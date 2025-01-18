@@ -210,7 +210,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         #[cfg(target_family = "windows")]
         let command_bytes = command_pieces.next().unwrap().as_bytes();
         #[cfg(target_family = "windows")]
-        let (cow, _encoding_used, _had_errors) = UTF_16LE.decode(command_bytes);
+        let (cow, _encoding_used, _had_errors) = UTF_16LE.encode(command_bytes);
         #[cfg(target_family = "windows")]
         let prog = OsString::from(cow.as_ref());
 

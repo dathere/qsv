@@ -105,6 +105,7 @@ csvs_convert = { version = "0.9.0", default-features = false, features = [
 data-encoding = { version = "2.7", optional = true }
 dotenvy = "0.15"
 dynfmt2 = { version = "0.2", default-features = false, features = ["curly"] }
+encoding_rs = "0.8"
 eudex = { version = "0.1", optional = true }
 ext-sort = { version = "0.1", default-features = false }
 fast-float2 = "0.2"
@@ -140,7 +141,6 @@ jsonschema = { version = "0.28", features = [
     "resolve-file",
     "resolve-http",
 ], default-features = false }
-local-encoding = { version = "0.2", optional = true }
 localzone = { version = "0.3", features = ["auto_validation"] }
 log = "0.4"
 mimalloc = { version = "0.1", default-features = false, optional = true }
@@ -316,9 +316,6 @@ csvlens = { git = "https://github.com/YS-L/csvlens", rev = "f1efb7a" }
 # needed to get latest dependencies and unreleased fixes
 grex = { git = "https://github.com/pemistahl/grex", rev = "cb71c10" }
 
-# use modernized version of local_encoding
-local-encoding = { git = "https://github.com/slonopotamus/local-encoding-rs", branch = "travis-madness" }
-
 # use our patched fork of sled to get rid of unmaintained instant
 sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }
 
@@ -394,7 +391,7 @@ fetch = [
     "serde_urlencoded",
     "sled",
 ]
-foreach = ["local-encoding"]
+foreach = []
 geocode = [
     "bytemuck",
     "cached",

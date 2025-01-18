@@ -3551,14 +3551,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "local-encoding"
-version = "0.2.0"
-source = "git+https://github.com/slonopotamus/local-encoding-rs?branch=travis-madness#4ac63dd0c32e42244aa563dd694ce488121873b1"
-dependencies = [
- "winapi",
-]
-
-[[package]]
 name = "local-waker"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5220,6 +5212,7 @@ dependencies = [
  "data-encoding",
  "dotenvy",
  "dynfmt2",
+ "encoding_rs",
  "eudex",
  "ext-sort",
  "fast-float2",
@@ -5246,7 +5239,6 @@ dependencies = [
  "jemallocator",
  "json-objects-to-csv",
  "jsonschema",
- "local-encoding",
  "localzone",
  "log",
  "mimalloc",

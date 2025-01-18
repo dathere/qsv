@@ -210,9 +210,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         #[cfg(target_family = "windows")]
         let command_bytes = command_pieces.next().unwrap().as_bytes();
         #[cfg(target_family = "windows")]
-        let (cow, _encoding_used, _had_errors) = UTF_16LE.encode(command_bytes);
+        let command_str = std::str::from_utf8(command_bytes).unwrap_or_default();
         #[cfg(target_family = "windows")]
-        let prog = OsString::from(cow.as_ref());
+        let (cow, _encoding_used, _had_errors) = UTF_16LE.encode(command_str);
+        #[cfg(target_family = "windows")]
+        let prog = OsString::from_wide(&utf16_le_bytes_to_utf16(&cow));
 
         let cmd_args: Vec<String> = command_pieces
             .map(|piece| {
@@ -291,4 +293,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
     dry_run_file.flush()?;
     Ok(wtr.flush()?)
+}
+
+#[cfg(target_family = "windows")]
+fn utf16_le_bytes_to_utf16(bytes: &[u8]) -> Vec<u16> {
+    bytes
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect()
 }

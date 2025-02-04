@@ -5565,11 +5565,11 @@ dependencies = [
 
 [[package]]
 name = "rand_hc"
-version = "0.3.2"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b363d4f6370f88d62bf586c80405657bde0f0e1b8945d47d2ad59b906cb4f54"
+checksum = "54fc7b35e3026136eaf1decdc66ecde3efadfd663cc0d71115ad40da7ebcff63"
 dependencies = [
- "rand_core 0.6.4",
+ "rand_core 0.9.0",
 ]
 
 [[package]]

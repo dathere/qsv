@@ -5268,7 +5268,7 @@ dependencies = [
  "qsv_docopt",
  "qsv_vader_sentiment_analysis",
  "quickcheck",
- "rand 0.8.5",
+ "rand 0.9.0",
  "rand_hc",
  "rand_xoshiro",
  "rayon",

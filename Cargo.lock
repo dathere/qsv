@@ -6365,12 +6365,9 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simple-home-dir"
-version = "0.4.7"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1f78301e9c87e04e958ef735dd9de41df52b6d5eb94a0af0ba06b3101a4b974"
-dependencies = [
- "windows-sys 0.59.0",
-]
+checksum = "57341e4ed0a2a2af338e3fc37ddd8c6a1825212bf2e20d4f5e1f3703d6dfdc2e"
 
 [[package]]
 name = "siphasher"

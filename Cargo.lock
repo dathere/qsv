@@ -5049,7 +5049,7 @@ dependencies = [
  "serde",
  "serde_json",
  "stacker",
- "sysinfo",
+ "sysinfo 0.33.1",
  "version_check",
 ]
 
@@ -5363,7 +5363,7 @@ dependencies = [
  "strsim",
  "strum 0.27.1",
  "strum_macros 0.27.1",
- "sysinfo",
+ "sysinfo 0.34.0",
  "tabwriter",
  "tempfile",
  "thousands",
@@ -6788,7 +6788,19 @@ dependencies = [
  "libc",
  "memchr",
  "ntapi",
- "rayon",
+ "windows 0.57.0",
+]
+
+[[package]]
+name = "sysinfo"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36913edff7a70c19d204c379e484b2a04d121fbb4e68bebc9fea651eb4386397"
+dependencies = [
+ "libc",
+ "memchr",
+ "ntapi",
+ "objc2-core-foundation",
  "windows 0.57.0",
 ]
 

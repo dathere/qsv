@@ -927,7 +927,7 @@ fn split_filter_with_padding() {
         .arg(&wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
-
+    wrk.assert_success(&mut cmd);
     // Check that the original files were created
     assert!(wrk.path("000.csv").exists());
     assert!(wrk.path("002.csv").exists());
@@ -982,7 +982,7 @@ fn split_filter_with_custom_filename() {
         .arg(&wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
-
+    wrk.assert_success(&mut cmd);
     // Check that the original files were created
     assert!(wrk.path("prefix-0.csv").exists());
     assert!(wrk.path("prefix-2.csv").exists());
@@ -1036,7 +1036,7 @@ fn split_filter_with_chunks() {
         .arg(&wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
-
+    wrk.assert_success(&mut cmd);
     // Check that the original files were created
     assert!(wrk.path("0.csv").exists());
     assert!(wrk.path("2.csv").exists());
@@ -1090,7 +1090,7 @@ fn split_filter_with_kb_size() {
         .arg(&wrk.path("."))
         .arg(test_file);
     wrk.run(&mut cmd);
-
+    wrk.assert_success(&mut cmd);
     // Check that at least some of the original files were created
     assert!(wrk.path("0.csv").exists());
     assert!(wrk.path("11.csv").exists());
@@ -1117,7 +1117,7 @@ fn split_filter_with_no_headers() {
         .arg(&wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
-
+    wrk.assert_success(&mut cmd);
     // Check that the original files were created
     assert!(wrk.path("0.csv").exists());
     assert!(wrk.path("2.csv").exists());
@@ -1169,6 +1169,8 @@ fn split_filter_with_cleanup() {
         .arg(&wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
+
+    wrk.assert_success(&mut cmd);
 
     // Check that the original files were removed
     assert!(!wrk.path("0.csv").exists());
@@ -1223,6 +1225,7 @@ fn split_filter_without_cleanup() {
         .arg(&wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     // Check that the original files were kept
     assert!(wrk.path("0.csv").exists());
@@ -1310,7 +1313,7 @@ fn split_filter_with_ignore_errors() {
 
     // The command should run successfully despite the filter command failing
     wrk.run(&mut cmd);
-
+    wrk.assert_success(&mut cmd);
     // Check that the original files were created
     assert!(wrk.path("0.csv").exists());
     assert!(wrk.path("2.csv").exists());

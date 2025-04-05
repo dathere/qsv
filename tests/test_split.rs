@@ -855,3 +855,498 @@ fn split_kbsize_boston_5k_no_headers() {
     assert!(wrk.path("84.csv").exists());
     assert!(wrk.path("93.csv").exists());
 }
+
+#[test]
+fn split_filter_basic() {
+    let wrk = Workdir::new("split_filter_basic");
+    wrk.create("in.csv", data(true));
+
+    // Create a simple filter command that creates a copy of each chunk with a .bak extension
+    let mut cmd = wrk.command("split");
+    cmd.args(["--size", "2"])
+        .arg("--filter")
+        .arg("cp $FILE {}.bak")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.run(&mut cmd);
+
+    wrk.assert_success(&mut cmd);
+
+    // Check that the original files were created
+    assert!(wrk.path("0.csv").exists());
+    assert!(wrk.path("2.csv").exists());
+    assert!(wrk.path("4.csv").exists());
+
+    // Check that the filtered files were created
+    assert!(wrk.path("0.bak").exists());
+    assert!(wrk.path("2.bak").exists());
+    assert!(wrk.path("4.bak").exists());
+
+    // Verify the content of the filtered files
+    split_eq!(
+        wrk,
+        "0.bak",
+        "\
+h1,h2
+a,b
+c,d
+"
+    );
+    split_eq!(
+        wrk,
+        "2.bak",
+        "\
+h1,h2
+e,f
+g,h
+"
+    );
+    split_eq!(
+        wrk,
+        "4.bak",
+        "\
+h1,h2
+i,j
+k,l
+"
+    );
+}
+
+#[test]
+fn split_filter_with_padding() {
+    let wrk = Workdir::new("split_filter_with_padding");
+    wrk.create("in.csv", data(true));
+
+    // Create a filter command with padding
+    let mut cmd = wrk.command("split");
+    cmd.args(["--size", "2"])
+        .arg("--pad")
+        .arg("3")
+        .arg("--filter")
+        .arg("cp $FILE chunk_{}.bak")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.run(&mut cmd);
+
+    // Check that the original files were created
+    assert!(wrk.path("000.csv").exists());
+    assert!(wrk.path("002.csv").exists());
+    assert!(wrk.path("004.csv").exists());
+
+    // Check that the filtered files were created
+    assert!(wrk.path("chunk_000.bak").exists());
+    assert!(wrk.path("chunk_002.bak").exists());
+    assert!(wrk.path("chunk_004.bak").exists());
+
+    // Verify the content of the filtered files
+    split_eq!(
+        wrk,
+        "chunk_000.bak",
+        "\
+h1,h2
+a,b
+c,d
+"
+    );
+    split_eq!(
+        wrk,
+        "chunk_002.bak",
+        "\
+h1,h2
+e,f
+g,h
+"
+    );
+    split_eq!(
+        wrk,
+        "chunk_004.bak",
+        "\
+h1,h2
+i,j
+k,l
+"
+    );
+}
+
+#[test]
+fn split_filter_with_custom_filename() {
+    let wrk = Workdir::new("split_filter_with_custom_filename");
+    wrk.create("in.csv", data(true));
+
+    // Create a filter command with custom filename
+    let mut cmd = wrk.command("split");
+    cmd.args(["--size", "2"])
+        .args(["--filename", "prefix-{}.csv"])
+        .arg("--filter")
+        .arg("cp $FILE prefix-{}.bak")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.run(&mut cmd);
+
+    // Check that the original files were created
+    assert!(wrk.path("prefix-0.csv").exists());
+    assert!(wrk.path("prefix-2.csv").exists());
+    assert!(wrk.path("prefix-4.csv").exists());
+
+    // Check that the filtered files were created
+    assert!(wrk.path("prefix-0.bak").exists());
+    assert!(wrk.path("prefix-2.bak").exists());
+    assert!(wrk.path("prefix-4.bak").exists());
+
+    // Verify the content of the filtered files
+    split_eq!(
+        wrk,
+        "prefix-0.bak",
+        "\
+h1,h2
+a,b
+c,d
+"
+    );
+    split_eq!(
+        wrk,
+        "prefix-2.bak",
+        "\
+h1,h2
+e,f
+g,h
+"
+    );
+    split_eq!(
+        wrk,
+        "prefix-4.bak",
+        "\
+h1,h2
+i,j
+k,l
+"
+    );
+}
+
+#[test]
+fn split_filter_with_chunks() {
+    let wrk = Workdir::new("split_filter_with_chunks");
+    wrk.create("in.csv", data(true));
+
+    // Create a filter command with chunks
+    let mut cmd = wrk.command("split");
+    cmd.args(["--chunks", "3"])
+        .arg("--filter")
+        .arg("cp $FILE chunk_{}.bak")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.run(&mut cmd);
+
+    // Check that the original files were created
+    assert!(wrk.path("0.csv").exists());
+    assert!(wrk.path("2.csv").exists());
+    assert!(wrk.path("4.csv").exists());
+
+    // Check that the filtered files were created
+    assert!(wrk.path("chunk_0.bak").exists());
+    assert!(wrk.path("chunk_2.bak").exists());
+    assert!(wrk.path("chunk_4.bak").exists());
+
+    // Verify the content of the filtered files
+    split_eq!(
+        wrk,
+        "chunk_0.bak",
+        "\
+h1,h2
+a,b
+c,d
+"
+    );
+    split_eq!(
+        wrk,
+        "chunk_2.bak",
+        "\
+h1,h2
+e,f
+g,h
+"
+    );
+    split_eq!(
+        wrk,
+        "chunk_4.bak",
+        "\
+h1,h2
+i,j
+k,l
+"
+    );
+}
+
+#[test]
+fn split_filter_with_kb_size() {
+    let wrk = Workdir::new("split_filter_with_kb_size");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Create a filter command with kb-size
+    let mut cmd = wrk.command("split");
+    cmd.args(["--kb-size", "5"])
+        .arg("--filter")
+        .arg("cp $FILE {}.bak")
+        .arg(&wrk.path("."))
+        .arg(test_file);
+    wrk.run(&mut cmd);
+
+    // Check that at least some of the original files were created
+    assert!(wrk.path("0.csv").exists());
+    assert!(wrk.path("11.csv").exists());
+
+    // Check that at least some of the filtered files were created
+    assert!(wrk.path("0.bak").exists());
+    assert!(wrk.path("11.bak").exists());
+
+    // Verify the content of the filtered files matches the original files
+    split_eq!(wrk, "0.bak", wrk.from_str::<String>(&wrk.path("0.csv")));
+    split_eq!(wrk, "11.bak", wrk.from_str::<String>(&wrk.path("11.csv")));
+}
+
+#[test]
+fn split_filter_with_no_headers() {
+    let wrk = Workdir::new("split_filter_with_no_headers");
+    wrk.create("in.csv", data(false));
+
+    // Create a filter command with no headers
+    let mut cmd = wrk.command("split");
+    cmd.args(["--no-headers", "--size", "2"])
+        .arg("--filter")
+        .arg("cp $FILE {}.bak")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.run(&mut cmd);
+
+    // Check that the original files were created
+    assert!(wrk.path("0.csv").exists());
+    assert!(wrk.path("2.csv").exists());
+    assert!(wrk.path("4.csv").exists());
+
+    // Check that the filtered files were created
+    assert!(wrk.path("0.bak").exists());
+    assert!(wrk.path("2.bak").exists());
+    assert!(wrk.path("4.bak").exists());
+
+    // Verify the content of the filtered files
+    split_eq!(
+        wrk,
+        "0.bak",
+        "\
+a,b
+c,d
+"
+    );
+    split_eq!(
+        wrk,
+        "2.bak",
+        "\
+e,f
+g,h
+"
+    );
+    split_eq!(
+        wrk,
+        "4.bak",
+        "\
+i,j
+k,l
+"
+    );
+}
+
+#[test]
+fn split_filter_with_cleanup() {
+    let wrk = Workdir::new("split_filter_with_cleanup");
+    wrk.create("in.csv", data(true));
+
+    // Create a filter command with cleanup
+    let mut cmd = wrk.command("split");
+    cmd.args(["--size", "2"])
+        .arg("--filter")
+        .arg("cp $FILE {}.bak")
+        .arg("--filter-cleanup")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.run(&mut cmd);
+
+    // Check that the original files were removed
+    assert!(!wrk.path("0.csv").exists());
+    assert!(!wrk.path("2.csv").exists());
+    assert!(!wrk.path("4.csv").exists());
+
+    // Check that the filtered files were created
+    assert!(wrk.path("0.bak").exists());
+    assert!(wrk.path("2.bak").exists());
+    assert!(wrk.path("4.bak").exists());
+
+    // Verify the content of the filtered files
+    split_eq!(
+        wrk,
+        "0.bak",
+        "\
+h1,h2
+a,b
+c,d
+"
+    );
+    split_eq!(
+        wrk,
+        "2.bak",
+        "\
+h1,h2
+e,f
+g,h
+"
+    );
+    split_eq!(
+        wrk,
+        "4.bak",
+        "\
+h1,h2
+i,j
+k,l
+"
+    );
+}
+
+#[test]
+fn split_filter_without_cleanup() {
+    let wrk = Workdir::new("split_filter_without_cleanup");
+    wrk.create("in.csv", data(true));
+
+    // Create a filter command without cleanup
+    let mut cmd = wrk.command("split");
+    cmd.args(["--size", "2"])
+        .arg("--filter")
+        .arg("cp $FILE {}.bak")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.run(&mut cmd);
+
+    // Check that the original files were kept
+    assert!(wrk.path("0.csv").exists());
+    assert!(wrk.path("2.csv").exists());
+    assert!(wrk.path("4.csv").exists());
+
+    // Check that the filtered files were created
+    assert!(wrk.path("0.bak").exists());
+    assert!(wrk.path("2.bak").exists());
+    assert!(wrk.path("4.bak").exists());
+
+    // Verify the content of the filtered files
+    split_eq!(
+        wrk,
+        "0.bak",
+        "\
+h1,h2
+a,b
+c,d
+"
+    );
+    split_eq!(
+        wrk,
+        "2.bak",
+        "\
+h1,h2
+e,f
+g,h
+"
+    );
+    split_eq!(
+        wrk,
+        "4.bak",
+        "\
+h1,h2
+i,j
+k,l
+"
+    );
+}
+
+#[test]
+fn split_filter_with_cleanup_failed_command() {
+    let wrk = Workdir::new("split_filter_with_cleanup_failed_command");
+    wrk.create("in.csv", data(true));
+
+    // Create a filter command with cleanup but with a command that will fail
+    let mut cmd = wrk.command("split");
+    cmd.args(["--size", "2"])
+        .arg("--filter")
+        .arg("nonexistent_command $FILE {}.bak")
+        .arg("--filter-cleanup")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+
+    wrk.run(&mut cmd);
+    wrk.assert_err(&mut cmd);
+
+    // The first chunk should still exist because it was created before the filter command failed
+    assert!(wrk.path("0.csv").exists());
+
+    // The second and third chunks should not exist because the filter command failed
+    assert!(!wrk.path("2.csv").exists());
+    assert!(!wrk.path("4.csv").exists());
+
+    // Check that the filtered files were not created
+    assert!(!wrk.path("0.bak").exists());
+    assert!(!wrk.path("2.bak").exists());
+    assert!(!wrk.path("4.bak").exists());
+}
+
+#[test]
+fn split_filter_with_ignore_errors() {
+    let wrk = Workdir::new("split_filter_with_ignore_errors");
+    wrk.create("in.csv", data(true));
+
+    // Create a filter command with ignore-errors
+    let mut cmd = wrk.command("split");
+    cmd.args(["--size", "2"])
+        .arg("--filter")
+        .arg("nonexistent_command $FILE {}.bak")
+        .arg("--filter-ignore-errors")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+
+    // The command should run successfully despite the filter command failing
+    wrk.run(&mut cmd);
+
+    // Check that the original files were created
+    assert!(wrk.path("0.csv").exists());
+    assert!(wrk.path("2.csv").exists());
+    assert!(wrk.path("4.csv").exists());
+
+    // Check that the filtered files were not created
+    assert!(!wrk.path("0.bak").exists());
+    assert!(!wrk.path("2.bak").exists());
+    assert!(!wrk.path("4.bak").exists());
+}
+
+#[test]
+fn split_filter_without_ignore_errors() {
+    let wrk = Workdir::new("split_filter_without_ignore_errors");
+    wrk.create("in.csv", data(true));
+
+    // Create a filter command without ignore-errors
+    let mut cmd = wrk.command("split");
+    cmd.args(["--size", "2"])
+        .arg("--filter")
+        .arg("nonexistent_command $FILE {}.bak")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+
+    // The command should fail when the filter command fails
+    wrk.assert_err(&mut cmd);
+
+    // The first chunk should still exist because it was created before the filter command failed
+    assert!(wrk.path("0.csv").exists());
+
+    // The second and third chunks should not exist because the filter command failed
+    assert!(!wrk.path("2.csv").exists());
+    assert!(!wrk.path("4.csv").exists());
+
+    // Check that the filtered files were not created
+    assert!(!wrk.path("0.bak").exists());
+    assert!(!wrk.path("2.bak").exists());
+    assert!(!wrk.path("4.bak").exists());
+}

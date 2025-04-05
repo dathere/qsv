@@ -1646,9 +1646,9 @@ dependencies = [
 
 [[package]]
 name = "csvs_convert"
-version = "0.9.1"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc976a67165ea990c46d41d1d6b8bcbf39db359f3579a13e4640ede1ea57aa91"
+checksum = "fdf9edfb9773fae1a7d5399838b65ca286fd66eca60988368d7b3cf2d8bcc1b3"
 dependencies = [
  "chrono",
  "counter",
@@ -5887,9 +5887,9 @@ dependencies = [
 
 [[package]]
 name = "rust_xlsxwriter"
-version = "0.84.2"
+version = "0.85.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "471ad60b86a26bae9b541a7c3561174c22f474202e653b78f47549939d6b93fa"
+checksum = "e04e5c9e505db0e7f0b48449b138d6de1fba90bd178833a0e401f8d1aab16774"
 dependencies = [
  "tempfile",
  "zip",

@@ -98,7 +98,7 @@ csv-index = "0.1"
 csvlens = { version = "0.12", optional = true, default-features = false, features = [
     "clipboard",
 ] }
-csvs_convert = { version = "0.9.1", default-features = false, features = [
+csvs_convert = { version = "0.10.1", default-features = false, features = [
     "converters",
 ], optional = true }
 data-encoding = { version = "2.8", optional = true }

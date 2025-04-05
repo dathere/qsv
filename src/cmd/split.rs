@@ -48,6 +48,10 @@ Examples:
 
     qsv split splitoutdir -c 10 -j 4 input.csv
 
+    qsv split outdir -s 100 --filter "gzip $FILE" input.csv
+    # This will create files with names like 0.csv, 100.csv, etc. in the directory
+    # 'outdir', and then run the command "gzip" on each chunk.
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_split.rs.
 
 Usage:
@@ -88,7 +92,20 @@ split options:
                            [default: {}.csv]
     --pad <arg>            The zero padding width that is used in the
                            generated filename.
-                           [default: 0] 
+                           [default: 0]
+
+                            FILTER OPTIONS:
+    --filter <command>      Run the specified command on each chunk after it is written.
+                            The command should use the $FILE environment variable,
+                            which is set to the path of the output file for each chunk.
+                            The string '{}' in the command will be replaced by the
+                            zero-based row number of the first row in the chunk.
+    --filter-cleanup        Cleanup the original output filename AFTER the filter command
+                            is run successfully for EACH chunk. If the filter command is not
+                            successful, the original filename is not removed.
+                            Only valid when --filter is used.
+    --filter-ignore-errors  Ignore errors when running the filter command.
+                            Only valid when --filter is used.
 
 Common options:
     -h, --help             Display this message
@@ -100,7 +117,7 @@ Common options:
     -q, --quiet            Do not display an output summary to stderr.
 "#;
 
-use std::{fs, io, path::Path};
+use std::{fs, io, path::Path, process::Command};
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::Deserialize;
@@ -114,17 +131,20 @@ use crate::{
 
 #[derive(Clone, Deserialize)]
 struct Args {
-    arg_input:       Option<String>,
-    arg_outdir:      String,
-    flag_size:       usize,
-    flag_chunks:     Option<usize>,
-    flag_kb_size:    Option<usize>,
-    flag_jobs:       Option<usize>,
-    flag_filename:   FilenameTemplate,
-    flag_pad:        usize,
-    flag_no_headers: bool,
-    flag_delimiter:  Option<Delimiter>,
-    flag_quiet:      bool,
+    arg_input:                 Option<String>,
+    arg_outdir:                String,
+    flag_size:                 usize,
+    flag_chunks:               Option<usize>,
+    flag_kb_size:              Option<usize>,
+    flag_jobs:                 Option<usize>,
+    flag_filename:             FilenameTemplate,
+    flag_pad:                  usize,
+    flag_no_headers:           bool,
+    flag_delimiter:            Option<Delimiter>,
+    flag_quiet:                bool,
+    flag_filter:               Option<String>,
+    flag_filter_cleanup:       bool,
+    flag_filter_ignore_errors: bool,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -170,6 +190,7 @@ impl Args {
         let mut wtr = self.new_writer(&headers, 0, self.flag_pad)?;
         let mut i = 0;
         let mut num_chunks = 0;
+        let mut chunk_start = 0; // Track the start index of current chunk
         let mut row = csv::ByteRecord::new();
         let chunk_size_bytes = chunk_size * 1024;
         let mut chunk_size_bytes_left = chunk_size_bytes - header_byte_size;
@@ -197,6 +218,11 @@ impl Args {
 
             if curr_size_bytes + next_size_bytes >= chunk_size_bytes_left {
                 wtr.flush()?;
+                // Run filter command if specified
+                if self.flag_filter.is_some() {
+                    self.run_filter_command(chunk_start, self.flag_pad)?;
+                }
+                chunk_start = i; // Set start index for next chunk
                 wtr = self.new_writer(&headers, i, self.flag_pad)?;
                 chunk_size_bytes_left = chunk_size_bytes - header_byte_size;
                 num_chunks += 1;
@@ -208,6 +234,10 @@ impl Args {
             }
         }
         wtr.flush()?;
+        // Run filter command for the last chunk if specified
+        if self.flag_filter.is_some() {
+            self.run_filter_command(chunk_start, self.flag_pad)?;
+        }
 
         if !self.flag_quiet {
             eprintln!(
@@ -245,6 +275,10 @@ impl Args {
         while rdr.read_byte_record(&mut row)? {
             if i > 0 && i % chunk_size == 0 {
                 wtr.flush()?;
+                // Run filter command if specified
+                if self.flag_filter.is_some() {
+                    self.run_filter_command(i - chunk_size, self.flag_pad)?;
+                }
                 nchunks += 1;
                 wtr = self.new_writer(&headers, i, self.flag_pad)?;
             }
@@ -252,6 +286,12 @@ impl Args {
             i += 1;
         }
         wtr.flush()?;
+        // Run filter command for the last chunk if specified
+        if self.flag_filter.is_some() {
+            // Calculate the start index for the last chunk
+            let last_chunk_start = ((i - 1) / chunk_size) * chunk_size;
+            self.run_filter_command(last_chunk_start, self.flag_pad)?;
+        }
 
         if !self.flag_quiet {
             eprintln!(
@@ -312,6 +352,14 @@ impl Args {
             // safety: safe to unwrap because we know the writer is a file
             // the only way this can fail is if we cannot write to the file
             wtr.flush().unwrap();
+
+            // Run filter command if specified
+            if self.flag_filter.is_some() {
+                // We can't use ? here because we're in a closure
+                if let Err(e) = self.run_filter_command(i * chunk_size, self.flag_pad) {
+                    eprintln!("Error running filter command: {e}");
+                }
+            }
         });
 
         if !self.flag_quiet {
@@ -341,6 +389,55 @@ impl Args {
             wtr.write_record(headers)?;
         }
         Ok(wtr)
+    }
+
+    fn run_filter_command(&self, start: usize, width: usize) -> CliResult<()> {
+        if let Some(ref filter_cmd) = self.flag_filter {
+            let outdir = Path::new(&self.arg_outdir).canonicalize()?;
+            let filename = self.flag_filename.filename(&format!("{start:0>width$}"));
+            let file_path = outdir.join(&filename);
+
+            // Check if the file exists before running the filter command
+            if !file_path.exists() {
+                eprintln!(
+                    "Warning: File {} does not exist, skipping filter command",
+                    file_path.display()
+                );
+                return Ok(());
+            }
+
+            // Replace {} in the command with the start index
+            let cmd = filter_cmd.replace("{}", &format!("{start:0>width$}"));
+
+            // Execute the command using the appropriate shell based on platform
+            let status = if cfg!(windows) {
+                Command::new("cmd")
+                    .arg("/C")
+                    .arg(&cmd)
+                    .current_dir(&self.arg_outdir)
+                    .env("FILE", file_path.canonicalize()?.as_os_str())
+                    .status()?
+            } else {
+                Command::new("sh")
+                    .arg("-c")
+                    .arg(&cmd)
+                    .current_dir(&self.arg_outdir)
+                    .env("FILE", file_path.canonicalize()?.as_os_str())
+                    .status()?
+            };
+
+            if !status.success() && !self.flag_filter_ignore_errors {
+                return fail_clierror!("Filter command failed with exit code: {status}");
+            }
+
+            // Cleanup the original output filename if the filter command was successful
+            if self.flag_filter_cleanup {
+                fs::remove_file(&file_path).unwrap_or_else(|e| {
+                    wwarn!("Failed to remove file {}: {e}", file_path.display());
+                });
+            }
+        }
+        Ok(())
     }
 
     fn rconfig(&self) -> Config {

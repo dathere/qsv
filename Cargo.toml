@@ -122,8 +122,8 @@ flexi_logger = { version = "0.30", features = [
 futures = "0.3"
 futures-util = "0.3"
 gender_guesser = { version = "0.2", optional = true }
-geosuggest-core = { version = "0.6", optional = true }
-geosuggest-utils = { version = "0.6", optional = true }
+geosuggest-core = { git = "https://github.com/estin/geosuggest.git", rev = "8879edd", optional = true }
+geosuggest-utils = { git = "https://github.com/estin/geosuggest.git", rev = "8879edd", optional = true }
 geozero = { version = "0.14.0", features = ["with-csv", "with-shp"], optional = true }
 governor = { version = "0.10", optional = true }
 grex = { version = "1.4", default-features = false }

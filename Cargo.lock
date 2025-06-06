@@ -1272,7 +1272,7 @@ dependencies = [
  "hashbrown 0.14.5",
  "once_cell",
  "r2d2",
- "redis",
+ "redis 0.29.5",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -5798,7 +5798,7 @@ dependencies = [
  "rand_hc",
  "rand_xoshiro",
  "rayon",
- "redis",
+ "redis 0.32.0",
  "regex",
  "reqwest",
  "rfd",
@@ -6250,6 +6250,22 @@ dependencies = [
  "r2d2",
  "ryu",
  "sha1_smol",
+ "socket2",
+ "url",
+]
+
+[[package]]
+name = "redis"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd673deb3d184140109c1e27b043c2354cb79399c3ef304c365fc628092ed773"
+dependencies = [
+ "ahash 0.8.12",
+ "combine",
+ "itoa",
+ "num-bigint",
+ "percent-encoding",
+ "ryu",
  "socket2",
  "url",
 ]

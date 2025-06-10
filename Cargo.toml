@@ -225,7 +225,7 @@ rand = "0.9"
 rand_hc = "0.4"
 rand_xoshiro = "0.7"
 rayon = "1.10"
-redis = { version = "=0.29.5", features = [
+redis = { version = "=0.32.0", features = [
     "ahash",
     "tcp_nodelay",
 ], default-features = false, optional = true }

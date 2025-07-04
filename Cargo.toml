@@ -139,7 +139,7 @@ gzp = { version = "1", default-features = false, features = [
 hashbrown = { version = "0.15", optional = true }
 human-panic = "2"
 indexmap = "2.9"
-indicatif = "0.17"
+indicatif = "0.18"
 itertools = "0.14"
 itoa = "1"
 jaq-core = "2"

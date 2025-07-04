@@ -128,7 +128,7 @@ flexi_logger = { version = "0.31", features = [
 futures = "0.3"
 futures-util = "0.3"
 gender_guesser = { version = "0.2", optional = true }
-geosuggest-core = { version = "0.7", features = ["geoip2"], optional = true }
+geosuggest-core = { version = "0.8", features = ["geoip2"], optional = true }
 geosuggest-utils = { version = "0.7", optional = true }
 geozero = { version = "0.14.0", features = [
     "with-csv",

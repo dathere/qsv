@@ -2887,14 +2887,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "geosuggest-utils"
-version = "0.7.1"
+name = "geosuggest-core"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6997f4473ef5b12ae6a036c3687853b83bae63bb93b4955fedfc517e44c2f126"
+checksum = "ca48ec9c251b33e63b6701934b048b8c91c80e42a27114a7123f54e6410e2112"
+dependencies = [
+ "csv",
+ "itertools 0.14.0",
+ "kiddo",
+ "rayon",
+ "rkyv 0.8.10",
+ "serde",
+ "strsim",
+]
+
+[[package]]
+name = "geosuggest-utils"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa7f3727d5646dcb6d0e013dca1e6a5c768b8112145a4bf7a96c913fb6ac026b"
 dependencies = [
  "anyhow",
  "futures",
- "geosuggest-core",
+ "geosuggest-core 0.8.0",
  "reqwest",
  "rkyv 0.8.10",
  "serde",
@@ -3795,6 +3810,7 @@ dependencies = [
  "generator",
  "num-traits",
  "ordered-float 5.0.0",
+ "rkyv 0.8.10",
  "sorted-vec",
 ]
 
@@ -5903,7 +5919,7 @@ dependencies = [
  "futures",
  "futures-util",
  "gender_guesser",
- "geosuggest-core",
+ "geosuggest-core 0.7.1",
  "geosuggest-utils",
  "geozero",
  "governor 0.10.0",

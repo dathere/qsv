@@ -173,7 +173,7 @@ minijinja-contrib = { version = "2", features = [
     "wordcount",
     "wordwrap",
 ] }
-mlua = { version = "0.10", features = [
+mlua = { version = "0.11", features = [
     "luau",
     "luau-jit",
     "serialize",

@@ -18,7 +18,7 @@ fn fruits_extended_headers() {
 2   price
 3   size
 4   availability"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/2/index.html#selecting-the-columns
@@ -40,7 +40,7 @@ grape,out of stock
 mango,available
 watermelon,available
 pear,out of stock"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/2/index.html#command-redirection
@@ -78,7 +78,7 @@ mango       available
 watermelon  available
 pear        out of stock
 "#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/2/index.html#exercise-2-piping-commands-example
@@ -116,7 +116,7 @@ mango       1.80
 watermelon  6.00
 pear        2.20
 "#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/2/index.html#exercise-2-piping-commands-example
@@ -158,5 +158,5 @@ fn fruits_extended_select_1_2_transpose_table() {
     let expected = r#"fruit  apple  banana  strawberry  orange  pineapple  grape  mango  watermelon  pear
 price  2.50   3.00    1.50        2.00    3.50       4.00   1.80   6.00        2.20
 "#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

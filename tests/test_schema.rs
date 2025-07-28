@@ -137,7 +137,7 @@ fn generate_schema_with_optional_flags_notrim_and_validate_with_errors() {
 
     assert!(!validation_error_output.is_empty());
 
-    similar_asserts::assert_eq!(
+    assert_eq!(
         validation_errors_expected.to_string(),
         validation_error_output
     );
@@ -222,7 +222,7 @@ fn generate_schema_with_optional_flags_trim_and_validate_with_errors() {
 
     assert!(!validation_error_output.is_empty());
 
-    similar_asserts::assert_eq!(
+    assert_eq!(
         validation_errors_expected.to_string(),
         validation_error_output
     );
@@ -303,7 +303,7 @@ fn generate_schema_with_const_and_enum_constraints() {
     let expected_schema = r#"{
   "$schema": "https://json-schema.org/draft-07/schema",
   "title": "JSON Schema for enum_const_test.csv",
-  "description": "Inferred JSON Schema from QSV schema command",
+  "description": "Inferred JSON Schema with `qsv schema enum_const_test.csv --enum-threshold 5`",
   "type": "object",
   "properties": {
     "first": {
@@ -378,5 +378,5 @@ fn generate_schema_with_const_and_enum_constraints() {
   ]
 }"#;
 
-    similar_asserts::assert_eq!(output_schema_string, expected_schema);
+    assert_eq!(output_schema_string, expected_schema);
 }

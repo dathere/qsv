@@ -1,0 +1,30 @@
+{
+    "tulips": [
+        {
+            "color": "purple",
+            "quantity": 2
+        },
+        {
+            "color": "white",
+            "quantity": 1
+        },
+        {
+            "color": "orange",
+            "quantity": 1
+        }
+    ],
+    "roses": [
+        {
+            "color": "red",
+            "quantity": 4
+        },
+        {
+            "color": "white",
+            "quantity": 1
+        },
+        {
+            "color": "pink",
+            "quantity": 1
+        }
+    ]
+}

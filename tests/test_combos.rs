@@ -41,7 +41,7 @@ fn combo_sort_dedup() {
         svec!["5", "2021-04-26 19:29:26", "f"],
         svec!["2", "2021-04-26 20:22:26", "e"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.create("in2.csv", expected);
 
@@ -58,7 +58,7 @@ fn combo_sort_dedup() {
         svec!["5", "2021-04-26 19:29:26", "f"],
         svec!["60", "2021-04-26 04:52:46", "g"],
     ];
-    similar_asserts::assert_eq!(got2, expected2);
+    assert_eq!(got2, expected2);
 
     wrk.create("in3.csv", expected2);
 
@@ -75,7 +75,7 @@ fn combo_sort_dedup() {
         svec!["30", "2021-04-26 11:44:13", "c"],
         svec!["60", "2021-04-26 04:52:46", "g"],
     ];
-    similar_asserts::assert_eq!(got3, expected3);
+    assert_eq!(got3, expected3);
 }
 
 #[test]

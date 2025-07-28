@@ -3,9 +3,9 @@ Open a file dialog to pick a file as input or save to an output file.
 
 Examples:
 Pick a single file as input to qsv stats using an INPUT file dialog,
-pipe into qsv stats using qsv prompt:
+pipe into qsv stats using qsv prompt, and browse the stats using qsv lens:
 
-  qsv prompt | qsv stats | qsv table
+  qsv prompt | qsv stats | qsv lens
 
 If you want to save the output of a command to a file using a save file OUTPUT dialog,
 pipe into qsv prompt using the --fd-output flag:
@@ -27,7 +27,9 @@ prompt options:
                            When using --fd-output, the default is "Save File As".
     -F, --filters <arg>    The filter to use for the INPUT file dialog. Set to "None" to
                            disable filters. Filters are comma-delimited file extensions.
-                           [default: csv,tsv,tab,ssv,xls,xlsx,ods]
+                           Defaults to csv,tsv,tab,ssv,xls,xlsx,xlsm,xlsb,ods.
+                           If the polars feature is enabled, it adds avro,arrow,ipc,parquet,
+                           json,jsonl,ndjson & gz,zst,zlib compressed files to the filter.
     -d, --workdir <dir>    The directory to start the file dialog in.
                            [default: .]
     -f, --fd-output        Write output to a file by using a save file dialog.
@@ -56,14 +58,14 @@ use std::{
 
 use rfd::FileDialog;
 
-use crate::{CliResult, Deserialize, util};
+use crate::{CliResult, Deserialize, config::Config, util};
 
 #[derive(Deserialize)]
 #[allow(clippy::struct_field_names)]
 struct Args {
     flag_msg:           Option<String>,
     flag_workdir:       PathBuf,
-    flag_filters:       String,
+    flag_filters:       Option<String>,
     flag_fd_output:     bool,
     flag_output:        Option<PathBuf>,
     flag_save_fname:    String,
@@ -143,11 +145,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .set_directory(args.flag_workdir.clone())
             .set_title(title.clone());
 
-        if !args.flag_filters.eq_ignore_ascii_case("none") {
-            let ext_comma_delimited: Vec<&str> = args.flag_filters.split(',').collect();
-            let ext_slice: &[&str] = &ext_comma_delimited;
-            if !ext_slice.is_empty() {
-                fd = fd.add_filter("Filter".to_string(), ext_slice);
+        if let Some(filters) = args.flag_filters {
+            if !filters.eq_ignore_ascii_case("none") {
+                let ext_comma_delimited: Vec<&str> = filters.split(',').collect();
+                let ext_slice: &[&str] = &ext_comma_delimited;
+                if !ext_slice.is_empty() {
+                    fd = fd.add_filter("Filter".to_string(), ext_slice);
+                }
+            }
+        } else {
+            // add default filters
+            fd = fd
+                .add_filter("CSV dialects", &["csv", "tsv", "tab", "ssv"])
+                .add_filter("Spreadsheets", &["xls", "xlsx", "xlsm", "xlsb", "ods"]);
+
+            #[cfg(feature = "polars")]
+            // addl formats when polars feature is enabled
+            {
+                fd = fd
+                    .add_filter("Compressed files", &["gz", "zlib", "zst"])
+                    .add_filter("Arrow", &["arrow", "ipc"])
+                    .add_filter("Avro", &["avro"])
+                    .add_filter("Parquet", &["parquet"])
+                    .add_filter("JSON (nested JSON array)", &["json"])
+                    .add_filter("JSON Lines", &["jsonl", "ndjson"]);
             }
         }
 
@@ -159,6 +180,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 format!(r#"Prompt error. Perhaps you did not select a file for input? "{title}""#)
             };
             return fail_clierror!("{err_msg}");
+        }
+
+        #[cfg(feature = "polars")]
+        {
+            // create Config so we can use its polars special-format handling to
+            // convert these extended formats to regular temporary CSVs
+            // safety: we can use unwrap here as we just check input_path is some
+            let path_string = input_path.unwrap().to_string_lossy().into_owned();
+            let config: Config = Config::new(Some(&path_string));
+
+            input_path = config.path;
         }
     }
 

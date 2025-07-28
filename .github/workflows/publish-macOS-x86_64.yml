@@ -40,7 +40,7 @@ jobs:
             addl-build-args: --features=apply,fetch,foreach,self_update,luau,polars,to,geocode,lens,prompt
             default-features: --no-default-features
             addl-qsvlite-features:
-            addl-qsvdp-features: luau
+            addl-qsvdp-features:
             addl-rustflags: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
 
     steps:

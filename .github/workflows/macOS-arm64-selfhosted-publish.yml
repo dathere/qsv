@@ -38,7 +38,7 @@ jobs:
             addl-build-args: --features=apply,fetch,foreach,self_update,luau,polars,to,geocode,lens
             default-features:
             addl-qsvlite-features:
-            addl-qsvdp-features: luau
+            addl-qsvdp-features:
 
     steps:
     - name: Installing Rust toolchain

@@ -11,7 +11,7 @@ use std::{env, fmt, mem::transmute, ops};
 
 use quickcheck::{Arbitrary, Gen, QuickCheck, Testable};
 use rand::Rng;
-// use similar_asserts::assert_eq;
+// use assert_eq;
 
 macro_rules! svec[
     ($($x:expr_2021),*) => (
@@ -24,7 +24,7 @@ macro_rules! svec[
 
 macro_rules! rassert_eq {
     ($given:expr_2021, $expected:expr_2021) => {{
-        similar_asserts::assert_eq!($given, $expected);
+        assert_eq!($given, $expected);
         true
     }};
 }
@@ -77,8 +77,10 @@ mod test_fmt;
 #[cfg(all(feature = "foreach"))]
 mod test_foreach;
 mod test_frequency;
-#[cfg(all(feature = "feature_capable", feature = "geocode"))]
+#[cfg(feature = "geocode")]
 mod test_geocode;
+#[cfg(feature = "geocode")]
+mod test_geoconvert;
 mod test_headers;
 mod test_index;
 mod test_input;

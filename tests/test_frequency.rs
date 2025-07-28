@@ -44,7 +44,7 @@ fn frequency_no_headers() {
         svec!["1", "b", "1", "12.5"],
         svec!["1", "h1", "1", "12.5"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn frequency_casesensitive() {
         svec!["h2", "y", "2", "28.57143"],
         svec!["h2", "z", "3", "42.85714"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn frequency_ignorecase() {
         svec!["h2", "y", "3", "42.85714"],
         svec!["h2", "z", "3", "42.85714"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn frequency_trim() {
         svec!["h2", "y", "5", "35.71429"],
         svec!["h2", "z", "4", "28.57143"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn frequency_no_trim() {
         svec!["h2", "y ", "3", "21.42857"],
         svec!["h2", "z", "3", "21.42857"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -187,7 +187,7 @@ fn frequency_no_nulls() {
         svec!["h1", "a", "4", "66.66667"],
         svec!["h1", "b", "1", "16.66667"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -204,7 +204,7 @@ fn frequency_nulls() {
         svec!["h1", "a", "4", "57.14286"],
         svec!["h1", "b", "1", "14.28571"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -221,7 +221,7 @@ fn frequency_limit() {
         svec!["h2", "Other (3)", "4", "57.14286"],
         svec!["h2", "z", "3", "42.85714"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn frequency_pct_dec_places() {
         svec!["h2", "Other (3)", "4", "57.143"],
         svec!["h2", "z", "3", "42.857"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -255,7 +255,7 @@ fn frequency_neg_pct_dec_places() {
         svec!["h2", "Other (3)", "4", "57.1429"],
         svec!["h2", "z", "3", "42.8571"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -270,7 +270,7 @@ fn frequency_limit_no_other() {
         svec!["h1", "a", "4", "57.14286"],
         svec!["h2", "z", "3", "42.85714"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -286,7 +286,7 @@ fn frequency_negative_limit() {
         svec!["h1", "a", "4", "57.14286"],
         svec!["h2", "Other (4)", "7", "100"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -302,7 +302,7 @@ fn frequency_limit_threshold() {
         svec!["h1", "a", "4", "57.14286"],
         svec!["h2", "Other (4)", "7", "100"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -323,7 +323,7 @@ fn frequency_limit_threshold_notmet() {
         svec!["h2", "y", "2", "28.57143"],
         svec!["h2", "z", "3", "42.85714"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 #[test]
 fn frequency_asc() {
@@ -339,7 +339,7 @@ fn frequency_asc() {
         svec!["h2", "y", "2", "28.57143"],
         svec!["h2", "z", "3", "42.85714"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -357,7 +357,7 @@ fn frequency_asc_ignorecase() {
         svec!["h2", "y", "3", "42.85714"],
         svec!["h2", "z", "3", "42.85714"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -375,7 +375,7 @@ fn frequency_custom_other_text() {
         svec!["h1", "其他 (3)", "3", "42.85714"],
         svec!["h2", "其他 (4)", "7", "100"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -394,7 +394,7 @@ fn frequency_custom_other_text_sorted() {
         svec!["h1", "a", "4", "57.14286"],
         svec!["h2", "Ibang halaga (4)", "7", "100"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -412,7 +412,7 @@ fn frequency_other_sorted() {
         svec!["h1", "a", "4", "57.14286"],
         svec!["h2", "Other (4)", "7", "100"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -428,7 +428,7 @@ fn frequency_other_text_none() {
         svec!["field", "value", "count", "percentage"],
         svec!["h1", "a", "4", "57.14286"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -445,7 +445,7 @@ fn frequency_select() {
         svec!["h2", "y", "2", "28.57143"],
         svec!["h2", "z", "3", "42.85714"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -462,7 +462,7 @@ fn frequency_all_unique() {
         svec!["field", "value", "count", "percentage"],
         svec!["case_enquiry_id", "<ALL_UNIQUE>", "100", "100"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -486,7 +486,7 @@ fn frequency_all_unique_with_stats_cache() {
         svec!["field", "value", "count", "percentage"],
         svec!["case_enquiry_id", "<ALL_UNIQUE>", "100", "100"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -513,7 +513,7 @@ fn frequency_all_unique_with_stats_cache_alt_all_unique_text() {
         svec!["field", "value", "count", "percentage"],
         svec!["case_enquiry_id", "<ALLE EINZIGARTIG>", "100", "100"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -531,7 +531,7 @@ fn frequency_all_unique_stats_cache_default() {
         svec!["field", "value", "count", "percentage"],
         svec!["case_enquiry_id", "<ALL_UNIQUE>", "100", "100"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -569,7 +569,7 @@ fn frequency_all_unique_stats_mode_none() {
         svec!["case_enquiry_id", "101004113403", "1", "1"],
         svec!["case_enquiry_id", "Other (90)", "90", "90"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -599,7 +599,7 @@ fn frequency_issue1962() {
         svec!["year", "2010", "10", "3.33333"],
         svec!["year", "Other (9)", "45", "15"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     let mut cmd = wrk.command("frequency");
     cmd.args(["--limit", "5"]).arg(testdata);
@@ -614,7 +614,7 @@ fn frequency_issue1962() {
         svec!["year", "2020", "20", "6.66667"],
         svec!["year", "Other (19)", "190", "63.33333"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // This tests that a frequency table computed by `qsv` is always the same
@@ -760,10 +760,10 @@ where
 
 fn assert_eq_ftables(got: &FTables, expected: &FTables) -> bool {
     for (k, v) in got.iter() {
-        similar_asserts::assert_eq!(freq_data(v), freq_data(expected.get(k).unwrap()));
+        assert_eq!(freq_data(v), freq_data(expected.get(k).unwrap()));
     }
     for (k, v) in expected.iter() {
-        similar_asserts::assert_eq!(freq_data(got.get(k).unwrap()), freq_data(v));
+        assert_eq!(freq_data(got.get(k).unwrap()), freq_data(v));
     }
     true
 }
@@ -803,6 +803,8 @@ fn frequency_vis_whitespace() {
         .args(["--limit", "0"])
         .arg("--vis-whitespace");
 
+    wrk.assert_success(&mut cmd);
+
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["field", "value", "count", "percentage"],
@@ -819,7 +821,7 @@ fn frequency_vis_whitespace() {
         svec!["header", "《zwsp》value", "1", "5.55556"],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -861,7 +863,7 @@ fn frequency_vis_whitespace_no_trim() {
         svec!["header", "no_whitespace", "1", "9.09091"],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -910,5 +912,5 @@ fn frequency_vis_whitespace_ignore_case() {
         svec!["header", "value《␏》", "1", "5.88235"],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

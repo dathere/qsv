@@ -251,8 +251,9 @@ module completions {
   ]
 
   export extern "qsv edit" [
-    --output
     --no-headers
+    --in-place
+    --output
     --help(-h)                # Print help
   ]
 
@@ -629,6 +630,52 @@ module completions {
     --help(-h)                # Print help
   ]
 
+  export extern "qsv geocode iplookup" [
+    --new-column
+    --rename
+    --country
+    --min-score
+    --admin1
+    --k_weight
+    --formatstr
+    --language
+    --invalid-result
+    --jobs
+    --batch
+    --timeout
+    --cache-dir
+    --languages
+    --cities-url
+    --force
+    --output
+    --delimiter
+    --progressbar
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv geocode iplookupnow" [
+    --new-column
+    --rename
+    --country
+    --min-score
+    --admin1
+    --k_weight
+    --formatstr
+    --language
+    --invalid-result
+    --jobs
+    --batch
+    --timeout
+    --cache-dir
+    --languages
+    --cities-url
+    --force
+    --output
+    --delimiter
+    --progressbar
+    --help(-h)                # Print help
+  ]
+
   export extern "qsv geocode index-load" [
     --new-column
     --rename
@@ -743,6 +790,12 @@ module completions {
   export extern "qsv geocode help countryinfonow" [
   ]
 
+  export extern "qsv geocode help iplookup" [
+  ]
+
+  export extern "qsv geocode help iplookupnow" [
+  ]
+
   export extern "qsv geocode help index-load" [
   ]
 
@@ -757,6 +810,15 @@ module completions {
 
   # Print this message or the help of the given subcommand(s)
   export extern "qsv geocode help help" [
+  ]
+
+  export extern "qsv geoconvert" [
+    --geometry
+    --latitude
+    --longitude
+    --max-length
+    --output
+    --help(-h)                # Print help
   ]
 
   export extern "qsv headers" [
@@ -880,6 +942,9 @@ module completions {
     --find
     --ignore-case
     --freeze-columns
+    --monochrome
+    --wrap-mode
+    --prompt
     --echo-column
     --debug
     --help(-h)                # Print help
@@ -962,6 +1027,23 @@ module completions {
     --drop
     --no-headers
     --delimiter
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv pivotp" [
+    --index
+    --values
+    --agg
+    --sort-columns
+    --col-separator
+    --validate
+    --try-parsedates
+    --infer-len
+    --decimal-comma
+    --ignore-errors
+    --output
+    --delimiter
+    --quiet
     --help(-h)                # Print help
   ]
 
@@ -1285,6 +1367,7 @@ module completions {
   export extern "qsv sort" [
     --select
     --numeric
+    --natural
     --reverse
     --ignore-case
     --unique
@@ -1319,6 +1402,9 @@ module completions {
     --jobs
     --filename
     --pad
+    --filter
+    --filter-cleanup
+    --filter-ignore-errors
     --no-headers
     --delimiter
     --quiet
@@ -1356,11 +1442,14 @@ module completions {
     --everything
     --typesonly
     --infer-boolean
+    --boolean-patterns
     --mode
     --cardinality
     --median
     --mad
     --quartiles
+    --percentiles
+    --percentile-list
     --round
     --nulls
     --infer-dates
@@ -1421,6 +1510,7 @@ module completions {
     --evolve
     --pipe
     --separator
+    --all-strings
     --jobs
     --delimiter
     --help(-h)                # Print help
@@ -1437,6 +1527,7 @@ module completions {
     --evolve
     --pipe
     --separator
+    --all-strings
     --jobs
     --delimiter
     --help(-h)                # Print help
@@ -1453,6 +1544,7 @@ module completions {
     --evolve
     --pipe
     --separator
+    --all-strings
     --jobs
     --delimiter
     --help(-h)                # Print help
@@ -1469,6 +1561,41 @@ module completions {
     --evolve
     --pipe
     --separator
+    --all-strings
+    --jobs
+    --delimiter
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv to ods" [
+    --print-package
+    --dump
+    --stats
+    --stats-csv
+    --quiet
+    --schema
+    --drop
+    --evolve
+    --pipe
+    --separator
+    --all-strings
+    --jobs
+    --delimiter
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv to parquet" [
+    --print-package
+    --dump
+    --stats
+    --stats-csv
+    --quiet
+    --schema
+    --drop
+    --evolve
+    --pipe
+    --separator
+    --all-strings
     --jobs
     --delimiter
     --help(-h)                # Print help
@@ -1485,6 +1612,7 @@ module completions {
     --evolve
     --pipe
     --separator
+    --all-strings
     --jobs
     --delimiter
     --help(-h)                # Print help
@@ -1501,6 +1629,12 @@ module completions {
   ]
 
   export extern "qsv to help xlsx" [
+  ]
+
+  export extern "qsv to help ods" [
+  ]
+
+  export extern "qsv to help parquet" [
   ]
 
   export extern "qsv to help datapackage" [
@@ -1532,6 +1666,7 @@ module completions {
 
   export extern "qsv validate" [
     --trim
+    --no-format-validation
     --fail-fast
     --valid
     --invalid
@@ -1669,6 +1804,12 @@ module completions {
   export extern "qsv help geocode countryinfonow" [
   ]
 
+  export extern "qsv help geocode iplookup" [
+  ]
+
+  export extern "qsv help geocode iplookupnow" [
+  ]
+
   export extern "qsv help geocode index-load" [
   ]
 
@@ -1679,6 +1820,9 @@ module completions {
   ]
 
   export extern "qsv help geocode index-reset" [
+  ]
+
+  export extern "qsv help geoconvert" [
   ]
 
   export extern "qsv help headers" [
@@ -1715,6 +1859,9 @@ module completions {
   ]
 
   export extern "qsv help partition" [
+  ]
+
+  export extern "qsv help pivotp" [
   ]
 
   export extern "qsv help pro" [
@@ -1820,6 +1967,12 @@ module completions {
   ]
 
   export extern "qsv help to xlsx" [
+  ]
+
+  export extern "qsv help to ods" [
+  ]
+
+  export extern "qsv help to parquet" [
   ]
 
   export extern "qsv help to datapackage" [

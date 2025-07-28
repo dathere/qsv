@@ -1,6 +1,8 @@
 static USAGE: &str = r#"
-Generate JSON Schema from CSV data.
+Generate JSON Schema or Polars Schema (with the `--polars` option) from CSV data.
 
+JSON Schema Validation:
+=======================
 This command derives a JSON Schema Validation (Draft 7) file from CSV data, 
 including validation rules based on data type and input data domain/range.
 https://json-schema.org/draft/2020-12/json-schema-validation.html
@@ -12,6 +14,11 @@ The intended workflow is to use the `schema` command to generate a JSON schema f
 from representative CSV data, fine-tune the JSON schema file as needed, and then use
 the `validate` command to validate other CSV data with the same structure using the
 generated JSON schema.
+
+After manually fine-tuning the JSON schema file, note that you can also use the
+`validate` command to validate the JSON Schema file as well:
+
+  `qsv validate schema manually-tuned-jsonschema.json`
 
 The generated JSON schema file has `.schema.json` suffix appended. For example, 
 for input `mydata.csv`, the generated JSON schema is `mydata.csv.schema.json`.
@@ -26,6 +33,19 @@ To speed up generation, the `schema` command will reuse a `stats.csv.data.jsonl`
 exists and is current (i.e. stats generated with --cardinality and --infer-dates options).
 Otherwise, it will run the `stats` command to generate the `stats.csv.data.jsonl` file first,
 and then use that to generate the schema file.
+
+Polars Schema:
+==============
+When the "polars" feature is enabled, the `--polars` option will generate a Polars schema
+instead of a JSON Schema. The generated Polars schema will be written to a file with the
+`.pschema.json` suffix appended to the input file stem.
+
+The Polars schema is a JSON object that describes the schema of a CSV file. When present,
+the `sqlp`, `joinp`, and `pivotp` commands will use the Polars schema to read the CSV file
+instead of inferring the schema from the CSV data. Not only does this allow these commands to
+skip schema inferencing which may fail when the inferencing sample is too low, it also allows 
+Polars to optimize the query and gives the user the option to tailor the schema to their specific
+query needs (e.g. using a Decimal type instead of a Float type).
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_schema.rs.
 
@@ -66,6 +86,11 @@ Schema options:
                                When not set, the number of jobs is set to the
                                number of CPUs detected.
 
+    --polars                   Infer a Polars schema instead of a JSON Schema.
+                               This option is only available if the `polars` feature is enabled.
+                               The generated Polars schema will be written to a file with the
+                               `.pschema.json` suffix appended to the input file stem.
+
 Common options:
     -h, --help                 Display this message
     -n, --no-headers           When set, the first row will not be interpreted
@@ -89,12 +114,44 @@ use rayon::slice::ParallelSliceMut;
 use serde_json::{Map, Value, json, value::Number};
 use stats::Frequencies;
 
-use crate::{CliResult, cmd::stats::StatsData, config::Config, util, util::StatsMode};
+use crate::{
+    CliResult,
+    cmd::stats::StatsData,
+    config::Config,
+    util::{self, StatsMode},
+};
 
 const STDIN_CSV: &str = "stdin.csv";
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: util::SchemaArgs = util::get_args(USAGE, argv)?;
+
+    #[cfg(feature = "polars")]
+    if args.flag_polars {
+        if let Some(input) = args.arg_input {
+            let input_path = Path::new(&input);
+            let schema_file = input_path.with_extension("pschema.json");
+            if util::infer_polars_schema(
+                args.flag_delimiter,
+                log::log_enabled!(log::Level::Debug),
+                input_path,
+                &schema_file,
+            )? {
+                return Ok(());
+            }
+            return fail_clierror!(
+                "Failed to infer Polars schema from {}",
+                input_path.display()
+            );
+        }
+        return fail_clierror!("Input file is required when using the --polars option.");
+    }
+    #[cfg(not(feature = "polars"))]
+    if args.flag_polars {
+        return fail_clierror!(
+            "The --polars option is only available if the `polars` feature is enabled."
+        );
+    }
 
     // if using stdin, we create a stdin.csv file as stdin is not seekable and we need to
     // open the file multiple times to compile stats/unique values, etc.
@@ -164,7 +221,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let schema = json!({
         "$schema": "https://json-schema.org/draft-07/schema",
         "title": format!("JSON Schema for {input_filename}"),
-        "description": "Inferred JSON Schema from QSV schema command",
+        "description": format!("Inferred JSON Schema with `qsv {}`", argv[1..].join(" ")),
         "type": "object",
         "properties": Value::Object(properties_map),
         "required": Value::Array(required_fields)

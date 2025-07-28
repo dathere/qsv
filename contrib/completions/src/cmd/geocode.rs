@@ -30,6 +30,8 @@ pub fn geocode_cmd() -> Command {
             Command::new("reversenow").args(&global_args),
             Command::new("countryinfo").args(&global_args),
             Command::new("countryinfonow").args(&global_args),
+            Command::new("iplookup").args(&global_args),
+            Command::new("iplookupnow").args(&global_args),
             Command::new("index-load").args(&global_args),
             Command::new("index-check").args(&global_args),
             Command::new("index-update").args(&global_args),

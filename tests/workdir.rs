@@ -77,6 +77,8 @@ impl Workdir {
             wtr.write_record(row).unwrap();
         }
         wtr.flush().unwrap();
+        // Attempt "to sync all OS-internal file content and metadata to disk"
+        let _ = fs::File::open(self.path(name)).unwrap().sync_all();
     }
 
     /// create a file and index it
@@ -217,6 +219,9 @@ impl Workdir {
         wrkdir_path.push(filename);
 
         fs::copy(resource_file_path, wrkdir_path.clone()).unwrap();
+
+        // Attempt "to sync all OS-internal file content and metadata to disk"
+        let _ = fs::File::open(wrkdir_path.clone()).unwrap().sync_all();
 
         wrkdir_path.into_os_string().into_string().unwrap()
     }

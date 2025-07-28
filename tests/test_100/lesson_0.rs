@@ -34,7 +34,7 @@ fn fruits_headers() {
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"1   fruit
 2   price"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/0/#exercise-0-total-rows
@@ -47,7 +47,7 @@ fn fruits_count_total() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "4";
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 #[test]
 fn fruits_count() {
@@ -58,5 +58,5 @@ fn fruits_count() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "3";
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

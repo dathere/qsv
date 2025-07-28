@@ -1,0 +1,6 @@
+id,primary_color,secondary_color,length,air_conditioner,amenities
+001,black,blue,full,true,"wheelchair ramp, tissue boxes, cup holders, USB ports"
+002,black,red,full,true,"wheelchair ramp, tissue boxes, USB ports"
+003,white,blue,half,true,"wheelchair ramp, tissue boxes"
+004,orange,blue,full,false,"wheelchair ramp, tissue boxes, USB ports"
+005,black,blue,full,true,"wheelchair ramp, tissue boxes, cup holders, USB ports"

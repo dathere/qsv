@@ -14,7 +14,7 @@ fn applydp_ops_unknown_operation() {
         .arg("data.csv");
 
     let got: String = wrk.output_stderr(&mut cmd);
-    similar_asserts::assert_eq!(&*got, "usage error: Unknown 'obfuscate' operation\n")
+    assert_eq!(&*got, "usage error: Unknown 'obfuscate' operation\n")
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn applydp_ops_upper() {
         svec!["SUE", "BIRD"],
         svec!["HOPKINS", "JADE"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn applydp_ops_escape() {
         svec!["Sue", "Bird\\u{1f426}"],
         svec!["Hop\\u{119}kins", "J\\u{e6}de"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn applydp_ops_upper_rename() {
         svec!["SUE", "BIRD"],
         svec!["HOPKINS", "JADE"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn applydp_ops_upper_rename_invalid() {
         .arg("data.csv");
 
     let got: String = wrk.output_stderr(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         "usage error: Number of new columns does not match input column selection.\n"
     );
@@ -166,7 +166,7 @@ fn applydp_ops_upper_index_params() {
         svec!["SUE", "BIRD"],
         svec!["HOPKINS", "JADE"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -236,7 +236,7 @@ fn applydp_dynfmt() {
              strawberries, all 3 - is just worth it!"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -263,7 +263,7 @@ fn applydp_ops_empty_shortcircuit() {
         svec!["0"],
         svec!["7"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -299,7 +299,7 @@ fn applydp_ops_replace() {
         svec!["Mr. Brown is not pleased."],
         svec!["this is a silverado car"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -322,7 +322,7 @@ fn applydp_ops_replace_validation_error() {
         .arg("data.csv");
 
     let got = wrk.output_stderr(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         "usage error: --comparand (-C) and --replacement (-R) are required for replace \
          operation.\n"
@@ -363,7 +363,7 @@ fn applydp_ops_regex_replace() {
         svec!["Won't fall for that scam!"],
         svec!["Just enter SSN when prompted. Also try SSN if it doesn't work."],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -395,7 +395,7 @@ fn applydp_regex_replace_issue1469() {
         svec!["Gordon", "H", "Irvin"],
         svec!["Jack", "K", "Lynch"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -418,7 +418,7 @@ fn applydp_ops_regex_replace_validation_error() {
         .arg("data.csv");
 
     let got = wrk.output_stderr(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         "usage error: --comparand (-C) and --replacement (-R) are required for regex_replace \
          operation.\n"
@@ -487,7 +487,7 @@ fn applydp_ops_mtrim() {
         svec!["Embedded (((multiple parens"],
         svec!["reverse parens"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -525,7 +525,7 @@ fn applydp_ops_round() {
         svec!["5"],
         svec!["not a number, should be ignored"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -566,7 +566,7 @@ fn applydp_ops_round_5places() {
         svec!["5"],
         svec!["not a number, should be ignored"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -596,7 +596,7 @@ fn applydp_ops_chain() {
         svec!["MARY SUE"],
         svec!["HOPKINS"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -617,7 +617,7 @@ fn applydp_ops_chain_validation_error() {
         .arg("data.csv");
 
     let got = wrk.output_stderr(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         "usage error: you can only use copy(0), regex_replace(0), replace(0), and strip(2) ONCE \
          per operation series.\n"
@@ -641,7 +641,7 @@ fn applydp_ops_chain_validation_error_missing_comparand() {
         .arg("data.csv");
 
     let got = wrk.output_stderr(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         "usage error: --comparand (-C) is required for strip operations.\n"
     );
@@ -675,7 +675,7 @@ fn applydp_ops_chain_squeeze0() {
         svec!["MARYSUE"],
         svec!["HOPKINS"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -705,7 +705,7 @@ fn applydp_ops_squeeze0() {
         svec!["MarySue"],
         svec!["JohnHopkins"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -737,7 +737,7 @@ fn applydp_ops_chain_strip() {
         svec!["MARY SUE"],
         svec!["HOPKINS"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -767,7 +767,7 @@ fn applydp_ops_mixed_case_chain() {
         svec!["MARY SUE"],
         svec!["HOPKINS"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -791,7 +791,7 @@ fn applydp_no_headers() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["JOHN"], svec!["MARY"], svec!["SUE"], svec!["HOPKINS"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -823,7 +823,7 @@ fn applydp_rename() {
         svec!["SUE"],
         svec!["HOPKINS"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -855,7 +855,7 @@ fn applydp_new_column() {
         svec!["Sue", "SUE"],
         svec!["Hopkins", "HOPKINS"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -886,7 +886,7 @@ fn applydp_emptyreplace() {
         svec!["Sue"],
         svec!["Hopkins"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -917,7 +917,7 @@ fn apply_emptyreplace_multiple_columns() {
         svec!["Sue", "NA", "Boston"],
         svec!["Hopkins", "40", "NA"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -948,5 +948,5 @@ fn apply_emptyreplace_all_columns() {
         svec!["Sue", "NA", "Boston"],
         svec!["Hopkins", "40", "NA"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

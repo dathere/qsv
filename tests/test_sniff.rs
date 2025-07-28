@@ -290,7 +290,7 @@ fn qsv_sniff_pipe_delimiter_env() {
     cmd.arg("in.file");
 
     let got: String = wrk.stdout(&mut cmd);
-    similar_asserts::assert_eq!(&*got, EXPECTED_CSV)
+    assert_eq!(&*got, EXPECTED_CSV)
 }
 
 #[test]
@@ -303,7 +303,7 @@ fn qsv_sniff_semicolon_delimiter_env() {
     cmd.arg("in.file");
 
     let got: String = wrk.stdout(&mut cmd);
-    similar_asserts::assert_eq!(&*got, EXPECTED_CSV)
+    assert_eq!(&*got, EXPECTED_CSV)
 }
 
 #[test]
@@ -316,7 +316,7 @@ fn qsv_sniff_tab_delimiter_env() {
     cmd.arg("in.file");
 
     let got: String = wrk.stdout(&mut cmd);
-    similar_asserts::assert_eq!(&*got, EXPECTED_CSV)
+    assert_eq!(&*got, EXPECTED_CSV)
 }
 
 #[test]

@@ -19,7 +19,7 @@ fn edit_by_col_name() {
 a,3
 b,2"
     .to_string();
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -41,7 +41,7 @@ fn edit_by_col_index() {
 a,3
 b,2"
     .to_string();
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -66,7 +66,7 @@ b,2",
 a,1
 b,2"
     .to_string();
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -90,7 +90,7 @@ b,2,y",
 z,1,x
 b,2,y"
         .to_string();
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -112,5 +112,40 @@ fn edit_by_col_underscore() {
 a,3
 b,2"
     .to_string();
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn edit_in_place() {
+    let wrk = Workdir::new("edit_in_place");
+    wrk.create(
+        "data.csv",
+        vec![svec!["letter", "number"], svec!["a", "1"], svec!["b", "2"]],
+    );
+
+    let mut cmd = wrk.command("edit");
+    cmd.arg("data.csv");
+    cmd.arg("number");
+    cmd.arg("0");
+    cmd.arg("3");
+    cmd.arg("--in-place");
+
+    cmd.output().unwrap();
+
+    let test_file = wrk.path("data.csv");
+    let backup_file = wrk.path("data.csv.bak");
+    let got = std::fs::read_to_string(test_file).unwrap();
+    let got_backup = std::fs::read_to_string(backup_file).unwrap();
+    let expected = "letter,number
+a,3
+b,2
+"
+    .to_string();
+    let expected_backup = "letter,number
+a,1
+b,2
+"
+    .to_string();
+    assert_eq!(got, expected);
+    assert_eq!(got_backup, expected_backup);
 }

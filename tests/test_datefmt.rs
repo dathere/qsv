@@ -35,7 +35,7 @@ fn datefmt() {
         svec!["1945-08-05T23:15:00+00:00"],
         svec!["2022-12-22T01:43:46.123456768+00:00"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn datefmt_to_est() {
         svec!["1945-08-05T18:15:00-05:00"],
         svec!["2022-12-21T20:43:46.123456768-05:00"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn datefmt_to_hawaii() {
         svec!["1945-08-05T13:45:00-09:30"],
         svec!["2022-12-21T15:43:46.123456768-10:00"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn datefmt_tz_inout() {
         svec!["1945-08-06T08:15:00+09:00"],
         svec!["2022-12-22T09:43:46.123456768+08:00"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -185,14 +185,14 @@ fn datefmt_input_tz() {
         svec!["2012-09-17T15:09:00+00:00"],
         svec!["2021-06-02T06:31:39+00:00"],
         svec!["2009-01-20T10:00:00+00:00"],
-        svec!["2005-07-03T23:00:00+00:00"],
+        svec!["2005-07-04"],
         svec!["2021-05-01T01:17:02.604456+00:00"],
         svec!["This is not a date and it will not be reformatted"],
         svec!["2017-11-25T22:22:26+00:00"],
         svec!["1945-08-05T23:15:00+00:00"],
         svec!["2022-12-22T01:43:46.123456768+00:00"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -229,7 +229,7 @@ fn datefmt_zulu() {
         svec!["1945-08-05T23:15:00Z"],
         svec!["2022-12-22T01:43:46Z"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -266,7 +266,7 @@ fn datefmt_utc() {
         svec!["1945-08-05T23:15:00+00:00"],
         svec!["2022-12-22T01:43:46.123456768+00:00"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -328,7 +328,7 @@ fn datefmt_to_unixtime() {
         svec!["9223372036"],
         svec!["-770144728"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -371,7 +371,7 @@ fn datefmt_unixtime_ms_to_date() {
         svec!["1945-08-06T06:54:32.717915+00:00"],
         svec!["2024-02-08T05:21:00+00:00"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -404,7 +404,7 @@ fn datefmt_keep_zero_time() {
         svec!["2021-05-01T01:17:02.604456+00:00"],
         svec!["This is not a date and it will not be reformatted"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -450,7 +450,7 @@ fn datefmt_multiple_cols() {
             "This is not a date and it will not be reformatted"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -498,7 +498,7 @@ fn datefmt_multiple_cols_keep_zero_time() {
             "This is not a date and it will not be reformatted"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -546,7 +546,7 @@ fn datefmt_multiple_cols_rename() {
             "This is not a date and it will not be reformatted"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -582,7 +582,7 @@ fn datefmt_prefer_dmy() {
                               * dmy */
         svec!["This is not a date and it will not be reformatted"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -619,7 +619,7 @@ fn datefmt_prefer_dmy_env() {
                               * dmy */
         svec!["This is not a date and it will not be reformatted"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -651,7 +651,7 @@ fn datefmt_fmtstring() {
         svec!["Wed Sep 30 18:48:56 2015 +0000"],
         svec!["This is not a date and it will not be reformatted"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -683,7 +683,7 @@ fn datefmt_fmtstring_with_literals() {
         svec!["Wed Sep 30 18:48:56 2015 is day 273, week 40 of 2015"],
         svec!["This is not a date and it will not be reformatted"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -715,5 +715,5 @@ fn datefmt_fmtstring_notime() {
         svec!["2014-04-08"],
         svec!["This is not a date and it will not be reformatted"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

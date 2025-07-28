@@ -2,7 +2,10 @@ use std::{
     env, fs,
     io::{self, Read},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use log::{debug, info, warn};
@@ -25,7 +28,7 @@ pub const DEFAULT_WTR_BUFFER_CAPACITY: usize = 512 * (1 << 10);
 const DEFAULT_SNIFFER_SAMPLE: usize = 100;
 
 // file size at which we warn user that a large file has not been indexed
-const NO_INDEX_WARNING_FILESIZE: u64 = 100_000_000; // 100MB
+const NO_INDEX_WARNING_FILESIZE: u64 = 100 * (1 << 20); // 100MB
 
 // so we don't have to keep checking if the index has been created
 static AUTO_INDEXED: AtomicBool = AtomicBool::new(false);
@@ -34,6 +37,25 @@ pub static SPONSOR_MESSAGE: &str = r#"sponsored by datHere - Data Infrastructure
 Need a UI & more advanced data-wrangling? Upgrade to qsv pro (https://qsvpro.datHere.com)
 "#;
 
+pub static TEMP_FILE_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+#[cfg(feature = "polars")]
+pub static POLARS_FLOAT_PRECISION: OnceLock<Option<usize>> = OnceLock::new();
+
+#[allow(unused_variables)]
+#[allow(dead_code)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SpecialFormat {
+    Avro,
+    Parquet,
+    Ipc,
+    Json,  // expects JSON Array
+    Jsonl, // expects JSON Lines
+    CompressedCsv,
+    CompressedTsv,
+    CompressedSsv,
+    Unknown,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Delimiter(pub u8);
 
@@ -146,7 +168,7 @@ impl Config {
             Ok(delim) => Delimiter::decode_delimiter(&delim).unwrap().as_byte(),
             _ => b',',
         };
-        let sniff = util::get_envvar_flag("QSV_SNIFF_DELIMITER")
+        let mut sniff = util::get_envvar_flag("QSV_SNIFF_DELIMITER")
             || util::get_envvar_flag("QSV_SNIFF_PREAMBLE");
         let mut skip_format_check = true;
         let mut format_error = None;
@@ -170,29 +192,57 @@ impl Config {
             // },
             Some(s) if s == "-" => (None, default_delim, false),
             Some(ref s) => {
-                let path = PathBuf::from(s);
+                let mut path = PathBuf::from(s);
+
                 // if QSV_SKIP_FORMAT_CHECK is set or path is a temp file, we skip format check
+                let temp_dir = crate::config::TEMP_FILE_DIR
+                    .get_or_init(|| tempfile::TempDir::new().unwrap().keep());
                 skip_format_check = sniff
                     || util::get_envvar_flag("QSV_SKIP_FORMAT_CHECK")
-                    || path.starts_with(std::env::temp_dir());
-                let (file_extension, delim, snappy) = get_delim_by_extension(&path, default_delim);
-                format_error = if skip_format_check {
-                    None
+                    || path.starts_with(temp_dir);
+
+                #[cfg(feature = "polars")]
+                let special_format = {
+                    let special_format = get_special_format(&path);
+                    if special_format != SpecialFormat::Unknown {
+                        skip_format_check = true;
+                    }
+                    special_format
+                };
+                #[cfg(not(feature = "polars"))]
+                let special_format = SpecialFormat::Unknown;
+                let (file_extension, delim, snappy) = if special_format == SpecialFormat::Unknown {
+                    let (file_extension, delim, snappy) =
+                        get_delim_by_extension(&path, default_delim);
+                    format_error = if skip_format_check {
+                        None
+                    } else {
+                        match file_extension.as_str() {
+                            "csv" | "tsv" | "tab" | "ssv" => None,
+                            ext => Some(format!(
+                                "{} is using an unsupported file format: {ext}. Set \
+                                 QSV_SKIP_FORMAT_CHECK to skip input format checking.",
+                                path.display()
+                            )),
+                        }
+                    };
+                    (file_extension, delim, snappy)
                 } else {
-                    match file_extension.as_str() {
-                        "csv" | "tsv" | "tab" | "ssv" => None,
-                        ext => Some(format!(
-                            "{} is using an unsupported file format: {ext}. Set \
-                             QSV_SKIP_FORMAT_CHECK to skip input format checking.",
-                            path.display()
-                        )),
+                    match util::convert_special_format(&path, special_format, default_delim) {
+                        Ok(temp_path) => {
+                            path.clone_from(&temp_path);
+                            sniff = false;
+                            get_delim_by_extension(&temp_path, default_delim)
+                        },
+                        Err(e) => {
+                            format_error = Some(format!("Failed to convert special format: {e}"));
+                            ("DUMMY".to_string(), default_delim, false)
+                        },
                     }
                 };
                 (Some(path), delim, snappy || file_extension.ends_with("sz"))
             },
         };
-        let sniff = util::get_envvar_flag("QSV_SNIFF_DELIMITER")
-            || util::get_envvar_flag("QSV_SNIFF_PREAMBLE");
         let comment: Option<u8> = match env::var("QSV_COMMENT_CHAR") {
             Ok(comment_char) => Some(comment_char.as_bytes().first().unwrap().to_owned()),
             Err(_) => None,
@@ -200,6 +250,8 @@ impl Config {
         let no_headers = util::get_envvar_flag("QSV_NO_HEADERS");
         let mut preamble = 0_u64;
         if sniff && path.is_some() {
+            // safety: we can safely unwrap as we just checked path.is_some()
+            #[allow(clippy::unnecessary_unwrap)]
             let sniff_path = path.as_ref().unwrap().to_str().unwrap();
 
             match Sniffer::new()
@@ -341,16 +393,19 @@ impl Config {
         self
     }
 
-    // comment read_buffer() and write_buffer() out for now, as they're not used
-    // pub const fn read_buffer(mut self, buffer: u32) -> Config {
-    //     self.read_buffer = buffer;
-    //     self
-    // }
+    pub fn set_read_buffer(mut self, buffer: usize) -> Config {
+        self.read_buffer = buffer
+            .try_into()
+            .unwrap_or(DEFAULT_RDR_BUFFER_CAPACITY as u32);
+        self
+    }
 
-    // pub const fn write_buffer(mut self, buffer: u32) -> Config {
-    //     self.write_buffer = buffer;
-    //     self
-    // }
+    pub fn set_write_buffer(mut self, buffer: usize) -> Config {
+        self.write_buffer = buffer
+            .try_into()
+            .unwrap_or(DEFAULT_WTR_BUFFER_CAPACITY as u32);
+        self
+    }
 
     #[allow(clippy::missing_const_for_fn)]
     pub fn select(mut self, sel_cols: SelectColumns) -> Config {
@@ -511,10 +566,10 @@ impl Config {
                 let Ok(()) = io::Write::flush(&mut wtr) else {
                     return;
                 };
-                debug!("autoindex of {path_buf:?} successful.");
+                debug!("autoindex of {} successful.", path_buf.display());
                 AUTO_INDEXED.store(true, Ordering::Relaxed);
             },
-            Err(e) => debug!("autoindex of {path_buf:?} failed: {e}"),
+            Err(e) => debug!("autoindex of {} failed: {e}", path_buf.display()),
         }
     }
 
@@ -659,7 +714,7 @@ impl Config {
                     // sink is /dev/null
                     Box::new(io::sink())
                 } else if self.snappy {
-                    info!("writing snappy-compressed file: {p:?}");
+                    info!("writing snappy-compressed file: {}", p.display());
                     Box::new(snap::write::FrameEncoder::new(fs::File::create(p)?))
                 } else {
                     Box::new(fs::File::create(p)?)
@@ -741,6 +796,84 @@ pub fn get_delim_by_extension(path: &Path, default_delim: u8) -> (String, u8, bo
     (file_extension, delim, snappy)
 }
 
+/// Determines if a file is a Parquet, Arrow IPC, JSONL, or compressed CSV file.
+///
+/// # Arguments
+///
+/// * `path` - A reference to the `Path` of the file.
+///
+/// # Returns
+///
+/// A `SpecialFormat` enum value indicating the type of special format the file is.
+pub fn get_special_format(path: &Path) -> SpecialFormat {
+    if !path.exists() {
+        return SpecialFormat::Unknown;
+    }
+
+    let extension = path.extension().unwrap_or_default();
+    match extension
+        .to_str()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "avro" => SpecialFormat::Avro,
+        "parquet" => SpecialFormat::Parquet,
+        "ipc" | "arrow" => SpecialFormat::Ipc,
+        "jsonl" | "ndjson" => SpecialFormat::Jsonl,
+        "json" => SpecialFormat::Json,
+        "gz" => {
+            let path_str = if let Some(s) = path.to_str() {
+                s.to_ascii_lowercase()
+            } else {
+                return SpecialFormat::Unknown;
+            };
+            if path_str.ends_with(".csv.gz") {
+                SpecialFormat::CompressedCsv
+            } else if path_str.ends_with(".tsv.gz") || path_str.ends_with(".tab.gz") {
+                SpecialFormat::CompressedTsv
+            } else if path_str.ends_with(".ssv.gz") {
+                SpecialFormat::CompressedSsv
+            } else {
+                SpecialFormat::Unknown
+            }
+        },
+        "zst" => {
+            let path_str = if let Some(s) = path.to_str() {
+                s.to_ascii_lowercase()
+            } else {
+                return SpecialFormat::Unknown;
+            };
+            if path_str.ends_with(".csv.zst") {
+                SpecialFormat::CompressedCsv
+            } else if path_str.ends_with(".tsv.zst") || path_str.ends_with(".tab.zst") {
+                SpecialFormat::CompressedTsv
+            } else if path_str.ends_with(".ssv.zst") {
+                SpecialFormat::CompressedSsv
+            } else {
+                SpecialFormat::Unknown
+            }
+        },
+        "zlib" => {
+            let path_str = if let Some(s) = path.to_str() {
+                s.to_ascii_lowercase()
+            } else {
+                return SpecialFormat::Unknown;
+            };
+            if path_str.ends_with(".csv.zlib") {
+                SpecialFormat::CompressedCsv
+            } else if path_str.ends_with(".tsv.zlib") || path_str.ends_with(".tab.zlib") {
+                SpecialFormat::CompressedTsv
+            } else if path_str.ends_with(".ssv.zlib") {
+                SpecialFormat::CompressedSsv
+            } else {
+                SpecialFormat::Unknown
+            }
+        },
+        _ => SpecialFormat::Unknown,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -751,8 +884,8 @@ mod tests {
     fn test_csv_extension() {
         let path = PathBuf::from("test.csv");
         let (ext, delim, snappy) = get_delim_by_extension(&path, b',');
-        similar_asserts::assert_eq!(ext, "csv");
-        similar_asserts::assert_eq!(delim, b',');
+        assert_eq!(ext, "csv");
+        assert_eq!(delim, b',');
         assert!(!snappy);
     }
 
@@ -760,8 +893,8 @@ mod tests {
     fn test_tsv_extension() {
         let path = PathBuf::from("test.tsv");
         let (ext, delim, snappy) = get_delim_by_extension(&path, b',');
-        similar_asserts::assert_eq!(ext, "tsv");
-        similar_asserts::assert_eq!(delim, b'\t');
+        assert_eq!(ext, "tsv");
+        assert_eq!(delim, b'\t');
         assert!(!snappy);
     }
 
@@ -769,8 +902,8 @@ mod tests {
     fn test_ssv_extension() {
         let path = PathBuf::from("test.ssv");
         let (ext, delim, snappy) = get_delim_by_extension(&path, b',');
-        similar_asserts::assert_eq!(ext, "ssv");
-        similar_asserts::assert_eq!(delim, b';');
+        assert_eq!(ext, "ssv");
+        assert_eq!(delim, b';');
         assert!(!snappy);
     }
 
@@ -778,8 +911,8 @@ mod tests {
     fn test_snappy_csv_extension() {
         let path = PathBuf::from("test.csv.sz");
         let (ext, delim, snappy) = get_delim_by_extension(&path, b',');
-        similar_asserts::assert_eq!(ext, "csv");
-        similar_asserts::assert_eq!(delim, b',');
+        assert_eq!(ext, "csv");
+        assert_eq!(delim, b',');
         assert!(snappy);
     }
 
@@ -787,8 +920,8 @@ mod tests {
     fn test_snappy_tsv_extension() {
         let path = PathBuf::from("test.tsv.sz");
         let (ext, delim, snappy) = get_delim_by_extension(&path, b',');
-        similar_asserts::assert_eq!(ext, "tsv");
-        similar_asserts::assert_eq!(delim, b'\t');
+        assert_eq!(ext, "tsv");
+        assert_eq!(delim, b'\t');
         assert!(snappy);
     }
 
@@ -797,8 +930,8 @@ mod tests {
         let path = PathBuf::from("test.unknown");
         let default_delim = b'|';
         let (ext, delim, snappy) = get_delim_by_extension(&path, default_delim);
-        similar_asserts::assert_eq!(ext, "unknown");
-        similar_asserts::assert_eq!(delim, default_delim);
+        assert_eq!(ext, "unknown");
+        assert_eq!(delim, default_delim);
         assert!(!snappy);
     }
 
@@ -807,8 +940,8 @@ mod tests {
         let path = PathBuf::from("test");
         let default_delim = b',';
         let (ext, delim, snappy) = get_delim_by_extension(&path, default_delim);
-        similar_asserts::assert_eq!(ext, "");
-        similar_asserts::assert_eq!(delim, default_delim);
+        assert_eq!(ext, "");
+        assert_eq!(delim, default_delim);
         assert!(!snappy);
     }
 }

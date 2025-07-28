@@ -160,8 +160,10 @@ pub struct Args {
 
 const NULL_VAL: &[u8] = b"(NULL)";
 const NON_UTF8_ERR: &str = "<Non-UTF8 ERROR>";
+const EMPTY_BYTE_VEC: Vec<u8> = Vec::new();
 
-static UNIQUE_COLUMNS: OnceLock<Vec<usize>> = OnceLock::new();
+static UNIQUE_COLUMNS_VEC: OnceLock<Vec<usize>> = OnceLock::new();
+static COL_CARDINALITY_VEC: OnceLock<Vec<(String, u64)>> = OnceLock::new();
 static FREQ_ROW_COUNT: OnceLock<u64> = OnceLock::new();
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -195,7 +197,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // safety: we know that UNIQUE_COLUMNS has been previously set when compiling frequencies
     // by sel_headers fn
-    let all_unique_headers = UNIQUE_COLUMNS.get().unwrap();
+    let unique_headers_vec = UNIQUE_COLUMNS_VEC.get().unwrap();
 
     wtr.write_record(vec!["field", "value", "count", "percentage"])?;
     let head_ftables = headers.iter().zip(tables);
@@ -211,7 +213,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         };
 
         let mut sorted_counts: Vec<(Vec<u8>, u64, f64)>;
-        all_unique_header = all_unique_headers.contains(&i);
+        all_unique_header = unique_headers_vec.contains(&i);
 
         if all_unique_header {
             // if the column has all unique values, we don't need to sort the counts
@@ -334,7 +336,7 @@ impl Args {
         }
 
         let mut pct_sum = 0.0_f64;
-        let mut pct = 0.0_f64;
+        let mut pct: f64;
         let mut count_sum = 0_u64;
         let pct_factor = if total_count > 0 {
             100.0_f64 / total_count.to_f64().unwrap_or(1.0_f64)
@@ -342,20 +344,24 @@ impl Args {
             0.0_f64
         };
 
+        // Pre-allocate the result vector with known capacity
+        // We might add an "Other" entry, so add 1 to capacity
+        let mut counts_final: Vec<(Vec<u8>, u64, f64)> = Vec::with_capacity(counts.len() + 1);
+
+        // Create NULL value once to avoid repeated to_vec allocations
+        let null_val = NULL_VAL.to_vec();
+
         #[allow(clippy::cast_precision_loss)]
-        let mut counts_final: Vec<(Vec<u8>, u64, f64)> = counts
-            .into_iter()
-            .map(|(byte_string, count)| {
-                count_sum += count;
-                pct = count as f64 * pct_factor;
-                pct_sum += pct;
-                if *b"" == **byte_string {
-                    (NULL_VAL.to_vec(), count, pct)
-                } else {
-                    (byte_string.to_owned(), count, pct)
-                }
-            })
-            .collect();
+        for (byte_string, count) in counts {
+            count_sum += count;
+            pct = count as f64 * pct_factor;
+            pct_sum += pct;
+            if *b"" == **byte_string {
+                counts_final.push((null_val.clone(), count, pct));
+            } else {
+                counts_final.push((byte_string.to_owned(), count, pct));
+            }
+        }
 
         let other_count = total_count - count_sum;
         if other_count > 0 && self.flag_other_text != "<NONE>" {
@@ -378,7 +384,7 @@ impl Args {
     pub fn sequential_ftables(&self) -> CliResult<(Headers, FTables)> {
         let mut rdr = self.rconfig().reader()?;
         let (headers, sel) = self.sel_headers(&mut rdr)?;
-        Ok((headers, self.ftables(&sel, rdr.byte_records())))
+        Ok((headers, self.ftables(&sel, rdr.byte_records(), 1)))
     }
 
     pub fn parallel_ftables(
@@ -406,7 +412,7 @@ impl Args {
                 let mut idx = args.rconfig().indexed().unwrap().unwrap();
                 idx.seek((i * chunk_size) as u64).unwrap();
                 let it = idx.byte_records().take(chunk_size);
-                send.send(args.ftables(&sel, it)).unwrap();
+                send.send(args.ftables(&sel, it, nchunks)).unwrap();
             });
         }
         drop(send);
@@ -414,21 +420,19 @@ impl Args {
     }
 
     #[inline]
-    fn ftables<I>(&self, sel: &Selection, it: I) -> FTables
+    fn ftables<I>(&self, sel: &Selection, it: I, nchunks: usize) -> FTables
     where
         I: Iterator<Item = csv::Result<csv::ByteRecord>>,
     {
-        let null = &b""[..].to_vec();
         let nsel = sel.normal();
         let nsel_len = nsel.len();
-        let mut freq_tables: Vec<_> = (0..nsel_len).map(|_| Frequencies::new()).collect();
 
         #[allow(unused_assignments)]
         // amortize allocations
         let mut field_buffer: Vec<u8> = Vec::with_capacity(1024);
         let mut row_buffer: csv::ByteRecord = csv::ByteRecord::with_capacity(200, nsel_len);
 
-        let all_unique_headers = UNIQUE_COLUMNS.get().unwrap();
+        let unique_headers_vec = UNIQUE_COLUMNS_VEC.get().unwrap();
 
         // assign flags to local variables for faster access
         let flag_no_nulls = self.flag_no_nulls;
@@ -438,8 +442,38 @@ impl Args {
         // compile a vector of bool flags for all_unique_headers
         // so we can skip the contains check in the hot loop below
         let all_unique_flag_vec: Vec<bool> = (0..nsel_len)
-            .map(|i| all_unique_headers.contains(&i))
+            .map(|i| unique_headers_vec.contains(&i))
             .collect();
+
+        // optimize the capacity of the freq_tables based on the cardinality of the columns
+        // if sequential, use the cardinality from the stats cache
+        // if parallel, use a default capacity of 1000 for non-unique columns
+        let newvec = Vec::new();
+        let col_cardinality_vec = COL_CARDINALITY_VEC.get().unwrap_or(&newvec);
+        let mut freq_tables: Vec<_> = if col_cardinality_vec.is_empty() {
+            (0..nsel_len)
+                .map(|_| Frequencies::with_capacity(1000))
+                .collect()
+        } else {
+            (0..nsel_len)
+                .map(|i| {
+                    let capacity = if all_unique_flag_vec[i] {
+                        1
+                    } else if nchunks == 1 {
+                        col_cardinality_vec
+                            .get(i)
+                            .map_or(1000, |(_, cardinality)| *cardinality as usize)
+                    } else {
+                        // use cardinality and number of jobs to set the capacity
+                        let cardinality = col_cardinality_vec
+                            .get(i)
+                            .map_or(1000, |(_, cardinality)| *cardinality as usize);
+                        cardinality / nchunks
+                    };
+                    Frequencies::with_capacity(capacity)
+                })
+                .collect()
+        };
 
         // Pre-compute function pointers for the hot path
         // instead of doing if chains repeatedly in the hot loop
@@ -473,7 +507,8 @@ impl Args {
 
         let mut string_buf = String::with_capacity(100);
         for row in it {
-            row_buffer.clone_from(&row.unwrap());
+            // safety: we know the row is valid
+            row_buffer.clone_from(&unsafe { row.unwrap_unchecked() });
             for (i, field) in nsel.select(row_buffer.into_iter()).enumerate() {
                 // safety: all_unique_flag_vec is pre-computed to have exactly nsel_len elements,
                 // which matches the number of selected columns that we iterate over.
@@ -492,11 +527,20 @@ impl Args {
                         freq_tables.get_unchecked_mut(i).add(field_buffer);
                     }
                 } else if !flag_no_nulls {
+                    // set to null (EMPTY_BYTES) as flag_no_nulls is false
                     unsafe {
-                        freq_tables.get_unchecked_mut(i).add(null.clone());
+                        freq_tables.get_unchecked_mut(i).add(EMPTY_BYTE_VEC);
                     }
                 }
             }
+        }
+        // shrink the capacity of the freq_tables to the actual number of elements.
+        // if sequential (nchunks == 1), we don't need to shrink the capacity as we
+        // use cardinality to set the capacity of the freq_tables
+        // if parallel (nchunks > 1), we need to shrink the capacity to avoid
+        // over-allocating memory
+        if nchunks > 1 {
+            freq_tables.shrink_to_fit();
         }
         freq_tables
     }
@@ -516,6 +560,7 @@ impl Args {
             flag_force:           false,
             flag_stdout:          false,
             flag_jobs:            Some(util::njobs(self.flag_jobs)),
+            flag_polars:          false,
             flag_no_headers:      self.flag_no_headers,
             flag_delimiter:       self.flag_delimiter,
             arg_input:            self.arg_input.clone(),
@@ -525,22 +570,13 @@ impl Args {
         let (csv_fields, csv_stats, dataset_stats) =
             get_stats_records(&schema_args, StatsMode::Frequency)?;
 
-        if csv_fields.is_empty() {
-            // the stats cache does not exist, just return an empty vector
+        if csv_fields.is_empty() || csv_stats.len() != csv_fields.len() {
+            // the stats cache does not exist or the number of fields & stats records
+            // do not match. Just return an empty vector.
             // we're not going to be able to get the cardinalities, so
             // this signals that we just compute frequencies for all columns
             return Ok(Vec::new());
         }
-
-        // safety: we know that csv_fields and csv_stats have the same length
-        // doing this as an assert also has the added benefit of eliminating bounds checking
-        // in the following hot iterator loop
-        assert!(
-            csv_fields.len() == csv_stats.len(),
-            "Mismatch between the number of fields: {} and stats records: {}",
-            csv_fields.len(),
-            csv_stats.len()
-        );
 
         let col_cardinality_vec: Vec<(String, u64)> = csv_stats
             .iter()
@@ -578,6 +614,8 @@ impl Args {
             }
         }
 
+        COL_CARDINALITY_VEC.get_or_init(|| col_cardinality_vec);
+
         Ok(all_unique_headers_vec)
     }
 
@@ -588,7 +626,7 @@ impl Args {
         let headers = rdr.byte_headers()?;
         let all_unique_headers_vec = self.get_unique_headers(headers)?;
 
-        UNIQUE_COLUMNS
+        UNIQUE_COLUMNS_VEC
             .set(all_unique_headers_vec)
             .map_err(|_| "Cannot set UNIQUE_COLUMNS")?;
 

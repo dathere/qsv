@@ -88,6 +88,7 @@ struct Args {
 
 fn main() -> QsvExitCode {
     util::qsv_custom_panic();
+    util::reset_sigpipe();
 
     let mut enabled_commands = String::new();
     #[cfg(all(feature = "apply", feature = "feature_capable"))]
@@ -136,8 +137,10 @@ fn main() -> QsvExitCode {
     enabled_commands.push_str("    frequency   Show frequency tables\n");
 
     #[cfg(all(feature = "geocode", not(feature = "lite")))]
-    enabled_commands
-        .push_str("    geocode     Geocodes a location against the Geonames cities database.\n");
+    enabled_commands.push_str(
+        "    geocode     Geocodes a location against the Geonames cities database.
+    geoconvert  Convert between spatial formats & CSV, including GeoJSON, SHP & more\n",
+    );
 
     enabled_commands.push_str(
         "    headers     Show header names
@@ -367,6 +370,8 @@ enum Command {
     Frequency,
     #[cfg(all(feature = "geocode", feature = "feature_capable"))]
     Geocode,
+    #[cfg(all(feature = "geocode", feature = "feature_capable"))]
+    Geoconvert,
     Headers,
     Help,
     Index,
@@ -463,6 +468,8 @@ impl Command {
             Command::Frequency => cmd::frequency::run(argv),
             #[cfg(all(feature = "geocode", feature = "feature_capable"))]
             Command::Geocode => cmd::geocode::run(argv),
+            #[cfg(all(feature = "geocode", feature = "feature_capable"))]
+            Command::Geoconvert => cmd::geoconvert::run(argv),
             Command::Headers => cmd::headers::run(argv),
             Command::Help => {
                 wout!("{USAGE}\n\n{SPONSOR_MESSAGE}");

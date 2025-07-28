@@ -24,7 +24,7 @@ fn headers_basic() {
     let expected = "\
 1   h1
 2   h2";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn headers_just_names() {
     let expected = "\
 h1
 h2";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn headers_just_count() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "2";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn headers_notrim() {
 8   "EW"
 9   "City"
 10  "State""#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn headers_trim() {
 8   EW
 9   City
 10  State"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -166,7 +166,7 @@ h1
 h2
 h2
 h3";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -176,7 +176,7 @@ fn headers_multiple_just_count() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "4";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn headers_intersect() {
 h1
 h2
 h3";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -222,14 +222,14 @@ fn headers_infile() {
         ["f"],
         ["g"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     let mut cmd: process::Command = wrk.command("headers");
     cmd.arg("testdata.infile-list").arg("--just-count");
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "10";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -251,5 +251,5 @@ fn headers_intersect_infile() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![["a"], ["b"], ["c"], ["d"], ["e"], ["f"], ["g"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

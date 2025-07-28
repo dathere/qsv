@@ -4,7 +4,7 @@ use crate::workdir::Workdir;
 
 macro_rules! part_eq {
     ($wrk:expr_2021, $path:expr_2021, $expected:expr_2021) => {
-        similar_asserts::assert_eq!(
+        assert_eq!(
             $wrk.from_str::<String>(&$wrk.path($path)),
             $expected.to_owned()
         );

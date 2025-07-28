@@ -83,7 +83,7 @@ QSV_NO_HEADERS = False
 # with this character are ignored. Note that when you want to use the pound sign
 # as a comment char, you need to enclose it in single quotes as its a reserved
 # character for dotenv files, e.g.
-QSV_COMMENT_CHAR: '#'
+QSV_COMMENT_CHAR = '#'
 
 # Otherwise, you can just use the character without enclosing it in single quotes
 # QSV_COMMENT_CHAR = !
@@ -93,6 +93,11 @@ QSV_COMMENT_CHAR: '#'
 # `stats`, `to`, `tojsonl` & # `validate`). If not set, max_jobs is set to the detected
 # number of logical processors.  See PERFORMANCE-Multithreading section for more info.
 # QSV_MAX_JOBS = 8
+
+# The precision to use when converting Polars-enabled formats (Avro,Arrow,Parquet,JSON,
+# JSONL and gz,zlib & zst compressed files) to CSV. If set, this will also override the
+# --float-precision option of the `sqlp` command.
+# QSV_POLARS_FLOAT_PRECISION = 8
 
 # if true, prohibit self-update version check for the latest qsv release 
 # published on GitHub.

@@ -27,7 +27,7 @@ fn prop_fixlengths_all_maxlen() {
         let got: Vec<CsvRecord> = wrk.read_stdout(&mut cmd);
         let got_len = got.iter().map(|r| r.len()).max().unwrap();
         for r in &got {
-            similar_asserts::assert_eq!(r.len(), got_len)
+            assert_eq!(r.len(), got_len)
         }
         TestResult::from_bool(rassert_eq!(got_len, expected_len))
     }
@@ -50,7 +50,7 @@ fn fixlengths_all_maxlen_trims() {
 
     let got: Vec<CsvRecord> = wrk.read_stdout(&mut cmd);
     for r in &got {
-        similar_asserts::assert_eq!(r.len(), 2)
+        assert_eq!(r.len(), 2)
     }
 }
 
@@ -71,7 +71,7 @@ fn fixlengths_insert_negative() {
     cmd.arg("in.csv").args(["-i", "-2"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         vec![
             svec!["clothes", "colours", "", "", "size"],
@@ -100,7 +100,7 @@ fn fixlengths_insert_positive() {
     cmd.arg("in.csv").args(["-i", "2"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         vec![
             svec!["clothes", "", "", "colours", "size"],
@@ -131,7 +131,7 @@ fn fixlengths_insert_positive_length_7() {
         .args(["--length", "7"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         vec![
             svec!["clothes", "", "", "", "", "colours", "size"],
@@ -162,7 +162,7 @@ fn fixlengths_insert_negative_length_7() {
         .args(["--length", "7"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         vec![
             svec!["clothes", "colours", "size", "", "", "", ""],
@@ -186,7 +186,7 @@ fn fixlengths_all_maxlen_trims_at_least_1() {
 
     let got: Vec<CsvRecord> = wrk.read_stdout(&mut cmd);
     for r in &got {
-        similar_asserts::assert_eq!(r.len(), 1)
+        assert_eq!(r.len(), 1)
     }
 }
 
@@ -206,7 +206,7 @@ fn prop_fixlengths_explicit_len() {
         let got: Vec<CsvRecord> = wrk.read_stdout(&mut cmd);
         let got_len = got.iter().map(|r| r.len()).max().unwrap();
         for r in &got {
-            similar_asserts::assert_eq!(r.len(), got_len)
+            assert_eq!(r.len(), got_len)
         }
         TestResult::from_bool(rassert_eq!(got_len, expected_len))
     }
@@ -228,7 +228,7 @@ fn fixlengths_remove_empty_basic() {
     cmd.arg("in.csv").args(["-r"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         vec![
             svec!["a", "c", "e"],
@@ -253,7 +253,7 @@ fn fixlengths_remove_empty_with_length() {
     cmd.arg("in.csv").args(["-r"]).args(["-l", "4"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         vec![
             svec!["a", "c", "e", ""],
@@ -278,7 +278,7 @@ fn fixlengths_remove_empty_with_insert() {
     cmd.arg("in.csv").args(["-r"]).args(["-i", "2"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         vec![
             svec!["a", "c", "e"],
@@ -306,7 +306,7 @@ fn fixlengths_remove_empty_with_length_and_insert() {
         .args(["-i", "2"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         vec![
             svec!["a", "", "", "c", "e"],
@@ -331,7 +331,7 @@ fn fixlengths_remove_empty_all_empty_columns() {
     cmd.arg("in.csv").args(["-r"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         vec![svec!["a", "e"], svec!["f", "j"], svec!["k", "o"],]
     );
@@ -355,7 +355,7 @@ fn fixlengths_remove_empty_with_negative_insert() {
         .args(["-i", "-2"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got,
         vec![
             svec!["a", "c", "", "", "e"],

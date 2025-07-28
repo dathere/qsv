@@ -7,7 +7,7 @@ fn compare_column(got: &[CsvRecord], expected: &[String], column: usize, skip_he
         .map(|row| &row[column])
         .zip(expected.iter())
     {
-        similar_asserts::assert_eq!(value, value_expected)
+        assert_eq!(value, value_expected)
     }
 }
 

@@ -24,5 +24,5 @@ apple,2.50
 banana,3.00
 strawberry,1.50";
     // Check that we receive the correct output
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }

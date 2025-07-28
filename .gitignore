@@ -38,3 +38,4 @@ tmp/*
 *.sz
 *.key
 *.psv
+scripts/benchmark_data.*

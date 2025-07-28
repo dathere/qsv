@@ -409,10 +409,10 @@ fn get_completion(
     // Parse response as JSON
     let response_json: serde_json::Value = response.json()?;
     // If response is an error, print error message
-    if let serde_json::Value::Object(ref map) = response_json {
-        if map.contains_key("error") {
-            return fail_clierror!("API Error: {}", map["error"]);
-        }
+    if let serde_json::Value::Object(ref map) = response_json
+        && map.contains_key("error")
+    {
+        return fail_clierror!("API Error: {}", map["error"]);
     }
 
     // Get completion from response
@@ -708,12 +708,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
     // If --prompt-file flag is specified but the prompt file does not exist, print error message.
-    if let Some(prompt_file) = args.flag_prompt_file.clone() {
-        if !PathBuf::from(prompt_file.clone()).exists() {
-            return fail_incorrectusage_clierror!(
-                "Error: Prompt file '{prompt_file}' does not exist."
-            );
-        }
+    if let Some(prompt_file) = args.flag_prompt_file.clone()
+        && !PathBuf::from(prompt_file.clone()).exists()
+    {
+        return fail_incorrectusage_clierror!("Error: Prompt file '{prompt_file}' does not exist.");
     }
     // If --json and --jsonl flags are specified, print error message.
     if is_json_output(&args)? && is_jsonl_output(&args)? {
@@ -754,7 +752,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let Ok(frequency) = Command::new(qsv_path.clone())
         .arg("frequency")
         .args(["--limit", "50"])
-        .args(["--lmt-threshold", "10"])
+        // .args(["--lmt-threshold", "10"])
         .arg(input_path.clone())
         .output()
     else {

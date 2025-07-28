@@ -232,7 +232,13 @@ Common options:
                                Not valid for stdin.
 "#;
 
-use std::{fs, num::NonZeroU32, sync::OnceLock, thread, time};
+use std::{
+    fs,
+    num::NonZeroU32,
+    sync::OnceLock,
+    thread,
+    time::{self, Duration},
+};
 
 use cached::{
     Cached, IOCached, RedisCache, Return, SizedCache,
@@ -346,7 +352,7 @@ pub enum ReportKind {
 pub struct RedisConfig {
     pub conn_str:      String,
     pub max_pool_size: u32,
-    pub ttl_secs:      u64,
+    pub ttl_secs:      Duration,
     pub ttl_refresh:   bool,
 }
 impl RedisConfig {
@@ -358,10 +364,12 @@ impl RedisConfig {
                 .unwrap_or_else(|_| DEFAULT_REDIS_POOL_SIZE.to_string())
                 .parse()
                 .unwrap_or(DEFAULT_REDIS_POOL_SIZE),
-            ttl_secs:      std::env::var(QSV_REDIS_TTL_SECS_ENV)
-                .unwrap_or_else(|_| DEFAULT_REDIS_TTL_SECS.to_string())
-                .parse()
-                .unwrap_or(DEFAULT_REDIS_TTL_SECS),
+            ttl_secs:      Duration::from_secs(
+                std::env::var(QSV_REDIS_TTL_SECS_ENV)
+                    .unwrap_or_else(|_| DEFAULT_REDIS_TTL_SECS.to_string())
+                    .parse()
+                    .unwrap_or(DEFAULT_REDIS_TTL_SECS),
+            ),
             ttl_refresh:   util::get_envvar_flag(QSV_REDIS_TTL_REFRESH_ENV),
         }
     }
@@ -369,16 +377,18 @@ impl RedisConfig {
 
 #[derive(Debug)]
 pub struct DiskCacheConfig {
-    pub ttl_secs:    u64,
+    pub ttl_secs:    Duration,
     pub ttl_refresh: bool,
 }
 impl DiskCacheConfig {
     pub fn new() -> DiskCacheConfig {
         Self {
-            ttl_secs:    std::env::var("QSV_DISKCACHE_TTL_SECS")
-                .unwrap_or_else(|_| DEFAULT_DISKCACHE_TTL_SECS.to_string())
-                .parse()
-                .unwrap_or(DEFAULT_DISKCACHE_TTL_SECS),
+            ttl_secs:    Duration::from_secs(
+                std::env::var("QSV_DISKCACHE_TTL_SECS")
+                    .unwrap_or_else(|_| DEFAULT_DISKCACHE_TTL_SECS.to_string())
+                    .parse()
+                    .unwrap_or(DEFAULT_DISKCACHE_TTL_SECS),
+            ),
             ttl_refresh: util::get_envvar_flag("QSV_DISKCACHE_TTL_REFRESH"),
         }
     }
@@ -449,10 +459,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             info!("flushed DiskCache directory: {diskcache_dir}");
         }
         // check if the cache directory exists, if it doesn't, create it
-        if !diskcache_dir.is_empty() {
-            if let Err(e) = fs::create_dir_all(&diskcache_dir) {
-                return fail_clierror!(r#"Cannot create cache directory "{diskcache_dir}": {e:?}"#);
-            }
+        if !diskcache_dir.is_empty()
+            && let Err(e) = fs::create_dir_all(&diskcache_dir)
+        {
+            return fail_clierror!(r#"Cannot create cache directory "{diskcache_dir}": {e:?}"#);
         }
         DISKCACHE_DIR.set(diskcache_dir).unwrap();
         // initialize DiskCache Config
@@ -1081,7 +1091,7 @@ fn get_cached_response(
             .set_refresh(diskcache_config.ttl_refresh)
             .build()
             .expect("error building diskcache");
-        log::info!("Disk cache created - dir: {cache_dir} - ttl: {ttl_secs}",
+        log::info!("Disk cache created - dir: {cache_dir} - ttl: {ttl_secs:?}",
             ttl_secs = diskcache_config.ttl_secs);
         diskcache.remove_expired_entries().expect("error removing expired diskcache entries");
         diskcache
@@ -1129,7 +1139,7 @@ fn get_diskcache_response(
             .set_connection_pool_max_size(redis_config.max_pool_size)
             .build()
             .expect("error building redis cache");
-        log::info!("Redis cache created - conn_str: {conn_str} - refresh: {ttl_refresh} - ttl: {ttl_secs} - pool_size: {pool_size}",
+        log::info!("Redis cache created - conn_str: {conn_str} - refresh: {ttl_refresh} - ttl: {ttl_secs:?} - pool_size: {pool_size}",
             conn_str = redis_config.conn_str,
             ttl_refresh = redis_config.ttl_refresh,
             ttl_secs = redis_config.ttl_secs,
@@ -1575,7 +1585,7 @@ fn test_apply_jaq_invalid_json() {
 
     let value = process_jaq(json, selectors).unwrap_err().to_string();
 
-    similar_asserts::assert_eq!(
+    assert_eq!(
         "JSON error: Error(\"expected value\", line: 1, column: 1)",
         value
     );

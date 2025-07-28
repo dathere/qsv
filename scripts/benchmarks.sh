@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=6.6.0
+bm_version=6.7.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -96,31 +96,41 @@ if [[ "$arg_pat" == "help" ]]; then
   echo "       e.g. ./benchmarks.sh sort - will run benchmarks with \"sort\" in the benchmark name"
   echo "       if <argument> is omitted, all benchmarks will be executed."
   echo ""
-  echo "       if <argument> is \"reset\", the benchmark data will be downloaded and prepared again."
-  echo "          though the results/benchmark_results.csv historical archive will be preserved."
-  echo "       if <argument> is \"clean\", temporary files will be deleted."
-  echo "       if <argument> is \"setup\", setup and install all the required tools."
-  echo "       if <argument> is \"help\", help text is displayed."
+  echo "       if <argument> is:"
+  echo "          \"reset\": the benchmark data will be downloaded and prepared again."
+  echo "                     though the results/benchmark_results.csv"
+  echo "                     historical archive will be preserved."
+  echo "          \"clean\": temporary files will be deleted."
+  echo "          \"setup\": setup and install all the required tools."
+  echo "           \"help\": this help text is displayed."
   echo ""
-  echo "benchmarking: $raw_version"
-  echo "dogfooding: $benchmarker_version"
-  exit
+  echo "Current configuration:"
+  echo "  benchmarking: $raw_version"
+  echo "  dogfooding: $benchmarker_version"
+  echo "  qsv binary: $qsv_bin"
+  echo "  qsv benchmarker binary: $qsv_benchmarker_bin"
+  echo "  benchmark data: $data"
+  echo "  benchmark data url: $benchmark_data_url"
+  echo "  benchmark data zip: $datazip"
+  echo "  warmup runs: $warmup_runs"
+  echo "  benchmark runs: $benchmark_runs"
+  exit 0
 fi
 
 # check if required tools/dependencies are installed ---------
 
-  # check if benchmarker_bin has the apply feature enabled
-  if [[ "$benchmarker_version" != *"apply;"* ]]; then
-    echo "ERROR: $qsv_benchmarker_bin does not have the apply feature enabled."
-    echo "The qsv apply command is needed to format the benchmarks results."
-  exit
+# check if benchmarker_bin has the apply feature enabled
+if [[ "$benchmarker_version" != *"apply;"* ]]; then
+  echo "ERROR: $qsv_benchmarker_bin does not have the apply feature enabled."
+  echo "The qsv apply command is needed to format the benchmarks results."
+  exit 1
 fi
 
 # check if the benchmarker_bin has the luau feature enabled
 if [[ "$benchmarker_version" != *"Luau"* ]]; then
   echo "ERROR: $qsv_benchmarker_bin does not have the luau feature enabled."
   echo "The qsv luau command is needed to aggregate the benchmarks results."
-  exit
+  exit 1
 fi
 
 # check if the benchmarker_bin has the to feature enabled
@@ -130,7 +140,7 @@ if [[ "$benchmarker_version" != *"to;"* ]]; then
     echo "ERROR: $qsv_benchmarker_bin does not have the to feature enabled."
     echo "The qsv to xlsx command is needed to create an Excel spreadsheet"
     echo "as benchmark_data.xlsx does not exist."
-    exit
+    exit 1
   fi
 fi
 
@@ -375,32 +385,63 @@ if [ ! -r communityboards.csv ]; then
   echo ""
 fi
 
-if [ ! -r searchset_patterns_unicode.txt ]; then
-  echo "> Preparing benchmark support data..."
-  # create an index so benchmark data preparation commands can run faster
+echo "> Preparing benchmark support data..."
+# create an index so benchmark data preparation commands can run faster
+if [ ! -f "$data.idx" ]; then
   "$qsv_benchmarker_bin" index "$data"
+fi
+
+if [ ! -r data_to_exclude.csv ]; then
   echo "   data_to_exclude.csv..."
   "$qsv_benchmarker_bin" sample --seed 42 1000 "$data" -o data_to_exclude.csv
+fi
+
+if [ ! -r data_unsorted.csv ]; then
   echo "   data_unsorted.csv..."
   "$qsv_benchmarker_bin" sort --seed 42 --random --faster "$data" -o data_unsorted.csv
+fi
+
+if [ ! -r data_sorted.csv ]; then
   echo "   data_sorted.csv..."
   "$qsv_benchmarker_bin" sort "$data" -o data_sorted.csv
+fi
+
+if [ ! -r benchmark_data.xlsx ]; then
   echo "   benchmark_data.xlsx..."
   "$qsv_benchmarker_bin" to xlsx benchmark_data.xlsx "$data"
+fi
+
+if [ ! -r benchmark_data.jsonl ]; then
   echo "   benchmark_data.jsonl..."
   "$qsv_benchmarker_bin" tojsonl "$data" --output benchmark_data.jsonl
+fi
+
+if [ ! -r benchmark_data.json ]; then
   echo "   benchmark_data.json..."
   "$qsv_benchmarker_bin" sqlp --format json "$data" -q 'select * from _t_1' --infer-len 127000 --rnull-values 'N/A' --output benchmark_data.json
+fi
+
+if [ ! -r benchmark_data.csv.schema.json ]; then
   echo "   benchmark_data.schema.json..."
   "$qsv_benchmarker_bin" schema "$data" --stdout >benchmark_data.csv.schema.json
+fi
+
+if [ ! -r benchmark_data.snappy ]; then
   echo "   benchmark_data.snappy..."
   "$qsv_benchmarker_bin" snappy compress "$data" --output benchmark_data.snappy
+fi
+
+if [ ! -r searchset_patterns.txt ]; then
   echo "   searchset_patterns.txt..."
   printf "homeless\npark\nNoise\n" >searchset_patterns.txt
+fi
+
+if [ ! -r searchset_patterns_unicode.txt ]; then
   echo "   searchset_patterns_unicode.txt..."
   printf "homeless\n💩\nNoise\n" >searchset_patterns_unicode.txt
-  echo ""
 fi
+
+echo ""
 
 schema=benchmark_data.csv.schema.json
 dynenum_schema=benchmark_data-dynenum.csv.schema.json
@@ -521,7 +562,7 @@ run flatten_condensed "$qsv_bin" flatten "$data" --condense 50
 run fmt "$qsv_bin" fmt --crlf "$data"
 run fmt_no_crlf "$qsv_bin" fmt "$data"
 run fmt_no_final_newline "$qsv_bin" fmt --no-final-newline "$data"
-run foreach "$qsv_bin" foreach City "echo {}" "$data"
+run foreach "$qsv_bin" foreach City \"echo {}\" "$data"
 run frequency "$qsv_bin" frequency "$data"
 run --index frequency_index "$qsv_bin" frequency "$data"
 run --index frequency_index_stats_mode_auto env QSV_STATS_MODE=auto bash -c \'"$qsv_bin" frequency "$data"\'
@@ -572,9 +613,9 @@ run luau_script_colidx "$qsv_bin" luau map turnaround_time --colindex "file:turn
 run luau_script_no_globals "$qsv_bin" luau map turnaround_time --no-globals "file:turnaround_time.luau" "$data"
 run luau_script_no_globals_colidx "$qsv_bin" luau map turnaround_time --no-globals --colindex "file:turnaround_time.luau" "$data"
 run partition "$qsv_bin" partition \'Community Board\' /tmp/partitioned "$data"
-run pivotp_basic "$qsv_bin" pivotp "Agency" --index "Borough" --values "Complaint Type" "$data"
-run pivotp_smart "$qsv_bin" pivotp "Agency" --index "Borough" --values "Complaint Type" --agg smart "$data"
-run pivotp_dates "$qsv_bin" pivotp "Created Date" --index "Borough" --values "Complaint Type" --try-parsedates "$data"
+run pivotp_basic "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" "$data"
+run pivotp_smart "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" --agg smart "$data"
+run pivotp_dates "$qsv_bin" pivotp \"Created Date\" --index "Borough" --values \"Complaint Type\" --try-parsedates "$data"
 run pseudo "$qsv_bin" pseudo \'Unique Key\' "$data"
 run pseudo_formatstr "$qsv_bin" pseudo \'Unique Key\' --formatstr 'ID-{}' --increment 5 "$data"
 run rename "$qsv_bin" rename \'unique_key,created_date,closed_date,agency,agency_name,complaint_type,descriptor,loctype,zip,addr1,street,xstreet1,xstreet2,inter1,inter2,addrtype,city,landmark,facility_type,status,due_date,res_desc,res_act_date,comm_board,bbl,boro,xcoord,ycoord,opendata_type,parkname,parkboro,vehtype,taxi_boro,taxi_loc,bridge_hwy_name,bridge_hwy_dir,ramp,bridge_hwy_seg,lat,long,loc\' "$data"
@@ -594,8 +635,8 @@ run sample_100000_seeded_secure "$qsv_bin" sample 100000 --rng cryptosecure --se
 run sample_bernoulli "$qsv_bin" sample --bernoulli 0.25 --seed 42 "$data"
 run sample_1000_systematic "$qsv_bin" sample 1000 --systematic random --seed 42 "$data"
 run sample_1000_stratified "$qsv_bin" sample 1000 --stratified "Agency" --seed 42 "$data"
-run sample_1000_weighted "$qsv_bin" sample 1000 --weighted "Incident Zip" --seed 42 "$data"
-run sample_1000_cluster "$qsv_bin" sample 1000 --cluster "Incident Zip" --seed 42 "$data"
+run sample_1000_weighted "$qsv_bin" sample 1000 --weighted \"Incident Zip\" --seed 42 "$data"
+run sample_1000_cluster "$qsv_bin" sample 1000 --cluster \"Incident Zip\" --seed 42 "$data"
 run --index sample_100000_seeded_index "$qsv_bin" sample --seed 42 100000 "$data"
 run --index sample_100000_seeded_index_faster "$qsv_bin" sample --rng faster --seed 42 100000 "$data"
 run --index sample_100000_seeded_index_secure "$qsv_bin" sample --rng cryptosecure --seed 42 100000 "$data"

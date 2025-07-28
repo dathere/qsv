@@ -28,7 +28,7 @@ fn pseudo() {
         svec!["1", "magenta"],
         svec!["0", "cyan"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn pseudo_no_headers() {
         svec!["1", "magenta"],
         svec!["0", "cyan"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn pseudo_formatstr() {
         svec!["ID-1", "magenta"],
         svec!["ID-0", "cyan"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn pseudo_formatstr_increment() {
         svec!["ID-5", "magenta"],
         svec!["ID-0", "cyan"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn pseudo_formatstr_start_increment() {
         svec!["ID-1005", "magenta"],
         svec!["ID-1000", "cyan"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -193,10 +193,10 @@ fn pseudo_overflow() {
         svec!["ID-18446744073709551610", "blue"],
         svec!["ID-18446744073709551605", "purple"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     let got_err = wrk.output_stderr(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got_err,
         "usage error: Overflowed. The counter is larger than u64::MAX(18446744073709551615). The \
          last valid counter is 18446744073709551615.\n"

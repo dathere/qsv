@@ -19,7 +19,7 @@ fn jsonl_simple() {
         svec!["2", "John", "Ann", "Jessika", "false"],
         svec!["3", "Bob", "Monika", "Jerry", "true"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -41,7 +41,7 @@ fn jsonl_simple_delimiter() {
         svec!["2;John;Ann;Jessika;false"],
         svec!["3;Bob;Monika;Jerry;true"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn jsonl_simple_error() {
         svec!["2", "John", "Ann", "Jessika", "false"],
         svec!["3", "Bob", "Monika", "Jerry", "true"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.assert_err(&mut cmd);
 }
@@ -94,7 +94,7 @@ fn jsonl_simple_ignore_error() {
         svec!["3", "Bob", "Monika", "Jerry", "true"],
         svec!["5", "Donald", "Melania", "Ivanka", "false"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.assert_success(&mut cmd);
 }
@@ -118,5 +118,5 @@ fn jsonl_nested() {
         svec!["2", "John", "Ann", "\"Jessika\",\"Antony\",\"Jack\""],
         svec!["3", "Bob", "Monika", "\"Jerry\",\"Karol\""],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

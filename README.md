@@ -5,19 +5,19 @@
 [![macOS build status](https://github.com/dathere/qsv/actions/workflows/rust-macos.yml/badge.svg)](https://github.com/dathere/qsv/actions/workflows/rust-macos.yml)
 [![Security audit](https://github.com/dathere/qsv/actions/workflows/security-audit.yml/badge.svg)](https://github.com/dathere/qsv/actions/workflows/security-audit.yml)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/29e587760af64abcb115ba23efe1b365)](https://app.codacy.com/gh/dathere/qsv/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Clones](https://img.shields.io/badge/dynamic/json?color=success&label=clones&query=count&url=https://gist.githubusercontent.com/jqnatividad/13f60ad0b54856a55f60b8e653079349/raw/clone.json&logo=github)](https://github.com/MShawon/github-clone-count-badge)
-[![Discussions](https://img.shields.io/github/discussions/dathere/qsv)](https://github.com/dathere/qsv/discussions)
 [![Crates.io](https://img.shields.io/crates/v/qsv.svg?logo=crates.io)](https://crates.io/crates/qsv)
+[![Clones](https://img.shields.io/badge/dynamic/json?color=success&label=clones%20since%202025-05-03&query=count&url=https://gist.githubusercontent.com/jqnatividad/13f60ad0b54856a55f60b8e653079349/raw/clone.json&logo=github)](https://gist.github.com/jqnatividad/13f60ad0b54856a55f60b8e653079349)
+[![Discussions](https://img.shields.io/github/discussions/dathere/qsv)](https://github.com/dathere/qsv/discussions)
 [![Crates.io downloads](https://img.shields.io/crates/d/qsv?color=orange&label=crates.io%20downloads)](https://crates.io/crates/qsv)
 [![Prebuilt Downloads](https://img.shields.io/github/downloads/dathere/qsv/total?logo=github&label=prebuilt%20downloads)](https://github.com/dathere/qsv/releases/latest)
-[![Minimum supported Rust version](https://img.shields.io/badge/Rust-1.85.0-red?logo=rust)](#minimum-supported-rust-version)
+[![Minimum supported Rust version](https://img.shields.io/badge/Rust-1.88-red?logo=rust)](#minimum-supported-rust-version)
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fjqnatividad%2Fqsv.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fjqnatividad%2Fqsv?ref=badge_shield)
 
 <div align="center">
 
  &nbsp;          |  Table of Contents
 :--------------------------|:-------------------------
-![qsv logo](docs/images/qsv-logo.png)<br/>[_Hi-ho "Quicksilver" away!_](https://www.youtube.com/watch?v=p9lf76xOA5k)<br/><sub><sup>[logo details](https://github.com/dathere/qsv/discussions/295)</sup></sub><br/>|qsv is a command line program for querying, slicing,<br>indexing, analyzing, filtering, enriching, transforming,<br>sorting, validating, joining, formatting & converting</br>tabular data (CSV, spreadsheets, [etc.](#file-formats)).<br>Commands are simple, composable & ___"blazing fast"___.<br><br>* [Commands](#available-commands)<br>* [Installation Options](#installation-options)<br> * [Whirlwind Tour](docs/whirlwind_tour.md#a-whirlwind-tour) / [Notebooks](contrib/notebooks/) / [Lessons & Exercises](https://100.dathere.com)<br>* [Cookbook](https://github.com/dathere/qsv/wiki/Cookbook#cookbook)<br>* [FAQ](https://github.com/dathere/qsv/discussions/categories/faq)<br>* [Performance Tuning](docs/PERFORMANCE.md#performance-tuning)<br>* 👉 [Benchmarks](https://qsv.dathere.com/benchmarks) 🚀<br>* [Environment Variables](docs/ENVIRONMENT_VARIABLES.md)<br>* [Feature Flags](#feature-flags)<br>* [Goals/Non-goals](#goals--non-goals)<br>* [Testing](#testing)<br>* [NYC School of Data 2022](https://docs.google.com/presentation/d/e/2PACX-1vQ12ndZL--gkz0HLQRaxqsNOwzddkv1iUKB3sq661yA77OPlAsmHJHpjaqt9s9QEf73VqMfb0cv4jHU/pub?start=false&loop=false&delayms=3000)/[csv,conf,v8](https://docs.google.com/presentation/d/10T_3MyIqS5UsKxJaOY7Ktrd-GfhJelQImlE_qYmtuis/edit#slide=id.g2e0f1e7aa0e_0_62) slides<br>* [Sponsor](#sponsor)
+![qsv logo](docs/images/qsv-logo.png)<br/>[_Hi-ho "Quicksilver" away!_](https://www.youtube.com/watch?v=p9lf76xOA5k)<br/><sub><sup>[logo details](https://github.com/dathere/qsv/discussions/295)</sup></sub><br/>|qsv is a command line program for querying, slicing,<br>indexing, analyzing, filtering, enriching, transforming,<br>sorting, validating, joining, formatting & converting</br>tabular data (CSV, spreadsheets, DBs, parquet, [etc](#file-formats)).<br>Commands are simple, composable & ___"blazing fast"___.<br><br>* [Commands](#available-commands)<br>* [Installation Options](#installation-options)<br> * [Whirlwind Tour](docs/whirlwind_tour.md#a-whirlwind-tour) / [Notebooks](contrib/notebooks/) / [Lessons & Exercises](https://100.dathere.com)<br>* [Cookbook](https://github.com/dathere/qsv/wiki/Cookbook#cookbook)<br>* [FAQ](https://github.com/dathere/qsv/discussions/categories/faq)<br>* [Performance Tuning](docs/PERFORMANCE.md#performance-tuning)<br>* 👉 [Benchmarks](https://qsv.dathere.com/benchmarks) 🚀<br>* [Environment Variables](docs/ENVIRONMENT_VARIABLES.md)<br>* [Feature Flags](#feature-flags)<br>* [Goals/Non-goals](#goals--non-goals)<br>* [Testing](#testing)<br>* [NYC School of Data 2022](https://docs.google.com/presentation/d/e/2PACX-1vQ12ndZL--gkz0HLQRaxqsNOwzddkv1iUKB3sq661yA77OPlAsmHJHpjaqt9s9QEf73VqMfb0cv4jHU/pub?start=false&loop=false&delayms=3000)/[csv,conf,v8](https://docs.google.com/presentation/d/10T_3MyIqS5UsKxJaOY7Ktrd-GfhJelQImlE_qYmtuis/edit#slide=id.g2e0f1e7aa0e_0_62)/[PyConUS 2025](https://docs.google.com/presentation/d/e/2PACX-1vRKFnU0Hm8oDrtCYbxcf96kHVsPcoLU05jPVNYaAs09D05gPMWDJ96q_4_zgUvadGro4deohisy-XtY/pub?start=false&loop=false&delayms=3000)<br>* [Sponsor](#sponsor)
 </div>
 <div align="center">
 
@@ -28,7 +28,7 @@
 | <a name="available-commands">Command | Description |
 | --- | --- |
 | [apply](/src/cmd/apply.rs#L2)✨<br>📇🚀🧠🤖🔣👆| Apply series of string, date, math & currency transformations to given CSV column/s. It also has some basic [NLP](https://en.wikipedia.org/wiki/Natural_language_processing) functions ([similarity](https://crates.io/crates/strsim), [sentiment analysis](https://crates.io/crates/vader_sentiment), [profanity](https://docs.rs/censor/latest/censor/), [eudex](https://github.com/ticki/eudex#eudex-a-blazingly-fast-phonetic-reductionhashing-algorithm), [language](https://crates.io/crates/whatlang) & [name gender](https://github.com/Raduc4/gender_guesser?tab=readme-ov-file#gender-guesser)) detection.  |
-| <a name="applydp_deeplink"></a>[applydp](/src/cmd/applydp.rs#L2)✨<br>📇🚀🔣👆 ![CKAN](docs/images/ckan.png)| applydp is a slimmed-down version of `apply` with only [Datapusher+](https://github.com/dathere/datapusher-plus) relevant subcommands/operations (`qsvdp` binary variant only). |
+| [applydp](/src/cmd/applydp.rs#L2)✨<br>📇🚀🔣👆 ![CKAN](docs/images/ckan.png)| <a name="applydp_deeplink"></a>applydp is a slimmed-down version of `apply` with only [Datapusher+](https://github.com/dathere/datapusher-plus) relevant subcommands/operations (`qsvdp` binary variant only). |
 | [behead](/src/cmd/behead.rs#L2) | Drop headers from a CSV.  |
 | [cat](/src/cmd/cat.rs#L2)<br>🗄️ | Concatenate CSV files by row or by column. |
 | [clipboard](/src/cmd/clipboard.rs#L2)✨ | Provide input from the clipboard or save output to the clipboard. |
@@ -52,45 +52,46 @@
 | [fmt](/src/cmd/fmt.rs#L2) | Reformat a CSV with different delimiters, record terminators or quoting rules. (Supports ASCII delimited data.)  |
 | [foreach](/src/cmd/foreach.rs#L2)✨<br>📇 | Execute a shell command once per line in given CSV file. |
 | [frequency](/src/cmd/frequency.rs#L2)<br>📇😣🏎️👆🪄 | Build [frequency tables](https://statisticsbyjim.com/basics/frequency-table/) of each column. Uses multithreading to go faster if an index is present. |
-| [geocode](/src/cmd/geocode.rs#L2)✨<br>📇🧠🌐🚀🔣👆 | Geocodes a location against an updatable local copy of the [Geonames](https://www.geonames.org/) cities database. With caching and multi-threading, it geocodes up to 360,000 records/sec! |
+| [geocode](/src/cmd/geocode.rs#L2)✨<br>📇🧠🌐🚀🔣👆🌎 | Geocodes a location against an updatable local copy of the [Geonames](https://www.geonames.org/) cities & the [Maxmind GeoLite2](https://www.maxmind.com/en/geolite-free-ip-geolocation-data) databases. With caching and multi-threading, it geocodes up to 360,000 records/sec! |
+| [geoconvert](/src/cmd/geoconvert.rs#L2)✨<br>🌎 | Convert between various spatial formats and CSV/SVG including GeoJSON, SHP, and more. |
 | [headers](/src/cmd/headers.rs#L2)<br>🗄️ | Show the headers of a CSV. Or show the intersection of all headers between many CSV files. |
 | [index](/src/cmd/index.rs#L2) | Create an index (📇) for a CSV. This is very quick (even the 15gb, 28m row NYC 311 dataset takes all of 14 seconds to index) & provides constant time indexing/random access into the CSV. With an index, `count`, `sample` & `slice` work instantaneously; random access mode is enabled in `luau`; and multithreading (🏎️) is enabled for the `frequency`, `split`, `stats`, `schema` & `tojsonl` commands. |
 | [input](/src/cmd/input.rs#L2) | Read CSV data with special commenting, quoting, trimming, line-skipping & non-UTF8 encoding handling rules. Typically used to "normalize" a CSV for further processing with other qsv commands. |
-| [join](/src/cmd/join.rs#L2)<br>👆 | Inner, outer, right, cross, anti & semi joins. Automatically creates a simple, in-memory hash index to make it fast.  |
+| [join](/src/cmd/join.rs#L2)<br>😣👆 | Inner, outer, right, cross, anti & semi joins. Automatically creates a simple, in-memory hash index to make it fast.  |
 | [joinp](/src/cmd/joinp.rs#L2)✨<br>🚀🐻‍❄️🪄 | Inner, outer, right, cross, anti, semi, non-equi & asof joins using the [Pola.rs](https://www.pola.rs) engine. Unlike the `join` command, `joinp` can process files larger than RAM, is multithreaded, has join key validation, a maintain row order option, pre and post-join filtering, join keys unicode normalization, supports "special" [non-equi joins](https://docs.pola.rs/user-guide/transformations/joins/#non-equi-joins) and [asof joins](https://docs.pola.rs/user-guide/transformations/joins/#asof-join) (which is [particularly useful for time series data](https://github.com/dathere/qsv/blob/30cc920d0812a854fcbfedc5db81788a0600c92b/tests/test_joinp.rs#L509-L983)) & its output columns can be coalesced. |
 | [json](/src/cmd/json.rs#L2)<br>👆 | Convert JSON to CSV.
 | [jsonl](/src/cmd/jsonl.rs#L2)<br>🚀🔣 | Convert newline-delimited JSON ([JSONL](https://jsonlines.org/)/[NDJSON](http://ndjson.org/)) to CSV. See `tojsonl` command to convert CSV to JSONL.
-| [lens](/src/cmd/lens.rs#L2)✨ | Interactively view, search & filter a CSV using the [csvlens](https://github.com/YS-L/csvlens#csvlens) engine.
-| <a name="luau_deeplink"></a><br>[luau](/src/cmd/luau.rs#L2) 👑✨<br>📇🌐🔣📚 ![CKAN](docs/images/ckan.png) | Create multiple new computed columns, filter rows, compute aggregations and build complex data pipelines by executing a [Luau](https://luau-lang.org) [0.663](https://github.com/Roblox/luau/releases/tag/0.663) expression/script for every row of a CSV file ([sequential mode](https://github.com/dathere/qsv/blob/bb72c4ef369d192d85d8b7cc6e972c1b7df77635/tests/test_luau.rs#L254-L298)), or using [random access](https://www.webopedia.com/definitions/random-access/) with an index ([random access mode](https://github.com/dathere/qsv/blob/bb72c4ef369d192d85d8b7cc6e972c1b7df77635/tests/test_luau.rs#L367-L415)).<br>Can process a single Luau expression or [full-fledged data-wrangling scripts using lookup tables](https://github.com/dathere/qsv-lookup-tables#example) with discrete BEGIN, MAIN and END sections.<br> It is not just another qsv command, it is qsv's [Domain-specific Language](https://en.wikipedia.org/wiki/Domain-specific_language) (DSL) with [numerous qsv-specific helper functions](https://github.com/dathere/qsv/blob/113eee17b97882dc368b2e65fec52b86df09f78b/src/cmd/luau.rs#L1356-L2290) to build production data pipelines. |
+| [lens](/src/cmd/lens.rs#L2)✨<br>🐻‍❄️ | Interactively view, search & filter a CSV using the [csvlens](https://github.com/YS-L/csvlens#csvlens) engine.
+| [luau](/src/cmd/luau.rs#L2) 👑✨<br>📇🌐🔣📚 ![CKAN](docs/images/ckan.png) | <a name="luau_deeplink"></a>Create multiple new computed columns, filter rows, compute aggregations and build complex data pipelines by executing a [Luau](https://luau-lang.org) [0.682](https://github.com/Roblox/luau/releases/tag/0.682) expression/script for every row of a CSV file ([sequential mode](https://github.com/dathere/qsv/blob/bb72c4ef369d192d85d8b7cc6e972c1b7df77635/tests/test_luau.rs#L254-L298)), or using [random access](https://www.webopedia.com/definitions/random-access/) with an index ([random access mode](https://github.com/dathere/qsv/blob/bb72c4ef369d192d85d8b7cc6e972c1b7df77635/tests/test_luau.rs#L367-L415)).<br>Can process a single Luau expression or [full-fledged data-wrangling scripts using lookup tables](https://github.com/dathere/qsv-lookup-tables#example) with discrete BEGIN, MAIN and END sections.<br> It is not just another qsv command, it is qsv's [Domain-specific Language](https://en.wikipedia.org/wiki/Domain-specific_language) (DSL) with [numerous qsv-specific helper functions](https://github.com/dathere/qsv/blob/113eee17b97882dc368b2e65fec52b86df09f78b/src/cmd/luau.rs#L1356-L2290) to build production data pipelines. |
 | [partition](/src/cmd/partition.rs#L2)<br>👆 | Partition a CSV based on a column value. |
 | [pivotp](/src/cmd/pivotp.rs#L2)✨<br>🚀🐻‍❄️🪄 | Pivot CSV data. Features "smart" aggregation auto-selection based on data type & stats. |
 | [pro](/src/cmd/pro.rs#L2) | Interact with the [qsv pro](https://qsvpro.dathere.com) API. |
-| [prompt](/src/cmd/prompt.rs#L2)✨ | Open a file dialog to either pick a file as input or save output to a file. |
+| [prompt](/src/cmd/prompt.rs#L2)✨<br>🐻‍❄️ | Open a file dialog to either pick a file as input or save output to a file. |
 | [pseudo](/src/cmd/pseudo.rs#L2)<br>🔣👆 | [Pseudonymise](https://en.wikipedia.org/wiki/Pseudonymization) the value of the given column by replacing them with an incremental identifier.  |
 | [py](/src/cmd/python.rs#L2)✨<br>📇🔣 | Create a new computed column or filter rows by evaluating a Python expression on every row of a CSV file. Python's [f-strings](https://www.freecodecamp.org/news/python-f-strings-tutorial-how-to-use-f-strings-for-string-formatting/) is particularly useful for extended formatting, [with the ability to evaluate Python expressions as well](https://github.com/dathere/qsv/blob/4cd00dca88addf0d287247fa27d40563b6d46985/src/cmd/python.rs#L23-L31). [Requires Python 3.8 or greater](https://github.com/dathere/qsv/blob/master/docs/INTERPRETERS.md#building-qsv-with-python-feature). |
 | [rename](/src/cmd/rename.rs#L2) |  Rename the columns of a CSV efficiently. |
 | [replace](/src/cmd/replace.rs#L2)<br>📇👆 | Replace CSV data using a regex. Applies the regex to each field individually. |
 | [reverse](/src/cmd/reverse.rs#L2)<br>📇🤯 | Reverse order of rows in a CSV. Unlike the `sort --reverse` command, it preserves the order of rows with the same key. If an index is present, it works with constant memory. Otherwise, it will load all the data into memory. |
-| <a name="safenames_deeplink"></a>[safenames](/src/cmd/safenames.rs#L2)<br>![CKAN](docs/images/ckan.png) | Modify headers of a CSV to only have ["safe" names](/src/cmd/safenames.rs#L5-L14) - guaranteed "database-ready"/"CKAN-ready" names.  |
+| [safenames](/src/cmd/safenames.rs#L2)<br>![CKAN](docs/images/ckan.png) | <a name="safenames_deeplink"></a>Modify headers of a CSV to only have ["safe" names](/src/cmd/safenames.rs#L5-L14) - guaranteed "database-ready"/"CKAN-ready" names.  |
 | [sample](/src/cmd/sample.rs#L2)<br>📇🌐🏎️ | Randomly draw rows (with optional seed) from a CSV using seven different sampling methods - [reservoir](https://en.wikipedia.org/wiki/Reservoir_sampling) (default), [indexed](https://en.wikipedia.org/wiki/Random_access), [bernoulli](https://en.wikipedia.org/wiki/Bernoulli_sampling), [systematic](https://en.wikipedia.org/wiki/Systematic_sampling), [stratified](https://en.wikipedia.org/wiki/Stratified_sampling), [weighted](https://doi.org/10.1016/j.ipl.2005.11.003) & [cluster sampling](https://en.wikipedia.org/wiki/Cluster_sampling). Supports sampling from CSVs on remote URLs. |
-| <a name="schema_deeplink"></a>[schema](/src/cmd/schema.rs#L2)<br>📇😣🏎️👆🪄 | Infer schema from CSV data, replete with data type & domain/range validation & output in [JSON Schema](https://json-schema.org/) format. Uses multithreading to go faster if an index is present. See [`validate`](#validate_deeplink) command to use the generated JSON Schema to validate if similar CSVs comply with the schema. |
+| [schema](/src/cmd/schema.rs#L2)<br>📇😣🏎️👆🪄🐻‍❄️ | <a name="schema_deeplink"></a>Infer either a [JSON Schema Validation Draft 2020-12](https://json-schema.org/draft/2020-12/json-schema-validation) or [Polars Schema](https://docs.pola.rs/user-guide/lazy/schemas/) from CSV data.<br>In JSON Schema Validation mode, it produces a `.schema.json` file replete with inferred data type & domain/range validation rules derived from [`stats`](#stats_deeplink). Uses multithreading to go faster if an index is present. See [`validate`](#validate_deeplink) command to use the generated JSON Schema to validate if similar CSVs comply with the schema.<br>With the `--polars` option, it produces a `.pschema.json` file that all polars commands (`sqlp`, `joinp` & `pivotp`) use to determine the data type of each column & to optimize performance.<br>Both schemas are editable and can be fine-tuned. For JSON Schema, to refine the inferred validation rules. For Polars Schema, to change the inferred Polars data types. |
 | [search](/src/cmd/search.rs#L2)<br>📇👆 | Run a regex over a CSV. Applies the regex to selected fields & shows only matching rows.  |
 | [searchset](/src/cmd/searchset.rs#L2)<br>📇👆 | _Run multiple regexes over a CSV in a single pass._ Applies the regexes to each field individually & shows only matching rows.  |
 | [select](/src/cmd/select.rs#L2)<br>👆 | Select, re-order, reverse, duplicate or drop columns.  |
 | [slice](/src/cmd/slice.rs#L2)<br>📇🏎️ | Slice rows from any part of a CSV. When an index is present, this only has to parse the rows in the slice (instead of all rows leading up to the start of the slice).  |
-| <a name="snappy_deeplink"></a>[snappy](/src/cmd/snappy.rs#L2)<br>🚀🌐 | Does streaming compression/decompression of the input using Google's [Snappy](https://github.com/google/snappy/blob/main/docs/README.md) framing format ([more info](#snappy-compressiondecompression)). |
+| [snappy](/src/cmd/snappy.rs#L2)<br>🚀🌐 | <a name="snappy_deeplink"></a>Does streaming compression/decompression of the input using Google's [Snappy](https://github.com/google/snappy/blob/main/docs/README.md) framing format ([more info](#snappy-compressiondecompression)). |
 | [sniff](/src/cmd/sniff.rs#L2)<br>📇🌐 ![CKAN](docs/images/ckan.png) | Quickly sniff & infer CSV metadata (delimiter, header row, preamble rows, quote character, flexible, is_utf8, average record length, number of records, content length & estimated number of records if sniffing a CSV on a URL, number of fields, field names & data types). It is also a general mime type detector. |
-| [sort](/src/cmd/sort.rs#L2)<br>🚀🤯👆 | Sorts CSV data in alphabetical (with case-insensitive option), numerical, reverse, unique or random (with optional seed) order (See also `extsort` & `sortcheck` commands).  |
+| [sort](/src/cmd/sort.rs#L2)<br>🚀🤯👆 | Sorts CSV data in [lexicographical](https://en.wikipedia.org/wiki/Lexicographic_order), [natural](https://en.wikipedia.org/wiki/Natural_sort_order), numerical, reverse, unique or random (with optional seed) order (Also see `extsort` & `sortcheck` commands).  |
 | [sortcheck](/src/cmd/sortcheck.rs#L2)<br>📇👆 | Check if a CSV is sorted. With the --json options, also retrieve record count, sort breaks & duplicate count. |
 | [split](/src/cmd/split.rs#L2)<br>📇🏎️ | Split one CSV file into many CSV files. It can split by number of rows, number of chunks or file size. Uses multithreading to go faster if an index is present when splitting by rows or chunks. |
-| [sqlp](/src/cmd/sqlp.rs#L2)✨<br>📇🚀🐻‍❄️🗄️🪄 | Run [Polars](https://pola.rs) SQL queries against several CSVs - converting queries to blazing-fast [LazyFrame](https://docs.pola.rs/user-guide/lazy/using/) expressions, processing larger than memory CSV files. Query results can be saved in CSV, JSON, JSONL, Parquet, Apache Arrow IPC and Apache Avro formats. Supports automatic decompression of gzip, zstd and zlib compressed input files using the `read_csv()` table function. |
-| <a name="stats_deeplink"></a>[stats](/src/cmd/stats.rs#L2)<br>📇🤯🏎️👆🪄 | Compute [summary statistics](https://en.wikipedia.org/wiki/Summary_statistics) (sum, min/max/range, sort order/sortiness, min/max/sum/avg length, mean, standard error of the mean (SEM), geometric/harmonic means, stddev, variance, Coefficient of Variation (CV), nullcount, max precision, sparsity, quartiles, Interquartile Range (IQR), lower/upper fences, skewness, median, mode/s, antimode/s, cardinality & uniqueness ratio) & make GUARANTEED data type inferences (Null, String, Float, Integer, Date, DateTime, Boolean) for each column in a CSV ([more info](https://github.com/dathere/qsv/wiki/Supplemental#stats-command-output-explanation)).<br>Uses multithreading to go faster if an index is present (with an index, can compile "streaming" stats on NYC's 311 data (15gb, 28m rows) in less than 7.3 seconds!). |
+| [sqlp](/src/cmd/sqlp.rs#L2)✨<br>📇🚀🐻‍❄️🗄️🪄 | Run [Polars](https://pola.rs) SQL (a PostgreSQL dialect) queries against several CSVs, Parquet, JSONL and Arrow files - converting queries to blazing-fast Polars [LazyFrame](https://docs.pola.rs/user-guide/lazy/) expressions, processing larger than memory CSV files. Query results can be saved in CSV, JSON, JSONL, Parquet, Apache Arrow IPC and Apache Avro formats. |
+| [stats](/src/cmd/stats.rs#L2)<br>📇🤯🏎️👆🪄 | <a name="stats_deeplink"></a>Compute [summary statistics](https://en.wikipedia.org/wiki/Summary_statistics) (sum, min/max/range, sort order/sortiness, min/max/sum/avg length, mean, standard error of the mean (SEM), geometric/harmonic means, stddev, variance, Coefficient of Variation (CV), nullcount, max precision, sparsity, quartiles, Interquartile Range (IQR), lower/upper fences, skewness, median, mode/s, antimode/s, cardinality & uniqueness ratio) & make GUARANTEED data type inferences (Null, String, Float, Integer, Date, DateTime, Boolean) for each column in a CSV ([more info](https://github.com/dathere/qsv/wiki/Supplemental#stats-command-output-explanation)).<br>Uses multithreading to go faster if an index is present (with an index, can compile "streaming" stats on NYC's 311 data (15gb, 28m rows) in less than 7.3 seconds!). |
 | [table](/src/cmd/table.rs#L2)<br>🤯 | Show aligned output of a CSV using [elastic tabstops](https://github.com/BurntSushi/tabwriter). To interactively view a CSV, use the `lens` command. |
 | [template](/src/cmd/template.rs#L2)<br>📇🚀🔣📚![CKAN](docs/images/ckan.png) | Renders a template using CSV data with the [MiniJinja](https://docs.rs/minijinja/latest/minijinja/) template engine ([Example](https://github.com/dathere/qsv/blob/4645ec07b5befe3b0c0e49bf0f547315d0d7514b/src/cmd/template.rs#L18-L44)). |
-| [to](/src/cmd/to.rs#L2)✨<br>🚀🗄️ | Convert CSV files to [PostgreSQL](https://www.postgresql.org), [SQLite](https://www.sqlite.org/index.html), XLSX and [Data Package](https://datahub.io/docs/data-packages/tabular). |
+| [to](/src/cmd/to.rs#L2)✨<br>🚀🗄️ | Convert CSV files to [Parquet](https://parquet.apache.org), [PostgreSQL](https://www.postgresql.org), [SQLite](https://www.sqlite.org/index.html), Excel (XLSX), [LibreOffice Calc](https://www.libreoffice.org/discover/calc/) (ODS) and [Data Package](https://datahub.io/docs/data-packages/tabular). |
 | [tojsonl](/src/cmd/tojsonl.rs#L3)<br>📇😣🚀🔣🪄 | Smartly converts CSV to a newline-delimited JSON ([JSONL](https://jsonlines.org/)/[NDJSON](http://ndjson.org/)). By scanning the CSV first, it "smartly" infers the appropriate JSON data type for each column. See `jsonl` command to convert JSONL to CSV. |
 | [transpose](/src/cmd/transpose.rs#L2)<br>🤯 | Transpose rows/columns of a CSV.  |
-| <a name="validate_deeplink"></a>[validate](/src/cmd/validate.rs#L2)<br>📇🚀🌐📚![CKAN](docs/images/ckan.png) | Validate CSV data [_blazingly-fast_](https://github.com/Stranger6667/jsonschema-rs?tab=readme-ov-file#performance "using jsonschema-rs - the fastest JSON Schema validator for Rust") using [JSON Schema Validation (Draft 2020-12)](https://json-schema.org/draft/2020-12/json-schema-validation.html) (e.g. _up to 780,031 rows/second_[^1] using [NYC's 311 schema](https://github.com/dathere/qsv/blob/master/resources/test/311_Service_Requests_from_2010_to_Present-2022-03-04.csv.schema.json) generated by the [`schema`](#schema_deeplink) command) & put invalid records into a separate file with an accompanying detailed validation error report file.<br>Supports a custom `currency` format with [ISO-4217](https://en.wikipedia.org/wiki/ISO_4217) validation, and a custom `dynamicEnum` keyword that supports enum validation against a CSV on the filesystem, or on a URL (http/https/ckan and dathere URL schemes supported).<br>If no JSON schema file is provided, validates if a CSV conforms to the [RFC 4180 standard](#rfc-4180-csv-standard) and is UTF-8 encoded. |
+| [validate](/src/cmd/validate.rs#L2)<br>📇🚀🌐📚![CKAN](docs/images/ckan.png) | <a name="validate_deeplink"></a>Validate CSV data [_blazingly-fast_](https://github.com/Stranger6667/jsonschema-rs?tab=readme-ov-file#performance "using jsonschema-rs - the fastest JSON Schema validator for Rust") using [JSON Schema Validation (Draft 2020-12)](https://json-schema.org/draft/2020-12/json-schema-validation.html) (e.g. _up to 780,031 rows/second_[^1] using [NYC's 311 schema](https://github.com/dathere/qsv/blob/master/resources/test/311_Service_Requests_from_2010_to_Present-2022-03-04.csv.schema.json) generated by the [`schema`](#schema_deeplink) command) & put invalid records into a separate file along with a detailed validation error report.<br><br>Supports several custom JSON Schema formats & keywords:<br> * `currency` custom format with [ISO-4217](https://en.wikipedia.org/wiki/ISO_4217) validation<br> * `dynamicEnum` custom keyword that supports enum validation against a CSV on the filesystem or a URL (http/https/ckan & dathere URL schemes supported)<br>* `uniqueCombinedWith` custom keyword to validate uniqueness across multiple columns for composite key validation.<br><br>If no JSON schema file is provided, validates if a CSV conforms to the [RFC 4180 standard](#rfc-4180-csv-standard) and is UTF-8 encoded. |
 
 <div style="text-align: right"><sub><sup>Performance metrics compiled on an M2 Pro 12-core Mac Mini with 32gb RAM</sup></sub></div>
 
@@ -100,7 +101,7 @@
 😣: uses additional memory proportional to the cardinality of the columns in the CSV.  
 🧠: expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.  
 🗄️: [Extended input support](#extended-input-support).  
-🐻‍❄️: command powered by [![polars 0.46.0](https://img.shields.io/badge/polars-0.46.0-blue) at the py-1.26.0 tag](https://github.com/pola-rs/polars/releases/tag/py-1.26.0).  
+🐻‍❄️: command powered/accelerated by [![polars 0.49.1](https://img.shields.io/badge/polars-0.49.1-blue)](https://github.com/pola-rs/polars/releases/tag/rs-0.49.0) vectorized query engine.  
 🤖: command uses Natural Language Processing & General AI techniques.  
 🏎️: multithreaded and/or faster when an index (📇) is available.  
 🚀: multithreaded even without an index.  
@@ -109,14 +110,16 @@
 🔣: requires UTF-8 encoded input.  
 👆: has powerful column selector support. See [`select`](https://github.com/dathere/qsv/blob/master/src/cmd/select.rs#L2) for syntax.  
 🪄: "automagical" commands that uses stats and/or frequency tables to work "smarter" & "faster".  
-📚: has lookup table support, enabling runtime "lookups" against local or remote reference CSVs.
+📚: has lookup table support, enabling runtime "lookups" against local or remote reference CSVs.  
+🌎: has geospatial capabilities.
 
 [^1]: see [`validate_index` benchmark](https://qsv.dathere.com/benchmarks)
 
 ## Installation Options
 
-### Option 0: TLDR Quick Install
-qsv's big brother - [qsv pro](https://qsvpro.dathere.com) is available for download from its website and on the [Microsoft Store](https://apps.microsoft.com/detail/xpffdj3f1jsztf?mode=full). Apart from a Graphical User Interface, it's superpowered with additional features and capabilities - an API, [CKAN](https://ckan.org) integration, a Natural Language interface, no false-positive Windows Defender warnings and more!
+### Option 0: qsv pro
+
+qsv's big brother - [qsv pro](https://qsvpro.dathere.com) is additionally available for download from its website and on the [Microsoft Store](https://apps.microsoft.com/detail/xpffdj3f1jsztf?mode=full). Apart from a Graphical User Interface, it's superpowered with additional features and capabilities - an API, [CKAN](https://ckan.org) integration, a Natural Language interface, no false-positive Windows Defender warnings and more!
 
 <a href="https://apps.microsoft.com/detail/xpffdj3f1jsztf?mode=full">
 <img
@@ -125,11 +128,23 @@ width="200"  /></a>
 
 ### Option 1: Download Prebuilt Binaries
 
-Full-featured prebuilt [binary variants](#variants) of the latest qsv version for Linux, macOS & Windows are available [for download](https://github.com/dathere/qsv/releases/latest), including binaries compiled with [Rust Nightly](https://stackoverflow.com/questions/70745970/rust-nightly-vs-beta-version) ([more info](https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#nightly-release-builds)).
+Full-featured prebuilt [binary variants](#variants) of the latest qsv version for Linux, macOS & Windows are available [for download](https://github.com/dathere/qsv/releases/latest), including binaries compiled with [Rust Nightly](https://stackoverflow.com/questions/70745970/rust-nightly-vs-beta-version) ([more info](https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#nightly-release-builds)). You may click a badge below based on your platform to download a ZIP with pre-built binaries.
+
+<div style="display: flex; gap: 1rem;">
+<a target="_blank" href="https://qsv.dathere.com/download/linux-x86_64-gnu"><img src="https://github.com/user-attachments/assets/f71812ec-30bc-4bfe-a8a3-a639d6a6c5aa" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/linux-aarch64-gnu"><img src="https://github.com/user-attachments/assets/80dccb2a-c0e5-4f85-a4e2-282d7e84d03f" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/linux-x86_64-musl"><img src="https://github.com/user-attachments/assets/aa2ee7ec-c183-4426-87e6-c2e9c136b69f" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/macos-silicon"><img src="https://github.com/user-attachments/assets/6b9534ae-ea09-44f9-b34a-259a3d9bcfa1" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/macos-intel"><img src="https://github.com/user-attachments/assets/79a25198-09b0-4c41-9ed7-2098da163d8b" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/windows-msvc"><img src="https://github.com/user-attachments/assets/d4418a34-541a-4a9a-8f29-da25d9ff3d7f" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/windows-gnu"><img src="https://github.com/user-attachments/assets/771660f3-e898-4ee2-acb5-e5f268434752" width="200" /></a>
+</div>
 
 These prebuilt binaries are also built with CPU optimizations enabled for x86_64 (e.g. [SSE4.2](https://en.wikipedia.org/wiki/SSE4#SSE4.2), [AVX2](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#Advanced_Vector_Extensions_2), [AVX512](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#Advanced_Vector_Extensions_512), etc. on Intel and AMD processors) and Apple Silicon processors ([ARM64 SIMD NEON](https://eclecticlight.co/2021/08/06/accelerating-the-m1-mac-an-introduction-to-simd/)) for even more performance gains. This may prevent some older CPUs from running qsv. If so, "portable" binaries (all CPU optimizations disabled) are also included in the release zip archives (qsv with a "p" suffix - e.g. `qsvp`, `qsvplite` `qsvpdp`).
 
-For Windows, an MSI Installer wrapping the x86_64-pc-windows-msvc build is also available for download.
+For Windows, an MSI "Easy installer" for the x86_64 MSVC `qsvp` binary is also available. After downloading and installing the Easy installer, launch the Easy installer and click "Install qsv" to download the latest `qsvp` pre-built binary to a folder that is added to your `PATH`. Afterwards qsv should be installed and you may launch a new terminal to use qsv.
+
+<a download href="https://github.com/dathere/qsv-easy-windows-installer/releases/download/v1.1.1/qsv-easy-installer_1.1.1_x64_en-US.msi"><img src="https://github.com/user-attachments/assets/ca24398b-0aaf-40be-abe0-c79a2b2da520" width="200" /></a>
 
 For macOS, ["ad-hoc" signatures](https://users.rust-lang.org/t/distributing-cli-apps-on-macos/70223) are used to sign our binaries, so you will need to [set appropriate Gatekeeper security settings](https://support.apple.com/en-us/HT202491) or run the following command to remove the quarantine attribute from qsv before you run it for the first time:
 
@@ -140,7 +155,7 @@ xattr -d com.apple.quarantine qsv
 
 An additional benefit of using the prebuilt binaries is that they have the `self_update` feature enabled, allowing you to quickly update qsv to the latest version with a simple `qsv --update`. For further security, the `self_update` feature only fetches [releases from this GitHub repo](https://github.com/dathere/qsv/releases) and automatically verifies the signature of the downloaded zip archive before installing the update.
 
-> **_NOTE:_** The `luau` feature is not available in `musl` prebuilt binaries[^3].
+> ℹ️ **_NOTE:_** The `luau` feature is not available in `musl` prebuilt binaries[^3].
 
 #### Manually verifying the Integrity of the Prebuilt Binaries Zip Archives
 All prebuilt binaries zip archives are signed with [zipsign](https://github.com/Kijewski/zipsign#zipsign) with the following public key [qsv-zipsign-public.key](https://github.com/dathere/qsv/raw/master/src/qsv-zipsign-public.key). To verify the integrity of the downloaded zip archives:
@@ -181,6 +196,9 @@ scoop install qsv
 
 # Void Linux (https://voidlinux.org/packages/?arch=x86_64&q=qsv)
 sudo xbps-install qsv
+
+# Conda-forge (https://anaconda.org/conda-forge/qsv)
+conda install conda-forge::qsv
 ```
 
 Note that qsv provided by these package managers/distros enable different features (Homebrew, for instance, only enables the `apply` and `luau` features. However, it does automatically install shell completion for `bash`, `fish` and `zsh` shells).
@@ -222,6 +240,8 @@ To install different [variants](#variants) and enable optional features, use car
 cargo install qsv --locked --bin qsv --features feature_capable,apply,fetch,foreach,geocode,luau,polars,python,self_update,to,ui
 # or shorthand
 cargo install qsv --locked --bin qsv -F all_features
+# enable all CPU optimizations for the current CPU (warning: creates non-portable binary)
+CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo install qsv --locked --bin qsv -F all_features
 
 # or enable only the apply and polars features
 cargo install qsv --locked --bin qsv -F feature_capable,apply,polars
@@ -230,10 +250,10 @@ cargo install qsv --locked --bin qsv -F feature_capable,apply,polars
 cargo install qsv --locked --bin qsvlite -F lite
 
 # or to install qsvdp
-cargo install qsv --locked --bin qsvdp -F datapusher_plus,luau
+cargo install qsv --locked --bin qsvdp -F datapusher_plus
 ```
 
-> **_NOTE:_** if you get compilation errors when running `cargo install`, use Option 4 to compile from source using `cargo build`. The errors are usually due to `cargo install` only using the latest release version of qsv's dependencies, and ignoring `patch.crates-io` entries in our Cargo.toml.
+> ℹ️ **_NOTE:_** if you get compilation errors when running `cargo install`, use Option 4 to compile from source using `cargo build`. The errors are usually due to `cargo install` only using the latest release version of qsv's dependencies, and ignoring `patch.crates-io` entries in our Cargo.toml.
 
 ### Option 4: Compile from Source
 
@@ -254,6 +274,8 @@ To compile different [variants](#variants) and enable optional [features](#featu
 cargo build --release --locked --bin qsv --features feature_capable,apply,fetch,foreach,geocode,luau,polars,python,self_update,to,ui
 # shorthand
 cargo build --release --locked --bin qsv -F all_features
+# enable all CPU optimizations for the current CPU (warning: creates non-portable binary)
+CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo build --release --locked --bin qsv -F all_features
 
 # or build qsv with only the fetch and foreach features enabled
 cargo build --release --locked --bin qsv -F feature_capable,fetch,foreach
@@ -262,10 +284,10 @@ cargo build --release --locked --bin qsv -F feature_capable,fetch,foreach
 cargo build --release --locked --bin qsvlite -F lite
 
 # for qsvdp
-cargo build --release --locked --bin qsvdp -F datapusher_plus,luau
+cargo build --release --locked --bin qsvdp -F datapusher_plus
 ```
 
-> **_NOTE:_** To build with Rust nightly, see [Nightly Release Builds](docs/PERFORMANCE.md#nightly-release-builds).
+> ℹ️ **_NOTE:_** To build with Rust nightly, see [Nightly Release Builds](docs/PERFORMANCE.md#nightly-release-builds).
 The `feature_capable`, `lite` and `datapusher_plus` are MUTUALLY EXCLUSIVE features. See [Special Build Features](docs/FEATURES.md#special-features-for-building-qsv-binary-variants) for more info.
 
 ### Variants
@@ -273,29 +295,41 @@ The `feature_capable`, `lite` and `datapusher_plus` are MUTUALLY EXCLUSIVE featu
 There are four binary variants of qsv:
 
 * `qsv` - [feature](#feature-flags)-capable(✨), with the [prebuilt binaries](https://github.com/dathere/qsv/releases/latest) enabling all applicable features except Python [^3]
-* `qsvpy` - same as `qsv` but with the Python feature enabled. Three subvariants are available - qsvpy310, qsvpy311 & qsvpy312 - which are compiled with the latest patch version of Python 3.10, 3.11 & 3.12 respectively.
+* `qsvpy` - same as `qsv` but with the Python feature enabled. Four subvariants are available - qsvpy310, qsvpy311, qsvpy312 & qsvpy313 - which are compiled with the latest patch version of Python 3.10, 3.11, 3.12 & 3.13 respectively. We need to have a binary for each Python version as Python is dynamically linked ([more info](docs/INTERPRETERS.md#building-qsv-with-python-feature)).
 * `qsvlite` - all features disabled (~13% of the size of `qsv`)
 * `qsvdp` - optimized for use with [DataPusher+](https://github.com/dathere/datapusher-plus) with only DataPusher+ relevant commands; an embedded [`luau`](#luau_deeplink) interpreter; [`applydp`](#applydp_deeplink), a slimmed-down version of the `apply` feature; the `--progressbar` option disabled; and the self-update only checking for new releases, requiring an explicit `--update` (~12% of the the size of `qsv`).
 
-> **_NOTE:_** There are "portable" subvariants of qsv available with the "p" suffix - `qsvp`, `qsvplite` and `qsvpdp`. These subvariants are compiled without any CPU features enabled. Use these subvariants if you're getting "Illegal instruction" errors when running the regular qsv binaries.
+> ℹ️ **_NOTE:_** There are "portable" subvariants of qsv available with the "p" suffix - `qsvp`, `qsvplite` and `qsvpdp`. These subvariants are compiled without any CPU features enabled. Use these subvariants if you have an old CPU architecture or getting "Illegal instruction" errors when running the regular qsv binaries.
 
 [^3]: The `luau`feature is NOT enabled by default on the prebuilt binaries for musl platforms. This is because we cross-compile using GitHub Action Runners using Ubuntu 20.04 LTS with the [musl libc](https://musl.libc.org/) toolchain. However, Ubuntu is a glibc-based, not a musl-based distro. We get around this by [cross-compiling](https://blog.logrocket.com/guide-cross-compilation-rust/).   
 Unfortunately, this prevents us from cross-compiling binaries with the `luau` feature enabled as doing so requires statically linking the host OS libc library. If you need the `luau` feature on `musl`, you will need to compile from source on your own musl-based Linux Distro (e.g. Alpine, Void, [etc.](https://wiki.musl-libc.org/projects-using-musl)).  
 
 ### Shell Completion
-qsv has extensive, extendable [shell completion](https://en.wikipedia.org/wiki/Command-line_completion) support. It currently supports the following shells: `bash`, `zsh`, `powershell`, `fish`, `nushell`, `fig` & `elvish`.
+qsv has extensive, extendable [shell completion](https://en.wikipedia.org/wiki/Command-line_completion) support. It currently supports the following shells: `bash`, `zsh`, `powershell`, `fish`, `nushell`, `fig` & `elvish`. You may download a shell completions script for your shell by clicking one of the badges below:
 
-To enable shell completion, see the [Shell Completion](contrib/completions/README.md) documentation. If you're using Bash, you can also follow the step-by-step tutorial at [100.dathere.com](https://100.dathere.com/exercises-setup.html#optional-set-up-qsv-completions).  
+<div style="display: flex; gap: 1rem;">
+<a download href="https://qsv.dathere.com/download/bash-shell"><img src="https://github.com/user-attachments/assets/3e35edf8-27d0-485d-84b1-36d8f1ef7075" width="140" /></a>
+<a download target="_blank" href="https://qsv.dathere.com/download/powershell-shell"><img src="https://github.com/user-attachments/assets/738358c8-c925-4778-b9c1-ef4ae1f2c52d" width="140" /></a>
+<a download target="_blank" href="https://qsv.dathere.com/download/zsh-shell"><img src="https://github.com/user-attachments/assets/a633e577-143c-47d3-bb5a-c4ca102bc007" width="140" /></a>
+<a download target="_blank" href="https://qsv.dathere.com/download/fish-shell"><img src="https://github.com/user-attachments/assets/cd24def7-bb75-4842-aa74-f92b5bc659ed" width="140" /></a>
+<a download target="_blank" href="https://qsv.dathere.com/download/nushell-shell"><img src="https://github.com/user-attachments/assets/fa76664e-8e3b-4663-bf16-ad489a42bdef" width="140" /></a>
+<a download target="_blank" href="https://qsv.dathere.com/download/fig-shell" width="160" /><img src="https://github.com/user-attachments/assets/7151e8ac-903b-4fa4-b63b-aceaaa0e2a9e" width="140" /></a>
+<a download target="_blank" href="https://qsv.dathere.com/download/elvish-shell"><img src="https://github.com/user-attachments/assets/9d2aa23e-73a7-4f77-8ab2-f168bf8ca216" width="140" /></a>
+</div>
+
+To customize shell completions, see the [Shell Completion](contrib/completions/README.md) documentation. If you're using Bash, you can also follow the step-by-step tutorial at [100.dathere.com](https://100.dathere.com/exercises-setup.html#optional-set-up-qsv-completions) to learn how to enable the Bash shell completions.
 
 ## Regular Expression Syntax
 
-The `--select` option and several commands (`apply`, `applydp`, `datefmt`, `exclude`, `fetchpost`, `replace`, `schema`, `search`, `searchset`, `select`, `sqlp` & `stats`) allow the user to specify regular expressions. We use the [`regex`](https://docs.rs/regex) crate to parse, compile and execute these expressions. [^4]
+The `--select` option and several commands (`apply`, `applydp`, `datefmt`, `exclude`, `fetchpost`, `replace`, `schema`, `search`, `searchset`, `select`, `sqlp`, `stats` & `validate`) allow the user to specify regular expressions. We use the [`regex`](https://docs.rs/regex) crate to parse, compile and execute these expressions. [^4]
 
 [^4]: This is the same regex engine used by [`ripgrep`](https://github.com/BurntSushi/ripgrep#ripgrep-rg) - the [blazingly fast grep replacement](https://blog.burntsushi.net/ripgrep/) that powers Visual Studio's [magical](https://lab.cccb.org/en/arthur-c-clarke-any-sufficiently-advanced-technology-is-indistinguishable-from-magic/) ["Find in Files"](https://github.com/microsoft/vscode-ripgrep) feature.
 
 Its syntax can be found [here](https://docs.rs/regex/latest/regex/#syntax) and *"is similar to other regex engines, but it lacks several features that are not known how to implement efficiently. This includes, but is not limited to, look-around and backreferences. In exchange, all regex searches in this crate have worst case O(m * n) time complexity, where m is proportional to the size of the regex and n is proportional to the size of the string being searched."*
 
 If you want to test your regular expressions, [regex101](https://regex101.com) supports the syntax used by the `regex` crate. Just select the "Rust" flavor.
+
+> JSON SCHEMA VALIDATION REGEX NOTE: The `schema` command, when inferring a JSON Schema Validation file, will derive a regex expression for the selected columns when the `--pattern-columns` option is used. Though the derived regex is guaranteed to work, it may not be the most efficient.<br/>Before using the generated JSON Schema file in production with the `validate` command, it is recommended that users inspect and optimize the derived regex as required.<br/>While doing so, note that the `validate` command in JSON Schema Validation mode, can also support "fancy" regex expressions with look-around and backreferences using the `--fancy-regex` option.
 
 ## File formats
 
@@ -318,13 +352,15 @@ The `excel` command recognizes Excel & Open Document Spreadsheet(ODS) files (`.x
 
 Speaking of Excel, if you're having trouble opening qsv-generated CSV files in Excel, set the QSV_OUTPUT_BOM environment variable to add a [Byte Order Mark](https://en.wikipedia.org/wiki/Byte_order_mark) to the beginning of the generated CSV file. This is a workaround for [Excel's UTF-8 encoding detection bug](https://stackoverflow.com/questions/155097/microsoft-excel-mangles-diacritics-in-csv-files).
 
-The `to` command converts CSVs to `.xlsx`, [Parquet](https://parquet.apache.org) & [Data Package](https://datahub.io/docs/data-packages/tabular) files, and populates [PostgreSQL](https://www.postgresql.org) and [SQLite](https://www.sqlite.org/index.html) databases.
+The `to` command converts CSVs to Excel `.xlsx`, LibreOffice/OpenOffice Calc `.ods`, [Parquet](https://parquet.apache.org) & [Data Package](https://datahub.io/docs/data-packages/tabular) formats, and populates [PostgreSQL](https://www.postgresql.org) and [SQLite](https://www.sqlite.org/index.html) databases.
 
 The `sqlp` command returns query results in CSV, JSON, JSONL, Parquet, [Apache Arrow IPC](https://arrow.apache.org/docs/format/Columnar.html#ipc-file-format) & [Apache AVRO](https://avro.apache.org) formats. Polars SQL also supports reading external files directly in various formats with its `read_csv`, `read_ndjson`, `read_parquet` & `read_ipc` [table functions](https://github.com/pola-rs/polars/blob/91a423fea2dc067837db65c3608e3cbc1112a6fc/crates/polars-sql/src/table_functions.rs#L18-L43).
 
 The `sniff` command can also detect the mime type of any file with the `--no-infer` or `--just-mime` options, may it be local or remote (http and https schemes supported).
 It can detect more than 130 file formats, including MS Office/Open Document files, JSON, XML, PDF, PNG, JPEG and specialized geospatial formats like GPX, GML, KML, TML, TMX, TSX, TTML.
 Click [here](https://docs.rs/file-format/latest/file_format/#reader-features) for a complete list.
+
+> ℹ️ **_NOTE:_** When the `polars` feature is enabled, qsv can also natively read `.parquet`, `.ipc`, `.arrow`, `.json` & `.jsonl` files.
 
 ### Extended Input Support
 
@@ -355,7 +391,16 @@ Using the `snappy` command, we can compress NYC's 311 data (15gb, 28m rows) to 4
 
 Compare that to [zip 3.0](https://infozip.sourceforge.net/Zip.html), which compressed the same file to 2.9 gb in _248.3 seconds on the same machine - 43x slower at 0.06 gb/sec_ with a 0.19 (5.17:1) compression ratio - for just an additional 14% (2.45 gb) of saved space. zip also took 4.3x longer to roundtrip decompress the same file in _72 seconds_ - _0.20 gb/sec_.
 
-> **_NOTE:_** In addition to `snappy` support, the `sqlp` command also supports automatic decompression of gzip, zstd and zlib compressed input files using the [`read_csv()` table function](https://github.com/dathere/qsv/blob/aa3b20f8ba3ae41b02a3c5d445092571f064b90d/src/cmd/sqlp.rs#L120-L130). It also supports automatic compression of output files when using the Arrow, Avro and Parquet output formats (using the [`--format`](https://github.com/dathere/qsv/blob/aa3b20f8ba3ae41b02a3c5d445092571f064b90d/src/cmd/sqlp.rs#L178-L185) and [`--compression`](https://github.com/dathere/qsv/blob/aa3b20f8ba3ae41b02a3c5d445092571f064b90d/src/cmd/sqlp.rs#L246-L261) options).
+> ℹ️ **_NOTE:_** qsv has additional compression support beyond Snappy:
+>
+> The `sqlp` command can:
+> - Automatically decompress gzip, zstd and zlib compressed input files
+> - Automatically compress output files when using Arrow, Avro and Parquet formats (via `--format` and `--compression` options)
+>
+> When the `polars` feature is enabled, qsv can automatically decompress these compressed file formats:
+> - CSV: `.csv.gz`, `.csv.zst`, `.csv.zlib`
+> - TSV/TAB: `.tsv.gz`, `.tsv.zst`, `.tsv.zlib`; `.tab.gz`, `.tab.zst`, `.tab.zlib`  
+> - SSV: `.ssv.gz`, `.ssv.zst`, `.ssv.zlib`
 
 ## RFC 4180 CSV Standard
 
@@ -440,9 +485,9 @@ Luau will also serve as the backbone of a whole library of **qsv recipes** - reu
 * **As Portable as Possible** - qsv is designed to be portable, with installers on several platforms with an integrated self-update mechanism. In preference order, it supports Linux, macOS and Windows. See [Installation Options](#installation-options) for more info.
 * **As Easy to Use as Possible** - qsv is designed to be easy to use. As easy-to-use that is,
  as command line interfaces go :shrug:. Its commands have numerous options but have sensible defaults. The usage text is written for a data analyst audience, not developers; and there are numerous examples in the usage text, with the tests doubling as examples as well. With [qsv pro](https://qsvpro.dathere.com), it has much expanded functionality while being easier to use with its Graphical User Interface.
-* **As Secure as Possible** - qsv is designed to be secure. It has no external runtime dependencies, is [written](https://aws.amazon.com/blogs/opensource/why-aws-loves-rust-and-how-wed-like-to-help/) [in](https://msrc.microsoft.com/blog/2019/07/why-rust-for-safe-systems-programming/) [Rust](https://opensource.googleblog.com/2023/06/rust-fact-vs-fiction-5-insights-from-googles-rust-journey-2022.html), and it's codebase is automatically audited for security vulnerabilities with automated [DevSkim](https://github.com/microsoft/DevSkim#devskim), ["cargo audit"](https://rustsec.org) and [Codacy](https://app.codacy.com/gh/dathere/qsv/dashboard) Github Actions workflows.  
+* **As Secure as Possible** - qsv is designed to be secure. It has no external runtime dependencies, is [written](https://aws.amazon.com/blogs/opensource/why-aws-loves-rust-and-how-wed-like-to-help/) [in](https://msrc.microsoft.com/blog/2019/07/why-rust-for-safe-systems-programming/) [Rust](https://opensource.googleblog.com/2023/06/rust-fact-vs-fiction-5-insights-from-googles-rust-journey-2022.html), and its codebase is automatically audited for security vulnerabilities with automated [DevSkim](https://github.com/microsoft/DevSkim#devskim), ["cargo audit"](https://rustsec.org) and [Codacy](https://app.codacy.com/gh/dathere/qsv/dashboard) Github Actions workflows.  
 It uses the latest stable Rust version, with an aggressive MSRV policy and the latest version of all its dependencies.
-It has an extensive test suite with ~1,800 tests, including several [property tests](https://medium.com/criteo-engineering/introduction-to-property-based-testing-f5236229d237) which [randomly generate](https://github.com/BurntSushi/quickcheck#quickcheck) parameters for oft-used commands.   
+It has an extensive test suite with ~1,980 tests, including several [property tests](https://medium.com/criteo-engineering/introduction-to-property-based-testing-f5236229d237) which [randomly generate](https://github.com/BurntSushi/quickcheck#quickcheck) parameters for oft-used commands.   
 Its prebuilt binary archives are [zipsigned](https://github.com/Kijewski/zipsign#zipsign), so you can [verify their integrity](#verifying-the-integrity-of-the-prebuilt-binaries-zip-archives). Its self-update mechanism automatically verifies the integrity of the prebuilt binaries archive before applying an update.
 See [Security](docs/SECURITY.md) for more info.
 * **As Easy to Contribute to as Possible** - qsv is designed to be easy to contribute to, with a focus on maintainability. It's modular architecture allows the easy addition of self-contained commands gated by feature flags, the source code is heavily commented, the usage text is embedded, and there are helper functions that make it easy to create additional commands and supporting tests. See [Features](docs/FEATURES.md) and [Contributing](CONTRIBUTING.md) for more info.
@@ -455,7 +500,7 @@ It can process well-formed CSVs in _any_ language so long as its UTF-8 encoded. 
 Finally, though the default Geonames index of the `geocode` command is English-only, the index can be rebuilt with the `geocode index-update` subcommand with the `--languages` option to return place names in multiple languages ([with support for 254 languages](http://download.geonames.org/export/dump/alternatenames/)).
 
 ## Testing
-qsv has ~1,800 tests in the [tests](https://github.com/dathere/qsv/tree/master/tests) directory.
+qsv has ~1,980 tests in the [tests](https://github.com/dathere/qsv/tree/master/tests) directory.
 Each command has its own test suite in a separate file with the convention `test_<COMMAND>.rs`.
 Apart from preventing regressions, the tests also serve as good illustrative examples, and are often linked from the usage text of each corresponding command.
 
@@ -471,7 +516,7 @@ cargo test --features lite
 cargo test stats --features lite
 
 # to test qsvdp
-cargo test --features datapusher_plus,luau
+cargo test --features datapusher_plus
 
 # to test a specific command
 # here we test only stats and use the
@@ -501,7 +546,7 @@ Dual-licensed under MIT or the [UNLICENSE](https://unlicense.org).
 
 ## Origins
 
-qsv is a fork of the popular [xsv](https://github.com/BurntSushi/xsv) utility, merging several pending PRs [since xsv 0.13.0's May 2018 release](https://github.com/BurntSushi/xsv/issues/267). On top of xsv's 20 commands, it adds numerous new features; 44 additional commands; 4 `apply` subcommands & 38 operations; 4 `to` subcommands; 3 `cat` subcommands; 7 `geocode` subcommands & 4 index operations; and 4 `snappy` subcommands.
+qsv is a fork of the popular [xsv](https://github.com/BurntSushi/xsv) utility, merging several pending PRs [since xsv 0.13.0's May 2018 release](https://github.com/BurntSushi/xsv/issues/267). On top of xsv's 20 commands, it adds numerous new features; 45 additional commands; 4 `apply` subcommands & 38 operations; 4 `to` subcommands; 3 `cat` subcommands; 7 `geocode` subcommands & 4 index operations; and 4 `snappy` subcommands.
 See [FAQ](https://github.com/dathere/qsv/discussions/categories/faq) for more details.
 
 ## Sponsor

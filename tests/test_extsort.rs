@@ -22,7 +22,7 @@ fn extsort_linemode() {
     let expected_csv = wrk.load_test_resource("adur-public-toilets-sorted.csv");
     wrk.create_from_string("adur-public-toilets-sorted.csv", &expected_csv);
 
-    similar_asserts::assert_eq!(dos2unix(&sorted_output), dos2unix(&expected_csv));
+    assert_eq!(dos2unix(&sorted_output), dos2unix(&expected_csv));
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn extsort_csvmode() {
     let expected_csv = wrk.load_test_resource("adur-public-toilets-extsorted-csvmode.csv");
     wrk.create_from_string("adur-public-toilets-extsorted-csvmode.csv", &expected_csv);
 
-    similar_asserts::assert_eq!(dos2unix(&sorted_output), dos2unix(&expected_csv));
+    assert_eq!(dos2unix(&sorted_output), dos2unix(&expected_csv));
 }
 
 #[test]
@@ -112,5 +112,5 @@ fn extsort_issue_2391() {
         svec!["272", "139284", "9730000630075"],
         svec!["273", "139285", "9730000630075"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

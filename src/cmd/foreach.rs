@@ -119,10 +119,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // splitter_pattern gets all the arguments to the command as tokens.
     // The regular expression matches any sequence of characters that consists of one or more word
-    // characters (`a-z`, `A-Z`, `0-9`, `_`, `.`, `+`, `-`), or any of the following three types of
-    // quoted strings: double-quoted strings ("..."), single-quoted strings ('...'), or
+    // characters (`a-z`, `A-Z`, `0-9`, `_`, `.`, `+`, `/`, `-`), or any of the following three
+    // types of quoted strings: double-quoted strings ("..."), single-quoted strings ('...'), or
     // backtick-quoted strings (`...`).
-    let splitter_pattern = Regex::new(r#"(?:[a-zA-Z0-9_.+-]+|"[^"]*"|'[^']*'|`[^`]*`)"#)?;
+    let splitter_pattern = Regex::new(r#"(?:[a-zA-Z0-9_.+/-]+|"[^"]*"|'[^']*'|`[^`]*`)"#)?;
 
     // cleaner_pattern removes the quotes or backticks from the quoted strings matched by
     // splitter_pattern.

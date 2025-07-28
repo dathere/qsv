@@ -24,7 +24,7 @@ fn dedup_normal() {
         svec!["2", "B"],
         svec!["2", "b"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn dedup_no_case() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["N", "S"], svec!["10", "a"], svec!["2", "B"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn dedup_issue_1381() {
         svec!["Member of Legislative Assembly"],
         svec!["Member of Tamil Nadu Legislative Assembly"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn dedup_issue_1665_numeric() {
         svec!["5"],
         svec!["10"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn dedup_select() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["N", "S"], svec!["10", "a"], svec!["2", "B"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn dedup_select_issue774() {
     let got: String = wrk.stdout(&mut cmd);
     let expected = wrk.load_test_resource("dedup-by-id-test-expected.csv");
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn dedup_sorted() {
         svec!["3", "c"],
         svec!["4", "d"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -205,7 +205,7 @@ fn dedup_sorted_nocase() {
         svec!["3", "c"],
         svec!["4", "d"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -241,7 +241,7 @@ fn dedup_alreadysorted_nocase() {
         svec!["3", "c"],
         svec!["4", "d"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]

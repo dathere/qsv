@@ -29,7 +29,7 @@ fn validate_good_tab() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"Valid: 29 Columns: ("case_enquiry_id", "open_dt", "target_dt", "closed_dt", "ontime", "case_status", "closure_reason", "case_title", "subject", "reason", "type", "queue", "department", "submittedphoto", "closedphoto", "location", "fire_district", "pwd_district", "city_council_district", "police_district", "neighborhood", "neighborhood_services_district", "ward", "precinct", "location_street_name", "location_zipcode", "latitude", "longitude", "source"); Records: 100; Delimiter: TAB"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -59,7 +59,7 @@ fn validate_good_csv_msg() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"Valid: 3 Columns: ("title", "name", "real age (earth years)"); Records: 3; Delimiter: ,"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn validate_empty_csv_msg() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"Valid: 3 Columns: ("title", "name", "real age (earth years)"); Records: 0; Delimiter: ,"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn validate_good_csv_pretty_json() {
     "real age (earth years)"
   ]
 }"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn validate_good_csv_json() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"{"delimiter_char":",","header_row":true,"quote_char":"\"","num_records":3,"num_fields":3,"fields":["title","name","age"]}"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn validate_bad_csv() {
     let expected = r#"Validation error: CSV error: record 2 (line: 3, byte: 36): found record with 2 fields, but the previous record has 3 fields.
 Use `qsv fixlengths` to fix record length issues.
 "#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.assert_err(&mut cmd);
 }
@@ -171,7 +171,7 @@ fn validate_bad_csv_first_record() {
     let expected = r#"Validation error: CSV error: record 1 (line: 2, byte: 15): found record with 2 fields, but the previous record has 3 fields.
 Use `qsv fixlengths` to fix record length issues.
 "#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.assert_err(&mut cmd);
 }
@@ -195,7 +195,7 @@ fn validate_bad_csv_last_record() {
     let expected = r#"Validation error: CSV error: record 3 (line: 4, byte: 54): found record with 4 fields, but the previous record has 3 fields.
 Use `qsv fixlengths` to fix record length issues.
 "#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.assert_err(&mut cmd);
 }
@@ -228,7 +228,7 @@ fn validate_bad_csv_prettyjson() {
   ]
 }
 "#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.assert_err(&mut cmd);
 }
@@ -273,12 +273,12 @@ fn validate_adur_public_toilets_dataset_with_json_schema() {
 
     // check invalid file output
     let invalid_output: String = wrk.from_str(&wrk.path("data.csv.invalid"));
-    similar_asserts::assert_eq!(adur_invalids().to_string(), invalid_output);
+    assert_eq!(adur_invalids().to_string(), invalid_output);
 
     // check validation error output
 
     let validation_error_output: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
-    similar_asserts::assert_eq!(adur_errors(), validation_error_output);
+    assert_eq!(adur_errors(), validation_error_output);
     wrk.assert_err(&mut cmd);
 }
 
@@ -302,7 +302,7 @@ fn validate_adur_public_toilets_dataset_with_json_schema_valid_output() {
 
     let out = wrk.output_stderr(&mut cmd);
     let expected = "13\n";
-    similar_asserts::assert_eq!(out, expected);
+    assert_eq!(out, expected);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -321,7 +321,7 @@ fn validate_adur_public_toilets_dataset_with_json_schema_valid_output() {
         svec!["07/07/2014 00:00", "http://opendatacommunities.org/id/district-council/adur", "Adur", "http://id.esd.org.uk/service/579", "Public toilets", "BEACH TOILETS BASIN ROAD SOUTH SOUTHWICK", "OSGB36", "522007", "106062", "http://www.ordnancesurvey.co.uk/business-and-government/help-and-support/public-sector/guidance/derived-data-exemptions.html", "Female and male", "None", "No", "No", "No", "No", "No", "No", "No", "", "", "http://www.adur-worthing.gov.uk/streets-and-travel/public-toilets/", "", "ADC", "surveyor_14@adur-worthing.gov.uk", "01903 221471", "Grounds staff only not public", "60032527", "", "PUBLIC CONVENIENCE NORTH PAVILION BUCKINGHAM PARK UPPER SHOREHAM ROAD SHOREHAM-BY-SEA", "", ""], 
         svec!["07/07/2014 00:00", "http://opendatacommunities.org/id/district-council/adur", "Adur", "http://id.esd.org.uk/service/579", "Public toilets", "BEACH TOILETS BASIN ROAD SOUTH SOUTHWICK", "OSGB36", "522083", "105168", "http://www.ordnancesurvey.co.uk/business-and-government/help-and-support/public-sector/guidance/derived-data-exemptions.html", "Female and male", "Unisex", "Yes", "No", "No", "No", "No", "No", "No", "", "", "http://www.adur-worthing.gov.uk/streets-and-travel/public-toilets/", "09.00 - 17.00", "ADC", "surveyor_15@adur-worthing.gov.uk", "01903 221471", "", "60034215", "", "PUBLIC CONVENIENCES CIVIC CENTRE HAM ROAD SHOREHAM-BY-SEA", "", ""]    
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.assert_err(&mut cmd);
 }
@@ -347,7 +347,7 @@ fn validate_with_schema_noheader() {
 
     let got = wrk.output_stderr(&mut cmd);
     let expected = "Cannot validate CSV without headers against a JSON Schema.\n".to_string();
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.assert_err(&mut cmd);
 }
@@ -367,11 +367,11 @@ fn validate_adur_public_toilets_dataset_with_json_schema_url() {
     wrk.output(&mut cmd);
 
     let invalid_output: String = wrk.from_str(&wrk.path("data.csv.invalid"));
-    similar_asserts::assert_eq!(adur_invalids().to_string(), invalid_output);
+    assert_eq!(adur_invalids().to_string(), invalid_output);
 
     // check validation error output
     let validation_error_output: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
-    similar_asserts::assert_eq!(adur_errors(), validation_error_output);
+    assert_eq!(adur_errors(), validation_error_output);
     wrk.assert_err(&mut cmd);
 }
 
@@ -429,20 +429,21 @@ fn validate_dynenum_with_column() {
     // Check validation-errors.tsv
     let validation_errors: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
 
-    let expected_errors = "row_number\tfield\terror\n3\tproduct\t\"Orange\" is not a valid \
-                           dynamicEnum value\n4\tproduct\t\"Grape\" is not a valid dynamicEnum \
-                           value\n";
-    similar_asserts::assert_eq!(validation_errors, expected_errors);
+    let expected_errors = r#"row_number	field	error
+3	product	"Orange" is not a valid dynamicEnum value
+4	product	"Grape" is not a valid dynamicEnum value
+"#;
+    assert_eq!(validation_errors, expected_errors);
 
     // Check valid records
     let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
     let expected_valid = vec![svec!["1", "Apple", "fruit"], svec!["2", "Banana", "fruit"]];
-    similar_asserts::assert_eq!(valid_records, expected_valid);
+    assert_eq!(valid_records, expected_valid);
 
     // Check invalid records
     let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
     let expected_invalid = vec![svec!["3", "Orange", "fruit"], svec!["4", "Grape", "fruit"]];
-    similar_asserts::assert_eq!(invalid_records, expected_invalid);
+    assert_eq!(invalid_records, expected_invalid);
 
     wrk.assert_err(&mut cmd);
 }
@@ -504,17 +505,17 @@ fn validate_dynenum_with_column_index() {
         .unwrap();
     let expected_errors = "row_number\tfield\terror\n2\tcode\t\"D4\" is not a valid dynamicEnum \
                            value\n4\tcode\t\"X9\" is not a valid dynamicEnum value\n";
-    similar_asserts::assert_eq!(validation_errors, expected_errors);
+    assert_eq!(validation_errors, expected_errors);
 
     // Check valid records
     let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
     let expected_valid = vec![svec!["1", "fruit", "A1"], svec!["3", "fruit", "B2"]];
-    similar_asserts::assert_eq!(valid_records, expected_valid);
+    assert_eq!(valid_records, expected_valid);
 
     // Check invalid records
     let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
     let expected_invalid = vec![svec!["2", "vegetable", "D4"], svec!["4", "fruit", "X9"]];
-    similar_asserts::assert_eq!(invalid_records, expected_invalid);
+    assert_eq!(invalid_records, expected_invalid);
 
     wrk.assert_err(&mut cmd);
 }
@@ -559,7 +560,7 @@ fn validate_dynenum_with_invalid_column() {
     // Check error output
     let got = wrk.output_stderr(&mut cmd);
     #[cfg(feature = "lite")]
-    similar_asserts::assert_eq!(got, "1 out of 1 records invalid.\n");
+    assert_eq!(got, "1 out of 1 records invalid.\n");
     #[cfg(not(feature = "lite"))]
     assert!(got.ends_with(
         "Cannot compile JSONschema. error: Column 'nonexistent_column' not found in lookup \
@@ -612,20 +613,21 @@ fn validate_dynenum_with_remote_csv() {
     let validation_errors = wrk
         .read_to_string("data.csv.validation-errors.tsv")
         .unwrap();
-    let expected_errors = "row_number\tfield\terror\n2\tfruit\t\"mango\" is not a valid \
-                           dynamicEnum value\n4\tfruit\t\"dragonfruit\" is not a valid \
-                           dynamicEnum value\n";
-    similar_asserts::assert_eq!(validation_errors, expected_errors);
+    let expected_errors = r#"row_number	field	error
+2	fruit	"mango" is not a valid dynamicEnum value
+4	fruit	"dragonfruit" is not a valid dynamicEnum value
+"#;
+    assert_eq!(validation_errors, expected_errors);
 
     // Check valid records
     let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
     let expected_valid = vec![svec!["1", "banana"], svec!["3", "apple"]];
-    similar_asserts::assert_eq!(valid_records, expected_valid);
+    assert_eq!(valid_records, expected_valid);
 
     // Check invalid records
     let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
     let expected_invalid = vec![svec!["2", "mango"], svec!["4", "dragonfruit"]];
-    similar_asserts::assert_eq!(invalid_records, expected_invalid);
+    assert_eq!(invalid_records, expected_invalid);
 
     wrk.assert_err(&mut cmd);
 }
@@ -742,11 +744,912 @@ fn validate_lite_dynenum_combinations() {
             .read_to_string("data.csv.validation-errors.tsv")
             .unwrap();
         let error_count = validation_errors.lines().count() - 1; // subtract header row
-        similar_asserts::assert_eq!(
-            error_count,
-            expected_invalid_count,
+        assert_eq!(
+            error_count, expected_invalid_count,
             "Failed for URI: {}",
             uri
         );
     }
+}
+
+#[test]
+fn validate_unique_combined_with() {
+    let wrk = Workdir::new("validate_unique_combined_with").flexible(true);
+
+    // Create test data with duplicate combinations
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "email", "department"],
+            svec!["1", "John Doe", "john@example.com", "IT"],
+            svec!["2", "Jane Smith", "jane@example.com", "HR"],
+            svec!["3", "John Doe", "john@example.com", "IT"], // Duplicate name+email
+            svec!["4", "Bob Wilson", "bob@example.com", "IT"],
+            svec!["5", "Jane Smith", "jane@example.com", "HR"], // Duplicate name+email
+        ],
+    );
+
+    // Create schema using uniqueCombinedWith to validate unique name+email combinations
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "email": { "type": "string" },
+                "department": { "type": "string" }
+            },
+            "uniqueCombinedWith": ["name", "email"]
+        }"#,
+    );
+
+    // Run validate command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check validation-errors.tsv
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    let expected_errors = r#"row_number	field	error
+3		Combination of values for columns name, email is not unique
+5		Combination of values for columns name, email is not unique
+"#;
+    assert_eq!(validation_errors, expected_errors);
+
+    // Check valid records
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["1", "John Doe", "john@example.com", "IT"],
+        svec!["2", "Jane Smith", "jane@example.com", "HR"],
+        svec!["4", "Bob Wilson", "bob@example.com", "IT"],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![
+        svec!["3", "John Doe", "john@example.com", "IT"],
+        svec!["5", "Jane Smith", "jane@example.com", "HR"],
+    ];
+    assert_eq!(invalid_records, expected_invalid);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn validate_unique_combined_with_indices() {
+    let wrk = Workdir::new("validate_unique_combined_with_indices").flexible(true);
+
+    // Create test data with duplicate combinations
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "email", "department"],
+            svec!["1", "John Doe", "john@example.com", "IT"],
+            svec!["2", "Jane Smith", "jane@example.com", "HR"],
+            svec!["3", "John Doe", "john@example.com", "IT"], // Duplicate name+email
+            svec!["4", "Bob Wilson", "bob@example.com", "IT"],
+            svec!["5", "Jane Smith", "jane@example.com", "HR"], // Duplicate name+email
+        ],
+    );
+
+    // Create schema using uniqueCombinedWith with column indices (1=name, 2=email)
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "email": { "type": "string" },
+                "department": { "type": "string" }
+            },
+            "uniqueCombinedWith": [1, 2]
+        }"#,
+    );
+
+    // Run validate command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check validation-errors.tsv
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    let expected_errors = r#"row_number	field	error
+3		Combination of values for columns 1, 2 is not unique
+5		Combination of values for columns 1, 2 is not unique
+"#;
+    assert_eq!(validation_errors, expected_errors);
+
+    // Check valid records
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["1", "John Doe", "john@example.com", "IT"],
+        svec!["2", "Jane Smith", "jane@example.com", "HR"],
+        svec!["4", "Bob Wilson", "bob@example.com", "IT"],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![
+        svec!["3", "John Doe", "john@example.com", "IT"],
+        svec!["5", "Jane Smith", "jane@example.com", "HR"],
+    ];
+    assert_eq!(invalid_records, expected_invalid);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn validate_unique_combined_with_both_names_and_indices() {
+    let wrk = Workdir::new("validate_unique_combined_with_both_names_and_indices").flexible(true);
+
+    // Create test data with duplicate combinations
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "email", "department"],
+            svec!["1", "John Doe", "john@example.com", "IT"],
+            svec!["2", "Jane Smith", "jane@example.com", "HR"],
+            svec!["3", "John Doe", "john@example.com", "IT"], // Duplicate name+email
+            svec!["4", "Bob Wilson", "bob@example.com", "IT"],
+            svec!["5", "Jane Smith", "jane@example.com", "HR"], // Duplicate name+email
+        ],
+    );
+
+    // Create schema using uniqueCombinedWith to validate unique name+email combinations
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "email": { "type": "string" },
+                "department": { "type": "string" }
+            },
+            "uniqueCombinedWith": ["name", 2]
+        }"#,
+    );
+
+    // Run validate command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check validation-errors.tsv
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    let expected_errors = r#"row_number	field	error
+3		Combination of values for columns name, 2 is not unique
+5		Combination of values for columns name, 2 is not unique
+"#;
+    assert_eq!(validation_errors, expected_errors);
+
+    // Check valid records
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["1", "John Doe", "john@example.com", "IT"],
+        svec!["2", "Jane Smith", "jane@example.com", "HR"],
+        svec!["4", "Bob Wilson", "bob@example.com", "IT"],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![
+        svec!["3", "John Doe", "john@example.com", "IT"],
+        svec!["5", "Jane Smith", "jane@example.com", "HR"],
+    ];
+    assert_eq!(invalid_records, expected_invalid);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn validate_unique_combined_with_empty_values() {
+    let wrk = Workdir::new("validate_unique_combined_with_empty_values").flexible(true);
+
+    // Create test data with empty values
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "email", "department"],
+            svec!["1", "John Doe", "john@example.com", "IT"],
+            svec!["2", "", "jane@example.com", "HR"], // Empty name
+            svec!["3", "John Doe", "", "IT"],         // Empty email
+            svec!["4", "", "", "IT"],                 // Both empty
+            svec!["5", "", "", "HR"],                 // Both empty - duplicate of row 4
+        ],
+    );
+
+    // Create schema using uniqueCombinedWith to validate unique name+email combinations
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { 
+                    "oneOf": [
+                        { "type": "string", "minLength": 0 },
+                        { "type": "null" }
+                    ]
+                },
+                "email": { 
+                    "oneOf": [
+                        { "type": "string", "minLength": 0 },
+                        { "type": "null" }
+                    ]
+                },
+                "department": { "type": "string" }
+            },
+            "uniqueCombinedWith": ["name", "email"]
+        }"#,
+    );
+
+    // Run validate command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check validation-errors.tsv
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    let expected_errors = r#"row_number	field	error
+5		Combination of values for columns name, email is not unique
+"#;
+    assert_eq!(validation_errors, expected_errors);
+
+    // Check valid records
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["1", "John Doe", "john@example.com", "IT"],
+        svec!["2", "", "jane@example.com", "HR"],
+        svec!["3", "John Doe", "", "IT"],
+        svec!["4", "", "", "IT"],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![svec!["5", "", "", "HR"]];
+    assert_eq!(invalid_records, expected_invalid);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn validate_unique_combined_with_special_chars() {
+    let wrk = Workdir::new("validate_unique_combined_with_special_chars").flexible(true);
+
+    // Create test data with special characters
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "email", "department"],
+            svec!["1", "John Doe", "john.doe@example.com", "IT"],
+            svec!["2", "Jane-Smith", "jane.smith@example.com", "HR"],
+            svec!["3", "John Doe", "john.doe@example.com", "IT"], // Duplicate
+            svec!["4", "Bob_Wilson", "bob.wilson@example.com", "IT"],
+            svec!["5", "Jane-Smith", "jane.smith@example.com", "HR"], // Duplicate
+        ],
+    );
+
+    // Create schema using uniqueCombinedWith to validate unique name+email combinations
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "email": { "type": "string" },
+                "department": { "type": "string" }
+            },
+            "uniqueCombinedWith": ["name", "email"]
+        }"#,
+    );
+
+    // Run validate command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check validation-errors.tsv
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    let expected_errors = r#"row_number	field	error
+3		Combination of values for columns name, email is not unique
+5		Combination of values for columns name, email is not unique
+"#;
+    assert_eq!(validation_errors, expected_errors);
+
+    // Check valid records
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["1", "John Doe", "john.doe@example.com", "IT"],
+        svec!["2", "Jane-Smith", "jane.smith@example.com", "HR"],
+        svec!["4", "Bob_Wilson", "bob.wilson@example.com", "IT"],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![
+        svec!["3", "John Doe", "john.doe@example.com", "IT"],
+        svec!["5", "Jane-Smith", "jane.smith@example.com", "HR"],
+    ];
+    assert_eq!(invalid_records, expected_invalid);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn validate_dynenum_with_multiple_columns() {
+    let wrk = Workdir::new("validate_dynenum_with_multiple_columns").flexible(true);
+
+    // Create lookup file with multiple columns
+    wrk.create(
+        "lookup.csv",
+        vec![
+            svec!["code", "name", "category", "status"],
+            svec!["A1", "Apple", "fruit", "active"],
+            svec!["B2", "Banana", "fruit", "active"],
+            svec!["C3", "Carrot", "vegetable", "inactive"],
+            svec!["D4", "Dragon Fruit", "fruit", "active"],
+        ],
+    );
+
+    // Create test data
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "product", "type", "status"],
+            svec!["1", "Apple", "fruit", "active"],
+            svec!["2", "Banana", "fruit", "active"],
+            svec!["3", "Orange", "fruit", "active"], // Invalid - not in lookup
+            svec!["4", "Carrot", "vegetable", "inactive"],
+            svec!["5", "Dragon Fruit", "fruit", "active"],
+        ],
+    );
+
+    // Create schema using dynamicEnum with multiple column validations
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "product": { 
+                    "type": "string",
+                    "dynamicEnum": "lookup.csv|name"
+                },
+                "type": { 
+                    "type": "string",
+                    "dynamicEnum": "lookup.csv|category"
+                },
+                "status": { 
+                    "type": "string",
+                    "dynamicEnum": "lookup.csv|status"
+                }
+            }
+        }"#,
+    );
+
+    // Run validate command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check validation-errors.tsv
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    let expected_errors = r#"row_number	field	error
+3	product	"Orange" is not a valid dynamicEnum value
+"#;
+    assert_eq!(validation_errors, expected_errors);
+
+    // Check valid records
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["1", "Apple", "fruit", "active"],
+        svec!["2", "Banana", "fruit", "active"],
+        svec!["4", "Carrot", "vegetable", "inactive"],
+        svec!["5", "Dragon Fruit", "fruit", "active"],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![svec!["3", "Orange", "fruit", "active"]];
+    assert_eq!(invalid_records, expected_invalid);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[cfg(not(feature = "lite"))]
+#[test]
+fn validate_dynenum_with_caching() {
+    let wrk = Workdir::new("validate_dynenum_with_caching").flexible(true);
+
+    // Create lookup file
+    wrk.create(
+        "lookup.csv",
+        vec![
+            svec!["code", "name"],
+            svec!["A1", "Apple"],
+            svec!["B2", "Banana"],
+            svec!["C3", "Carrot"],
+        ],
+    );
+
+    // Create test data
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "product"],
+            svec!["1", "Apple"],
+            svec!["2", "Orange"], // Invalid
+            svec!["3", "Banana"],
+        ],
+    );
+
+    // Create schema using dynamicEnum with cache configuration
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "product": { 
+                    "type": "string",
+                    "dynamicEnum": "product_cache;3600|lookup.csv|name"
+                }
+            }
+        }"#,
+    );
+
+    // Run validate command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check validation-errors.tsv
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    let expected_errors = r#"row_number	field	error
+2	product	"Orange" is not a valid dynamicEnum value
+"#;
+    assert_eq!(validation_errors, expected_errors);
+
+    // Check valid records
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![svec!["1", "Apple"], svec!["3", "Banana"]];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![svec!["2", "Orange"]];
+    assert_eq!(invalid_records, expected_invalid);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn validate_dynenum_with_invalid_uri() {
+    let wrk = Workdir::new("validate_dynenum_with_invalid_uri").flexible(true);
+
+    // Create test data
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "product"],
+            svec!["1", "Apple"],
+            svec!["2", "Banana"],
+        ],
+    );
+
+    // Create schema using dynamicEnum with invalid URI
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "product": { 
+                    "type": "string",
+                    "dynamicEnum": "nonexistent.csv"
+                }
+            }
+        }"#,
+    );
+
+    // Run validate command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+
+    // Check error output
+    let got = wrk.output_stderr(&mut cmd);
+
+    assert!(got.starts_with("Cannot compile JSONschema."));
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn validate_unique_combined_with_mixed_names_and_indices() {
+    let wrk = Workdir::new("validate_unique_combined_with_mixed_names_and_indices").flexible(true);
+
+    // Create test data with duplicate combinations
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "email", "department", "role"],
+            svec!["1", "John Doe", "john@example.com", "IT", "Developer"],
+            svec!["2", "Jane Smith", "jane@example.com", "HR", "Manager"],
+            svec!["3", "John Doe", "john@example.com", "IT", "Developer"], // Duplicate name+email+role
+            svec!["4", "Bob Wilson", "bob@example.com", "IT", "Developer"],
+            svec!["5", "Jane Smith", "jane@example.com", "HR", "Manager"], // Duplicate name+email+role
+            svec!["6", "Alice Brown", "alice@example.com", "IT", "Developer"], // Valid - different role
+            svec!["7", "Alice Brown", "alice@example.com", "IT", "Manager"], // Valid - different role
+        ],
+    );
+
+    // Create schema using uniqueCombinedWith with mix of column names and indices
+    // name (by name), email (by index 2), role (by name)
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "email": { "type": "string" },
+                "department": { "type": "string" },
+                "role": { "type": "string" }
+            },
+            "uniqueCombinedWith": ["name", 2, "role"]
+        }"#,
+    );
+
+    // Run validate command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check validation-errors.tsv
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    // note: the order of the columns in the error message is named first, then indexed
+    // that's why the error message names the columns as name, role, 2,
+    // but the order of the columns in the schema is name, 2
+    let expected_errors = r#"row_number	field	error
+3		Combination of values for columns name, role, 2 is not unique
+5		Combination of values for columns name, role, 2 is not unique
+"#;
+    assert_eq!(validation_errors, expected_errors);
+
+    // Check valid records
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["1", "John Doe", "john@example.com", "IT", "Developer"],
+        svec!["2", "Jane Smith", "jane@example.com", "HR", "Manager"],
+        svec!["4", "Bob Wilson", "bob@example.com", "IT", "Developer"],
+        svec!["6", "Alice Brown", "alice@example.com", "IT", "Developer"],
+        svec!["7", "Alice Brown", "alice@example.com", "IT", "Manager"],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![
+        svec!["3", "John Doe", "john@example.com", "IT", "Developer"],
+        svec!["5", "Jane Smith", "jane@example.com", "HR", "Manager"],
+    ];
+    assert_eq!(invalid_records, expected_invalid);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn validate_no_format_validation() {
+    let wrk = Workdir::new("validate_no_format_validation").flexible(true);
+
+    // Create test data with invalid format values
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "email", "website", "fee"],
+            svec![
+                "1",
+                "John Doe",
+                "john@example.com",
+                "https://example.com",
+                "$100.00"
+            ],
+            svec![
+                "2",
+                "Jane Smith",
+                "not-an-email",
+                "not-a-url",
+                "not-currency"
+            ], // Invalid formats
+            svec!["3", "Bob Wilson", "bob.wilson", "ftp://invalid", "€ 50.00"], // Invalid formats
+        ],
+    );
+
+    // Create schema with format validation
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "email": { 
+                    "type": "string",
+                    "format": "email"
+                },
+                "website": { 
+                    "type": "string",
+                    "format": "uri"
+                },
+                "fee": { 
+                    "type": "string",
+                    "format": "currency"
+                }
+            }
+        }"#,
+    );
+
+    // First, run validation WITH format validation (default behavior)
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check that format validation errors are present
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+
+    // Should have format validation errors
+    assert!(validation_errors.contains("is not a \"email\""));
+    assert!(validation_errors.contains("is not a \"uri\""));
+    assert!(validation_errors.contains("is not a \"currency\""));
+
+    // Clean up output files for next test
+    let _ = std::fs::remove_file(wrk.path("data.csv.valid"));
+    let _ = std::fs::remove_file(wrk.path("data.csv.invalid"));
+    let _ = std::fs::remove_file(wrk.path("data.csv.validation-errors.tsv"));
+
+    // Now run validation WITHOUT format validation
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--no-format-validation")
+        .arg("data.csv")
+        .arg("schema.json");
+
+    wrk.assert_success(&mut cmd);
+
+    // Should not create any error files since all records are valid
+    // when format validation is disabled
+    assert!(!wrk.path("data.csv.invalid").exists());
+    assert!(!wrk.path("data.csv.validation-errors.tsv").exists());
+
+    let got: String = wrk.output_stderr(&mut cmd);
+    let expected = "All 3 records valid.\n";
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn validate_json_schema_file() {
+    let wrk = Workdir::new("validate_json_schema_file").flexible(true);
+
+    // Create schema with format validation
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "email": { 
+                    "type": "string",
+                    "format": "email"
+                }
+            }
+        }"#,
+    );
+
+    // Run validate command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn validate_invalid_json_schema_file() {
+    let wrk = Workdir::new("validate_invalid_json_schema_file").flexible(true);
+
+    // Create schema with format validation
+    // Create schema with format validation
+    // This schema is invalid because it has a draft version that doesn't exist
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-25/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "email": { 
+                    "type": "string",
+                    "format": "email"
+                }
+            }
+        }"#,
+    );
+
+    // Run validate command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("schema.json");
+
+    wrk.assert_err(&mut cmd);
+
+    let got = wrk.output_stderr(&mut cmd);
+    assert_eq!(got, "JSON Schema Meta-Reference Error: Unknown specification: https://json-schema.org/draft/2020-25/schema\n");
+
+    // Create schema with format validation
+    // This schema is invalid because of invalid types "stringy"
+    wrk.create_from_string(
+        "schema2.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "stringy" },
+                "name": { "type": "string" },
+                "email": { 
+                    "type": "string",
+                    "format": "email"
+                }
+            }
+        }"#,
+    );
+
+    // Run validate command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("schema2.json");
+
+    wrk.assert_err(&mut cmd);
+
+    let got = wrk.output_stderr(&mut cmd);
+    assert_eq!(got, "Invalid JSON Schema.\n");
+}
+
+#[test]
+fn validate_with_fancy_regex() {
+    let wrk = Workdir::new("validate_with_fancy_regex").flexible(true);
+
+    // Create test data with passwords that need to meet specific criteria
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["username", "password"],
+            svec!["user1", "Password123!"], // Valid: has uppercase, lowercase, digit, special char
+            svec!["user2", "password123"],  // Invalid: no uppercase, no special char
+            svec!["user3", "PASSWORD123!"], // Invalid: no lowercase
+            svec!["user4", "Password!"],    // Invalid: no digit
+            svec!["user5", "Pass123"],      // Invalid: no special char
+        ],
+    );
+
+    // Create schema with a regex pattern that requires fancy regex support
+    // This regex uses look-ahead assertions (?=...) to ensure password contains:
+    // - at least one uppercase letter
+    // - at least one lowercase letter
+    // - at least one digit
+    // - at least one special character
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "username": { "type": "string" },
+                "password": { 
+                    "type": "string",
+                    "pattern": "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?]).{8,}$"
+                }
+            }
+        }"#,
+    );
+
+    // Run validate command WITHOUT fancy-regex flag (should fail)
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+
+    // This should fail because the regex pattern uses look-ahead assertions
+    // which are not supported by the default regex engine
+    wrk.assert_err(&mut cmd);
+
+    // Run validate command WITH fancy-regex flag (should work)
+    let mut cmd_fancy = wrk.command("validate");
+    cmd_fancy
+        .arg("data.csv")
+        .arg("schema.json")
+        .arg("--fancy-regex");
+    wrk.output(&mut cmd_fancy);
+
+    // we still get an error here as the test data is invalid,
+    // not because of the regex engine
+    wrk.assert_err(&mut cmd_fancy);
+    let got = wrk.output_stderr(&mut cmd_fancy);
+    assert_eq!(got, "4 out of 5 records invalid.\n");
+
+    // Check validation-errors.tsv - should show 4 invalid passwords
+    let validation_errors: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
+
+    // The error messages should indicate pattern validation failures
+    assert!(validation_errors.contains("password"));
+    // Check for the specific error message format used by jsonschema
+    assert!(validation_errors.contains("does not match"));
+
+    // Check valid records - should only contain the valid password
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![svec!["user1", "Password123!"]];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records - should contain the 4 invalid passwords
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![
+        svec!["user2", "password123"],
+        svec!["user3", "PASSWORD123!"],
+        svec!["user4", "Password!"],
+        svec!["user5", "Pass123"],
+    ];
+    assert_eq!(invalid_records, expected_invalid);
 }

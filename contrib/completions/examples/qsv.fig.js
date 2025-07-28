@@ -615,10 +615,13 @@ const completion: Fig.Spec = {
       name: "edit",
       options: [
         {
-          name: "--output",
+          name: "--no-headers",
         },
         {
-          name: "--no-headers",
+          name: "--in-place",
+        },
+        {
+          name: "--output",
         },
         {
           name: ["-h", "--help"],
@@ -1620,6 +1623,138 @@ const completion: Fig.Spec = {
           ],
         },
         {
+          name: "iplookup",
+          options: [
+            {
+              name: "--new-column",
+            },
+            {
+              name: "--rename",
+            },
+            {
+              name: "--country",
+            },
+            {
+              name: "--min-score",
+            },
+            {
+              name: "--admin1",
+            },
+            {
+              name: "--k_weight",
+            },
+            {
+              name: "--formatstr",
+            },
+            {
+              name: "--language",
+            },
+            {
+              name: "--invalid-result",
+            },
+            {
+              name: "--jobs",
+            },
+            {
+              name: "--batch",
+            },
+            {
+              name: "--timeout",
+            },
+            {
+              name: "--cache-dir",
+            },
+            {
+              name: "--languages",
+            },
+            {
+              name: "--cities-url",
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--output",
+            },
+            {
+              name: "--delimiter",
+            },
+            {
+              name: "--progressbar",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "iplookupnow",
+          options: [
+            {
+              name: "--new-column",
+            },
+            {
+              name: "--rename",
+            },
+            {
+              name: "--country",
+            },
+            {
+              name: "--min-score",
+            },
+            {
+              name: "--admin1",
+            },
+            {
+              name: "--k_weight",
+            },
+            {
+              name: "--formatstr",
+            },
+            {
+              name: "--language",
+            },
+            {
+              name: "--invalid-result",
+            },
+            {
+              name: "--jobs",
+            },
+            {
+              name: "--batch",
+            },
+            {
+              name: "--timeout",
+            },
+            {
+              name: "--cache-dir",
+            },
+            {
+              name: "--languages",
+            },
+            {
+              name: "--cities-url",
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--output",
+            },
+            {
+              name: "--delimiter",
+            },
+            {
+              name: "--progressbar",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
           name: "index-load",
           options: [
             {
@@ -1906,6 +2041,12 @@ const completion: Fig.Spec = {
               name: "countryinfonow",
             },
             {
+              name: "iplookup",
+            },
+            {
+              name: "iplookupnow",
+            },
+            {
               name: "index-load",
             },
             {
@@ -1981,6 +2122,30 @@ const completion: Fig.Spec = {
         },
         {
           name: "--progressbar",
+        },
+        {
+          name: ["-h", "--help"],
+          description: "Print help",
+        },
+      ],
+    },
+    {
+      name: "geoconvert",
+      options: [
+        {
+          name: "--geometry",
+        },
+        {
+          name: "--latitude",
+        },
+        {
+          name: "--longitude",
+        },
+        {
+          name: "--max-length",
+        },
+        {
+          name: "--output",
         },
         {
           name: ["-h", "--help"],
@@ -2331,6 +2496,15 @@ const completion: Fig.Spec = {
           name: "--freeze-columns",
         },
         {
+          name: "--monochrome",
+        },
+        {
+          name: "--wrap-mode",
+        },
+        {
+          name: "--prompt",
+        },
+        {
           name: "--echo-column",
         },
         {
@@ -2539,6 +2713,54 @@ const completion: Fig.Spec = {
         },
         {
           name: "--delimiter",
+        },
+        {
+          name: ["-h", "--help"],
+          description: "Print help",
+        },
+      ],
+    },
+    {
+      name: "pivotp",
+      options: [
+        {
+          name: "--index",
+        },
+        {
+          name: "--values",
+        },
+        {
+          name: "--agg",
+        },
+        {
+          name: "--sort-columns",
+        },
+        {
+          name: "--col-separator",
+        },
+        {
+          name: "--validate",
+        },
+        {
+          name: "--try-parsedates",
+        },
+        {
+          name: "--infer-len",
+        },
+        {
+          name: "--decimal-comma",
+        },
+        {
+          name: "--ignore-errors",
+        },
+        {
+          name: "--output",
+        },
+        {
+          name: "--delimiter",
+        },
+        {
+          name: "--quiet",
         },
         {
           name: ["-h", "--help"],
@@ -3351,6 +3573,9 @@ const completion: Fig.Spec = {
           name: "--numeric",
         },
         {
+          name: "--natural",
+        },
+        {
           name: "--reverse",
         },
         {
@@ -3445,6 +3670,15 @@ const completion: Fig.Spec = {
         },
         {
           name: "--pad",
+        },
+        {
+          name: "--filter",
+        },
+        {
+          name: "--filter-cleanup",
+        },
+        {
+          name: "--filter-ignore-errors",
         },
         {
           name: "--no-headers",
@@ -3552,6 +3786,9 @@ const completion: Fig.Spec = {
           name: "--infer-boolean",
         },
         {
+          name: "--boolean-patterns",
+        },
+        {
           name: "--mode",
         },
         {
@@ -3565,6 +3802,12 @@ const completion: Fig.Spec = {
         },
         {
           name: "--quartiles",
+        },
+        {
+          name: "--percentiles",
+        },
+        {
+          name: "--percentile-list",
         },
         {
           name: "--round",
@@ -3741,6 +3984,9 @@ const completion: Fig.Spec = {
               name: "--separator",
             },
             {
+              name: "--all-strings",
+            },
+            {
               name: "--jobs",
             },
             {
@@ -3784,6 +4030,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--separator",
+            },
+            {
+              name: "--all-strings",
             },
             {
               name: "--jobs",
@@ -3831,6 +4080,105 @@ const completion: Fig.Spec = {
               name: "--separator",
             },
             {
+              name: "--all-strings",
+            },
+            {
+              name: "--jobs",
+            },
+            {
+              name: "--delimiter",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "ods",
+          options: [
+            {
+              name: "--print-package",
+            },
+            {
+              name: "--dump",
+            },
+            {
+              name: "--stats",
+            },
+            {
+              name: "--stats-csv",
+            },
+            {
+              name: "--quiet",
+            },
+            {
+              name: "--schema",
+            },
+            {
+              name: "--drop",
+            },
+            {
+              name: "--evolve",
+            },
+            {
+              name: "--pipe",
+            },
+            {
+              name: "--separator",
+            },
+            {
+              name: "--all-strings",
+            },
+            {
+              name: "--jobs",
+            },
+            {
+              name: "--delimiter",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "parquet",
+          options: [
+            {
+              name: "--print-package",
+            },
+            {
+              name: "--dump",
+            },
+            {
+              name: "--stats",
+            },
+            {
+              name: "--stats-csv",
+            },
+            {
+              name: "--quiet",
+            },
+            {
+              name: "--schema",
+            },
+            {
+              name: "--drop",
+            },
+            {
+              name: "--evolve",
+            },
+            {
+              name: "--pipe",
+            },
+            {
+              name: "--separator",
+            },
+            {
+              name: "--all-strings",
+            },
+            {
               name: "--jobs",
             },
             {
@@ -3876,6 +4224,9 @@ const completion: Fig.Spec = {
               name: "--separator",
             },
             {
+              name: "--all-strings",
+            },
+            {
               name: "--jobs",
             },
             {
@@ -3899,6 +4250,12 @@ const completion: Fig.Spec = {
             },
             {
               name: "xlsx",
+            },
+            {
+              name: "ods",
+            },
+            {
+              name: "parquet",
             },
             {
               name: "datapackage",
@@ -3940,6 +4297,9 @@ const completion: Fig.Spec = {
         },
         {
           name: "--separator",
+        },
+        {
+          name: "--all-strings",
         },
         {
           name: "--jobs",
@@ -4012,6 +4372,9 @@ const completion: Fig.Spec = {
       options: [
         {
           name: "--trim",
+        },
+        {
+          name: "--no-format-validation",
         },
         {
           name: "--fail-fast",
@@ -4190,6 +4553,12 @@ const completion: Fig.Spec = {
               name: "countryinfonow",
             },
             {
+              name: "iplookup",
+            },
+            {
+              name: "iplookupnow",
+            },
+            {
               name: "index-load",
             },
             {
@@ -4202,6 +4571,9 @@ const completion: Fig.Spec = {
               name: "index-reset",
             },
           ],
+        },
+        {
+          name: "geoconvert",
         },
         {
           name: "headers",
@@ -4240,6 +4612,9 @@ const completion: Fig.Spec = {
         },
         {
           name: "partition",
+        },
+        {
+          name: "pivotp",
         },
         {
           name: "pro",
@@ -4351,6 +4726,12 @@ const completion: Fig.Spec = {
             },
             {
               name: "xlsx",
+            },
+            {
+              name: "ods",
+            },
+            {
+              name: "parquet",
             },
             {
               name: "datapackage",

@@ -255,3 +255,21 @@ impl From<chrono_tz::ParseError> for CliError {
         CliError::Other(format!("ChronoTZ error: {err:?}"))
     }
 }
+
+impl From<zip::result::ZipError> for CliError {
+    fn from(err: zip::result::ZipError) -> CliError {
+        match err {
+            zip::result::ZipError::Io(e) => CliError::Io(e),
+            zip::result::ZipError::InvalidArchive(e) => {
+                CliError::IncorrectUsage(format!("Zip error: {e:?}"))
+            },
+            zip::result::ZipError::FileNotFound => {
+                CliError::IncorrectUsage("Zip error: zip archive not found.".to_string())
+            },
+            zip::result::ZipError::InvalidPassword => {
+                CliError::IncorrectUsage("Zip error: password-protected zip file.".to_string())
+            },
+            _ => CliError::Other(format!("Zip error: {err:?}")),
+        }
+    }
+}

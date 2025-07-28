@@ -2,8 +2,9 @@ static USAGE: &str = r#"
 Formats recognized date fields (19 formats recognized) to a specified date format
 using strftime date format specifiers.
 
-See https://github.com/dathere/belt/tree/main/dateparser#accepted-date-formats for
-recognized date formats.
+For recognized date formats, see
+https://github.com/dathere/qsv-dateparser?tab=readme-ov-file#accepted-date-formats
+
 See https://docs.rs/chrono/latest/chrono/format/strftime/ for 
 accepted date format specifiers for --formatstr.
 Defaults to ISO 8601/RFC 3339 format when --formatstr is not specified.

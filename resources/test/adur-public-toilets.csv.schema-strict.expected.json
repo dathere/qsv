@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema",
   "title": "JSON Schema for adur-public-toilets.csv",
-  "description": "Inferred JSON Schema from QSV schema command",
+  "description": "Inferred JSON Schema with `qsv schema adur-public-toilets.csv --enum-threshold 13 --pattern-columns ReportEmail,OpeningHours --strict-dates`",
   "type": "object",
   "properties": {
     "ExtractDate": {

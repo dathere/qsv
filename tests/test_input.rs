@@ -18,7 +18,7 @@ fn test_input_comment() {
         svec!["d", "4", "delta"],
         svec!["e", "5", "epsilon"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn test_input_skiplines() {
         svec!["c", "3"],
         svec!["e", "5"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn test_input_autoskip() {
         svec!["a", "2", "z", "1.2020569"],
         svec!["c", "42", "x", "1.0"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn test_input_quotestyle_nonnumeric() {
 "a",1.0,1,"this is a string"
 "c",3.5,3,"this is another string"
 "e",3.14,42,"this is a third string""#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn test_input_quotestyle_necessary() {
 a,1.0,1,"1,234,5678 - number with commas"
 c,3.5,3,this is another string
 e,3.14,42,this is a third string"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn test_input_quotestyle_all() {
 "a","1.0","1","1,234,5678 - number with commas"
 "c","3.5","3","this is another string"
 "e","3.14","42","this is a third string""#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn test_input_skip_one_line() {
         svec!["c", "3"],
         svec!["e", "5"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -187,7 +187,7 @@ fn test_input_skip_no_line() {
         svec!["c", "3"],
         svec!["e", "5"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -212,7 +212,7 @@ fn test_input_trim_headers() {
         svec!["c  ", "3"],
         svec!["e", "5   "],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -237,7 +237,7 @@ fn test_input_trim_fields() {
         svec!["c", "3"],
         svec!["e", "5"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn test_input_trim_headers_fields() {
         svec!["c", "3"],
         svec!["e", "5"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -291,7 +291,7 @@ fn test_input_skip_lastlines() {
         svec!["b", "2"],
         svec!["c", "3"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -324,7 +324,7 @@ fn test_input_skip_lines_both() {
         svec!["b", "2"],
         svec!["c", "3"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -347,7 +347,7 @@ fn test_input_both_skip_flexible() {
         svec!["b", "2"],
         svec!["c", "3"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -416,7 +416,7 @@ fn input_noheadertrim() {
             "OH"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -476,5 +476,5 @@ fn input_headertrim() {
             "OH"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

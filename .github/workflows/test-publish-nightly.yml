@@ -12,7 +12,7 @@ jobs:
     runs-on: ${{ matrix.job.os }}
     strategy:
       matrix:
-        rust: [nightly-2025-03-07]
+        rust: [nightly-2025-06-27]
         job:
           - os: ubuntu-latest
             os-name: linux
@@ -20,7 +20,7 @@ jobs:
             architecture: x86_64
             addl-build-args: --features=apply,luau,fetch,foreach,nightly,to,self_update,polars
             default-features:
-            addl-qsvdp-features: luau
+            addl-qsvdp-features:
           # - os: ubuntu-latest
           #   os-name: linux
           #   target: x86_64-unknown-linux-musl
@@ -34,21 +34,21 @@ jobs:
             architecture: x86_64
             addl-build-args: --features=apply,luau,fetch,nightly,to,self_update,polars
             default-features:
-            addl-qsvdp-features: luau
+            addl-qsvdp-features:
           - os: windows-latest
             os-name: windows
             target: x86_64-pc-windows-gnu
             architecture: x86_64
             addl-build-args: --features=apply,luau,fetch,nightly,self_update,polars
             default-features: --no-default-features 
-            addl-qsvdp-features: luau
+            addl-qsvdp-features:
           - os: macos-latest
             os-name: macos
             target: x86_64-apple-darwin
             architecture: x86_64
             addl-build-args: --features=apply,luau,fetch,foreach,nightly,to,self_update
             default-features:
-            addl-qsvdp-features: luau
+            addl-qsvdp-features:
 
     steps:
     - name: Installing Rust toolchain

@@ -154,7 +154,7 @@ join_test!(join_inner, |wrk: Workdir,
             svec!["Buffalo", "NY", "Buffalo", "Ralph Wilson Stadium"],
         ],
     );
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 });
 
 join_test!(
@@ -172,7 +172,7 @@ join_test!(
                 svec!["Buffalo", "NY", "Buffalo", "Ralph Wilson Stadium"],
             ],
         );
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -192,7 +192,7 @@ join_test!(
                 svec!["Buffalo", "NY", "Buffalo", "Ralph Wilson Stadium"],
             ],
         );
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -213,7 +213,7 @@ join_test!(
                 svec!["Buffalo", "NY", "Buffalo", "Ralph Wilson Stadium"],
             ],
         );
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -233,7 +233,7 @@ join_test!(
                 svec!["", "", "BOSTON", "BOSTON COMMON"],
             ],
         );
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -253,7 +253,7 @@ join_test!(
                 svec!["Boston", "MA", "BOSTON", "BOSTON COMMON"],
             ],
         );
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -278,7 +278,7 @@ join_test!(
                 svec!["", "", "BOSTON", "BOSTON COMMON"],
             ],
         );
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -292,7 +292,7 @@ join_test!(join_left_semi, |wrk: Workdir,
         true,
         vec![svec!["Boston", "MA"], svec!["Buffalo", "NY"]],
     );
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 });
 
 join_test!(join_left_anti, |wrk: Workdir,
@@ -305,7 +305,7 @@ join_test!(join_left_anti, |wrk: Workdir,
         true,
         vec![svec!["New York", "NY"], svec!["San Francisco", "CA"]],
     );
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 });
 
 #[test]
@@ -326,7 +326,7 @@ fn join_inner_issue11() {
         svec!["3", "4", "4", "3"],
         svec!["5", "6", "6", "5"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -352,7 +352,7 @@ fn join_cross() {
         svec!["c", "d", "1", "2"],
         svec!["c", "d", "3", "4"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -372,7 +372,7 @@ fn join_cross_no_headers() {
         svec!["c", "d", "1", "2"],
         svec!["c", "d", "3", "4"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 join_test!(
@@ -392,7 +392,7 @@ join_test!(
         if headers {
             expected[0] = svec!["city", "place"];
         }
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -414,7 +414,7 @@ join_test!(
         if headers {
             expected[0] = svec!["city", "place"];
         }
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -434,7 +434,7 @@ join_test!(
         if headers {
             expected[0] = svec!["city", "place"];
         }
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -447,7 +447,7 @@ join_test!(
         if headers {
             expected[0] = svec!["city", "place"];
         }
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -488,7 +488,7 @@ fn join_keys_output_inner() {
         .map(|line| line.split(',').map(String::from).collect())
         .collect();
     let expected = vec![svec!["b"], svec!["c"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -529,7 +529,7 @@ fn join_keys_output_left_anti() {
         .map(|line| line.split(',').map(String::from).collect())
         .collect();
     let expected = vec![svec!["a"]]; // Only 'a' has no match in numbers.csv
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -570,7 +570,7 @@ fn join_keys_output_left_semi() {
         .map(|line| line.split(',').map(String::from).collect())
         .collect();
     let expected = vec![svec!["b"], svec!["c"]]; // 'b' and 'c' have matches
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -611,7 +611,7 @@ fn join_keys_output_full() {
         .map(|line| line.split(',').map(String::from).collect())
         .collect();
     let expected = vec![svec!["b"], svec!["c"]]; // Only matched keys are written
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -651,7 +651,7 @@ fn join_keys_output_multiple_columns() {
         .map(|line| line.split(',').map(String::from).collect())
         .collect();
     let expected = vec![svec!["Boston", "MA"], svec!["Chicago", "IL"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -691,7 +691,7 @@ join_test_with_zeros!(
                 svec!["00000", "data5", "000", "info5"],
             ],
         );
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -729,7 +729,7 @@ fn join_inner_zeros_casei() {
         svec!["1nyc", "data3", "1NYC", "info1"],
         svec!["1nyc", "data3", "01nyc", "info3"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 join_test_with_zeros!(
@@ -751,7 +751,7 @@ join_test_with_zeros!(
                 svec!["00000", "data5", "000", "info5"],
             ],
         );
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -790,7 +790,7 @@ fn join_nulls() {
         svec!["2", "", "2", "b"],
         svec!["3", "baz", "3", "c"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     // Test with --nulls flag (should include empty fields)
     let mut cmd = wrk.command("join");
@@ -805,7 +805,7 @@ fn join_nulls() {
         svec!["3", "baz", "3", "c"],
         svec!["", "bar", "", "d"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -840,7 +840,7 @@ fn join_multiple_key_columns() {
         svec!["Portland", "OR", "200", "Portland", "OR", "medium"],
         svec!["Portland", "ME", "300", "Portland", "ME", "small"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -877,7 +877,7 @@ fn join_with_duplicate_keys() {
         svec!["1", "b", "1", "y"],
         svec!["2", "c", "2", "z"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -912,7 +912,7 @@ fn join_with_whitespace() {
         svec!["2  ", "b", "  2", "y"],
         svec!["  3  ", "c", "3", "z"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -946,7 +946,7 @@ fn join_right_semi_header_order_issue_2434() {
         svec!["1", "1", "B1"],
         svec!["2", "2", "B2"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -980,7 +980,7 @@ fn join_right_semi_different_fields_issue_2437() {
         svec!["1", "105", "0101"],
         svec!["3", "105", "0101"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1010,5 +1010,5 @@ fn join_right_anti_different_fields_issue_2437() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["id", "PA", "PB"], svec!["4", "105", "0101"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

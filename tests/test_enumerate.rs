@@ -24,7 +24,7 @@ fn enumerate() {
         svec!["c", "72", "2"],
         svec!["d", "7", "3"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn enumerate_counter() {
         svec!["c", "72", "12"],
         svec!["d", "7", "13"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn enumerate_counter_inc() {
         svec!["c", "72", "16"],
         svec!["d", "7", "19"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn enumerate_hash() {
         svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
         svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -140,7 +140,7 @@ fn enumerate_hash_intl() {
         svec!["d", "7", "I thiñk, therefore I am", "7671262618974725285"],
         svec!["d", "7", "I thiñk, therefore I am", "7671262618974725285"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn enumerate_hash_replace_old_hash() {
         svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
         svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn enumerate_hash_replace_old_hash2() {
         svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
         svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -228,7 +228,7 @@ fn enumerate_hash_regex() {
         svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
         svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -257,7 +257,7 @@ fn enumerate_hash_subset() {
         svec!["d", "7", "I think, therefore I am", "3273771710137887128"],
         svec!["d", "7", "I think, therefore I am", "3273771710137887128"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -286,7 +286,7 @@ fn enumerate_hash_reverse() {
         svec!["d", "7", "I think, therefore I am", "17754472455904896405"],
         svec!["d", "7", "I think, therefore I am", "17754472455904896405"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -315,7 +315,7 @@ fn enumerate_hash_regex_not() {
         svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
         svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -342,7 +342,7 @@ fn enumerate_column_name() {
         svec!["c", "72", "2"],
         svec!["d", "7", "3"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -369,7 +369,7 @@ fn enumerate_constant() {
         svec!["c", "72", "test"],
         svec!["d", "7", "test"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -396,7 +396,7 @@ fn enumerate_constant_null() {
         svec!["c", "72", ""],
         svec!["d", "7", ""],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -423,7 +423,7 @@ fn enumerate_copy() {
         svec!["c", "72", "72"],
         svec!["d", "7", "7"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -450,7 +450,7 @@ fn enumerate_copy_long_to_short() {
         svec!["c", "72 shorter", "72 shorter"],
         svec!["d", "7", "7"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -481,7 +481,7 @@ fn enumerate_copy_name() {
         svec!["c", "72", "72"],
         svec!["d", "7", "7"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -501,8 +501,8 @@ fn enumerate_uuid7() {
     cmd.arg("--uuid7").arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    similar_asserts::assert_eq!(5, got.len());
-    similar_asserts::assert_eq!(3, got[0].len());
+    assert_eq!(5, got.len());
+    assert_eq!(3, got[0].len());
     // assert that the uuid7 column is monitonically increasing
     assert!(got[1][2] < got[2][2]);
     assert!(got[2][2] < got[3][2]);
@@ -531,7 +531,7 @@ fn enumerate_constant_issue_2172_new_column() {
         svec!["Joe", "1", "test"],
         svec!["Mary", "2", "test"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -558,7 +558,7 @@ fn enumerate_copy_issue_2172_new_column() {
         svec!["Joe", "1", "1"],
         svec!["Mary", "2", "2"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -585,7 +585,7 @@ fn enumerate_hash_issue_2172_new_column() {
         svec!["Joe", "1162351066380295090"],
         svec!["Mary", "13526984025446498287"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -612,5 +612,5 @@ fn enumerate_hash_issue_2172() {
         svec!["Joe", "1", "1162351066380295090"],
         svec!["Mary", "2", "13526984025446498287"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

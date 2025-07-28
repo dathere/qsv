@@ -158,7 +158,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .writer()?;
 
     let mut is_stdin = false;
-    let mut rdr: Box<dyn BufRead> = match args.arg_input {
+    let mut rdr: Box<dyn BufRead> = match args.arg_input.clone() {
         None => {
             is_stdin = true;
             Box::new(BufReader::new(io::stdin()))
@@ -182,8 +182,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // so just make a reasonably big batch size
             1_000_000
         } else {
-            // safety: we know flag_output is Some coz of the std_in check above
-            util::count_lines_in_file(&args.flag_output.unwrap())? as usize
+            // safety: we know arg_input is Some coz of the std_in check above
+            util::count_lines_in_file(&args.arg_input.unwrap())? as usize
         }
     } else {
         args.flag_batch
@@ -248,7 +248,7 @@ Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl."#,
                 Ok(v) => Some(json_line_to_csv_record(&v, &headers)),
                 Err(e) => {
                     if !args.flag_ignore_errors {
-                        log::error!("serde_json::from_str error: {:#?}", e);
+                        log::error!("serde_json::from_str error: {e:#?}");
                     }
                     None
                 },

@@ -150,7 +150,7 @@ fn sortcheck_simple_all_json() {
     let output = cmd.output().unwrap();
     let got_stdout = std::str::from_utf8(&output.stdout).unwrap_or_default();
 
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got_stdout,
         r#"{"sorted":false,"record_count":9,"unsorted_breaks":2,"dupe_count":-1}
 "#
@@ -183,7 +183,7 @@ fn sortcheck_simple_json() {
     let output = cmd.output().unwrap();
     let got_stdout = std::str::from_utf8(&output.stdout).unwrap_or_default();
 
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got_stdout,
         r#"{"sorted":false,"record_count":9,"unsorted_breaks":2,"dupe_count":-1}
 "#
@@ -219,7 +219,7 @@ fn sortcheck_simple_all_json_progressbar() {
     let output = cmd.output().unwrap();
     let got_stdout = std::str::from_utf8(&output.stdout).unwrap_or_default();
 
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got_stdout,
         r#"{"sorted":false,"record_count":9,"unsorted_breaks":2,"dupe_count":-1}
 "#

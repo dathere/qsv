@@ -361,8 +361,9 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (edit)
 _arguments "${_arguments_options[@]}" : \
-'--output[]' \
 '--no-headers[]' \
+'--in-place[]' \
+'--output[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -790,6 +791,56 @@ _arguments "${_arguments_options[@]}" : \
 '--help[Print help]' \
 && ret=0
 ;;
+(iplookup)
+_arguments "${_arguments_options[@]}" : \
+'--new-column[]' \
+'--rename[]' \
+'--country[]' \
+'--min-score[]' \
+'--admin1[]' \
+'--k_weight[]' \
+'--formatstr[]' \
+'--language[]' \
+'--invalid-result[]' \
+'--jobs[]' \
+'--batch[]' \
+'--timeout[]' \
+'--cache-dir[]' \
+'--languages[]' \
+'--cities-url[]' \
+'--force[]' \
+'--output[]' \
+'--delimiter[]' \
+'--progressbar[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(iplookupnow)
+_arguments "${_arguments_options[@]}" : \
+'--new-column[]' \
+'--rename[]' \
+'--country[]' \
+'--min-score[]' \
+'--admin1[]' \
+'--k_weight[]' \
+'--formatstr[]' \
+'--language[]' \
+'--invalid-result[]' \
+'--jobs[]' \
+'--batch[]' \
+'--timeout[]' \
+'--cache-dir[]' \
+'--languages[]' \
+'--cities-url[]' \
+'--force[]' \
+'--output[]' \
+'--delimiter[]' \
+'--progressbar[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (index-load)
 _arguments "${_arguments_options[@]}" : \
 '--new-column[]' \
@@ -926,6 +977,14 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(iplookup)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(iplookupnow)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (index-load)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -953,6 +1012,17 @@ esac
         esac
     ;;
 esac
+;;
+(geoconvert)
+_arguments "${_arguments_options[@]}" : \
+'--geometry[]' \
+'--latitude[]' \
+'--longitude[]' \
+'--max-length[]' \
+'--output[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
 ;;
 (headers)
 _arguments "${_arguments_options[@]}" : \
@@ -1090,6 +1160,9 @@ _arguments "${_arguments_options[@]}" : \
 '--find[]' \
 '--ignore-case[]' \
 '--freeze-columns[]' \
+'--monochrome[]' \
+'--wrap-mode[]' \
+'--prompt[]' \
 '--echo-column[]' \
 '--debug[]' \
 '-h[Print help]' \
@@ -1206,6 +1279,25 @@ _arguments "${_arguments_options[@]}" : \
 '--drop[]' \
 '--no-headers[]' \
 '--delimiter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(pivotp)
+_arguments "${_arguments_options[@]}" : \
+'--index[]' \
+'--values[]' \
+'--agg[]' \
+'--sort-columns[]' \
+'--col-separator[]' \
+'--validate[]' \
+'--try-parsedates[]' \
+'--infer-len[]' \
+'--decimal-comma[]' \
+'--ignore-errors[]' \
+'--output[]' \
+'--delimiter[]' \
+'--quiet[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1659,6 +1751,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--select[]' \
 '--numeric[]' \
+'--natural[]' \
 '--reverse[]' \
 '--ignore-case[]' \
 '--unique[]' \
@@ -1697,6 +1790,9 @@ _arguments "${_arguments_options[@]}" : \
 '--jobs[]' \
 '--filename[]' \
 '--pad[]' \
+'--filter[]' \
+'--filter-cleanup[]' \
+'--filter-ignore-errors[]' \
 '--no-headers[]' \
 '--delimiter[]' \
 '--quiet[]' \
@@ -1738,11 +1834,14 @@ _arguments "${_arguments_options[@]}" : \
 '--everything[]' \
 '--typesonly[]' \
 '--infer-boolean[]' \
+'--boolean-patterns[]' \
 '--mode[]' \
 '--cardinality[]' \
 '--median[]' \
 '--mad[]' \
 '--quartiles[]' \
+'--percentiles[]' \
+'--percentile-list[]' \
 '--round[]' \
 '--nulls[]' \
 '--infer-dates[]' \
@@ -1809,6 +1908,7 @@ _arguments "${_arguments_options[@]}" : \
 '--evolve[]' \
 '--pipe[]' \
 '--separator[]' \
+'--all-strings[]' \
 '--jobs[]' \
 '--delimiter[]' \
 '-h[Print help]' \
@@ -1835,6 +1935,7 @@ _arguments "${_arguments_options[@]}" : \
 '--evolve[]' \
 '--pipe[]' \
 '--separator[]' \
+'--all-strings[]' \
 '--jobs[]' \
 '--delimiter[]' \
 '-h[Print help]' \
@@ -1853,6 +1954,7 @@ _arguments "${_arguments_options[@]}" : \
 '--evolve[]' \
 '--pipe[]' \
 '--separator[]' \
+'--all-strings[]' \
 '--jobs[]' \
 '--delimiter[]' \
 '-h[Print help]' \
@@ -1871,6 +1973,45 @@ _arguments "${_arguments_options[@]}" : \
 '--evolve[]' \
 '--pipe[]' \
 '--separator[]' \
+'--all-strings[]' \
+'--jobs[]' \
+'--delimiter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(ods)
+_arguments "${_arguments_options[@]}" : \
+'--print-package[]' \
+'--dump[]' \
+'--stats[]' \
+'--stats-csv[]' \
+'--quiet[]' \
+'--schema[]' \
+'--drop[]' \
+'--evolve[]' \
+'--pipe[]' \
+'--separator[]' \
+'--all-strings[]' \
+'--jobs[]' \
+'--delimiter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(parquet)
+_arguments "${_arguments_options[@]}" : \
+'--print-package[]' \
+'--dump[]' \
+'--stats[]' \
+'--stats-csv[]' \
+'--quiet[]' \
+'--schema[]' \
+'--drop[]' \
+'--evolve[]' \
+'--pipe[]' \
+'--separator[]' \
+'--all-strings[]' \
 '--jobs[]' \
 '--delimiter[]' \
 '-h[Print help]' \
@@ -1889,6 +2030,7 @@ _arguments "${_arguments_options[@]}" : \
 '--evolve[]' \
 '--pipe[]' \
 '--separator[]' \
+'--all-strings[]' \
 '--jobs[]' \
 '--delimiter[]' \
 '-h[Print help]' \
@@ -1916,6 +2058,14 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (xlsx)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(ods)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(parquet)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -1962,6 +2112,7 @@ _arguments "${_arguments_options[@]}" : \
 (validate)
 _arguments "${_arguments_options[@]}" : \
 '--trim[]' \
+'--no-format-validation[]' \
 '--fail-fast[]' \
 '--valid[]' \
 '--invalid[]' \
@@ -2178,6 +2329,14 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(iplookup)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(iplookupnow)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (index-load)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -2197,6 +2356,10 @@ _arguments "${_arguments_options[@]}" : \
         esac
     ;;
 esac
+;;
+(geoconvert)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
 ;;
 (headers)
 _arguments "${_arguments_options[@]}" : \
@@ -2255,6 +2418,10 @@ _arguments "${_arguments_options[@]}" : \
 esac
 ;;
 (partition)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(pivotp)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -2442,6 +2609,14 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(ods)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(parquet)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (datapackage)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -2503,6 +2678,7 @@ _qsv_commands() {
 'foreach:' \
 'frequency:' \
 'geocode:' \
+'geoconvert:' \
 'headers:' \
 'index:' \
 'input:' \
@@ -2513,6 +2689,7 @@ _qsv_commands() {
 'lens:' \
 'luau:' \
 'partition:' \
+'pivotp:' \
 'pro:' \
 'prompt:' \
 'pseudo:' \
@@ -2785,6 +2962,8 @@ _qsv__geocode_commands() {
 'reversenow:' \
 'countryinfo:' \
 'countryinfonow:' \
+'iplookup:' \
+'iplookupnow:' \
 'index-load:' \
 'index-check:' \
 'index-update:' \
@@ -2812,6 +2991,8 @@ _qsv__geocode__help_commands() {
 'reversenow:' \
 'countryinfo:' \
 'countryinfonow:' \
+'iplookup:' \
+'iplookupnow:' \
 'index-load:' \
 'index-check:' \
 'index-update:' \
@@ -2855,6 +3036,16 @@ _qsv__geocode__help__index-update_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help index-update commands' commands "$@"
 }
+(( $+functions[_qsv__geocode__help__iplookup_commands] )) ||
+_qsv__geocode__help__iplookup_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode help iplookup commands' commands "$@"
+}
+(( $+functions[_qsv__geocode__help__iplookupnow_commands] )) ||
+_qsv__geocode__help__iplookupnow_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode help iplookupnow commands' commands "$@"
+}
 (( $+functions[_qsv__geocode__help__reverse_commands] )) ||
 _qsv__geocode__help__reverse_commands() {
     local commands; commands=()
@@ -2895,6 +3086,16 @@ _qsv__geocode__index-update_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode index-update commands' commands "$@"
 }
+(( $+functions[_qsv__geocode__iplookup_commands] )) ||
+_qsv__geocode__iplookup_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode iplookup commands' commands "$@"
+}
+(( $+functions[_qsv__geocode__iplookupnow_commands] )) ||
+_qsv__geocode__iplookupnow_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode iplookupnow commands' commands "$@"
+}
 (( $+functions[_qsv__geocode__reverse_commands] )) ||
 _qsv__geocode__reverse_commands() {
     local commands; commands=()
@@ -2914,6 +3115,11 @@ _qsv__geocode__suggest_commands() {
 _qsv__geocode__suggestnow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode suggestnow commands' commands "$@"
+}
+(( $+functions[_qsv__geoconvert_commands] )) ||
+_qsv__geoconvert_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geoconvert commands' commands "$@"
 }
 (( $+functions[_qsv__headers_commands] )) ||
 _qsv__headers_commands() {
@@ -2948,6 +3154,7 @@ _qsv__help_commands() {
 'foreach:' \
 'frequency:' \
 'geocode:' \
+'geoconvert:' \
 'headers:' \
 'index:' \
 'input:' \
@@ -2958,6 +3165,7 @@ _qsv__help_commands() {
 'lens:' \
 'luau:' \
 'partition:' \
+'pivotp:' \
 'pro:' \
 'prompt:' \
 'pseudo:' \
@@ -3162,6 +3370,8 @@ _qsv__help__geocode_commands() {
 'reversenow:' \
 'countryinfo:' \
 'countryinfonow:' \
+'iplookup:' \
+'iplookupnow:' \
 'index-load:' \
 'index-check:' \
 'index-update:' \
@@ -3199,6 +3409,16 @@ _qsv__help__geocode__index-update_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode index-update commands' commands "$@"
 }
+(( $+functions[_qsv__help__geocode__iplookup_commands] )) ||
+_qsv__help__geocode__iplookup_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help geocode iplookup commands' commands "$@"
+}
+(( $+functions[_qsv__help__geocode__iplookupnow_commands] )) ||
+_qsv__help__geocode__iplookupnow_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help geocode iplookupnow commands' commands "$@"
+}
 (( $+functions[_qsv__help__geocode__reverse_commands] )) ||
 _qsv__help__geocode__reverse_commands() {
     local commands; commands=()
@@ -3218,6 +3438,11 @@ _qsv__help__geocode__suggest_commands() {
 _qsv__help__geocode__suggestnow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode suggestnow commands' commands "$@"
+}
+(( $+functions[_qsv__help__geoconvert_commands] )) ||
+_qsv__help__geoconvert_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help geoconvert commands' commands "$@"
 }
 (( $+functions[_qsv__help__headers_commands] )) ||
 _qsv__help__headers_commands() {
@@ -3286,6 +3511,11 @@ _qsv__help__luau__map_commands() {
 _qsv__help__partition_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help partition commands' commands "$@"
+}
+(( $+functions[_qsv__help__pivotp_commands] )) ||
+_qsv__help__pivotp_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help pivotp commands' commands "$@"
 }
 (( $+functions[_qsv__help__pro_commands] )) ||
 _qsv__help__pro_commands() {
@@ -3459,6 +3689,8 @@ _qsv__help__to_commands() {
 'postgres:' \
 'sqlite:' \
 'xlsx:' \
+'ods:' \
+'parquet:' \
 'datapackage:' \
     )
     _describe -t commands 'qsv help to commands' commands "$@"
@@ -3467,6 +3699,16 @@ _qsv__help__to_commands() {
 _qsv__help__to__datapackage_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help to datapackage commands' commands "$@"
+}
+(( $+functions[_qsv__help__to__ods_commands] )) ||
+_qsv__help__to__ods_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help to ods commands' commands "$@"
+}
+(( $+functions[_qsv__help__to__parquet_commands] )) ||
+_qsv__help__to__parquet_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help to parquet commands' commands "$@"
 }
 (( $+functions[_qsv__help__to__postgres_commands] )) ||
 _qsv__help__to__postgres_commands() {
@@ -3580,6 +3822,11 @@ _qsv__luau__map_commands() {
 _qsv__partition_commands() {
     local commands; commands=()
     _describe -t commands 'qsv partition commands' commands "$@"
+}
+(( $+functions[_qsv__pivotp_commands] )) ||
+_qsv__pivotp_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv pivotp commands' commands "$@"
 }
 (( $+functions[_qsv__pro_commands] )) ||
 _qsv__pro_commands() {
@@ -3840,6 +4087,8 @@ _qsv__to_commands() {
 'postgres:' \
 'sqlite:' \
 'xlsx:' \
+'ods:' \
+'parquet:' \
 'datapackage:' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
@@ -3856,6 +4105,8 @@ _qsv__to__help_commands() {
 'postgres:' \
 'sqlite:' \
 'xlsx:' \
+'ods:' \
+'parquet:' \
 'datapackage:' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
@@ -3871,6 +4122,16 @@ _qsv__to__help__help_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to help help commands' commands "$@"
 }
+(( $+functions[_qsv__to__help__ods_commands] )) ||
+_qsv__to__help__ods_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv to help ods commands' commands "$@"
+}
+(( $+functions[_qsv__to__help__parquet_commands] )) ||
+_qsv__to__help__parquet_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv to help parquet commands' commands "$@"
+}
 (( $+functions[_qsv__to__help__postgres_commands] )) ||
 _qsv__to__help__postgres_commands() {
     local commands; commands=()
@@ -3885,6 +4146,16 @@ _qsv__to__help__sqlite_commands() {
 _qsv__to__help__xlsx_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to help xlsx commands' commands "$@"
+}
+(( $+functions[_qsv__to__ods_commands] )) ||
+_qsv__to__ods_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv to ods commands' commands "$@"
+}
+(( $+functions[_qsv__to__parquet_commands] )) ||
+_qsv__to__parquet_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv to parquet commands' commands "$@"
 }
 (( $+functions[_qsv__to__postgres_commands] )) ||
 _qsv__to__postgres_commands() {

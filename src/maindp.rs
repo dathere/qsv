@@ -62,13 +62,15 @@ static COMMAND_LIST: &str = r#"
     exclude     Excludes the records in one CSV from another
     extdedup    Remove duplicates rows from an arbitrarily large text file
     frequency   Show frequency tables
+    geocode     Geocodes a location against the Geonames cities database
+    geoconvert  Convert between spatial formats & CSV, including GeoJSON, SHP & more
     headers     Show header names
     help        Show this usage message
     index       Create CSV index for faster access
     input       Read CSVs w/ special quoting, skipping, trimming & transcoding rules
-    joinp       Join CSV files using the Pola.rs engine
-    luau        Execute Luau script on CSV data
-    pivotp      Pivot CSV data
+    joinp       Join CSV files using the Pola.rs engine 🐻‍❄️
+    luau        Execute Luau script on CSV data 👑
+    pivotp      Pivot CSV data 🐻‍❄️
     pseudo      Pseudonymise the values of a column
     rename      Rename the columns of CSV data efficiently
     replace     Replace patterns in CSV data
@@ -83,12 +85,14 @@ static COMMAND_LIST: &str = r#"
     sniff       Quickly sniff CSV metadata
     sort        Sort CSV data in alphabetical, numerical, reverse or random order
     sortcheck   Check if a CSV is sorted
-    sqlp        Run a SQL query against several CSVs using the Pola.rs engine
+    sqlp        Run a SQL query against several CSVs using the Pola.rs engine 🐻‍❄️
     stats       Infer data types and compute summary statistics
     template    Render templates using CSV data
     validate    Validate CSV data for RFC4180-compliance or with JSON Schema
 
-    NOTE: qsvdp ignores the --progressbar option for all commands."#;
+    NOTE: qsvdp ignores the --progressbar option for all commands.
+          🐻‍❄️ - requires polars feature
+          👑 - requires luau feature"#;
 
 mod clitypes;
 mod cmd;
@@ -124,6 +128,7 @@ struct Args {
 
 fn main() -> QsvExitCode {
     util::qsv_custom_panic();
+    util::reset_sigpipe();
 
     let now = Instant::now();
     #[allow(unused_variables)]
@@ -251,6 +256,8 @@ enum Command {
     Exclude,
     ExtDedup,
     Frequency,
+    Geocode,
+    Geoconvert,
     Headers,
     Help,
     Index,
@@ -307,6 +314,8 @@ impl Command {
             Command::Exclude => cmd::exclude::run(argv),
             Command::ExtDedup => cmd::extdedup::run(argv),
             Command::Frequency => cmd::frequency::run(argv),
+            Command::Geocode => cmd::geocode::run(argv),
+            Command::Geoconvert => cmd::geoconvert::run(argv),
             Command::Headers => cmd::headers::run(argv),
             Command::Help => {
                 wout!("{USAGE}\n\n{SPONSOR_MESSAGE}");

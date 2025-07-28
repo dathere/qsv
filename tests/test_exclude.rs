@@ -80,7 +80,7 @@ exclude_test!(exclude, |wrk: Workdir,
             svec!["NEW YORK", "NY"],
         ],
     );
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 });
 
 exclude_test!(exclude_casei, |wrk: Workdir,
@@ -89,7 +89,7 @@ exclude_test!(exclude_casei, |wrk: Workdir,
     cmd.arg("--ignore-case");
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = make_rows(headers, vec![svec!["San Francisco", "CA"]]);
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 });
 
 exclude_test!(include, |wrk: Workdir,
@@ -105,7 +105,7 @@ exclude_test!(include, |wrk: Workdir,
             svec!["Buffalo", "NY"],
         ],
     );
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 });
 
 exclude_test!(include_casei, |wrk: Workdir,
@@ -122,7 +122,7 @@ exclude_test!(include_casei, |wrk: Workdir,
             svec!["NEW YORK", "NY"],
         ],
     );
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 });
 
 #[test]
@@ -140,7 +140,7 @@ fn exclude_utf8_issue778_aliases_posiions() {
     let got: String = wrk.stdout(&mut cmd);
     let expected = wrk.load_test_resource("aliases-positions-expected.csv");
 
-    similar_asserts::assert_eq!(got, expected.trim_end());
+    assert_eq!(got, expected.trim_end());
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn exclude_utf8_issue778_positions_aliases() {
     let got: String = wrk.stdout(&mut cmd);
     let expected = wrk.load_test_resource("positions-aliases-expected.csv");
 
-    similar_asserts::assert_eq!(got, expected.trim_end());
+    assert_eq!(got, expected.trim_end());
 }
 
 #[test]
@@ -194,5 +194,5 @@ fn exclude_1497_empty_fields() {
     let got: String = wrk.stdout(&mut cmd);
     let expected = "id,start,end\n1,2001,2003\n4,2007,2010";
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

@@ -134,7 +134,7 @@ pub fn load_lookup_table(
         && cached_csv_size > 0
     {
         lookup_table_uri = cached_csv_path.display().to_string();
-        info!("Using cached lookup table {}", lookup_table_uri);
+        info!("Using cached lookup table {lookup_table_uri}");
     } else if !lookup_table_is_file {
         // Handle remote files
         if let Some(lookup_url) = lookup_table_uri.strip_prefix("dathere://") {

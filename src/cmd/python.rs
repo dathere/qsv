@@ -414,12 +414,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         .call1((result,))?;
                     let include_record: bool = result.extract().unwrap_or(false);
 
-                    if include_record {
-                        if let Err(e) = wtr.write_record(&*record) {
-                            return Err(pyo3::PyErr::new::<pyo3::exceptions::PyIOError, _>(
-                                format!("cannot write record ({row_number}-{e})"),
-                            ));
-                        }
+                    if include_record && let Err(e) = wtr.write_record(&*record) {
+                        return Err(pyo3::PyErr::new::<pyo3::exceptions::PyIOError, _>(format!(
+                            "cannot write record ({row_number}-{e})"
+                        )));
                     }
                 }
             }

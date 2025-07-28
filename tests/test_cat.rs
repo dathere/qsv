@@ -62,7 +62,7 @@ fn cat_rows_space() {
         (rows1.to_vec(), rows2.to_vec())
     };
     let got: Vec<Vec<String>> = run_cat("cat_rows_space", "rows", rows1, rows2, no_headers);
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn cat_rows_headers() {
     expected.extend(rows2.clone().into_iter().skip(1));
 
     let got: Vec<Vec<String>> = run_cat("cat_rows_headers", "rows", rows1, rows2, |_| ());
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn cat_rowskey() {
         svec!["2", "3", "4", "5"],
         svec!["z", "y", "x", "w"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -178,7 +178,7 @@ fn cat_rowskey_ssv_tsv() {
         svec!["2", "3", "4", "5"],
         svec!["z", "y", "x", "w"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn cat_rows_flexible() {
         svec!["2", "3", "5", "4"],
         svec!["z", "y", "w", "x"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -282,7 +282,7 @@ fn cat_rows_flexible_infile() {
         svec!["2", "3", "5", "4"],
         svec!["z", "y", "w", "x"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -334,7 +334,7 @@ fn cat_rowskey_grouping() {
         svec!["in3", "2", "3", "4", "5"],
         svec!["in3", "z", "y", "x", "w"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -389,7 +389,7 @@ fn cat_rowskey_grouping_noheader() {
         svec!["in3", "2", "3", "5", "4"],
         svec!["in3", "z", "y", "w", "x"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -459,7 +459,7 @@ fn cat_rowskey_grouping_parentdirfname() {
         svec!["testdir/in3.csv", "2", "3", "4", "5"],
         svec!["testdir/in3.csv", "z", "y", "x", "w"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -528,7 +528,7 @@ fn cat_rowskey_grouping_parentdirfstem() {
         svec!["testdir/in3", "2", "3", "4", "5"],
         svec!["testdir/in3", "z", "y", "x", "w"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -580,7 +580,7 @@ fn cat_rowskey_grouping_infile() {
         svec!["in3", "2", "3", "4", "5"],
         svec!["in3", "z", "y", "x", "w"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -633,7 +633,7 @@ fn cat_rowskey_grouping_customname() {
         svec!["in3", "2", "3", "4", "5"],
         svec!["in3", "z", "y", "x", "w"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -684,7 +684,7 @@ fn cat_rowskey_insertion_order() {
         svec!["2", "3", "4", "5"],
         svec!["z", "y", "x", "w"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -738,7 +738,7 @@ fn cat_rowskey_insertion_order_noheader() {
         svec!["2", "3", "5", "4"],
         svec!["z", "y", "w", "x"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -759,7 +759,7 @@ fn prop_cat_cols() {
             r1.extend(r2.into_iter());
             expected.push(r1);
         }
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
         TestResult::passed()
     }
     qcheck(p as fn(CsvData, CsvData) -> TestResult);
@@ -772,7 +772,7 @@ fn cat_cols_headers() {
 
     let expected = vec![svec!["h1", "h2", "h3", "h4"], svec!["a", "b", "y", "z"]];
     let got: Vec<Vec<String>> = run_cat("cat_cols_headers", "columns", rows1, rows2, |_| ());
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -782,7 +782,7 @@ fn cat_cols_no_pad() {
 
     let expected = vec![svec!["a", "b", "y", "z"]];
     let got: Vec<Vec<String>> = run_cat("cat_cols_headers", "columns", rows1, rows2, no_headers);
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -792,5 +792,102 @@ fn cat_cols_pad() {
 
     let expected = vec![svec!["a", "b", "y", "z"], svec!["", "", "y", "z"]];
     let got: Vec<Vec<String>> = run_cat("cat_cols_headers", "columns", rows1, rows2, pad);
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn cat_rows_directory_skip_format_check() {
+    let wrk = Workdir::new("cat_rows_directory_skip_format_check");
+
+    // Create a subdirectory to test directory processing
+    let _ = wrk.create_subdir("test");
+
+    // Create a file with unsupported extension (.txt) that would normally be filtered out
+    wrk.create_from_string("test/test.txt", "col_name");
+
+    // Also create a supported CSV file to ensure both are processed
+    wrk.create("test/valid.csv", vec![svec!["header"], svec!["data"]]);
+
+    let mut cmd = wrk.command("cat");
+    cmd.env("QSV_SKIP_FORMAT_CHECK", "1")
+        .arg("rows")
+        .arg("--no-headers") // Use no-headers since the .txt file doesn't have proper headers
+        .arg("test");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // When QSV_SKIP_FORMAT_CHECK is set, both files should be processed
+    // The exact order may vary, but we should see content from both files
+    // Since we're using --no-headers, all lines are treated as data
+    let expected_lines = vec!["col_name", "header", "data"];
+
+    // Convert output to a flat list of strings for easier comparison
+    let got_flat: Vec<String> = got.into_iter().flatten().collect();
+
+    // Check that we got all expected content (order may vary due to directory traversal)
+    for expected_line in expected_lines {
+        assert!(
+            got_flat.contains(&expected_line.to_string()),
+            "Expected to find '{}' in output: {:?}",
+            expected_line,
+            got_flat
+        );
+    }
+
+    // Ensure we got the expected number of lines
+    assert_eq!(
+        got_flat.len(),
+        3,
+        "Expected 3 lines of output, got: {:?}",
+        got_flat
+    );
+}
+
+#[test]
+fn cat_rows_directory_skip_format_check_only_unsupported() {
+    let wrk = Workdir::new("cat_rows_directory_skip_format_check_only_unsupported");
+
+    // Create a subdirectory to test directory processing
+    let _ = wrk.create_subdir("test");
+
+    // Create only a file with unsupported extension - this reproduces the exact issue scenario
+    wrk.create_from_string("test/test.txt", "col_name");
+
+    let mut cmd = wrk.command("cat");
+    cmd.env("QSV_SKIP_FORMAT_CHECK", "1")
+        .arg("rows")
+        .arg("--no-headers")
+        .arg("test");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["col_name"]];
+
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn cat_rows_directory_without_skip_format_check_fails() {
+    let wrk = Workdir::new("cat_rows_directory_without_skip_format_check");
+
+    // Create a subdirectory to test directory processing
+    let _ = wrk.create_subdir("test");
+
+    // Create only a file with unsupported extension
+    wrk.create_from_string("test/test.txt", "col_name");
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows").arg("test");
+
+    // This should fail with the error message mentioned in the issue
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "No data on stdin. Please provide at least one input file or pipe data to stdin."
+        ),
+        "Expected error message not found. Stderr: {}",
+        stderr
+    );
 }

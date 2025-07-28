@@ -12,6 +12,7 @@ Objects with duplicate keys are not recommended as only one key and its values m
 
 If your JSON data is not in the expected format and/or is nested or complex, try using
 the --jaq option to pass a jq-like filter before parsing with the above constraints.
+Learn more about jaqhere: https://github.com/01mf02/jaq
 
 As an example, say we have the following JSON data in a file fruits.json:
 
@@ -30,7 +31,7 @@ As an example, say we have the following JSON data in a file fruits.json:
 
 To convert it to CSV format run:
 
-qsv json fruits.json
+  qsv json fruits.json
 
 And the following is printed to the terminal:
 
@@ -38,14 +39,60 @@ fruit,price,calories
 apple,2.5,95
 banana,3.0,105
 
-The order of the columns in the CSV file will be the same as the order of the keys in the first JSON object.
-The order of the rows in the CSV file will be the same as the order of the objects in the JSON array.
+IMPORTANT: 
+  The order of the columns in the CSV file will be the same as the order of the keys in the first JSON object.
+  The order of the rows in the CSV file will be the same as the order of the objects in the JSON array.
+
+  Additional keys not present in the first JSON object will be appended as additional columns in the
+  output CSV in the order they appear.
+
+For example, say we have the following JSON data in a file fruits2.json:
+
+[
+    {
+        "fruit": "apple",
+        "cost": 1.75,
+        "price": 2.50,
+        "calories": 95
+    },
+    {
+        "fruit": "mangosteen",
+        "price": 5.00,
+        "calories": 56
+    },
+    {
+        "fruit": "starapple",
+        "rating": 9,
+        "price": 4.50,
+        "calories": 95,
+    },
+    {
+        "fruit": "banana",
+        "price": 3.00,
+        "calories": 105
+    }
+]
+
+If we run the following command:
+
+  qsv json fruits2.json | qsv table
+
+The output CSV will have the following columns:
+
+fruit       cost  price  calories  rating
+apple       1.75  2.5    95        
+mangosteen        5.0    56        
+starapple         4.5    95        9
+banana            3.0    105       
+
+Note that the "rating" column is added as an additional column in the output CSV,
+though it appears as the 2nd column in the third JSON object for "starapple".
 
 If you want to select/reorder/drop columns in the output CSV, use the --select option, for example:
 
-qsv json fruits.json --select price,fruit
+  qsv json fruits.json --select price,fruit
 
-And the following is printed to the terminal:
+The following is printed to the terminal:
 
 price,fruit
 2.5,apple
@@ -58,8 +105,7 @@ For example you may copy the JSON data above to your clipboard then run:
 
 qsv clipboard | qsv json
 
-When JSON data is nested or complex, try using the --jaq option and provide a filter value.
-The --jaq option uses jaq (like jq). You may learn more here: https://github.com/01mf02/jaq
+Again, when JSON data is nested or complex, try using the --jaq option and provide a filter value.
 
 For example we have a .json file with a "data" key and the value being the same array as before:
 
@@ -88,6 +134,7 @@ json options:
                            See 'qsv select --help' for the full syntax.
                            Note however that <cols> NEED to be a comma-delimited list
                            of column NAMES and NOT column INDICES.
+                           [default: 1- ]
 
 Common options:
     -h, --help             Display this message
@@ -258,8 +305,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // as the order of the headers in the CSV file is not guaranteed to be the same as the order of
     // the keys in the JSON object
     let temp_dir = env::temp_dir();
-    let intermediate_csv = temp_dir
-        .join("intermediate.csv")
+    let intermediate_csv = tempfile::Builder::new()
+        .suffix(".csv")
+        .tempfile_in(&temp_dir)?
+        .into_temp_path()
         .to_string_lossy()
         .into_owned();
 
@@ -275,21 +324,45 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         let flattener = Flattener::new();
         let intermediate_csv_writer = csv::WriterBuilder::new()
-            .buffer_capacity(config::DEFAULT_WTR_BUFFER_CAPACITY)
+            .has_headers(true)
             .from_path(intermediate_csv.clone())?;
-        Json2Csv::new(flattener).convert_from_array(values, intermediate_csv_writer)?;
+        Json2Csv::new(flattener)
+            .preserve_key_order(true)
+            .convert_from_array(values, intermediate_csv_writer)?;
     }
 
     // STEP 2: select the columns to use in the final output
-    // if --select is not specified, select in the order of the first dict's keys
-    // safety: we checked that first_dict is not empty so headers is not empty
-    let sel_cols = args
-        .flag_select
-        .unwrap_or_else(|| SelectColumns::parse(&first_dict_headers.join(",")).unwrap());
-
+    // Read the intermediate CSV to get the actual headers (which are sorted alphabetically)
     let sel_rconfig = config::Config::new(Some(intermediate_csv).as_ref()).no_headers(false);
     let mut intermediate_csv_rdr = sel_rconfig.reader()?;
     let byteheaders = intermediate_csv_rdr.byte_headers()?;
+
+    // Convert byte headers to string headers for easier processing
+    let actual_headers: Vec<String> = byteheaders
+        .iter()
+        .map(|h| String::from_utf8_lossy(h).to_string())
+        .collect();
+
+    // If --select is not specified, reorder the actual headers to match the first dict's key order
+    let sel_cols = if let Some(select_cols) = args.flag_select {
+        select_cols
+    } else {
+        // If all expected headers exist, use the original order
+        if first_dict_headers
+            .iter()
+            .all(|&h| actual_headers.contains(&h.to_string()))
+        {
+            SelectColumns::parse(&first_dict_headers.join(",")).map_err(|e| {
+                CliError::Other(format!(
+                    "Failed to parse select columns in order of the first JSON dict: {e}"
+                ))
+            })?
+        } else {
+            // Otherwise, just use the headers as they appear in the CSV
+            SelectColumns::parse(&actual_headers.join(","))
+                .map_err(|e| CliError::Other(format!("Failed to parse select columns: {e}")))?
+        }
+    };
 
     // and write the selected columns to the final CSV file
     let sel = sel_rconfig.select(sel_cols).selection(byteheaders)?;

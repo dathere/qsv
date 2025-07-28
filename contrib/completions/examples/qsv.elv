@@ -50,6 +50,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand foreach 'foreach'
             cand frequency 'frequency'
             cand geocode 'geocode'
+            cand geoconvert 'geoconvert'
             cand headers 'headers'
             cand index 'index'
             cand input 'input'
@@ -60,6 +61,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand lens 'lens'
             cand luau 'luau'
             cand partition 'partition'
+            cand pivotp 'pivotp'
             cand pro 'pro'
             cand prompt 'prompt'
             cand pseudo 'pseudo'
@@ -334,8 +336,9 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --help 'Print help'
         }
         &'qsv;edit'= {
-            cand --output 'output'
             cand --no-headers 'no-headers'
+            cand --in-place 'in-place'
+            cand --output 'output'
             cand -h 'Print help'
             cand --help 'Print help'
         }
@@ -579,6 +582,8 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand reversenow 'reversenow'
             cand countryinfo 'countryinfo'
             cand countryinfonow 'countryinfonow'
+            cand iplookup 'iplookup'
+            cand iplookupnow 'iplookupnow'
             cand index-load 'index-load'
             cand index-check 'index-check'
             cand index-update 'index-update'
@@ -723,6 +728,52 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand -h 'Print help'
             cand --help 'Print help'
         }
+        &'qsv;geocode;iplookup'= {
+            cand --new-column 'new-column'
+            cand --rename 'rename'
+            cand --country 'country'
+            cand --min-score 'min-score'
+            cand --admin1 'admin1'
+            cand --k_weight 'k_weight'
+            cand --formatstr 'formatstr'
+            cand --language 'language'
+            cand --invalid-result 'invalid-result'
+            cand --jobs 'jobs'
+            cand --batch 'batch'
+            cand --timeout 'timeout'
+            cand --cache-dir 'cache-dir'
+            cand --languages 'languages'
+            cand --cities-url 'cities-url'
+            cand --force 'force'
+            cand --output 'output'
+            cand --delimiter 'delimiter'
+            cand --progressbar 'progressbar'
+            cand -h 'Print help'
+            cand --help 'Print help'
+        }
+        &'qsv;geocode;iplookupnow'= {
+            cand --new-column 'new-column'
+            cand --rename 'rename'
+            cand --country 'country'
+            cand --min-score 'min-score'
+            cand --admin1 'admin1'
+            cand --k_weight 'k_weight'
+            cand --formatstr 'formatstr'
+            cand --language 'language'
+            cand --invalid-result 'invalid-result'
+            cand --jobs 'jobs'
+            cand --batch 'batch'
+            cand --timeout 'timeout'
+            cand --cache-dir 'cache-dir'
+            cand --languages 'languages'
+            cand --cities-url 'cities-url'
+            cand --force 'force'
+            cand --output 'output'
+            cand --delimiter 'delimiter'
+            cand --progressbar 'progressbar'
+            cand -h 'Print help'
+            cand --help 'Print help'
+        }
         &'qsv;geocode;index-load'= {
             cand --new-column 'new-column'
             cand --rename 'rename'
@@ -822,6 +873,8 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand reversenow 'reversenow'
             cand countryinfo 'countryinfo'
             cand countryinfonow 'countryinfonow'
+            cand iplookup 'iplookup'
+            cand iplookupnow 'iplookupnow'
             cand index-load 'index-load'
             cand index-check 'index-check'
             cand index-update 'index-update'
@@ -840,6 +893,10 @@ set edit:completion:arg-completer[qsv] = {|@words|
         }
         &'qsv;geocode;help;countryinfonow'= {
         }
+        &'qsv;geocode;help;iplookup'= {
+        }
+        &'qsv;geocode;help;iplookupnow'= {
+        }
         &'qsv;geocode;help;index-load'= {
         }
         &'qsv;geocode;help;index-check'= {
@@ -849,6 +906,15 @@ set edit:completion:arg-completer[qsv] = {|@words|
         &'qsv;geocode;help;index-reset'= {
         }
         &'qsv;geocode;help;help'= {
+        }
+        &'qsv;geoconvert'= {
+            cand --geometry 'geometry'
+            cand --latitude 'latitude'
+            cand --longitude 'longitude'
+            cand --max-length 'max-length'
+            cand --output 'output'
+            cand -h 'Print help'
+            cand --help 'Print help'
         }
         &'qsv;headers'= {
             cand --just-names 'just-names'
@@ -971,6 +1037,9 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --find 'find'
             cand --ignore-case 'ignore-case'
             cand --freeze-columns 'freeze-columns'
+            cand --monochrome 'monochrome'
+            cand --wrap-mode 'wrap-mode'
+            cand --prompt 'prompt'
             cand --echo-column 'echo-column'
             cand --debug 'debug'
             cand -h 'Print help'
@@ -1053,6 +1122,23 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --drop 'drop'
             cand --no-headers 'no-headers'
             cand --delimiter 'delimiter'
+            cand -h 'Print help'
+            cand --help 'Print help'
+        }
+        &'qsv;pivotp'= {
+            cand --index 'index'
+            cand --values 'values'
+            cand --agg 'agg'
+            cand --sort-columns 'sort-columns'
+            cand --col-separator 'col-separator'
+            cand --validate 'validate'
+            cand --try-parsedates 'try-parsedates'
+            cand --infer-len 'infer-len'
+            cand --decimal-comma 'decimal-comma'
+            cand --ignore-errors 'ignore-errors'
+            cand --output 'output'
+            cand --delimiter 'delimiter'
+            cand --quiet 'quiet'
             cand -h 'Print help'
             cand --help 'Print help'
         }
@@ -1378,6 +1464,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
         &'qsv;sort'= {
             cand --select 'select'
             cand --numeric 'numeric'
+            cand --natural 'natural'
             cand --reverse 'reverse'
             cand --ignore-case 'ignore-case'
             cand --unique 'unique'
@@ -1412,6 +1499,9 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --jobs 'jobs'
             cand --filename 'filename'
             cand --pad 'pad'
+            cand --filter 'filter'
+            cand --filter-cleanup 'filter-cleanup'
+            cand --filter-ignore-errors 'filter-ignore-errors'
             cand --no-headers 'no-headers'
             cand --delimiter 'delimiter'
             cand --quiet 'quiet'
@@ -1449,11 +1539,14 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --everything 'everything'
             cand --typesonly 'typesonly'
             cand --infer-boolean 'infer-boolean'
+            cand --boolean-patterns 'boolean-patterns'
             cand --mode 'mode'
             cand --cardinality 'cardinality'
             cand --median 'median'
             cand --mad 'mad'
             cand --quartiles 'quartiles'
+            cand --percentiles 'percentiles'
+            cand --percentile-list 'percentile-list'
             cand --round 'round'
             cand --nulls 'nulls'
             cand --infer-dates 'infer-dates'
@@ -1514,6 +1607,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --evolve 'evolve'
             cand --pipe 'pipe'
             cand --separator 'separator'
+            cand --all-strings 'all-strings'
             cand --jobs 'jobs'
             cand --delimiter 'delimiter'
             cand -h 'Print help'
@@ -1521,6 +1615,8 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand postgres 'postgres'
             cand sqlite 'sqlite'
             cand xlsx 'xlsx'
+            cand ods 'ods'
+            cand parquet 'parquet'
             cand datapackage 'datapackage'
             cand help 'Print this message or the help of the given subcommand(s)'
         }
@@ -1535,6 +1631,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --evolve 'evolve'
             cand --pipe 'pipe'
             cand --separator 'separator'
+            cand --all-strings 'all-strings'
             cand --jobs 'jobs'
             cand --delimiter 'delimiter'
             cand -h 'Print help'
@@ -1551,6 +1648,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --evolve 'evolve'
             cand --pipe 'pipe'
             cand --separator 'separator'
+            cand --all-strings 'all-strings'
             cand --jobs 'jobs'
             cand --delimiter 'delimiter'
             cand -h 'Print help'
@@ -1567,6 +1665,41 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --evolve 'evolve'
             cand --pipe 'pipe'
             cand --separator 'separator'
+            cand --all-strings 'all-strings'
+            cand --jobs 'jobs'
+            cand --delimiter 'delimiter'
+            cand -h 'Print help'
+            cand --help 'Print help'
+        }
+        &'qsv;to;ods'= {
+            cand --print-package 'print-package'
+            cand --dump 'dump'
+            cand --stats 'stats'
+            cand --stats-csv 'stats-csv'
+            cand --quiet 'quiet'
+            cand --schema 'schema'
+            cand --drop 'drop'
+            cand --evolve 'evolve'
+            cand --pipe 'pipe'
+            cand --separator 'separator'
+            cand --all-strings 'all-strings'
+            cand --jobs 'jobs'
+            cand --delimiter 'delimiter'
+            cand -h 'Print help'
+            cand --help 'Print help'
+        }
+        &'qsv;to;parquet'= {
+            cand --print-package 'print-package'
+            cand --dump 'dump'
+            cand --stats 'stats'
+            cand --stats-csv 'stats-csv'
+            cand --quiet 'quiet'
+            cand --schema 'schema'
+            cand --drop 'drop'
+            cand --evolve 'evolve'
+            cand --pipe 'pipe'
+            cand --separator 'separator'
+            cand --all-strings 'all-strings'
             cand --jobs 'jobs'
             cand --delimiter 'delimiter'
             cand -h 'Print help'
@@ -1583,6 +1716,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --evolve 'evolve'
             cand --pipe 'pipe'
             cand --separator 'separator'
+            cand --all-strings 'all-strings'
             cand --jobs 'jobs'
             cand --delimiter 'delimiter'
             cand -h 'Print help'
@@ -1592,6 +1726,8 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand postgres 'postgres'
             cand sqlite 'sqlite'
             cand xlsx 'xlsx'
+            cand ods 'ods'
+            cand parquet 'parquet'
             cand datapackage 'datapackage'
             cand help 'Print this message or the help of the given subcommand(s)'
         }
@@ -1600,6 +1736,10 @@ set edit:completion:arg-completer[qsv] = {|@words|
         &'qsv;to;help;sqlite'= {
         }
         &'qsv;to;help;xlsx'= {
+        }
+        &'qsv;to;help;ods'= {
+        }
+        &'qsv;to;help;parquet'= {
         }
         &'qsv;to;help;datapackage'= {
         }
@@ -1627,6 +1767,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
         }
         &'qsv;validate'= {
             cand --trim 'trim'
+            cand --no-format-validation 'no-format-validation'
             cand --fail-fast 'fail-fast'
             cand --valid 'valid'
             cand --invalid 'invalid'
@@ -1672,6 +1813,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand foreach 'foreach'
             cand frequency 'frequency'
             cand geocode 'geocode'
+            cand geoconvert 'geoconvert'
             cand headers 'headers'
             cand index 'index'
             cand input 'input'
@@ -1682,6 +1824,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand lens 'lens'
             cand luau 'luau'
             cand partition 'partition'
+            cand pivotp 'pivotp'
             cand pro 'pro'
             cand prompt 'prompt'
             cand pseudo 'pseudo'
@@ -1787,6 +1930,8 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand reversenow 'reversenow'
             cand countryinfo 'countryinfo'
             cand countryinfonow 'countryinfonow'
+            cand iplookup 'iplookup'
+            cand iplookupnow 'iplookupnow'
             cand index-load 'index-load'
             cand index-check 'index-check'
             cand index-update 'index-update'
@@ -1804,6 +1949,10 @@ set edit:completion:arg-completer[qsv] = {|@words|
         }
         &'qsv;help;geocode;countryinfonow'= {
         }
+        &'qsv;help;geocode;iplookup'= {
+        }
+        &'qsv;help;geocode;iplookupnow'= {
+        }
         &'qsv;help;geocode;index-load'= {
         }
         &'qsv;help;geocode;index-check'= {
@@ -1811,6 +1960,8 @@ set edit:completion:arg-completer[qsv] = {|@words|
         &'qsv;help;geocode;index-update'= {
         }
         &'qsv;help;geocode;index-reset'= {
+        }
+        &'qsv;help;geoconvert'= {
         }
         &'qsv;help;headers'= {
         }
@@ -1837,6 +1988,8 @@ set edit:completion:arg-completer[qsv] = {|@words|
         &'qsv;help;luau;filter'= {
         }
         &'qsv;help;partition'= {
+        }
+        &'qsv;help;pivotp'= {
         }
         &'qsv;help;pro'= {
             cand lens 'lens'
@@ -1912,6 +2065,8 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand postgres 'postgres'
             cand sqlite 'sqlite'
             cand xlsx 'xlsx'
+            cand ods 'ods'
+            cand parquet 'parquet'
             cand datapackage 'datapackage'
         }
         &'qsv;help;to;postgres'= {
@@ -1919,6 +2074,10 @@ set edit:completion:arg-completer[qsv] = {|@words|
         &'qsv;help;to;sqlite'= {
         }
         &'qsv;help;to;xlsx'= {
+        }
+        &'qsv;help;to;ods'= {
+        }
+        &'qsv;help;to;parquet'= {
         }
         &'qsv;help;to;datapackage'= {
         }

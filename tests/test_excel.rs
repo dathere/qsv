@@ -16,7 +16,7 @@ fn excel_open_xls() {
         svec!["http://api.zippopotam.us/us/94105", "San Francisco"],
         svec!["http://api.zippopotam.us/us/92802", "Anaheim"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -41,7 +41,7 @@ fn excel_cellerrors() {
         svec!["8", "Hello", "hello"],
         svec!["9", "abcd", "wxyz"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn excel_cellerrors_formula() {
         svec!["8", "Hello", "hello"],
         svec!["9", "abcd", "wxyz"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn excel_cellerrors_both() {
         svec!["8", "Hello", "hello"],
         svec!["9", "abcd", "wxyz"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn excel_open_xls_delimiter() {
         svec!["http://api.zippopotam.us/us/94105;San Francisco"],
         svec!["http://api.zippopotam.us/us/92802;Anaheim"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn excel_open_xlsx_readpassword() {
     cmd.arg(xlsx_file);
 
     let got = wrk.output_stderr(&mut cmd);
-    similar_asserts::assert_eq!(got, "Xlsx error: Workbook is password protected\n");
+    assert_eq!(got, "Xlsx error: Workbook is password protected\n");
     wrk.assert_err(&mut cmd);
 }
 
@@ -151,7 +151,7 @@ fn excel_open_ods_readpassword() {
     cmd.arg(ods_file);
 
     let got = wrk.output_stderr(&mut cmd);
-    similar_asserts::assert_eq!(got, "Ods error: Workbook is password protected\n");
+    assert_eq!(got, "Ods error: Workbook is password protected\n");
     wrk.assert_err(&mut cmd);
 }
 
@@ -176,7 +176,7 @@ fn excel_open_flexible_xls() {
         svec!["http://api.zippopotam.us/us/92802", "Anaheim", ""],
         svec!["http://api.zippopotam.us/us/10001", "New York", ""],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -204,7 +204,7 @@ fn excel_trim_xls() {
         svec!["d", "line1 line2 line3", "f"],
         svec!["e", "5c", "surrounded by en and em spaces"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn excel_date_xls() {
         svec!["1970-01-01", "7", "2009-01-21", "here"],
         svec!["1989-12-31", "11", "2016-04-01", "42"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -260,7 +260,7 @@ fn excel_date_xls_dateformat() {
         svec!["1970-01-01", "7", "2009-01-21", "here"],
         svec!["1989-12-31", "11", "2016-04-01", "42"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -292,7 +292,7 @@ fn excel_date_xlsx_date_format() {
         ],
         svec!["Tue 2001-09-11", "9/11/01 8:30 am"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -313,7 +313,7 @@ fn excel_xlsx_data_types() {
         svec!["4", "-54545.6565756785", "0", "2001-09-11 08:30:00", "PT84600S", "fox", "💩", "El rápido zorro marrón"], 
         svec!["5", "-5446563454.43546", "true", "1945-08-06 08:15:00", "PT40S", "jumped", "🙀", "いろはにほへとちりぬるをわかよたれそつねならむうゐのおくやまけふこえてあさきゆめみしゑひもせす"]
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -342,7 +342,7 @@ fn excel_date_xlsx() {
         ],
         svec!["2001-09-11", "9/11/01 8:30 am"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -361,7 +361,7 @@ fn excel_open_ods() {
         svec!["http://api.zippopotam.us/us/94105", "San Francisco"],
         svec!["http://api.zippopotam.us/us/92802", "Anaheim"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -410,7 +410,7 @@ fn excel_open_xlsx() {
         svec!["amazon.com", "Seattle", "14.23", "2012-03-14"],
         svec!["microsoft.com", "Redmond", "14.201", "2012-03-14 15:30:00"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -431,7 +431,7 @@ fn excel_last_sheet() {
         svec!["d", "2"],
         svec!["e", "1"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -445,7 +445,7 @@ fn excel_invalid_sheet_index() {
 
     let got = wrk.output_stderr(&mut cmd);
     let expected = "usage error: sheet index 100 is greater than number of sheets 8\n".to_string();
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_err(&mut cmd);
 }
 
@@ -460,7 +460,7 @@ fn excel_invalid_sheet_neg_index() {
 
     let got = wrk.output_stderr(&mut cmd);
     let expected = "5 2-column rows exported from \"Last\" sheet\n".to_string();
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -481,7 +481,7 @@ fn excel_sheet_name() {
         svec!["w", "7"],
         svec!["v", "3.14159265358979"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -502,7 +502,7 @@ fn excel_xls_float_handling_516() {
         svec!["4", "14.2", "pink"],
         svec!["5", "14.201", "grey"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -523,7 +523,7 @@ fn excel_case_insensitive_sheet_name() {
         svec!["w", "7"],
         svec!["v", "3.14159265358979"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -664,7 +664,7 @@ fn excel_metadata() {
             "0"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -689,7 +689,7 @@ fn excel_short_metadata() {
         svec!["6", "NoData", "WorkSheet", "Visible"],
         svec!["7", "Last", "WorkSheet", "Visible"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1165,7 +1165,7 @@ fn ods_metadata() {
         ],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1184,7 +1184,7 @@ fn ods_short_metadata() {
         svec!["0", "Sheet1", "WorkSheet", "Visible"],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1230,7 +1230,7 @@ fn ods_metadata_pretty_json() {
 }"#;
 
     assert!(got.ends_with(expected));
-    // similar_asserts::assert_eq!(got, expected);
+    // assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1316,7 +1316,7 @@ fn excel_metadata_sheet_types() {
             "0"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1403,7 +1403,7 @@ fn excel_metadata_sheet_types_xlsx() {
             "0"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1505,7 +1505,7 @@ fn excel_metadata_sheet_types_xlsb() {
             "0"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1591,7 +1591,7 @@ fn excel_metadata_sheet_types_ods() {
             "0"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1605,7 +1605,7 @@ fn excel_message() {
     cmd.arg("--sheet").arg("Middle").arg(xls_file);
 
     let got = wrk.output_stderr(&mut cmd);
-    similar_asserts::assert_eq!(got, "5 2-column rows exported from \"Middle\" sheet\n");
+    assert_eq!(got, "5 2-column rows exported from \"Middle\" sheet\n");
 }
 
 #[test]
@@ -1618,7 +1618,7 @@ fn excel_empty_sheet_message() {
     cmd.arg("--sheet").arg("nodata").arg(xls_file);
 
     let got = wrk.output_stderr(&mut cmd);
-    similar_asserts::assert_eq!(got, "0 4-column rows exported from \"NoData\" sheet\n");
+    assert_eq!(got, "0 4-column rows exported from \"NoData\" sheet\n");
 }
 
 #[test]
@@ -1631,7 +1631,7 @@ fn excel_empty_sheet2_message() {
     cmd.arg("--sheet").arg("Sheet1").arg(xls_file);
 
     let got = wrk.output_stderr(&mut cmd);
-    similar_asserts::assert_eq!(got, "\"Sheet: Sheet1 \"is empty.\n");
+    assert_eq!(got, "\"Sheet: Sheet1 \"is empty.\n");
     wrk.assert_err(&mut cmd);
 }
 
@@ -1651,7 +1651,7 @@ fn excel_integer_headers() {
         svec!["There", "4", "5", "6"],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1667,7 +1667,7 @@ fn excel_range_cols() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["A", "B"], svec!["2", "3"], svec!["3", "4"]];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1683,7 +1683,7 @@ fn excel_range_rowcols() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["5", "6"]];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1699,7 +1699,7 @@ fn excel_range_double_letter_cols() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["Z", "AA", "AB"], svec!["27", "28", "29"]];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1715,7 +1715,7 @@ fn excel_neg_float() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["-100.01"], svec!["-200.02"]];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1731,7 +1731,7 @@ fn excel_small_neg_float() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["-0.01"], svec!["-0.02"]];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1747,7 +1747,7 @@ fn excel_neg_int() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["-1"], svec!["-2"]];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1763,7 +1763,7 @@ fn excel_zero() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["0"], svec!["0"]];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1779,7 +1779,7 @@ fn excel_small_pos_float() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["0.01"], svec!["0.02"]];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1795,7 +1795,7 @@ fn excel_pos_float() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["100.01"], svec!["200.02"]];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1811,7 +1811,7 @@ fn excel_pos_int() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["1"], svec!["2"]];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1827,7 +1827,7 @@ fn excel_large_floats() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["A"], svec!["9.22337203685478e19"]];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1882,7 +1882,7 @@ fn excel_table_range() {
         svec!["a6", "true", "0.9999"],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1904,7 +1904,7 @@ fn excel_named_range() {
         svec!["echo", "5.5", "9"],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1924,7 +1924,7 @@ fn excel_absolute_range() {
         svec!["2", "d", "2.2"],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1944,6 +1944,6 @@ fn excel_absolute_range2() {
         svec!["2", "d", "2.2"],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }

@@ -57,7 +57,7 @@ pivotp_test!(pivotp_basic, |wrk: Workdir, mut cmd: process::Command| {
         svec!["2023-01-01", "100", "150"],
         svec!["2023-01-02", "300", "250"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 });
 
 // Test pivot with multiple index columns
@@ -85,7 +85,7 @@ pivotp_test!(
             svec!["2023-01-02", "South", "", "250"],
             svec!["2023-01-02", "North", "300", "350"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -110,7 +110,7 @@ pivotp_test!(pivotp_sum_agg, |wrk: Workdir, mut cmd: process::Command| {
         svec!["North", "400", "500"],
         svec!["South", "200", "250"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 });
 
 // Test pivot with mean aggregation
@@ -136,7 +136,7 @@ pivotp_test!(
             svec!["North", "200.0", "250.0"],
             svec!["South", "200.0", "250.0"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -161,7 +161,7 @@ pivotp_test!(pivotp_min_agg, |wrk: Workdir, mut cmd: process::Command| {
         svec!["North", "100", "150"],
         svec!["South", "200", "250"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 });
 
 // Test pivot with max aggregation
@@ -185,7 +185,7 @@ pivotp_test!(pivotp_max_agg, |wrk: Workdir, mut cmd: process::Command| {
         svec!["North", "300", "350"],
         svec!["South", "200", "250"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 });
 
 // Test pivot with median aggregation
@@ -211,7 +211,7 @@ pivotp_test!(
             svec!["North", "200.0", "250.0"],
             svec!["South", "200.0", "250.0"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -238,7 +238,7 @@ pivotp_test!(
             svec!["North", "2", "2"],
             svec!["South", "1", "1"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -265,7 +265,7 @@ pivotp_test!(
             svec!["North", "300", "350"],
             svec!["South", "200", "250"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -293,7 +293,7 @@ pivotp_test!(
             svec!["2023-01-01", "100", "150"],
             svec!["2023-01-02", "300", "250"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -322,7 +322,7 @@ pivotp_test!(
             svec!["2023-01-01", "100", "150"],
             svec!["2023-01-02", "300", "250"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -353,7 +353,7 @@ pivotp_test!(
 
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
         let expected = vec![svec!["date;A;B"], svec!["2023-01-01;100;150"]];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -373,7 +373,7 @@ pivotp_test!(
             svec!["2023-01-02", "South", "", "250"],
             svec!["2023-01-02", "North", "300", "350"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -406,7 +406,7 @@ pivotp_test!(
             svec!["2023-01-01", "100", "150", "200", ""],
             svec!["2023-01-02", "300", "350", "", "250"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -445,7 +445,7 @@ pivotp_test!(
             svec!["2023-01-01", "300", "150", "30", "15"],
             svec!["2023-01-02", "300", "600", "30", "60"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -490,7 +490,7 @@ pivotp_test!(
             svec!["2023-01-01", "300", "150", "30", "15"],
             svec!["2023-01-02", "300", "600", "30", "60"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -518,7 +518,7 @@ pivotp_test!(
             svec!["2023-01-01", "300", "150"],
             svec!["2023-01-02", "300", "600"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -550,7 +550,7 @@ pivotp_test!(
 
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
         let expected = vec![svec!["date;A;B"], svec!["2023-01-01;100.5;150.75"]];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -574,7 +574,7 @@ pivotp_test!(
         let expected_msg = "Info: High variability in values (CV > 1), using Median for more \
                             robust central tendency\nPivot on-column cardinality:\n  product: \
                             2\n(2, 3)\n";
-        similar_asserts::assert_eq!(msg, expected_msg);
+        assert_eq!(msg, expected_msg);
 
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
         let expected = vec![
@@ -582,7 +582,7 @@ pivotp_test!(
             svec!["2023-01-01", "150.0", "150.0"],
             svec!["2023-01-02", "300.0", "300.0"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );
 
@@ -609,6 +609,6 @@ pivotp_test!(
             svec!["2023-01-01", "150.0", "150.0"],
             svec!["2023-01-02", "300.0", "300.0"],
         ];
-        similar_asserts::assert_eq!(got, expected);
+        assert_eq!(got, expected);
     }
 );

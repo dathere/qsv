@@ -23,7 +23,7 @@ fn table() {
     cmd.arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    similar_asserts::assert_eq!(&*got, EXPECTED_TABLE)
+    assert_eq!(&*got, EXPECTED_TABLE)
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn table_tsv() {
     cmd.arg("in.tsv");
 
     let got: String = wrk.stdout(&mut cmd);
-    similar_asserts::assert_eq!(&*got, EXPECTED_TABLE)
+    assert_eq!(&*got, EXPECTED_TABLE)
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn table_ssv() {
     cmd.arg("in.ssv");
 
     let got: String = wrk.stdout(&mut cmd);
-    similar_asserts::assert_eq!(&*got, EXPECTED_TABLE)
+    assert_eq!(&*got, EXPECTED_TABLE)
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn table_default() {
     cmd.arg("in.file");
 
     let got: String = wrk.stdout(&mut cmd);
-    similar_asserts::assert_eq!(&*got, EXPECTED_TABLE)
+    assert_eq!(&*got, EXPECTED_TABLE)
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn table_pipe_delimiter_env() {
     cmd.arg("in.file");
 
     let got: String = wrk.stdout(&mut cmd);
-    similar_asserts::assert_eq!(&*got, EXPECTED_TABLE)
+    assert_eq!(&*got, EXPECTED_TABLE)
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn table_pipe_delimiter() {
     cmd.arg("--delimiter").arg("|").arg("in.file");
 
     let got: String = wrk.stdout(&mut cmd);
-    similar_asserts::assert_eq!(&*got, EXPECTED_TABLE)
+    assert_eq!(&*got, EXPECTED_TABLE)
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn invalid_delimiter_len() {
     cmd.arg("--delimiter").arg("||").arg("in.file");
 
     let got: String = wrk.output_stderr(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         &*got,
         "Could not convert '||' to a single ASCII character.\n"
     )
@@ -120,7 +120,7 @@ fn table_right_align() {
     cmd.arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         &*got,
         concat!("     h1   h2  h3\n", "abcdefg    a  a\n", "      a  abc  z",)
     );
@@ -137,7 +137,7 @@ fn table_center_align() {
     cmd.arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    similar_asserts::assert_eq!(
+    assert_eq!(
         &*got,
         concat!("  h1     h2   h3\n", "abcdefg   a   a\n", "   a     abc  z",)
     );

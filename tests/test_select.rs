@@ -25,7 +25,7 @@ macro_rules! select_test {
                         .map(|s| s.to_string())
                         .collect::<Vec<String>>(),
                 ];
-                similar_asserts::assert_eq!(got, expected);
+                assert_eq!(got, expected);
             }
 
             #[test]
@@ -45,7 +45,7 @@ macro_rules! select_test {
                         .map(|s| s.to_string())
                         .collect::<Vec<String>>(),
                 ];
-                similar_asserts::assert_eq!(got, expected);
+                assert_eq!(got, expected);
             }
         }
     };
@@ -251,7 +251,7 @@ fn test_select_sort() {
             "value7", "value4"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -268,7 +268,7 @@ fn test_select_sort_subset() {
         svec!["8", "9", "4", "7"],
         svec!["value3", "value2", "value7", "value4"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -297,7 +297,7 @@ fn test_select_random_seeded() {
             "value6", "value10"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -317,5 +317,86 @@ fn test_select_random_seeded_subset() {
         svec!["7", "4", "9", "8"],
         svec!["value4", "value7", "value2", "value3"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
+}
+
+// Add tests for semicolon-separated CSV files
+#[test]
+fn test_select_semicolon_separator() {
+    let wrk = Workdir::new("test_select_semicolon_separator");
+    // Create a CSV file with semicolon separator
+    let data = vec![svec!["h1;h2;h3;h4"], svec!["a;b;c;d"]];
+    wrk.create("data.csv", data);
+
+    // Test with default separator (should fail to parse correctly)
+    let mut cmd = wrk.command("select");
+    cmd.arg("h1").arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+
+    // Test with explicit semicolon separator
+    let mut cmd = wrk.command("select");
+    cmd.arg("--delimiter")
+        .arg(";")
+        .arg("--")
+        .arg("h1")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Now the output should be correct
+    let expected = vec![svec!["h1"], svec!["a"]];
+    assert_eq!(got, expected);
+}
+
+// Test handling of out-of-bounds indices
+#[test]
+fn test_select_out_of_bounds_indices() {
+    let wrk = Workdir::new("test_select_out_of_bounds_indices");
+    wrk.create("data.csv", data(true));
+
+    // Test with an index that's out of bounds
+    let mut cmd = wrk.command("select");
+    cmd.arg("--").arg("10").arg("data.csv");
+
+    // This should not panic with our new robust implementation
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // The output should be empty because the index is out of bounds
+    let expected: Vec<Vec<String>> = vec![];
+    assert_eq!(got, expected);
+}
+
+// Test the robustness of the select function with different CSV formats
+#[test]
+fn test_select_robustness() {
+    let wrk = Workdir::new("test_select_robustness");
+
+    // Test with a CSV file that has fewer columns than expected
+    let data = vec![
+        svec!["h1", "h2"], // Only 2 columns instead of 5
+        svec!["a", "b"],
+    ];
+    wrk.create("data.csv", data);
+
+    // Test with an index that's out of bounds
+    let mut cmd = wrk.command("select");
+    cmd.arg("--").arg("5").arg("data.csv");
+
+    // This should not panic with our new robust implementation
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // The output should be empty because the index is out of bounds
+    let expected: Vec<Vec<String>> = vec![];
+    assert_eq!(got, expected);
+
+    // Test with a valid index
+    let mut cmd = wrk.command("select");
+    cmd.arg("--").arg("2").arg("data.csv");
+
+    // This should work correctly
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // The output should contain the second column
+    let expected = vec![svec!["h2"], svec!["b"]];
+    assert_eq!(got, expected);
 }

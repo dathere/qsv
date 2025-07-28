@@ -12,5 +12,5 @@ fn behead() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["a", "1"], svec!["b", "2"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

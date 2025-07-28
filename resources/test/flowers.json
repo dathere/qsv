@@ -1,0 +1,20 @@
+[
+    {
+        "name": "tulip",
+        "primary_color": "purple",
+        "available": true,
+        "quantity": 4
+    },
+    {
+        "name": "rose",
+        "primary_color": "red",
+        "available": true,
+        "quantity": 6
+    },
+    {
+        "name": "sunflower",
+        "primary_color": "yellow",
+        "available": false,
+        "quantity": 0
+    }
+]

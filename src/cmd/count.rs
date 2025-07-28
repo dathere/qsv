@@ -344,7 +344,7 @@ fn count_input(conf: &Config, count_delims_mode: CountDelimsMode) -> CliResult<(
 
         // Calculate median width
         widths.par_sort_unstable();
-        let median = if count % 2 == 0 {
+        let median = if count.is_multiple_of(2) {
             usize::midpoint(
                 widths[(count / 2) as usize - 1],
                 widths[(count / 2) as usize],
@@ -377,7 +377,7 @@ fn count_input(conf: &Config, count_delims_mode: CountDelimsMode) -> CliResult<(
                 .map(|&width| (width as f64 - median as f64).abs())
                 .collect();
             abs_devs.par_sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-            if count % 2 == 0 {
+            if count.is_multiple_of(2) {
                 f64::midpoint(
                     abs_devs[(count / 2) as usize - 1],
                     abs_devs[(count / 2) as usize],
@@ -435,6 +435,7 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
         prelude::*,
         sql::SQLContext,
     };
+    use polars_utils::plpath::PlPath;
 
     // info!("using polars");
 
@@ -472,7 +473,7 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
     {
         // First, try to read the first row to check if the file is empty
         // do it in a block so schema_df is dropped early
-        let schema_df = match LazyCsvReader::new(filepath.clone())
+        let schema_df = match LazyCsvReader::new(PlPath::new(&filepath.to_string_lossy()))
             .with_separator(delimiter)
             .with_comment_prefix(comment_prefix.clone())
             .with_n_rows(Some(1))
@@ -502,7 +503,7 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
     } else {
         // otherwise, read the file into a Polars LazyFrame
         // using the LazyCsvReader builder to set CSV read options
-        lazy_df = match LazyCsvReader::new(filepath.clone())
+        lazy_df = match LazyCsvReader::new(PlPath::new(&filepath.to_string_lossy()))
             .with_separator(delimiter)
             .with_comment_prefix(comment_prefix)
             .with_low_memory(low_memory)
@@ -525,7 +526,7 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
             | OptFlags::COMM_SUBPLAN_ELIM
             | OptFlags::COMM_SUBEXPR_ELIM
             | OptFlags::FAST_PROJECTION
-            | OptFlags::STREAMING;
+            | OptFlags::NEW_STREAMING;
         ctx.register("sql_lf", lazy_df.with_optimizations(optflags));
         "SELECT COUNT(*) FROM sql_lf".to_string()
     };

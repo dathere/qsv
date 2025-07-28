@@ -130,7 +130,7 @@ fn test_stats<S>(
         if field == "skewness" { 40 } else { 15 },
         cmp::min(field_val.len(), expected.len()),
     );
-    similar_asserts::assert_eq!(&field_val[0..len], &expected[0..len]);
+    assert_eq!(&field_val[0..len], &expected[0..len]);
 }
 
 fn setup<S>(
@@ -229,6 +229,43 @@ stats_tests!(stats_infer_int, "type", &["1"], "Integer");
 stats_tests!(stats_infer_float, "type", &["1.2"], "Float");
 stats_tests!(stats_infer_null, "type", &[""], "NULL");
 stats_tests!(stats_infer_date, "type", &["1968-06-27"], "Date");
+stats_tests!(stats_infer_date_unix_epoch, "type", &["1970-01-01"], "Date");
+stats_tests!(
+    stats_infer_date_unix_epoch_2,
+    "type",
+    &["1970-01-01 00:00:00"],
+    "Date"
+);
+stats_tests!(
+    stats_infer_date_unix_epoch_3,
+    "type",
+    &["1970-01-01 00:00:00 UTC"],
+    "Date"
+);
+stats_tests!(
+    stats_infer_date_unix_epoch_4,
+    "type",
+    &["1970-01-01 00:00:00.000 UTC"],
+    "Date"
+);
+stats_tests!(
+    stats_infer_date_unix_epoch_5,
+    "type",
+    &["1970-01-01 00:00:00.000000 UTC"],
+    "Date"
+);
+stats_tests!(
+    stats_infer_date_unix_epoch_6,
+    "type",
+    &["1970-01-01 00:00:00.000000000 UTC"],
+    "Date"
+);
+stats_tests!(
+    stats_infer_date_unix_epoch_7,
+    "type",
+    &["1970-01-01 00:00:01 UTC"],
+    "DateTime"
+);
 stats_no_infer_dates_tests!(stats_infer_nodate, "type", &["1968-06-27"], "String");
 stats_tests!(
     stats_infer_datetime,
@@ -615,8 +652,8 @@ fn stats_prefer_dmy() {
     let mut cmd = wrk.command("stats");
     cmd.arg("--infer-dates")
         .arg("--prefer-dmy")
-        .arg(&"--dataset-stats")
-        .args(&["--dates-whitelist", "_dT"])
+        .arg("--dataset-stats")
+        .args(["--dates-whitelist", "_dT"])
         .arg(test_file);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -632,7 +669,7 @@ fn stats_prefer_dmy() {
     let got2: String = wrk.stdout(&mut cmd);
     let expected2 = wrk.load_test_resource("boston311-100-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
 }
 
 #[test]
@@ -642,8 +679,8 @@ fn stats_prefer_mdy() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--infer-dates")
-        .arg(&"--dataset-stats")
-        .args(&["--dates-whitelist", "_dt"])
+        .arg("--dataset-stats")
+        .args(["--dates-whitelist", "_dt"])
         .arg(test_file);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -660,7 +697,7 @@ fn stats_prefer_mdy() {
 
     let expected2 = wrk.load_test_resource("boston311-100-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
 }
 
 #[test]
@@ -686,7 +723,7 @@ fn stats_rounding() {
     let got2: String = wrk.stdout(&mut cmd);
     let expected2 = wrk.load_test_resource("boston311-100-everything-8places-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
 }
 
 #[test]
@@ -732,7 +769,7 @@ fn stats_no_date_inference() {
     let got2: String = wrk.stdout(&mut cmd);
     let expected2 = wrk.load_test_resource("boston311-100-everything-nodate-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
 }
 
 #[test]
@@ -744,8 +781,8 @@ fn stats_with_date_inference() {
     cmd.arg("--everything")
         .arg(test_file)
         .arg("--infer-dates")
-        .arg(&"--dataset-stats")
-        .args(&["--dates-whitelist", "all"]);
+        .arg("--dataset-stats")
+        .args(["--dates-whitelist", "all"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -760,7 +797,7 @@ fn stats_with_date_inference() {
     let got2: String = wrk.stdout(&mut cmd);
     let expected2 = wrk.load_test_resource("boston311-100-everything-date-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
 }
 
 #[test]
@@ -787,7 +824,7 @@ fn stats_with_date_inference_default_whitelist() {
     let expected2 =
         wrk.load_test_resource("boston311-100-everything-inferdates-defaultwhitelist-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
 }
 
 #[test]
@@ -799,8 +836,8 @@ fn stats_with_date_inference_variance_stddev() {
     cmd.arg("--everything")
         .arg(test_file)
         .arg("--infer-dates")
-        .args(&["--dates-whitelist", "all"])
-        .arg(&"--dataset-stats");
+        .args(["--dates-whitelist", "all"])
+        .arg("--dataset-stats");
 
     wrk.assert_success(&mut cmd);
 
@@ -812,7 +849,7 @@ fn stats_with_date_inference_variance_stddev() {
     let expected2 =
         wrk.load_test_resource("boston311-100-everything-date-stats-variance-stddev.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
 }
 
 #[test]
@@ -824,8 +861,8 @@ fn stats_with_date_type() {
     cmd.arg("--everything")
         .arg(test_file)
         .arg("--infer-dates")
-        .args(&["--dates-whitelist", "all"])
-        .arg(&"--dataset-stats");
+        .args(["--dates-whitelist", "all"])
+        .arg("--dataset-stats");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -840,7 +877,7 @@ fn stats_with_date_type() {
     let got2: String = wrk.stdout(&mut cmd);
     let expected2 = wrk.load_test_resource("boston311-100-everything-datenotime-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
 }
 
 #[test]
@@ -849,13 +886,13 @@ fn stats_typesonly() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(&["--typesonly", "--dataset-stats"]).arg(test_file);
+    cmd.args(["--typesonly", "--dataset-stats"]).arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
 
     let expected = wrk.load_test_resource("boston311-100-typesonly-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
 }
 
 #[test]
@@ -864,16 +901,16 @@ fn stats_typesonly_with_dates() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(&["--typesonly", "--dataset-stats"])
+    cmd.args(["--typesonly", "--dataset-stats"])
         .arg("--infer-dates")
-        .args(&["--dates-whitelist", "all"])
+        .args(["--dates-whitelist", "all"])
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
 
     let expected = wrk.load_test_resource("boston311-100-typesonly-withdates-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
 }
 
 #[test]
@@ -884,9 +921,9 @@ fn stats_typesonly_cache_threshold_zero() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(&["--typesonly", "--dataset-stats"])
+    cmd.args(["--typesonly", "--dataset-stats"])
         .arg("--infer-dates")
-        .args(&["--dates-whitelist", "all"])
+        .args(["--dates-whitelist", "all"])
         .args(&["--cache-threshold", "0"])
         .arg(test_file);
 
@@ -894,7 +931,7 @@ fn stats_typesonly_cache_threshold_zero() {
 
     let expected = wrk.load_test_resource("boston311-100-typesonly-withdates-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
 
     // check that the stats cache files were NOT created
     assert!(!Path::new(&wrk.path("boston311-100.stats.csv")).exists());
@@ -907,16 +944,16 @@ fn stats_typesonly_cache() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(&["--typesonly", "--dataset-stats"])
+    cmd.args(["--typesonly", "--dataset-stats"])
         .arg("--infer-dates")
-        .args(&["--dates-whitelist", "all"])
+        .args(["--dates-whitelist", "all"])
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
 
     let expected = wrk.load_test_resource("boston311-100-typesonly-withdates-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
 }
 
 #[test]
@@ -928,8 +965,8 @@ fn stats_cache() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--infer-dates")
-        .args(&["--dates-whitelist", "all"])
-        .arg(&"--dataset-stats")
+        .args(["--dates-whitelist", "all"])
+        .arg("--dataset-stats")
         // set cache threshold to 1 to force cache creation
         .args(&["--cache-threshold", "1"])
         .arg(test_file);
@@ -946,7 +983,7 @@ fn stats_cache() {
     let got2: String = wrk.stdout(&mut cmd);
     let expected2 = wrk.load_test_resource("boston311-100-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
 
     // check that the stats cache files were created
     assert!(Path::new(&wrk.path("boston311-100.stats.csv")).exists());
@@ -985,7 +1022,7 @@ fn stats_cache_negative_threshold() {
     let got2: String = wrk.stdout(&mut cmd);
     let expected2 = wrk.load_test_resource("boston311-100-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
 
     // check that the stats cache files were created
     assert!(Path::new(&wrk.path("boston311-100.stats.csv")).exists());
@@ -1001,8 +1038,8 @@ fn stats_cache_negative_threshold_unmet() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--infer-dates")
-        .args(&["--dates-whitelist", "all"])
-        .arg(&"--dataset-stats")
+        .args(["--dates-whitelist", "all"])
+        .arg("--dataset-stats")
         // set cache threshold to -51200 to set autoindex_size to 50 kb
         // and to force cache creation
         .args(&["--cache-threshold", "-51200"])
@@ -1023,7 +1060,7 @@ fn stats_cache_negative_threshold_unmet() {
     let got2: String = wrk.stdout(&mut cmd);
     let expected2 = wrk.load_test_resource("boston311-100-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
 
     // check that the stats cache files were created
     assert!(Path::new(&wrk.path("boston311-100.stats.csv")).exists());
@@ -1064,7 +1101,7 @@ fn stats_cache_negative_threshold_five() {
     let got2: String = wrk.stdout(&mut cmd);
     let expected2 = wrk.load_test_resource("boston311-100-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
 
     // check that the stats cache files were created
     assert!(!Path::new(&wrk.path("boston311-100.stats.csv")).exists());
@@ -1085,7 +1122,7 @@ fn stats_antimodes_len_500() {
 
     let expected = wrk.load_test_resource("boston311-100-antimodes-len500-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
 }
 
 #[test]
@@ -1095,14 +1132,14 @@ fn stats_infer_boolean_1_0() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--infer-boolean")
-        .arg(&"--dataset-stats")
+        .arg("--dataset-stats")
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
 
     let expected = wrk.load_test_resource("boston311-10-boolean-1or0-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
 }
 
 #[test]
@@ -1112,14 +1149,14 @@ fn stats_infer_boolean_t_f() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--infer-boolean")
-        .arg(&"--dataset-stats")
+        .arg("--dataset-stats")
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
 
     let expected = wrk.load_test_resource("boston311-10-boolean-tf-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
 }
 
 #[test]
@@ -1131,14 +1168,14 @@ fn stats_infer_boolean_true_false() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg("true:false")
-        .arg(&"--dataset-stats")
+        .arg("--dataset-stats")
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
 
     let expected = wrk.load_test_resource("boston311-10-boolean-tf-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
 }
 
 #[test]
@@ -1150,7 +1187,7 @@ fn stats_infer_boolean_true_false_error() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg("true:falsy")
-        .arg(&"--dataset-stats")
+        .arg("--dataset-stats")
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
@@ -1169,7 +1206,7 @@ fn stats_infer_boolean_true_false_error_pattern_mismatch() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg("true:no")
-        .arg(&"--dataset-stats")
+        .arg("--dataset-stats")
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
@@ -1187,14 +1224,52 @@ fn stats_typesonly_infer_boolean_t_f() {
     let mut cmd = wrk.command("stats");
     cmd.arg("--typesonly")
         .arg("--infer-boolean")
-        .arg(&"--dataset-stats")
+        .arg("--dataset-stats")
         .arg(test_file);
+
+    wrk.assert_success(&mut cmd);
 
     let got: String = wrk.stdout(&mut cmd);
 
     let expected = wrk.load_test_resource("boston311-10-typesonly-boolean-tf-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+}
+
+#[test]
+fn stats_typesonly_infer_boolean_t_f_infer_dates() {
+    let wrk = Workdir::new("stats_typesonly_infer_boolean_t_f_infer_dates");
+    let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--typesonly")
+        .arg("--infer-boolean")
+        .arg("--infer-dates")
+        .arg("--dataset-stats")
+        .arg(test_file);
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    let expected = wrk.load_test_resource("boston311-10-typesonly-boolean-tf-inferdates-stats.csv");
+
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+}
+
+#[test]
+fn stats_infer_boolean_invalid_pattern() {
+    let wrk = Workdir::new("stats_infer_boolean_invalid_pattern");
+    let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg(":false,yep:,1:0")
+        .arg("--dataset-stats")
+        .arg(test_file);
+
+    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1202,7 +1277,7 @@ fn stats_is_ascii() {
     let wrk = Workdir::new("stats_is_ascii");
     let test_file = wrk.load_test_file("boston311-100-with-nonascii.csv");
     let mut cmd = wrk.command("stats");
-    cmd.arg(test_file).arg(&"--dataset-stats").arg("--force");
+    cmd.arg(test_file).arg("--dataset-stats").arg("--force");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -1217,7 +1292,7 @@ fn stats_is_ascii() {
     let got2: String = wrk.stdout(&mut cmd);
     let expected2 = wrk.load_test_resource("boston311-100-with-nonascii-stats.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
 }
 
 #[test]
@@ -1235,7 +1310,7 @@ fn stats_everything_utf8_japanese_issue817() {
 
     // let got: String = wrk.stdout(&mut cmd);
     // let expected = wrk.load_test_resource("utf8-japanesedata-stats-everything.csv");
-    // similar_asserts::assert_eq!(dos2unix(&got).trim_end(), dos2unix(&expected).trim_end());
+    // assert_eq!(dos2unix(&got).trim_end(), dos2unix(&expected).trim_end());
 }
 
 #[test]
@@ -1256,7 +1331,7 @@ fn stats_leading_zero_handling() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--typesonly")
-        .arg(&"--dataset-stats")
+        .arg("--dataset-stats")
         .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1274,7 +1349,7 @@ fn stats_leading_zero_handling() {
             "ae045ecc55c3c99d40dd2b7369e55db9d15d1a19988850c496aa3afd456e164e"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1294,7 +1369,7 @@ fn stats_zero_cv() {
     );
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("data.csv").arg(&"--dataset-stats");
+    cmd.arg("data.csv").arg("--dataset-stats");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -1375,7 +1450,7 @@ fn stats_zero_cv() {
             "",
             "0",
             "3.1623",
-            "0",
+            "",
             "",
             "7.0711",
             "50",
@@ -1404,7 +1479,7 @@ fn stats_zero_cv() {
             "",
             "0",
             "28.8472",
-            "0",
+            "",
             "",
             "64.5043",
             "4160.801",
@@ -1416,7 +1491,7 @@ fn stats_zero_cv() {
         ],
         svec![
             "col4", "Integer", "", "935", "-900", "1000", "1900", "Unsorted", "-0.5", "", "", "",
-            "", "", "", "", "187", "304.3603", "0", "", "680.5703", "463176", "363.9414", "0", "",
+            "", "", "", "", "187", "304.3603", "", "", "680.5703", "463176", "363.9414", "0", "",
             "0", ""
         ],
         svec![
@@ -1533,10 +1608,10 @@ fn stats_zero_cv() {
             "",
             "",
             "",
-            "6e3c1035ebfe08ef286abbc7fd528717ff0ee129fbb9aacca5f27c529e39eff8"
+            "9e162b617fe233c126f65b81136a6da6ea6367a63e520ed99f823f3fc1915ded"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1560,7 +1635,7 @@ fn stats_output_tab_delimited() {
     let mut cmd = wrk.command("stats");
     cmd.arg("data.csv")
         .args(&["--output", &out_file])
-        .arg(&"--dataset-stats");
+        .arg("--dataset-stats");
 
     wrk.assert_success(&mut cmd);
 
@@ -1574,7 +1649,7 @@ qsv__columncount																										3
 qsv__filesize_bytes																										62
 qsv__fingerprint_hash																										cf6ba47ee7251a17b8d7789636b2c5d2302ea6e0fb69572f1eaf25aead083cef
 "#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1598,7 +1673,7 @@ fn stats_output_ssv_delimited() {
     let mut cmd = wrk.command("stats");
     cmd.arg("data.csv")
         .args(&["--output", &out_file])
-        .arg(&"--dataset-stats");
+        .arg("--dataset-stats");
 
     wrk.assert_success(&mut cmd);
 
@@ -1612,7 +1687,7 @@ qsv__columncount;;;;;;;;;;;;;;;;;;;;;;;;;;3
 qsv__filesize_bytes;;;;;;;;;;;;;;;;;;;;;;;;;;62
 qsv__fingerprint_hash;;;;;;;;;;;;;;;;;;;;;;;;;;cf6ba47ee7251a17b8d7789636b2c5d2302ea6e0fb69572f1eaf25aead083cef
 "#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1636,7 +1711,7 @@ fn stats_output_csvsz_delimited() {
     let mut cmd = wrk.command("stats");
     cmd.arg("data.csv")
         .args(&["--output", &out_file])
-        .arg(&"--dataset-stats");
+        .arg("--dataset-stats");
 
     wrk.assert_success(&mut cmd);
 
@@ -1652,7 +1727,7 @@ qsv__rowcount,,,,,,,,,,,,,,,,,,,,,,,,,,5
 qsv__columncount,,,,,,,,,,,,,,,,,,,,,,,,,,3
 qsv__filesize_bytes,,,,,,,,,,,,,,,,,,,,,,,,,,62
 qsv__fingerprint_hash,,,,,,,,,,,,,,,,,,,,,,,,,,cf6ba47ee7251a17b8d7789636b2c5d2302ea6e0fb69572f1eaf25aead083cef"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 mod stats_infer_nothing {
@@ -1724,7 +1799,7 @@ fn stats_vis_whitespace() {
     let mut cmd = wrk.command("stats");
     cmd.arg("--vis-whitespace")
         .arg("--everything")
-        .arg(&"--dataset-stats")
+        .arg("--dataset-stats")
         .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1788,7 +1863,7 @@ fn stats_vis_whitespace() {
         svec!["qsv__filesize_bytes", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "323"], 
         svec!["qsv__fingerprint_hash", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "39f84fb60ced1488a91fc3a7a6e22692dafb414e0d43f09ab768c5f9981db630"]
     ];
-    // similar_asserts::
+    //
     assert_eq!(got, expected);
 }
 
@@ -1882,7 +1957,7 @@ fn stats_percentiles() {
         ],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1980,7 +2055,7 @@ fn stats_percentiles_floats() {
         ],
     ];
 
-    //similar_asserts::
+    //
     assert_eq!(got, expected);
 }
 
@@ -2070,7 +2145,7 @@ fn stats_percentiles_with_dates() {
         ],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -2158,7 +2233,7 @@ fn stats_percentiles_with_nulls() {
         ],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -2221,7 +2296,7 @@ fn stats_percentiles_mixed_types() {
         ],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -2309,7 +2384,7 @@ fn stats_percentiles_edge_cases() {
         ],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -2402,7 +2477,7 @@ fn stats_percentiles_custom_list() {
         ],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -2455,5 +2530,365 @@ fn stats_percentiles_single_value() {
         ],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn stats_infer_boolean_prefix_pattern() {
+    let wrk = Workdir::new("stats_infer_boolean_prefix_pattern");
+    let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg("t*:f*")
+        .arg("--dataset-stats")
+        .arg(test_file);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    let expected = wrk.load_test_resource("boston311-10-boolean-tf-stats.csv");
+
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+}
+
+#[test]
+fn stats_infer_boolean_multiple_patterns() {
+    let wrk = Workdir::new("stats_infer_boolean_multiple_patterns");
+    let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg("true:false,t*:f*,y*:n*")
+        .arg("--dataset-stats")
+        .arg(test_file);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    let expected = wrk.load_test_resource("boston311-10-boolean-tf-stats.csv");
+
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+}
+
+#[test]
+fn stats_infer_boolean_case_insensitive() {
+    let wrk = Workdir::new("stats_infer_boolean_case_insensitive");
+    let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg("TRUE:FALSE")
+        .arg("--dataset-stats")
+        .arg(test_file);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    let expected = wrk.load_test_resource("boston311-10-boolean-tf-stats.csv");
+
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+}
+
+#[test]
+fn stats_infer_boolean_long_patterns() {
+    let wrk = Workdir::new("stats_infer_boolean_long_patterns");
+
+    // Create test data with values that won't match the truthy:falsy pattern
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["col1"],
+            svec!["true"],
+            svec!["false"],
+            svec!["true"],
+            svec!["false"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg("truthy:falsy")
+        .arg("--dataset-stats")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // Should not be inferred as boolean since values don't match pattern
+    assert!(!got.contains("Boolean"));
+    assert!(got.contains("String"));
+}
+
+#[test]
+fn stats_infer_boolean_cardinality_three() {
+    let wrk = Workdir::new("stats_infer_boolean_cardinality_three");
+
+    // Create a test file with 3 distinct values that would match boolean patterns
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["col1"],
+            svec!["true"],
+            svec!["truthy"],
+            svec!["false"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg("true*:false*")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // Should not be inferred as boolean because cardinality is 3
+    assert!(!got.contains("Boolean"));
+    assert!(got.contains("String"));
+}
+
+#[test]
+fn stats_infer_boolean_empty_pattern() {
+    let wrk = Workdir::new("stats_infer_boolean_empty_pattern");
+    let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg("")
+        .arg("--dataset-stats")
+        .arg(test_file);
+
+    // This should fail with an error
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn stats_infer_boolean_missing_colon() {
+    let wrk = Workdir::new("stats_infer_boolean_missing_colon");
+    let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg("truefalse")
+        .arg("--dataset-stats")
+        .arg(test_file);
+
+    // This should fail with an error
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn stats_infer_boolean_missing_true_pattern() {
+    let wrk = Workdir::new("stats_infer_boolean_missing_true_pattern");
+    let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg(":false")
+        .arg("--dataset-stats")
+        .arg(test_file);
+
+    // This should fail with an error
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn stats_infer_boolean_missing_false_pattern() {
+    let wrk = Workdir::new("stats_infer_boolean_missing_false_pattern");
+    let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg("true:")
+        .arg("--dataset-stats")
+        .arg(test_file);
+
+    // This should fail with an error
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn stats_issue_2668_semicolon_separator() {
+    let wrk = Workdir::new("stats_issue_2668_semicolon_separator");
+    wrk.create("data.csv", vec![svec!["h1;h2;h3;h4"], svec!["1;2;3;4"]]);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv");
+
+    // should not fail, and just treat the data as a single column
+    // as the default delimiter is comma, and the separator is semicolon
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec![
+            "field",
+            "type",
+            "is_ascii",
+            "sum",
+            "min",
+            "max",
+            "range",
+            "sort_order",
+            "sortiness",
+            "min_length",
+            "max_length",
+            "sum_length",
+            "avg_length",
+            "stddev_length",
+            "variance_length",
+            "cv_length",
+            "mean",
+            "sem",
+            "geometric_mean",
+            "harmonic_mean",
+            "stddev",
+            "variance",
+            "cv",
+            "nullcount",
+            "max_precision",
+            "sparsity"
+        ],
+        svec![
+            "h1;h2;h3;h4",
+            "String",
+            "true",
+            "",
+            "1;2;3;4",
+            "1;2;3;4",
+            "",
+            "Unsorted",
+            "0",
+            "7",
+            "7",
+            "7",
+            "7",
+            "0",
+            "0",
+            "0",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "0",
+            "",
+            "0"
+        ],
+    ];
+
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn stats_string_max_length() {
+    let wrk = Workdir::new("stats_string_max_length");
+
+    // Create test data with long strings
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["col1", "col2"],
+            svec!["short", "very_short"],
+            svec!["medium_length_string", "medium_length_string"],
+            svec![
+                "this_is_a_very_long_string_that_should_be_truncated",
+                "another_very_long_string_that_should_be_truncated"
+            ],
+        ],
+    );
+
+    // Run stats with QSV_STATS_STRING_MAX_LENGTH set to 10
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv").env("QSV_STATS_STRING_MAX_LENGTH", "10");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Print the output for debugging
+    // println!("Output with QSV_STATS_STRING_MAX_WIDTH=10:");
+    // for row in &got {
+    //     println!("{:?}", row);
+    // }
+
+    // Find the min and max values in the output
+    let mut min_value = String::new();
+    let mut max_value = String::new();
+
+    // Find the row for col1
+    for row in &got {
+        if row.len() > 0 && row[0] == "col1" {
+            // The min and max values are in columns 4 and 5 (0-indexed)
+            if row.len() > 5 {
+                min_value = row[4].clone();
+                max_value = row[5].clone();
+            }
+            break;
+        }
+    }
+
+    // Check that the long string was truncated
+    assert_eq!(min_value, "medium_len...");
+    assert_eq!(max_value, "this_is_a_...");
+
+    // Run stats with QSV_STATS_STRING_MAX_LENGTH set to 20
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv").env("QSV_STATS_STRING_MAX_LENGTH", "20");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Find the min and max values in the output
+    let mut min_value = String::new();
+    let mut max_value = String::new();
+
+    // Find the row for col1
+    for row in &got {
+        if row.len() > 0 && row[0] == "col1" {
+            // The min and max values are in columns 4 and 5 (0-indexed)
+            if row.len() > 5 {
+                min_value = row[4].clone();
+                max_value = row[5].clone();
+            }
+            break;
+        }
+    }
+
+    // Check that the long string was truncated with a longer width
+    assert_eq!(min_value, "medium_length_string");
+    assert_eq!(max_value, "this_is_a_very_long_...");
+
+    // Run stats without the environment variable
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Find the min and max values in the output
+    let mut min_value = String::new();
+    let mut max_value = String::new();
+
+    // Find the row for col1
+    for row in &got {
+        if row.len() > 0 && row[0] == "col1" {
+            // The min and max values are in columns 4 and 5 (0-indexed)
+            if row.len() > 5 {
+                min_value = row[4].clone();
+                max_value = row[5].clone();
+            }
+            break;
+        }
+    }
+
+    // Check that the long string was not truncated
+    assert_eq!(min_value, "medium_length_string");
+    assert_eq!(
+        max_value,
+        "this_is_a_very_long_string_that_should_be_truncated"
+    );
 }

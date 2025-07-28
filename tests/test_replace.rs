@@ -24,7 +24,7 @@ fn replace() {
         svec!["166", "yellow"],
         svec!["167", "yellow"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -52,7 +52,7 @@ fn replace_regex_literal() {
         svec!["166.0", "yellow"],
         svec!["167.0", "yellow.0"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 
@@ -131,7 +131,7 @@ fn replace_null() {
 
     let got_err = wrk.output_stderr(&mut cmd);
     let expected_err = "5\n";
-    similar_asserts::assert_eq!(got_err, expected_err);
+    assert_eq!(got_err, expected_err);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -141,7 +141,7 @@ fn replace_null() {
         svec!["166", "yellow"],
         svec!["167", "yellow"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.assert_success(&mut cmd);
 }
@@ -177,11 +177,11 @@ fn replace_unicode() {
         svec!["167.0", "belloψ"],
         svec!["167.0", "Ƀellowish"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     let got_err = wrk.output_stderr(&mut cmd);
     let expected_err = "4\n";
-    similar_asserts::assert_eq!(got_err, expected_err);
+    assert_eq!(got_err, expected_err);
 
     wrk.assert_success(&mut cmd);
 }
@@ -217,7 +217,7 @@ fn replace_unicode_envvar() {
         svec!["167.0", "belloψ"],
         svec!["167.0", "Ƀellowish"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -247,7 +247,7 @@ fn replace_no_headers() {
         svec!["166", "yellow"],
         svec!["167", "yellow.0"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -278,7 +278,7 @@ fn replace_select() {
         svec!["166", "yellow"],
         svec!["167", "yellow.0"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -309,5 +309,5 @@ fn replace_groups() {
         svec!["6", "yellow"],
         svec!["7", "yellow.0"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

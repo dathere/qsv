@@ -30,7 +30,7 @@ fn sample_seed() {
         svec!["7", "i"],
         svec!["5", "f"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn sample_seed_delimiter() {
         svec!["7|i"],
         svec!["5|f"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn sample_seed_faster() {
         svec!["4", "c"],
         svec!["5", "f"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn sample_seed_secure() {
         svec!["4", "c"],
         svec!["8", "h"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn sample_seed_url() {
              valencienne",
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn sample_percentage_seed_no_index_percentage() {
         svec!["7", "i"],
         svec!["8", "h"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -239,7 +239,7 @@ fn sample_percentage_seed_indexed() {
         svec!["5", "f"],
         svec!["6", "e"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn sample_percentage_seed_indexed_faster() {
         svec!["8", "h"],
         svec!["8", "h"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -309,7 +309,7 @@ fn sample_percentage_seed_indexed_secure() {
         svec!["3", "d"],
         svec!["8", "h"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -359,7 +359,7 @@ fn sample_indexed_random_access() {
         svec!["22", "v"],
         svec!["24", "x"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -412,7 +412,7 @@ fn sample_indexed_random_access_faster() {
         svec!["21", "u"],
         svec!["22", "v"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -465,7 +465,7 @@ fn sample_indexed_random_access_secure() {
         svec!["7", "i"],
         svec!["10", "j"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -526,7 +526,7 @@ fn sample_bernoulli_seed() {
         svec!["5", "f"],
         svec!["6", "e"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -562,7 +562,7 @@ fn sample_bernoulli_seed_faster() {
         svec!["4", "c"],
         svec!["6", "e"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -592,7 +592,7 @@ fn sample_bernoulli_seed_secure() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["R", "S"], svec!["3", "d"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -651,7 +651,7 @@ fn sample_systematic() {
         svec!["7", "i"],
         svec!["10", "j"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -695,7 +695,7 @@ fn sample_stratified() {
         svec!["C", "8"],
         svec!["D", "12"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -744,7 +744,7 @@ fn sample_stratified_large_sample_size() {
         svec!["C", "11"],
         svec!["D", "12"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -781,7 +781,7 @@ fn sample_weighted() {
         svec!["9", "90"],
         svec!["10", "100"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -825,7 +825,7 @@ fn sample_cluster() {
         svec!["H3", "P6", "40"],
         svec!["H3", "P7", "45"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -895,7 +895,7 @@ fn sample_stratified_empty_stratum() {
         svec!["A", "3"],
         svec!["B", "4"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -921,7 +921,7 @@ fn sample_weighted_zero_weights() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["ID", "Weight"], svec!["3", "30"], svec!["5", "50"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -953,7 +953,7 @@ fn sample_cluster_single_record() {
         svec!["B", "2"],
         svec!["B", "3"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -985,7 +985,7 @@ fn sample_systematic_with_headers() {
         svec!["4", "d"],
         svec!["7", "g"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1019,7 +1019,7 @@ fn sample_systematic_with_headers_random_with_seed() {
         svec!["5", "e"],
         svec!["9", "i"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1048,7 +1048,7 @@ fn sample_systematic_no_headers() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["1", "a"], svec!["4", "d"], svec!["7", "g"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1137,7 +1137,7 @@ fn sample_weighted_invalid_weights() {
     // Records with invalid weights are treated as having zero weight
     // we requested two samples but returning only one as we ran out of records
     let expected = vec![svec!["ID", "Weight"], svec!["4", "40"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1195,7 +1195,7 @@ fn sample_stratified_with_delimiter() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["Group|Value"], svec!["A|2"], svec!["B|3"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1255,7 +1255,7 @@ fn sample_systematic_fractional() {
         svec!["7", "g"],
         svec!["10", "j"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1299,7 +1299,7 @@ fn sample_remote_bernoulli_streaming_standard_rng() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
     // Verify we got the header
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got[0],
         vec![
             "Unique Key",
@@ -1351,7 +1351,7 @@ fn sample_remote_bernoulli_streaming_standard_rng() {
 
     // Verify the structure of sampled records
     for record in got.iter().skip(1) {
-        similar_asserts::assert_eq!(record.len(), 41); // Each record should have position and title
+        assert_eq!(record.len(), 41); // Each record should have position and title
         assert!(!record[0].is_empty()); // Unique Key should not be empty
         assert!(!record[1].is_empty()); // Created Date should not be empty
     }
@@ -1376,7 +1376,7 @@ fn sample_remote_bernoulli_streaming_cryptosecure() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
     // Verify we got the header
-    similar_asserts::assert_eq!(
+    assert_eq!(
         got[0],
         vec![
             "Unique Key",
@@ -1428,7 +1428,7 @@ fn sample_remote_bernoulli_streaming_cryptosecure() {
 
     // Verify the structure of sampled records
     for record in got.iter().skip(1) {
-        similar_asserts::assert_eq!(record.len(), 41); // Each record should have position and title
+        assert_eq!(record.len(), 41); // Each record should have position and title
         assert!(!record[0].is_empty()); // Unique Key should not be empty
         assert!(!record[1].is_empty()); // Created Date should not be empty
     }

@@ -123,7 +123,7 @@ Trim parentheses & brackets from the description field.
 
 Replace ' and ' with ' & ' in the description field.
 
-  $ qsv apply replace description --comparand ' and ' --replacement ' & ' file.csv
+  $ qsv apply operations replace description --comparand ' and ' --replacement ' & ' file.csv
 
 Extract the numeric value of the Salary column in a new column named Salary_num.
 
@@ -314,7 +314,7 @@ use std::{str::FromStr, sync::OnceLock};
 
 use base62;
 use censor::{Censor, Sex, Zealous};
-use cpc::{eval, units::Unit};
+use cpc::eval;
 use crc32fast;
 use data_encoding::BASE64;
 use dynfmt2::Format;
@@ -343,7 +343,7 @@ use whatlang::detect;
 use crate::{
     CliResult,
     clitypes::CliError,
-    config::{Config, Delimiter},
+    config::{Config, DEFAULT_RDR_BUFFER_CAPACITY, Delimiter},
     regex_oncelock,
     select::SelectColumns,
     util,
@@ -458,7 +458,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers(args.flag_no_headers)
-        .select(args.arg_column);
+        .select(args.arg_column)
+        // since apply does batch processing,
+        // use a bigger read buffer unless the user set their own buffer
+        .set_read_buffer(if std::env::var("QSV_RDR_BUFFER_CAPACITY").is_err() {
+            DEFAULT_RDR_BUFFER_CAPACITY * 10
+        } else {
+            DEFAULT_RDR_BUFFER_CAPACITY
+        });
 
     let mut rdr = rconfig.reader()?;
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
@@ -685,7 +692,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             } else {
                                 &cell
                             };
-                            match eval(cell_for_eval, true, Unit::Celsius, false) {
+                            match eval(cell_for_eval, true, false) {
                                 Ok(answer) => {
                                     if append_unit {
                                         format!("{} {:?}", answer.value, answer.unit)
@@ -932,7 +939,7 @@ fn validate_operations(
                                 DEFAULT_THRESHOLD
                             };
                             if show_confidence {
-                                final_threshold * -1.0
+                                -final_threshold
                             } else {
                                 final_threshold
                             }

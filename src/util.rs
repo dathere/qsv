@@ -1,13 +1,15 @@
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use std::borrow::Cow;
+#[allow(unused_imports)]
+use std::fmt::Write as _;
 #[cfg(target_family = "unix")]
 use std::os::unix::process::ExitStatusExt;
+#[cfg(feature = "polars")]
+use std::sync::Arc;
 use std::{
     cmp::min,
     collections::HashMap,
-    env,
-    fmt::Write as _,
-    fs,
+    env, fs,
     fs::File,
     io::{BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
@@ -20,14 +22,16 @@ use csv::ByteRecord;
 use docopt::Docopt;
 use filetime::FileTime;
 use human_panic::setup_panic;
-#[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use log::{info, log_enabled};
+#[cfg(feature = "polars")]
+use polars::prelude::Schema;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use serde::de::{Deserialize, Deserializer, Error};
 use sysinfo::System;
+use zip::read::root_dir_common_filter;
 
 #[cfg(feature = "polars")]
 use crate::cmd::count::polars_count_input;
@@ -35,7 +39,10 @@ use crate::{
     CURRENT_COMMAND, CliError, CliResult,
     cmd::stats::{JsonTypes, STATSDATA_TYPES_MAP, StatsData},
     config,
-    config::{Config, DEFAULT_RDR_BUFFER_CAPACITY, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
+    config::{
+        Config, DEFAULT_RDR_BUFFER_CAPACITY, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter, SpecialFormat,
+        get_special_format,
+    },
     select::SelectColumns,
 };
 
@@ -61,6 +68,7 @@ static JOBS_TO_USE: OnceLock<usize> = OnceLock::new();
 
 pub type ByteString = Vec<u8>;
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum StatsMode {
     Schema,
@@ -84,6 +92,7 @@ pub struct SchemaArgs {
     pub flag_force:           bool,
     pub flag_stdout:          bool,
     pub flag_jobs:            Option<usize>,
+    pub flag_polars:          bool,
     pub flag_no_headers:      bool,
     pub flag_delimiter:       Option<Delimiter>,
     pub arg_input:            Option<String>,
@@ -138,6 +147,18 @@ const WHITESPACE_MARKERS: &[(char, &str)] = &[
     ('\u{200B}', "《zwsp》"),  // zero width space
 ];
 
+#[cfg(unix)]
+pub fn reset_sigpipe() {
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
+#[cfg(not(unix))]
+pub fn reset_sigpipe() {
+    // no-op
+}
+
 /// Visualizes whitespace characters in a string by replacing them with visible markers
 ///
 /// This function takes a string and returns a new string where whitespace characters
@@ -164,11 +185,11 @@ const WHITESPACE_MARKERS: &[(char, &str)] = &[
 /// ```
 /// let s = "hello\tworld\n";
 /// let vis = visualize_whitespace(s);
-/// similar_asserts::assert_eq!(vis, "hello《→》world《¶》");
+/// assert_eq!(vis, "hello《→》world《¶》");
 ///
 /// let spaces = "   ";
 /// let vis = visualize_whitespace(spaces);
-/// similar_asserts::assert_eq!(vis, "《_》《_》《_》");
+/// assert_eq!(vis, "《_》《_》《_》");
 /// ```
 pub fn visualize_whitespace(s: &str) -> String {
     // Check if string is all spaces
@@ -425,6 +446,7 @@ const OTHER_ENV_VARS: &[&str] = &["all_proxy", "no_proxy", "http_proxy", "https_
 pub fn show_env_vars() {
     let mut env_var_set = false;
     for (n, v) in env::vars_os() {
+        // safety: we know that the env::vars_os() will not fail
         let env_var = n.into_string().unwrap();
         #[cfg(feature = "mimalloc")]
         if env_var.starts_with("QSV_")
@@ -565,7 +587,6 @@ pub fn count_lines_in_file(file: &str) -> Result<u64, CliError> {
     Ok(line_count)
 }
 
-#[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub fn prep_progress(progress: &ProgressBar, record_count: u64) {
     progress.set_style(
         ProgressStyle::default_bar()
@@ -580,7 +601,6 @@ pub fn prep_progress(progress: &ProgressBar, record_count: u64) {
     log::info!("Progress started... {record_count} records");
 }
 
-#[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub fn finish_progress(progress: &ProgressBar) {
     progress.set_style(
         ProgressStyle::default_bar()
@@ -700,7 +720,7 @@ pub const fn num_of_chunks(nitems: usize, chunk_size: usize) -> usize {
         return nitems;
     }
     let mut n = nitems / chunk_size;
-    if nitems % chunk_size != 0 {
+    if !nitems.is_multiple_of(chunk_size) {
         n += 1;
     }
     n
@@ -820,6 +840,7 @@ pub fn condense(val: Cow<[u8]>, n: Option<usize>) -> Cow<[u8]> {
 }
 
 pub fn idx_path(csv_path: &Path) -> PathBuf {
+    // safety: we know the path has a filename
     let mut p = csv_path
         .to_path_buf()
         .into_os_string()
@@ -1054,12 +1075,11 @@ Self-update only works with prebuilt binaries released on GitHub https://github.
         winfo!("Up to date ({curr_version})... no update required.");
     }
 
-    if !check_only {
-        if let Ok(status_code) =
+    if !check_only
+        && let Ok(status_code) =
             send_hwsurvey(&bin_name, updated, latest_release, curr_version, false)
-        {
-            log::info!("HW survey sent. Status code: {status_code}");
-        }
+    {
+        log::info!("HW survey sent. Status code: {status_code}");
     }
 
     Ok(updated)
@@ -1095,7 +1115,7 @@ fn send_hwsurvey(
     let long_os_version =
         sysinfo::System::long_os_version().unwrap_or_else(|| "Unknown OS version".to_string());
     let cpu_count = sys.cpus().len();
-    let physical_cpu_count = sys.physical_core_count().unwrap_or_default();
+    let physical_cpu_count = sysinfo::System::physical_core_count().unwrap_or_default();
     let cpu_vendor_id = sys.cpus()[0].vendor_id();
     let cpu_brand = sys.cpus()[0].brand().trim();
     let cpu_freq = sys.cpus()[0].frequency();
@@ -1286,6 +1306,16 @@ pub fn is_safe_name(header_name: &str) -> bool {
 }
 
 pub fn log_end(mut qsv_args: String, now: std::time::Instant) {
+    #[cfg(feature = "polars")]
+    use crate::config::TEMP_FILE_DIR;
+
+    #[cfg(feature = "polars")]
+    if let Some(temp_dir) = TEMP_FILE_DIR.get() {
+        // if polars is enabled, we need to remove the temporary directory
+        // after the command finishes. This is using unwrap_or_default()
+        // to avoid panics if the directory is already deleted.
+        std::fs::remove_dir_all(temp_dir).unwrap_or_default();
+    }
     if log::log_enabled!(log::Level::Info) {
         let ellipsis = if qsv_args.len() > 24 {
             utf8_truncate(&mut qsv_args, 24);
@@ -1365,7 +1395,7 @@ impl ColumnNameParser {
         self.chars.get(self.pos).copied()
     }
 
-    fn bump(&mut self) {
+    const fn bump(&mut self) {
         if self.pos < self.chars.len() {
             self.pos += 1;
         }
@@ -1407,6 +1437,7 @@ impl ColumnNameParser {
             if self.is_end_of_field() {
                 break;
             }
+            // safety: we know that the cur() will not be None as we checked above
             name.push(self.cur().unwrap());
             self.bump();
         }
@@ -1431,6 +1462,10 @@ impl ColumnNameParser {
 /// * A String containing the rounded number with trailing zeros removed and -0.0 normalized to 0.0
 pub fn round_num(dec_f64: f64, places: u32) -> String {
     use rust_decimal::{Decimal, RoundingStrategy};
+
+    if dec_f64.is_nan() {
+        return String::new();
+    }
 
     // if places is the sentinel value 9999, we don't round, just return the number as is
     if places == 9999 {
@@ -1494,6 +1529,12 @@ pub fn load_dotenv() -> CliResult<()> {
     // whatever manually set environment variables are present.
 
     if let Ok(dotenv_path) = std::env::var("QSV_DOTENV_PATH") {
+        // <NONE> is a sentinel value to disable dotenv processing
+        if dotenv_path == "<NONE>" {
+            log::warn!("dotenv processing disabled with QSV_DOTENV_PATH=<NONE>");
+            return Ok(());
+        }
+
         let canonical_dotenv_path = std::fs::canonicalize(dotenv_path)?;
         if let Err(e) = dotenvy::from_filename_override(canonical_dotenv_path.clone()) {
             return fail_clierror!(
@@ -1517,8 +1558,9 @@ pub fn load_dotenv() -> CliResult<()> {
         // in the same directory as the executable
         let qsv_binary_path = std::env::current_exe()?;
 
-        let qsv_dir = qsv_binary_path.parent().unwrap();
+        let qsv_dir = qsv_binary_path.parent().ok_or("No parent directory")?;
 
+        // safety: we know that the file_stem() will not be None as we checked above
         let qsv_binary_filestem = qsv_binary_path
             .file_stem()
             .unwrap()
@@ -1567,20 +1609,75 @@ pub fn get_envvar_flag(key: &str) -> bool {
     }
 }
 
+/// Validates if a file is actually a Snappy-compressed file before attempting decompression
+fn is_valid_snappy_file(path: &PathBuf) -> Result<bool, CliError> {
+    let mut file = std::fs::File::open(path)?;
+    let mut reader = BufReader::new(&mut file);
+
+    // Try to create a FrameDecoder and read the first few bytes
+    // This will fail immediately if the file doesn't have a valid Snappy header
+    let decoder = snap::read::FrameDecoder::new(&mut reader);
+    let mut buffer = Vec::with_capacity(50);
+
+    match decoder.take(50).read_to_end(&mut buffer) {
+        Ok(_) => {
+            // Successfully read some bytes, this is likely a valid Snappy file
+            log::debug!("File {} appears to be a valid Snappy file", path.display());
+            Ok(true)
+        },
+        Err(e) => {
+            // Failed to read, this is not a valid Snappy file
+            log::debug!("File {} is not a valid Snappy file: {}", path.display(), e);
+            Ok(false)
+        },
+    }
+}
+
 pub fn decompress_snappy_file(
     path: &PathBuf,
     tmpdir: &tempfile::TempDir,
 ) -> Result<String, CliError> {
+    // First, validate that this is actually a Snappy file
+    if !is_valid_snappy_file(path)? {
+        return fail_clierror!(
+            r#"File '{}' has an .sz extension but is not a valid Snappy-compressed file.
+This might be a temporary file or incorrectly named file.
+Consider renaming the file or using a different input."#,
+            path.display()
+        );
+    }
+
+    // Proceed with decompression since we've validated the file
     let mut snappy_file = std::fs::File::open(path.clone())?;
     let mut snappy_reader = snap::read::FrameDecoder::new(&mut snappy_file);
+    // safety: we know that the file_stem() will not be None as we opened the file above
     let file_stem = Path::new(&path).file_stem().unwrap().to_str().unwrap();
     let decompressed_filepath = tmpdir
         .path()
         .join(format!("qsv_temp_decompressed__{file_stem}"));
     let mut decompressed_file = std::fs::File::create(decompressed_filepath.clone())?;
-    std::io::copy(&mut snappy_reader, &mut decompressed_file)?;
-    decompressed_file.flush()?;
-    Ok(format!("{}", decompressed_filepath.display()))
+
+    match std::io::copy(&mut snappy_reader, &mut decompressed_file) {
+        Ok(num_bytes) => {
+            decompressed_file.flush()?;
+            log::debug!(
+                "Successfully decompressed Snappy file: {} ({} bytes)",
+                path.display(),
+                num_bytes
+            );
+            Ok(format!("{}", decompressed_filepath.display()))
+        },
+        Err(e) => {
+            // Clean up the partially created file
+            let _ = std::fs::remove_file(&decompressed_filepath);
+            fail_clierror!(
+                "Failed to decompress Snappy file '{}': {}. The file may be corrupted or \
+                 incomplete.",
+                path.display(),
+                e
+            )
+        },
+    }
 }
 
 /// downloads a file from a url and saves it to a path
@@ -1724,6 +1821,24 @@ pub fn isutf8_file(path: &Path) -> Result<bool, CliError> {
     Ok(simdutf8::basic::from_utf8(&buffer).is_ok())
 }
 
+// check if a file is supported by process_input
+fn is_supported_file(path: &Path) -> bool {
+    // If QSV_SKIP_FORMAT_CHECK is set, consider all files as supported
+    if get_envvar_flag("QSV_SKIP_FORMAT_CHECK") {
+        return true;
+    }
+
+    let ext = path
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .map(str::to_lowercase)
+        .unwrap_or_default();
+    match ext.as_str() {
+        "csv" | "ssv" | "tsv" | "tab" => true,
+        _ => get_special_format(path) != SpecialFormat::Unknown,
+    }
+}
+
 /// Process the input files and return a vector of paths to the input files.
 ///
 /// If the input is empty, try to copy stdin to a file named stdin in the passed temp directory.
@@ -1731,6 +1846,7 @@ pub fn isutf8_file(path: &Path) -> Result<bool, CliError> {
 /// If it's not empty, check the input files if they exist, and return an error if they don't.
 ///
 /// If the input is a directory, add all the files in the directory to the input.
+/// If the input is a zip file, add all the files in the zip file to the input.
 /// If the input is a file with the extension ".infile-list", read the file & add each line as a
 /// file to the input.
 /// If the input is a file, add the file to the input.
@@ -1745,10 +1861,12 @@ pub fn process_input(
     let work_input = if arg_input.len() == 1 {
         let input_path = &arg_input[0];
         if input_path.is_dir() {
-            // if the input is a directory, add all the files in the directory to the input
+            // if the input is a directory, add all the supported files in the directory to the
+            // input
             std::fs::read_dir(input_path)?
                 .map(|entry| entry.map(|e| e.path()))
-                .collect::<Result<Vec<_>, _>>()?
+                .filter_map(|path| path.ok().filter(|p| is_supported_file(p)))
+                .collect::<Vec<_>>()
         } else if input_path.is_file() {
             // if the input is a file and has the extension "infile-list" case-insensitive,
             // read the file. Each line is a file path
@@ -1842,6 +1960,68 @@ pub fn process_input(
             std::fs::rename(&decompressed_filepath, &final_decompressed_filepath)?;
 
             processed_input.push(final_decompressed_filepath);
+        }
+        // is the input file a zip archive?
+        else if path
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .map(str::to_lowercase)
+            == Some("zip".to_string())
+        {
+            // if so, extract all files from the zip archive to the temp directory
+            log::info!("Extracting files from zip archive: {}", path.display());
+
+            // Create a subdirectory in the temp directory for this zip file
+            // safety: we know the path has a filename
+            let zip_filename = path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .replace(".zip", "");
+            let zip_extract_dir = tmpdir.path().join(&zip_filename);
+            std::fs::create_dir_all(&zip_extract_dir)?;
+
+            // Open the zip file
+            let zip_file = std::fs::File::open(&path)?;
+            let mut archive = zip::ZipArchive::new(zip_file)?;
+
+            // Extract all files from the zip archive
+            for i in 0..archive.len() {
+                let mut zip_entry = archive.by_index(i)?;
+                let entry_path = zip_entry.name().to_string();
+
+                // Skip directories and common system files
+                if entry_path.ends_with('/')
+                    || !root_dir_common_filter(std::path::Path::new(&entry_path))
+                {
+                    log::info!("  Skipping system file or directory: {entry_path}");
+                    continue;
+                }
+
+                // Create the full path for the extracted file
+                let file_path = zip_extract_dir.join(&entry_path);
+
+                // Create parent directories if they don't exist
+                if let Some(parent) = file_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+
+                // Extract the file
+                let mut outfile = std::fs::File::create(&file_path)?;
+                std::io::copy(&mut zip_entry, &mut outfile)?;
+
+                log::info!("  Extracted file: {}", file_path.display());
+
+                // Add the extracted file to the processed input if it's a supported format
+                if is_supported_file(&file_path) {
+                    processed_input.push(file_path);
+                } else {
+                    log::info!("  Skipping unsupported file type: {}", file_path.display());
+                }
+            }
+
+            log::info!("Extracted {} files from zip archive", archive.len());
         } else {
             processed_input.push(path);
         }
@@ -1855,7 +2035,7 @@ pub fn process_input(
         }
         return fail_clierror!("{custom_empty_stdin_errmsg}");
     }
-    log::debug!("processed input file/s: {:?}", processed_input);
+    log::debug!("processed input file/s: {processed_input:?}");
     Ok(processed_input)
 }
 
@@ -2098,19 +2278,23 @@ pub fn get_stats_records(
         || env_mode == "none"
         || args.arg_input.is_none()
         || args.arg_input.as_ref() == Some(&"-".to_string())
+        // safety: we know that by this point, args.arg_input is not None as
+        // the earlier is_none() check would have short-circuited already
+        || get_special_format(Path::new(args.arg_input.as_ref().unwrap())) != SpecialFormat::Unknown
     {
         // if stdin or StatsMode::None,
         // we're just doing frequency old school w/o cardinality
         return Ok((ByteRecord::new(), Vec::new(), HashMap::new()));
     }
 
-    let canonical_input_path = Path::new(args.arg_input.as_ref().unwrap()).canonicalize()?;
+    let input_path = args.arg_input.as_ref().ok_or("No input provided")?;
+    let canonical_input_path = Path::new(input_path).canonicalize()?;
     let statsdata_path = canonical_input_path.with_extension("stats.csv.data.jsonl");
 
     let stats_data_current = if statsdata_path.exists() {
         let statsdata_metadata = std::fs::metadata(&statsdata_path)?;
 
-        let input_metadata = std::fs::metadata(args.arg_input.as_ref().unwrap())?;
+        let input_metadata = std::fs::metadata(input_path)?;
 
         let statsdata_mtime = FileTime::from_last_modification_time(&statsdata_metadata);
         let input_mtime = FileTime::from_last_modification_time(&input_metadata);
@@ -2122,7 +2306,10 @@ pub fn get_stats_records(
             false
         }
     } else {
-        info!("stats.csv.data.jsonl file does not exist: {statsdata_path:?}");
+        info!(
+            "stats.csv.data.jsonl file does not exist: {}",
+            statsdata_path.display()
+        );
         false
     };
 
@@ -2134,7 +2321,7 @@ pub fn get_stats_records(
     }
 
     // get the headers from the input file
-    let mut rdr = csv::Reader::from_path(args.arg_input.as_ref().ok_or("No input provided")?)?;
+    let mut rdr = csv::Reader::from_path(input_path)?;
     let csv_fields = rdr.byte_headers()?.clone();
     drop(rdr);
 
@@ -2155,7 +2342,10 @@ pub fn get_stats_records(
             s_slice = curr_line.as_bytes().to_vec();
             if curr_line.starts_with(DATASET_STATS_PREFIX) {
                 // Parse dataset stats record
-                let v: serde_json::Value = simd_json::serde::from_slice(&mut s_slice).unwrap();
+                let v: serde_json::Value =
+                    simd_json::serde::from_slice(&mut s_slice).map_err(|e| {
+                        CliError::Other(format!("Failed to parse dataset stats JSON: {e}"))
+                    })?;
                 let field = &v["field"];
                 let value = v["qsv__value"].clone();
 
@@ -2211,10 +2401,8 @@ pub fn get_stats_records(
             flag_dataset_stats:    true,
         };
 
-        let tempfile = tempfile::Builder::new()
-            .suffix(".stats.csv")
-            .tempfile()
-            .unwrap();
+        let tempfile = tempfile::Builder::new().suffix(".stats.csv").tempfile()?;
+        // safety: we just created a tempfile, which is guaranteed to have a path
         let tempfile_path = tempfile.path().to_str().unwrap().to_string();
 
         let statsdatajson_path = &canonical_input_path.with_extension("stats.csv.data.jsonl");
@@ -2287,7 +2475,7 @@ pub fn get_stats_records(
 
         let stats_args_vec: Vec<&str> = stats_args_str.split('\t').collect();
 
-        let qsv_bin = std::env::current_exe().unwrap();
+        let qsv_bin = std::env::current_exe()?;
         let mut stats_cmd = std::process::Command::new(qsv_bin);
         if requested_mode == StatsMode::Outliers {
             // set the max length for antimodes
@@ -2335,7 +2523,10 @@ pub fn get_stats_records(
             s_slice = curr_line.as_bytes().to_vec();
             if curr_line.starts_with(DATASET_STATS_PREFIX) {
                 // Parse dataset stats record
-                let v: serde_json::Value = simd_json::serde::from_slice(&mut s_slice).unwrap();
+                let v: serde_json::Value =
+                    simd_json::serde::from_slice(&mut s_slice).map_err(|e| {
+                        CliError::Other(format!("Failed to parse dataset stats JSONL: {e}"))
+                    })?;
                 let field = &v["field"];
                 let value = v["qsv__value"].clone();
 
@@ -2414,6 +2605,7 @@ pub fn csv_to_jsonl(
                             } else {
                                 serde_json::Value::Number(
                                     serde_json::Number::from_f64(0.0).unwrap_or_else(|| {
+                                        // safety: we know that 0.0 is a valid f64
                                         serde_json::Number::from_f64(0.0).unwrap()
                                     }),
                                 )
@@ -2422,6 +2614,7 @@ pub fn csv_to_jsonl(
                             // serde_json::Value::String(val.to_owned())
                             serde_json::Value::Number(
                                 serde_json::Number::from_f64(0.0)
+                                    // safety: we know that 0.0 is a valid f64
                                     .unwrap_or_else(|| serde_json::Number::from_f64(0.0).unwrap()),
                             )
                         }
@@ -2471,7 +2664,7 @@ pub fn optimal_batch_size(rconfig: &Config, batch_size: usize, num_jobs: usize) 
         || batch_size == 1
     {
         // the optimal batch size is the number of rows divided by the number of jobs
-        if num_rows % num_jobs == 0 {
+        if num_rows.is_multiple_of(num_jobs) {
             // there is no remainder as num_rows is divisible by num_jobs
             num_rows / num_jobs
         } else {
@@ -2582,3 +2775,320 @@ pub fn expand_tilde(path: impl AsRef<Path>) -> Option<PathBuf> {
 //     json_record.push('}');
 //     Ok(json_record)
 // }
+
+/// Loads a Polars schema from a pschema.json file if it exists.
+///
+/// # Arguments
+///
+/// * `path` - The path to the input file
+///
+/// # Returns
+///
+/// * `Option<Arc<Schema>>` - The loaded schema if the file exists and can be parsed, None otherwise
+#[cfg(feature = "polars")]
+fn load_schema_from_file(path: &Path) -> Result<Option<Arc<Schema>>, Box<dyn std::error::Error>> {
+    // Use only the input file prefix to create the schema file path
+    // e.g. data.tsv.gz, data.parquet, data.ssv should look for a schema file
+    // named data.pschema.json
+    // TODO: replace this with std::path::file_prefix once its stabilized
+    // https://github.com/rust-lang/rust/pull/129114
+    let fileprefix = path
+        .file_name()
+        .and_then(|fname| fname.to_str())
+        .map(|s| s.split('.').next().unwrap_or(""))
+        .unwrap_or_default();
+    let schema_file = path.with_file_name(format!("{fileprefix}.pschema.json"));
+
+    if schema_file.exists() {
+        // Load the schema from the pschema.json file
+        let file = File::open(&schema_file)?;
+        let mut buf_reader = BufReader::new(file);
+        let mut schema_json = String::with_capacity(100);
+        buf_reader.read_to_string(&mut schema_json)?;
+        let schema: Schema = serde_json::from_str(&schema_json)?;
+        Ok(Some(Arc::new(schema)))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Converts files in special formats (Parquet, Avro, Arrow IPC, JSONL, JSON, or compressed CSV)
+/// into a standard delimited text file. The output file extension will be:
+/// - .tsv for tab-delimited
+/// - .ssv for semicolon-delimited
+/// - .csv for comma-delimited
+///
+/// # Arguments
+///
+/// * `path` - The path to the input file.
+/// * `format` - The format of the input file.
+/// * `delim` - The delimiter to use for the output CSV file.
+///
+/// # Returns
+///
+/// A `Result` containing the path to the temporary CSV file.
+/// The caller is responsible for deleting the temporary file.
+#[cfg(feature = "polars")]
+pub fn convert_special_format(
+    path: &Path,
+    format: SpecialFormat,
+    delim: u8,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    use polars::{
+        io::avro::AvroReader,
+        prelude::{
+            CsvParseOptions, CsvReadOptions, CsvWriter, IpcReader, JsonLineReader, JsonReader,
+            ParquetReader, SerReader, SerWriter,
+        },
+    };
+
+    // Check if there's a pschema.json file with the same filestem
+    // the Polars schema will be used in parsing
+    // JSON/JSONL and compressed CSV files only
+    let schema = if let SpecialFormat::Avro | SpecialFormat::Parquet | SpecialFormat::Ipc = format {
+        None
+    } else {
+        load_schema_from_file(path)?
+    };
+
+    let mut extension = ".csv";
+    // Create a reader based on the file format and convert to DataFrame
+    let mut df = match format {
+        SpecialFormat::Avro => AvroReader::new(BufReader::new(File::open(path)?)).finish()?,
+        SpecialFormat::Parquet => ParquetReader::new(BufReader::new(File::open(path)?)).finish()?,
+        SpecialFormat::Ipc => IpcReader::new(BufReader::new(File::open(path)?)).finish()?,
+        SpecialFormat::Jsonl => {
+            let df = JsonLineReader::new(BufReader::new(File::open(path)?));
+            if let Some(schema) = schema {
+                df.with_schema(schema).finish()?
+            } else {
+                df.finish()?
+            }
+        },
+        SpecialFormat::Json => {
+            let df = JsonReader::new(BufReader::new(File::open(path)?));
+            if let Some(schema) = schema {
+                df.with_schema(schema).finish()?
+            } else {
+                df.finish()?
+            }
+        },
+        SpecialFormat::CompressedCsv
+        | SpecialFormat::CompressedTsv
+        | SpecialFormat::CompressedSsv => {
+            let separator = match format {
+                SpecialFormat::CompressedTsv => {
+                    extension = ".tsv";
+                    b'\t'
+                },
+                SpecialFormat::CompressedSsv => {
+                    extension = ".ssv";
+                    b';'
+                },
+                _ => delim,
+            };
+
+            // Create base CSV read options with the appropriate separator
+            let base_options = CsvReadOptions::default()
+                .with_parse_options(CsvParseOptions::default().with_separator(separator));
+
+            // Try reading the compressed file with a schema if available
+            let reader = CsvReadOptions::default()
+                .try_into_reader_with_file_path(Some(path.to_path_buf()))?
+                .with_options(if let Some(schema) = schema {
+                    base_options.clone().with_schema(Some(schema))
+                } else {
+                    // it failed, try to infer it with 1,000 rows
+                    base_options.clone().with_infer_schema_length(Some(1_000))
+                });
+
+            if let Ok(df) = reader.finish() {
+                df
+            } else {
+                // Got an error. Try again with a larger infer schema length of 10,000 rows
+                log::warn!(
+                    "Falling back to reading file \"{}\" without a schema. 2nd try using infer \
+                     schema length of 10,000 rows.",
+                    path.display()
+                );
+
+                let reader_2ndtry = CsvReadOptions::default()
+                    .try_into_reader_with_file_path(Some(path.to_path_buf()))?
+                    .with_options(base_options.clone().with_infer_schema_length(Some(10_000)));
+
+                if let Ok(df) = reader_2ndtry.finish() {
+                    df
+                } else {
+                    log::warn!("Still failing. 3rd try - scanning the whole file to infer schema.");
+
+                    // Try one last time without an infer schema length, scanning the whole file
+                    let reader_3rdtry = CsvReadOptions::default()
+                        .try_into_reader_with_file_path(Some(path.to_path_buf()))?
+                        .with_options(base_options.with_infer_schema_length(None));
+
+                    reader_3rdtry.finish()?
+                }
+            }
+        },
+        SpecialFormat::Unknown => return Err("Unknown format".into()),
+    };
+
+    // Get or initialize temp directory that persists until program exit
+    // safety: we know that the tempfile::TempDir::new() will not ordinarily fail
+    // otherwise, we have a bigger problem
+    let temp_dir =
+        crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep());
+
+    // Create temp file with appropriate extension
+    let mut temp_file = tempfile::Builder::new()
+        .suffix(extension)
+        .tempfile_in(temp_dir)?;
+
+    // Get QSV_POLARS_FORMAT_FLOAT_PRECISION env var
+    let precision = crate::config::POLARS_FLOAT_PRECISION.get_or_init(|| {
+        std::env::var("QSV_POLARS_FLOAT_PRECISION")
+            .ok()
+            .and_then(|s| s.parse().ok())
+    });
+
+    // Write DataFrame to CSV with specified delimiter/separator
+    CsvWriter::new(BufWriter::new(&temp_file))
+        .with_separator(delim)
+        .with_float_precision(*precision)
+        .finish(&mut df)?;
+    temp_file.flush()?;
+
+    let path = temp_file.path().to_path_buf();
+    temp_file.keep()?; // Prevent auto-deletion
+
+    Ok(path)
+}
+
+#[cfg(not(feature = "polars"))]
+#[allow(unused_variables)]
+pub fn convert_special_format(
+    path: &Path,
+    format: SpecialFormat,
+    delim: u8,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    Err(
+        "This file type cannot be opened with your current version of qsv. You need the full, \
+         polars-enabled version to work with Avro, Arrow, Parquet, JSON/JSONL and gzip/zlib/zst \
+         compressed files. Please download the full version from the qsv website."
+            .into(),
+    )
+}
+
+#[cfg(feature = "polars")]
+pub fn infer_polars_schema(
+    delimiter: Option<crate::config::Delimiter>,
+    debuglog_flag: bool,
+    table: &Path,
+    schema_file: &std::path::PathBuf,
+) -> Result<bool, crate::clitypes::CliError> {
+    let schema_args = SchemaArgs {
+        flag_enum_threshold:  0,
+        flag_ignore_case:     false,
+        flag_strict_dates:    false,
+        // we still get all the stats columns so we can use the stats cache
+        flag_pattern_columns: crate::select::SelectColumns::parse("").unwrap(),
+        flag_dates_whitelist: String::new(),
+        flag_prefer_dmy:      false,
+        flag_force:           false,
+        flag_stdout:          false,
+        flag_jobs:            Some(njobs(None)),
+        flag_polars:          false,
+        flag_no_headers:      false,
+        flag_delimiter:       delimiter,
+        arg_input:            Some(table.to_string_lossy().into_owned()),
+        flag_memcheck:        false,
+    };
+    let (csv_fields, csv_stats, _) = get_stats_records(&schema_args, StatsMode::PolarsSchema)?;
+    let mut schema = polars::prelude::Schema::with_capacity(csv_stats.len());
+    for (idx, stat) in csv_stats.iter().enumerate() {
+        // safety: we know that the get(idx) will not be None as we are using an iterator
+        schema.insert(
+            polars::prelude::PlSmallStr::from_str(
+                simdutf8::basic::from_utf8(csv_fields.get(idx).unwrap()).unwrap(),
+            ),
+            {
+                let datatype = &stat.r#type;
+                #[allow(clippy::match_same_arms)]
+                match datatype.as_str() {
+                    "String" => polars::datatypes::DataType::String,
+                    "Integer" => {
+                        // safety: integer types are guaranteed to have a min and max
+                        let min = stat.min.as_ref().unwrap();
+                        let max = stat.max.as_ref().unwrap();
+
+                        // Check if all values are non-negative to
+                        // use unsigned types
+                        if let (Ok(min_val), Ok(max_val)) = (min.parse::<i64>(), max.parse::<i64>())
+                        {
+                            if min_val >= 0 {
+                                // Use smallest unsigned type that can hold
+                                // the max value
+                                if max_val <= u8::MAX as i64 {
+                                    polars::datatypes::DataType::UInt8
+                                } else if max_val <= u16::MAX as i64 {
+                                    polars::datatypes::DataType::UInt16
+                                } else if max_val <= u32::MAX as i64 {
+                                    polars::datatypes::DataType::UInt32
+                                } else {
+                                    polars::datatypes::DataType::UInt64
+                                }
+                            } else {
+                                // Use signed types for negative values
+                                if min_val >= i32::MIN as i64 && max_val <= i32::MAX as i64 {
+                                    polars::datatypes::DataType::Int32
+                                } else {
+                                    polars::datatypes::DataType::Int64
+                                }
+                            }
+                        } else {
+                            // Fallback to Int64 if parsing fails
+                            polars::datatypes::DataType::Int64
+                        }
+                    },
+                    "Float" => {
+                        // safety: float types are guaranteed to have a min and max
+                        let min = stat.min.as_ref().unwrap();
+                        let max = stat.max.as_ref().unwrap();
+                        let precision = stat.max_precision.unwrap_or(0);
+
+                        // As we use f64 internally, its unlikely that we have more
+                        // than 16 digits of precision, but we do this anyway to
+                        // document it as the polars engine does support it
+                        if precision > 16 {
+                            // For very high precision, use Decimal type
+                            polars::datatypes::DataType::Decimal(
+                                Some(precision as usize),
+                                // polars will infer scale from the data if None
+                                None,
+                            )
+                        } else if precision > 7
+                            || min.parse::<f32>().is_err()
+                            || max.parse::<f32>().is_err()
+                        {
+                            polars::datatypes::DataType::Float64
+                        } else {
+                            polars::datatypes::DataType::Float32
+                        }
+                    },
+                    "Boolean" => polars::datatypes::DataType::Boolean,
+                    "Date" => polars::datatypes::DataType::Date,
+                    _ => polars::datatypes::DataType::String,
+                }
+            },
+        );
+    }
+    let stats_schema = std::sync::Arc::new(schema);
+    let stats_schema_json = serde_json::to_string_pretty(&stats_schema)?;
+    let mut file = std::io::BufWriter::new(File::create(schema_file)?);
+    file.write_all(stats_schema_json.as_bytes())?;
+    file.flush()?;
+    if debuglog_flag {
+        log::debug!("Saved stats_schema to file: {}", schema_file.display());
+    }
+    Ok(true)
+}

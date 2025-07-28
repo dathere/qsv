@@ -39,7 +39,7 @@ fn snappy_roundtrip() {
     cmd.arg("decompress").arg(out_file); // DevSkim: ignore DS126858
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd); // DevSkim: ignore DS126858
-    similar_asserts::assert_eq!(got, thedata);
+    assert_eq!(got, thedata);
 
     wrk.assert_success(&mut cmd);
 }
@@ -57,7 +57,7 @@ fn snappy_decompress() {
 
     let expected = wrk.load_test_resource("boston311-100.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
 
     wrk.assert_success(&mut cmd);
 }
@@ -74,7 +74,7 @@ fn snappy_decompress_url() {
 
     let expected = wrk.load_test_resource("boston311-100.csv");
 
-    similar_asserts::assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
 
     wrk.assert_success(&mut cmd);
 }
@@ -104,7 +104,7 @@ fn snappy_compress() {
     let expected = wrk.load_test_resource("boston311-100.csv");
     let got = wrk.read_to_string("out.csv").unwrap();
 
-    similar_asserts::assert_eq!(dos2unix(&got).trim_end(), dos2unix(&expected).trim_end());
+    assert_eq!(dos2unix(&got).trim_end(), dos2unix(&expected).trim_end());
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn snappy_automatic_decompression() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "100";
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.assert_success(&mut cmd);
 }
@@ -195,7 +195,7 @@ fn snappy_automatic_compression() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "50";
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.assert_success(&mut cmd);
 }

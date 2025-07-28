@@ -8,7 +8,7 @@ env:
 
 jobs:
   analyze-tags:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     outputs:
       previous-tag: ${{ steps.previoustag.outputs.tag }}
     steps:
@@ -36,7 +36,7 @@ jobs:
             addl-build-args: --features=apply,luau,fetch,foreach,self_update,geocode,polars,to,python,lens,prompt
             default-features:
             addl-qsvlite-features:
-            addl-qsvdp-features: luau
+            addl-qsvdp-features:
             addl-rustflags: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
           # - os: ubuntu-22.04
           #   os-name: linux
@@ -52,7 +52,7 @@ jobs:
             addl-build-args: --features=apply,luau,fetch,self_update,polars,geocode,to,python,lens,foreach,prompt
             default-features:
             addl-qsvlite-features:
-            addl-qsvdp-features: luau
+            addl-qsvdp-features:
             addl-rustflags: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
           # - os: windows-latest
           #   os-name: windows
@@ -61,7 +61,7 @@ jobs:
           #   addl-build-args: --features=apply,luau,fetch,nightly,self_update,polars
           #   default-features: --no-default-features 
           #   addl-qsvlite-features:
-          #   addl-qsvdp-features: luau
+          #   addl-qsvdp-features:
           #   addl-rustflags: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
           - os: macos-latest
             os-name: macos
@@ -70,7 +70,7 @@ jobs:
             addl-build-args: --features=apply,luau,fetch,foreach,to,self_update,polars,geocode,python,lens,prompt
             default-features:
             addl-qsvlite-features:
-            addl-qsvdp-features: luau
+            addl-qsvdp-features:
             addl-rustflags: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
 
     steps:
@@ -92,7 +92,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libwayland-dev
-    - uses: actions/setup-python@v5.4.0
+    - uses: actions/setup-python@v5.6.0
       with:
         python-version: '3.10'
     - name: Build qsvpy310
@@ -120,7 +120,7 @@ jobs:
         fi
         cd ..
 
-    - uses: actions/setup-python@v5.4.0
+    - uses: actions/setup-python@v5.6.0
       with:
           python-version: '3.11'
     - name: Build qsvpy311
@@ -147,7 +147,7 @@ jobs:
           fi
           cd ..
 
-    - uses: actions/setup-python@v5.4.0
+    - uses: actions/setup-python@v5.6.0
       with:
           python-version: '3.12'
     - name: Build qsvpy312
@@ -175,7 +175,7 @@ jobs:
             rustup show > qsvpy_rust_version_info.txt
             cd ..
 
-    - uses: actions/setup-python@v5.4.0
+    - uses: actions/setup-python@v5.6.0
       with:
           python-version: '3.13'
     - name: Build qsvpy313

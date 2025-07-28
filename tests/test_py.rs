@@ -27,7 +27,7 @@ fn py_map() {
         svec!["c", "72", "73"],
         svec!["d", "7", "8"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn py_map_error() {
         svec!["c", "72", "<ERROR>"],
         svec!["d", "7", "<ERROR>"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -87,7 +87,7 @@ fn py_map_builtins() {
         svec!["c", "72", "97"],
         svec!["d", "7", "32"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn py_map_math() {
         svec!["c", "72", "36"],
         svec!["d", "7", "3"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn py_map_datetime() {
         svec!["c", "1991-07-04", "1991-06-29"],
         svec!["d", "2021-01-04", "2020-12-30"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -215,7 +215,7 @@ def celsius_to_fahrenheit(celsius):
         svec!["d", "7", "13"],
         svec!["e", "fib of 8", "incorrect input - not a number"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     let mut cmd = wrk.command("py");
     cmd.arg("map")
@@ -234,7 +234,7 @@ def celsius_to_fahrenheit(celsius):
         svec!["d", "7", "44.6"],
         svec!["e", "fib of 8", "incorrect input - not a float"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -304,7 +304,7 @@ def celsius_to_fahrenheit(celsius):
         svec!["d", "7", "13"],
         svec!["e", "fib of 8", "incorrect input - not a number"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.create_from_string("testfile2.code", "qsv_uh.celsius_to_fahrenheit(number)");
 
@@ -325,7 +325,7 @@ def celsius_to_fahrenheit(celsius):
         svec!["d", "7", "44.6"],
         svec!["e", "fib of 8", "incorrect input - not a float"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -355,7 +355,7 @@ fn py_map_col_positional() {
         svec!["c", "72", "73"],
         svec!["d", "7", "8"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -385,7 +385,7 @@ fn py_map_col_by_key() {
         svec!["c", "72", "73"],
         svec!["d", "7", "8"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -415,7 +415,7 @@ fn py_map_col_by_attr() {
         svec!["c", "72", "73"],
         svec!["d", "7", "8"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -443,7 +443,7 @@ fn py_map_no_headers() {
         svec!["c", "72", "73"],
         svec!["d", "7", "8"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -473,7 +473,7 @@ fn py_map_boolean() {
         svec!["c", "72", "True"],
         svec!["d", "7", "False"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -498,7 +498,7 @@ fn py_filter() {
         svec!["b", "24"],
         svec!["c", "72"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -527,7 +527,7 @@ fn py_filter_error() {
         svec!["c", "72"],
         svec!["d", "7"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 
     wrk.assert_err(&mut cmd);
     let stderr_string = wrk.output_stderr(&mut cmd);
@@ -559,7 +559,7 @@ fn py_format() {
         svec!["10", "bananas", "20", "10 bananas cost $200.00"],
         svec!["3", "strawberries", "3.50", "3 strawberries cost $10.50"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -602,7 +602,7 @@ fn py_format_with_conditionals() {
             "3 strawberries cost $10.50. Its quite cheap!"
         ],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -633,5 +633,5 @@ fn py_format_header_with_invalid_chars() {
         svec!["10", "bananas", "20", "10 bananas cost $200.00"],
         svec!["3", "strawberries", "3.50", "3 strawberries cost $10.50"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

@@ -87,6 +87,9 @@ _qsv() {
             qsv,geocode)
                 cmd="qsv__geocode"
                 ;;
+            qsv,geoconvert)
+                cmd="qsv__geoconvert"
+                ;;
             qsv,headers)
                 cmd="qsv__headers"
                 ;;
@@ -119,6 +122,9 @@ _qsv() {
                 ;;
             qsv,partition)
                 cmd="qsv__partition"
+                ;;
+            qsv,pivotp)
+                cmd="qsv__pivotp"
                 ;;
             qsv,pro)
                 cmd="qsv__pro"
@@ -276,6 +282,12 @@ _qsv() {
             qsv__geocode,index-update)
                 cmd="qsv__geocode__index__update"
                 ;;
+            qsv__geocode,iplookup)
+                cmd="qsv__geocode__iplookup"
+                ;;
+            qsv__geocode,iplookupnow)
+                cmd="qsv__geocode__iplookupnow"
+                ;;
             qsv__geocode,reverse)
                 cmd="qsv__geocode__reverse"
                 ;;
@@ -308,6 +320,12 @@ _qsv() {
                 ;;
             qsv__geocode__help,index-update)
                 cmd="qsv__geocode__help__index__update"
+                ;;
+            qsv__geocode__help,iplookup)
+                cmd="qsv__geocode__help__iplookup"
+                ;;
+            qsv__geocode__help,iplookupnow)
+                cmd="qsv__geocode__help__iplookupnow"
                 ;;
             qsv__geocode__help,reverse)
                 cmd="qsv__geocode__help__reverse"
@@ -396,6 +414,9 @@ _qsv() {
             qsv__help,geocode)
                 cmd="qsv__help__geocode"
                 ;;
+            qsv__help,geoconvert)
+                cmd="qsv__help__geoconvert"
+                ;;
             qsv__help,headers)
                 cmd="qsv__help__headers"
                 ;;
@@ -428,6 +449,9 @@ _qsv() {
                 ;;
             qsv__help,partition)
                 cmd="qsv__help__partition"
+                ;;
+            qsv__help,pivotp)
+                cmd="qsv__help__pivotp"
                 ;;
             qsv__help,pro)
                 cmd="qsv__help__pro"
@@ -549,6 +573,12 @@ _qsv() {
             qsv__help__geocode,index-update)
                 cmd="qsv__help__geocode__index__update"
                 ;;
+            qsv__help__geocode,iplookup)
+                cmd="qsv__help__geocode__iplookup"
+                ;;
+            qsv__help__geocode,iplookupnow)
+                cmd="qsv__help__geocode__iplookupnow"
+                ;;
             qsv__help__geocode,reverse)
                 cmd="qsv__help__geocode__reverse"
                 ;;
@@ -593,6 +623,12 @@ _qsv() {
                 ;;
             qsv__help__to,datapackage)
                 cmd="qsv__help__to__datapackage"
+                ;;
+            qsv__help__to,ods)
+                cmd="qsv__help__to__ods"
+                ;;
+            qsv__help__to,parquet)
+                cmd="qsv__help__to__parquet"
                 ;;
             qsv__help__to,postgres)
                 cmd="qsv__help__to__postgres"
@@ -693,6 +729,12 @@ _qsv() {
             qsv__to,help)
                 cmd="qsv__to__help"
                 ;;
+            qsv__to,ods)
+                cmd="qsv__to__ods"
+                ;;
+            qsv__to,parquet)
+                cmd="qsv__to__parquet"
+                ;;
             qsv__to,postgres)
                 cmd="qsv__to__postgres"
                 ;;
@@ -707,6 +749,12 @@ _qsv() {
                 ;;
             qsv__to__help,help)
                 cmd="qsv__to__help__help"
+                ;;
+            qsv__to__help,ods)
+                cmd="qsv__to__help__ods"
+                ;;
+            qsv__to__help,parquet)
+                cmd="qsv__to__help__parquet"
                 ;;
             qsv__to__help,postgres)
                 cmd="qsv__to__help__postgres"
@@ -724,7 +772,7 @@ _qsv() {
 
     case "${cmd}" in
         qsv)
-            opts="-h --list --envlist --update --updatenow --version --help apply behead cat clipboard count datefmt dedup describegpt diff edit enum excel exclude extdedup extsort explode fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode headers index input join joinp json jsonl lens luau partition pro prompt pseudo py rename replace reverse safenames sample schema search searchset select slice snappy sniff sort sortcheck split sqlp stats table template to tojsonl transpose validate help"
+            opts="-h --list --envlist --update --updatenow --version --help apply behead cat clipboard count datefmt dedup describegpt diff edit enum excel exclude extdedup extsort explode fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert headers index input join joinp json jsonl lens luau partition pivotp pro prompt pseudo py rename replace reverse safenames sample schema search searchset select slice snappy sniff sort sortcheck split sqlp stats table template to tojsonl transpose validate help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1116,7 +1164,7 @@ _qsv() {
             return 0
             ;;
         qsv__edit)
-            opts="-h --output --no-headers --help"
+            opts="-h --no-headers --in-place --output --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1326,7 +1374,7 @@ _qsv() {
             return 0
             ;;
         qsv__geocode)
-            opts="-h --new-column --rename --country --min-score --admin1 --k_weight --formatstr --language --invalid-result --jobs --batch --timeout --cache-dir --languages --cities-url --force --output --delimiter --progressbar --help suggest suggestnow reverse reversenow countryinfo countryinfonow index-load index-check index-update index-reset help"
+            opts="-h --new-column --rename --country --min-score --admin1 --k_weight --formatstr --language --invalid-result --jobs --batch --timeout --cache-dir --languages --cities-url --force --output --delimiter --progressbar --help suggest suggestnow reverse reversenow countryinfo countryinfonow iplookup iplookupnow index-load index-check index-update index-reset help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1368,7 +1416,7 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__help)
-            opts="suggest suggestnow reverse reversenow countryinfo countryinfonow index-load index-check index-update index-reset help"
+            opts="suggest suggestnow reverse reversenow countryinfo countryinfonow iplookup iplookupnow index-load index-check index-update index-reset help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1466,6 +1514,34 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__help__index__update)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__geocode__help__iplookup)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__geocode__help__iplookupnow)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1591,6 +1667,34 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__geocode__iplookup)
+            opts="-h --new-column --rename --country --min-score --admin1 --k_weight --formatstr --language --invalid-result --jobs --batch --timeout --cache-dir --languages --cities-url --force --output --delimiter --progressbar --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__geocode__iplookupnow)
+            opts="-h --new-column --rename --country --min-score --admin1 --k_weight --formatstr --language --invalid-result --jobs --batch --timeout --cache-dir --languages --cities-url --force --output --delimiter --progressbar --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__geocode__reverse)
             opts="-h --new-column --rename --country --min-score --admin1 --k_weight --formatstr --language --invalid-result --jobs --batch --timeout --cache-dir --languages --cities-url --force --output --delimiter --progressbar --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -1647,6 +1751,20 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__geoconvert)
+            opts="-h --geometry --latitude --longitude --max-length --output --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__headers)
             opts="-h --just-names --just-count --intersect --trim --delimiter --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
@@ -1662,7 +1780,7 @@ _qsv() {
             return 0
             ;;
         qsv__help)
-            opts="apply behead cat clipboard count datefmt dedup describegpt diff edit enum excel exclude extdedup extsort explode fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode headers index input join joinp json jsonl lens luau partition pro prompt pseudo py rename replace reverse safenames sample schema search searchset select slice snappy sniff sort sortcheck split sqlp stats table template to tojsonl transpose validate help"
+            opts="apply behead cat clipboard count datefmt dedup describegpt diff edit enum excel exclude extdedup extsort explode fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert headers index input join joinp json jsonl lens luau partition pivotp pro prompt pseudo py rename replace reverse safenames sample schema search searchset select slice snappy sniff sort sortcheck split sqlp stats table template to tojsonl transpose validate help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2110,7 +2228,7 @@ _qsv() {
             return 0
             ;;
         qsv__help__geocode)
-            opts="suggest suggestnow reverse reversenow countryinfo countryinfonow index-load index-check index-update index-reset"
+            opts="suggest suggestnow reverse reversenow countryinfo countryinfonow iplookup iplookupnow index-load index-check index-update index-reset"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2207,6 +2325,34 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__help__geocode__iplookup)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__help__geocode__iplookupnow)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__help__geocode__reverse)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -2252,6 +2398,20 @@ _qsv() {
         qsv__help__geocode__suggestnow)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__help__geoconvert)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -2432,6 +2592,20 @@ _qsv() {
             return 0
             ;;
         qsv__help__partition)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__help__pivotp)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2880,7 +3054,7 @@ _qsv() {
             return 0
             ;;
         qsv__help__to)
-            opts="postgres sqlite xlsx datapackage"
+            opts="postgres sqlite xlsx ods parquet datapackage"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2894,6 +3068,34 @@ _qsv() {
             return 0
             ;;
         qsv__help__to__datapackage)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__help__to__ods)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__help__to__parquet)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -3076,7 +3278,7 @@ _qsv() {
             return 0
             ;;
         qsv__lens)
-            opts="-h --delimiter --tab-separated --no-headers --columns --filter --find --ignore-case --freeze-columns --echo-column --debug --help"
+            opts="-h --delimiter --tab-separated --no-headers --columns --filter --find --ignore-case --freeze-columns --monochrome --wrap-mode --prompt --echo-column --debug --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3189,6 +3391,20 @@ _qsv() {
             ;;
         qsv__partition)
             opts="-h --filename --prefix-length --drop --no-headers --delimiter --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__pivotp)
+            opts="-h --index --values --agg --sort-columns --col-separator --validate --try-parsedates --infer-len --decimal-comma --ignore-errors --output --delimiter --quiet --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3734,7 +3950,7 @@ _qsv() {
             return 0
             ;;
         qsv__sort)
-            opts="-h --select --numeric --reverse --ignore-case --unique --random --seed --rng --jobs --faster --output --no-headers --delimiter --memcheck --help"
+            opts="-h --select --numeric --natural --reverse --ignore-case --unique --random --seed --rng --jobs --faster --output --no-headers --delimiter --memcheck --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3762,7 +3978,7 @@ _qsv() {
             return 0
             ;;
         qsv__split)
-            opts="-h --size --chunks --kb-size --jobs --filename --pad --no-headers --delimiter --quiet --help"
+            opts="-h --size --chunks --kb-size --jobs --filename --pad --filter --filter-cleanup --filter-ignore-errors --no-headers --delimiter --quiet --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3790,7 +4006,7 @@ _qsv() {
             return 0
             ;;
         qsv__stats)
-            opts="-h --select --everything --typesonly --infer-boolean --mode --cardinality --median --mad --quartiles --round --nulls --infer-dates --dates-whitelist --prefer-dmy --force --jobs --stats-jsonl --cache-threshold --vis-whitespace --dataset-stats --output --no-headers --delimiter --memcheck --help"
+            opts="-h --select --everything --typesonly --infer-boolean --boolean-patterns --mode --cardinality --median --mad --quartiles --percentiles --percentile-list --round --nulls --infer-dates --dates-whitelist --prefer-dmy --force --jobs --stats-jsonl --cache-threshold --vis-whitespace --dataset-stats --output --no-headers --delimiter --memcheck --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3832,7 +4048,7 @@ _qsv() {
             return 0
             ;;
         qsv__to)
-            opts="-h --print-package --dump --stats --stats-csv --quiet --schema --drop --evolve --pipe --separator --jobs --delimiter --help postgres sqlite xlsx datapackage help"
+            opts="-h --print-package --dump --stats --stats-csv --quiet --schema --drop --evolve --pipe --separator --all-strings --jobs --delimiter --help postgres sqlite xlsx ods parquet datapackage help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3846,7 +4062,7 @@ _qsv() {
             return 0
             ;;
         qsv__to__datapackage)
-            opts="-h --print-package --dump --stats --stats-csv --quiet --schema --drop --evolve --pipe --separator --jobs --delimiter --help"
+            opts="-h --print-package --dump --stats --stats-csv --quiet --schema --drop --evolve --pipe --separator --all-strings --jobs --delimiter --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3860,7 +4076,7 @@ _qsv() {
             return 0
             ;;
         qsv__to__help)
-            opts="postgres sqlite xlsx datapackage help"
+            opts="postgres sqlite xlsx ods parquet datapackage help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3888,6 +4104,34 @@ _qsv() {
             return 0
             ;;
         qsv__to__help__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__to__help__ods)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__to__help__parquet)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -3943,8 +4187,36 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__to__ods)
+            opts="-h --print-package --dump --stats --stats-csv --quiet --schema --drop --evolve --pipe --separator --all-strings --jobs --delimiter --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__to__parquet)
+            opts="-h --print-package --dump --stats --stats-csv --quiet --schema --drop --evolve --pipe --separator --all-strings --jobs --delimiter --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__to__postgres)
-            opts="-h --print-package --dump --stats --stats-csv --quiet --schema --drop --evolve --pipe --separator --jobs --delimiter --help"
+            opts="-h --print-package --dump --stats --stats-csv --quiet --schema --drop --evolve --pipe --separator --all-strings --jobs --delimiter --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3958,7 +4230,7 @@ _qsv() {
             return 0
             ;;
         qsv__to__sqlite)
-            opts="-h --print-package --dump --stats --stats-csv --quiet --schema --drop --evolve --pipe --separator --jobs --delimiter --help"
+            opts="-h --print-package --dump --stats --stats-csv --quiet --schema --drop --evolve --pipe --separator --all-strings --jobs --delimiter --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3972,7 +4244,7 @@ _qsv() {
             return 0
             ;;
         qsv__to__xlsx)
-            opts="-h --print-package --dump --stats --stats-csv --quiet --schema --drop --evolve --pipe --separator --jobs --delimiter --help"
+            opts="-h --print-package --dump --stats --stats-csv --quiet --schema --drop --evolve --pipe --separator --all-strings --jobs --delimiter --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -4014,7 +4286,7 @@ _qsv() {
             return 0
             ;;
         qsv__validate)
-            opts="-h --trim --fail-fast --valid --invalid --json --pretty-json --valid-output --jobs --batch --timeout --cache-dir --ckan-api --ckan-token --no-headers --delimiter --progressbar --quiet --help"
+            opts="-h --trim --no-format-validation --fail-fast --valid --invalid --json --pretty-json --valid-output --jobs --batch --timeout --cache-dir --ckan-api --ckan-token --no-headers --delimiter --progressbar --quiet --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

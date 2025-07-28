@@ -2,7 +2,7 @@
 
 | Variable | Description |
 | --- | --- |
-| `QSV_DOTENV_PATH` | The full pathname of the dotenv file to load, OVERRIDING existing environment variables. This takes precedence over any other dotenv files in the filesystem. |
+| `QSV_DOTENV_PATH` | The full pathname of the dotenv file to load, OVERRIDING existing environment variables. This takes precedence over any other dotenv files in the filesystem. Set to "<NONE>" to disable dotenv processing. |
 | `QSV_DEFAULT_DELIMITER` | single ascii character to use as delimiter.  Overrides `--delimiter` option. Defaults to "," (comma) for CSV files & "\t" (tab) for TSV files when not set. Note that this will also set the delimiter for qsv's output to stdout.<br>However, using the `--output` option, regardless of this environment variable, will automatically change the delimiter used in the generated file based on the file extension - i.e. comma for `.csv`; tab for `.tsv` & `.tab` ; and semicolon for `.ssv` files |
 | `QSV_SNIFF_DELIMITER` | if set, the delimiter is automatically detected. Overrides `QSV_DEFAULT_DELIMITER` & `--delimiter` option. Note that this does not work with stdin. |
 | `QSV_NO_HEADERS` | if set, the first row will **NOT** be interpreted as headers. Supersedes `QSV_TOGGLE_HEADERS`. |
@@ -10,6 +10,7 @@
 | `QSV_ANTIMODES_LEN` | set to the maximum number of characters when listing "antimodes" in `stats`. Otherwise, the default is 100. Set to 0 to disable length limiting. |
 | `QSV_AUTOINDEX_SIZE` | if set, specifies the minimum file size (in bytes) of a CSV file before an index is automatically created. Note that stale indices are automatically updated regardless of this setting. |
 | `QSV_STATSCACHE_MODE` | Specifies how the stats cache is used by "smart" commands. Valid values are:<br />  * auto - use the stats cache if it's valid (the stats-jsonl file exists and is current) - default.<br />  * force - if the cache does not exist, create it by running stats.<br />  * none - do not use the stats cache, even if it exists. |
+| `QSV_STATS_STRING_MAX_LENGTH` | Specifies the maximum string length for the "min"/"max" stats column. Some CSVs can have very long string columns that can cause other parsers to fail (e.g. Python's CSV reader can only accommodate 128kb strings by default) and when converting spatial formats like GeoJSON or Shapefile to CSV, the geometry column can easily be larger than this. When set, truncates the "min"/"max" columns of type String at the specified length and then appends an ellipsis (...). |
 | `QSV_CACHE_DIR` | The directory to use for caching downloaded lookup_table resources using the `luau` qsv_register_lookup() helper function. |
 | `QSV_CKAN_API` | The CKAN Action API endpoint to use with the `luau` qsv_register_lookup() helper function when using the "ckan://" scheme. |
 | `QSV_CKAN_TOKEN`| The CKAN token to use with the `luau` qsv_register_lookup() helper function when using the "ckan://" scheme. Only required to access private resources. |
@@ -18,6 +19,7 @@
 | `QSV_NO_UPDATE` | if set, prohibit self-update version check for the latest qsv release published on GitHub. |
 | `QSV_LLM_APIKEY` | The API key of the supported LLM service to use with the `describegpt` command. |
 | `QSV_OUTPUT_BOM` | if set, the output will have a Byte Order Mark (BOM) at the beginning. This is used to generate Excel-friendly CSVs on Windows. |
+| `QSV_POLARS_FLOAT_PRECISION` | The precision to use when converting Polars-enabled formats (Avro,Arrow,Parquet,JSON,JSONL and gz,zlib & zst compressed files) to CSV. If set, this will also override the --float-precision option of the `sqlp` command. |
 | `QSV_PREFER_DMY` | if set, date parsing will use DMY format. Otherwise, use MDY format (used with `datefmt`, `schema`, `sniff` & `stats` commands). |
 | `QSV_REGEX_UNICODE` | if set, makes `search`, `searchset` & `replace` commands unicode-aware. For increased performance, these commands are not unicode-aware by default & will ignore unicode values when matching & will abort when unicode characters are used in the regex. Note that the `apply operations regex_replace` operation is always unicode-aware. |
 | `QSV_RDR_BUFFER_CAPACITY` | reader buffer size (default - 128k (bytes): 131072) |

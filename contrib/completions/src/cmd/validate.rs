@@ -3,6 +3,7 @@ use clap::{arg, Command};
 pub fn validate_cmd() -> Command {
     Command::new("validate").args([
         arg!(--trim),
+        arg!(--"no-format-validation"),
         arg!(--"fail-fast"),
         arg!(--valid),
         arg!(--invalid),

@@ -16,7 +16,7 @@ fn foreach() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["NAME = John"], svec!["NAME = Mary"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -32,7 +32,7 @@ fn foreach_dry_run() {
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"echo NAME = John
 echo NAME = Mary"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn foreach_multiple_braces() {
         svec!["NAME = John", " John", " John"],
         svec!["NAME = Mary", " Mary", " Mary"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn foreach_multiple_braces_dry_run() {
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"echo NAME = John, John, John
 echo NAME = Mary, Mary, Mary"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn foreach_special_chars_1171() {
         svec!["dig +short www.apple.com a"],
         svec!["dig +short https://civic-data-ecosystem.github.io a"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -131,7 +131,7 @@ echo dig +short https://www.google.com a
 echo dig +short www.apple.com a
 echo dig +short https://civic-data-ecosystem.github.io a"#;
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -155,7 +155,7 @@ fn foreach_unify() {
         svec!["John", "1"],
         svec!["Mary", "1"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -181,7 +181,7 @@ fn foreach_new_column() {
         svec!["John", "1", "John"],
         svec!["Mary", "1", "Mary"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -205,7 +205,7 @@ echo $1 $REVERSED_NAME"#,
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["John nhoJ"], svec!["Mary yraM"]];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -227,5 +227,24 @@ echo $1 $REVERSED_NAME"#,
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "sh multiple_commands.sh John\nsh multiple_commands.sh Mary";
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn foreach_issue_2753() {
+    let wrk = Workdir::new("foreach_issue_2753");
+    wrk.create("data.csv", vec![svec!["a", "b"], svec!["1", "1/"]]);
+    let mut cmd = wrk.command("foreach");
+    cmd.arg("b").arg("echo {}test").arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"echo 1/test"#;
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("foreach");
+    cmd.arg("b").arg(r#"echo {}/test"#).arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"echo 1//test"#;
+    assert_eq!(got, expected);
 }

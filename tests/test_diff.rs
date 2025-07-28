@@ -25,7 +25,7 @@ fn diff_sort_diff_result_on_first_column_with_qsv_sort_cmd() {
     let expected2 =
         expected_diff_result_sort_on_first_column_original_is_left_arg_and_diff_is_right_arg();
 
-    similar_asserts::assert_eq!(dos2unix(&got2), dos2unix(&expected2));
+    assert_eq!(dos2unix(&got2), dos2unix(&expected2));
 
     fn expected_diff_result_sort_on_first_column_original_is_left_arg_and_diff_is_right_arg()
     -> String {
@@ -65,7 +65,7 @@ fn diff_original_left_and_diff_right_sort_diff_result_by_lines_by_default() {
     let actual: String = wrk.stdout(&mut cmd);
     let expected = create_expected_diff_result_when_sorting_by_lines_original_is_left_arg_and_diff_is_right_arg();
 
-    similar_asserts::assert_eq!(dos2unix(&actual), dos2unix(&expected));
+    assert_eq!(dos2unix(&actual), dos2unix(&expected));
 
     fn create_expected_diff_result_when_sorting_by_lines_original_is_left_arg_and_diff_is_right_arg()
     -> String {
@@ -107,7 +107,7 @@ fn diff_diff_left_and_original_right_sort_diff_result_by_lines_by_default() {
     let actual: String = wrk.stdout(&mut cmd);
     let expected = create_expected_diff_result_when_sorting_by_lines_diff_is_left_arg_and_original_is_right_arg();
 
-    similar_asserts::assert_eq!(dos2unix(&actual), dos2unix(&expected));
+    assert_eq!(dos2unix(&actual), dos2unix(&expected));
 
     fn create_expected_diff_result_when_sorting_by_lines_diff_is_left_arg_and_original_is_right_arg()
     -> String {
@@ -161,7 +161,7 @@ fn diff_sort_diff_result_by_lines_by_default_modified_rows_interleaved() {
         svec!["+", "3", "higgs_changed", "corge"],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn diff_sort_diff_result_by_first_column() {
     let actual: String = wrk.stdout(&mut cmd);
     let expected = create_expected_diff_result_when_sorting_by_first_column();
 
-    similar_asserts::assert_eq!(dos2unix(&actual), dos2unix(&expected));
+    assert_eq!(dos2unix(&actual), dos2unix(&expected));
 
     fn create_expected_diff_result_when_sorting_by_first_column() -> String {
         r#"
@@ -231,7 +231,7 @@ fn diff_sort_diff_result_by_first_column_name() {
     let actual: String = wrk.stdout(&mut cmd);
     let expected = create_expected_diff_result_when_sorting_by_first_column();
 
-    similar_asserts::assert_eq!(dos2unix(&actual), dos2unix(&expected));
+    assert_eq!(dos2unix(&actual), dos2unix(&expected));
 
     fn create_expected_diff_result_when_sorting_by_first_column() -> String {
         r#"
@@ -284,7 +284,7 @@ fn diff_different_delimiters_sort_diff_result_by_first_column() {
     let actual: String = wrk.stdout(&mut cmd);
     let expected = create_expected_diff_result_when_sorting_by_first_column();
 
-    similar_asserts::assert_eq!(dos2unix(&actual), dos2unix(&expected));
+    assert_eq!(dos2unix(&actual), dos2unix(&expected));
 
     fn create_expected_diff_result_when_sorting_by_first_column() -> String {
         r#"
@@ -320,7 +320,7 @@ fn diff_with_no_headers_in_result() {
         svec!["+", "1", "foo_changed", "bar",],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -339,7 +339,7 @@ fn diff_no_diff_with_no_headers_in_result() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected: Vec<Vec<String>> = vec![];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -379,7 +379,7 @@ fn diff_key_sort_by_column_name() {
         svec!["+", "2", "booz", "fart"],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -408,7 +408,7 @@ fn diff_key_by_column_name_columns_have_different_order_error() {
                     select` to reorder the columns on the right CSV to match the order of the \
                     left CSV.\nThe key column indices on the left CSV are in index \
                     locations:\n[0]\nand on the right CSV are:\n[1]\n";
-    similar_asserts::assert_eq!(wrk.output_stderr(&mut cmd), expected);
+    assert_eq!(wrk.output_stderr(&mut cmd), expected);
 }
 
 #[test]
@@ -437,7 +437,7 @@ fn diff_sort_by_column_name_columns_have_different_order_error() {
                     select` to reorder the columns on the right CSV to match the order of the \
                     left CSV.\nThe sort column indices on the left CSV are in index \
                     locations:\n[0]\nand on the right CSV are:\n[1]\n";
-    similar_asserts::assert_eq!(wrk.output_stderr(&mut cmd), expected);
+    assert_eq!(wrk.output_stderr(&mut cmd), expected);
 }
 
 #[test]
@@ -462,7 +462,7 @@ fn diff_only_left_has_headers_headers_in_result() {
         svec!["+", "1", "foo_changed", "bar",],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -487,7 +487,7 @@ fn diff_only_right_has_headers_headers_in_result() {
         svec!["+", "1", "foo_changed", "bar",],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -515,7 +515,7 @@ fn diff_with_generic_headers_in_result() {
         svec!["+", "1", "foo_changed", "bar",],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -543,7 +543,7 @@ fn diff_with_no_left_no_right_and_no_headers_in_result() {
         svec!["+", "1", "foo_changed", "bar",],
     ];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -569,7 +569,7 @@ fn diff_no_diff_with_generic_headers_in_result() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["diffresult", "_col_1", "_col_2", "_col_3",]];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -590,7 +590,7 @@ fn diff_no_diff_and_zero_columns_flag_true_for_headers_in_result_but_none_are_in
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected: Vec<Vec<String>> = vec![];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -611,7 +611,7 @@ fn diff_left_has_one_column_right_has_none_headers_in_result() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["diffresult", "h1"]];
 
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -632,7 +632,7 @@ fn diff_with_default_delimiter_in_result() {
 diffresult,h1,h2,h3
 -,1,foo,bar
 +,1,foo_changed,bar";
-    similar_asserts::assert_eq!(got.as_str(), expected);
+    assert_eq!(got.as_str(), expected);
 }
 
 #[test]
@@ -653,7 +653,7 @@ fn diff_with_different_delimiter_in_result() {
 diffresult;h1;h2;h3
 -;1;foo;bar
 +;1;foo_changed;bar";
-    similar_asserts::assert_eq!(got.as_str(), expected);
+    assert_eq!(got.as_str(), expected);
 }
 
 #[test]
@@ -688,7 +688,7 @@ diffresult,h1,h2,h3
 -,2,,quux
 +,2,,quux_modified
 +,4,added,row";
-    similar_asserts::assert_eq!(got.as_str(), expected);
+    assert_eq!(got.as_str(), expected);
 }
 
 #[test]
@@ -723,7 +723,7 @@ diffresult,h1,h2,h3,h4
 -,2,,,drix
 +,2,,,drix_modified
 +,4,added,row,new";
-    similar_asserts::assert_eq!(got.as_str(), expected);
+    assert_eq!(got.as_str(), expected);
 }
 
 #[test]
@@ -760,7 +760,7 @@ diffresult,h1,h2,h3
 -,3,corge,
 +,3,corge_modified,
 +,4,added,row";
-    similar_asserts::assert_eq!(got.as_str(), expected);
+    assert_eq!(got.as_str(), expected);
 }
 
 #[test]
@@ -799,7 +799,7 @@ diffresult,h1,h2,h3,h4
 -,3,corge,,id3
 +,3,corge_modified,,id3
 +,3,added,row,id_new";
-    similar_asserts::assert_eq!(got.as_str(), expected);
+    assert_eq!(got.as_str(), expected);
 }
 
 fn create_file_with_delim(wrk: &Workdir, file_path_new: &str, file_path: &str, delimiter: u8) {
@@ -840,7 +840,7 @@ fn diff_with_delimiter_overrides_all_delimiters() {
 diffresult;h1;h2;h3
 -;1;foo;bar
 +;1;foo_changed;bar";
-    similar_asserts::assert_eq!(got.as_str(), expected);
+    assert_eq!(got.as_str(), expected);
 }
 
 #[test]
@@ -861,7 +861,7 @@ fn diff_with_tab_delimiter() {
 diffresult\th1\th2\th3
 -\t1\tfoo\tbar
 +\t1\tfoo_changed\tbar";
-    similar_asserts::assert_eq!(got.as_str(), expected);
+    assert_eq!(got.as_str(), expected);
 }
 
 #[test]
@@ -895,5 +895,5 @@ fn diff_with_mixed_delimiters() {
 diffresult|h1|h2|h3
 -|1|foo|bar
 +|1|foo_changed|bar";
-    similar_asserts::assert_eq!(got.as_str(), expected);
+    assert_eq!(got.as_str(), expected);
 }

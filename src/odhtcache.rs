@@ -142,7 +142,7 @@ impl ExtDedupCache {
                     }
                 },
                 Err(e) => {
-                    debug!("Failed to create memory map: {}", e);
+                    debug!("Failed to create memory map: {e}");
                     // Fallback to regular HashTableOwned if mmap fails
                     self.disk = Some(HashTableOwned::<ExtDedupConfig>::with_capacity(
                         1_000_000, 95,

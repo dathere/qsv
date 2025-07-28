@@ -781,13 +781,13 @@ fn register_lookup(
     let cache_age_secs = cache_age_secs.unwrap_or(3600);
 
     // Check if lookup_name already exists in LOOKUP_MAP
-    if let Some(lock) = LOOKUP_MAP.get() {
-        if let Ok(map) = lock.read() {
-            if map.contains_key(lookup_name) && cache_age_secs > 0 {
-                // Lookup table already registered
-                return Ok(true);
-            }
-        }
+    if let Some(lock) = LOOKUP_MAP.get()
+        && let Ok(map) = lock.read()
+        && map.contains_key(lookup_name)
+        && cache_age_secs > 0
+    {
+        // Lookup table already registered
+        return Ok(true);
     }
 
     if lookup_table_uri.is_empty() {

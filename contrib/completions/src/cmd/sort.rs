@@ -4,6 +4,7 @@ pub fn sort_cmd() -> Command {
     Command::new("sort").args([
         arg!(--select),
         arg!(--numeric),
+        arg!(--natural),
         arg!(--reverse),
         arg!(--"ignore-case"),
         arg!(--unique),

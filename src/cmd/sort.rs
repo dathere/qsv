@@ -1,9 +1,5 @@
 static USAGE: &str = r#"
-Sorts CSV data in alphabetical (with case-insensitive option), numerical,
-reverse, unique or random (with optional seed) order.
-
-The sort is done in lexicographical order.
-https://en.wikipedia.org/wiki/Lexicographic_order
+Sorts CSV data in lexicographical, natural, numerical, reverse, unique or random order.
 
 Note that this requires reading all of the CSV data into memory. If
 you need to sort a large file that may not fit into memory, use the
@@ -19,12 +15,19 @@ sort options:
     -s, --select <arg>      Select a subset of columns to sort.
                             See 'qsv select --help' for the format details.
     -N, --numeric           Compare according to string numerical value
+    --natural               Compare strings using natural sort order
+                            (treats numbers within strings as actual numbers, e.g.
+                            "data1.txt", "data2.txt", "data10.txt", as opposed to
+                            "data1.txt", "data10.txt", "data2.txt" when sorting
+                            lexicographically)
+                            https://en.wikipedia.org/wiki/Natural_sort_order
     -R, --reverse           Reverse order
     -i, --ignore-case       Compare strings disregarding case
     -u, --unique            When set, identical consecutive lines will be dropped
                             to keep only one line per sorted value.
 
-    --random                Random order
+                            RANDOM SORTING OPTIONS:
+    --random                Randomize (scramble) the data by row
     --seed <number>         Random Number Generator (RNG) seed to use if --random is set
     --rng <kind>            The RNG algorithm to use if --random is set.
                             Three RNGs are supported:
@@ -42,7 +45,7 @@ sort options:
                             When not set, the number of jobs is set to the
                             number of CPUs detected.
     --faster                When set, the sort will be faster. This is done by
-                            using a faster sorting algorithm that is not stable
+                            using a faster sorting algorithm that is not "stable"
                             (i.e. the order of identical values is not guaranteed
                             to be preserved). It has the added side benefit that the
                             sort will also be in-place (i.e. does not allocate),
@@ -61,6 +64,7 @@ Common options:
                             Must be a single character. (default: ,)
     --memcheck              Check if there is enough memory to load the entire
                             CSV into memory using CONSERVATIVE heuristics.
+                            Ignored if --random or --faster is set.
 "#;
 
 use std::{cmp, str::FromStr};
@@ -88,6 +92,7 @@ struct Args {
     arg_input:        Option<String>,
     flag_select:      SelectColumns,
     flag_numeric:     bool,
+    flag_natural:     bool,
     flag_reverse:     bool,
     flag_ignore_case: bool,
     flag_unique:      bool,
@@ -113,6 +118,7 @@ enum RngKind {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     let numeric = args.flag_numeric;
+    let natural = args.flag_natural;
     let reverse = args.flag_reverse;
     let random = args.flag_random;
     let faster = args.flag_faster;
@@ -150,9 +156,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let ignore_case = args.flag_ignore_case;
 
     let mut all = rdr.byte_records().collect::<Result<Vec<_>, _>>()?;
-    match (numeric, reverse, random, faster) {
+    // Tuple ordering and boolean flag meanings:
+    // numeric: Sort numerically
+    // natural: Sort in natural order https://en.wikipedia.org/wiki/Natural_sort_order
+    // reverse: Sort in reverse order
+    // random: Sort randomly
+    // faster: Use faster parallel "unstable" sorting algorithm by using
+    //   non-allocating, par_sort_unstable_by
+    //   https://docs.rs/rayon/latest/rayon/slice/trait.ParallelSliceMut.html#method.par_sort_unstable_by
+    // if all flags are false (the default), then we do a stable parallel, lexicographical sort
+    match (numeric, natural, reverse, random, faster) {
         // --random sort
-        (_, _, true, _) => {
+        (_, _, _, true, _) => {
             match rng_kind {
                 RngKind::Standard => {
                     if let Some(val) = seed {
@@ -190,7 +205,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         },
 
         // default stable parallel sort
-        (false, false, false, false) => all.par_sort_by(|r1, r2| {
+        (false, false, false, false, false) => all.par_sort_by(|r1, r2| {
             let a = sel.select(r1);
             let b = sel.select(r2);
             if ignore_case {
@@ -200,7 +215,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         }),
         // default --faster unstable, non-allocating parallel sort
-        (false, false, false, true) => all.par_sort_unstable_by(|r1, r2| {
+        (false, false, false, false, true) => all.par_sort_unstable_by(|r1, r2| {
             let a = sel.select(r1);
             let b = sel.select(r2);
             if ignore_case {
@@ -210,21 +225,42 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         }),
 
+        // --natural stable parallel natural sort
+        (false, true, false, false, false) => all.par_sort_by(|r1, r2| {
+            let a = sel.select(r1);
+            let b = sel.select(r2);
+            if ignore_case {
+                iter_cmp_natural_ignore_case(a, b)
+            } else {
+                iter_cmp_natural(a, b)
+            }
+        }),
+        // --natural --faster unstable, non-allocating parallel natural sort
+        (false, true, false, false, true) => all.par_sort_unstable_by(|r1, r2| {
+            let a = sel.select(r1);
+            let b = sel.select(r2);
+            if ignore_case {
+                iter_cmp_natural_ignore_case(a, b)
+            } else {
+                iter_cmp_natural(a, b)
+            }
+        }),
+
         // --numeric stable parallel numeric sort
-        (true, false, false, false) => all.par_sort_by(|r1, r2| {
+        (true, false, false, false, false) => all.par_sort_by(|r1, r2| {
             let a = sel.select(r1);
             let b = sel.select(r2);
             iter_cmp_num(a, b)
         }),
         // --numeric --faster unstable, non-allocating, parallel numeric sort
-        (true, false, false, true) => all.par_sort_unstable_by(|r1, r2| {
+        (true, false, false, false, true) => all.par_sort_unstable_by(|r1, r2| {
             let a = sel.select(r1);
             let b = sel.select(r2);
             iter_cmp_num(a, b)
         }),
 
         // --reverse stable parallel sort
-        (false, true, false, false) => all.par_sort_by(|r1, r2| {
+        (false, false, true, false, false) => all.par_sort_by(|r1, r2| {
             let a = sel.select(r1);
             let b = sel.select(r2);
             if ignore_case {
@@ -234,7 +270,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         }),
         // --reverse --faster unstable parallel sort
-        (false, true, false, true) => all.par_sort_unstable_by(|r1, r2| {
+        (false, false, true, false, true) => all.par_sort_unstable_by(|r1, r2| {
             let a = sel.select(r1);
             let b = sel.select(r2);
             if ignore_case {
@@ -244,39 +280,118 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         }),
 
+        // --natural --reverse stable parallel natural sort
+        (false, true, true, false, false) => all.par_sort_by(|r1, r2| {
+            let a = sel.select(r1);
+            let b = sel.select(r2);
+            if ignore_case {
+                iter_cmp_natural_ignore_case(b, a)
+            } else {
+                iter_cmp_natural(b, a)
+            }
+        }),
+        // --natural --reverse --faster unstable parallel natural sort
+        (false, true, true, false, true) => all.par_sort_unstable_by(|r1, r2| {
+            let a = sel.select(r1);
+            let b = sel.select(r2);
+            if ignore_case {
+                iter_cmp_natural_ignore_case(b, a)
+            } else {
+                iter_cmp_natural(b, a)
+            }
+        }),
+
         // --numeric --reverse stable sort
-        (true, true, false, false) => all.par_sort_by(|r1, r2| {
+        (true, false, true, false, false) => all.par_sort_by(|r1, r2| {
             let a = sel.select(r1);
             let b = sel.select(r2);
             iter_cmp_num(b, a)
         }),
         // --numeric --reverse --faster unstable sort
-        (true, true, false, true) => all.par_sort_unstable_by(|r1, r2| {
+        (true, false, true, false, true) => all.par_sort_unstable_by(|r1, r2| {
             let a = sel.select(r1);
             let b = sel.select(r2);
             iter_cmp_num(b, a)
+        }),
+
+        // --numeric --natural stable sort (natural takes precedence over numeric)
+        (true, true, false, false, false) => all.par_sort_by(|r1, r2| {
+            let a = sel.select(r1);
+            let b = sel.select(r2);
+            if ignore_case {
+                iter_cmp_natural_ignore_case(a, b)
+            } else {
+                iter_cmp_natural(a, b)
+            }
+        }),
+        // --numeric --natural --faster unstable sort
+        (true, true, false, false, true) => all.par_sort_unstable_by(|r1, r2| {
+            let a = sel.select(r1);
+            let b = sel.select(r2);
+            if ignore_case {
+                iter_cmp_natural_ignore_case(a, b)
+            } else {
+                iter_cmp_natural(a, b)
+            }
+        }),
+
+        // --numeric --natural --reverse stable sort
+        (true, true, true, false, false) => all.par_sort_by(|r1, r2| {
+            let a = sel.select(r1);
+            let b = sel.select(r2);
+            if ignore_case {
+                iter_cmp_natural_ignore_case(b, a)
+            } else {
+                iter_cmp_natural(b, a)
+            }
+        }),
+        // --numeric --natural --reverse --faster unstable sort
+        (true, true, true, false, true) => all.par_sort_unstable_by(|r1, r2| {
+            let a = sel.select(r1);
+            let b = sel.select(r2);
+            if ignore_case {
+                iter_cmp_natural_ignore_case(b, a)
+            } else {
+                iter_cmp_natural(b, a)
+            }
         }),
     }
 
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
     let mut prev: Option<csv::ByteRecord> = None;
     rconfig.write_headers(&mut rdr, &mut wtr)?;
-    for r in all {
-        if args.flag_unique {
+    if args.flag_unique {
+        for r in all {
             match prev {
-                Some(other_r) => match iter_cmp(sel.select(&r), sel.select(&other_r)) {
-                    cmp::Ordering::Equal => (),
-                    _ => {
-                        wtr.write_byte_record(&r)?;
-                    },
+                Some(other_r) => {
+                    let comparison = if numeric {
+                        iter_cmp_num(sel.select(&r), sel.select(&other_r))
+                    } else if natural {
+                        if ignore_case {
+                            iter_cmp_natural_ignore_case(sel.select(&r), sel.select(&other_r))
+                        } else {
+                            iter_cmp_natural(sel.select(&r), sel.select(&other_r))
+                        }
+                    } else if ignore_case {
+                        iter_cmp_ignore_case(sel.select(&r), sel.select(&other_r))
+                    } else {
+                        iter_cmp(sel.select(&r), sel.select(&other_r))
+                    };
+                    match comparison {
+                        cmp::Ordering::Equal => (),
+                        _ => {
+                            wtr.write_byte_record(&r)?;
+                        },
+                    }
                 },
                 None => {
                     wtr.write_byte_record(&r)?;
                 },
             }
-
             prev = Some(r);
-        } else {
+        }
+    } else {
+        for r in all {
             wtr.write_byte_record(&r)?;
         }
     }
@@ -324,6 +439,52 @@ where
     }
 }
 
+/// Order `a` and `b` using natural sort order
+#[inline]
+pub fn iter_cmp_natural<'a, L, R>(mut a: L, mut b: R) -> cmp::Ordering
+where
+    L: Iterator<Item = &'a [u8]>,
+    R: Iterator<Item = &'a [u8]>,
+{
+    loop {
+        match (a.next(), b.next()) {
+            (None, None) => return cmp::Ordering::Equal,
+            (None, _) => return cmp::Ordering::Less,
+            (_, None) => return cmp::Ordering::Greater,
+            (Some(x), Some(y)) => {
+                let comparison = compare_natural_strings(x, y);
+                match comparison {
+                    cmp::Ordering::Equal => (),
+                    non_eq => return non_eq,
+                }
+            },
+        }
+    }
+}
+
+/// Order `a` and `b` using natural sort order, ignoring case
+#[inline]
+pub fn iter_cmp_natural_ignore_case<'a, L, R>(mut a: L, mut b: R) -> cmp::Ordering
+where
+    L: Iterator<Item = &'a [u8]>,
+    R: Iterator<Item = &'a [u8]>,
+{
+    loop {
+        match (a.next(), b.next()) {
+            (None, None) => return cmp::Ordering::Equal,
+            (None, _) => return cmp::Ordering::Less,
+            (_, None) => return cmp::Ordering::Greater,
+            (Some(x), Some(y)) => {
+                let comparison = compare_natural_strings_ignore_case(x, y);
+                match comparison {
+                    cmp::Ordering::Equal => (),
+                    non_eq => return non_eq,
+                }
+            },
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Number {
     Int(i64),
@@ -342,7 +503,10 @@ fn compare_num(n1: Number, n2: Number) -> cmp::Ordering {
     }
 }
 
-#[inline]
+#[allow(clippy::inline_always)]
+// This function is part of a performance-critical hot path. Inlining it
+// avoids the overhead of a function call, improving performance.
+#[inline(always)]
 fn compare_float(f1: f64, f2: f64) -> cmp::Ordering {
     f1.partial_cmp(&f2).unwrap_or(cmp::Ordering::Equal)
 }
@@ -367,4 +531,95 @@ where
         },
         None => None,
     }
+}
+
+#[inline]
+fn compare_natural_strings(a: &[u8], b: &[u8]) -> cmp::Ordering {
+    compare_natural_bytes(a, b, false)
+}
+
+#[inline]
+fn compare_natural_strings_ignore_case(a: &[u8], b: &[u8]) -> cmp::Ordering {
+    compare_natural_bytes(a, b, true)
+}
+
+#[inline]
+fn compare_natural_bytes(a: &[u8], b: &[u8], ignore_case: bool) -> cmp::Ordering {
+    let mut a_pos = 0;
+    let mut b_pos = 0;
+
+    let mut a_byte;
+    let mut b_byte;
+
+    let mut num_comparison;
+    let mut char_comparison;
+
+    let mut a_num;
+    let mut b_num;
+    let mut a_end;
+    let mut b_end;
+
+    let mut a_char;
+    let mut b_char;
+
+    while a_pos < a.len() && b_pos < b.len() {
+        a_byte = a[a_pos];
+        b_byte = b[b_pos];
+
+        // If both are ASCII digits, collect the full numbers and compare them
+        if a_byte.is_ascii_digit() && b_byte.is_ascii_digit() {
+            (a_num, a_end) = collect_number_from_bytes(a, a_pos);
+            (b_num, b_end) = collect_number_from_bytes(b, b_pos);
+
+            num_comparison = a_num.cmp(&b_num);
+            if num_comparison != cmp::Ordering::Equal {
+                return num_comparison;
+            }
+
+            a_pos = a_end;
+            b_pos = b_end;
+        } else if a_byte.is_ascii_digit() {
+            // Digits come before non-digits
+            return cmp::Ordering::Less;
+        } else if b_byte.is_ascii_digit() {
+            // Digits come before non-digits
+            return cmp::Ordering::Greater;
+        } else {
+            // Both are non-digits, compare normally
+            a_char = if ignore_case {
+                a_byte.to_ascii_lowercase()
+            } else {
+                a_byte
+            };
+            b_char = if ignore_case {
+                b_byte.to_ascii_lowercase()
+            } else {
+                b_byte
+            };
+
+            char_comparison = a_char.cmp(&b_char);
+            if char_comparison != cmp::Ordering::Equal {
+                return char_comparison;
+            }
+            a_pos += 1;
+            b_pos += 1;
+        }
+    }
+
+    // If we've exhausted one string but not the other
+    a_pos.cmp(&b_pos)
+}
+
+#[inline]
+fn collect_number_from_bytes(bytes: &[u8], start: usize) -> (i64, usize) {
+    let mut pos = start;
+
+    // Find the end of the digit sequence
+    while pos < bytes.len() && bytes[pos].is_ascii_digit() {
+        pos += 1;
+    }
+
+    // Parse the number using SIMD-optimized parsing
+    let num = atoi_simd::parse::<i64>(&bytes[start..pos]).unwrap_or(0);
+    (num, pos)
 }

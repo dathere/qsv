@@ -14,7 +14,7 @@ For examples, see https://github.com/dathere/qsv/blob/master/tests/test_joinp.rs
 
 Usage:
     qsv joinp [options] <columns1> <input1> <columns2> <input2>
-    qsv joinp --cross [--validate <arg>] <input1> <input2> [--output <file>]
+    qsv joinp --cross [--validate <arg>] <input1> <input2> [--decimal-comma] [--delimiter <arg>] [--output <file>]
     qsv joinp --non-equi <expr> <input1> <input2> [options] [--output <file>]
     qsv joinp --help
 
@@ -130,6 +130,9 @@ joinp options:
                                   and cache the result
                                 Schema files use the same name as input with .pschema.json extension
                                 (e.g., data.csv -> data.pschema.json)
+                           NOTE: If the input files have pschema.json files that are newer or created
+                           at the same time as the input files, they will be used to inform the join
+                           operation regardless of the value of --cache-schema unless --infer-len is 0.
                            [default: 0]
     --low-memory           Use low memory mode when parsing CSVs. This will use less memory
                            but will be slower. It will also process the join in streaming mode.
@@ -142,7 +145,7 @@ joinp options:
                            parsing and will skip the entire batch where the error occurred.
                            To get more detailed error messages, set the environment variable
                            POLARS_BACKTRACE_IN_ERR=1 before running the join.
-    --decimal-comma        Use comma as the decimal separator when parsing CSVs.
+    --decimal-comma        Use comma as the decimal separator when parsing & writing CSVs.
                            Otherwise, use period as the decimal separator.
                            Note that you'll need to set --delimiter to an alternate delimiter
                            other than the default comma if you are using this option.
@@ -266,6 +269,7 @@ use std::{
 };
 
 use polars::prelude::*;
+use polars_utils::plpath::PlPath;
 use serde::Deserialize;
 use tempfile::tempdir;
 
@@ -323,6 +327,10 @@ struct Args {
     flag_ignore_leading_zeros: bool,
     flag_norm_unicode:         Option<String>,
 }
+
+// IMPORTANT: This must be kept in sync with the default value
+// of the --infer-len option in the USAGE string above.
+const DEFAULT_INFER_LEN: usize = 10000;
 
 #[derive(PartialEq, Eq)]
 enum SpecialJoin {
@@ -501,16 +509,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 ..Default::default()
             };
 
-            if strategy == AsofStrategy::Nearest {
-                if let Some(ref tolerance) = args.flag_tolerance {
-                    // If the tolerance is a positive integer, it is tolerance number of rows.
-                    // Otherwise, it is a tolerance date language spec.
-                    if let Ok(numeric_tolerance) = atoi_simd::parse_pos::<u64>(tolerance.as_bytes())
-                    {
-                        asof_options.tolerance = Some(AnyValue::UInt64(numeric_tolerance));
-                    } else {
-                        asof_options.tolerance_str = Some(tolerance.into());
-                    }
+            if strategy == AsofStrategy::Nearest
+                && let Some(ref tolerance) = args.flag_tolerance
+            {
+                // If the tolerance is a positive integer, it is tolerance number of rows.
+                // Otherwise, it is a tolerance date language spec.
+                if let Ok(numeric_tolerance) = atoi_simd::parse_pos::<u64>(tolerance.as_bytes()) {
+                    asof_options.tolerance = Some(AnyValue::UInt64(numeric_tolerance));
+                } else {
+                    asof_options.tolerance_str = Some(tolerance.into());
                 }
             }
             if args.flag_left_by.is_some() {
@@ -532,7 +539,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 );
             }
             join.run(
-                JoinType::AsOf(asof_options),
+                JoinType::AsOf(Box::new(asof_options)),
                 validation,
                 MaintainOrderJoin::None,
                 if args.flag_no_sort {
@@ -582,6 +589,7 @@ struct JoinStruct {
     time_format:          Option<String>,
     float_precision:      Option<usize>,
     null_value:           String,
+    decimal_comma:        bool,
     ignore_case:          bool,
     ignore_leading_zeros: bool,
 }
@@ -686,6 +694,26 @@ impl JoinStruct {
             JoinCoalesce::JoinSpecific
         };
 
+        let mut out_delim = self.delim;
+        let mut out_writer = match self.output {
+            Some(ref output_file) => {
+                out_delim = tsvssv_delim(output_file, self.delim);
+
+                // no need to use buffered writer here, as CsvWriter already does that
+                let path = Path::new(&output_file);
+                Box::new(File::create(path).unwrap()) as Box<dyn Write>
+            },
+            None => Box::new(io::stdout()) as Box<dyn Write>,
+        };
+
+        if out_delim == b',' && self.decimal_comma {
+            out_writer.flush()?;
+            return fail_clierror!(
+                "Using --decimal-comma with a comma separator is invalid, use --delimiter to set \
+                 a different separator."
+            );
+        }
+
         let mut optflags = OptFlags::from_bits_truncate(0);
         if self.no_optimizations {
             optflags |= OptFlags::TYPE_COERCION;
@@ -703,7 +731,7 @@ impl JoinStruct {
                 | OptFlags::COLLAPSE_JOINS;
         }
 
-        optflags.set(OptFlags::STREAMING, self.streaming);
+        optflags.set(OptFlags::NEW_STREAMING, self.streaming);
 
         // log::debug!("Optimization flags: {optimization_flags:?}");
 
@@ -816,18 +844,6 @@ impl JoinStruct {
             results_df = results_df.select(keep_cols)?;
         }
 
-        let mut out_delim = self.delim;
-        let mut out_writer = match self.output {
-            Some(ref output_file) => {
-                out_delim = tsvssv_delim(output_file, self.delim);
-
-                // no need to use buffered writer here, as CsvWriter already does that
-                let path = Path::new(&output_file);
-                Box::new(File::create(path).unwrap()) as Box<dyn Write>
-            },
-            None => Box::new(io::stdout()) as Box<dyn Write>,
-        };
-
         // shape is the number of rows and columns
         let join_shape = results_df.shape();
 
@@ -839,6 +855,7 @@ impl JoinStruct {
             .with_time_format(self.time_format)
             .with_float_precision(self.float_precision)
             .with_null_value(self.null_value)
+            .with_decimal_comma(self.decimal_comma)
             .include_bom(util::get_envvar_flag("QSV_OUTPUT_BOM"))
             .finish(&mut results_df)?;
 
@@ -857,7 +874,7 @@ impl Args {
             args: &Args,
             delim: u8,
         ) -> LazyCsvReader {
-            LazyCsvReader::new(file_path)
+            LazyCsvReader::new(PlPath::new(file_path))
                 .with_has_header(true)
                 .with_missing_is_null(args.flag_nulls)
                 .with_comment_prefix(comment_char.cloned())
@@ -880,6 +897,7 @@ impl Args {
                 flag_force:           false,
                 flag_stdout:          false,
                 flag_jobs:            Some(util::njobs(None)),
+                flag_polars:          false,
                 flag_no_headers:      false,
                 flag_delimiter:       args.flag_delimiter,
                 arg_input:            Some(input_path.to_string_lossy().into_owned()),
@@ -948,6 +966,13 @@ impl Args {
         /// * `-1` - Use string schema for all columns without caching
         /// * `-2` - Use string schema for all columns and cache it
         ///
+        /// # Notes
+        /// * If the pschema.json file exists and is newer or created at the same time as the table
+        ///   file, we enable the cache schema flag even if --cache-schema is 0 (not set)
+        /// * Unless --infer-len is explicitly set to a non-default value (10000) and --cache-schema
+        ///   is not set to -1 or -2, we enable the cache schema flag even if --cache-schema is 0
+        ///   (not set)
+        ///
         /// # Errors
         /// Returns error if:
         /// * File operations fail
@@ -960,12 +985,29 @@ impl Args {
             delim: u8,
             debuglog_flag: bool,
         ) -> CliResult<(LazyFrame, bool)> {
-            let schema_file = input_path.canonicalize()?.with_extension("pschema.json");
             let mut create_schema = false;
-            let cache_schema = if args.flag_infer_len == 0 {
+
+            // First, check if the pschema.json file exists and is newer or created at the same time
+            // as the table file
+            let schema_file = input_path.canonicalize()?.with_extension("pschema.json");
+            let mut valid_schema_exists = schema_file.exists()
+                && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?;
+
+            let cache_schema: i8 = if args.flag_infer_len == 0 {
                 0
             } else {
-                args.flag_cache_schema
+                // if the pschema.json file exists and is newer or created at the same time as the
+                // table file, we enable the cache schema flag, so long as
+                // --cache-schema is not set to -1 or -2, and
+                // --infer-len is not explicitly set to a non-default value
+                if valid_schema_exists
+                    && args.flag_infer_len != DEFAULT_INFER_LEN
+                    && args.flag_cache_schema >= 0
+                {
+                    1
+                } else {
+                    args.flag_cache_schema
+                }
             };
 
             let mut reader =
@@ -980,10 +1022,6 @@ impl Args {
                     });
                 },
                 1 => {
-                    let mut valid_schema_exists = schema_file.exists()
-                        && schema_file.metadata()?.modified()?
-                            > input_path.metadata()?.modified()?;
-
                     if !valid_schema_exists {
                         let schema = create_schema_from_stats(input_path, args)?;
                         let stats_schema = Arc::new(schema);
@@ -1169,6 +1207,7 @@ impl Args {
             } else {
                 self.flag_null_value.clone()
             },
+            decimal_comma: self.flag_decimal_comma,
             ignore_case: self.flag_ignore_case,
             ignore_leading_zeros: self.flag_ignore_leading_zeros,
         })
@@ -1215,23 +1254,23 @@ pub fn tsvssv_delim<P: AsRef<Path>>(file: P, orig_delim: u8) -> u8 {
 
 #[test]
 fn test_tsvssv_delim() {
-    similar_asserts::assert_eq!(tsvssv_delim("test.tsv", b','), b'\t');
-    similar_asserts::assert_eq!(tsvssv_delim("test.tab", b','), b'\t');
-    similar_asserts::assert_eq!(tsvssv_delim("test.ssv", b','), b';');
-    similar_asserts::assert_eq!(tsvssv_delim("test.sz", b','), b',');
-    similar_asserts::assert_eq!(tsvssv_delim("test.csv", b','), b',');
-    similar_asserts::assert_eq!(tsvssv_delim("test.TSV", b','), b'\t');
-    similar_asserts::assert_eq!(tsvssv_delim("test.Tab", b','), b'\t');
-    similar_asserts::assert_eq!(tsvssv_delim("test.SSV", b','), b';');
-    similar_asserts::assert_eq!(tsvssv_delim("test.sZ", b','), b',');
-    similar_asserts::assert_eq!(tsvssv_delim("test.CsV", b','), b',');
-    similar_asserts::assert_eq!(tsvssv_delim("test", b','), b',');
-    similar_asserts::assert_eq!(tsvssv_delim("test.csv.sz", b','), b',');
-    similar_asserts::assert_eq!(tsvssv_delim("test.tsv.sz", b','), b'\t');
-    similar_asserts::assert_eq!(tsvssv_delim("test.tab.sz", b','), b'\t');
-    similar_asserts::assert_eq!(tsvssv_delim("test.ssv.sz", b','), b';');
-    similar_asserts::assert_eq!(tsvssv_delim("test.csV.Sz", b','), b',');
-    similar_asserts::assert_eq!(tsvssv_delim("test.TSV.SZ", b','), b'\t');
-    similar_asserts::assert_eq!(tsvssv_delim("test.Tab.sZ", b','), b'\t');
-    similar_asserts::assert_eq!(tsvssv_delim("test.SSV.sz", b','), b';');
+    assert_eq!(tsvssv_delim("test.tsv", b','), b'\t');
+    assert_eq!(tsvssv_delim("test.tab", b','), b'\t');
+    assert_eq!(tsvssv_delim("test.ssv", b','), b';');
+    assert_eq!(tsvssv_delim("test.sz", b','), b',');
+    assert_eq!(tsvssv_delim("test.csv", b','), b',');
+    assert_eq!(tsvssv_delim("test.TSV", b','), b'\t');
+    assert_eq!(tsvssv_delim("test.Tab", b','), b'\t');
+    assert_eq!(tsvssv_delim("test.SSV", b','), b';');
+    assert_eq!(tsvssv_delim("test.sZ", b','), b',');
+    assert_eq!(tsvssv_delim("test.CsV", b','), b',');
+    assert_eq!(tsvssv_delim("test", b','), b',');
+    assert_eq!(tsvssv_delim("test.csv.sz", b','), b',');
+    assert_eq!(tsvssv_delim("test.tsv.sz", b','), b'\t');
+    assert_eq!(tsvssv_delim("test.tab.sz", b','), b'\t');
+    assert_eq!(tsvssv_delim("test.ssv.sz", b','), b';');
+    assert_eq!(tsvssv_delim("test.csV.Sz", b','), b',');
+    assert_eq!(tsvssv_delim("test.TSV.SZ", b','), b'\t');
+    assert_eq!(tsvssv_delim("test.Tab.sZ", b','), b'\t');
+    assert_eq!(tsvssv_delim("test.SSV.sz", b','), b';');
 }

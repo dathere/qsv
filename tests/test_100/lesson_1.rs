@@ -18,7 +18,7 @@ fn fruits_cat() {
 apple,2.50
 banana,3.00
 strawberry,1.50"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/1/#viewing-raw-file-content-in-the-terminal
@@ -34,7 +34,7 @@ fn fruits_raw_select() {
 apple,2.50
 banana,3.00
 strawberry,1.50"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/1/#viewing-raw-file-content-in-the-terminal
@@ -51,7 +51,7 @@ fn fruits_raw_fmt() {
 apple,2.50
 banana,3.00
 strawberry,1.50"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/1/#viewing-raw-file-content-in-the-terminal
@@ -67,7 +67,7 @@ fn fruits_raw_slice() {
 apple,2.50
 banana,3.00
 strawberry,1.50"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/1/#viewing-raw-file-content-in-the-terminal
@@ -90,7 +90,7 @@ fn fruits_raw_sqlp() {
 apple,2.50
 banana,3.00
 strawberry,1.50"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/1/#increasing-readability-with-qsv-table
@@ -107,7 +107,7 @@ fn fruits_table() {
 apple       2.50
 banana      3.00
 strawberry  1.50"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/1/#exercise-1-viewing-file-content-with-tables
@@ -124,7 +124,7 @@ fn fruits_table_align_right() {
      apple  2.50
     banana  3.00
 strawberry  1.50"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/1/#exercise-1-viewing-file-content-with-tables
@@ -147,7 +147,7 @@ grape       4.00   small   out of stock
 mango       1.80   medium  available
 watermelon  6.00   large   available
 pear        2.20   medium  out of stock"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/1/#exercise-1-viewing-file-content-with-tables
@@ -170,7 +170,7 @@ grape                 4.00                  small                 out of stock
 mango                 1.80                  medium                available
 watermelon            6.00                  large                 available
 pear                  2.20                  medium                out of stock"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/1/#exercise-1-viewing-file-content-with-tables
@@ -193,7 +193,7 @@ grape                         4.00                     small                    
 mango                         1.80                     medium                    available
 watermelon                    6.00                     large                     available
 pear                          2.20                     medium                    out of stock"#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // https://100.dathere.com/lessons/1/#exercise-1-viewing-file-content-with-tables
@@ -216,5 +216,5 @@ grape     4.00   small     out o...
 mango     1.80   mediu...  avail...
 water...  6.00   large     avail...
 pear      2.20   mediu...  out o..."#;
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }

@@ -321,6 +321,7 @@ fn check_stats_cache(args: &Args) -> Result<bool, CliError> {
         flag_no_headers:      false,
         flag_delimiter:       args.flag_delimiter,
         flag_jobs:            None,
+        flag_polars:          false,
         flag_memcheck:        false,
         flag_force:           args.flag_force,
         flag_prefer_dmy:      false,
@@ -397,43 +398,41 @@ fn check_stats_cache(args: &Args) -> Result<bool, CliError> {
             };
 
             // Check cardinality equals row count for key column in left file
-            if let Some(left_col) = left_stats.get(idx) {
-                if left_col.cardinality != left_dataset_rowcount {
-                    return fail_incorrectusage_clierror!(
-                        "Primary key values in left CSV are not unique in column {colname} \
-                         (cardinality: {left_cardinality} != rowcount: {left_rowcount}). Use `qsv \
-                         extdedup --select {colname} {left_input} --no-output` to check \
-                         duplicates.",
-                        colname = if colname_used_for_key {
-                            key_col.to_string()
-                        } else {
-                            idx.to_string()
-                        },
-                        left_cardinality = left_col.cardinality,
-                        left_rowcount = left_dataset_rowcount,
-                        left_input = args.arg_input_left.as_ref().unwrap()
-                    );
-                }
+            if let Some(left_col) = left_stats.get(idx)
+                && left_col.cardinality != left_dataset_rowcount
+            {
+                return fail_incorrectusage_clierror!(
+                    "Primary key values in left CSV are not unique in column {colname} \
+                     (cardinality: {left_cardinality} != rowcount: {left_rowcount}). Use `qsv \
+                     extdedup --select {colname} {left_input} --no-output` to check duplicates.",
+                    colname = if colname_used_for_key {
+                        key_col.to_string()
+                    } else {
+                        idx.to_string()
+                    },
+                    left_cardinality = left_col.cardinality,
+                    left_rowcount = left_dataset_rowcount,
+                    left_input = args.arg_input_left.as_ref().unwrap()
+                );
             }
 
             // Check cardinality equals row count for key column in right file
-            if let Some(right_col) = right_stats.get(idx) {
-                if right_col.cardinality != right_dataset_rowcount {
-                    return fail_incorrectusage_clierror!(
-                        "Primary key values in right CSV are not unique in column {colname} \
-                         (cardinality: {right_cardinality} != rowcount: {right_rowcount}). Use \
-                         `qsv extdedup --select {colname} {right_input} --no-output` to check \
-                         duplicates.",
-                        colname = if colname_used_for_key {
-                            key_col.to_string()
-                        } else {
-                            idx.to_string()
-                        },
-                        right_cardinality = right_col.cardinality,
-                        right_rowcount = right_dataset_rowcount,
-                        right_input = args.arg_input_right.as_ref().unwrap()
-                    );
-                }
+            if let Some(right_col) = right_stats.get(idx)
+                && right_col.cardinality != right_dataset_rowcount
+            {
+                return fail_incorrectusage_clierror!(
+                    "Primary key values in right CSV are not unique in column {colname} \
+                     (cardinality: {right_cardinality} != rowcount: {right_rowcount}). Use `qsv \
+                     extdedup --select {colname} {right_input} --no-output` to check duplicates.",
+                    colname = if colname_used_for_key {
+                        key_col.to_string()
+                    } else {
+                        idx.to_string()
+                    },
+                    right_cardinality = right_col.cardinality,
+                    right_rowcount = right_dataset_rowcount,
+                    right_input = args.arg_input_right.as_ref().unwrap()
+                );
             }
         }
     }

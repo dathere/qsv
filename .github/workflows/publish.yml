@@ -42,7 +42,7 @@ jobs:
             addl-build-args: --features=apply,luau,fetch,foreach,self_update,geocode,polars,to,lens,prompt
             default-features:
             addl-qsvlite-features:
-            addl-qsvdp-features: luau
+            addl-qsvdp-features:
             addl-rustflags: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
           - os: ubuntu-24.04
             os-name: linux
@@ -73,7 +73,7 @@ jobs:
             addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt
             default-features:
             addl-qsvlite-features:
-            addl-qsvdp-features: luau
+            addl-qsvdp-features:
             addl-rustflags: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
           # - os: windows-latest
           #   os-name: windows
@@ -93,7 +93,7 @@ jobs:
             addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt
             default-features: --no-default-features
             addl-qsvlite-features:
-            addl-qsvdp-features: luau
+            addl-qsvdp-features:
             addl-rustflags: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
           # - os: macos-12
           #   os-name: macos
@@ -103,7 +103,7 @@ jobs:
           #   addl-build-args: --features=apply,luau,fetch,foreach,self_update,polars
           #   default-features: --no-default-features
           #   addl-qsvlite-features:
-          #   addl-qsvdp-features: luau
+          #   addl-qsvdp-features:
           # - os: macos-12
           #   os-name: macos
           #   target: aarch64-apple-darwin

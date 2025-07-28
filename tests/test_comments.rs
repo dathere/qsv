@@ -30,7 +30,7 @@ fn comments() {
         svec!["c", "3"],
         svec!["e", "5"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn comments_dotenv_pound() {
         svec!["c", "3"],
         svec!["e", "5"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn comments_dotenv() {
         svec!["c", "3"],
         svec!["e", "5"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn comments_long() {
         svec!["c", "3"],
         svec!["e", "5"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn comments_unicode_supported() {
         svec!["a", "1"],
         svec!["c", "3"],
     ];
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 // Polars doesn't support unicode comment char
@@ -231,7 +231,7 @@ fn comments_headers() {
     let expected = "\
 1   column1
 2   column2";
-    similar_asserts::assert_eq!(got, expected);
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -247,7 +247,7 @@ fn envlist() {
     // compare only the first few bytes, as there may be other env vars active
     // e.g. debugging, logging, etc.
     let len = std::cmp::min(got.len(), expected.len());
-    similar_asserts::assert_eq!(&got[0..len], &expected[0..len]);
+    assert_eq!(&got[0..len], &expected[0..len]);
 
     // unset it so we don't have side effects outside tests
     // as these env vars persists

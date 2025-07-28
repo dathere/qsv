@@ -342,6 +342,7 @@ fn check_stats_cache(
         flag_no_headers:      args.flag_no_headers,
         flag_delimiter:       args.flag_delimiter,
         flag_jobs:            None,
+        flag_polars:          false,
         flag_memcheck:        false,
         flag_force:           args.flag_force,
         flag_prefer_dmy:      false,
@@ -376,22 +377,22 @@ fn check_stats_cache(
                                 .position(|field| field == weight_col.as_bytes())
                         };
 
-                        if let Some(idx) = idx {
-                            if let Some(col_stats) = stats.get(idx) {
-                                let min_weight = col_stats
-                                    .min
-                                    .clone()
-                                    .unwrap()
-                                    .parse::<f64>()
-                                    .unwrap_or_default();
-                                if min_weight < 0.0 {
-                                    return fail_incorrectusage_clierror!(
-                                        "Weights must be non-negative. Lowest weight: {min_weight}"
-                                    );
-                                }
-
-                                max_weight = col_stats.max.clone().unwrap().parse::<f64>().ok();
+                        if let Some(idx) = idx
+                            && let Some(col_stats) = stats.get(idx)
+                        {
+                            let min_weight = col_stats
+                                .min
+                                .clone()
+                                .unwrap()
+                                .parse::<f64>()
+                                .unwrap_or_default();
+                            if min_weight < 0.0 {
+                                return fail_incorrectusage_clierror!(
+                                    "Weights must be non-negative. Lowest weight: {min_weight}"
+                                );
                             }
+
+                            max_weight = col_stats.max.clone().unwrap().parse::<f64>().ok();
                         }
                     }
                 },
@@ -1017,7 +1018,7 @@ fn sample_systematic<R: io::Read, W: io::Write>(
     // Select records at regular intervals
     let mut selected_count = 0;
     for (i, record) in rdr.byte_records().enumerate().skip(start) {
-        if i % interval == 0 && selected_count < target_count {
+        if i.is_multiple_of(interval) && selected_count < target_count {
             wtr.write_byte_record(&record?)?;
             selected_count += 1;
         }

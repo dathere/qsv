@@ -19,7 +19,7 @@ fn extdedup_linemode() {
     let expected_csv = wrk.load_test_resource("boston311-100-deduped.csv");
     wrk.create_from_string("boston311-100-deduped.csv", &expected_csv);
 
-    similar_asserts::assert_eq!(dos2unix(&deduped_output), dos2unix(&expected_csv));
+    assert_eq!(dos2unix(&deduped_output), dos2unix(&expected_csv));
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn extdedup_linemode_dupesoutput() {
     let expected_csv = wrk.load_test_resource("boston311-100-deduped.csv");
     wrk.create_from_string("boston311-100-deduped.csv", &expected_csv);
 
-    similar_asserts::assert_eq!(dos2unix(&deduped_output), dos2unix(&expected_csv));
+    assert_eq!(dos2unix(&deduped_output), dos2unix(&expected_csv));
 
     // load dupe-output txt
     let dupes_output: String = wrk.from_str(&wrk.path("boston311-100-extdededuped-dupeoutput.txt"));
@@ -52,7 +52,7 @@ fn extdedup_linemode_dupesoutput() {
     let expected_output = wrk.load_test_resource("boston311-extdedup-dupeoutput.txt");
     wrk.create_from_string("boston311-extdedup-dupeoutput.txt", &expected_output);
 
-    similar_asserts::assert_eq!(dos2unix(&dupes_output), dos2unix(&expected_output));
+    assert_eq!(dos2unix(&dupes_output), dos2unix(&expected_output));
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn extdedupe_csvmode() {
     let expected_csv = wrk.load_test_resource("boston311-100-deduped.csv");
     wrk.create_from_string("boston311-100-deduped.csv", &expected_csv);
 
-    similar_asserts::assert_eq!(dos2unix(&deduped_output), dos2unix(&expected_csv));
+    assert_eq!(dos2unix(&deduped_output), dos2unix(&expected_csv));
 
     // Check that the correct number of rows were deduplicated
     let output = wrk.output(&mut cmd);
@@ -107,7 +107,7 @@ fn extdedupe_csvmode_dupesoutput() {
     let expected_csv = wrk.load_test_resource("boston311-100-deduped.csv");
     wrk.create_from_string("boston311-100-deduped.csv", &expected_csv);
 
-    similar_asserts::assert_eq!(dos2unix(&deduped_output), dos2unix(&expected_csv));
+    assert_eq!(dos2unix(&deduped_output), dos2unix(&expected_csv));
 
     // load dupe-output txt
     let dupes_output: String = wrk.from_str(&wrk.path("boston311-100-extdededuped-dupeoutput.csv"));
@@ -115,7 +115,7 @@ fn extdedupe_csvmode_dupesoutput() {
     let expected_output = wrk.load_test_resource("boston311-extdedup-dupeoutput.csv");
     wrk.create_from_string("boston311-extdedup-dupeoutput.csv", &expected_output);
 
-    similar_asserts::assert_eq!(dos2unix(&dupes_output), dos2unix(&expected_output));
+    assert_eq!(dos2unix(&dupes_output), dos2unix(&expected_output));
 
     // Check that the correct number of rows were deduplicated
     let output = wrk.output(&mut cmd);
@@ -142,7 +142,7 @@ fn extdedupe_csvmode_neighborhood() {
     let expected_csv = wrk.load_test_resource("boston311-extdedup-neighborhood.csv");
     wrk.create_from_string("boston311-extdedup-neighborhood.csv", &expected_csv);
 
-    similar_asserts::assert_eq!(dos2unix(&deduped_output), dos2unix(&expected_csv));
+    assert_eq!(dos2unix(&deduped_output), dos2unix(&expected_csv));
 
     // Check that the correct number of rows were deduplicated
     let output = wrk.output(&mut cmd);

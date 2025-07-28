@@ -17,7 +17,7 @@ fn count_simple() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "3";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -29,7 +29,7 @@ fn count_empty() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "0";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn count_simple_tsv() {
     let got: String = wrk.stdout(&mut cmd);
     let expected = "3";
 
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn count_simple_ssv() {
     let got: String = wrk.stdout(&mut cmd);
     let expected = "3";
 
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn count_simple_custom_delimiter() {
     let got: String = wrk.stdout(&mut cmd);
     let expected = "3";
 
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn count_width() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "4;16-15-15-13-1.5-1.2247-1";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -140,7 +140,7 @@ fn count_width_json() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"{"count":4,"max":16,"avg":15,"median":15,"min":13,"variance":1.5,"stddev":1.2247,"mad":1}"#;
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -161,7 +161,7 @@ fn count_width_no_delims() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "4;16-13.5-13-11-3.25-1.8028-1.5";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -182,7 +182,7 @@ fn count_width_no_delims_human_readable() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "4;max:16 avg:13.5 median:13 min:11 variance:3.25 stddev:1.8028 mad:1.5";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -203,7 +203,7 @@ fn count_width_human_readable() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "4;max:16 avg:15 median:15 min:13 variance:1.5 stddev:1.2247 mad:1";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -229,7 +229,7 @@ fn count_width_custom_delimiter() {
     let got: String = wrk.stdout(&mut cmd);
     let expected = "4;18-15.5-15-13-3.25-1.8028-1.5";
 
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -249,7 +249,7 @@ delta,42.5,false
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "4";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]
@@ -272,7 +272,7 @@ fn count_comments() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "2";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 /// This tests whether `qsv count` gets the right answer.
@@ -420,7 +420,7 @@ fn count_custom_delimiter() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "4";
-    similar_asserts::assert_eq!(got, expected.to_string());
+    assert_eq!(got, expected.to_string());
 }
 
 #[test]

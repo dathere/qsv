@@ -95,29 +95,29 @@ Excel options:
                                type is the sheet type (WorkSheet, DialogSheet, MacroSheet, ChartSheet, Vba).
                                visible is the sheet visibility (Visible, Hidden, VeryHidden).
                                row_count includes all rows, including the first row.
-                               safe_headers is a list of header with "safe"(database-ready) names.
+                               safe_headers is a list of headers with "safe"(PostgreSQL-ready) names.
                                unsafe_headers is a list of headers with "unsafe" names.
                                duplicate_headers_count is a count of duplicate header names.
                                names is a list of defined names in the workbook, with the associated formula.
                                name_count is the number of defined names in the workbook.
-                               tables is a list of tables in the workbook, with sheet where the table
-                               is found, columns and the column_count.  (XLSX only)
+                               tables is a list of tables in the workbook, along with the sheet where 
+                                the table is found, the columns and the column_count.  (XLSX only)
                                table_count is the number of tables in the workbook.  (XLSX only)
 
                                In CSV(c) mode, the output is in CSV format.
                                In short(s) CSV mode, the output is in CSV format with only the
-                               index, sheet_name, type and visible fields.
+                                index, sheet_name, type and visible fields.
                                
                                In JSON(j) mode, the output is minified JSON.
                                In Pretty JSON(J) mode, the output is pretty-printed JSON.
                                In Short(S) JSON mode, the output is minified JSON with only the
                                  index, sheet_name, type and visible fields.
                                For all JSON modes, the filename, the full file path, the workbook format
-                               and the number of sheets are also included.
+                                and the number of sheets are also included.
                                If metadata retrieval performance is a concern, use the short modes
                                as they return instantaneously as they don't need to process the sheet data.
                                
-                               All other Excel options are ignored.
+                               If this option is used, all other Excel options are ignored.
                                [default: none]
 
     --table <table>            An Excel table (case-insensitive) to extract to a CSV.
@@ -788,7 +788,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         } else {
             // failing all else, get the first sheet
             // safety: its safe to use index access here as sheet_names is guaranteed to have at
-            // least one element as we check if its not empty in  the beginning
+            // least one element as we check if its not empty in the beginning
             let first_sheet = sheet_names[0].to_string();
             info!(
                 r#"Invalid sheet "{}". Using the first sheet "{}" instead."#,
@@ -992,10 +992,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         row_idx += 1;
     }
 
-    let ncpus = util::njobs(args.flag_jobs);
-
-    // set chunk_size to number of rows per core/thread
-    let chunk_size = row_count.div_ceil(ncpus);
+    let njobs = util::njobs(args.flag_jobs);
+    let chunk_size = util::chunk_size(row_count, njobs);
 
     let keep_zero_time = args.flag_keep_zero_time;
     let formula_get_value_error = "cannot get formula".to_string();
@@ -1082,8 +1080,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 // its not a datetime, its a duration
                                 // return the duration as a string in ISO 8601 format
                                 // https://www.digi.com/resources/documentation/digidocs/90001488-13/reference/r_iso_8601_duration_format.htm
-                                // safety: we know this is a duration coz we did a is_datetime check
-                                // above & ExcelDataTime only has 2 variants, DateTime & Duration
+                                // safety: we know this is a valid duration coz we did a is_datetime
+                                // check above & ExcelDataTime only
+                                // has 2 variants, DateTime & Duration
                                 work_date = edt.as_duration().unwrap().to_string();
                             }
 

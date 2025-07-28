@@ -2,7 +2,8 @@ static USAGE: &str = r#"
 Transpose the rows/columns of CSV data.
 
 Note that by default this reads all of the CSV data into memory,
-unless --multipass is given.
+and will automatically go into multipass mode if the CSV is larger
+than memory.
 
 Usage:
     qsv transpose [options] [<input>]
@@ -26,17 +27,19 @@ Common options:
                            Ignored when --multipass option is enabled.
 "#;
 
-use std::str;
+use std::{fs::File, str};
 
 use csv::ByteRecord;
+use memmap2::MmapOptions;
 use serde::Deserialize;
 
 use crate::{
     CliResult,
-    config::{Config, Delimiter},
+    config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
     util,
 };
 
+#[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Deserialize)]
 struct Args {
     arg_input:      Option<String>,
@@ -56,7 +59,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     if args.flag_multipass && !input_is_stdin {
-        args.multipass_transpose()
+        args.multipass_transpose_streaming()
     } else {
         args.in_memory_transpose()
     }
@@ -65,8 +68,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 impl Args {
     fn in_memory_transpose(&self) -> CliResult<()> {
         // we're loading the entire file into memory, we need to check avail mem
-        if let Some(path) = self.rconfig().path {
-            util::mem_file_check(&path, false, self.flag_memcheck)?;
+        if let Some(path) = self.rconfig().path
+            && let Err(e) = util::mem_file_check(&path, false, self.flag_memcheck)
+        {
+            eprintln!("File too large for in-memory transpose: {e}.\nDoing multipass transpose...");
+            return self.multipass_transpose_streaming();
         }
 
         let mut rdr = self.rconfig().reader()?;
@@ -74,9 +80,9 @@ impl Args {
         let nrows = rdr.byte_headers()?.len();
 
         let all = rdr.byte_records().collect::<Result<Vec<_>, _>>()?;
+        let mut record = ByteRecord::with_capacity(1024, nrows);
         for i in 0..nrows {
-            let mut record = ByteRecord::new();
-
+            record.clear();
             for row in &all {
                 record.push_field(&row[i]);
             }
@@ -85,24 +91,40 @@ impl Args {
         Ok(wtr.flush()?)
     }
 
-    fn multipass_transpose(&self) -> CliResult<()> {
-        let mut wtr = self.wconfig().writer()?;
+    fn multipass_transpose_streaming(&self) -> CliResult<()> {
+        // Get the number of columns from the first row
         let nrows = self.rconfig().reader()?.byte_headers()?.len();
 
-        for i in 0..nrows {
-            let mut rdr = self.rconfig().reader()?;
+        // Memory map the file for efficient access
+        let file = File::open(self.arg_input.as_ref().unwrap())?;
+        // safety: we know we have a file input at this stage
+        let mmap = unsafe { MmapOptions::new().populate().map(&file)? };
+        let mut wtr = self.wconfig().writer()?;
 
-            let mut record = ByteRecord::new();
+        let mut record = ByteRecord::with_capacity(1024, nrows);
+
+        for i in 0..nrows {
+            record.clear();
+
+            // Create a reader from the memory-mapped data
+            // this is more efficient for large files as we reduce I/O
+            let mut rdr = self.rconfig().from_reader(&mmap[..]);
+
+            // Read all rows for this column
             for row in rdr.byte_records() {
-                record.push_field(&row?[i]);
+                let row = row?;
+                if i < row.len() {
+                    record.push_field(&row[i]);
+                }
             }
+
             wtr.write_byte_record(&record)?;
         }
         Ok(wtr.flush()?)
     }
 
     fn wconfig(&self) -> Config {
-        Config::new(self.flag_output.as_ref())
+        Config::new(self.flag_output.as_ref()).set_write_buffer(DEFAULT_WTR_BUFFER_CAPACITY * 20)
     }
 
     fn rconfig(&self) -> Config {

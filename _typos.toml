@@ -19,11 +19,12 @@ seeked        = "seeked"
 
 [files]
 extend-exclude = [
-    "*.pynb",
-    "*.ipynb",
-    "*.lua",
     "*.csv",
+    "*.geojson",
+    "*.ipynb",
     "*.jsonl",
-    "*.tab",
+    "*.lua",
+    "*.pynb",
     "*.ssv",
+    "*.tab",
 ]

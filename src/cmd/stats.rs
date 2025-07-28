@@ -1,9 +1,11 @@
 static USAGE: &str = r#"
 Compute summary statistics & infers data types for each column in a CSV.
 
-> NOTE: `stats` is heavily optimized for speed. It assumes the CSV is well-formed and
-UTF-8 encoded. If you encounter problems generating stats, use `qsv validate` to confirm the
-input CSV is valid.
+> IMPORTANT: `stats` is heavily optimized for speed. It ASSUMES the CSV is well-formed & UTF-8 encoded.
+> This allows it to employ numerous performance optimizations (skip repetitive UTF-8 validation, skip
+> bounds checks, cache results, etc.) that may result in undefined behavior if the CSV is not well-formed.
+> All these optimizations are GUARANTEED to work with well-formed CSVs.
+> If you encounter problems generating stats, use `qsv validate` FIRST to confirm the CSV is valid.
 
 Summary stats include sum, min/max/range, sort order/sortiness, min/max/sum/avg/stddev/variance/cv length,
 mean, standard error of the mean (SEM), geometric mean, harmonic mean, stddev, variance, coefficient of
@@ -285,13 +287,14 @@ https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#stats-cache)
 to make them work smarter & faster.
 
 To safeguard against undefined behavior, `stats` is the most extensively tested command,
-with ~520 tests.
+with ~520 tests. It also employs numerous performance optimizations (skip repetitive UTF-8
+validation, skip bounds checks, cache results, etc.) that may result in undefined behavior
+if the CSV is not well-formed. See "safety:" comments in the code for more details.
 */
 
 use std::{
-    default::Default,
-    fmt, fs, io,
-    io::Write,
+    fmt, fs,
+    io::{self, BufRead, Seek, Write},
     iter::repeat_n,
     path::{Path, PathBuf},
     str,
@@ -581,12 +584,51 @@ pub const DEFAULT_STATS_SEPARATOR: &str = "|";
 
 static BOOLEAN_PATTERNS: OnceLock<Vec<BooleanPattern>> = OnceLock::new();
 #[derive(Clone, Debug)]
+/// Represents a pattern for boolean value inference in CSV data.
+///
+/// This struct defines patterns that can be used to identify boolean values in CSV columns.
+/// It supports both exact matches and prefix matching with wildcards for flexible boolean
+/// detection during CSV statistics computation.
+///
+/// # Fields
+///
+/// * `true_pattern` - The pattern that identifies `true` values (case-insensitive)
+/// * `false_pattern` - The pattern that identifies `false` values (case-insensitive)
+///
+/// # Pattern Matching
+///
+/// Patterns support two types of matching:
+/// * **Exact match**: The value must exactly match the pattern (case-insensitive)
+/// * **Prefix match**: If the pattern ends with `*`, it matches any value that starts with the
+///   prefix (e.g., `"yes*"` matches `"yes"`, `"yes please"`, `"YES"`, etc.)
 struct BooleanPattern {
     true_pattern:  String,
     false_pattern: String,
 }
 
 impl BooleanPattern {
+    /// Checks if a value matches the boolean pattern.
+    ///
+    /// This method determines whether a given string value matches either the true or false
+    /// pattern defined in this `BooleanPattern`. The matching is case-insensitive and supports
+    /// both exact matches and prefix matching with wildcards.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The string value to check against the boolean patterns
+    ///
+    /// # Returns
+    ///
+    /// * `Some(true)` - If the value matches the true pattern
+    /// * `Some(false)` - If the value matches the false pattern
+    /// * `None` - If the value doesn't match either pattern
+    ///
+    /// # Matching Logic
+    ///
+    /// 1. **Exact match**: The value is compared directly to both patterns (case-insensitive)
+    /// 2. **Prefix match**: If a pattern ends with `*`, the value is checked if it starts with the
+    ///    prefix (excluding the `*` character)
+    /// 3. **Priority**: Exact matches are checked before prefix matches for better performance
     fn matches(&self, value: &str) -> Option<bool> {
         let value_lower = value.to_lowercase();
 
@@ -616,25 +658,96 @@ impl BooleanPattern {
     }
 }
 
-fn parse_boolean_patterns(boolean_patterns: &str) -> Vec<BooleanPattern> {
-    boolean_patterns
-        .split(',')
-        .filter_map(|pair| {
-            let mut parts = pair.split(':');
-            let true_pattern = parts.next()?.trim().to_lowercase();
-            let false_pattern = parts.next()?.trim().to_lowercase();
-            if true_pattern.is_empty() || false_pattern.is_empty() {
-                None
-            } else {
-                Some(BooleanPattern {
-                    true_pattern,
-                    false_pattern,
-                })
-            }
-        })
-        .collect()
+/// Parses a comma-separated string of boolean patterns into a vector of `BooleanPattern` structs.
+///
+/// This function takes a string containing boolean pattern pairs and converts them into
+/// `BooleanPattern` objects that can be used for boolean value inference in CSV data.
+///
+/// # Arguments
+///
+/// * `boolean_patterns` - A comma-separated string of pattern pairs in the format `"true:false"`
+///
+/// # Format
+///
+/// The input string should contain pattern pairs separated by commas, where each pair
+/// consists of a true pattern and false pattern separated by a colon:
+/// `"true_pattern1:false_pattern1,true_pattern2:false_pattern2"`
+///
+/// # Returns
+///
+/// * `Ok(Vec<BooleanPattern>)` - Vector of parsed boolean patterns
+/// * `Err(CliError)` - If the format is invalid or patterns are empty
+///
+/// # Errors
+///
+/// * Returns an error if any pattern pair is missing the colon separator
+/// * Returns an error if either the true or false pattern is empty
+/// * Returns an error if no patterns are provided
+fn parse_boolean_patterns(boolean_patterns: &str) -> CliResult<Vec<BooleanPattern>> {
+    let mut patterns = Vec::new();
+    for pair in boolean_patterns.split(',') {
+        let mut parts = pair.split(':');
+        let true_pattern = parts.next().unwrap_or("").trim().to_lowercase();
+        let false_pattern = parts.next().unwrap_or("").trim().to_lowercase();
+
+        if true_pattern.is_empty() || false_pattern.is_empty() {
+            return fail_incorrectusage_clierror!("Invalid boolean pattern: {pair}");
+        }
+
+        patterns.push(BooleanPattern {
+            true_pattern,
+            false_pattern,
+        });
+    }
+    if patterns.is_empty() {
+        return fail_incorrectusage_clierror!("Boolean patterns must have at least one pattern");
+    }
+    Ok(patterns)
 }
 
+/// Main entry point for the stats command.
+///
+/// This function orchestrates the entire CSV statistics computation process, including
+/// argument parsing, configuration setup, data processing, and output generation.
+/// It handles both sequential and parallel processing approaches based on the dataset size
+/// and available system resources.
+///
+/// # Arguments
+///
+/// * `argv` - Command line arguments as string slices
+///
+/// # Returns
+///
+/// * `Ok(())` - Successfully completed statistics computation
+/// * `Err(CliError)` - If there's an error during processing
+///
+/// # Process Overview
+///
+/// 1. **Argument Parsing**: Parses command line arguments and validates configuration
+/// 2. **Boolean Inference Setup**: Configures boolean pattern matching if enabled
+/// 3. **Environment Variables**: Checks for QSV_PREFER_DMY environment variable
+/// 4. **Output Configuration**: Determines output format and compression settings
+/// 5. **Statistics Computation**: Processes CSV data using sequential or parallel approach
+/// 6. **Cache Management**: Handles statistics caching and cache invalidation
+/// 7. **Output Generation**: Writes results to stdout or specified output file
+/// 8. **Cleanup**: Removes temporary files and handles cleanup operations
+///
+/// # Features
+///
+/// * **Type Inference**: Automatically detects data types (numeric, string, date, boolean)
+/// * **Date Inference**: Configurable date pattern recognition
+/// * **Boolean Inference**: Pattern-based boolean value detection
+/// * **Parallel Processing**: Multi-threaded computation for large datasets
+/// * **Caching**: Intelligent caching of computed statistics
+/// * **Multiple Output Formats**: CSV, JSON, and compressed formats
+/// * **Comprehensive Statistics**: Mean, median, quartiles, mode, cardinality, etc.
+///
+/// # Error Handling
+///
+/// * Validates input file existence and format
+/// * Handles CSV parsing errors gracefully
+/// * Manages temporary file creation and cleanup
+/// * Provides detailed error messages for configuration issues
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
     if args.flag_typesonly {
@@ -651,7 +764,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if !args.flag_cardinality {
             args.flag_cardinality = true;
         }
-        let _ = BOOLEAN_PATTERNS.set(parse_boolean_patterns(&args.flag_boolean_patterns));
+
+        // validate boolean patterns
+        let patterns = parse_boolean_patterns(&args.flag_boolean_patterns)?;
+        let _ = BOOLEAN_PATTERNS.set(patterns);
     }
 
     // check prefer_dmy env var
@@ -732,28 +848,74 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if let Some(format_error) = rconfig.format_error {
         return fail_incorrectusage_clierror!("{format_error}");
     }
-    let mut stdin_tempfile_path = None;
 
+    // infer delimiter when we're getting input from stdin
+    // as the stats engine needs to know the delimiter or it will panic
+    let mut stdin_tempfile_path = None;
     if rconfig.is_stdin() {
         // read from stdin and write to a temp file
         log::info!("Reading from stdin");
-        let mut stdin_file = NamedTempFile::new()?;
+
+        let temp_dir =
+            crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep());
+
+        let mut stdin_file = tempfile::Builder::new().tempfile_in(temp_dir)?;
+
         let stdin = std::io::stdin();
         let mut stdin_handle = stdin.lock();
         std::io::copy(&mut stdin_handle, &mut stdin_file)?;
         drop(stdin_handle);
-        let (_file, tempfile_path) = stdin_file
+        let (mut preview_file, tempfile_path) = stdin_file
             .keep()
             .or(Err("Cannot keep temporary file".to_string()))?;
+
+        // Only infer delimiter if QSV_DEFAULT_DELIMITER is not set
+        if std::env::var("QSV_DEFAULT_DELIMITER").is_err() {
+            // Seek to start of file before reading
+            preview_file.seek(std::io::SeekFrom::Start(0))?;
+
+            // Read first line to infer delimiter
+            let mut first_line = String::new();
+            let mut reader = io::BufReader::new(&preview_file);
+            reader.read_line(&mut first_line)?;
+
+            // Count occurrences of each potential delimiter
+            let tab_count = first_line.matches('\t').count();
+            let semicolon_count = first_line.matches(';').count();
+            let comma_count = first_line.matches(',').count();
+
+            // Special case: if we see multiple consecutive spaces but no tabs,
+            // those spaces might actually be tabs in the original file
+            let space_groups = first_line
+                .split(|c: char| !c.is_whitespace())
+                .filter(|s| !s.is_empty())
+                .count();
+
+            // Infer delimiter by finding the most frequent one
+            let inferred = if tab_count > 0
+                || (space_groups > 2 && comma_count == 0 && semicolon_count == 0)
+            {
+                "\t"
+            } else if semicolon_count > 0 && semicolon_count >= comma_count {
+                ";"
+            } else {
+                ","
+            };
+
+            // Set QSV_DEFAULT_DELIMITER environment variable
+            // this is only for the current process. When qsv exits, it will not persist
+            unsafe { std::env::set_var("QSV_DEFAULT_DELIMITER", inferred) };
+        }
+
         stdin_tempfile_path = Some(tempfile_path.clone());
         args.arg_input = Some(tempfile_path.to_string_lossy().to_string());
         rconfig.path = Some(tempfile_path);
     } else {
         // check if the input file exists
-        if let Some(path) = rconfig.path.clone() {
-            if !path.exists() {
-                return fail_clierror!("File {:?} does not exist", path.display());
-            }
+        if let Some(path) = rconfig.path.clone()
+            && !path.exists()
+        {
+            return fail_clierror!("File {:?} does not exist", path.display());
         }
     }
 
@@ -1156,6 +1318,43 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 }
 
 impl Args {
+    /// Computes statistics for CSV data using a single-threaded sequential approach.
+    ///
+    /// This function processes the entire CSV file in a single thread, reading all records
+    /// sequentially and computing statistics for each column. It's suitable for smaller datasets
+    /// or when parallel processing overhead would be counterproductive.
+    ///
+    /// # Arguments
+    ///
+    /// * `whitelist` - A comma-separated list of column names for date inference, or "all" for all
+    ///   columns
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((csv::ByteRecord, Vec<Stats>))` - A tuple containing the CSV headers and computed
+    ///   statistics
+    /// * `Err(CliError)` - If there's an error reading the CSV or computing statistics
+    ///
+    /// # Process Flow
+    ///
+    /// 1. **Setup**: Creates a CSV reader with the configured settings
+    /// 2. **Headers**: Reads and processes the CSV headers, applying column selection
+    /// 3. **Date Inference**: Initializes date inference flags based on the whitelist
+    /// 4. **Computation**: Processes all records sequentially to compute statistics
+    /// 5. **Return**: Returns headers and computed statistics
+    ///
+    /// # Performance Characteristics
+    ///
+    /// * **Memory**: Processes records one at a time, keeping memory usage low
+    /// * **CPU**: Single-threaded, no parallelization overhead
+    /// * **I/O**: Sequential file reading, good for streaming data
+    /// * **Best for**: Small to medium datasets, when simplicity is preferred
+    ///
+    /// # Error Handling
+    ///
+    /// * CSV parsing errors are propagated as `CliError`
+    /// * Date inference initialization errors are handled
+    /// * File I/O errors are wrapped in appropriate error types
     fn sequential_stats(&self, whitelist: &str) -> CliResult<(csv::ByteRecord, Vec<Stats>)> {
         let mut rdr = self.rconfig().reader()?;
         let (headers, sel) = self.sel_headers(&mut rdr)?;
@@ -1166,6 +1365,60 @@ impl Args {
         Ok((headers, stats))
     }
 
+    /// Computes statistics for CSV data using a multi-threaded parallel approach.
+    ///
+    /// This function processes the CSV file using multiple threads, dividing the work into
+    /// chunks and processing each chunk in parallel. It requires an index file to enable
+    /// random access to CSV records. For optimal performance on large datasets.
+    ///
+    /// # Arguments
+    ///
+    /// * `whitelist` - A comma-separated list of column names for date inference, or "all" for all
+    ///   columns
+    /// * `idx_count` - The number of records in the CSV file (from the index)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((csv::ByteRecord, Vec<Stats>))` - A tuple containing the CSV headers and computed
+    ///   statistics
+    /// * `Err(CliError)` - If there's an error reading the CSV or computing statistics
+    ///
+    /// # Process Flow
+    ///
+    /// 1. **Validation**: Falls back to sequential processing if `idx_count` is 0
+    /// 2. **Setup**: Creates a CSV reader and processes headers
+    /// 3. **Date Inference**: Initializes date inference flags based on the whitelist
+    /// 4. **Parallelization**: Divides work into chunks based on available jobs
+    /// 5. **Thread Pool**: Creates worker threads to process chunks concurrently
+    /// 6. **Indexed Access**: Uses CSV index for random access to record chunks
+    /// 7. **Merging**: Combines results from all threads using the `Commute` trait
+    /// 8. **Return**: Returns headers and merged statistics
+    ///
+    /// # Performance Characteristics
+    ///
+    /// * **Memory**: Higher memory usage due to parallel processing
+    /// * **CPU**: Multi-threaded, utilizes all available CPU cores
+    /// * **I/O**: Random access via index, may have higher I/O overhead
+    /// * **Best for**: Large datasets, when CPU utilization is important
+    ///
+    /// # Threading Details
+    ///
+    /// * Uses `ThreadPool` with number of jobs from `self.flag_jobs`
+    /// * Chunk size is calculated based on total records and number of jobs
+    /// * Each thread processes a contiguous chunk of records
+    /// * Results are merged using the `merge_all` function
+    ///
+    /// # Safety Considerations
+    ///
+    /// * Requires a valid CSV index file for random access
+    /// * Uses unsafe code for performance-critical operations
+    /// * Thread safety is ensured through channel-based communication
+    /// * Index seeking operations are wrapped in expect() for better error messages
+    ///
+    /// # Fallback Behavior
+    ///
+    /// * Automatically falls back to `sequential_stats` when `idx_count` is 0
+    /// * This handles edge cases where parallel processing isn't beneficial
     fn parallel_stats(
         &self,
         whitelist: &str,
@@ -1191,16 +1444,17 @@ impl Args {
         for i in 0..nchunks {
             let (send, args, sel) = (send.clone(), self.clone(), sel.clone());
             pool.execute(move || {
-                // safety: indexed() & seek() are safe as we know we have an index file
-                // if indexed() or seek() does return an Err, you have a bigger problem
-                // as the index file was modified WHILE stats is running and you actually
-                // NEED to abort if that happens, however unlikely
+                // safety: indexed() is safe as we know we have an index file
+                // and we know it will return an Ok
                 let mut idx = unsafe {
                     args.rconfig()
                         .indexed()
                         .unwrap_unchecked()
                         .unwrap_unchecked()
                 };
+                // safety: seek() is safe as we know we have an index file
+                // we do an expect() here so that it triggers a human-panic
+                // with some actionable infoif the index is corrupted
                 idx.seek((i * chunk_size) as u64)
                     .expect("File seek failed.");
                 let it = idx.byte_records().take(chunk_size);
@@ -1214,6 +1468,40 @@ impl Args {
         Ok((headers, merge_all(recv.iter()).unwrap_or_default()))
     }
 
+    /// Converts a vector of `Stats` objects into CSV records for output.
+    ///
+    /// This function processes all computed statistics in parallel, converting each `Stats`
+    /// object into a `csv::StringRecord` that can be written to the output file. The
+    /// conversion is done using a thread pool for better performance on large datasets.
+    ///
+    /// # Arguments
+    ///
+    /// * `stats` - Vector of computed statistics for each column
+    /// * `visualize_ws` - Whether to visualize whitespace characters in string outputs
+    ///
+    /// # Returns
+    ///
+    /// A vector of `csv::StringRecord` objects, one for each column's statistics
+    ///
+    /// # Process
+    ///
+    /// 1. **Setup**: Pre-allocates vectors and creates thread pool
+    /// 2. **Parallel Processing**: Each `Stats` object is converted to a record in parallel
+    /// 3. **Channel Communication**: Uses bounded channels for thread-safe communication
+    /// 4. **Collection**: Gathers all converted records into the final vector
+    ///
+    /// # Performance
+    ///
+    /// * Uses thread pool with number of jobs from `self.flag_jobs`
+    /// * Each `Stats` object is processed in its own thread
+    /// * Bounded channels prevent memory explosion
+    /// * Pre-allocated vectors reduce memory allocations
+    ///
+    /// # Safety
+    ///
+    /// * Uses unsafe code for performance-critical operations
+    /// * Channel communication is thread-safe
+    /// * Bounds checking is avoided where safe
     fn stats_to_records(&self, stats: Vec<Stats>, visualize_ws: bool) -> Vec<csv::StringRecord> {
         let round_places = self.flag_round;
         let infer_boolean = self.flag_infer_boolean;
@@ -1243,6 +1531,43 @@ impl Args {
         records
     }
 
+    /// Computes statistics for CSV data from an iterator of records.
+    ///
+    /// This function processes CSV records from an iterator and computes comprehensive
+    /// statistics for each column. It's the core computation engine used by both
+    /// sequential and parallel processing approaches.
+    ///
+    /// # Arguments
+    ///
+    /// * `sel` - Column selection configuration
+    /// * `it` - Iterator over CSV records (ByteRecord results)
+    ///
+    /// # Returns
+    ///
+    /// A vector of `Stats` objects, one for each selected column
+    ///
+    /// # Process
+    ///
+    /// 1. **Initialization**: Creates `Stats` objects for each selected column
+    /// 2. **Record Processing**: Iterates through all CSV records
+    /// 3. **Field Processing**: For each record, processes selected fields
+    /// 4. **Statistics Accumulation**: Updates statistics for each field
+    /// 5. **Type Inference**: Automatically detects data types during processing
+    ///
+    /// # Performance Optimizations
+    ///
+    /// * **Inline**: Function is marked as `#[inline]` for performance
+    /// * **Unsafe Operations**: Uses unsafe code for bounds checking avoidance
+    /// * **Memory Reuse**: Reuses ByteRecord objects to reduce allocations
+    /// * **Hot Loop Optimization**: Critical path is optimized for speed
+    /// * **Register Usage**: Frequently accessed variables are kept in registers
+    ///
+    /// # Safety Considerations
+    ///
+    /// * Uses unsafe code for performance-critical operations
+    /// * Assumes `INFER_DATE_FLAGS` is properly initialized
+    /// * Bounds checking is avoided where safe
+    /// * Iterator errors are handled gracefully
     #[inline]
     fn compute<I>(&self, sel: &Selection, it: I) -> Vec<Stats>
     where
@@ -1282,6 +1607,33 @@ impl Args {
         stats
     }
 
+    /// Reads and processes CSV headers with column selection.
+    ///
+    /// This function reads the CSV headers from the reader and applies column selection
+    /// based on the configuration. It returns both the selected headers and the selection
+    /// object for use in subsequent processing.
+    ///
+    /// # Arguments
+    ///
+    /// * `rdr` - CSV reader with the input data
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((csv::ByteRecord, Selection))` - Tuple containing selected headers and selection
+    ///   object
+    /// * `Err(CliError)` - If there's an error reading headers or applying selection
+    ///
+    /// # Process
+    ///
+    /// 1. **Header Reading**: Reads byte headers from the CSV reader
+    /// 2. **Selection Creation**: Creates a selection object based on configuration
+    /// 3. **Header Filtering**: Applies the selection to filter headers
+    /// 4. **Return**: Returns both selected headers and selection object
+    ///
+    /// # Performance
+    ///
+    /// * **Inline**: Function is marked as `#[inline]` for performance
+    /// * **Minimal Allocations**: Reuses existing data structures where possible
     #[inline]
     fn sel_headers<R: io::Read>(
         &self,
@@ -1292,6 +1644,27 @@ impl Args {
         Ok((sel.select(&headers).collect(), sel))
     }
 
+    /// Creates a CSV reader configuration based on the current arguments.
+    ///
+    /// This function builds a `Config` object for CSV reading that incorporates
+    /// all the relevant settings from the command line arguments, including
+    /// input file, delimiter, header settings, and column selection.
+    ///
+    /// # Returns
+    ///
+    /// A `Config` object configured for CSV reading with current settings
+    ///
+    /// # Configuration Options
+    ///
+    /// * **Input File**: Uses `self.arg_input` as the data source
+    /// * **Delimiter**: Applies the configured delimiter from `self.flag_delimiter`
+    /// * **Headers**: Sets header behavior based on `self.flag_no_headers`
+    /// * **Column Selection**: Applies column selection from `self.flag_select`
+    ///
+    /// # Performance
+    ///
+    /// * **Inline**: Function is marked as `#[inline]` for performance
+    /// * **Minimal Overhead**: Creates configuration without unnecessary allocations
     #[inline]
     fn rconfig(&self) -> Config {
         Config::new(self.arg_input.as_ref())
@@ -1300,15 +1673,46 @@ impl Args {
             .select(self.flag_select.clone())
     }
 
+    /// Creates a vector of `Stats` objects for statistics computation.
+    ///
+    /// This function initializes a vector of `Stats` objects, one for each column
+    /// that will be processed. Each `Stats` object is configured with the appropriate
+    /// `WhichStats` settings based on the command line arguments.
+    ///
+    /// # Arguments
+    ///
+    /// * `record_len` - Number of columns to create statistics for
+    ///
+    /// # Returns
+    ///
+    /// A vector of initialized `Stats` objects
+    ///
+    /// # Configuration
+    ///
+    /// Each `Stats` object is configured with `WhichStats` settings:
+    /// * **Nulls**: Enabled based on `self.flag_nulls`
+    /// * **Sum/Range/Distribution**: Enabled unless `typesonly` is set
+    /// * **Cardinality**: Enabled for `everything` or `cardinality` flags
+    /// * **Median**: Enabled for `median` flag (unless `quartiles` is set)
+    /// * **MAD**: Enabled for `everything` or `mad` flags
+    /// * **Quartiles**: Enabled for `everything` or `quartiles` flags
+    /// * **Mode**: Enabled for `everything` or `mode` flags
+    /// * **Percentiles**: Enabled for `percentiles` flag
+    ///
+    /// # Performance
+    ///
+    /// * **Inline**: Function is marked as `#[inline]` for performance
+    /// * **Pre-allocated**: Uses `Vec::with_capacity` for efficient allocation
+    /// * **Bulk Initialization**: Uses `repeat_n` for efficient object creation
     #[inline]
     fn new_stats(&self, record_len: usize) -> Vec<Stats> {
         let mut stats: Vec<Stats> = Vec::with_capacity(record_len);
         stats.extend(repeat_n(
             Stats::new(WhichStats {
                 include_nulls:   self.flag_nulls,
-                sum:             !self.flag_typesonly,
+                sum:             !self.flag_typesonly || self.flag_infer_boolean,
                 range:           !self.flag_typesonly || self.flag_infer_boolean,
-                dist:            !self.flag_typesonly,
+                dist:            !self.flag_typesonly || self.flag_infer_boolean,
                 cardinality:     self.flag_everything || self.flag_cardinality,
                 median:          !self.flag_everything && self.flag_median && !self.flag_quartiles,
                 mad:             self.flag_everything || self.flag_mad,
@@ -1409,7 +1813,27 @@ impl Args {
     }
 }
 
-/// returns the path to the stats file
+/// Determines the path for the statistics output file.
+///
+/// This function constructs the appropriate file path for the statistics output
+/// based on the input file path and whether the input is from stdin. It handles
+/// both regular file inputs and stdin input cases.
+///
+/// # Arguments
+///
+/// * `stats_csv_path` - The path to the input CSV file
+/// * `stdin_flag` - Whether the input is from stdin
+///
+/// # Returns
+///
+/// * `Ok(PathBuf)` - The path where statistics should be written
+/// * `Err(io::Error)` - If the path construction fails
+///
+/// # Behavior
+///
+/// * **Regular Files**: Creates a `.stats.csv` file in the same directory as the input
+/// * **Stdin Input**: Creates a `stdin.stats.csv` file in the current directory
+/// * **Path Validation**: Validates that the input path has a parent directory and filename
 fn stats_path(stats_csv_path: &Path, stdin_flag: bool) -> io::Result<PathBuf> {
     let parent = stats_csv_path
         .parent()
@@ -1427,6 +1851,29 @@ fn stats_path(stats_csv_path: &Path, stdin_flag: bool) -> io::Result<PathBuf> {
     Ok(parent.join(new_fname))
 }
 
+/// Initializes date inference flags for CSV column headers.
+///
+/// This function sets up a global static `INFER_DATE_FLAGS` that determines which columns
+/// should have date inference enabled during CSV processing. The flags are used to optimize
+/// date parsing by only attempting to parse dates for columns that are likely to contain
+/// date data.
+///
+/// # Arguments
+///
+/// * `infer_dates` - Whether date inference should be enabled at all
+/// * `headers` - The CSV headers as a ByteRecord containing column names
+/// * `flag_whitelist` - A comma-separated list of column name patterns to enable date inference
+///   for. Use "all" (case-insensitive) to enable date inference for all columns.
+///
+/// # Returns
+///
+/// * `Ok(())` - Successfully initialized the date inference flags
+/// * `Err(String)` - Error message if initialization failed
+///
+/// # Global State
+///
+/// This function modifies the global static `INFER_DATE_FLAGS` which is used throughout
+/// the stats computation to determine which columns should attempt date parsing.
 fn init_date_inference(
     infer_dates: bool,
     headers: &csv::ByteRecord,
@@ -1493,27 +1940,63 @@ impl Commute for WhichStats {
 }
 
 #[allow(clippy::unsafe_derive_deserialize)]
-#[repr(C)]
+#[repr(C, align(64))] // Align to cache line size for better performance
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 struct Stats {
-    // optimal memory layout for this central struct
-    // this ordering consumes 688 bytes
-    typ:            FieldType,                 // 1 byte
-    is_ascii:       bool,                      // 1 byte
-    max_precision:  u16,                       // 2 bytes
-    which:          WhichStats,                // 10 bytes
-    nullcount:      u64,                       // 8 bytes
-    sum_stotlen:    u64,                       // 8 bytes
-    sum:            Option<TypedSum>,          // 32 bytes
-    modes:          Option<Unsorted<Vec<u8>>>, // 32 bytes
-    // we use the same Unsorted struct for median, mad, quartiles & percentiles
+    // CACHE LINE 1: Most frequently accessed fields (hot data)
+    // Group small, frequently accessed fields together
+    typ:           FieldType, // 1 byte - accessed in every add() call
+    is_ascii:      bool,      // 1 byte - accessed for strings
+    max_precision: u16,       // 2 bytes - accessed for floats
+
+    // 4 bytes padding here for alignment
+    nullcount:   u64, // 8 bytes - frequently updated counter
+    sum_stotlen: u64, // 8 bytes - frequently updated counter
+
+    // Configuration flags (accessed once during initialization)
+    which: WhichStats, // 10 bytes - read-only after initialization
+
+    // 6 bytes padding here to reach 64 bytes (cache line boundary)
+
+    // CACHE LINE 2+: Less frequently accessed but still important
+    // Large Option types that may be None, grouped by usage pattern
+    sum: Option<TypedSum>, // 32 bytes - updated in add() for numeric types
+
+    // CACHE LINE 3+: Statistics computation fields
+    online:     Option<OnlineStats>, // 48 bytes - used for mean/variance calculations
+    online_len: Option<OnlineStats>, // 48 bytes - used for string length stats
+
+    // CACHE LINE 4+: Mode and cardinality computation
+    modes: Option<Unsorted<Vec<u8>>>, // 32 bytes - used for mode/cardinality
+
+    // CACHE LINE 5+: Sorting-based statistics
     #[allow(clippy::struct_field_names)]
-    unsorted_stats: Option<Unsorted<f64>>, // 32 bytes
-    online:         Option<OnlineStats>, // 48 bytes
-    online_len:     Option<OnlineStats>, // 48 bytes
-    minmax:         Option<TypedMinMax>, // 432 bytes
+    unsorted_stats: Option<Unsorted<f64>>, // 32 bytes - median/quartiles/percentiles
+
+    // CACHE LINE 6+: Min/Max tracking (largest field, least cache-friendly)
+    minmax: Option<TypedMinMax>, // 432 bytes - largest field, accessed less frequently
 }
 
+/// Converts a timestamp in milliseconds to RFC3339 format.
+///
+/// This function converts a Unix timestamp (in milliseconds) to a human-readable
+/// RFC3339 formatted string. It handles both date and datetime types, returning
+/// only the date component for date types.
+///
+/// # Arguments
+///
+/// * `timestamp` - Unix timestamp in milliseconds
+/// * `typ` - The field type (TDate or TDateTime)
+///
+/// # Returns
+///
+/// A string in RFC3339 format (e.g., "2023-01-15T10:30:00Z" or "2023-01-15")
+///
+/// # Behavior
+///
+/// * **TDate**: Returns only the date component (YYYY-MM-DD)
+/// * **TDateTime**: Returns full RFC3339 format with time and timezone
+/// * **Invalid Timestamps**: Returns default RFC3339 format for invalid timestamps
 #[inline]
 fn timestamp_ms_to_rfc3339(timestamp: i64, typ: FieldType) -> String {
     let date_val = chrono::DateTime::from_timestamp_millis(timestamp)
@@ -1529,6 +2012,34 @@ fn timestamp_ms_to_rfc3339(timestamp: i64, typ: FieldType) -> String {
 }
 
 impl Stats {
+    /// Creates a new `Stats` object with the specified configuration.
+    ///
+    /// This function initializes a `Stats` object with all fields set to their default
+    /// values and optional components created based on the `WhichStats` configuration.
+    /// The object is optimized for performance with cache-line aligned fields.
+    ///
+    /// # Arguments
+    ///
+    /// * `which` - Configuration specifying which statistics to compute
+    ///
+    /// # Returns
+    ///
+    /// A new `Stats` object ready for statistics computation
+    ///
+    /// # Initialization Details
+    ///
+    /// * **Default Values**: All basic fields are initialized to sensible defaults
+    /// * **Optional Components**: Creates `TypedSum`, `TypedMinMax`, `OnlineStats`, etc. based on
+    ///   configuration
+    /// * **Memory Pre-allocation**: Pre-allocates memory for unsorted statistics based on record
+    ///   count
+    /// * **Cache Optimization**: Fields are organized for optimal cache line usage
+    ///
+    /// # Performance
+    ///
+    /// * **Efficient Allocation**: Only allocates memory for enabled statistics
+    /// * **Cache-Friendly**: Field layout optimized for CPU cache lines
+    /// * **Pre-allocation**: Uses record count to pre-allocate appropriate memory sizes
     fn new(which: WhichStats) -> Stats {
         let (mut sum, mut minmax, mut online, mut online_len, mut modes, mut unsorted_stats) =
             (None, None, None, None, None, None);
@@ -1542,12 +2053,17 @@ impl Stats {
             online = Some(stats::OnlineStats::default());
             online_len = Some(stats::OnlineStats::default());
         }
+
+        // preallocate memory for the unsorted stats structs
+        // if we dont't have a record count, we use a default of 10,000
+        // to avoid allocating too much memory
+        let record_count = *RECORD_COUNT.get().unwrap_or(&10_000) as usize;
         if which.mode || which.cardinality {
-            modes = Some(stats::Unsorted::default());
+            modes = Some(stats::Unsorted::with_capacity(record_count));
         }
         // we use the same Unsorted struct for median, mad, quartiles & percentiles
         if which.quartiles || which.median || which.mad || which.percentiles {
-            unsorted_stats = Some(stats::Unsorted::default());
+            unsorted_stats = Some(stats::Unsorted::with_capacity(record_count));
         }
         Stats {
             typ: FieldType::default(),
@@ -1565,112 +2081,232 @@ impl Stats {
         }
     }
 
-    #[inline]
+    /// Adds a sample value to the statistics computation.
+    ///
+    /// This is the core method for accumulating statistics. It processes a single
+    /// field value, updates type inference, and accumulates all relevant statistics
+    /// based on the current configuration. This method is called for every field
+    /// in every record during CSV processing.
+    ///
+    /// # Arguments
+    ///
+    /// * `sample` - The field value as bytes to process
+    /// * `infer_dates` - Whether to attempt date inference for this field
+    /// * `infer_boolean` - Whether to attempt boolean inference for this field
+    /// * `prefer_dmy` - Whether to prefer day/month/year date format over month/day/year
+    ///
+    /// # Process
+    ///
+    /// 1. **Type Inference**: Updates the field type based on the sample
+    /// 2. **Early Return**: Skips computation if only type inference is needed
+    /// 3. **Statistics Accumulation**: Updates all enabled statistics
+    /// 4. **Performance Optimization**: Uses unsafe code for hot path operations
+    ///
+    /// # Statistics Updated
+    ///
+    /// * **Type Information**: Field type, ASCII flag, max precision
+    /// * **Counters**: Null count, string length sum
+    /// * **Sum Statistics**: Numeric sums for different types
+    /// * **Min/Max**: Range and extreme value tracking
+    /// * **Online Statistics**: Mean, variance, standard deviation
+    /// * **Mode Statistics**: Mode and cardinality tracking
+    /// * **Unsorted Statistics**: Data for median, quartiles, percentiles
+    ///
+    /// # Performance
+    ///
+    /// * **Always Inline**: Marked as `#[inline(always)]` for maximum performance
+    /// * **Hot Path Optimization**: Critical path is highly optimized
+    /// * **Unsafe Operations**: Uses unsafe code for bounds checking avoidance
+    /// * **Conditional Computation**: Only computes enabled statistics
+    ///
+    /// # Safety
+    ///
+    /// * Uses unsafe code for performance-critical operations
+    /// * Assumes valid UTF-8 input for string operations
+    /// * Bounds checking is avoided where safe
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
     fn add(&mut self, sample: &[u8], infer_dates: bool, infer_boolean: bool, prefer_dmy: bool) {
-        let (sample_type, timestamp_val) =
+        let (sample_type, int_val, float_val) =
             FieldType::from_sample(infer_dates, prefer_dmy, sample, self.typ);
         self.typ.merge(sample_type);
 
         // we're inferring --typesonly, so don't add samples to compute statistics
         // unless we need to --infer-boolean. In which case, we need --cardinality
         // and --range, so we need to add samples.
+        // Early return for the uncommon typesonly case
+        // Most of the time we're NOT doing typesonly, so put this check first
         if self.which.typesonly && !infer_boolean {
             return;
         }
 
         let t = self.typ;
-        if let Some(v) = self.sum.as_mut() {
-            v.add(t, sample);
-        }
-        if let Some(v) = self.minmax.as_mut() {
-            if timestamp_val == 0 {
-                v.add(t, sample);
-            } else {
-                v.add(t, itoa::Buffer::new().format(timestamp_val).as_bytes());
+
+        // Process the frequently used Option-based statistics first
+        // These are commonly enabled, so check them in order of likelihood
+
+        // microbenchmarks show 'b"" != sample' is faster than '!sample.is_empty()'
+        if b"" != sample {
+            // safety: sum is always enabled and if check above ensures there is a sample to add
+            unsafe {
+                self.sum
+                    .as_mut()
+                    .unwrap_unchecked()
+                    .add_with_parsed(t, sample, float_val, int_val);
             }
         }
+
+        // safety: MinMax always enabled
+        unsafe {
+            self.minmax
+                .as_mut()
+                .unwrap_unchecked()
+                .add_with_parsed(t, sample, float_val, int_val);
+        };
+
+        // Modes/cardinality less common but still frequent
         if let Some(v) = self.modes.as_mut() {
             v.add(sample.to_vec());
         }
+
+        if t == TString {
+            // safety: online_len is always enabled when t == TString
+            unsafe {
+                self.online_len
+                    .as_mut()
+                    .unwrap_unchecked()
+                    .add(&sample.len());
+            }
+            // ASCII check: once false, it stays false, so check the flag first
+            if self.is_ascii {
+                self.is_ascii = sample.is_ascii();
+            }
+            if sample_type == TNull {
+                self.nullcount += 1;
+            }
+            return; // Early return for strings
+        }
+
+        // Handle null counting - most samples are NOT null
         if sample_type == TNull {
             self.nullcount += 1;
+            if self.which.include_nulls {
+                // safety: online is always enabled
+                unsafe {
+                    self.online.as_mut().unwrap_unchecked().add_null();
+                }
+            }
+            return; // Early return for nulls
         }
+
+        // Process other types - from most to least frequent
         match t {
-            TString => {
-                self.is_ascii &= sample.is_ascii();
-                if let Some(v) = self.online_len.as_mut() {
-                    v.add(&sample.len());
+            TInteger => {
+                if let Some(v) = self.unsorted_stats.as_mut() {
+                    v.add(float_val);
+                }
+                // safety: online is always enabled
+                unsafe {
+                    self.online.as_mut().unwrap_unchecked().add_f64(float_val);
                 }
             },
-            TFloat | TInteger => {
-                if sample_type == TNull {
-                    if self.which.include_nulls {
-                        if let Some(v) = self.online.as_mut() {
-                            v.add_null();
-                        }
-                    }
+            TFloat => {
+                if let Some(v) = self.unsorted_stats.as_mut() {
+                    v.add(float_val);
+                }
+                // safety: online is always enabled
+                unsafe {
+                    self.online.as_mut().unwrap_unchecked().add_f64(float_val);
+                }
+
+                // precision calculation
+                // note that we are referring to number of decimal places,
+                // not the number of significant digits
+                let precision = if float_val == 0.0 {
+                    0
                 } else {
-                    // safety: we know the sample is a valid f64, so we can use unwrap
-                    let n = unsafe { fast_float2::parse(sample).unwrap_unchecked() };
-                    if let Some(v) = self.unsorted_stats.as_mut() {
-                        v.add(n);
+                    // safety: we know that f is a valid f64
+                    // so there will always be a fraction part, even if it's 0
+                    unsafe {
+                        ryu::Buffer::new()
+                            .format_finite(float_val)
+                            .split('.')
+                            .next_back()
+                            .unwrap_unchecked()
+                            .len() as u16
                     }
-                    if let Some(v) = self.online.as_mut() {
-                        v.add(&n);
-                    }
-                    if t == TFloat {
-                        let mut ryu_buffer = ryu::Buffer::new();
-                        // safety: we know that n is a valid f64
-                        // so there will always be a fraction part, even if it's 0
-                        let fractpart = unsafe {
-                            ryu_buffer
-                                .format_finite(n)
-                                .split('.')
-                                .next_back()
-                                .unwrap_unchecked()
-                        };
-                        self.max_precision = std::cmp::max(
-                            self.max_precision,
-                            (if *fractpart == *"0" {
-                                0
-                            } else {
-                                fractpart.len()
-                            }) as u16,
-                        );
-                    }
-                }
-            },
-            TNull => {
-                if self.which.include_nulls {
-                    if let Some(v) = self.online.as_mut() {
-                        v.add_null();
-                    }
-                }
+                };
+                self.max_precision = std::cmp::max(self.max_precision, precision);
             },
             TDateTime | TDate => {
-                if sample_type == TNull {
-                    if self.which.include_nulls {
-                        if let Some(v) = self.online.as_mut() {
-                            v.add_null();
-                        }
-                    }
-                // if timestamp_val != 0, then we successfully inferred a date from the sample
-                } else if timestamp_val != 0 {
-                    // calculate date statistics by adding date samples as timestamps to
-                    // millisecond precision.
-                    #[allow(clippy::cast_precision_loss)]
-                    let n = timestamp_val as f64;
-                    if let Some(v) = self.unsorted_stats.as_mut() {
-                        v.add(n);
-                    }
-                    if let Some(v) = self.online.as_mut() {
-                        v.add(&n);
-                    }
+                // calculate date statistics by adding date samples as unix timestamps
+                // to the millisecond precision.
+                #[allow(clippy::cast_precision_loss)]
+                let timestamp = int_val as f64;
+                if let Some(v) = self.unsorted_stats.as_mut() {
+                    v.add(timestamp);
+                }
+                // safety: online is always enabled
+                unsafe {
+                    self.online.as_mut().unwrap_unchecked().add_f64(timestamp);
                 }
             },
+            _ => {},
         }
     }
 
+    /// Converts the collected statistics into a CSV record for output.
+    ///
+    /// This function formats all the computed statistics for a single column into a
+    /// `csv::StringRecord` that can be written to the output CSV file. The function
+    /// handles different data types (numeric, string, date, boolean) and applies
+    /// appropriate formatting based on the configuration flags.
+    ///
+    /// # Arguments
+    ///
+    /// * `round_places` - Number of decimal places to round numeric values to
+    /// * `infer_boolean` - Whether to attempt boolean type inference for columns with cardinality 2
+    /// * `visualize_ws` - Whether to visualize whitespace characters in string outputs
+    /// * `dataset_stats` - Whether to include dataset-level statistics (adds empty field for
+    ///   qsv__value)
+    ///
+    /// # Returns
+    ///
+    /// A `csv::StringRecord` containing all the computed statistics for this column,
+    /// formatted according to the specified parameters.
+    ///
+    /// # Statistics Included
+    ///
+    /// The function includes the following statistics (when enabled via `which` flags):
+    ///
+    /// * **Type information**: Data type, ASCII flag for strings
+    /// * **Basic statistics**: Sum, min, max, range, sort order
+    /// * **String statistics**: Length min/max/sum/avg/stddev/variance/coefficient of variation
+    /// * **Numeric statistics**: Mean, standard error, geometric mean, harmonic mean, stddev,
+    ///   variance, CV
+    /// * **Distribution**: Null count, max precision, sparsity
+    /// * **Robust statistics**: Median, MAD (Median Absolute Deviation)
+    /// * **Quartiles**: Q1, Q2 (median), Q3, IQR, inner/outer fences, skewness
+    /// * **Mode statistics**: Mode(s), mode count, mode occurrences, antimode(s), antimode count,
+    ///   antimode occurrences
+    /// * **Cardinality**: Unique value count, uniqueness ratio
+    /// * **Percentiles**: Custom percentile values (when specified)
+    ///
+    /// # Type-Specific Behavior
+    ///
+    /// * **Numeric types**: All numeric statistics are computed and formatted with rounding
+    /// * **String types**: Only string-relevant statistics (length, cardinality, mode) are computed
+    /// * **Date/DateTime types**: Statistics are converted to RFC3339 format or days for
+    ///   readability
+    /// * **Boolean inference**: When enabled, columns with cardinality 2 are checked against
+    ///   boolean patterns
+    /// * **Null types**: Only basic type information is included
+    ///
+    /// # Performance Notes
+    ///
+    /// The function is optimized for performance with pre-allocated vectors and efficient
+    /// string formatting. It reuses computed values (like median from quartiles) to avoid
+    /// redundant calculations.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_record(
         &mut self,
@@ -1984,12 +2620,21 @@ impl Stats {
             #[allow(clippy::cast_precision_loss)]
             let sem = std_dev / (v.len() as f64).sqrt();
             let mean = v.mean();
-            let cv = (std_dev / mean) * 100_f64;
+            let mean_string = util::round_num(mean, round_places);
+            // if mean is 0, we can't calculate the CV, so we return NaN
+            // we do this as checking for 0.0 floating point values is not reliable
+            // so we do util::round_num() first as that is what is returned to the user
+            // for 0.0 floating point values.
+            let cv = if mean_string == "0" {
+                f64::NAN
+            } else {
+                (std_dev / mean) * 100.0_f64
+            };
             let geometric_mean = v.geometric_mean();
             let harmonic_mean = v.harmonic_mean();
             if self.typ == TFloat || self.typ == TInteger {
                 pieces.extend_from_slice(&[
-                    util::round_num(mean, round_places),
+                    mean_string,
                     util::round_num(sem, round_places),
                     util::round_num(geometric_mean, round_places),
                     util::round_num(harmonic_mean, round_places),
@@ -2290,42 +2935,50 @@ impl FieldType {
     /// returns the inferred type and if infer_dates is true,
     /// the date in ms since the epoch if the type is a date or datetime
     /// otherwise, 0
-    #[inline]
+    /// it also returns the float value if the sample is a number
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
     pub fn from_sample(
         infer_dates: bool,
         prefer_dmy: bool,
         sample: &[u8],
         current_type: FieldType,
-    ) -> (FieldType, i64) {
+    ) -> (FieldType, i64, f64) {
         // faster than sample.len() == 0 or sample.is_empty() per microbenchmarks
         if b"" == sample {
-            return (FieldType::TNull, 0);
+            return (FieldType::TNull, 0, 0.0);
         }
 
         // no need to do type checking if current_type is already a String
         if current_type == FieldType::TString {
-            return (FieldType::TString, 0);
+            return (FieldType::TString, 0, 0.0);
         }
 
-        if let Ok(samp_int) = atoi_simd::parse::<i64>(sample) {
-            // Check for integer, with leading zero check for strings like zip codes
-            // safety: we know sample is not null as we checked earlier
-            if samp_int == 0 || unsafe { *sample.get_unchecked(0) != b'0' } {
-                return (FieldType::TInteger, 0);
+        // an int can be a float, but once we've seen a float, we can't go back to an int
+        if current_type != FieldType::TFloat {
+            if let Ok(samp_int) = atoi_simd::parse::<i64>(sample) {
+                // Check for integer, with leading zero check for strings like zip codes
+                // safety: we know sample is not null as we checked earlier
+                if samp_int == 0 || unsafe { *sample.get_unchecked(0) != b'0' } {
+                    // note that we still return samp_int as f64 even if it's an integer
+                    // as the qsv-stats crate expects a float value for integer fields
+                    #[allow(clippy::cast_precision_loss)]
+                    return (FieldType::TInteger, samp_int, samp_int as f64);
+                }
+                // If starts with '0' and a valid integer != 0, it's a string with a leading zero
+                return (FieldType::TString, 0, 0.0);
             }
-            // If starts with '0' and a valid integer != 0, it's a string with a leading zero
-            return (FieldType::TString, 0);
         }
 
         // Check for float
         // we use fast_float2 as it doesn't need to validate the sample as UTF-8 first
-        if fast_float2::parse::<f64, &[u8]>(sample).is_ok() {
-            return (FieldType::TFloat, 0);
+        if let Ok(float_sample) = fast_float2::parse::<f64, &[u8]>(sample) {
+            return (FieldType::TFloat, 0, float_sample);
         }
 
         // Only attempt UTF-8 validation and date parsing if infer_dates is true
         if !infer_dates {
-            return (FieldType::TString, 0);
+            return (FieldType::TString, 0, 0.0);
         }
 
         // Check if valid UTF-8 first, return early if not
@@ -2335,19 +2988,19 @@ impl FieldType {
                 let ts_val = parsed_date.timestamp_millis();
                 return if ts_val % MS_IN_DAY_INT == 0 {
                     // if the date is a whole number of days, return as a date
-                    (FieldType::TDate, ts_val)
+                    (FieldType::TDate, ts_val, 0.0)
                 } else {
                     // otherwise, return as a datetime
-                    (FieldType::TDateTime, ts_val)
+                    (FieldType::TDateTime, ts_val, 0.0)
                 };
             }
         } else {
             // If not valid UTF-8, it's a binary string, return as TString
-            return (FieldType::TString, 0);
+            return (FieldType::TString, 0, 0.0);
         }
 
         // Default to TString if none of the above conditions are met
-        (FieldType::TString, 0)
+        (FieldType::TString, 0, 0.0)
     }
 }
 
@@ -2404,6 +3057,7 @@ impl fmt::Debug for FieldType {
 /// `TypedSum` keeps a rolling sum of the data seen.
 /// It sums integers until it sees a float, at which point it sums floats.
 /// It also counts the total length of strings.
+#[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
 struct TypedSum {
     float:   Option<f64>,
@@ -2412,32 +3066,23 @@ struct TypedSum {
 }
 
 impl TypedSum {
-    #[inline]
-    fn add(&mut self, typ: FieldType, sample: &[u8]) {
-        if b"" == sample {
-            return;
-        }
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    fn add_with_parsed(&mut self, typ: FieldType, sample: &[u8], float_val: f64, int_val: i64) {
         #[allow(clippy::cast_precision_loss)]
         match typ {
-            TFloat => {
-                if let Ok(float_sample) = fast_float2::parse::<f64, &[u8]>(sample) {
-                    if let Some(ref mut f) = self.float {
-                        *f += float_sample;
-                    } else {
-                        self.float = Some((self.integer as f64) + float_sample);
-                    }
-                }
-            },
             TInteger => {
                 if let Some(ref mut float) = self.float {
-                    // safety: we know that the sample is a valid f64
-                    *float += fast_float2::parse::<f64, &[u8]>(sample).unwrap();
+                    *float += float_val;
                 } else {
-                    // so we don't panic on overflow/underflow, use saturating_add
-                    self.integer = self
-                        .integer
-                        // safety: we know that the sample is a valid i64
-                        .saturating_add(atoi_simd::parse::<i64>(sample).unwrap());
+                    self.integer = self.integer.saturating_add(int_val);
+                }
+            },
+            TFloat => {
+                if let Some(ref mut f) = self.float {
+                    *f += float_val;
+                } else {
+                    self.float = Some((self.integer as f64) + float_val);
                 }
             },
             TString => {
@@ -2491,6 +3136,7 @@ impl Commute for TypedSum {
 
 /// `TypedMinMax` keeps track of minimum/maximum/range/sort_order values for each possible type
 /// where min/max/range/sort_order makes sense.
+#[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
 struct TypedMinMax {
     floats:   MinMax<f64>,
@@ -2501,38 +3147,35 @@ struct TypedMinMax {
 }
 
 impl TypedMinMax {
+    /// Add a sample with pre-parsed values to avoid redundant parsing
     #[inline]
-    fn add(&mut self, typ: FieldType, sample: &[u8]) {
+    fn add_with_parsed(&mut self, typ: FieldType, sample: &[u8], float_val: f64, int_val: i64) {
         let sample_len = sample.len();
         if sample_len == 0 {
             self.str_len.add(0);
             return;
         }
-        // safety: we can use unwrap below since we know the data type of the sample
+
         match typ {
             TString => {
                 self.str_len.add(sample_len);
                 self.strings.add(sample.to_vec());
             },
-            TFloat => {
-                let n = fast_float2::parse::<f64, &[u8]>(sample).unwrap();
-
-                self.floats.add(n);
-                self.integers.add(n as i64);
-            },
             TInteger => {
-                let n = atoi_simd::parse::<i64>(sample).unwrap();
-                self.integers.add(n);
-                #[allow(clippy::cast_precision_loss)]
-                self.floats.add(n as f64);
+                self.integers.add(int_val);
+                self.floats.add(float_val);
+            },
+            TFloat => {
+                self.floats.add(float_val);
             },
             TNull => {},
             // it must be a TDate or TDateTime
             // we use "_" here instead of "TDate | TDateTime" for the match to avoid
             // the overhead of matching on the OR value, however minor
             _ => {
-                let n = atoi_simd::parse::<i64>(sample).unwrap();
-                self.dates.add(n);
+                if int_val != 0 {
+                    self.dates.add(int_val);
+                }
             },
         }
     }
@@ -2566,6 +3209,28 @@ impl TypedMinMax {
                 ) {
                     let min_str = String::from_utf8_lossy(min).to_string();
                     let max_str = String::from_utf8_lossy(max).to_string();
+
+                    let max_length = std::env::var("QSV_STATS_STRING_MAX_LENGTH")
+                        .ok()
+                        .and_then(|s| s.parse::<usize>().ok());
+
+                    let (min_str, max_str) = if let Some(max_len) = max_length {
+                        (
+                            if min_str.len() > max_len {
+                                format!("{}...", &min_str[..max_len])
+                            } else {
+                                min_str
+                            },
+                            if max_str.len() > max_len {
+                                format!("{}...", &max_str[..max_len])
+                            } else {
+                                max_str
+                            },
+                        )
+                    } else {
+                        (min_str, max_str)
+                    };
+
                     let (min_display, max_display) = if visualize_ws {
                         (
                             util::visualize_whitespace(&min_str),

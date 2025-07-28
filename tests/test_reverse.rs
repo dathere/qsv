@@ -1,11 +1,17 @@
 use crate::{Csv, CsvData, qcheck, workdir::Workdir};
 
 fn prop_reverse(name: &str, rows: CsvData, headers: bool) -> bool {
-    if rows.is_empty()
-        || rows[0].contains(&"\u{feff}".to_string())
-        || rows.last().unwrap().contains(&"\u{feff}".to_string())
-    {
+    if rows.is_empty() {
         return true;
+    }
+
+    // Check for BOM characters in any row
+    for row in rows.iter() {
+        for field in row.iter() {
+            if field.contains("\u{feff}") {
+                return true;
+            }
+        }
     }
 
     let wrk = Workdir::new(name);
@@ -25,11 +31,13 @@ fn prop_reverse(name: &str, rows: CsvData, headers: bool) -> bool {
         vec![]
     };
     expected.reverse();
-    if expected.is_empty()
-        || expected[0].contains(&"\u{feff}".to_string())
-        || expected.last().unwrap().contains(&"\u{feff}".to_string())
-    {
-        return true;
+    // Check for BOM characters in expected results
+    for row in &expected {
+        for field in row {
+            if field.contains("\u{feff}") {
+                return true;
+            }
+        }
     }
     if !headers.is_empty() {
         expected.insert(0, headers);
@@ -58,10 +66,13 @@ fn prop_reverse_indexed(name: &str, rows: CsvData, headers: bool) -> bool {
         return true;
     }
 
-    if rows[0].contains(&"\u{feff}".to_string())
-        || rows.last().unwrap().contains(&"\u{feff}".to_string())
-    {
-        return true;
+    // Check for BOM characters in any row, not just first and last
+    for row in rows.iter() {
+        for field in row.iter() {
+            if field.contains("\u{feff}") {
+                return true;
+            }
+        }
     }
 
     let wrk = Workdir::new(name);
@@ -81,11 +92,13 @@ fn prop_reverse_indexed(name: &str, rows: CsvData, headers: bool) -> bool {
         vec![]
     };
     expected.reverse();
-    if expected.is_empty()
-        || expected[0].contains(&"\u{feff}".to_string())
-        || expected.last().unwrap().contains(&"\u{feff}".to_string())
-    {
-        return true;
+    // Check for BOM characters in expected results
+    for row in &expected {
+        for field in row {
+            if field.contains("\u{feff}") {
+                return true;
+            }
+        }
     }
     if !headers.is_empty() {
         expected.insert(0, headers);

@@ -32,11 +32,15 @@ qsv supports a custom format - `currency`. This format will only accept a valid 
       Negative amounts: ($100.00) or -$100.00
       Different styles: 1.000,00 (used in some countries for euros)
 
-qsv also supports a custom keyword - `dynamicEnum`. It allows for dynamic validation against a CSV.
-This is useful for validating against a set of values unknown at the time of schema creation or
-when the set of valid values is dynamic or too large to hardcode into the JSON Schema.
-`dynamicEnum` can be used to validate against a CSV file on the local filesystem or a URL
-(http/https, dathere and ckan schemes supported). The "dynamicEnum" value has the form:
+qsv also supports two custom keywords - `dynamicEnum` and `uniqueCombinedWith`.
+
+dynamicEnum
+===========
+`dynamicEnum` allows for dynamic validation against a reference CSV file.
+It can be used to validate against a set of values unknown at the time of schema creation or
+when the set of valid values is dynamic or too large to hardcode into the JSON Schema with `enum`.
+The reference CSV file can be local or a URL (http/https, dathere & ckan schemes supported).
+The "dynamicEnum" value has the form:
 
   // qsvlite binary variant only supports URIs which can be files on the local filesystem
   // or remote files (http and https schemes supported)
@@ -81,6 +85,29 @@ when the set of valid values is dynamic or too large to hardcode into the JSON S
     dynamicEnum = "dathere://us_states.csv"
 
 If colname is not specified, the first column of the CSV file is read and used for validation.
+
+uniqueCombinedWith
+==================
+`uniqueCombinedWith` allows you to validate that combinations of values across specified columns
+are unique. It can be used with either column names or column indices (0-based). For example:
+
+    // Validate that combinations of name and email are unique
+    uniqueCombinedWith = ["name", "email"]
+
+    // Validate that combinations of columns at indices 1 and 2 are unique
+    uniqueCombinedWith = [1, 2]
+
+    // Validate that the combinations of named and indexed columns are unique
+    uniqueCombinedWith = ["name", 2]
+
+When a duplicate combination is found, the validation will fail and the error message will indicate
+which columns had duplicate combinations (named columns first, then indexed columns). The invalid
+records will be written to the .invalid file, while valid records will be written to the .valid file.
+
+`uniqueCombinedWith` complements the standard `uniqueItems` keyword, which can only validate
+uniqueness across a single column. 
+
+-------------------------------------------------------
 
 You can create a JSON Schema file from a reference CSV file using the `qsv schema` command.
 Once the schema is created, you can fine-tune it to your needs and use it to validate other CSV
@@ -143,10 +170,14 @@ Validate arguments:
 
 Validate options:
     --trim                     Trim leading and trailing whitespace from fields before validating.
+    --no-format-validation     Disable JSON Schema format validation. Ignores all JSON Schema
+                               "format" keywords (e.g. date,email, uri, currency, etc.). This is
+                               useful when you want to validate the structure of the CSV file
+                               w/o worrying about the data types and domain/range of the fields.
     --fail-fast                Stops on first error.
     --valid <suffix>           Valid record output file suffix. [default: valid]
     --invalid <suffix>         Invalid record output file suffix. [default: invalid]
-    --json                     When validating without a schema, return the RFC 4180 check
+    --json                     When validating without a JSON Schema, return the RFC 4180 check
                                as a JSON file instead of a message.
     --pretty-json              Same as --json, but pretty printed.
     --valid-output <file>      Change validation mode behavior so if ALL rows are valid, to pass it to
@@ -163,6 +194,25 @@ Validate options:
                                Set to 0 to load all rows in one batch.
                                Set to 1 to force batch optimization even for files with
                                less than 50000 rows. [default: 50000]
+
+                               FANCY REGEX OPTIONS:
+    --fancy-regex              Use the fancy regex engine instead of the default regex engine
+                               for validation.
+                               The fancy engine supports advanced regex features such as
+                               lookaround and backreferences, but is not as performant as
+                               the default regex engine which guarantees linear-time matching,
+                               prevents DoS attacks, and is more efficient for simple patterns.
+    --backtrack-limit <limit>  Set the approximate number of backtracking steps allowed.
+                               This is only used when --fancy-regex is set.
+                               [default: 1000000]
+
+                               OPTIONS FOR BOTH REGEX ENGINES:
+    --size-limit <mb>          Set the approximate size limit, in megabytes, of a compiled regex.
+                               [default: 50]
+    --dfa-size-limit <mb>      Set the approximate capacity, in megabytes, of the cache of transitions
+                               used by the engine's lazy Discrete Finite Automata.
+                               [default: 10]
+    
     --timeout <seconds>        Timeout for downloading json-schemas on URLs and for
                                'dynamicEnum' lookups on URLs. [default: 30]
     --cache-dir <dir>          The directory to use for caching downloaded dynamicEnum resources.
@@ -206,13 +256,14 @@ use std::{
     },
 };
 
+use bitvec::prelude::*;
 use csv::ByteRecord;
 use foldhash::{HashSet, HashSetExt};
 use indicatif::HumanCount;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use jsonschema::{
-    Keyword, ValidationError, Validator,
+    Keyword, PatternOptions, ValidationError, Validator,
     output::BasicOutput,
     paths::{LazyLocation, Location},
 };
@@ -233,7 +284,7 @@ use crate::lookup;
 use crate::lookup::{LookupTableOptions, load_lookup_table};
 use crate::{
     CliError, CliResult,
-    config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
+    config::{Config, DEFAULT_RDR_BUFFER_CAPACITY, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
     util,
 };
 
@@ -270,26 +321,31 @@ macro_rules! fail_validation_error {
 #[derive(Deserialize)]
 #[allow(dead_code)]
 struct Args {
-    cmd_schema:        bool,
-    flag_trim:         bool,
-    flag_fail_fast:    bool,
-    flag_valid:        Option<String>,
-    flag_invalid:      Option<String>,
-    flag_json:         bool,
-    flag_pretty_json:  bool,
-    flag_valid_output: Option<String>,
-    flag_jobs:         Option<usize>,
-    flag_batch:        usize,
-    flag_no_headers:   bool,
-    flag_delimiter:    Option<Delimiter>,
-    flag_progressbar:  bool,
-    flag_quiet:        bool,
-    arg_input:         Option<String>,
-    arg_json_schema:   Option<String>,
-    flag_timeout:      u16,
-    flag_cache_dir:    String,
-    flag_ckan_api:     String,
-    flag_ckan_token:   Option<String>,
+    cmd_schema:                bool,
+    flag_trim:                 bool,
+    flag_no_format_validation: bool,
+    flag_fail_fast:            bool,
+    flag_valid:                Option<String>,
+    flag_invalid:              Option<String>,
+    flag_json:                 bool,
+    flag_pretty_json:          bool,
+    flag_valid_output:         Option<String>,
+    flag_jobs:                 Option<usize>,
+    flag_batch:                usize,
+    flag_no_headers:           bool,
+    flag_delimiter:            Option<Delimiter>,
+    flag_progressbar:          bool,
+    flag_quiet:                bool,
+    arg_input:                 Option<String>,
+    arg_json_schema:           Option<String>,
+    flag_fancy_regex:          bool,
+    flag_backtrack_limit:      usize,
+    flag_size_limit:           usize,
+    flag_dfa_size_limit:       usize,
+    flag_timeout:              u16,
+    flag_cache_dir:            String,
+    flag_ckan_api:             String,
+    flag_ckan_token:           Option<String>,
 }
 
 enum JSONtypes {
@@ -367,6 +423,176 @@ impl Keyword for DynEnumValidator {
             false
         }
     }
+}
+
+struct UniqueCombinedWithValidator {
+    column_names:      Vec<String>,
+    column_indices:    Vec<usize>,
+    seen_combinations: std::sync::RwLock<HashSet<String>>,
+}
+
+impl UniqueCombinedWithValidator {
+    fn new(column_names: Vec<String>, column_indices: Vec<usize>) -> Self {
+        Self {
+            column_names,
+            column_indices,
+            seen_combinations: std::sync::RwLock::new(HashSet::new()),
+        }
+    }
+}
+
+impl Keyword for UniqueCombinedWithValidator {
+    fn validate<'instance>(
+        &self,
+        instance: &'instance Value,
+        instance_path: &LazyLocation,
+    ) -> Result<(), ValidationError<'instance>> {
+        let obj = instance.as_object().ok_or_else(|| {
+            ValidationError::custom(
+                Location::default(),
+                instance_path.into(),
+                instance,
+                "Instance must be an object",
+            )
+        })?;
+
+        let mut values = Vec::with_capacity(self.column_names.len() + self.column_indices.len());
+
+        // Get values from column names
+        for name in &self.column_names {
+            if let Some(value) = obj.get(name) {
+                values.push(value.to_string());
+            }
+        }
+
+        // Get values from column indices by converting to array first
+        if !self.column_indices.is_empty() {
+            let array: Vec<_> = obj.values().collect();
+            for &idx in &self.column_indices {
+                if let Some(value) = array.get(idx) {
+                    values.push(value.to_string());
+                }
+            }
+        }
+
+        let combination = values.join("|");
+        let mut seen = self.seen_combinations.write().unwrap();
+
+        if seen.contains(&combination) {
+            let mut column_desc_parts =
+                Vec::with_capacity(self.column_names.len() + self.column_indices.len());
+
+            // Add named columns
+            if !self.column_names.is_empty() {
+                column_desc_parts.extend(self.column_names.iter().cloned());
+            }
+
+            // Add indexed columns
+            if !self.column_indices.is_empty() {
+                column_desc_parts.extend(
+                    self.column_indices
+                        .iter()
+                        .map(std::string::ToString::to_string),
+                );
+            }
+
+            let column_desc = column_desc_parts.join(", ");
+            return Err(ValidationError::custom(
+                Location::default(),
+                instance_path.into(),
+                instance,
+                format!("Combination of values for columns {column_desc} is not unique"),
+            ));
+        }
+
+        seen.insert(combination);
+        drop(seen);
+        Ok(())
+    }
+
+    fn is_valid(&self, instance: &Value) -> bool {
+        let Some(obj) = instance.as_object() else {
+            return false;
+        };
+
+        let mut values = Vec::with_capacity(self.column_names.len() + self.column_indices.len());
+
+        // Get values from column names
+        for name in &self.column_names {
+            if let Some(value) = obj.get(name) {
+                values.push(value.to_string());
+            }
+        }
+
+        // Get values from column indices by converting to array first
+        if !self.column_indices.is_empty() {
+            let array: Vec<_> = obj.values().collect();
+            for &idx in &self.column_indices {
+                if let Some(value) = array.get(idx) {
+                    values.push(value.to_string());
+                }
+            }
+        }
+
+        let combination = values.join("|");
+        let seen = self.seen_combinations.read().unwrap();
+        !seen.contains(&combination)
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn unique_combined_with_validator_factory<'a>(
+    _parent: &'a Map<String, Value>,
+    value: &'a Value,
+    location: Location,
+) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+    // Get the array of column names/indices
+    let columns = value.as_array().ok_or_else(|| {
+        ValidationError::custom(
+            Location::default(),
+            location.clone(),
+            value,
+            "'uniqueCombinedWith' must be an array of column names or indices",
+        )
+    })?;
+
+    let col_len = columns.len();
+    let mut column_names = Vec::with_capacity(col_len);
+    let mut column_indices = Vec::with_capacity(col_len);
+
+    // Convert each column name/index to appropriate type
+    for col in columns {
+        // Try parsing as index first
+        if let Some(idx) = col.as_u64() {
+            column_indices.push(idx as usize);
+        } else {
+            // Try as string
+            let name = col.as_str().ok_or_else(|| {
+                ValidationError::custom(
+                    Location::default(),
+                    location.clone(),
+                    col,
+                    "Column names must be strings or numbers",
+                )
+            })?;
+            column_names.push(name.to_string());
+        }
+    }
+
+    // Validate that we have at least one column
+    if column_names.is_empty() && column_indices.is_empty() {
+        return Err(ValidationError::custom(
+            Location::default(),
+            location,
+            value,
+            "'uniqueCombinedWith' must specify at least one column",
+        ));
+    }
+
+    Ok(Box::new(UniqueCombinedWithValidator::new(
+        column_names,
+        column_indices,
+    )))
 }
 
 /// Parse the dynamicEnum URI string to extract cache_name, final_uri, cache_age and column
@@ -487,121 +713,121 @@ fn parse_dynenum_uri(uri: &str) -> (String, String, i64, Option<String>) {
 fn test_parse_dynenum_uri() {
     // Test simple URL with no pipe separators
     let (cache_name, uri, cache_age, column) = parse_dynenum_uri("https://example.com/data.csv");
-    similar_asserts::assert_eq!(cache_name, "data");
-    similar_asserts::assert_eq!(uri, "https://example.com/data.csv");
-    similar_asserts::assert_eq!(cache_age, 3600);
-    similar_asserts::assert_eq!(column, None);
+    assert_eq!(cache_name, "data");
+    assert_eq!(uri, "https://example.com/data.csv");
+    assert_eq!(cache_age, 3600);
+    assert_eq!(column, None);
 
     // Test with custom cache name and age
     let (cache_name, uri, cache_age, column) =
         parse_dynenum_uri("custom_name;600|https://example.com/data.csv");
-    similar_asserts::assert_eq!(cache_name, "custom_name");
-    similar_asserts::assert_eq!(uri, "https://example.com/data.csv");
-    similar_asserts::assert_eq!(cache_age, 600);
-    similar_asserts::assert_eq!(column, None);
+    assert_eq!(cache_name, "custom_name");
+    assert_eq!(uri, "https://example.com/data.csv");
+    assert_eq!(cache_age, 600);
+    assert_eq!(column, None);
 
     // Test with column name
     let (cache_name, uri, cache_age, column) = parse_dynenum_uri("lookup.csv|name");
-    similar_asserts::assert_eq!(cache_name, "lookup");
-    similar_asserts::assert_eq!(uri, "lookup.csv");
-    similar_asserts::assert_eq!(cache_age, 3600);
-    similar_asserts::assert_eq!(column, Some("name".to_string()));
+    assert_eq!(cache_name, "lookup");
+    assert_eq!(uri, "lookup.csv");
+    assert_eq!(cache_age, 3600);
+    assert_eq!(column, Some("name".to_string()));
 
     // Test with cache config and column
     let (cache_name, uri, cache_age, column) = parse_dynenum_uri("MyCache;1800|lookup.csv|code");
-    similar_asserts::assert_eq!(cache_name, "MyCache");
-    similar_asserts::assert_eq!(uri, "lookup.csv");
-    similar_asserts::assert_eq!(cache_age, 1800);
-    similar_asserts::assert_eq!(column, Some("code".to_string()));
+    assert_eq!(cache_name, "MyCache");
+    assert_eq!(uri, "lookup.csv");
+    assert_eq!(cache_age, 1800);
+    assert_eq!(column, Some("code".to_string()));
 
     // Test empty cache name with age and column
     let (cache_name, uri, cache_age, column) = parse_dynenum_uri(";1800|lookup.csv|code");
-    similar_asserts::assert_eq!(cache_name, "lookup");
-    similar_asserts::assert_eq!(uri, "lookup.csv");
-    similar_asserts::assert_eq!(cache_age, 1800);
-    similar_asserts::assert_eq!(column, Some("code".to_string()));
+    assert_eq!(cache_name, "lookup");
+    assert_eq!(uri, "lookup.csv");
+    assert_eq!(cache_age, 1800);
+    assert_eq!(column, Some("code".to_string()));
 
     // Test empty cache name with age but no column
     let (cache_name, uri, cache_age, column) = parse_dynenum_uri(";1800|lookup.csv");
-    similar_asserts::assert_eq!(cache_name, "lookup");
-    similar_asserts::assert_eq!(uri, "lookup.csv");
-    similar_asserts::assert_eq!(cache_age, 1800);
-    similar_asserts::assert_eq!(column, None);
+    assert_eq!(cache_name, "lookup");
+    assert_eq!(uri, "lookup.csv");
+    assert_eq!(cache_age, 1800);
+    assert_eq!(column, None);
 
     // Test simple local file path
     let (cache_name, uri, cache_age, column) = parse_dynenum_uri("lookup.csv");
-    similar_asserts::assert_eq!(cache_name, "lookup");
-    similar_asserts::assert_eq!(uri, "lookup.csv");
-    similar_asserts::assert_eq!(cache_age, 3600);
-    similar_asserts::assert_eq!(column, None);
+    assert_eq!(cache_name, "lookup");
+    assert_eq!(uri, "lookup.csv");
+    assert_eq!(cache_age, 3600);
+    assert_eq!(column, None);
 
     // Test simple fully qualified local file path in Windows
     let (cache_name, uri, cache_age, column) = parse_dynenum_uri(r#"c:\Users\jdoe\lookup.csv"#);
-    similar_asserts::assert_eq!(cache_name, "lookup");
-    similar_asserts::assert_eq!(uri, r#"c:\Users\jdoe\lookup.csv"#);
-    similar_asserts::assert_eq!(cache_age, 3600);
-    similar_asserts::assert_eq!(column, None);
+    assert_eq!(cache_name, "lookup");
+    assert_eq!(uri, r#"c:\Users\jdoe\lookup.csv"#);
+    assert_eq!(cache_age, 3600);
+    assert_eq!(column, None);
 
     // Test simple local file path on *nix filesystem, with column
     let (cache_name, uri, cache_age, column) = parse_dynenum_uri("/tmp/lookup.csv|first_col");
-    similar_asserts::assert_eq!(cache_name, "lookup");
-    similar_asserts::assert_eq!(uri, "/tmp/lookup.csv");
-    similar_asserts::assert_eq!(cache_age, 3600);
-    similar_asserts::assert_eq!(column, Some("first_col".to_string()));
+    assert_eq!(cache_name, "lookup");
+    assert_eq!(uri, "/tmp/lookup.csv");
+    assert_eq!(cache_age, 3600);
+    assert_eq!(column, Some("first_col".to_string()));
 
     // Test case-insensitive cache name generation
     let (cache_name, uri, cache_age, column) = parse_dynenum_uri("LookUp.csv");
-    similar_asserts::assert_eq!(cache_name, "LookUp");
-    similar_asserts::assert_eq!(uri, "LookUp.csv");
-    similar_asserts::assert_eq!(cache_age, 3600);
-    similar_asserts::assert_eq!(column, None);
+    assert_eq!(cache_name, "LookUp");
+    assert_eq!(uri, "LookUp.csv");
+    assert_eq!(cache_age, 3600);
+    assert_eq!(column, None);
 
     // Test CKAN URL with custom cache name
     let (cache_name, uri, cache_age, column) =
         parse_dynenum_uri("NYC_neighborhood_data|ckan://nyc_neighborhoods?");
-    similar_asserts::assert_eq!(cache_name, "NYC_neighborhood_data");
-    similar_asserts::assert_eq!(uri, "ckan://nyc_neighborhoods?");
-    similar_asserts::assert_eq!(cache_age, 3600);
-    similar_asserts::assert_eq!(column, None);
+    assert_eq!(cache_name, "NYC_neighborhood_data");
+    assert_eq!(uri, "ckan://nyc_neighborhoods?");
+    assert_eq!(cache_age, 3600);
+    assert_eq!(column, None);
 
     // Test CKAN URL with custom cache name and age
     let (cache_name, uri, cache_age, column) =
         parse_dynenum_uri("NYC_neighborhood_data;5000|ckan://nyc_neighborhoods?");
-    similar_asserts::assert_eq!(cache_name, "NYC_neighborhood_data");
-    similar_asserts::assert_eq!(uri, "ckan://nyc_neighborhoods?");
-    similar_asserts::assert_eq!(cache_age, 5000);
-    similar_asserts::assert_eq!(column, None);
+    assert_eq!(cache_name, "NYC_neighborhood_data");
+    assert_eq!(uri, "ckan://nyc_neighborhoods?");
+    assert_eq!(cache_age, 5000);
+    assert_eq!(column, None);
 
     // Test CKAN URL with custom cache name, age and column
     let (cache_name, uri, cache_age, column) =
         parse_dynenum_uri("NYC_neighborhood_data;5000|ckan://nyc_neighborhoods?|Neighborhood_Col");
-    similar_asserts::assert_eq!(cache_name, "NYC_neighborhood_data");
-    similar_asserts::assert_eq!(uri, "ckan://nyc_neighborhoods?");
-    similar_asserts::assert_eq!(cache_age, 5000);
-    similar_asserts::assert_eq!(column, Some("Neighborhood_Col".to_string()));
+    assert_eq!(cache_name, "NYC_neighborhood_data");
+    assert_eq!(uri, "ckan://nyc_neighborhoods?");
+    assert_eq!(cache_age, 5000);
+    assert_eq!(column, Some("Neighborhood_Col".to_string()));
 
     // Test dathere URL with no options
     let (cache_name, uri, cache_age, column) = parse_dynenum_uri("dathere://us_states.csv");
-    similar_asserts::assert_eq!(cache_name, "us_states");
-    similar_asserts::assert_eq!(uri, "dathere://us_states.csv");
-    similar_asserts::assert_eq!(cache_age, 3600);
-    similar_asserts::assert_eq!(column, None);
+    assert_eq!(cache_name, "us_states");
+    assert_eq!(uri, "dathere://us_states.csv");
+    assert_eq!(cache_age, 3600);
+    assert_eq!(column, None);
 
     // Test dathere URL with column
     let (cache_name, uri, cache_age, column) =
         parse_dynenum_uri("dathere://us_states.csv|state_col");
-    similar_asserts::assert_eq!(cache_name, "us_states");
-    similar_asserts::assert_eq!(uri, "dathere://us_states.csv");
-    similar_asserts::assert_eq!(cache_age, 3600);
-    similar_asserts::assert_eq!(column, Some("state_col".to_string()));
+    assert_eq!(cache_name, "us_states");
+    assert_eq!(uri, "dathere://us_states.csv");
+    assert_eq!(cache_age, 3600);
+    assert_eq!(column, Some("state_col".to_string()));
 
     // Test dathere URL with custom cache name, age and column
     let (cache_name, uri, cache_age, column) =
         parse_dynenum_uri("usl_lookup;6000|dathere://us_states.csv|state_col");
-    similar_asserts::assert_eq!(cache_name, "usl_lookup");
-    similar_asserts::assert_eq!(uri, "dathere://us_states.csv");
-    similar_asserts::assert_eq!(cache_age, 6000);
-    similar_asserts::assert_eq!(column, Some("state_col".to_string()));
+    assert_eq!(cache_name, "usl_lookup");
+    assert_eq!(uri, "dathere://us_states.csv");
+    assert_eq!(cache_age, 6000);
+    assert_eq!(column, Some("state_col".to_string()));
 }
 
 /// Factory function that creates a DynEnumValidator for validating against dynamic enums loaded
@@ -661,7 +887,7 @@ fn dyn_enum_validator_factory<'a>(
     // Load the lookup table
     let lookup_result = match load_lookup_table(&opts) {
         Ok(result) => result,
-        Err(e) => return fail_validation_error!("Error loading dynamicEnum lookup table: {}", e),
+        Err(e) => return fail_validation_error!("Error loading dynamicEnum lookup table: {e}"),
     };
 
     // Read the specified column into a HashSet
@@ -728,7 +954,7 @@ fn dyn_enum_validator_factory<'a>(
     if let Value::String(uri) = value {
         let temp_download = match NamedTempFile::new() {
             Ok(file) => file,
-            Err(e) => return fail_validation_error!("Failed to create temporary file: {}", e),
+            Err(e) => return fail_validation_error!("Failed to create temporary file: {e}"),
         };
 
         // Split URI to get column specification
@@ -832,28 +1058,40 @@ fn dyn_enum_validator_factory<'a>(
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
-    // validate the JSON Schema file
+    // Is the JSON Schema file valid?
     if args.cmd_schema {
         if let Some(ref schema) = args.arg_json_schema {
-            let schema_json = load_json(schema)?;
-            match jsonschema::meta::try_is_valid(&serde_json::from_str(&schema_json)?) {
+            let schema_json_string = load_json(schema)?;
+            let schema_json = serde_json::from_str(&schema_json_string)?;
+            // First, try_is_valid the JSON Schema
+            match jsonschema::meta::try_is_valid(&schema_json) {
                 Ok(is_valid) => {
                     if is_valid {
-                        if !args.flag_quiet {
-                            winfo!("Valid JSON Schema.");
-                            return Ok(());
+                        // Now, try_validate the JSON Schema
+                        let validated = jsonschema::meta::try_validate(&schema_json);
+                        match validated {
+                            Ok(Ok(())) => {
+                                if !args.flag_quiet {
+                                    winfo!("Valid JSON Schema.");
+                                }
+                                return Ok(());
+                            },
+                            Ok(Err(e)) => {
+                                return fail_clierror!("JSON Schema Meta-Validation Error: {e}");
+                            },
+                            Err(e) => {
+                                return fail_clierror!("JSON Schema Meta-Reference Error: {e}");
+                            },
                         }
-                    } else {
-                        return fail_clierror!("Invalid JSON Schema.");
                     }
+                    return fail_clierror!("Invalid JSON Schema.");
                 },
                 Err(e) => {
-                    return fail_clierror!("Invalid JSON Schema: {e}");
+                    return fail_clierror!("JSON Schema Meta-Reference Error: {e}");
                 },
             }
-        } else {
-            return fail_clierror!("No JSON Schema file supplied.");
         }
+        return fail_clierror!("No JSON Schema file supplied.");
     }
 
     TIMEOUT_SECS.store(
@@ -861,7 +1099,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Ordering::Relaxed,
     );
 
-    let mut rconfig = Config::new(args.arg_input.as_ref()).no_headers(args.flag_no_headers);
+    let mut rconfig = Config::new(args.arg_input.as_ref())
+        .no_headers(args.flag_no_headers)
+        .set_read_buffer(if std::env::var("QSV_RDR_BUFFER_CAPACITY").is_err() {
+            DEFAULT_RDR_BUFFER_CAPACITY * 10
+        } else {
+            DEFAULT_RDR_BUFFER_CAPACITY
+        });
 
     if args.flag_delimiter.is_some() {
         rconfig = rconfig.delimiter(args.flag_delimiter);
@@ -942,8 +1186,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         return fail_encoding_clierror!(
                             "non-utf8 sequence detected in header, position {pos:?}.\n{err}\nUse \
                              `qsv input` to fix formatting and to handle non-utf8 sequences.\n
-                             You may also want to transcode your data to UTF-8 first using `iconv` \
-                             or `recode`."
+                             Alternatively, transcode your data to UTF-8 first using `iconv` or \
+                             `recode`."
                         );
                     }
                     // its not a UTF-8 error, report a generic header validation error
@@ -1015,6 +1259,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             "detail" : "Cannot parse CSV record as UTF-8",
                             "meta": {
                                 "last_valid_record": format!("{record_idx}"),
+                                "invalid_record": format!("{record:?}"),
                             }
                         }]
                     });
@@ -1029,9 +1274,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // we're not returning a JSON error, so we can use a
                 // user-friendly error message with utf8 transcoding suggestions
                 return fail_encoding_clierror!(
-                    "non-utf8 sequence at record {record_idx}.\nUse `qsv input` to fix formatting \
-                     and to handle non-utf8 sequences.\nYou may also want to transcode your data \
-                     to UTF-8 first using `iconv` or `recode`."
+                    r#"non-utf8 sequence at record {record_idx}.
+Invalid record: {record:?}
+Use `qsv input` to fix formatting and to handle non-utf8 sequences.
+Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."#
                 );
             }
 
@@ -1091,12 +1337,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let show_progress =
         (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR")) && !rconfig.is_stdin();
 
+    // for full row count, prevent CSV reader from aborting on inconsistent column count
+    rconfig = rconfig.flexible(true);
+    let record_count = util::count_rows(&rconfig)?;
+    rconfig = rconfig.flexible(false);
+
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
     if show_progress {
-        // for full row count, prevent CSV reader from aborting on inconsistent column count
-        rconfig = rconfig.flexible(true);
-        let record_count = util::count_rows(&rconfig)?;
-        rconfig = rconfig.flexible(false);
         util::prep_progress(&progress, record_count);
     } else {
         progress.set_draw_target(ProgressDrawTarget::hidden());
@@ -1133,17 +1380,46 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // safety: we know the schema is_some() because we checked above
         match load_json(&args.arg_json_schema.clone().unwrap()) {
             Ok(s) => {
+                // Check for custom formats and keywords before parsing
+                let has_currency_format = s.contains(r#""format": "currency""#);
+                let has_dynamic_enum = s.contains("dynamicEnum");
+                let has_unique_combined = s.contains("uniqueCombinedWith");
+
                 // parse JSON string
                 let mut s_slice = s.as_bytes().to_vec();
-                match simd_json::serde::from_slice(&mut s_slice) {
+                match simd_json::serde::from_slice::<Value>(&mut s_slice) {
                     Ok(json) => {
                         // compile JSON Schema
-                        match Validator::options()
-                            .with_format("currency", currency_format_checker)
-                            .with_keyword("dynamicEnum", dyn_enum_validator_factory)
-                            .should_validate_formats(true)
-                            .build(&json)
-                        {
+                        let mut validator_options = Validator::options()
+                            .should_validate_formats(!args.flag_no_format_validation);
+
+                        // Add custom validators based on pre-checked flags
+                        if has_currency_format {
+                            validator_options = validator_options.with_format("currency", currency_format_checker);
+                        }
+
+                        if has_dynamic_enum {
+                            validator_options = validator_options.with_keyword("dynamicEnum", dyn_enum_validator_factory);
+                        }
+
+                        if has_unique_combined {
+                            validator_options = validator_options.with_keyword("uniqueCombinedWith", unique_combined_with_validator_factory);
+                        }
+
+                        if args.flag_fancy_regex {
+                            let fancy_regex_options = PatternOptions::fancy_regex()
+                                .backtrack_limit(args.flag_backtrack_limit)
+                                .size_limit(args.flag_size_limit * (1 << 20))
+                                .dfa_size_limit(args.flag_dfa_size_limit * (1 << 20));
+                            validator_options = validator_options.with_pattern_options(fancy_regex_options);
+                        } else {
+                            let regex_options = PatternOptions::regex()
+                                .size_limit(args.flag_size_limit * (1 << 20))
+                                .dfa_size_limit(args.flag_dfa_size_limit * (1 << 20));
+                            validator_options = validator_options.with_pattern_options(regex_options);
+                        }
+
+                        match validator_options.build(&json) {
                             Ok(schema) => (json, schema),
                             Err(e) => {
                                 return fail_clierror!(r#"Cannot compile JSONschema. error: {e}
@@ -1184,13 +1460,16 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_
 
     let num_jobs = util::njobs(args.flag_jobs);
 
-    // reuse batch buffer
+    // amortize allocations
+    let mut valid_flags: BitVec = BitVec::with_capacity(record_count as usize);
     let batch_size = util::optimal_batch_size(&rconfig, args.flag_batch, num_jobs);
     let mut batch = Vec::with_capacity(batch_size);
-    let mut validation_results = Vec::with_capacity(batch_size);
-    let mut valid_flags: Vec<bool> = Vec::with_capacity(batch_size);
+    let mut batch_validation_results: Vec<Option<String>> = Vec::with_capacity(batch_size);
     let mut validation_error_messages: Vec<String> = Vec::with_capacity(50);
     let flag_trim = args.flag_trim;
+    let flag_fail_fast = args.flag_fail_fast;
+    let mut itoa_buffer = itoa::Buffer::new();
+    let batch_pariter_min_len = batch_size / num_jobs;
 
     // main loop to read CSV and construct batches for parallel processing.
     // each batch is processed via Rayon parallel iterator.
@@ -1200,7 +1479,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_
             match rdr.read_byte_record(&mut record) {
                 Ok(true) => {
                     row_number += 1;
-                    record.push_field(itoa::Buffer::new().format(row_number).as_bytes());
+                    record.push_field(itoa_buffer.format(row_number).as_bytes());
                     if flag_trim {
                         record.trim();
                     }
@@ -1223,21 +1502,60 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_
         // validation_results vector should have same row count and in same order as input CSV
         batch
             .par_iter()
-            .with_min_len(1024)
-            .map(|record| do_json_validation(&header_types, header_len, record, &schema_compiled))
-            .collect_into_vec(&mut validation_results);
+            .with_min_len(batch_pariter_min_len)
+            .map(|record| {
+                // convert CSV record to JSON instance
+                let json_instance = match to_json_instance(&header_types, header_len, record) {
+                    Ok(obj) => obj,
+                    Err(e) => {
+                        // Only convert to string when we have an error
+                        // safety: row number was added as last column. We can do index access, not
+                        // use get(), and unwrap_unchecked safely since we know its there
+                        let row_number_string = unsafe {
+                            simdutf8::basic::from_utf8(&record[header_len]).unwrap_unchecked()
+                        };
+                        return Some(format!("{row_number_string}\t<RECORD>\t{e}"));
+                    },
+                };
+
+                // validate JSON instance against JSON Schema
+                match schema_compiled.apply(&json_instance).basic() {
+                    BasicOutput::Valid(_) => None,
+                    BasicOutput::Invalid(errors) => {
+                        // Only convert to string when we have validation errors
+                        // safety: see safety comment above
+                        let row_number_string = unsafe {
+                            simdutf8::basic::from_utf8(&record[header_len]).unwrap_unchecked()
+                        };
+
+                        // Preallocate the vector with the known size
+                        let mut error_messages = Vec::with_capacity(errors.len());
+
+                        // there can be multiple validation errors for a single record,
+                        // squash multiple errors into one long String with linebreaks
+                        for e in errors {
+                            error_messages.push(format!(
+                                "{row_number_string}\t{field}\t{error}",
+                                field = e.instance_location().as_str().trim_start_matches('/'),
+                                error = e.error_description()
+                            ));
+                        }
+                        Some(error_messages.join("\n"))
+                    },
+                }
+            })
+            .collect_into_vec(&mut batch_validation_results);
 
         // write to validation error report, but keep Vec<bool> to gen valid/invalid files later
         // because Rayon collect() guarantees original order, we can sequentially append results
         // to vector with each batch
-        for result in &validation_results {
+        let start_idx = valid_flags.len();
+        valid_flags.extend(std::iter::repeat_n(true, batch_size));
+        for (i, result) in batch_validation_results.iter().enumerate() {
             if let Some(validation_error_msg) = result {
                 invalid_count += 1;
-                valid_flags.push(false);
-
-                validation_error_messages.push(validation_error_msg.to_string());
-            } else {
-                valid_flags.push(true);
+                unsafe { valid_flags.set_unchecked(start_idx + i, false) };
+                validation_error_messages.push(validation_error_msg.to_owned());
             }
         }
 
@@ -1248,7 +1566,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_
         batch.clear();
 
         // for fail-fast, exit loop if batch has any error
-        if args.flag_fail_fast && invalid_count > 0 {
+        if flag_fail_fast && invalid_count > 0 {
             break 'batch_loop;
         }
     } // end batch loop
@@ -1335,7 +1653,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_
 
 fn split_invalid_records(
     rconfig: &Config,
-    valid_flags: &[bool],
+    valid_flags: &BitSlice,
     headers: &ByteRecord,
     input_path: &str,
     valid_suffix: &str,
@@ -1356,23 +1674,21 @@ fn split_invalid_records(
 
     let mut rdr = rconfig.reader()?;
 
+    let valid_flags_len = valid_flags.len();
+
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
-        split_row_num += 1;
-
         // length of valid_flags is max number of rows we can split
-        if split_row_num > valid_flags.len() {
+        if split_row_num > valid_flags_len {
             break;
         }
 
-        // vector is 0-based, row_num is 1-based
-        let is_valid = valid_flags[split_row_num - 1];
-
-        if is_valid {
+        if valid_flags[split_row_num] {
             valid_wtr.write_byte_record(&record)?;
         } else {
             invalid_wtr.write_byte_record(&record)?;
         }
+        split_row_num += 1;
     }
 
     valid_wtr.flush()?;
@@ -1406,42 +1722,6 @@ fn write_error_report(input_path: &str, validation_error_messages: Vec<String>) 
     Ok(())
 }
 
-/// if given record is valid, return None, otherwise, error file entry string
-#[inline]
-fn do_json_validation(
-    header_types: &[(String, JSONtypes)],
-    header_len: usize,
-    record: &ByteRecord,
-    schema_compiled: &Validator,
-) -> Option<String> {
-    // safety: row number was added as last column. We can unwrap safely since we know its there
-    let row_number_string = simdutf8::basic::from_utf8(record.get(header_len).unwrap()).unwrap();
-
-    validate_json_instance(
-        &(match to_json_instance(header_types, header_len, record) {
-            Ok(obj) => obj,
-            Err(e) => {
-                return Some(format!("{row_number_string}\t<RECORD>\t{e}"));
-            },
-        }),
-        schema_compiled,
-    )
-    .map(|validation_errors| {
-        // squash multiple errors into one long String with linebreaks
-        validation_errors
-            .iter()
-            .map(|(field, error)| {
-                // validation error file format: row_number, field, error
-                format!(
-                    "{row_number_string}\t{field}\t{error}",
-                    field = field.trim_start_matches('/')
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    })
-}
-
 /// convert CSV Record into JSON instance by referencing JSON types
 #[inline]
 fn to_json_instance(
@@ -1451,43 +1731,50 @@ fn to_json_instance(
 ) -> CliResult<Value> {
     let mut json_object_map = Map::with_capacity(header_len);
 
+    let mut json_value;
+
     for ((key, json_type), value) in header_types.iter().zip(record.iter()) {
         if value.is_empty() {
             json_object_map.insert(key.clone(), Value::Null);
             continue;
         }
 
-        let json_value = match json_type {
-            JSONtypes::String => match simdutf8::basic::from_utf8(value) {
-                Ok(v) => Value::String(v.to_owned()),
-                Err(_) => Value::String(String::from_utf8_lossy(value).into_owned()),
+        json_value = match json_type {
+            JSONtypes::String => {
+                if let Ok(v) = simdutf8::basic::from_utf8(value) {
+                    Value::String(v.to_owned())
+                } else {
+                    // don't return an error if the string fails utf8 validation
+                    // send the lossy utf8 value
+                    Value::String(String::from_utf8_lossy(value).into_owned())
+                }
             },
-            JSONtypes::Number => match fast_float2::parse(value) {
-                Ok(float) => {
+            JSONtypes::Number => {
+                if let Ok(float) = fast_float2::parse(value) {
                     Value::Number(Number::from_f64(float).unwrap_or_else(|| Number::from(0)))
-                },
-                Err(_) => {
+                } else {
                     return fail_clierror!(
-                        "Can't cast into Number. key: {key}, value: {}",
+                        "Can't cast to Number. key: {key}, value: {}",
                         String::from_utf8_lossy(value)
                     );
-                },
+                }
             },
-            JSONtypes::Integer => match atoi_simd::parse::<i64>(value) {
-                Ok(int) => Value::Number(Number::from(int)),
-                Err(_) => {
+            JSONtypes::Integer => {
+                if let Ok(int) = atoi_simd::parse::<i64>(value) {
+                    Value::Number(Number::from(int))
+                } else {
                     return fail_clierror!(
-                        "Can't cast into Integer. key: {key}, value: {}",
+                        "Can't cast to Integer. key: {key}, value: {}",
                         String::from_utf8_lossy(value)
                     );
-                },
+                }
             },
             JSONtypes::Boolean => match value {
                 b"true" | b"1" => Value::Bool(true),
                 b"false" | b"0" => Value::Bool(false),
                 _ => {
                     return fail_clierror!(
-                        "Can't cast into Boolean. key: {key}, value: {}",
+                        "Can't cast to Boolean. key: {key}, value: {}",
                         String::from_utf8_lossy(value)
                     );
                 },
@@ -1564,6 +1851,82 @@ fn get_json_types(headers: &ByteRecord, schema: &Value) -> CliResult<Vec<(String
     Ok(header_types)
 }
 
+fn load_json(uri: &str) -> Result<String, String> {
+    let json_string = match uri {
+        url if url.to_lowercase().starts_with("http") => {
+            use reqwest::blocking::Client;
+
+            let client_timeout =
+                std::time::Duration::from_secs(TIMEOUT_SECS.load(Ordering::Relaxed) as u64);
+
+            let client = match Client::builder()
+                // safety: we're using a validated QSV_USER_AGENT or the default user agent
+                .user_agent(util::set_user_agent(None).unwrap())
+                .brotli(true)
+                .gzip(true)
+                .deflate(true)
+                .zstd(true)
+                .use_rustls_tls()
+                .http2_adaptive_window(true)
+                .connection_verbose(
+                    log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace),
+                )
+                .timeout(client_timeout)
+                .build()
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    return fail_format!("Cannot build reqwest client: {e}.");
+                },
+            };
+
+            match client.get(url).send() {
+                Ok(response) => response.text().unwrap_or_default(),
+                Err(e) => return fail_format!("Cannot read JSON at url {url}: {e}."),
+            }
+        },
+        path => {
+            let mut buffer = String::new();
+            match File::open(path) {
+                Ok(p) => {
+                    BufReader::new(p)
+                        .read_to_string(&mut buffer)
+                        .unwrap_or_default();
+                },
+                Err(e) => return fail_format!("Cannot read JSON file {path}: {e}."),
+            }
+            buffer
+        },
+    };
+
+    Ok(json_string)
+}
+
+/// Validate JSON instance against compiled JSON Schema
+/// If invalid, returns Some(Vec<(String,String)>) holding the error messages
+/// this is just for the tests below and is equivalent to the validation logic
+/// in the main `validate` function which was inlined for performance reasons
+#[cfg(test)]
+fn validate_json_instance(
+    instance: &Value,
+    schema_compiled: &Validator,
+) -> Option<Vec<(String, String)>> {
+    match schema_compiled.apply(instance).basic() {
+        BasicOutput::Valid(_) => None,
+        BasicOutput::Invalid(errors) => Some(
+            errors
+                .iter()
+                .map(|e| {
+                    (
+                        e.instance_location().to_string(),
+                        e.error_description().to_string(),
+                    )
+                })
+                .collect(),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests_for_csv_to_json_conversion {
 
@@ -1633,7 +1996,7 @@ mod tests_for_csv_to_json_conversion {
         let mut record = rdr.byte_records().next().unwrap().unwrap();
         record.trim();
 
-        similar_asserts::assert_eq!(
+        assert_eq!(
             to_json_instance(&header_types, headers.len(), &record)
                 .expect("can't convert csv to json instance"),
             json!({
@@ -1670,82 +2033,8 @@ mod tests_for_csv_to_json_conversion {
         );
         assert!(&result.is_err());
         let error = result.err().unwrap().to_string();
-        similar_asserts::assert_eq!("Can't cast into Integer. key: C, value: 3.0e8", error);
+        assert_eq!("Can't cast to Integer. key: C, value: 3.0e8", error);
     }
-}
-
-/// Validate JSON instance against compiled JSON Schema
-/// If invalid, returns Some(Vec<(String,String)>) holding the error messages
-#[inline]
-fn validate_json_instance(
-    instance: &Value,
-    schema_compiled: &Validator,
-) -> Option<Vec<(String, String)>> {
-    match schema_compiled.apply(instance).basic() {
-        BasicOutput::Valid(_) => None,
-        BasicOutput::Invalid(errors) => Some(
-            errors
-                .iter()
-                .map(|e| {
-                    (
-                        e.instance_location().to_string(),
-                        e.error_description().to_string(),
-                    )
-                })
-                .collect(),
-        ),
-    }
-}
-
-fn load_json(uri: &str) -> Result<String, String> {
-    let json_string = match uri {
-        url if url.to_lowercase().starts_with("http") => {
-            use reqwest::blocking::Client;
-
-            let client_timeout =
-                std::time::Duration::from_secs(TIMEOUT_SECS.load(Ordering::Relaxed) as u64);
-
-            let client = match Client::builder()
-                // safety: we're using a validated QSV_USER_AGENT or the default user agent
-                .user_agent(util::set_user_agent(None).unwrap())
-                .brotli(true)
-                .gzip(true)
-                .deflate(true)
-                .zstd(true)
-                .use_rustls_tls()
-                .http2_adaptive_window(true)
-                .connection_verbose(
-                    log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace),
-                )
-                .timeout(client_timeout)
-                .build()
-            {
-                Ok(c) => c,
-                Err(e) => {
-                    return fail_format!("Cannot build reqwest client: {e}.");
-                },
-            };
-
-            match client.get(url).send() {
-                Ok(response) => response.text().unwrap_or_default(),
-                Err(e) => return fail_format!("Cannot read JSON at url {url}: {e}."),
-            }
-        },
-        path => {
-            let mut buffer = String::new();
-            match File::open(path) {
-                Ok(p) => {
-                    BufReader::new(p)
-                        .read_to_string(&mut buffer)
-                        .unwrap_or_default();
-                },
-                Err(e) => return fail_format!("Cannot read JSON file {path}: {e}."),
-            }
-            buffer
-        },
-    };
-
-    Ok(json_string)
 }
 
 #[cfg(test)]
@@ -1822,7 +2111,7 @@ mod tests_for_schema_validation {
 
         assert!(result.is_some());
 
-        similar_asserts::assert_eq!(
+        assert_eq!(
             vec![(
                 "/name".to_string(),
                 "\"X\" is shorter than 2 characters".to_string()
@@ -1897,7 +2186,7 @@ fn test_validate_currency_email_dynamicenum_validator() {
     let result = validate_json_instance(&instance, &compiled_schema);
 
     // Dogecoin is not an ISO currency
-    similar_asserts::assert_eq!(
+    assert_eq!(
         result,
         Some(vec![(
             "/fee".to_owned(),
@@ -1925,7 +2214,7 @@ fn test_validate_currency_email_dynamicenum_validator() {
 
     let result = validate_json_instance(&instance, &compiled_schema);
 
-    similar_asserts::assert_eq!(
+    assert_eq!(
         result,
         Some(vec![
             (
@@ -1968,10 +2257,10 @@ fn test_validate_currency_email_dynamicenum_validator() {
         let result = validate_json_instance(&instance, &compiled_schema);
 
         match i {
-            0 => similar_asserts::assert_eq!(result, None),
-            1 => similar_asserts::assert_eq!(result, None),
-            2 => similar_asserts::assert_eq!(result, None),
-            3 => similar_asserts::assert_eq!(
+            0 => assert_eq!(result, None),
+            1 => assert_eq!(result, None),
+            2 => assert_eq!(result, None),
+            3 => assert_eq!(
                 result,
                 Some(vec![
                     (
@@ -1984,29 +2273,29 @@ fn test_validate_currency_email_dynamicenum_validator() {
                     )
                 ])
             ),
-            4 => similar_asserts::assert_eq!(
+            4 => assert_eq!(
                 result,
                 Some(vec![(
                     "/name".to_owned(),
                     "\"X\" is shorter than 2 characters".to_owned()
                 )])
             ),
-            5 => similar_asserts::assert_eq!(result, None),
-            6 => similar_asserts::assert_eq!(
+            5 => assert_eq!(result, None),
+            6 => assert_eq!(
                 result,
                 Some(vec![(
                     "/agency".to_owned(),
                     "\"NYFD\" is not a valid dynamicEnum value".to_owned()
                 )])
             ),
-            7 => similar_asserts::assert_eq!(
+            7 => assert_eq!(
                 result,
                 Some(vec![(
                     "/fee".to_owned(),
                     "\"WAX 100.000,00\" is not a \"currency\"".to_owned()
                 )])
             ),
-            8 => similar_asserts::assert_eq!(
+            8 => assert_eq!(
                 result,
                 Some(vec![
                     (
@@ -2066,7 +2355,7 @@ fn test_dyn_enum_validator() {
     assert!(!validator.is_valid(&json!(5)));
     match validator.validate(&json!("lanzones")) {
         Err(e) => {
-            similar_asserts::assert_eq!(
+            assert_eq!(
                 format!("{e:?}"),
                 r#"ValidationError { instance: String("lanzones"), kind: Custom { message: "\"lanzones\" is not a valid dynamicEnum value" }, instance_path: Location(""), schema_path: Location("") }"#
             );
@@ -2074,5 +2363,5 @@ fn test_dyn_enum_validator() {
         _ => {
             unreachable!("Expected an error, but validation succeeded.");
         },
-    };
+    }
 }

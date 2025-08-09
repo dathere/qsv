@@ -4070,9 +4070,9 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "luau0-src"
-version = "0.15.4+luau682"
+version = "0.15.5+luau686"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c658d07cf320153a615d85ac44c44548817b4e68c9f34b124648dd3c673030e6"
+checksum = "7e15ce6a2b8f9d8acf7cd38f22a86e4325d5d5474ef9861ad9c4f13f1dab1ea6"
 dependencies = [
  "cc",
 ]
@@ -6808,9 +6808,9 @@ dependencies = [
 
 [[package]]
 name = "rustversion"
-version = "1.0.21"
+version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a0d197bd2c9dc6e53b84da9556a69ba4cdfab8619eb41a8bd1cc2027a0f6b1d"
+checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "ryu"
@@ -8004,11 +8004,10 @@ dependencies = [
 
 [[package]]
 name = "tree_magic_mini"
-version = "3.1.6"
+version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aac5e8971f245c3389a5a76e648bfc80803ae066a1243a75db0064d7c1129d63"
+checksum = "f943391d896cdfe8eec03a04d7110332d445be7df856db382dd96a730667562c"
 dependencies = [
- "fnv",
  "memchr",
  "nom",
  "once_cell",

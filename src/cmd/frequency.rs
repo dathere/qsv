@@ -3,7 +3,7 @@ Compute a frequency table on input data. It has CSV and JSON output modes.
 https://en.wikipedia.org/wiki/Frequency_(statistics)#Frequency_distribution_table
 
 In CSV output mode (default), the table is formatted as CSV data with the following
-columns - field,value,count,percentage.
+columns - field,value,count,percentage,rank.
 
 In JSON output mode, the table is formatted as nested JSON data. In addition to
 the columns above, the JSON output also includes the row count, field count, each
@@ -99,7 +99,9 @@ frequency options:
                             the "Other" category will not be included in the frequency table.
                             [default: Other]
     -a, --asc               Sort the frequency tables in ascending order by count.
-                            The default is descending order.
+                            The default is descending order. Note that this option will
+                            also reverse ranking - i.e. the least frequent values will
+                            have a rank of 1.
     --no-trim               Don't trim whitespace from values when computing frequencies.
                             The default is to trim leading and trailing whitespaces.
     --no-nulls              Don't include NULLs in the frequency table.
@@ -476,9 +478,6 @@ impl Args {
         // We might add an "Other" entry, so add 1 to capacity
         let mut counts_final: Vec<(Vec<u8>, u64, f64, u32)> = Vec::with_capacity(counts.len() + 1);
 
-        // Create NULL value once to avoid repeated to_vec allocations
-        let null_val = NULL_VAL.to_vec();
-
         // Group by count to handle ties
         let mut count_groups: Vec<(u64, Vec<Vec<u8>>)> = Vec::new();
         let mut current_count = None;
@@ -489,8 +488,7 @@ impl Args {
                 && count != prev_count
                 && !current_group.is_empty()
             {
-                count_groups.push((prev_count, current_group));
-                current_group = Vec::new();
+                count_groups.push((prev_count, std::mem::take(&mut current_group)));
             }
 
             current_count = Some(count);
@@ -500,15 +498,12 @@ impl Args {
             count_groups.push((current_count.unwrap(), current_group));
         }
 
+        // Create NULL value once to avoid repeated to_vec allocations
+        let null_val = NULL_VAL.to_vec();
         // Sort each group alphabetically and assign ranks
         let mut current_rank = 1u32;
         for (count, mut group) in count_groups {
-            // Sort the group alphabetically
-            group.sort_by(|a, b| {
-                let a_str = String::from_utf8_lossy(a);
-                let b_str = String::from_utf8_lossy(b);
-                a_str.cmp(&b_str)
-            });
+            group.sort_unstable();
 
             for byte_string in group {
                 count_sum += count;
@@ -836,10 +831,10 @@ impl Args {
             if self.flag_other_sorted {
                 if self.flag_asc {
                     // ascending order
-                    processed_frequencies.sort_by(|a, b| a.count.cmp(&b.count));
+                    processed_frequencies.sort_unstable_by(|a, b| a.count.cmp(&b.count));
                 } else {
                     // descending order
-                    processed_frequencies.sort_by(|a, b| b.count.cmp(&a.count));
+                    processed_frequencies.sort_unstable_by(|a, b| b.count.cmp(&a.count));
                 }
             }
 
@@ -906,7 +901,7 @@ impl Args {
                 nullcount,
                 sparsity,
                 uniqueness_ratio,
-                stats: field_stats.clone(),
+                stats: std::mem::take(&mut field_stats),
                 frequencies: processed_frequencies
                     .iter()
                     .map(|pf| FrequencyEntry {
@@ -926,7 +921,6 @@ impl Args {
             });
 
             // Clear the vectors for the next iteration
-            field_stats.clear();
             processed_frequencies.clear();
         } // end for loop
 

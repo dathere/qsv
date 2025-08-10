@@ -5,6 +5,15 @@ https://en.wikipedia.org/wiki/Frequency_(statistics)#Frequency_distribution_tabl
 In CSV output mode (default), the table is formatted as CSV data with the following
 columns - field,value,count,percentage,rank.
 
+The rank column is 1-based and is calculated based on the count of the values,
+with the most frequent having a rank of 1. When there are multiple values with
+the same count, the they all have the same rank, and the next rank skips the
+number of values with the same count.
+
+For example, if there are 2 values with a count of 10, 4 values with a count of 6,
+and 3 values with a count of 3, and 1 value with a count of 2, the rank column will
+be 1, 1, 3, 3, 3, 3, 7, 7, 7, 10.
+
 In JSON output mode, the table is formatted as nested JSON data. In addition to
 the columns above, the JSON output also includes the row count, field count, each
 field's data type, cardinality, nullcount, sparsity, uniqueness_ratio and its stats.
@@ -100,7 +109,7 @@ frequency options:
                             [default: Other]
     -a, --asc               Sort the frequency tables in ascending order by count.
                             The default is descending order. Note that this option will
-                            also reverse ranking - i.e. the least frequent values will
+                            also reverse ranking - i.e. the LEAST frequent values will
                             have a rank of 1.
     --no-trim               Don't trim whitespace from values when computing frequencies.
                             The default is to trim leading and trailing whitespaces.
@@ -505,7 +514,7 @@ impl Args {
         for (count, mut group) in count_groups {
             group.sort_unstable();
 
-            for byte_string in group {
+            for byte_string in &group {
                 count_sum += count;
                 pct = count as f64 * pct_factor;
                 pct_sum += pct;
@@ -513,10 +522,10 @@ impl Args {
                 if byte_string.is_empty() {
                     counts_final.push((null_val.clone(), count, pct, current_rank));
                 } else {
-                    counts_final.push((byte_string, count, pct, current_rank));
+                    counts_final.push((byte_string.clone(), count, pct, current_rank));
                 }
             }
-            current_rank += 1;
+            current_rank += group.len() as u32;
         }
 
         let other_count = total_count - count_sum;

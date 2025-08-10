@@ -191,6 +191,7 @@ struct FrequencyEntry {
     value:      String,
     count:      u64,
     percentage: f64,
+    rank:       u32,
 }
 
 #[derive(Serialize)]
@@ -228,6 +229,7 @@ struct ProcessedFrequency {
     percentage:           f64,
     formatted_percentage: String,
     value:                Vec<u8>,
+    rank:                 u32,
 }
 
 static UNIQUE_COLUMNS_VEC: OnceLock<Vec<usize>> = OnceLock::new();
@@ -271,6 +273,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     #[allow(unused_assignments)]
     let mut header_vec: Vec<u8> = Vec::with_capacity(tables.len());
     let mut itoa_buffer = itoa::Buffer::new();
+    let mut itoa_buffer_rank = itoa::Buffer::new();
     let mut row: Vec<&[u8]>;
 
     let head_ftables = headers.iter().zip(tables);
@@ -287,7 +290,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let unique_headers_vec = UNIQUE_COLUMNS_VEC.get().unwrap();
 
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
-    wtr.write_record(vec!["field", "value", "count", "percentage"])?;
+    wtr.write_record(vec!["field", "value", "count", "percentage", "rank"])?;
 
     for (i, (header, ftab)) in head_ftables.enumerate() {
         header_vec = if rconfig.no_headers {
@@ -317,6 +320,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 },
                 itoa_buffer.format(processed_freq.count).as_bytes(),
                 processed_freq.formatted_percentage.as_bytes(),
+                itoa_buffer_rank.format(processed_freq.rank).as_bytes(),
             ];
             wtr.write_record(row)?;
         }
@@ -356,12 +360,13 @@ impl Args {
                 count:                row_count,
                 percentage:           100.0,
                 formatted_percentage: formatted_pct,
+                rank:                 1, // Rank 1 for all-unique headers
             });
         } else {
             // Process regular frequencies
             let mut counts_to_process = self.counts(ftab);
             if !self.flag_other_sorted
-                && counts_to_process.first().is_some_and(|(value, _, _)| {
+                && counts_to_process.first().is_some_and(|(value, _, _, _)| {
                     value.starts_with(format!("{} (", self.flag_other_text).as_bytes())
                 })
             {
@@ -369,13 +374,14 @@ impl Args {
             }
 
             // Convert to processed frequencies
-            for (value, count, percentage) in counts_to_process {
+            for (value, count, percentage, rank) in counts_to_process {
                 let formatted_pct = self.format_percentage(percentage, abs_dec_places);
                 processed_frequencies.push(ProcessedFrequency {
                     value,
                     count,
                     percentage,
                     formatted_percentage: formatted_pct,
+                    rank,
                 });
             }
         }
@@ -411,7 +417,7 @@ impl Args {
     }
 
     #[inline]
-    fn counts(&self, ftab: &FTable) -> Vec<(ByteString, u64, f64)> {
+    fn counts(&self, ftab: &FTable) -> Vec<(ByteString, u64, f64, u32)> {
         let (mut counts, total_count) = if self.flag_asc {
             // parallel sort in ascending order - least frequent values first
             ftab.par_frequent(true)
@@ -468,21 +474,54 @@ impl Args {
 
         // Pre-allocate the result vector with known capacity
         // We might add an "Other" entry, so add 1 to capacity
-        let mut counts_final: Vec<(Vec<u8>, u64, f64)> = Vec::with_capacity(counts.len() + 1);
+        let mut counts_final: Vec<(Vec<u8>, u64, f64, u32)> = Vec::with_capacity(counts.len() + 1);
 
         // Create NULL value once to avoid repeated to_vec allocations
         let null_val = NULL_VAL.to_vec();
 
-        #[allow(clippy::cast_precision_loss)]
+        // Group by count to handle ties
+        let mut count_groups: Vec<(u64, Vec<Vec<u8>>)> = Vec::new();
+        let mut current_count = None;
+        let mut current_group = Vec::new();
+
         for (byte_string, count) in counts {
-            count_sum += count;
-            pct = count as f64 * pct_factor;
-            pct_sum += pct;
-            if *b"" == **byte_string {
-                counts_final.push((null_val.clone(), count, pct));
-            } else {
-                counts_final.push((byte_string.to_owned(), count, pct));
+            if let Some(prev_count) = current_count
+                && count != prev_count
+                && !current_group.is_empty()
+            {
+                count_groups.push((prev_count, current_group));
+                current_group = Vec::new();
             }
+
+            current_count = Some(count);
+            current_group.push(byte_string.clone());
+        }
+        if !current_group.is_empty() {
+            count_groups.push((current_count.unwrap(), current_group));
+        }
+
+        // Sort each group alphabetically and assign ranks
+        let mut current_rank = 1u32;
+        for (count, mut group) in count_groups {
+            // Sort the group alphabetically
+            group.sort_by(|a, b| {
+                let a_str = String::from_utf8_lossy(a);
+                let b_str = String::from_utf8_lossy(b);
+                a_str.cmp(&b_str)
+            });
+
+            for byte_string in group {
+                count_sum += count;
+                pct = count as f64 * pct_factor;
+                pct_sum += pct;
+
+                if byte_string.is_empty() {
+                    counts_final.push((null_val.clone(), count, pct, current_rank));
+                } else {
+                    counts_final.push((byte_string, count, pct, current_rank));
+                }
+            }
+            current_rank += 1;
         }
 
         let other_count = total_count - count_sum;
@@ -498,6 +537,7 @@ impl Args {
                 .to_vec(),
                 other_count,
                 100.0_f64 - pct_sum,
+                0, // Special rank for "Other" category
             ));
         }
         counts_final
@@ -833,31 +873,30 @@ impl Args {
                 && !dtype.is_empty()
                 && dtype.as_str() != "NULL"
                 && dtype.as_str() != "Boolean"
+                && let Some(sr) = stats_record
             {
-                if let Some(sr) = stats_record {
-                    // Add all available stats if some
-                    add_stat(&mut field_stats, "sum", sr.sum);
-                    add_stat(&mut field_stats, "min", sr.min.clone());
-                    add_stat(&mut field_stats, "max", sr.max.clone());
-                    add_stat(&mut field_stats, "range", sr.range);
-                    add_stat(&mut field_stats, "sort_order", sr.sort_order.clone());
+                // Add all available stats if some
+                add_stat(&mut field_stats, "sum", sr.sum);
+                add_stat(&mut field_stats, "min", sr.min.clone());
+                add_stat(&mut field_stats, "max", sr.max.clone());
+                add_stat(&mut field_stats, "range", sr.range);
+                add_stat(&mut field_stats, "sort_order", sr.sort_order.clone());
 
-                    // String-specific stats
-                    add_stat(&mut field_stats, "min_length", sr.min_length);
-                    add_stat(&mut field_stats, "max_length", sr.max_length);
-                    add_stat(&mut field_stats, "sum_length", sr.sum_length);
-                    add_stat(&mut field_stats, "avg_length", sr.avg_length);
-                    add_stat(&mut field_stats, "stddev_length", sr.stddev_length);
-                    add_stat(&mut field_stats, "variance_length", sr.variance_length);
-                    add_stat(&mut field_stats, "cv_length", sr.cv_length);
+                // String-specific stats
+                add_stat(&mut field_stats, "min_length", sr.min_length);
+                add_stat(&mut field_stats, "max_length", sr.max_length);
+                add_stat(&mut field_stats, "sum_length", sr.sum_length);
+                add_stat(&mut field_stats, "avg_length", sr.avg_length);
+                add_stat(&mut field_stats, "stddev_length", sr.stddev_length);
+                add_stat(&mut field_stats, "variance_length", sr.variance_length);
+                add_stat(&mut field_stats, "cv_length", sr.cv_length);
 
-                    // Numeric-specific stats
-                    add_stat(&mut field_stats, "mean", sr.mean);
-                    add_stat(&mut field_stats, "sem", sr.sem);
-                    add_stat(&mut field_stats, "stddev", sr.stddev);
-                    add_stat(&mut field_stats, "variance", sr.variance);
-                    add_stat(&mut field_stats, "cv", sr.cv);
-                }
+                // Numeric-specific stats
+                add_stat(&mut field_stats, "mean", sr.mean);
+                add_stat(&mut field_stats, "sem", sr.sem);
+                add_stat(&mut field_stats, "stddev", sr.stddev);
+                add_stat(&mut field_stats, "variance", sr.variance);
+                add_stat(&mut field_stats, "cv", sr.cv);
             }
 
             fields.push(FrequencyField {
@@ -881,6 +920,7 @@ impl Args {
                             .formatted_percentage
                             .parse::<f64>()
                             .unwrap_or(pf.percentage),
+                        rank:       pf.rank,
                     })
                     .collect(),
             });

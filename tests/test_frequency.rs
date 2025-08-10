@@ -39,11 +39,11 @@ fn frequency_no_headers() {
     got = got.into_iter().skip(1).collect();
     got.sort_unstable();
     let expected = vec![
-        svec!["1", "(NULL)", "1", "12.5"],
-        svec!["1", "(NULL)", "1", "12.5"],
-        svec!["1", "a", "4", "50"],
-        svec!["1", "b", "1", "12.5"],
-        svec!["1", "h1", "1", "12.5"],
+        svec!["1", "(NULL)", "1", "12.5", "2"],
+        svec!["1", "(NULL)", "1", "12.5", "2"],
+        svec!["1", "a", "4", "50", "1"],
+        svec!["1", "b", "1", "12.5", "2"],
+        svec!["1", "h1", "1", "12.5", "2"],
     ];
     assert_eq!(got, expected);
 }
@@ -56,11 +56,11 @@ fn frequency_casesensitive() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h2", "Y", "1", "14.28571"],
-        svec!["h2", "x", "1", "14.28571"],
-        svec!["h2", "y", "2", "28.57143"],
-        svec!["h2", "z", "3", "42.85714"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h2", "Y", "1", "14.28571", "3"],
+        svec!["h2", "x", "1", "14.28571", "3"],
+        svec!["h2", "y", "2", "28.57143", "2"],
+        svec!["h2", "z", "3", "42.85714", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -75,10 +75,10 @@ fn frequency_ignorecase() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h2", "x", "1", "14.28571"],
-        svec!["h2", "y", "3", "42.85714"],
-        svec!["h2", "z", "3", "42.85714"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h2", "x", "1", "14.28571", "2"],
+        svec!["h2", "y", "3", "42.85714", "1"],
+        svec!["h2", "z", "3", "42.85714", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -117,12 +117,12 @@ fn frequency_trim() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h2", "Y", "2", "14.28571"],
-        svec!["h2", "Z", "2", "14.28571"],
-        svec!["h2", "x", "1", "7.14286"],
-        svec!["h2", "y", "5", "35.71429"],
-        svec!["h2", "z", "4", "28.57143"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h2", "Y", "2", "14.28571", "3"],
+        svec!["h2", "Z", "2", "14.28571", "3"],
+        svec!["h2", "x", "1", "7.14286", "4"],
+        svec!["h2", "y", "5", "35.71429", "1"],
+        svec!["h2", "z", "4", "28.57143", "2"],
     ];
     assert_eq!(got, expected);
 }
@@ -160,15 +160,15 @@ fn frequency_no_trim() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h2", "  Z   ", "2", "14.28571"],
-        svec!["h2", " Y ", "1", "7.14286"],
-        svec!["h2", " z", "1", "7.14286"],
-        svec!["h2", "Y", "1", "7.14286"],
-        svec!["h2", "x", "1", "7.14286"],
-        svec!["h2", "y", "2", "14.28571"],
-        svec!["h2", "y ", "3", "21.42857"],
-        svec!["h2", "z", "3", "21.42857"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h2", "  Z   ", "2", "14.28571", "2"],
+        svec!["h2", " Y ", "1", "7.14286", "3"],
+        svec!["h2", " z", "1", "7.14286", "3"],
+        svec!["h2", "Y", "1", "7.14286", "3"],
+        svec!["h2", "x", "1", "7.14286", "3"],
+        svec!["h2", "y", "2", "14.28571", "2"],
+        svec!["h2", "y ", "3", "21.42857", "1"],
+        svec!["h2", "z", "3", "21.42857", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -183,10 +183,10 @@ fn frequency_no_nulls() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h1", "(NULL)", "1", "16.66667"],
-        svec!["h1", "a", "4", "66.66667"],
-        svec!["h1", "b", "1", "16.66667"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "(NULL)", "1", "16.66667", "2"],
+        svec!["h1", "a", "4", "66.66667", "1"],
+        svec!["h1", "b", "1", "16.66667", "2"],
     ];
     assert_eq!(got, expected);
 }
@@ -199,11 +199,11 @@ fn frequency_nulls() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h1", "(NULL)", "1", "14.28571"],
-        svec!["h1", "(NULL)", "1", "14.28571"],
-        svec!["h1", "a", "4", "57.14286"],
-        svec!["h1", "b", "1", "14.28571"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "(NULL)", "1", "14.28571", "2"],
+        svec!["h1", "(NULL)", "1", "14.28571", "2"],
+        svec!["h1", "a", "4", "57.14286", "1"],
+        svec!["h1", "b", "1", "14.28571", "2"],
     ];
     assert_eq!(got, expected);
 }
@@ -216,11 +216,11 @@ fn frequency_limit() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h1", "Other (3)", "3", "42.85714"],
-        svec!["h1", "a", "4", "57.14286"],
-        svec!["h2", "Other (3)", "4", "57.14286"],
-        svec!["h2", "z", "3", "42.85714"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "Other (3)", "3", "42.85714", "0"],
+        svec!["h1", "a", "4", "57.14286", "1"],
+        svec!["h2", "Other (3)", "4", "57.14286", "0"],
+        svec!["h2", "z", "3", "42.85714", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -233,11 +233,11 @@ fn frequency_pct_dec_places() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h1", "Other (3)", "3", "42.857"],
-        svec!["h1", "a", "4", "57.143"],
-        svec!["h2", "Other (3)", "4", "57.143"],
-        svec!["h2", "z", "3", "42.857"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "Other (3)", "3", "42.857", "0"],
+        svec!["h1", "a", "4", "57.143", "1"],
+        svec!["h2", "Other (3)", "4", "57.143", "0"],
+        svec!["h2", "z", "3", "42.857", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -250,11 +250,11 @@ fn frequency_neg_pct_dec_places() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h1", "Other (3)", "3", "42.8571"],
-        svec!["h1", "a", "4", "57.1429"],
-        svec!["h2", "Other (3)", "4", "57.1429"],
-        svec!["h2", "z", "3", "42.8571"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "Other (3)", "3", "42.8571", "0"],
+        svec!["h1", "a", "4", "57.1429", "1"],
+        svec!["h2", "Other (3)", "4", "57.1429", "0"],
+        svec!["h2", "z", "3", "42.8571", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -267,9 +267,9 @@ fn frequency_limit_no_other() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h1", "a", "4", "57.14286"],
-        svec!["h2", "z", "3", "42.85714"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "a", "4", "57.14286", "1"],
+        svec!["h2", "z", "3", "42.85714", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -282,10 +282,10 @@ fn frequency_negative_limit() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h1", "Other (3)", "3", "42.85714"],
-        svec!["h1", "a", "4", "57.14286"],
-        svec!["h2", "Other (4)", "7", "100"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "Other (3)", "3", "42.85714", "0"],
+        svec!["h1", "a", "4", "57.14286", "1"],
+        svec!["h2", "Other (4)", "7", "100", "0"],
     ];
     assert_eq!(got, expected);
 }
@@ -298,10 +298,10 @@ fn frequency_limit_threshold() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h1", "Other (3)", "3", "42.85714"],
-        svec!["h1", "a", "4", "57.14286"],
-        svec!["h2", "Other (4)", "7", "100"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "Other (3)", "3", "42.85714", "0"],
+        svec!["h1", "a", "4", "57.14286", "1"],
+        svec!["h2", "Other (4)", "7", "100", "0"],
     ];
     assert_eq!(got, expected);
 }
@@ -314,15 +314,15 @@ fn frequency_limit_threshold_notmet() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h1", "(NULL)", "1", "14.28571"],
-        svec!["h1", "(NULL)", "1", "14.28571"],
-        svec!["h1", "a", "4", "57.14286"],
-        svec!["h1", "b", "1", "14.28571"],
-        svec!["h2", "Y", "1", "14.28571"],
-        svec!["h2", "x", "1", "14.28571"],
-        svec!["h2", "y", "2", "28.57143"],
-        svec!["h2", "z", "3", "42.85714"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "(NULL)", "1", "14.28571", "2"],
+        svec!["h1", "(NULL)", "1", "14.28571", "2"],
+        svec!["h1", "a", "4", "57.14286", "1"],
+        svec!["h1", "b", "1", "14.28571", "2"],
+        svec!["h2", "Y", "1", "14.28571", "3"],
+        svec!["h2", "x", "1", "14.28571", "3"],
+        svec!["h2", "y", "2", "28.57143", "2"],
+        svec!["h2", "z", "3", "42.85714", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -334,11 +334,11 @@ fn frequency_asc() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h2", "Y", "1", "14.28571"],
-        svec!["h2", "x", "1", "14.28571"],
-        svec!["h2", "y", "2", "28.57143"],
-        svec!["h2", "z", "3", "42.85714"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h2", "Y", "1", "14.28571", "1"],
+        svec!["h2", "x", "1", "14.28571", "1"],
+        svec!["h2", "y", "2", "28.57143", "2"],
+        svec!["h2", "z", "3", "42.85714", "3"],
     ];
     assert_eq!(got, expected);
 }
@@ -353,10 +353,10 @@ fn frequency_asc_ignorecase() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h2", "x", "1", "14.28571"],
-        svec!["h2", "y", "3", "42.85714"],
-        svec!["h2", "z", "3", "42.85714"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h2", "x", "1", "14.28571", "1"],
+        svec!["h2", "y", "3", "42.85714", "2"],
+        svec!["h2", "z", "3", "42.85714", "2"],
     ];
     assert_eq!(got, expected);
 }
@@ -371,10 +371,10 @@ fn frequency_custom_other_text() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h1", "a", "4", "57.14286"],
-        svec!["h1", "其他 (3)", "3", "42.85714"],
-        svec!["h2", "其他 (4)", "7", "100"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "a", "4", "57.14286", "1"],
+        svec!["h1", "其他 (3)", "3", "42.85714", "0"],
+        svec!["h2", "其他 (4)", "7", "100", "0"],
     ];
     assert_eq!(got, expected);
 }
@@ -390,10 +390,10 @@ fn frequency_custom_other_text_sorted() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h1", "Ibang halaga (3)", "3", "42.85714"],
-        svec!["h1", "a", "4", "57.14286"],
-        svec!["h2", "Ibang halaga (4)", "7", "100"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "Ibang halaga (3)", "3", "42.85714", "0"],
+        svec!["h1", "a", "4", "57.14286", "1"],
+        svec!["h2", "Ibang halaga (4)", "7", "100", "0"],
     ];
     assert_eq!(got, expected);
 }
@@ -408,10 +408,10 @@ fn frequency_other_sorted() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h1", "Other (3)", "3", "42.85714"],
-        svec!["h1", "a", "4", "57.14286"],
-        svec!["h2", "Other (4)", "7", "100"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "Other (3)", "3", "42.85714", "0"],
+        svec!["h1", "a", "4", "57.14286", "1"],
+        svec!["h2", "Other (4)", "7", "100", "0"],
     ];
     assert_eq!(got, expected);
 }
@@ -426,8 +426,8 @@ fn frequency_other_text_none() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h1", "a", "4", "57.14286"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "a", "4", "57.14286", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -440,11 +440,11 @@ fn frequency_select() {
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["h2", "Y", "1", "14.28571"],
-        svec!["h2", "x", "1", "14.28571"],
-        svec!["h2", "y", "2", "28.57143"],
-        svec!["h2", "z", "3", "42.85714"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h2", "Y", "1", "14.28571", "3"],
+        svec!["h2", "x", "1", "14.28571", "3"],
+        svec!["h2", "y", "2", "28.57143", "2"],
+        svec!["h2", "z", "3", "42.85714", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -460,8 +460,8 @@ fn frequency_all_unique() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["case_enquiry_id", "<ALL_UNIQUE>", "100", "100"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["case_enquiry_id", "<ALL_UNIQUE>", "100", "100", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -484,8 +484,8 @@ fn frequency_all_unique_with_stats_cache() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["case_enquiry_id", "<ALL_UNIQUE>", "100", "100"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["case_enquiry_id", "<ALL_UNIQUE>", "100", "100", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -511,8 +511,8 @@ fn frequency_all_unique_with_stats_cache_alt_all_unique_text() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["case_enquiry_id", "<ALLE EINZIGARTIG>", "100", "100"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["case_enquiry_id", "<ALLE EINZIGARTIG>", "100", "100", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -529,8 +529,8 @@ fn frequency_all_unique_stats_cache_default() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["case_enquiry_id", "<ALL_UNIQUE>", "100", "100"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["case_enquiry_id", "<ALL_UNIQUE>", "100", "100", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -557,18 +557,18 @@ fn frequency_all_unique_stats_mode_none() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["case_enquiry_id", "101004113298", "1", "1"],
-        svec!["case_enquiry_id", "101004113313", "1", "1"],
-        svec!["case_enquiry_id", "101004113348", "1", "1"],
-        svec!["case_enquiry_id", "101004113363", "1", "1"],
-        svec!["case_enquiry_id", "101004113371", "1", "1"],
-        svec!["case_enquiry_id", "101004113385", "1", "1"],
-        svec!["case_enquiry_id", "101004113386", "1", "1"],
-        svec!["case_enquiry_id", "101004113391", "1", "1"],
-        svec!["case_enquiry_id", "101004113394", "1", "1"],
-        svec!["case_enquiry_id", "101004113403", "1", "1"],
-        svec!["case_enquiry_id", "Other (90)", "90", "90"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["case_enquiry_id", "101004113298", "1", "1", "1"],
+        svec!["case_enquiry_id", "101004113313", "1", "1", "1"],
+        svec!["case_enquiry_id", "101004113348", "1", "1", "1"],
+        svec!["case_enquiry_id", "101004113363", "1", "1", "1"],
+        svec!["case_enquiry_id", "101004113371", "1", "1", "1"],
+        svec!["case_enquiry_id", "101004113385", "1", "1", "1"],
+        svec!["case_enquiry_id", "101004113386", "1", "1", "1"],
+        svec!["case_enquiry_id", "101004113391", "1", "1", "1"],
+        svec!["case_enquiry_id", "101004113394", "1", "1", "1"],
+        svec!["case_enquiry_id", "101004113403", "1", "1", "1"],
+        svec!["case_enquiry_id", "Other (90)", "90", "90", "0"],
     ];
     assert_eq!(got, expected);
 }
@@ -582,23 +582,23 @@ fn frequency_issue1962() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["year", "2024", "24", "8"],
-        svec!["year", "2023", "23", "7.66667"],
-        svec!["year", "2022", "22", "7.33333"],
-        svec!["year", "2021", "21", "7"],
-        svec!["year", "2020", "20", "6.66667"],
-        svec!["year", "2019", "19", "6.33333"],
-        svec!["year", "2018", "18", "6"],
-        svec!["year", "2017", "17", "5.66667"],
-        svec!["year", "2016", "16", "5.33333"],
-        svec!["year", "2015", "15", "5"],
-        svec!["year", "2014", "14", "4.66667"],
-        svec!["year", "2013", "13", "4.33333"],
-        svec!["year", "2012", "12", "4"],
-        svec!["year", "2011", "11", "3.66667"],
-        svec!["year", "2010", "10", "3.33333"],
-        svec!["year", "Other (9)", "45", "15"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["year", "2024", "24", "8", "1"],
+        svec!["year", "2023", "23", "7.66667", "2"],
+        svec!["year", "2022", "22", "7.33333", "3"],
+        svec!["year", "2021", "21", "7", "4"],
+        svec!["year", "2020", "20", "6.66667", "5"],
+        svec!["year", "2019", "19", "6.33333", "6"],
+        svec!["year", "2018", "18", "6", "7"],
+        svec!["year", "2017", "17", "5.66667", "8"],
+        svec!["year", "2016", "16", "5.33333", "9"],
+        svec!["year", "2015", "15", "5", "10"],
+        svec!["year", "2014", "14", "4.66667", "11"],
+        svec!["year", "2013", "13", "4.33333", "12"],
+        svec!["year", "2012", "12", "4", "13"],
+        svec!["year", "2011", "11", "3.66667", "14"],
+        svec!["year", "2010", "10", "3.33333", "15"],
+        svec!["year", "Other (9)", "45", "15", "0"],
     ];
     assert_eq!(got, expected);
 
@@ -607,13 +607,13 @@ fn frequency_issue1962() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["year", "2024", "24", "8"],
-        svec!["year", "2023", "23", "7.66667"],
-        svec!["year", "2022", "22", "7.33333"],
-        svec!["year", "2021", "21", "7"],
-        svec!["year", "2020", "20", "6.66667"],
-        svec!["year", "Other (19)", "190", "63.33333"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["year", "2024", "24", "8", "1"],
+        svec!["year", "2023", "23", "7.66667", "2"],
+        svec!["year", "2022", "22", "7.33333", "3"],
+        svec!["year", "2021", "21", "7", "4"],
+        svec!["year", "2020", "20", "6.66667", "5"],
+        svec!["year", "Other (19)", "190", "63.33333", "0"],
     ];
     assert_eq!(got, expected);
 }
@@ -808,18 +808,18 @@ fn frequency_vis_whitespace() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["header", "value", "8", "44.44444"],
-        svec!["header", "(NULL)", "1", "5.55556"],
-        svec!["header", "no_whitespace", "1", "5.55556"],
-        svec!["header", "value《⍽》", "1", "5.55556"],
-        svec!["header", "value《emsp》", "1", "5.55556"],
-        svec!["header", "value《figsp》", "1", "5.55556"],
-        svec!["header", "value《zwsp》", "1", "5.55556"],
-        svec!["header", "《⍽》value", "1", "5.55556"],
-        svec!["header", "《emsp》value", "1", "5.55556"],
-        svec!["header", "《figsp》value", "1", "5.55556"],
-        svec!["header", "《zwsp》value", "1", "5.55556"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["header", "value", "8", "44.44444", "1"],
+        svec!["header", "(NULL)", "1", "5.55556", "2"],
+        svec!["header", "no_whitespace", "1", "5.55556", "2"],
+        svec!["header", "value《⍽》", "1", "5.55556", "2"],
+        svec!["header", "value《emsp》", "1", "5.55556", "2"],
+        svec!["header", "value《figsp》", "1", "5.55556", "2"],
+        svec!["header", "value《zwsp》", "1", "5.55556", "2"],
+        svec!["header", "《⍽》value", "1", "5.55556", "2"],
+        svec!["header", "《emsp》value", "1", "5.55556", "2"],
+        svec!["header", "《figsp》value", "1", "5.55556", "2"],
+        svec!["header", "《zwsp》value", "1", "5.55556", "2"],
     ];
 
     assert_eq!(got, expected);
@@ -855,13 +855,19 @@ fn frequency_vis_whitespace_no_trim() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["header", "《→》value", "2", "18.18182"],
-        svec!["header", "《_》《_》《_》《_》《_》《_》", "2", "18.18182"],
-        svec!["header", " value", "2", "18.18182"],
-        svec!["header", "value《→》", "2", "18.18182"],
-        svec!["header", "value ", "2", "18.18182"],
-        svec!["header", "no_whitespace", "1", "9.09091"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["header", "《→》value", "2", "18.18182", "1"],
+        svec![
+            "header",
+            "《_》《_》《_》《_》《_》《_》",
+            "2",
+            "18.18182",
+            "1"
+        ],
+        svec!["header", " value", "2", "18.18182", "1"],
+        svec!["header", "value《→》", "2", "18.18182", "1"],
+        svec!["header", "value ", "2", "18.18182", "1"],
+        svec!["header", "no_whitespace", "1", "9.09091", "2"],
     ];
 
     assert_eq!(got, expected);
@@ -904,13 +910,13 @@ fn frequency_vis_whitespace_ignore_case() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
-        svec!["field", "value", "count", "percentage"],
-        svec!["header", "value", "12", "70.58824"],
-        svec!["header", "(NULL)", "1", "5.88235"],
-        svec!["header", "no_whitespace", "1", "5.88235"],
-        svec!["header", "value《zwsp》", "1", "5.88235"],
-        svec!["header", "value《␎》", "1", "5.88235"],
-        svec!["header", "value《␏》", "1", "5.88235"],
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["header", "value", "12", "70.58824", "1"],
+        svec!["header", "(NULL)", "1", "5.88235", "2"],
+        svec!["header", "no_whitespace", "1", "5.88235", "2"],
+        svec!["header", "value《zwsp》", "1", "5.88235", "2"],
+        svec!["header", "value《␎》", "1", "5.88235", "2"],
+        svec!["header", "value《␏》", "1", "5.88235", "2"],
     ];
 
     assert_eq!(got, expected);

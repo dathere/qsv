@@ -3,7 +3,16 @@ Compute a frequency table on input data. It has CSV and JSON output modes.
 https://en.wikipedia.org/wiki/Frequency_(statistics)#Frequency_distribution_table
 
 In CSV output mode (default), the table is formatted as CSV data with the following
-columns - field,value,count,percentage.
+columns - field,value,count,percentage,rank.
+
+The rank column is 1-based and is calculated based on the count of the values,
+with the most frequent having a rank of 1. When there are multiple values with
+the same count, they all have the same rank, and the next rank skips the
+number of values with the same count.
+
+For example, if there are 2 values with a count of 10, 4 values with a count of 6,
+and 3 values with a count of 3, and 1 value with a count of 2, the rank column will
+be 1, 1, 3, 3, 3, 3, 7, 7, 7, 10.
 
 In JSON output mode, the table is formatted as nested JSON data. In addition to
 the columns above, the JSON output also includes the row count, field count, each
@@ -99,7 +108,9 @@ frequency options:
                             the "Other" category will not be included in the frequency table.
                             [default: Other]
     -a, --asc               Sort the frequency tables in ascending order by count.
-                            The default is descending order.
+                            The default is descending order. Note that this option will
+                            also reverse ranking - i.e. the LEAST frequent values will
+                            have a rank of 1.
     --no-trim               Don't trim whitespace from values when computing frequencies.
                             The default is to trim leading and trailing whitespaces.
     --no-nulls              Don't include NULLs in the frequency table.
@@ -191,6 +202,7 @@ struct FrequencyEntry {
     value:      String,
     count:      u64,
     percentage: f64,
+    rank:       u32,
 }
 
 #[derive(Serialize)]
@@ -228,6 +240,7 @@ struct ProcessedFrequency {
     percentage:           f64,
     formatted_percentage: String,
     value:                Vec<u8>,
+    rank:                 u32,
 }
 
 static UNIQUE_COLUMNS_VEC: OnceLock<Vec<usize>> = OnceLock::new();
@@ -271,6 +284,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     #[allow(unused_assignments)]
     let mut header_vec: Vec<u8> = Vec::with_capacity(tables.len());
     let mut itoa_buffer = itoa::Buffer::new();
+    let mut itoa_buffer_rank = itoa::Buffer::new();
     let mut row: Vec<&[u8]>;
 
     let head_ftables = headers.iter().zip(tables);
@@ -287,7 +301,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let unique_headers_vec = UNIQUE_COLUMNS_VEC.get().unwrap();
 
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
-    wtr.write_record(vec!["field", "value", "count", "percentage"])?;
+    wtr.write_record(vec!["field", "value", "count", "percentage", "rank"])?;
 
     for (i, (header, ftab)) in head_ftables.enumerate() {
         header_vec = if rconfig.no_headers {
@@ -317,6 +331,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 },
                 itoa_buffer.format(processed_freq.count).as_bytes(),
                 processed_freq.formatted_percentage.as_bytes(),
+                itoa_buffer_rank.format(processed_freq.rank).as_bytes(),
             ];
             wtr.write_record(row)?;
         }
@@ -356,12 +371,13 @@ impl Args {
                 count:                row_count,
                 percentage:           100.0,
                 formatted_percentage: formatted_pct,
+                rank:                 1, // Rank 1 for all-unique headers
             });
         } else {
             // Process regular frequencies
             let mut counts_to_process = self.counts(ftab);
             if !self.flag_other_sorted
-                && counts_to_process.first().is_some_and(|(value, _, _)| {
+                && counts_to_process.first().is_some_and(|(value, _, _, _)| {
                     value.starts_with(format!("{} (", self.flag_other_text).as_bytes())
                 })
             {
@@ -369,13 +385,14 @@ impl Args {
             }
 
             // Convert to processed frequencies
-            for (value, count, percentage) in counts_to_process {
+            for (value, count, percentage, rank) in counts_to_process {
                 let formatted_pct = self.format_percentage(percentage, abs_dec_places);
                 processed_frequencies.push(ProcessedFrequency {
                     value,
                     count,
                     percentage,
                     formatted_percentage: formatted_pct,
+                    rank,
                 });
             }
         }
@@ -411,7 +428,7 @@ impl Args {
     }
 
     #[inline]
-    fn counts(&self, ftab: &FTable) -> Vec<(ByteString, u64, f64)> {
+    fn counts(&self, ftab: &FTable) -> Vec<(ByteString, u64, f64, u32)> {
         let (mut counts, total_count) = if self.flag_asc {
             // parallel sort in ascending order - least frequent values first
             ftab.par_frequent(true)
@@ -468,21 +485,47 @@ impl Args {
 
         // Pre-allocate the result vector with known capacity
         // We might add an "Other" entry, so add 1 to capacity
-        let mut counts_final: Vec<(Vec<u8>, u64, f64)> = Vec::with_capacity(counts.len() + 1);
+        let mut counts_final: Vec<(Vec<u8>, u64, f64, u32)> = Vec::with_capacity(counts.len() + 1);
+
+        // Group by count to handle ties
+        let mut count_groups: Vec<(u64, Vec<Vec<u8>>)> = Vec::new();
+        let mut current_count = None;
+        let mut current_group = Vec::new();
+
+        for (byte_string, count) in counts {
+            if let Some(prev_count) = current_count
+                && count != prev_count
+                && !current_group.is_empty()
+            {
+                count_groups.push((prev_count, std::mem::take(&mut current_group)));
+            }
+
+            current_count = Some(count);
+            current_group.push(byte_string.clone());
+        }
+        if !current_group.is_empty() {
+            count_groups.push((current_count.unwrap(), current_group));
+        }
 
         // Create NULL value once to avoid repeated to_vec allocations
         let null_val = NULL_VAL.to_vec();
+        // Sort each group alphabetically and assign ranks
+        let mut current_rank = 1u32;
+        for (count, mut group) in count_groups {
+            group.sort_unstable();
 
-        #[allow(clippy::cast_precision_loss)]
-        for (byte_string, count) in counts {
-            count_sum += count;
-            pct = count as f64 * pct_factor;
-            pct_sum += pct;
-            if *b"" == **byte_string {
-                counts_final.push((null_val.clone(), count, pct));
-            } else {
-                counts_final.push((byte_string.to_owned(), count, pct));
+            for byte_string in &group {
+                count_sum += count;
+                pct = count as f64 * pct_factor;
+                pct_sum += pct;
+
+                if byte_string.is_empty() {
+                    counts_final.push((null_val.clone(), count, pct, current_rank));
+                } else {
+                    counts_final.push((byte_string.clone(), count, pct, current_rank));
+                }
             }
+            current_rank += group.len() as u32;
         }
 
         let other_count = total_count - count_sum;
@@ -498,6 +541,7 @@ impl Args {
                 .to_vec(),
                 other_count,
                 100.0_f64 - pct_sum,
+                0, // Special rank for "Other" category
             ));
         }
         counts_final
@@ -796,10 +840,10 @@ impl Args {
             if self.flag_other_sorted {
                 if self.flag_asc {
                     // ascending order
-                    processed_frequencies.sort_by(|a, b| a.count.cmp(&b.count));
+                    processed_frequencies.sort_unstable_by(|a, b| a.count.cmp(&b.count));
                 } else {
                     // descending order
-                    processed_frequencies.sort_by(|a, b| b.count.cmp(&a.count));
+                    processed_frequencies.sort_unstable_by(|a, b| b.count.cmp(&a.count));
                 }
             }
 
@@ -866,7 +910,7 @@ impl Args {
                 nullcount,
                 sparsity,
                 uniqueness_ratio,
-                stats: field_stats.clone(),
+                stats: std::mem::take(&mut field_stats),
                 frequencies: processed_frequencies
                     .iter()
                     .map(|pf| FrequencyEntry {
@@ -880,12 +924,12 @@ impl Args {
                             .formatted_percentage
                             .parse::<f64>()
                             .unwrap_or(pf.percentage),
+                        rank:       pf.rank,
                     })
                     .collect(),
             });
 
             // Clear the vectors for the next iteration
-            field_stats.clear();
             processed_frequencies.clear();
         } // end for loop
 

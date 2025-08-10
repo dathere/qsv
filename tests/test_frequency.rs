@@ -76,7 +76,7 @@ fn frequency_ignorecase() {
     got.sort_unstable();
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
-        svec!["h2", "x", "1", "14.28571", "2"],
+        svec!["h2", "x", "1", "14.28571", "3"],
         svec!["h2", "y", "3", "42.85714", "1"],
         svec!["h2", "z", "3", "42.85714", "1"],
     ];
@@ -120,7 +120,7 @@ fn frequency_trim() {
         svec!["field", "value", "count", "percentage", "rank"],
         svec!["h2", "Y", "2", "14.28571", "3"],
         svec!["h2", "Z", "2", "14.28571", "3"],
-        svec!["h2", "x", "1", "7.14286", "4"],
+        svec!["h2", "x", "1", "7.14286", "5"],
         svec!["h2", "y", "5", "35.71429", "1"],
         svec!["h2", "z", "4", "28.57143", "2"],
     ];
@@ -161,12 +161,12 @@ fn frequency_no_trim() {
     got.sort_unstable();
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
-        svec!["h2", "  Z   ", "2", "14.28571", "2"],
-        svec!["h2", " Y ", "1", "7.14286", "3"],
-        svec!["h2", " z", "1", "7.14286", "3"],
-        svec!["h2", "Y", "1", "7.14286", "3"],
-        svec!["h2", "x", "1", "7.14286", "3"],
-        svec!["h2", "y", "2", "14.28571", "2"],
+        svec!["h2", "  Z   ", "2", "14.28571", "3"],
+        svec!["h2", " Y ", "1", "7.14286", "5"],
+        svec!["h2", " z", "1", "7.14286", "5"],
+        svec!["h2", "Y", "1", "7.14286", "5"],
+        svec!["h2", "x", "1", "7.14286", "5"],
+        svec!["h2", "y", "2", "14.28571", "3"],
         svec!["h2", "y ", "3", "21.42857", "1"],
         svec!["h2", "z", "3", "21.42857", "1"],
     ];
@@ -337,8 +337,8 @@ fn frequency_asc() {
         svec!["field", "value", "count", "percentage", "rank"],
         svec!["h2", "Y", "1", "14.28571", "1"],
         svec!["h2", "x", "1", "14.28571", "1"],
-        svec!["h2", "y", "2", "28.57143", "2"],
-        svec!["h2", "z", "3", "42.85714", "3"],
+        svec!["h2", "y", "2", "28.57143", "3"],
+        svec!["h2", "z", "3", "42.85714", "4"],
     ];
     assert_eq!(got, expected);
 }
@@ -867,7 +867,7 @@ fn frequency_vis_whitespace_no_trim() {
         svec!["header", " value", "2", "18.18182", "1"],
         svec!["header", "value《→》", "2", "18.18182", "1"],
         svec!["header", "value ", "2", "18.18182", "1"],
-        svec!["header", "no_whitespace", "1", "9.09091", "2"],
+        svec!["header", "no_whitespace", "1", "9.09091", "6"],
     ];
 
     assert_eq!(got, expected);
@@ -940,15 +940,16 @@ fn frequency_json() {
     assert_eq!(field["cardinality"], 4);
     let freqs = field["frequencies"].as_array().unwrap();
     let expected = vec![
-        ("z", 3, 42.85714),
-        ("y", 2, 28.57143),
-        ("Y", 1, 14.28571),
-        ("x", 1, 14.28571),
+        ("z", 3, 42.85714, 1),
+        ("y", 2, 28.57143, 2),
+        ("Y", 1, 14.28571, 3),
+        ("x", 1, 14.28571, 3),
     ];
-    for (i, (val, count, pct)) in expected.iter().enumerate() {
+    for (i, (val, count, pct, rank)) in expected.iter().enumerate() {
         assert_eq!(freqs[i]["value"], *val);
         assert_eq!(freqs[i]["count"], *count);
         assert!((freqs[i]["percentage"].as_f64().unwrap() - *pct).abs() < 1e-5);
+        assert_eq!(freqs[i]["rank"], *rank);
     }
 }
 
@@ -971,16 +972,17 @@ fn frequency_json_no_headers() {
     assert_eq!(field["cardinality"], 5);
     let freqs = field["frequencies"].as_array().unwrap();
     let expected = vec![
-        ("a", 4, 50.0),
-        ("(NULL)", 1, 12.5),
-        ("(NULL)", 1, 12.5),
-        ("b", 1, 12.5),
-        ("h1", 1, 12.5),
+        ("a", 4, 50.0, 1),
+        ("(NULL)", 1, 12.5, 2),
+        ("(NULL)", 1, 12.5, 2),
+        ("b", 1, 12.5, 2),
+        ("h1", 1, 12.5, 2),
     ];
-    for (i, (val, count, pct)) in expected.iter().enumerate() {
+    for (i, (val, count, pct, rank)) in expected.iter().enumerate() {
         assert_eq!(freqs[i]["value"], *val);
         assert_eq!(freqs[i]["count"], *count);
         assert!((freqs[i]["percentage"].as_f64().unwrap() - *pct).abs() < 1e-5);
+        assert_eq!(freqs[i]["rank"], *rank);
     }
 }
 

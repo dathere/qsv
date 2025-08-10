@@ -7,7 +7,7 @@ columns - field,value,count,percentage,rank.
 
 The rank column is 1-based and is calculated based on the count of the values,
 with the most frequent having a rank of 1. When there are multiple values with
-the same count, the they all have the same rank, and the next rank skips the
+the same count, they all have the same rank, and the next rank skips the
 number of values with the same count.
 
 For example, if there are 2 values with a count of 10, 4 values with a count of 6,

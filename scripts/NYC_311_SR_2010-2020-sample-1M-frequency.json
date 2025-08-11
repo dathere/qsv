@@ -1,0 +1,4546 @@
+{
+  "input": "/tmp/NYC_311_SR_2010-2020-sample-1M.csv",
+  "description": "Generated with `qsv frequency /tmp/NYC_311_SR_2010-2020-sample-1M.csv --json -o scripts/NYC_311_SR_2010-2020-sample-1M-frequency.json`",
+  "rowcount": 1000000,
+  "fieldcount": 41,
+  "fields": [
+    {
+      "field": "Unique Key",
+      "type": "Integer",
+      "cardinality": 1000000,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 1.0,
+      "stats": [
+        {
+          "name": "sum",
+          "value": 32687965858032
+        },
+        {
+          "name": "min",
+          "value": 11465364
+        },
+        {
+          "name": "max",
+          "value": 48478173
+        },
+        {
+          "name": "range",
+          "value": 37012809
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "mean",
+          "value": 32687965.858
+        },
+        {
+          "name": "sem",
+          "value": 9013.8953
+        },
+        {
+          "name": "stddev",
+          "value": 9013895.3358
+        },
+        {
+          "name": "variance",
+          "value": 81250309125279.28
+        },
+        {
+          "name": "cv",
+          "value": 27.5756
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "<ALL_UNIQUE>",
+          "count": 1000000,
+          "percentage": 100.0,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "field": "Created Date",
+      "type": "String",
+      "cardinality": 841014,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.841,
+      "stats": [
+        {
+          "name": "min",
+          "value": "01/01/2010 01:05:51 PM"
+        },
+        {
+          "name": "max",
+          "value": "12/31/2019 12:58:50 PM"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 22
+        },
+        {
+          "name": "max_length",
+          "value": 22
+        },
+        {
+          "name": "sum_length",
+          "value": 22000000
+        },
+        {
+          "name": "avg_length",
+          "value": 22
+        },
+        {
+          "name": "stddev_length",
+          "value": 0
+        },
+        {
+          "name": "variance_length",
+          "value": 0
+        },
+        {
+          "name": "cv_length",
+          "value": 0
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "01/24/2013 12:00:00 AM",
+          "count": 347,
+          "percentage": 0.0347,
+          "rank": 1
+        },
+        {
+          "value": "01/07/2014 12:00:00 AM",
+          "count": 315,
+          "percentage": 0.0315,
+          "rank": 2
+        },
+        {
+          "value": "01/08/2015 12:00:00 AM",
+          "count": 283,
+          "percentage": 0.0283,
+          "rank": 3
+        },
+        {
+          "value": "02/16/2015 12:00:00 AM",
+          "count": 269,
+          "percentage": 0.0269,
+          "rank": 4
+        },
+        {
+          "value": "11/25/2013 12:00:00 AM",
+          "count": 259,
+          "percentage": 0.0259,
+          "rank": 5
+        },
+        {
+          "value": "01/08/2014 12:00:00 AM",
+          "count": 247,
+          "percentage": 0.0247,
+          "rank": 6
+        },
+        {
+          "value": "01/07/2015 12:00:00 AM",
+          "count": 241,
+          "percentage": 0.0241,
+          "rank": 7
+        },
+        {
+          "value": "01/04/2012 12:00:00 AM",
+          "count": 240,
+          "percentage": 0.024,
+          "rank": 8
+        },
+        {
+          "value": "01/04/2010 12:00:00 AM",
+          "count": 235,
+          "percentage": 0.0235,
+          "rank": 9
+        },
+        {
+          "value": "01/23/2014 12:00:00 AM",
+          "count": 231,
+          "percentage": 0.0231,
+          "rank": 10
+        },
+        {
+          "value": "Other (841,004)",
+          "count": 997333,
+          "percentage": 99.7333,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Closed Date",
+      "type": "String",
+      "cardinality": 688837,
+      "nullcount": 28619,
+      "sparsity": 0.0286,
+      "uniqueness_ratio": 0.6888,
+      "stats": [
+        {
+          "name": "min",
+          "value": "01/01/1900 12:00:00 AM"
+        },
+        {
+          "name": "max",
+          "value": "12/31/2019 12:59:00 PM"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 22
+        },
+        {
+          "name": "sum_length",
+          "value": 21370382
+        },
+        {
+          "name": "avg_length",
+          "value": 21.3704
+        },
+        {
+          "name": "stddev_length",
+          "value": 3.6681
+        },
+        {
+          "name": "variance_length",
+          "value": 13.4552
+        },
+        {
+          "name": "cv_length",
+          "value": 0.1716
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 28619,
+          "percentage": 2.8619,
+          "rank": 1
+        },
+        {
+          "value": "11/15/2010 12:00:00 AM",
+          "count": 384,
+          "percentage": 0.0384,
+          "rank": 2
+        },
+        {
+          "value": "11/07/2012 12:00:00 AM",
+          "count": 329,
+          "percentage": 0.0329,
+          "rank": 3
+        },
+        {
+          "value": "12/09/2010 12:00:00 AM",
+          "count": 267,
+          "percentage": 0.0267,
+          "rank": 4
+        },
+        {
+          "value": "01/28/2013 12:00:00 AM",
+          "count": 259,
+          "percentage": 0.0259,
+          "rank": 5
+        },
+        {
+          "value": "01/09/2014 12:00:00 AM",
+          "count": 255,
+          "percentage": 0.0255,
+          "rank": 6
+        },
+        {
+          "value": "11/28/2011 12:00:00 AM",
+          "count": 254,
+          "percentage": 0.0254,
+          "rank": 7
+        },
+        {
+          "value": "01/06/2014 12:00:00 AM",
+          "count": 252,
+          "percentage": 0.0252,
+          "rank": 8
+        },
+        {
+          "value": "02/28/2011 12:00:00 AM",
+          "count": 245,
+          "percentage": 0.0245,
+          "rank": 9
+        },
+        {
+          "value": "11/08/2010 12:00:00 AM",
+          "count": 239,
+          "percentage": 0.0239,
+          "rank": 10
+        },
+        {
+          "value": "Other (688,827)",
+          "count": 968897,
+          "percentage": 96.8897,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Agency",
+      "type": "String",
+      "cardinality": 28,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.0,
+      "stats": [
+        {
+          "name": "min",
+          "value": "3-1-1"
+        },
+        {
+          "name": "max",
+          "value": "TLC"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 3
+        },
+        {
+          "name": "max_length",
+          "value": 42
+        },
+        {
+          "name": "sum_length",
+          "value": 3490582
+        },
+        {
+          "name": "avg_length",
+          "value": 3.4906
+        },
+        {
+          "name": "stddev_length",
+          "value": 1.8975
+        },
+        {
+          "name": "variance_length",
+          "value": 3.6005
+        },
+        {
+          "name": "cv_length",
+          "value": 0.5436
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "NYPD",
+          "count": 265116,
+          "percentage": 26.5116,
+          "rank": 1
+        },
+        {
+          "value": "HPD",
+          "count": 258033,
+          "percentage": 25.8033,
+          "rank": 2
+        },
+        {
+          "value": "DOT",
+          "count": 132462,
+          "percentage": 13.2462,
+          "rank": 3
+        },
+        {
+          "value": "DSNY",
+          "count": 81606,
+          "percentage": 8.1606,
+          "rank": 4
+        },
+        {
+          "value": "DEP",
+          "count": 75895,
+          "percentage": 7.5895,
+          "rank": 5
+        },
+        {
+          "value": "DOB",
+          "count": 51806,
+          "percentage": 5.1806,
+          "rank": 6
+        },
+        {
+          "value": "DPR",
+          "count": 45581,
+          "percentage": 4.5581,
+          "rank": 7
+        },
+        {
+          "value": "DOHMH",
+          "count": 25138,
+          "percentage": 2.5138,
+          "rank": 8
+        },
+        {
+          "value": "DOF",
+          "count": 20691,
+          "percentage": 2.0691,
+          "rank": 9
+        },
+        {
+          "value": "TLC",
+          "count": 11402,
+          "percentage": 1.1402,
+          "rank": 10
+        },
+        {
+          "value": "Other (18)",
+          "count": 32270,
+          "percentage": 3.227,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Agency Name",
+      "type": "String",
+      "cardinality": 553,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.0006,
+      "stats": [
+        {
+          "name": "min",
+          "value": "3-1-1"
+        },
+        {
+          "name": "max",
+          "value": "Valuation Policy"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 3
+        },
+        {
+          "name": "max_length",
+          "value": 82
+        },
+        {
+          "name": "sum_length",
+          "value": 34840715
+        },
+        {
+          "name": "avg_length",
+          "value": 34.8407
+        },
+        {
+          "name": "stddev_length",
+          "value": 10.5137
+        },
+        {
+          "name": "variance_length",
+          "value": 110.5379
+        },
+        {
+          "name": "cv_length",
+          "value": 0.3018
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "New York City Police Department",
+          "count": 265038,
+          "percentage": 26.5038,
+          "rank": 1
+        },
+        {
+          "value": "Department of Housing Preservation and Development",
+          "count": 258019,
+          "percentage": 25.8019,
+          "rank": 2
+        },
+        {
+          "value": "Department of Transportation",
+          "count": 132462,
+          "percentage": 13.2462,
+          "rank": 3
+        },
+        {
+          "value": "Department of Environmental Protection",
+          "count": 75895,
+          "percentage": 7.5895,
+          "rank": 4
+        },
+        {
+          "value": "Department of Buildings",
+          "count": 50649,
+          "percentage": 5.0649,
+          "rank": 5
+        },
+        {
+          "value": "Department of Parks and Recreation",
+          "count": 45580,
+          "percentage": 4.558,
+          "rank": 6
+        },
+        {
+          "value": "Department of Health and Mental Hygiene",
+          "count": 25001,
+          "percentage": 2.5001,
+          "rank": 7
+        },
+        {
+          "value": "Department of Sanitation",
+          "count": 22701,
+          "percentage": 2.2701,
+          "rank": 8
+        },
+        {
+          "value": "Taxi and Limousine Commission",
+          "count": 11187,
+          "percentage": 1.1187,
+          "rank": 9
+        },
+        {
+          "value": "Department of Consumer Affairs",
+          "count": 9494,
+          "percentage": 0.9494,
+          "rank": 10
+        },
+        {
+          "value": "Other (543)",
+          "count": 103974,
+          "percentage": 10.3974,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Complaint Type",
+      "type": "String",
+      "cardinality": 287,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.0003,
+      "stats": [
+        {
+          "name": "min",
+          "value": "../../WEB-INF/web.xml;x="
+        },
+        {
+          "name": "max",
+          "value": "ZTESTINT"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 3
+        },
+        {
+          "name": "max_length",
+          "value": 41
+        },
+        {
+          "name": "sum_length",
+          "value": 16475270
+        },
+        {
+          "name": "avg_length",
+          "value": 16.4753
+        },
+        {
+          "name": "stddev_length",
+          "value": 6.8221
+        },
+        {
+          "name": "variance_length",
+          "value": 46.5406
+        },
+        {
+          "name": "cv_length",
+          "value": 0.4141
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "Noise - Residential",
+          "count": 89439,
+          "percentage": 8.9439,
+          "rank": 1
+        },
+        {
+          "value": "HEAT/HOT WATER",
+          "count": 56639,
+          "percentage": 5.6639,
+          "rank": 2
+        },
+        {
+          "value": "Illegal Parking",
+          "count": 45032,
+          "percentage": 4.5032,
+          "rank": 3
+        },
+        {
+          "value": "Blocked Driveway",
+          "count": 42356,
+          "percentage": 4.2356,
+          "rank": 4
+        },
+        {
+          "value": "Street Condition",
+          "count": 41469,
+          "percentage": 4.1469,
+          "rank": 5
+        },
+        {
+          "value": "Street Light Condition",
+          "count": 39856,
+          "percentage": 3.9856,
+          "rank": 6
+        },
+        {
+          "value": "HEATING",
+          "count": 35738,
+          "percentage": 3.5738,
+          "rank": 7
+        },
+        {
+          "value": "PLUMBING",
+          "count": 30209,
+          "percentage": 3.0209,
+          "rank": 8
+        },
+        {
+          "value": "Water System",
+          "count": 28195,
+          "percentage": 2.8195,
+          "rank": 9
+        },
+        {
+          "value": "Noise - Street/Sidewalk",
+          "count": 27506,
+          "percentage": 2.7506,
+          "rank": 10
+        },
+        {
+          "value": "Other (277)",
+          "count": 563561,
+          "percentage": 56.3561,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Descriptor",
+      "type": "String",
+      "cardinality": 1392,
+      "nullcount": 3001,
+      "sparsity": 0.003,
+      "uniqueness_ratio": 0.0014,
+      "stats": [
+        {
+          "name": "min",
+          "value": "1 Missed Collection"
+        },
+        {
+          "name": "max",
+          "value": "unknown odor/taste in drinking water (QA6)"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 80
+        },
+        {
+          "name": "sum_length",
+          "value": 17426583
+        },
+        {
+          "name": "avg_length",
+          "value": 17.4266
+        },
+        {
+          "name": "stddev_length",
+          "value": 10.4342
+        },
+        {
+          "name": "variance_length",
+          "value": 108.8723
+        },
+        {
+          "name": "cv_length",
+          "value": 0.5988
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "Loud Music/Party",
+          "count": 93646,
+          "percentage": 9.3646,
+          "rank": 1
+        },
+        {
+          "value": "ENTIRE BUILDING",
+          "count": 36885,
+          "percentage": 3.6885,
+          "rank": 2
+        },
+        {
+          "value": "HEAT",
+          "count": 35088,
+          "percentage": 3.5088,
+          "rank": 3
+        },
+        {
+          "value": "No Access",
+          "count": 31631,
+          "percentage": 3.1631,
+          "rank": 4
+        },
+        {
+          "value": "Street Light Out",
+          "count": 29659,
+          "percentage": 2.9659,
+          "rank": 5
+        },
+        {
+          "value": "Pothole",
+          "count": 25010,
+          "percentage": 2.501,
+          "rank": 6
+        },
+        {
+          "value": "Banging/Pounding",
+          "count": 24553,
+          "percentage": 2.4553,
+          "rank": 7
+        },
+        {
+          "value": "APARTMENT ONLY",
+          "count": 19754,
+          "percentage": 1.9754,
+          "rank": 8
+        },
+        {
+          "value": "Loud Talking",
+          "count": 14553,
+          "percentage": 1.4553,
+          "rank": 9
+        },
+        {
+          "value": "CEILING",
+          "count": 14350,
+          "percentage": 1.435,
+          "rank": 10
+        },
+        {
+          "value": "Other (1,382)",
+          "count": 674871,
+          "percentage": 67.4871,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Location Type",
+      "type": "String",
+      "cardinality": 162,
+      "nullcount": 239131,
+      "sparsity": 0.2391,
+      "uniqueness_ratio": 0.0002,
+      "stats": [
+        {
+          "name": "min",
+          "value": "1-, 2- and 3- Family Home"
+        },
+        {
+          "name": "max",
+          "value": "Wooded Area"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 36
+        },
+        {
+          "name": "sum_length",
+          "value": 12417750
+        },
+        {
+          "name": "avg_length",
+          "value": 12.4177
+        },
+        {
+          "name": "stddev_length",
+          "value": 8.9759
+        },
+        {
+          "name": "variance_length",
+          "value": 80.5671
+        },
+        {
+          "name": "cv_length",
+          "value": 0.7228
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "RESIDENTIAL BUILDING",
+          "count": 255562,
+          "percentage": 25.5562,
+          "rank": 1
+        },
+        {
+          "value": "(NULL)",
+          "count": 239131,
+          "percentage": 23.9131,
+          "rank": 2
+        },
+        {
+          "value": "Street/Sidewalk",
+          "count": 145653,
+          "percentage": 14.5653,
+          "rank": 3
+        },
+        {
+          "value": "Residential Building/House",
+          "count": 92765,
+          "percentage": 9.2765,
+          "rank": 4
+        },
+        {
+          "value": "Street",
+          "count": 92190,
+          "percentage": 9.219,
+          "rank": 5
+        },
+        {
+          "value": "Sidewalk",
+          "count": 63250,
+          "percentage": 6.325,
+          "rank": 6
+        },
+        {
+          "value": "Store/Commercial",
+          "count": 12798,
+          "percentage": 1.2798,
+          "rank": 7
+        },
+        {
+          "value": "Property Address",
+          "count": 8497,
+          "percentage": 0.8497,
+          "rank": 8
+        },
+        {
+          "value": "Club/Bar/Restaurant",
+          "count": 8303,
+          "percentage": 0.8303,
+          "rank": 9
+        },
+        {
+          "value": "Park",
+          "count": 7078,
+          "percentage": 0.7078,
+          "rank": 10
+        },
+        {
+          "value": "Other (152)",
+          "count": 74773,
+          "percentage": 7.4773,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Incident Zip",
+      "type": "String",
+      "cardinality": 535,
+      "nullcount": 54978,
+      "sparsity": 0.055,
+      "uniqueness_ratio": 0.0005,
+      "stats": [
+        {
+          "name": "min",
+          "value": "*"
+        },
+        {
+          "name": "max",
+          "value": "XXXXX"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 10
+        },
+        {
+          "name": "sum_length",
+          "value": 4347871
+        },
+        {
+          "name": "avg_length",
+          "value": 4.3479
+        },
+        {
+          "name": "stddev_length",
+          "value": 1.14
+        },
+        {
+          "name": "variance_length",
+          "value": 1.2996
+        },
+        {
+          "name": "cv_length",
+          "value": 0.2622
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 54978,
+          "percentage": 5.4978,
+          "rank": 1
+        },
+        {
+          "value": "11226",
+          "count": 17114,
+          "percentage": 1.7114,
+          "rank": 2
+        },
+        {
+          "value": "10467",
+          "count": 14495,
+          "percentage": 1.4495,
+          "rank": 3
+        },
+        {
+          "value": "11207",
+          "count": 12872,
+          "percentage": 1.2872,
+          "rank": 4
+        },
+        {
+          "value": "11385",
+          "count": 12469,
+          "percentage": 1.2469,
+          "rank": 5
+        },
+        {
+          "value": "10458",
+          "count": 12468,
+          "percentage": 1.2468,
+          "rank": 6
+        },
+        {
+          "value": "10453",
+          "count": 12175,
+          "percentage": 1.2175,
+          "rank": 7
+        },
+        {
+          "value": "10468",
+          "count": 12052,
+          "percentage": 1.2052,
+          "rank": 8
+        },
+        {
+          "value": "11221",
+          "count": 11940,
+          "percentage": 1.194,
+          "rank": 9
+        },
+        {
+          "value": "10457",
+          "count": 11783,
+          "percentage": 1.1783,
+          "rank": 10
+        },
+        {
+          "value": "Other (525)",
+          "count": 827654,
+          "percentage": 82.7654,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Incident Address",
+      "type": "String",
+      "cardinality": 341996,
+      "nullcount": 174700,
+      "sparsity": 0.1747,
+      "uniqueness_ratio": 0.342,
+      "stats": [
+        {
+          "name": "min",
+          "value": "* *"
+        },
+        {
+          "name": "max",
+          "value": "west 155 street and edgecombe avenue"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 55
+        },
+        {
+          "name": "sum_length",
+          "value": 14591947
+        },
+        {
+          "name": "avg_length",
+          "value": 14.5919
+        },
+        {
+          "name": "stddev_length",
+          "value": 7.332
+        },
+        {
+          "name": "variance_length",
+          "value": 53.7589
+        },
+        {
+          "name": "cv_length",
+          "value": 0.5025
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 174700,
+          "percentage": 17.47,
+          "rank": 1
+        },
+        {
+          "value": "655 EAST  230 STREET",
+          "count": 1538,
+          "percentage": 0.1538,
+          "rank": 2
+        },
+        {
+          "value": "78-15 PARSONS BOULEVARD",
+          "count": 694,
+          "percentage": 0.0694,
+          "rank": 3
+        },
+        {
+          "value": "672 EAST  231 STREET",
+          "count": 663,
+          "percentage": 0.0663,
+          "rank": 4
+        },
+        {
+          "value": "89-21 ELMHURST AVENUE",
+          "count": 660,
+          "percentage": 0.066,
+          "rank": 5
+        },
+        {
+          "value": "34 ARDEN STREET",
+          "count": 587,
+          "percentage": 0.0587,
+          "rank": 6
+        },
+        {
+          "value": "BROADWAY",
+          "count": 537,
+          "percentage": 0.0537,
+          "rank": 7
+        },
+        {
+          "value": "1025 BOYNTON AVENUE",
+          "count": 503,
+          "percentage": 0.0503,
+          "rank": 8
+        },
+        {
+          "value": "674 EAST  231 STREET",
+          "count": 396,
+          "percentage": 0.0396,
+          "rank": 9
+        },
+        {
+          "value": "159-06 UNION TURNPIKE",
+          "count": 344,
+          "percentage": 0.0344,
+          "rank": 10
+        },
+        {
+          "value": "Other (341,986)",
+          "count": 819378,
+          "percentage": 81.9378,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Street Name",
+      "type": "String",
+      "cardinality": 14837,
+      "nullcount": 174720,
+      "sparsity": 0.1747,
+      "uniqueness_ratio": 0.0148,
+      "stats": [
+        {
+          "name": "min",
+          "value": "*"
+        },
+        {
+          "name": "max",
+          "value": "wyckoff avenue"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 55
+        },
+        {
+          "name": "sum_length",
+          "value": 10888475
+        },
+        {
+          "name": "avg_length",
+          "value": 10.8885
+        },
+        {
+          "name": "stddev_length",
+          "value": 5.7968
+        },
+        {
+          "name": "variance_length",
+          "value": 33.6032
+        },
+        {
+          "name": "cv_length",
+          "value": 0.5324
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 174720,
+          "percentage": 17.472,
+          "rank": 1
+        },
+        {
+          "value": "BROADWAY",
+          "count": 9702,
+          "percentage": 0.9702,
+          "rank": 2
+        },
+        {
+          "value": "GRAND CONCOURSE",
+          "count": 5851,
+          "percentage": 0.5851,
+          "rank": 3
+        },
+        {
+          "value": "OCEAN AVENUE",
+          "count": 3946,
+          "percentage": 0.3946,
+          "rank": 4
+        },
+        {
+          "value": "5 AVENUE",
+          "count": 3694,
+          "percentage": 0.3694,
+          "rank": 5
+        },
+        {
+          "value": "3 AVENUE",
+          "count": 3487,
+          "percentage": 0.3487,
+          "rank": 6
+        },
+        {
+          "value": "AMSTERDAM AVENUE",
+          "count": 3234,
+          "percentage": 0.3234,
+          "rank": 7
+        },
+        {
+          "value": "ST NICHOLAS AVENUE",
+          "count": 2877,
+          "percentage": 0.2877,
+          "rank": 8
+        },
+        {
+          "value": "2 AVENUE",
+          "count": 2647,
+          "percentage": 0.2647,
+          "rank": 9
+        },
+        {
+          "value": "MORRIS AVENUE",
+          "count": 2620,
+          "percentage": 0.262,
+          "rank": 10
+        },
+        {
+          "value": "Other (14,827)",
+          "count": 787222,
+          "percentage": 78.7222,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Cross Street 1",
+      "type": "String",
+      "cardinality": 16238,
+      "nullcount": 320401,
+      "sparsity": 0.3204,
+      "uniqueness_ratio": 0.0162,
+      "stats": [
+        {
+          "name": "min",
+          "value": "1 AVE"
+        },
+        {
+          "name": "max",
+          "value": "mermaid"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 32
+        },
+        {
+          "name": "sum_length",
+          "value": 8355458
+        },
+        {
+          "name": "avg_length",
+          "value": 8.3555
+        },
+        {
+          "name": "stddev_length",
+          "value": 6.6045
+        },
+        {
+          "name": "variance_length",
+          "value": 43.6193
+        },
+        {
+          "name": "cv_length",
+          "value": 0.7904
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 320401,
+          "percentage": 32.0401,
+          "rank": 1
+        },
+        {
+          "value": "BEND",
+          "count": 12562,
+          "percentage": 1.2562,
+          "rank": 2
+        },
+        {
+          "value": "BROADWAY",
+          "count": 8548,
+          "percentage": 0.8548,
+          "rank": 3
+        },
+        {
+          "value": "3 AVENUE",
+          "count": 6154,
+          "percentage": 0.6154,
+          "rank": 4
+        },
+        {
+          "value": "5 AVENUE",
+          "count": 6138,
+          "percentage": 0.6138,
+          "rank": 5
+        },
+        {
+          "value": "AMSTERDAM AVENUE",
+          "count": 5450,
+          "percentage": 0.545,
+          "rank": 6
+        },
+        {
+          "value": "DEAD END",
+          "count": 4643,
+          "percentage": 0.4643,
+          "rank": 7
+        },
+        {
+          "value": "7 AVENUE",
+          "count": 4635,
+          "percentage": 0.4635,
+          "rank": 8
+        },
+        {
+          "value": "2 AVENUE",
+          "count": 4303,
+          "percentage": 0.4303,
+          "rank": 9
+        },
+        {
+          "value": "8 AVENUE",
+          "count": 3849,
+          "percentage": 0.3849,
+          "rank": 10
+        },
+        {
+          "value": "Other (16,228)",
+          "count": 623317,
+          "percentage": 62.3317,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Cross Street 2",
+      "type": "String",
+      "cardinality": 16486,
+      "nullcount": 323644,
+      "sparsity": 0.3236,
+      "uniqueness_ratio": 0.0165,
+      "stats": [
+        {
+          "name": "min",
+          "value": "1 AVE"
+        },
+        {
+          "name": "max",
+          "value": "surf"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 35
+        },
+        {
+          "name": "sum_length",
+          "value": 8363431
+        },
+        {
+          "name": "avg_length",
+          "value": 8.3634
+        },
+        {
+          "name": "stddev_length",
+          "value": 6.645
+        },
+        {
+          "name": "variance_length",
+          "value": 44.1554
+        },
+        {
+          "name": "cv_length",
+          "value": 0.7945
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 323644,
+          "percentage": 32.3644,
+          "rank": 1
+        },
+        {
+          "value": "BEND",
+          "count": 12390,
+          "percentage": 1.239,
+          "rank": 2
+        },
+        {
+          "value": "BROADWAY",
+          "count": 8833,
+          "percentage": 0.8833,
+          "rank": 3
+        },
+        {
+          "value": "DEAD END",
+          "count": 5626,
+          "percentage": 0.5626,
+          "rank": 4
+        },
+        {
+          "value": "8 AVENUE",
+          "count": 4309,
+          "percentage": 0.4309,
+          "rank": 5
+        },
+        {
+          "value": "7 AVENUE",
+          "count": 4216,
+          "percentage": 0.4216,
+          "rank": 6
+        },
+        {
+          "value": "3 AVENUE",
+          "count": 3878,
+          "percentage": 0.3878,
+          "rank": 7
+        },
+        {
+          "value": "2 AVENUE",
+          "count": 3807,
+          "percentage": 0.3807,
+          "rank": 8
+        },
+        {
+          "value": "1 AVENUE",
+          "count": 3729,
+          "percentage": 0.3729,
+          "rank": 9
+        },
+        {
+          "value": "NOSTRAND AVENUE",
+          "count": 3400,
+          "percentage": 0.34,
+          "rank": 10
+        },
+        {
+          "value": "Other (16,476)",
+          "count": 626168,
+          "percentage": 62.6168,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Intersection Street 1",
+      "type": "String",
+      "cardinality": 11237,
+      "nullcount": 767422,
+      "sparsity": 0.7674,
+      "uniqueness_ratio": 0.0112,
+      "stats": [
+        {
+          "name": "min",
+          "value": "1 AVE"
+        },
+        {
+          "name": "max",
+          "value": "flatlands AVE"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 35
+        },
+        {
+          "name": "sum_length",
+          "value": 2949273
+        },
+        {
+          "name": "avg_length",
+          "value": 2.9493
+        },
+        {
+          "name": "stddev_length",
+          "value": 5.6793
+        },
+        {
+          "name": "variance_length",
+          "value": 32.2544
+        },
+        {
+          "name": "cv_length",
+          "value": 1.9257
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 767422,
+          "percentage": 76.7422,
+          "rank": 1
+        },
+        {
+          "value": "BROADWAY",
+          "count": 3761,
+          "percentage": 0.3761,
+          "rank": 2
+        },
+        {
+          "value": "CARPENTER AVENUE",
+          "count": 2918,
+          "percentage": 0.2918,
+          "rank": 3
+        },
+        {
+          "value": "BEND",
+          "count": 2009,
+          "percentage": 0.2009,
+          "rank": 4
+        },
+        {
+          "value": "3 AVENUE",
+          "count": 1957,
+          "percentage": 0.1957,
+          "rank": 5
+        },
+        {
+          "value": "5 AVENUE",
+          "count": 1808,
+          "percentage": 0.1808,
+          "rank": 6
+        },
+        {
+          "value": "AMSTERDAM AVENUE",
+          "count": 1328,
+          "percentage": 0.1328,
+          "rank": 7
+        },
+        {
+          "value": "2 AVENUE",
+          "count": 1323,
+          "percentage": 0.1323,
+          "rank": 8
+        },
+        {
+          "value": "7 AVENUE",
+          "count": 1012,
+          "percentage": 0.1012,
+          "rank": 9
+        },
+        {
+          "value": "8 AVENUE",
+          "count": 980,
+          "percentage": 0.098,
+          "rank": 10
+        },
+        {
+          "value": "Other (11,227)",
+          "count": 215482,
+          "percentage": 21.5482,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Intersection Street 2",
+      "type": "String",
+      "cardinality": 11674,
+      "nullcount": 767709,
+      "sparsity": 0.7677,
+      "uniqueness_ratio": 0.0117,
+      "stats": [
+        {
+          "name": "min",
+          "value": "1 AVE"
+        },
+        {
+          "name": "max",
+          "value": "glenwood RD"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 33
+        },
+        {
+          "name": "sum_length",
+          "value": 2917798
+        },
+        {
+          "name": "avg_length",
+          "value": 2.9178
+        },
+        {
+          "name": "stddev_length",
+          "value": 5.6363
+        },
+        {
+          "name": "variance_length",
+          "value": 31.768
+        },
+        {
+          "name": "cv_length",
+          "value": 1.9317
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 767709,
+          "percentage": 76.7709,
+          "rank": 1
+        },
+        {
+          "value": "BROADWAY",
+          "count": 3462,
+          "percentage": 0.3462,
+          "rank": 2
+        },
+        {
+          "value": "BEND",
+          "count": 1942,
+          "percentage": 0.1942,
+          "rank": 3
+        },
+        {
+          "value": "2 AVENUE",
+          "count": 1690,
+          "percentage": 0.169,
+          "rank": 4
+        },
+        {
+          "value": "3 AVENUE",
+          "count": 1630,
+          "percentage": 0.163,
+          "rank": 5
+        },
+        {
+          "value": "LOWERRE PLACE",
+          "count": 1557,
+          "percentage": 0.1557,
+          "rank": 6
+        },
+        {
+          "value": "WHITE PLAINS ROAD",
+          "count": 1535,
+          "percentage": 0.1535,
+          "rank": 7
+        },
+        {
+          "value": "1 AVENUE",
+          "count": 1344,
+          "percentage": 0.1344,
+          "rank": 8
+        },
+        {
+          "value": "5 AVENUE",
+          "count": 1258,
+          "percentage": 0.1258,
+          "rank": 9
+        },
+        {
+          "value": "8 AVENUE",
+          "count": 1125,
+          "percentage": 0.1125,
+          "rank": 10
+        },
+        {
+          "value": "Other (11,664)",
+          "count": 216748,
+          "percentage": 21.6748,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Address Type",
+      "type": "String",
+      "cardinality": 6,
+      "nullcount": 125802,
+      "sparsity": 0.1258,
+      "uniqueness_ratio": 0.0,
+      "stats": [
+        {
+          "name": "min",
+          "value": "ADDRESS"
+        },
+        {
+          "name": "max",
+          "value": "PLACENAME"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 12
+        },
+        {
+          "name": "sum_length",
+          "value": 6832263
+        },
+        {
+          "name": "avg_length",
+          "value": 6.8323
+        },
+        {
+          "name": "stddev_length",
+          "value": 3.0923
+        },
+        {
+          "name": "variance_length",
+          "value": 9.5623
+        },
+        {
+          "name": "cv_length",
+          "value": 0.4526
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "ADDRESS",
+          "count": 710380,
+          "percentage": 71.038,
+          "rank": 1
+        },
+        {
+          "value": "INTERSECTION",
+          "count": 133361,
+          "percentage": 13.3361,
+          "rank": 2
+        },
+        {
+          "value": "(NULL)",
+          "count": 125802,
+          "percentage": 12.5802,
+          "rank": 3
+        },
+        {
+          "value": "BLOCKFACE",
+          "count": 22620,
+          "percentage": 2.262,
+          "rank": 4
+        },
+        {
+          "value": "LATLONG",
+          "count": 7421,
+          "percentage": 0.7421,
+          "rank": 5
+        },
+        {
+          "value": "PLACENAME",
+          "count": 416,
+          "percentage": 0.0416,
+          "rank": 6
+        }
+      ]
+    },
+    {
+      "field": "City",
+      "type": "String",
+      "cardinality": 382,
+      "nullcount": 61963,
+      "sparsity": 0.062,
+      "uniqueness_ratio": 0.0004,
+      "stats": [
+        {
+          "name": "min",
+          "value": "*"
+        },
+        {
+          "name": "max",
+          "value": "YORKTOWN HEIGHTS"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 22
+        },
+        {
+          "name": "sum_length",
+          "value": 7721241
+        },
+        {
+          "name": "avg_length",
+          "value": 7.7212
+        },
+        {
+          "name": "stddev_length",
+          "value": 3.2635
+        },
+        {
+          "name": "variance_length",
+          "value": 10.6505
+        },
+        {
+          "name": "cv_length",
+          "value": 0.4227
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "BROOKLYN",
+          "count": 296254,
+          "percentage": 29.6254,
+          "rank": 1
+        },
+        {
+          "value": "NEW YORK",
+          "count": 189069,
+          "percentage": 18.9069,
+          "rank": 2
+        },
+        {
+          "value": "BRONX",
+          "count": 181168,
+          "percentage": 18.1168,
+          "rank": 3
+        },
+        {
+          "value": "(NULL)",
+          "count": 61963,
+          "percentage": 6.1963,
+          "rank": 4
+        },
+        {
+          "value": "STATEN ISLAND",
+          "count": 49045,
+          "percentage": 4.9045,
+          "rank": 5
+        },
+        {
+          "value": "JAMAICA",
+          "count": 13659,
+          "percentage": 1.3659,
+          "rank": 6
+        },
+        {
+          "value": "FLUSHING",
+          "count": 10475,
+          "percentage": 1.0475,
+          "rank": 7
+        },
+        {
+          "value": "Jamaica",
+          "count": 10278,
+          "percentage": 1.0278,
+          "rank": 8
+        },
+        {
+          "value": "ASTORIA",
+          "count": 9520,
+          "percentage": 0.952,
+          "rank": 9
+        },
+        {
+          "value": "RIDGEWOOD",
+          "count": 7541,
+          "percentage": 0.7541,
+          "rank": 10
+        },
+        {
+          "value": "Other (372)",
+          "count": 171028,
+          "percentage": 17.1028,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Landmark",
+      "type": "String",
+      "cardinality": 5915,
+      "nullcount": 912779,
+      "sparsity": 0.9128,
+      "uniqueness_ratio": 0.0059,
+      "stats": [
+        {
+          "name": "min",
+          "value": "1 AVENUE"
+        },
+        {
+          "name": "max",
+          "value": "ZULETTE AVENUE"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 32
+        },
+        {
+          "name": "sum_length",
+          "value": 1165773
+        },
+        {
+          "name": "avg_length",
+          "value": 1.1658
+        },
+        {
+          "name": "stddev_length",
+          "value": 3.8978
+        },
+        {
+          "name": "variance_length",
+          "value": 15.1925
+        },
+        {
+          "name": "cv_length",
+          "value": 3.3435
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 912779,
+          "percentage": 91.2779,
+          "rank": 1
+        },
+        {
+          "value": "EAST  230 STREET",
+          "count": 1545,
+          "percentage": 0.1545,
+          "rank": 2
+        },
+        {
+          "value": "EAST  231 STREET",
+          "count": 1291,
+          "percentage": 0.1291,
+          "rank": 3
+        },
+        {
+          "value": "BROADWAY",
+          "count": 1148,
+          "percentage": 0.1148,
+          "rank": 4
+        },
+        {
+          "value": "5 AVENUE",
+          "count": 584,
+          "percentage": 0.0584,
+          "rank": 5
+        },
+        {
+          "value": "3 AVENUE",
+          "count": 473,
+          "percentage": 0.0473,
+          "rank": 6
+        },
+        {
+          "value": "GRAND CONCOURSE",
+          "count": 473,
+          "percentage": 0.0473,
+          "rank": 6
+        },
+        {
+          "value": "PARSONS BOULEVARD",
+          "count": 443,
+          "percentage": 0.0443,
+          "rank": 8
+        },
+        {
+          "value": "2 AVENUE",
+          "count": 393,
+          "percentage": 0.0393,
+          "rank": 9
+        },
+        {
+          "value": "8 AVENUE",
+          "count": 363,
+          "percentage": 0.0363,
+          "rank": 10
+        },
+        {
+          "value": "Other (5,905)",
+          "count": 80508,
+          "percentage": 8.0508,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Facility Type",
+      "type": "String",
+      "cardinality": 6,
+      "nullcount": 145478,
+      "sparsity": 0.1455,
+      "uniqueness_ratio": 0.0,
+      "stats": [
+        {
+          "name": "min",
+          "value": "DSNY Garage"
+        },
+        {
+          "name": "max",
+          "value": "School District"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 15
+        },
+        {
+          "name": "sum_length",
+          "value": 3790876
+        },
+        {
+          "name": "avg_length",
+          "value": 3.7909
+        },
+        {
+          "name": "stddev_length",
+          "value": 2.7562
+        },
+        {
+          "name": "variance_length",
+          "value": 7.5969
+        },
+        {
+          "name": "cv_length",
+          "value": 0.7271
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "N/A",
+          "count": 628279,
+          "percentage": 62.8279,
+          "rank": 1
+        },
+        {
+          "value": "Precinct",
+          "count": 193259,
+          "percentage": 19.3259,
+          "rank": 2
+        },
+        {
+          "value": "(NULL)",
+          "count": 145478,
+          "percentage": 14.5478,
+          "rank": 3
+        },
+        {
+          "value": "DSNY Garage",
+          "count": 32310,
+          "percentage": 3.231,
+          "rank": 4
+        },
+        {
+          "value": "School",
+          "count": 617,
+          "percentage": 0.0617,
+          "rank": 5
+        },
+        {
+          "value": "School District",
+          "count": 57,
+          "percentage": 0.0057,
+          "rank": 6
+        }
+      ]
+    },
+    {
+      "field": "Status",
+      "type": "String",
+      "cardinality": 10,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.0,
+      "stats": [
+        {
+          "name": "min",
+          "value": "Assigned"
+        },
+        {
+          "name": "max",
+          "value": "Unspecified"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 4
+        },
+        {
+          "name": "max_length",
+          "value": 16
+        },
+        {
+          "name": "sum_length",
+          "value": 6048943
+        },
+        {
+          "name": "avg_length",
+          "value": 6.0489
+        },
+        {
+          "name": "stddev_length",
+          "value": 0.5411
+        },
+        {
+          "name": "variance_length",
+          "value": 0.2928
+        },
+        {
+          "name": "cv_length",
+          "value": 0.0894
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "Closed",
+          "count": 952522,
+          "percentage": 95.2522,
+          "rank": 1
+        },
+        {
+          "value": "Pending",
+          "count": 20119,
+          "percentage": 2.0119,
+          "rank": 2
+        },
+        {
+          "value": "Open",
+          "count": 12340,
+          "percentage": 1.234,
+          "rank": 3
+        },
+        {
+          "value": "In Progress",
+          "count": 7841,
+          "percentage": 0.7841,
+          "rank": 4
+        },
+        {
+          "value": "Assigned",
+          "count": 6651,
+          "percentage": 0.6651,
+          "rank": 5
+        },
+        {
+          "value": "Started",
+          "count": 377,
+          "percentage": 0.0377,
+          "rank": 6
+        },
+        {
+          "value": "Email Sent",
+          "count": 142,
+          "percentage": 0.0142,
+          "rank": 7
+        },
+        {
+          "value": "Closed - Testing",
+          "count": 3,
+          "percentage": 0.0003,
+          "rank": 8
+        },
+        {
+          "value": "Unassigned",
+          "count": 3,
+          "percentage": 0.0003,
+          "rank": 8
+        },
+        {
+          "value": "Unspecified",
+          "count": 2,
+          "percentage": 0.0002,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "field": "Due Date",
+      "type": "String",
+      "cardinality": 345077,
+      "nullcount": 647794,
+      "sparsity": 0.6478,
+      "uniqueness_ratio": 0.3451,
+      "stats": [
+        {
+          "name": "min",
+          "value": "01/01/2010 01:26:03 PM"
+        },
+        {
+          "name": "max",
+          "value": "12/31/2018 12:59:20 PM"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 22
+        },
+        {
+          "name": "sum_length",
+          "value": 7748532
+        },
+        {
+          "name": "avg_length",
+          "value": 7.7485
+        },
+        {
+          "name": "stddev_length",
+          "value": 10.5085
+        },
+        {
+          "name": "variance_length",
+          "value": 110.4287
+        },
+        {
+          "name": "cv_length",
+          "value": 1.3562
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 647794,
+          "percentage": 64.7794,
+          "rank": 1
+        },
+        {
+          "value": "04/08/2015 10:00:58 AM",
+          "count": 214,
+          "percentage": 0.0214,
+          "rank": 2
+        },
+        {
+          "value": "05/02/2014 03:32:17 PM",
+          "count": 183,
+          "percentage": 0.0183,
+          "rank": 3
+        },
+        {
+          "value": "03/30/2018 10:10:39 AM",
+          "count": 172,
+          "percentage": 0.0172,
+          "rank": 4
+        },
+        {
+          "value": "06/27/2015 10:29:08 AM",
+          "count": 157,
+          "percentage": 0.0157,
+          "rank": 5
+        },
+        {
+          "value": "07/09/2016 11:21:17 AM",
+          "count": 146,
+          "percentage": 0.0146,
+          "rank": 6
+        },
+        {
+          "value": "04/03/2016 03:32:41 PM",
+          "count": 140,
+          "percentage": 0.014,
+          "rank": 7
+        },
+        {
+          "value": "09/12/2014 02:25:36 PM",
+          "count": 131,
+          "percentage": 0.0131,
+          "rank": 8
+        },
+        {
+          "value": "06/22/2018 03:13:02 PM",
+          "count": 110,
+          "percentage": 0.011,
+          "rank": 9
+        },
+        {
+          "value": "10/10/2018 09:00:21 AM",
+          "count": 104,
+          "percentage": 0.0104,
+          "rank": 10
+        },
+        {
+          "value": "Other (345,067)",
+          "count": 350849,
+          "percentage": 35.0849,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Resolution Description",
+      "type": "String",
+      "cardinality": 1216,
+      "nullcount": 20480,
+      "sparsity": 0.0205,
+      "uniqueness_ratio": 0.0012,
+      "stats": [
+        {
+          "name": "min",
+          "value": "A DOB violation was issued for failing to comply with an existing Stop Work Order."
+        },
+        {
+          "name": "max",
+          "value": "Your request was submitted to the Department of Homeless Services. The City?s outreach team will assess the homeless individual and offer appropriate assistance within 2 hours. If you asked to know the outcome of your request, you will get a call within 2 hours. No further status will be available through the NYC 311 App, 311, or 311 Online."
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 934
+        },
+        {
+          "name": "sum_length",
+          "value": 153148305
+        },
+        {
+          "name": "avg_length",
+          "value": 153.1483
+        },
+        {
+          "name": "stddev_length",
+          "value": 82.149
+        },
+        {
+          "name": "variance_length",
+          "value": 6748.4538
+        },
+        {
+          "name": "cv_length",
+          "value": 0.5364
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "The Police Department responded to the complaint and with the information available observed no evidence of the violation at that time.",
+          "count": 91408,
+          "percentage": 9.1408,
+          "rank": 1
+        },
+        {
+          "value": "The Department of Housing Preservation and Development inspected the following conditions. No violations were issued. The complaint has been closed.",
+          "count": 72962,
+          "percentage": 7.2962,
+          "rank": 2
+        },
+        {
+          "value": "The Police Department responded to the complaint and took action to fix the condition.",
+          "count": 63868,
+          "percentage": 6.3868,
+          "rank": 3
+        },
+        {
+          "value": "Service Request status for this request is available on the Department of Transportation?s website. Please click the ?Learn More? link below.",
+          "count": 52155,
+          "percentage": 5.2155,
+          "rank": 4
+        },
+        {
+          "value": "The Department of Housing Preservation and Development inspected the following conditions. Violations were issued. Information about specific violations is available at www.nyc.gov/hpd.",
+          "count": 43722,
+          "percentage": 4.3722,
+          "rank": 5
+        },
+        {
+          "value": "The Police Department responded to the complaint and determined that police action was not necessary.",
+          "count": 35500,
+          "percentage": 3.55,
+          "rank": 6
+        },
+        {
+          "value": "The Department of Housing Preservation and Development was not able to gain access to inspect the following conditions. The complaint has been closed. If the condition still exists, please file a new complaint.",
+          "count": 34676,
+          "percentage": 3.4676,
+          "rank": 7
+        },
+        {
+          "value": "The Police Department responded and upon arrival those responsible for the condition were gone.",
+          "count": 31937,
+          "percentage": 3.1937,
+          "rank": 8
+        },
+        {
+          "value": "The complaint you filed is a duplicate of a condition already reported by another tenant for a building-wide condition. The original complaint is still open. HPD may attempt to contact you to verify the correction of the condition or may conduct an inspection of your unit if the original complainant is not available for verification.",
+          "count": 21290,
+          "percentage": 2.129,
+          "rank": 9
+        },
+        {
+          "value": "(NULL)",
+          "count": 20480,
+          "percentage": 2.048,
+          "rank": 10
+        },
+        {
+          "value": "Other (1,206)",
+          "count": 532002,
+          "percentage": 53.2002,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Resolution Action Updated Date",
+      "type": "String",
+      "cardinality": 690314,
+      "nullcount": 15072,
+      "sparsity": 0.0151,
+      "uniqueness_ratio": 0.6903,
+      "stats": [
+        {
+          "name": "min",
+          "value": "01/01/2010 01:50:45 PM"
+        },
+        {
+          "name": "max",
+          "value": "12/31/2019 12:58:00 PM"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 22
+        },
+        {
+          "name": "sum_length",
+          "value": 21668416
+        },
+        {
+          "name": "avg_length",
+          "value": 21.6684
+        },
+        {
+          "name": "stddev_length",
+          "value": 2.6805
+        },
+        {
+          "name": "variance_length",
+          "value": 7.1849
+        },
+        {
+          "name": "cv_length",
+          "value": 0.1237
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 15072,
+          "percentage": 1.5072,
+          "rank": 1
+        },
+        {
+          "value": "11/15/2010 12:00:00 AM",
+          "count": 385,
+          "percentage": 0.0385,
+          "rank": 2
+        },
+        {
+          "value": "11/07/2012 12:00:00 AM",
+          "count": 336,
+          "percentage": 0.0336,
+          "rank": 3
+        },
+        {
+          "value": "12/09/2010 12:00:00 AM",
+          "count": 273,
+          "percentage": 0.0273,
+          "rank": 4
+        },
+        {
+          "value": "02/28/2011 12:00:00 AM",
+          "count": 268,
+          "percentage": 0.0268,
+          "rank": 5
+        },
+        {
+          "value": "01/09/2014 12:00:00 AM",
+          "count": 262,
+          "percentage": 0.0262,
+          "rank": 6
+        },
+        {
+          "value": "01/28/2013 12:00:00 AM",
+          "count": 261,
+          "percentage": 0.0261,
+          "rank": 7
+        },
+        {
+          "value": "11/08/2010 12:00:00 AM",
+          "count": 257,
+          "percentage": 0.0257,
+          "rank": 8
+        },
+        {
+          "value": "01/06/2014 12:00:00 AM",
+          "count": 255,
+          "percentage": 0.0255,
+          "rank": 9
+        },
+        {
+          "value": "11/28/2011 12:00:00 AM",
+          "count": 253,
+          "percentage": 0.0253,
+          "rank": 10
+        },
+        {
+          "value": "Other (690,304)",
+          "count": 982378,
+          "percentage": 98.2378,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Community Board",
+      "type": "String",
+      "cardinality": 77,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.0001,
+      "stats": [
+        {
+          "name": "min",
+          "value": "0 Unspecified"
+        },
+        {
+          "name": "max",
+          "value": "Unspecified STATEN ISLAND"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 8
+        },
+        {
+          "name": "max_length",
+          "value": 25
+        },
+        {
+          "name": "sum_length",
+          "value": 11142863
+        },
+        {
+          "name": "avg_length",
+          "value": 11.1429
+        },
+        {
+          "name": "stddev_length",
+          "value": 2.971
+        },
+        {
+          "name": "variance_length",
+          "value": 8.8269
+        },
+        {
+          "name": "cv_length",
+          "value": 0.2666
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "0 Unspecified",
+          "count": 49878,
+          "percentage": 4.9878,
+          "rank": 1
+        },
+        {
+          "value": "12 MANHATTAN",
+          "count": 29845,
+          "percentage": 2.9845,
+          "rank": 2
+        },
+        {
+          "value": "12 QUEENS",
+          "count": 23570,
+          "percentage": 2.357,
+          "rank": 3
+        },
+        {
+          "value": "01 BROOKLYN",
+          "count": 21714,
+          "percentage": 2.1714,
+          "rank": 4
+        },
+        {
+          "value": "03 BROOKLYN",
+          "count": 21292,
+          "percentage": 2.1292,
+          "rank": 5
+        },
+        {
+          "value": "12 BRONX",
+          "count": 20693,
+          "percentage": 2.0693,
+          "rank": 6
+        },
+        {
+          "value": "04 BRONX",
+          "count": 20507,
+          "percentage": 2.0507,
+          "rank": 7
+        },
+        {
+          "value": "07 QUEENS",
+          "count": 20480,
+          "percentage": 2.048,
+          "rank": 8
+        },
+        {
+          "value": "05 BROOKLYN",
+          "count": 20302,
+          "percentage": 2.0302,
+          "rank": 9
+        },
+        {
+          "value": "07 BRONX",
+          "count": 20084,
+          "percentage": 2.0084,
+          "rank": 10
+        },
+        {
+          "value": "Other (67)",
+          "count": 751635,
+          "percentage": 75.1635,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "BBL",
+      "type": "String",
+      "cardinality": 268383,
+      "nullcount": 243046,
+      "sparsity": 0.243,
+      "uniqueness_ratio": 0.2684,
+      "stats": [
+        {
+          "name": "min",
+          "value": 0
+        },
+        {
+          "name": "max",
+          "value": 5080470043
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 10
+        },
+        {
+          "name": "sum_length",
+          "value": 448540
+        },
+        {
+          "name": "avg_length",
+          "value": 0.4485
+        },
+        {
+          "name": "stddev_length",
+          "value": 4.3011
+        },
+        {
+          "name": "variance_length",
+          "value": 18.4993
+        },
+        {
+          "name": "cv_length",
+          "value": 9.5891
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 243046,
+          "percentage": 24.3046,
+          "rank": 1
+        },
+        {
+          "value": "2048330028",
+          "count": 1566,
+          "percentage": 0.1566,
+          "rank": 2
+        },
+        {
+          "value": "4068290001",
+          "count": 696,
+          "percentage": 0.0696,
+          "rank": 3
+        },
+        {
+          "value": "4015110001",
+          "count": 664,
+          "percentage": 0.0664,
+          "rank": 4
+        },
+        {
+          "value": "2048330080",
+          "count": 663,
+          "percentage": 0.0663,
+          "rank": 5
+        },
+        {
+          "value": "1021740175",
+          "count": 612,
+          "percentage": 0.0612,
+          "rank": 6
+        },
+        {
+          "value": "2037140054",
+          "count": 503,
+          "percentage": 0.0503,
+          "rank": 7
+        },
+        {
+          "value": "2039447501",
+          "count": 446,
+          "percentage": 0.0446,
+          "rank": 8
+        },
+        {
+          "value": "2048330083",
+          "count": 398,
+          "percentage": 0.0398,
+          "rank": 9
+        },
+        {
+          "value": "2025110068",
+          "count": 375,
+          "percentage": 0.0375,
+          "rank": 10
+        },
+        {
+          "value": "Other (268,373)",
+          "count": 751031,
+          "percentage": 75.1031,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Borough",
+      "type": "String",
+      "cardinality": 6,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.0,
+      "stats": [
+        {
+          "name": "min",
+          "value": "BRONX"
+        },
+        {
+          "name": "max",
+          "value": "Unspecified"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 5
+        },
+        {
+          "name": "max_length",
+          "value": 13
+        },
+        {
+          "name": "sum_length",
+          "value": 7595025
+        },
+        {
+          "name": "avg_length",
+          "value": 7.595
+        },
+        {
+          "name": "stddev_length",
+          "value": 2.0632
+        },
+        {
+          "name": "variance_length",
+          "value": 4.2568
+        },
+        {
+          "name": "cv_length",
+          "value": 0.2717
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "BROOKLYN",
+          "count": 296081,
+          "percentage": 29.6081,
+          "rank": 1
+        },
+        {
+          "value": "QUEENS",
+          "count": 228818,
+          "percentage": 22.8818,
+          "rank": 2
+        },
+        {
+          "value": "MANHATTAN",
+          "count": 195488,
+          "percentage": 19.5488,
+          "rank": 3
+        },
+        {
+          "value": "BRONX",
+          "count": 180142,
+          "percentage": 18.0142,
+          "rank": 4
+        },
+        {
+          "value": "Unspecified",
+          "count": 49878,
+          "percentage": 4.9878,
+          "rank": 5
+        },
+        {
+          "value": "STATEN ISLAND",
+          "count": 49593,
+          "percentage": 4.9593,
+          "rank": 6
+        }
+      ]
+    },
+    {
+      "field": "X Coordinate (State Plane)",
+      "type": "Integer",
+      "cardinality": 102556,
+      "nullcount": 85327,
+      "sparsity": 0.0853,
+      "uniqueness_ratio": 0.1026,
+      "stats": [
+        {
+          "name": "sum",
+          "value": 919555108413
+        },
+        {
+          "name": "min",
+          "value": 913281
+        },
+        {
+          "name": "max",
+          "value": 1067220
+        },
+        {
+          "name": "range",
+          "value": 153939
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "mean",
+          "value": 1005337.5451
+        },
+        {
+          "name": "sem",
+          "value": 23.5391
+        },
+        {
+          "name": "stddev",
+          "value": 22512.4528
+        },
+        {
+          "name": "variance",
+          "value": 506810531.5324
+        },
+        {
+          "name": "cv",
+          "value": 2.2393
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 85327,
+          "percentage": 8.5327,
+          "rank": 1
+        },
+        {
+          "value": "1022911",
+          "count": 1568,
+          "percentage": 0.1568,
+          "rank": 2
+        },
+        {
+          "value": "1037000",
+          "count": 701,
+          "percentage": 0.0701,
+          "rank": 3
+        },
+        {
+          "value": "1023174",
+          "count": 675,
+          "percentage": 0.0675,
+          "rank": 4
+        },
+        {
+          "value": "1018372",
+          "count": 669,
+          "percentage": 0.0669,
+          "rank": 5
+        },
+        {
+          "value": "1004402",
+          "count": 590,
+          "percentage": 0.059,
+          "rank": 6
+        },
+        {
+          "value": "1018209",
+          "count": 488,
+          "percentage": 0.0488,
+          "rank": 7
+        },
+        {
+          "value": "1023188",
+          "count": 410,
+          "percentage": 0.041,
+          "rank": 8
+        },
+        {
+          "value": "1037538",
+          "count": 348,
+          "percentage": 0.0348,
+          "rank": 9
+        },
+        {
+          "value": "1012586",
+          "count": 347,
+          "percentage": 0.0347,
+          "rank": 10
+        },
+        {
+          "value": "Other (102,546)",
+          "count": 908877,
+          "percentage": 90.8877,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Y Coordinate (State Plane)",
+      "type": "Integer",
+      "cardinality": 116092,
+      "nullcount": 85327,
+      "sparsity": 0.0853,
+      "uniqueness_ratio": 0.1161,
+      "stats": [
+        {
+          "name": "sum",
+          "value": 188099299101
+        },
+        {
+          "name": "min",
+          "value": 121152
+        },
+        {
+          "name": "max",
+          "value": 271876
+        },
+        {
+          "name": "range",
+          "value": 150724
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "mean",
+          "value": 205646.4978
+        },
+        {
+          "name": "sem",
+          "value": 33.1699
+        },
+        {
+          "name": "stddev",
+          "value": 31723.1985
+        },
+        {
+          "name": "variance",
+          "value": 1006361322.6747
+        },
+        {
+          "name": "cv",
+          "value": 15.4261
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 85327,
+          "percentage": 8.5327,
+          "rank": 1
+        },
+        {
+          "value": "264242",
+          "count": 1566,
+          "percentage": 0.1566,
+          "rank": 2
+        },
+        {
+          "value": "202363",
+          "count": 706,
+          "percentage": 0.0706,
+          "rank": 3
+        },
+        {
+          "value": "211606",
+          "count": 665,
+          "percentage": 0.0665,
+          "rank": 4
+        },
+        {
+          "value": "264429",
+          "count": 663,
+          "percentage": 0.0663,
+          "rank": 5
+        },
+        {
+          "value": "253313",
+          "count": 601,
+          "percentage": 0.0601,
+          "rank": 6
+        },
+        {
+          "value": "239723",
+          "count": 495,
+          "percentage": 0.0495,
+          "rank": 7
+        },
+        {
+          "value": "264423",
+          "count": 401,
+          "percentage": 0.0401,
+          "rank": 8
+        },
+        {
+          "value": "201770",
+          "count": 356,
+          "percentage": 0.0356,
+          "rank": 9
+        },
+        {
+          "value": "201185",
+          "count": 352,
+          "percentage": 0.0352,
+          "rank": 10
+        },
+        {
+          "value": "Other (116,082)",
+          "count": 908868,
+          "percentage": 90.8868,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Open Data Channel Type",
+      "type": "String",
+      "cardinality": 5,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.0,
+      "stats": [
+        {
+          "name": "min",
+          "value": "MOBILE"
+        },
+        {
+          "name": "max",
+          "value": "UNKNOWN"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 5
+        },
+        {
+          "name": "max_length",
+          "value": 7
+        },
+        {
+          "name": "sum_length",
+          "value": 5718030
+        },
+        {
+          "name": "avg_length",
+          "value": 5.718
+        },
+        {
+          "name": "stddev_length",
+          "value": 0.8144
+        },
+        {
+          "name": "variance_length",
+          "value": 0.6633
+        },
+        {
+          "name": "cv_length",
+          "value": 0.1424
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "PHONE",
+          "count": 497606,
+          "percentage": 49.7606,
+          "rank": 1
+        },
+        {
+          "value": "UNKNOWN",
+          "count": 230402,
+          "percentage": 23.0402,
+          "rank": 2
+        },
+        {
+          "value": "ONLINE",
+          "count": 177334,
+          "percentage": 17.7334,
+          "rank": 3
+        },
+        {
+          "value": "MOBILE",
+          "count": 79892,
+          "percentage": 7.9892,
+          "rank": 4
+        },
+        {
+          "value": "OTHER",
+          "count": 14766,
+          "percentage": 1.4766,
+          "rank": 5
+        }
+      ]
+    },
+    {
+      "field": "Park Facility Name",
+      "type": "String",
+      "cardinality": 1889,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.0019,
+      "stats": [
+        {
+          "name": "min",
+          "value": "\"Uncle\" Vito F. Maranzano Glendale Playground"
+        },
+        {
+          "name": "max",
+          "value": "Zimmerman Playground"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 3
+        },
+        {
+          "name": "max_length",
+          "value": 82
+        },
+        {
+          "name": "sum_length",
+          "value": 11072428
+        },
+        {
+          "name": "avg_length",
+          "value": 11.0724
+        },
+        {
+          "name": "stddev_length",
+          "value": 1.2391
+        },
+        {
+          "name": "variance_length",
+          "value": 1.5353
+        },
+        {
+          "name": "cv_length",
+          "value": 0.1119
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "Unspecified",
+          "count": 993141,
+          "percentage": 99.3141,
+          "rank": 1
+        },
+        {
+          "value": "Central Park",
+          "count": 261,
+          "percentage": 0.0261,
+          "rank": 2
+        },
+        {
+          "value": "Riverside Park",
+          "count": 136,
+          "percentage": 0.0136,
+          "rank": 3
+        },
+        {
+          "value": "Prospect Park",
+          "count": 129,
+          "percentage": 0.0129,
+          "rank": 4
+        },
+        {
+          "value": "N/A",
+          "count": 84,
+          "percentage": 0.0084,
+          "rank": 5
+        },
+        {
+          "value": "Flushing Meadows Corona Park",
+          "count": 68,
+          "percentage": 0.0068,
+          "rank": 6
+        },
+        {
+          "value": "Forest Park",
+          "count": 66,
+          "percentage": 0.0066,
+          "rank": 7
+        },
+        {
+          "value": "Franz Sigel Park",
+          "count": 51,
+          "percentage": 0.0051,
+          "rank": 8
+        },
+        {
+          "value": "Hudson River Park",
+          "count": 50,
+          "percentage": 0.005,
+          "rank": 9
+        },
+        {
+          "value": "Rockaway Beach Boardwalk",
+          "count": 50,
+          "percentage": 0.005,
+          "rank": 9
+        },
+        {
+          "value": "Other (1,879)",
+          "count": 5964,
+          "percentage": 0.5964,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Park Borough",
+      "type": "String",
+      "cardinality": 6,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.0,
+      "stats": [
+        {
+          "name": "min",
+          "value": "BRONX"
+        },
+        {
+          "name": "max",
+          "value": "Unspecified"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 5
+        },
+        {
+          "name": "max_length",
+          "value": 13
+        },
+        {
+          "name": "sum_length",
+          "value": 7595025
+        },
+        {
+          "name": "avg_length",
+          "value": 7.595
+        },
+        {
+          "name": "stddev_length",
+          "value": 2.0632
+        },
+        {
+          "name": "variance_length",
+          "value": 4.2568
+        },
+        {
+          "name": "cv_length",
+          "value": 0.2717
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "BROOKLYN",
+          "count": 296081,
+          "percentage": 29.6081,
+          "rank": 1
+        },
+        {
+          "value": "QUEENS",
+          "count": 228818,
+          "percentage": 22.8818,
+          "rank": 2
+        },
+        {
+          "value": "MANHATTAN",
+          "count": 195488,
+          "percentage": 19.5488,
+          "rank": 3
+        },
+        {
+          "value": "BRONX",
+          "count": 180142,
+          "percentage": 18.0142,
+          "rank": 4
+        },
+        {
+          "value": "Unspecified",
+          "count": 49878,
+          "percentage": 4.9878,
+          "rank": 5
+        },
+        {
+          "value": "STATEN ISLAND",
+          "count": 49593,
+          "percentage": 4.9593,
+          "rank": 6
+        }
+      ]
+    },
+    {
+      "field": "Vehicle Type",
+      "type": "String",
+      "cardinality": 5,
+      "nullcount": 999652,
+      "sparsity": 0.9997,
+      "uniqueness_ratio": 0.0,
+      "stats": [
+        {
+          "name": "min",
+          "value": "Ambulette / Paratransit"
+        },
+        {
+          "name": "max",
+          "value": "Green Taxi"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 23
+        },
+        {
+          "name": "sum_length",
+          "value": 4066
+        },
+        {
+          "name": "avg_length",
+          "value": 0.0041
+        },
+        {
+          "name": "stddev_length",
+          "value": 0.2293
+        },
+        {
+          "name": "variance_length",
+          "value": 0.0526
+        },
+        {
+          "name": "cv_length",
+          "value": 56.4051
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 999652,
+          "percentage": 99.9652,
+          "rank": 1
+        },
+        {
+          "value": "Car Service",
+          "count": 317,
+          "percentage": 0.0317,
+          "rank": 2
+        },
+        {
+          "value": "Ambulette / Paratransit",
+          "count": 19,
+          "percentage": 0.0019,
+          "rank": 3
+        },
+        {
+          "value": "Commuter Van",
+          "count": 11,
+          "percentage": 0.0011,
+          "rank": 4
+        },
+        {
+          "value": "Green Taxi",
+          "count": 1,
+          "percentage": 0.0001,
+          "rank": 5
+        }
+      ]
+    },
+    {
+      "field": "Taxi Company Borough",
+      "type": "String",
+      "cardinality": 11,
+      "nullcount": 999156,
+      "sparsity": 0.9992,
+      "uniqueness_ratio": 0.0,
+      "stats": [
+        {
+          "name": "min",
+          "value": "BRONX"
+        },
+        {
+          "name": "max",
+          "value": "Staten Island"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 13
+        },
+        {
+          "name": "sum_length",
+          "value": 6313
+        },
+        {
+          "name": "avg_length",
+          "value": 0.0063
+        },
+        {
+          "name": "stddev_length",
+          "value": 0.2259
+        },
+        {
+          "name": "variance_length",
+          "value": 0.051
+        },
+        {
+          "name": "cv_length",
+          "value": 35.783
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 999156,
+          "percentage": 99.9156,
+          "rank": 1
+        },
+        {
+          "value": "BROOKLYN",
+          "count": 207,
+          "percentage": 0.0207,
+          "rank": 2
+        },
+        {
+          "value": "QUEENS",
+          "count": 194,
+          "percentage": 0.0194,
+          "rank": 3
+        },
+        {
+          "value": "MANHATTAN",
+          "count": 171,
+          "percentage": 0.0171,
+          "rank": 4
+        },
+        {
+          "value": "BRONX",
+          "count": 127,
+          "percentage": 0.0127,
+          "rank": 5
+        },
+        {
+          "value": "STATEN ISLAND",
+          "count": 42,
+          "percentage": 0.0042,
+          "rank": 6
+        },
+        {
+          "value": "Manhattan",
+          "count": 35,
+          "percentage": 0.0035,
+          "rank": 7
+        },
+        {
+          "value": "Brooklyn",
+          "count": 28,
+          "percentage": 0.0028,
+          "rank": 8
+        },
+        {
+          "value": "Queens",
+          "count": 26,
+          "percentage": 0.0026,
+          "rank": 9
+        },
+        {
+          "value": "Bronx",
+          "count": 13,
+          "percentage": 0.0013,
+          "rank": 10
+        },
+        {
+          "value": "Other (1)",
+          "count": 1,
+          "percentage": 0.0001,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Taxi Pick Up Location",
+      "type": "String",
+      "cardinality": 1903,
+      "nullcount": 992129,
+      "sparsity": 0.9921,
+      "uniqueness_ratio": 0.0019,
+      "stats": [
+        {
+          "name": "min",
+          "value": "1 5 AVENUE MANHATTAN"
+        },
+        {
+          "name": "max",
+          "value": "YORK AVENUE AND EAST 70 STREET"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 60
+        },
+        {
+          "name": "sum_length",
+          "value": 135661
+        },
+        {
+          "name": "avg_length",
+          "value": 0.1357
+        },
+        {
+          "name": "stddev_length",
+          "value": 2.1518
+        },
+        {
+          "name": "variance_length",
+          "value": 4.6304
+        },
+        {
+          "name": "cv_length",
+          "value": 15.8618
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 992129,
+          "percentage": 99.2129,
+          "rank": 1
+        },
+        {
+          "value": "Other",
+          "count": 4091,
+          "percentage": 0.4091,
+          "rank": 2
+        },
+        {
+          "value": "JFK Airport",
+          "count": 562,
+          "percentage": 0.0562,
+          "rank": 3
+        },
+        {
+          "value": "Intersection",
+          "count": 486,
+          "percentage": 0.0486,
+          "rank": 4
+        },
+        {
+          "value": "La Guardia Airport",
+          "count": 387,
+          "percentage": 0.0387,
+          "rank": 5
+        },
+        {
+          "value": "JFK AIRPORT, QUEENS (JAMAICA) ,NY, 11430",
+          "count": 84,
+          "percentage": 0.0084,
+          "rank": 6
+        },
+        {
+          "value": "New York-Penn Station",
+          "count": 78,
+          "percentage": 0.0078,
+          "rank": 7
+        },
+        {
+          "value": "Grand Central Station",
+          "count": 69,
+          "percentage": 0.0069,
+          "rank": 8
+        },
+        {
+          "value": "Port Authority Bus Terminal",
+          "count": 55,
+          "percentage": 0.0055,
+          "rank": 9
+        },
+        {
+          "value": "LA GUARDIA AIRPORT, QUEENS (EAST ELMHURST) ,NY, 11369",
+          "count": 38,
+          "percentage": 0.0038,
+          "rank": 10
+        },
+        {
+          "value": "Other (1,893)",
+          "count": 2021,
+          "percentage": 0.2021,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Bridge Highway Name",
+      "type": "String",
+      "cardinality": 68,
+      "nullcount": 997711,
+      "sparsity": 0.9977,
+      "uniqueness_ratio": 0.0001,
+      "stats": [
+        {
+          "name": "min",
+          "value": "145th St. Br - Lenox Ave"
+        },
+        {
+          "name": "max",
+          "value": "Willis Ave Br - 125th St/1st Ave"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 42
+        },
+        {
+          "name": "sum_length",
+          "value": 36974
+        },
+        {
+          "name": "avg_length",
+          "value": 0.037
+        },
+        {
+          "name": "stddev_length",
+          "value": 0.8221
+        },
+        {
+          "name": "variance_length",
+          "value": 0.6759
+        },
+        {
+          "name": "cv_length",
+          "value": 22.2353
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 997711,
+          "percentage": 99.7711,
+          "rank": 1
+        },
+        {
+          "value": "Belt Pkwy",
+          "count": 276,
+          "percentage": 0.0276,
+          "rank": 2
+        },
+        {
+          "value": "BQE/Gowanus Expwy",
+          "count": 254,
+          "percentage": 0.0254,
+          "rank": 3
+        },
+        {
+          "value": "Grand Central Pkwy",
+          "count": 186,
+          "percentage": 0.0186,
+          "rank": 4
+        },
+        {
+          "value": "Long Island Expwy",
+          "count": 173,
+          "percentage": 0.0173,
+          "rank": 5
+        },
+        {
+          "value": "FDR Dr",
+          "count": 166,
+          "percentage": 0.0166,
+          "rank": 6
+        },
+        {
+          "value": "Van Wyck Expwy",
+          "count": 114,
+          "percentage": 0.0114,
+          "rank": 7
+        },
+        {
+          "value": "Staten Island Expwy",
+          "count": 102,
+          "percentage": 0.0102,
+          "rank": 8
+        },
+        {
+          "value": "Major Deegan Expwy",
+          "count": 88,
+          "percentage": 0.0088,
+          "rank": 9
+        },
+        {
+          "value": "Cross Island Pkwy",
+          "count": 79,
+          "percentage": 0.0079,
+          "rank": 10
+        },
+        {
+          "value": "Other (58)",
+          "count": 851,
+          "percentage": 0.0851,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Bridge Highway Direction",
+      "type": "String",
+      "cardinality": 50,
+      "nullcount": 997691,
+      "sparsity": 0.9977,
+      "uniqueness_ratio": 0.0001,
+      "stats": [
+        {
+          "name": "min",
+          "value": "Bronx Bound"
+        },
+        {
+          "name": "max",
+          "value": "Westbound/To Goethals Br"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 33
+        },
+        {
+          "name": "sum_length",
+          "value": 44089
+        },
+        {
+          "name": "avg_length",
+          "value": 0.0441
+        },
+        {
+          "name": "stddev_length",
+          "value": 0.9533
+        },
+        {
+          "name": "variance_length",
+          "value": 0.9089
+        },
+        {
+          "name": "cv_length",
+          "value": 21.6233
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 997691,
+          "percentage": 99.7691,
+          "rank": 1
+        },
+        {
+          "value": "East/Long Island Bound",
+          "count": 210,
+          "percentage": 0.021,
+          "rank": 2
+        },
+        {
+          "value": "North/Bronx Bound",
+          "count": 208,
+          "percentage": 0.0208,
+          "rank": 3
+        },
+        {
+          "value": "East/Queens Bound",
+          "count": 197,
+          "percentage": 0.0197,
+          "rank": 4
+        },
+        {
+          "value": "West/Staten Island Bound",
+          "count": 175,
+          "percentage": 0.0175,
+          "rank": 5
+        },
+        {
+          "value": "West/Brooklyn Bound",
+          "count": 98,
+          "percentage": 0.0098,
+          "rank": 6
+        },
+        {
+          "value": "West/Manhattan Bound",
+          "count": 95,
+          "percentage": 0.0095,
+          "rank": 7
+        },
+        {
+          "value": "Manhattan Bound",
+          "count": 93,
+          "percentage": 0.0093,
+          "rank": 8
+        },
+        {
+          "value": "Northbound/Uptown",
+          "count": 92,
+          "percentage": 0.0092,
+          "rank": 9
+        },
+        {
+          "value": "North/Westchester County Bound",
+          "count": 77,
+          "percentage": 0.0077,
+          "rank": 10
+        },
+        {
+          "value": "Other (40)",
+          "count": 1064,
+          "percentage": 0.1064,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Road Ramp",
+      "type": "String",
+      "cardinality": 4,
+      "nullcount": 997693,
+      "sparsity": 0.9977,
+      "uniqueness_ratio": 0.0,
+      "stats": [
+        {
+          "name": "min",
+          "value": "N/A"
+        },
+        {
+          "name": "max",
+          "value": "Roadway"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 7
+        },
+        {
+          "name": "sum_length",
+          "value": 14400
+        },
+        {
+          "name": "avg_length",
+          "value": 0.0144
+        },
+        {
+          "name": "stddev_length",
+          "value": 0.3069
+        },
+        {
+          "name": "variance_length",
+          "value": 0.0942
+        },
+        {
+          "name": "cv_length",
+          "value": 21.3118
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 997693,
+          "percentage": 99.7693,
+          "rank": 1
+        },
+        {
+          "value": "Roadway",
+          "count": 1731,
+          "percentage": 0.1731,
+          "rank": 2
+        },
+        {
+          "value": "Ramp",
+          "count": 555,
+          "percentage": 0.0555,
+          "rank": 3
+        },
+        {
+          "value": "N/A",
+          "count": 21,
+          "percentage": 0.0021,
+          "rank": 4
+        }
+      ]
+    },
+    {
+      "field": "Bridge Highway Segment",
+      "type": "String",
+      "cardinality": 937,
+      "nullcount": 997556,
+      "sparsity": 0.9976,
+      "uniqueness_ratio": 0.0009,
+      "stats": [
+        {
+          "name": "min",
+          "value": "1-1-1265963747"
+        },
+        {
+          "name": "max",
+          "value": "Wythe Ave/Kent Ave (Exit 31)"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 100
+        },
+        {
+          "name": "sum_length",
+          "value": 110781
+        },
+        {
+          "name": "avg_length",
+          "value": 0.1108
+        },
+        {
+          "name": "stddev_length",
+          "value": 2.5166
+        },
+        {
+          "name": "variance_length",
+          "value": 6.3334
+        },
+        {
+          "name": "cv_length",
+          "value": 22.7171
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 997556,
+          "percentage": 99.7556,
+          "rank": 1
+        },
+        {
+          "value": "Ramp",
+          "count": 92,
+          "percentage": 0.0092,
+          "rank": 2
+        },
+        {
+          "value": "Roadway",
+          "count": 54,
+          "percentage": 0.0054,
+          "rank": 3
+        },
+        {
+          "value": "Clove Rd/Richmond Rd (Exit 13) - Lily Pond Ave/Bay St (Exit 15 S-N)",
+          "count": 23,
+          "percentage": 0.0023,
+          "rank": 4
+        },
+        {
+          "value": "N/A",
+          "count": 23,
+          "percentage": 0.0023,
+          "rank": 4
+        },
+        {
+          "value": "Outer Roadway",
+          "count": 21,
+          "percentage": 0.0021,
+          "rank": 6
+        },
+        {
+          "value": "Rockaway Pkwy (Exit 13) - Flatbush Ave (Exit 11N)",
+          "count": 21,
+          "percentage": 0.0021,
+          "rank": 6
+        },
+        {
+          "value": "Bikepath",
+          "count": 19,
+          "percentage": 0.0019,
+          "rank": 8
+        },
+        {
+          "value": "East 42nd St (Exit 9) - East 61st St / East 63rd St (Exit 12)",
+          "count": 17,
+          "percentage": 0.0017,
+          "rank": 9
+        },
+        {
+          "value": "Flatbush Ave (Exit 11N) - Gateway National Recreation Area (Exit 12)",
+          "count": 15,
+          "percentage": 0.0015,
+          "rank": 10
+        },
+        {
+          "value": "Other (927)",
+          "count": 2159,
+          "percentage": 0.2159,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Latitude",
+      "type": "Float",
+      "cardinality": 353694,
+      "nullcount": 254695,
+      "sparsity": 0.2547,
+      "uniqueness_ratio": 0.3537,
+      "stats": [
+        {
+          "name": "sum",
+          "value": 30355391.7604
+        },
+        {
+          "name": "min",
+          "value": 40.1123853
+        },
+        {
+          "name": "max",
+          "value": 40.9128688
+        },
+        {
+          "name": "range",
+          "value": 0.8005
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "mean",
+          "value": 40.7288
+        },
+        {
+          "name": "sem",
+          "value": 0.0001
+        },
+        {
+          "name": "stddev",
+          "value": 0.0893
+        },
+        {
+          "name": "variance",
+          "value": 0.008
+        },
+        {
+          "name": "cv",
+          "value": 0.2193
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 254695,
+          "percentage": 25.4695,
+          "rank": 1
+        },
+        {
+          "value": "40.89187241649303",
+          "count": 1538,
+          "percentage": 0.1538,
+          "rank": 2
+        },
+        {
+          "value": "40.1123853",
+          "count": 1153,
+          "percentage": 0.1153,
+          "rank": 3
+        },
+        {
+          "value": "40.89238451539139",
+          "count": 663,
+          "percentage": 0.0663,
+          "rank": 4
+        },
+        {
+          "value": "40.7474203",
+          "count": 552,
+          "percentage": 0.0552,
+          "rank": 5
+        },
+        {
+          "value": "40.7219591",
+          "count": 441,
+          "percentage": 0.0441,
+          "rank": 6
+        },
+        {
+          "value": "40.8245945",
+          "count": 432,
+          "percentage": 0.0432,
+          "rank": 7
+        },
+        {
+          "value": "40.89236798554616",
+          "count": 396,
+          "percentage": 0.0396,
+          "rank": 8
+        },
+        {
+          "value": "40.7203282",
+          "count": 303,
+          "percentage": 0.0303,
+          "rank": 9
+        },
+        {
+          "value": "40.72195913199264",
+          "count": 253,
+          "percentage": 0.0253,
+          "rank": 10
+        },
+        {
+          "value": "Other (353,684)",
+          "count": 739574,
+          "percentage": 73.9574,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Longitude",
+      "type": "Float",
+      "cardinality": 353996,
+      "nullcount": 254695,
+      "sparsity": 0.2547,
+      "uniqueness_ratio": 0.354,
+      "stats": [
+        {
+          "name": "sum",
+          "value": -55100392.9499
+        },
+        {
+          "name": "min",
+          "value": -77.5195844
+        },
+        {
+          "name": "max",
+          "value": -73.7005968
+        },
+        {
+          "name": "range",
+          "value": 3.819
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "mean",
+          "value": -73.93
+        },
+        {
+          "name": "sem",
+          "value": 0.0002
+        },
+        {
+          "name": "stddev",
+          "value": 0.1635
+        },
+        {
+          "name": "variance",
+          "value": 0.0267
+        },
+        {
+          "name": "cv",
+          "value": -0.2212
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 254695,
+          "percentage": 25.4695,
+          "rank": 1
+        },
+        {
+          "value": "-73.86016845296459",
+          "count": 1538,
+          "percentage": 0.1538,
+          "rank": 2
+        },
+        {
+          "value": "-77.5195844",
+          "count": 1153,
+          "percentage": 0.1153,
+          "rank": 3
+        },
+        {
+          "value": "-73.8592161325675",
+          "count": 663,
+          "percentage": 0.0663,
+          "rank": 4
+        },
+        {
+          "value": "-73.876853",
+          "count": 552,
+          "percentage": 0.0552,
+          "rank": 5
+        },
+        {
+          "value": "-73.8096968",
+          "count": 441,
+          "percentage": 0.0441,
+          "rank": 6
+        },
+        {
+          "value": "-73.8772991",
+          "count": 432,
+          "percentage": 0.0432,
+          "rank": 7
+        },
+        {
+          "value": "-73.85916553107027",
+          "count": 396,
+          "percentage": 0.0396,
+          "rank": 8
+        },
+        {
+          "value": "-73.8077606",
+          "count": 303,
+          "percentage": 0.0303,
+          "rank": 9
+        },
+        {
+          "value": "-73.80969682426189",
+          "count": 253,
+          "percentage": 0.0253,
+          "rank": 10
+        },
+        {
+          "value": "Other (353,986)",
+          "count": 739574,
+          "percentage": 73.9574,
+          "rank": 0
+        }
+      ]
+    },
+    {
+      "field": "Location",
+      "type": "String",
+      "cardinality": 375772,
+      "nullcount": 254695,
+      "sparsity": 0.2547,
+      "uniqueness_ratio": 0.3758,
+      "stats": [
+        {
+          "name": "min",
+          "value": "(40.1123853, -77.5195844)"
+        },
+        {
+          "name": "max",
+          "value": "(40.9128688, -73.9024731)"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 40
+        },
+        {
+          "name": "sum_length",
+          "value": 19709659
+        },
+        {
+          "name": "avg_length",
+          "value": 19.7097
+        },
+        {
+          "name": "stddev_length",
+          "value": 12.1918
+        },
+        {
+          "name": "variance_length",
+          "value": 148.6401
+        },
+        {
+          "name": "cv_length",
+          "value": 0.6186
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 254695,
+          "percentage": 25.4695,
+          "rank": 1
+        },
+        {
+          "value": "(40.89187241649303, -73.86016845296459)",
+          "count": 1538,
+          "percentage": 0.1538,
+          "rank": 2
+        },
+        {
+          "value": "(40.1123853, -77.5195844)",
+          "count": 1153,
+          "percentage": 0.1153,
+          "rank": 3
+        },
+        {
+          "value": "(40.89238451539139, -73.8592161325675)",
+          "count": 663,
+          "percentage": 0.0663,
+          "rank": 4
+        },
+        {
+          "value": "(40.7474203, -73.876853)",
+          "count": 552,
+          "percentage": 0.0552,
+          "rank": 5
+        },
+        {
+          "value": "(40.7219591, -73.8096968)",
+          "count": 441,
+          "percentage": 0.0441,
+          "rank": 6
+        },
+        {
+          "value": "(40.8245945, -73.8772991)",
+          "count": 432,
+          "percentage": 0.0432,
+          "rank": 7
+        },
+        {
+          "value": "(40.89236798554616, -73.85916553107027)",
+          "count": 396,
+          "percentage": 0.0396,
+          "rank": 8
+        },
+        {
+          "value": "(40.7203282, -73.8077606)",
+          "count": 303,
+          "percentage": 0.0303,
+          "rank": 9
+        },
+        {
+          "value": "(40.72195913199264, -73.80969682426189)",
+          "count": 253,
+          "percentage": 0.0253,
+          "rank": 10
+        },
+        {
+          "value": "Other (375,762)",
+          "count": 739574,
+          "percentage": 73.9574,
+          "rank": 0
+        }
+      ]
+    }
+  ]
+}

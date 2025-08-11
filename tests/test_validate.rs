@@ -94,12 +94,7 @@ fn validate_good_csv_pretty_json() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"{
-  "delimiter_char": ",",
-  "header_row": true,
-  "quote_char": "\"",
-  "num_records": 3,
-  "num_fields": 3,
-  "fields": [
+  "delimiter_char": ",","header_row": true,"quote_char": "\"","num_records": 3,"num_fields": 3,"fields": [
     "title",
     "name",
     "real age (earth years)"

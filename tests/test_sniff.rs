@@ -358,28 +358,18 @@ fn sniff_pretty_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = dos2unix(
-        r#"sampled_records": 3,
-  "estimated": false,
-  "num_records": 3,
-  "avg_record_len": 10,
-  "num_fields": 4,
-  "stats_types": false,
-  "fields": [
+    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 3,"quote_char": "none","flexible": false,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 116,"file_size": 116,"sampled_records": 3,"estimated": false,"num_records": 3,"avg_record_len": 10,"num_fields": 4,"stats_types": false,"fields": [
     "h1",
     "h2",
     "h3",
     "h4"
-  ],
-  "types": [
+  ],"types": [
     "Text",
     "Unsigned",
     "Text",
     "Float"
   ]
-}"#,
-    );
-
+}"#;
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
 }
 
@@ -396,13 +386,7 @@ fn sniff_sample() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = r#""sampled_records": 7,
-  "estimated": false,
-  "num_records": 15,
-  "avg_record_len": 555,
-  "num_fields": 32,
-  "stats_types": false,
-  "fields": [
+    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 0,"quote_char": "none","flexible": false,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 9246,"file_size": 9246,"sampled_records": 7,"estimated": false,"num_records": 15,"avg_record_len": 555,"num_fields": 32,"stats_types": false,"fields": [
     "ExtractDate",
     "OrganisationURI",
     "OrganisationLabel",
@@ -435,8 +419,7 @@ fn sniff_sample() {
     "StreetAddress",
     "GeoAreaURI",
     "GeoAreaLabel"
-  ],
-  "types": [
+  ],"types": [
     "Date",
     "Text",
     "Text",

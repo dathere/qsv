@@ -10,7 +10,7 @@ with the most frequent having a rank of 1. When there are multiple values with
 the same count, they all have the same rank, and the next rank skips the
 number of values with the same count.
 
-For example, if there are 2 values with a count of 10, 4 values with a count of 6,
+For example, if a column has 2 values with a count of 10, 4 values with a count of 6,
 and 3 values with a count of 3, and 1 value with a count of 2, the rank column will
 be 1, 1, 3, 3, 3, 3, 7, 7, 7, 10.
 
@@ -335,7 +335,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             ];
             wtr.write_record(row)?;
         }
-        // Clear the vector for the next iteration
         processed_frequencies.clear();
     }
     Ok(wtr.flush()?)
@@ -441,8 +440,7 @@ impl Args {
         let unique_counts_len = counts.len();
         if self.flag_lmt_threshold == 0 || self.flag_lmt_threshold >= unique_counts_len {
             // check if the column has all unique values
-            // do this by looking at the counts vec
-            // and see if it has a count of 1, indicating all unique values
+            // i.e., counts vec has a count of 1, indicating all unique values
             let all_unique = counts[if self.flag_asc {
                 unique_counts_len - 1
             } else {
@@ -466,9 +464,8 @@ impl Args {
             if self.flag_limit > 0 {
                 counts.truncate(abs_limit);
             } else if self.flag_limit < 0 && !unique_limited {
-                // if limit is negative, only return values with an occurrence count >= absolute
-                // value of the negative limit. We only do this if we haven't
-                // already unique limited the values
+                // if limit < 0, only return values with an occurrence count >= abs value of limit
+                // Only do this if we haven't already unique limited the values
                 let count_limit = abs_limit as u64;
                 counts.retain(|(_, count)| *count >= count_limit);
             }
@@ -686,7 +683,6 @@ impl Args {
                 // safety: freq_tables is pre-allocated with nsel_len elements.
                 // i will always be < nsel_len as it comes from enumerate() over the selected cols
                 if !field.is_empty() {
-                    // Reuse buffers instead of creating new ones
                     field_buffer = process_field(field, &mut string_buf);
                     unsafe {
                         freq_tables.get_unchecked_mut(i).add(field_buffer);
@@ -702,8 +698,7 @@ impl Args {
         // shrink the capacity of the freq_tables to the actual number of elements.
         // if sequential (nchunks == 1), we don't need to shrink the capacity as we
         // use cardinality to set the capacity of the freq_tables
-        // if parallel (nchunks > 1), we need to shrink the capacity to avoid
-        // over-allocating memory
+        // if parallel (nchunks > 1), shrink the capacity to avoid over-allocating memory
         if nchunks > 1 {
             freq_tables.shrink_to_fit();
         }
@@ -761,8 +756,7 @@ impl Args {
                     .unwrap_or(NON_UTF8_ERR)
                     .to_string();
                 if self.flag_json {
-                    // Store the stats record in the hashmap for later use
-                    // when we're producing JSON output
+                    // Store the stats records hashmap for later use when producing JSON output
                     stats_records_hashmap.insert(col_name_str.clone(), stats_record.clone());
                 }
                 (col_name_str, stats_record.cardinality)
@@ -792,8 +786,7 @@ impl Args {
         COL_CARDINALITY_VEC.get_or_init(|| col_cardinality_vec);
 
         if self.flag_json {
-            // Store the stats records hashmap for later use
-            // when we're producing JSON output
+            // Store the stats records hashmap for later use when producing JSON output
             STATS_RECORDS.set(stats_records_hashmap).unwrap();
         }
 
@@ -839,24 +832,19 @@ impl Args {
             // Sort frequencies by count if flag_other_sorted
             if self.flag_other_sorted {
                 if self.flag_asc {
-                    // ascending order
+                    // asc order
                     processed_frequencies.sort_unstable_by(|a, b| a.count.cmp(&b.count));
                 } else {
-                    // descending order
+                    // desc order
                     processed_frequencies.sort_unstable_by(|a, b| b.count.cmp(&a.count));
                 }
             }
 
             // Calculate cardinality for this field
-            // we do this instead of using the stats record's cardinality
-            // so we can handle stdin which doesn't have a stats record
             let cardinality = if all_unique_header {
-                // For all-unique fields, cardinality equals rowcount
-                rowcount
+                rowcount // For all-unique fields, cardinality == rowcount
             } else {
-                // For regular fields, cardinality is the number of unique values in the original
-                // table before any limits are applied
-                ftab.len() as u64
+                ftab.len() as u64 // otherwise, cardinality == number of unique values
             };
 
             // Get stats record for this field
@@ -865,12 +853,12 @@ impl Args {
             // Get data type and nullcount from stats record
             let dtype = stats_record.map_or(String::new(), |sr| sr.r#type.clone());
             let nullcount = stats_record.map_or(0, |sr| sr.nullcount);
-            let sparsity = util::round_num(nullcount as f64 / rowcount as f64, 4)
-                .parse::<f64>()
-                .unwrap_or(0.0);
-            let uniqueness_ratio = util::round_num(cardinality as f64 / rowcount as f64, 4)
-                .parse::<f64>()
-                .unwrap_or(0.0);
+            let sparsity =
+                fast_float2::parse(&util::round_num(nullcount as f64 / rowcount as f64, 4))
+                    .unwrap_or(0.0);
+            let uniqueness_ratio =
+                fast_float2::parse(&util::round_num(cardinality as f64 / rowcount as f64, 4))
+                    .unwrap_or(0.0);
 
             // Build stats vector from stats record if type is not empty and not NULL or Boolean
             if !self.flag_no_stats
@@ -886,7 +874,7 @@ impl Args {
                 add_stat(&mut field_stats, "range", sr.range);
                 add_stat(&mut field_stats, "sort_order", sr.sort_order.clone());
 
-                // String-specific stats
+                // String-specific length stats
                 add_stat(&mut field_stats, "min_length", sr.min_length);
                 add_stat(&mut field_stats, "max_length", sr.max_length);
                 add_stat(&mut field_stats, "sum_length", sr.sum_length);
@@ -920,17 +908,14 @@ impl Args {
                             String::from_utf8_lossy(&pf.value).to_string()
                         },
                         count:      pf.count,
-                        percentage: pf
-                            .formatted_percentage
-                            .parse::<f64>()
+                        percentage: fast_float2::parse(&pf.formatted_percentage)
                             .unwrap_or(pf.percentage),
                         rank:       pf.rank,
                     })
                     .collect(),
             });
 
-            // Clear the vectors for the next iteration
-            processed_frequencies.clear();
+            processed_frequencies.clear(); // clear for next field
         } // end for loop
 
         let output = FrequencyOutput {
@@ -942,8 +927,7 @@ impl Args {
             },
             description: format!("Generated with `qsv {}`", argv[1..].join(" ")),
             rowcount: if rowcount == 0 {
-                // if rowcount == 0 (most probably, coz the input is STDIN),
-                // derive the rowcount from first json_fields vec
+                // if rowcount == 0, derive the rowcount from first field's frequencies
                 // by summing the counts for the first field
                 fields
                     .first()
@@ -989,19 +973,19 @@ impl Args {
 /// Automatically converts any type to appropriate JSON value
 fn add_stat<T: ToString>(field_stats: &mut Vec<FieldStats>, name: &str, value: Option<T>) {
     if let Some(val) = value {
-        let value_str = val.to_string();
+        let val_string = val.to_string();
 
         // Try to parse as integer first
-        let json_value = if let Ok(int_val) = value_str.parse::<i64>() {
+        let json_value = if let Ok(int_val) = atoi_simd::parse::<i64>(val_string.as_bytes()) {
             JsonValue::Number(int_val.into())
-        } else if let Ok(float_val) = value_str.parse::<f64>() {
+        } else if let Ok(float_val) = fast_float2::parse(&val_string) {
             JsonValue::Number(
                 serde_json::Number::from_f64(float_val)
                     .unwrap_or_else(|| serde_json::Number::from(0)),
             )
         } else {
             // Fall back to string
-            JsonValue::String(value_str)
+            JsonValue::String(val_string)
         };
 
         field_stats.push(FieldStats {

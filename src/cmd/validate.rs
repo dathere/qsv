@@ -1158,7 +1158,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 }]
                             });
                             let json_error = if flag_pretty_json {
-                                serde_json::to_string_pretty(&header_error).unwrap()
+                                simd_json::to_string_pretty(&header_error).unwrap()
                             } else {
                                 header_error.to_string()
                             };
@@ -1174,7 +1174,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             }]
                         });
                         let json_error = if flag_pretty_json {
-                            serde_json::to_string_pretty(&header_error).unwrap()
+                            simd_json::to_string_pretty(&header_error).unwrap()
                         } else {
                             header_error.to_string()
                         };
@@ -1226,7 +1226,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     });
 
                     let json_error = if flag_pretty_json {
-                        serde_json::to_string_pretty(&validation_error).unwrap()
+                        simd_json::to_string_pretty(&validation_error).unwrap()
                     } else {
                         validation_error.to_string()
                     };
@@ -1265,7 +1265,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     });
 
                     let json_error = if flag_pretty_json {
-                        serde_json::to_string_pretty(&validation_error).unwrap()
+                        simd_json::to_string_pretty(&validation_error).unwrap()
                     } else {
                         validation_error.to_string()
                     };
@@ -1300,9 +1300,9 @@ Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."#
             };
 
             if flag_pretty_json {
-                serde_json::to_string_pretty(&rfc4180).unwrap()
+                simd_json::to_string_pretty(&rfc4180).unwrap()
             } else {
-                serde_json::to_string(&rfc4180).unwrap()
+                simd_json::to_string(&rfc4180).unwrap()
             }
         } else {
             let delim_display = if rconfig.get_delimiter() == b'\t' {

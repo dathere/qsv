@@ -239,7 +239,7 @@ fn is_valid_model(
     let Some(models) = response_json["data"].as_array() else {
         return fail_clierror!(
             "Invalid response: 'data' field is not an array or is missing\n\n{}",
-            serde_json::to_string_pretty(&response_json).unwrap_or_default()
+            simd_json::to_string_pretty(&response_json).unwrap_or_default()
         );
     };
     for model in models {
@@ -607,7 +607,7 @@ fn run_inference_options(
     if is_json_output(args)? && !is_jsonl_output(args)? {
         // Format & print JSON output
         let formatted_output =
-            format_output(&serde_json::to_string_pretty(&total_json_output).unwrap());
+            format_output(&simd_json::to_string_pretty(&total_json_output).unwrap());
         println!("{formatted_output}");
         // Write to file if --output is used, or overwrite if already exists
         if let Some(output_file_path) = args.flag_output.clone() {
@@ -623,7 +623,7 @@ fn run_inference_options(
             total_json_output["timestamp"] = json!(chrono::offset::Utc::now().to_rfc3339());
         }
         // Format & print JSONL output
-        let formatted_output = format_output(&serde_json::to_string(&total_json_output).unwrap());
+        let formatted_output = format_output(&simd_json::to_string(&total_json_output).unwrap());
         println!("{formatted_output}");
         // Write to file if --output is used, or append if already exists
         if let Some(output_file_path) = args.flag_output.clone() {

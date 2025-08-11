@@ -1233,7 +1233,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         stats_pathbuf.set_extension("csv.json");
         std::fs::write(
             stats_pathbuf,
-            serde_json::to_string_pretty(&current_stats_args)?,
+            simd_json::to_string_pretty(&current_stats_args)?,
         )?;
     } else if let Some(path) = rconfig.path {
         // if we read from a file, copy the temp stats file to "<FILESTEM>.stats.csv"
@@ -1285,7 +1285,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .to_string();
             std::fs::write(
                 stats_pathbuf.clone(),
-                serde_json::to_string_pretty(&current_stats_args)?,
+                simd_json::to_string_pretty(&current_stats_args)?,
             )?;
 
             // save the stats data to "<FILESTEM>.stats.csv.data.jsonl"

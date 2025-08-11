@@ -858,7 +858,7 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                     .read_metadata(geocode_index_file)
                     .map_err(|e| format!("index-check error: {e}"))?;
 
-                let index_metadata_json = match serde_json::to_string_pretty(&metadata) {
+                let index_metadata_json = match simd_json::to_string_pretty(&metadata) {
                     Ok(json) => json,
                     Err(e) => {
                         let json_error = json!({
@@ -1914,9 +1914,9 @@ fn format_result(
                 // don't have a country record
                 let countryrecord = engine.country_info(country).unwrap();
                 let cr_json =
-                    serde_json::to_string(cityrecord).unwrap_or_else(|_| "null".to_string());
+                    simd_json::to_string(cityrecord).unwrap_or_else(|_| "null".to_string());
                 let country_json =
-                    serde_json::to_string(countryrecord).unwrap_or_else(|_| "null".to_string());
+                    simd_json::to_string(countryrecord).unwrap_or_else(|_| "null".to_string());
                 let us_fips_codes_json = get_us_fips_codes(cityrecord, nameslang);
                 format!(
                     "{{\"cityrecord\":{cr_json}, \"countryrecord\":{country_json} \
@@ -1927,11 +1927,11 @@ fn format_result(
                 // safety: see safety note above for "%json"
                 let countryrecord = engine.country_info(country).unwrap();
                 let cr_json =
-                    serde_json::to_string_pretty(cityrecord).unwrap_or_else(|_| "null".to_string());
-                let country_json = serde_json::to_string_pretty(countryrecord)
+                    simd_json::to_string_pretty(cityrecord).unwrap_or_else(|_| "null".to_string());
+                let country_json = simd_json::to_string_pretty(countryrecord)
                     .unwrap_or_else(|_| "null".to_string());
                 let us_fips_codes = get_us_fips_codes(cityrecord, nameslang);
-                let us_fips_codes_json = serde_json::to_string_pretty(&us_fips_codes)
+                let us_fips_codes_json = simd_json::to_string_pretty(&us_fips_codes)
                     .unwrap_or_else(|_| "null".to_string());
                 format!(
                     "{{\n  \"cityrecord\":{cr_json},\n  \"countryrecord\":{country_json}\n \
@@ -2116,9 +2116,9 @@ fn get_countryinfo(
         let formatted = match formatstr {
             "%capital" => countryrecord.info.capital.to_string(),
             "%continent" => countryrecord.info.continent.to_string(),
-            "%json" => serde_json::to_string(countryrecord).unwrap_or_else(|_| "null".to_string()),
+            "%json" => simd_json::to_string(countryrecord).unwrap_or_else(|_| "null".to_string()),
             "%pretty-json" => {
-                serde_json::to_string_pretty(countryrecord).unwrap_or_else(|_| "null".to_string())
+                simd_json::to_string_pretty(countryrecord).unwrap_or_else(|_| "null".to_string())
             },
             _ => countryrecord
                 .names

@@ -1160,7 +1160,7 @@ fn get_redis_response(
     flag_max_retries: u8,
 ) -> Result<cached::Return<String>, CliError> {
     Ok(Return::new({
-        serde_json::to_string(&get_response(
+        simd_json::to_string(&get_response(
             url,
             client,
             limiter,
@@ -1572,8 +1572,8 @@ fn format_value(value: Value) -> String {
         },
         Value::String(s) => format!("\"{s}\""),
         Value::Null => "null".to_string(),
-        Value::Array(arr) => serde_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string()),
-        Value::Object(obj) => serde_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string()),
+        Value::Array(arr) => simd_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string()),
+        Value::Object(obj) => simd_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string()),
     }
 }
 

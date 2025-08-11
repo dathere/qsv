@@ -1255,7 +1255,7 @@ fn get_redis_response(
     flag_max_retries: u8,
 ) -> Result<cached::Return<String>, CliError> {
     Ok(Return::new({
-        serde_json::to_string(&get_response(
+        simd_json::to_string(&get_response(
             url,
             form_body_jsonmap,
             payload_content_type,
@@ -1354,7 +1354,7 @@ fn get_response(
 
         // send the actual request
         let form_body_raw = match payload_content_type {
-            ContentType::Json => serde_json::to_string(&form_body_jsonmap)
+            ContentType::Json => simd_json::to_string(&form_body_jsonmap)
                 .unwrap() // safety: we know form_body_jsonmap is a valid JSON at this point
                 .as_bytes()
                 .to_owned(),

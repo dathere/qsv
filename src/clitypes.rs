@@ -256,6 +256,12 @@ impl From<chrono_tz::ParseError> for CliError {
     }
 }
 
+impl From<simd_json::Error> for CliError {
+    fn from(err: simd_json::Error) -> CliError {
+        CliError::Other(format!("SimdJSON error: {err:?}"))
+    }
+}
+
 impl From<zip::result::ZipError> for CliError {
     fn from(err: zip::result::ZipError) -> CliError {
         match err {

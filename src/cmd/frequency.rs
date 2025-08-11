@@ -402,11 +402,7 @@ impl Args {
         let pct_decimal = Decimal::from_f64(percentage).unwrap_or_default();
         let pct_scale = if self.flag_pct_dec_places < 0 {
             let current_scale = pct_decimal.scale();
-            if current_scale > abs_dec_places {
-                current_scale
-            } else {
-                abs_dec_places
-            }
+            current_scale.max(abs_dec_places)
         } else {
             abs_dec_places
         };
@@ -905,7 +901,7 @@ impl Args {
                         value:      if self.flag_vis_whitespace {
                             util::visualize_whitespace(&String::from_utf8_lossy(&pf.value))
                         } else {
-                            String::from_utf8_lossy(&pf.value).to_string()
+                            String::from_utf8_lossy(&pf.value).into_owned()
                         },
                         count:      pf.count,
                         percentage: fast_float2::parse(&pf.formatted_percentage)

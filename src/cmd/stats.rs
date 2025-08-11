@@ -2439,8 +2439,8 @@ impl Stats {
                         let antimodes_len = ANTIMODES_LEN.get_or_init(|| {
                             std::env::var("QSV_ANTIMODES_LEN")
                                 .map(|val| {
-                                    let parsed =
-                                        val.parse::<usize>().unwrap_or(DEFAULT_ANTIMODES_LEN);
+                                    let parsed = atoi_simd::parse::<usize>(val.as_bytes())
+                                        .unwrap_or(DEFAULT_ANTIMODES_LEN);
                                     // if 0, disable length limiting
                                     if parsed == 0 { usize::MAX } else { parsed }
                                 })
@@ -2854,8 +2854,8 @@ impl Stats {
                         .which
                         .percentile_list
                         .split(',')
-                        .filter_map(|p| p.trim().parse::<f64>().ok())
-                        .map(|p| p as u8)
+                        .filter_map(|p: &str| fast_float2::parse(p).ok())
+                        .map(|p: f64| p as u8)
                         .collect::<Vec<_>>();
 
                     if let Some(percentile_values) = v.custom_percentiles(&percentile_list) {
@@ -3212,7 +3212,7 @@ impl TypedMinMax {
 
                     let max_length = std::env::var("QSV_STATS_STRING_MAX_LENGTH")
                         .ok()
-                        .and_then(|s| s.parse::<usize>().ok());
+                        .and_then(|s| atoi_simd::parse::<usize>(s.as_bytes()).ok());
 
                     let (min_str, max_str) = if let Some(max_len) = max_length {
                         (

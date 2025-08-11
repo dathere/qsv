@@ -762,7 +762,7 @@ impl Args {
         // now, get the unique headers, where cardinality == rowcount
         let row_count = dataset_stats
             .get("qsv__rowcount")
-            .and_then(|count| count.parse::<u64>().ok())
+            .and_then(|count| atoi_simd::parse::<u64>(count.as_bytes()).ok())
             .unwrap_or_else(|| util::count_rows(&self.rconfig()).unwrap_or_default());
         FREQ_ROW_COUNT.set(row_count).unwrap();
 

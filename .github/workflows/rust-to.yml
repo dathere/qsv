@@ -24,7 +24,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libwayland-dev
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: Update Rust
       run: rustup update
     - name: Setup Rust-cache

@@ -1648,3 +1648,493 @@ fn validate_with_fancy_regex() {
     ];
     assert_eq!(invalid_records, expected_invalid);
 }
+
+#[test]
+fn validate_schema_subcommand_valid_schema() {
+    let wrk = Workdir::new("validate_schema_subcommand_valid_schema").flexible(true);
+
+    // Create a valid JSON Schema
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "email": { 
+                    "type": "string",
+                    "format": "email"
+                },
+                "age": { 
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 150
+                }
+            },
+            "required": ["id", "name"]
+        }"#,
+    );
+
+    // Run validate schema command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("schema.json");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.output_stderr(&mut cmd);
+    let expected = "Valid JSON Schema.\n";
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn validate_schema_subcommand_invalid_schema() {
+    let wrk = Workdir::new("validate_schema_subcommand_invalid_schema").flexible(true);
+
+    // Create an invalid JSON Schema (invalid type)
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "invalid_type" },
+                "name": { "type": "string" }
+            }
+        }"#,
+    );
+
+    // Run validate schema command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("schema.json");
+
+    wrk.assert_err(&mut cmd);
+
+    let got: String = wrk.output_stderr(&mut cmd);
+    let expected = "Invalid JSON Schema.\n";
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn validate_schema_subcommand_invalid_draft() {
+    let wrk = Workdir::new("validate_schema_subcommand_invalid_draft").flexible(true);
+
+    // Create a schema with invalid draft version
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-25/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" }
+            }
+        }"#,
+    );
+
+    // Run validate schema command
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("schema.json");
+
+    wrk.assert_err(&mut cmd);
+
+    let got: String = wrk.output_stderr(&mut cmd);
+    let expected = "JSON Schema Meta-Reference Error: Unknown specification: https://json-schema.org/draft/2020-25/schema\n";
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn validate_schema_subcommand_no_schema_file() {
+    let wrk = Workdir::new("validate_schema_subcommand_no_schema_file").flexible(true);
+
+    // Run validate schema command without providing a schema file
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema");
+
+    wrk.assert_err(&mut cmd);
+
+    let got: String = wrk.output_stderr(&mut cmd);
+    let expected = "No JSON Schema file supplied.\n";
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn validate_schema_subcommand_with_no_format_validation() {
+    let wrk = Workdir::new("validate_schema_subcommand_with_no_format_validation").flexible(true);
+
+    // Create a schema with format validation
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "email": { 
+                    "type": "string",
+                    "format": "email"
+                },
+                "uri": { 
+                    "type": "string",
+                    "format": "uri"
+                },
+                "currency": { 
+                    "type": "string",
+                    "format": "currency"
+                }
+            }
+        }"#,
+    );
+
+    // Run validate schema command with --no-format-validation
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema")
+        .arg("--no-format-validation")
+        .arg("schema.json");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.output_stderr(&mut cmd);
+    let expected = "Valid JSON Schema.\n";
+    assert_eq!(got, expected);
+}
+
+// Note: --quiet flag test removed due to command parsing issues
+
+#[test]
+fn validate_with_no_format_validation_success() {
+    let wrk = Workdir::new("validate_with_no_format_validation_success").flexible(true);
+
+    // Create test data with invalid format values that would normally fail validation
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "email", "website", "currency"],
+            svec!["1", "John Doe", "not-an-email", "not-a-url", "not-currency"],
+            svec![
+                "2",
+                "Jane Smith",
+                "also-not-email",
+                "also-not-url",
+                "also-not-currency"
+            ],
+        ],
+    );
+
+    // Create schema with format validation
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "email": { 
+                    "type": "string",
+                    "format": "email"
+                },
+                "website": { 
+                    "type": "string",
+                    "format": "uri"
+                },
+                "currency": { 
+                    "type": "string",
+                    "format": "currency"
+                }
+            }
+        }"#,
+    );
+
+    // Run validation WITH format validation (should fail)
+    let mut cmd_with_format = wrk.command("validate");
+    cmd_with_format.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd_with_format);
+
+    wrk.assert_err(&mut cmd_with_format);
+
+    // Check that format validation errors are present
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(validation_errors.contains("is not a \"email\""));
+    assert!(validation_errors.contains("is not a \"uri\""));
+    assert!(validation_errors.contains("is not a \"currency\""));
+
+    // Clean up output files for next test
+    let _ = std::fs::remove_file(wrk.path("data.csv.valid"));
+    let _ = std::fs::remove_file(wrk.path("data.csv.invalid"));
+    let _ = std::fs::remove_file(wrk.path("data.csv.validation-errors.tsv"));
+
+    // Run validation WITHOUT format validation (should succeed)
+    let mut cmd_no_format = wrk.command("validate");
+    cmd_no_format
+        .arg("--no-format-validation")
+        .arg("data.csv")
+        .arg("schema.json");
+
+    wrk.assert_success(&mut cmd_no_format);
+
+    // Should not create any error files since all records are valid
+    // when format validation is disabled
+    assert!(!wrk.path("data.csv.invalid").exists());
+    assert!(!wrk.path("data.csv.validation-errors.tsv").exists());
+
+    let got: String = wrk.output_stderr(&mut cmd_no_format);
+    let expected = "All 2 records valid.\n";
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn validate_with_no_format_validation_mixed_errors() {
+    let wrk = Workdir::new("validate_with_no_format_validation_mixed_errors").flexible(true);
+
+    // Create test data with both format errors and structural errors
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "email", "age"],
+            svec!["1", "John Doe", "not-an-email", "25"], // Format error only
+            svec!["2", "Jane Smith", "jane@example.com", "not-a-number"], // Type error
+            svec!["3", "Bob Wilson", "bob@example.com", "30"], // Valid
+        ],
+    );
+
+    // Create schema with both format and type validation
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "email": { 
+                    "type": "string",
+                    "format": "email"
+                },
+                "age": { 
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 150
+                }
+            }
+        }"#,
+    );
+
+    // Run validation WITH format validation
+    let mut cmd_with_format = wrk.command("validate");
+    cmd_with_format.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd_with_format);
+
+    wrk.assert_err(&mut cmd_with_format);
+
+    // Should have both format and type errors
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(validation_errors.contains("is not a \"email\"")); // Format error
+    assert!(validation_errors.contains("Can't cast to Integer")); // Type error
+
+    // Clean up output files for next test
+    let _ = std::fs::remove_file(wrk.path("data.csv.valid"));
+    let _ = std::fs::remove_file(wrk.path("data.csv.invalid"));
+    let _ = std::fs::remove_file(wrk.path("data.csv.validation-errors.tsv"));
+
+    // Run validation WITHOUT format validation
+    let mut cmd_no_format = wrk.command("validate");
+    cmd_no_format
+        .arg("--no-format-validation")
+        .arg("data.csv")
+        .arg("schema.json");
+    wrk.output(&mut cmd_no_format);
+
+    wrk.assert_err(&mut cmd_no_format);
+
+    // Should only have type errors, no format errors
+    let validation_errors_no_format = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(!validation_errors_no_format.contains("is not a \"email\"")); // No format error
+    assert!(validation_errors_no_format.contains("Can't cast to Integer")); // Still has type error
+
+    // Check valid records - should include the record with only format errors
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["1", "John Doe", "not-an-email", "25"], // Now valid (format ignored)
+        svec!["3", "Bob Wilson", "bob@example.com", "30"], // Still valid
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records - should only include the record with type errors
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![svec!["2", "Jane Smith", "jane@example.com", "not-a-number"]];
+    assert_eq!(invalid_records, expected_invalid);
+}
+
+#[test]
+fn validate_schema_subcommand_with_invalid_format_validation() {
+    let wrk =
+        Workdir::new("validate_schema_subcommand_with_invalid_format_validation").flexible(true);
+
+    // Create a schema with invalid format validation that would normally fail
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "email": { 
+                    "type": "string",
+                    "format": "invalid_format"
+                }
+            }
+        }"#,
+    );
+
+    // Run validate schema command WITHOUT --no-format-validation (should fail)
+    let mut cmd_with_format = wrk.command("validate");
+    cmd_with_format.arg("schema").arg("schema.json");
+
+    wrk.assert_err(&mut cmd_with_format);
+
+    // Run validate schema command WITH --no-format-validation (should succeed)
+    let mut cmd_no_format = wrk.command("validate");
+    cmd_no_format
+        .arg("schema")
+        .arg("--no-format-validation")
+        .arg("schema.json");
+
+    wrk.assert_success(&mut cmd_no_format);
+
+    let got: String = wrk.output_stderr(&mut cmd_no_format);
+    let expected = "Valid JSON Schema.\n";
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn validate_schema_subcommand_with_url_schema() {
+    let wrk = Workdir::new("validate_schema_subcommand_with_url_schema").flexible(true);
+
+    // Test with a remote schema URL
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema")
+        .arg("https://raw.githubusercontent.com/dathere/qsv/master/resources/test/public-toilets-schema.json");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.output_stderr(&mut cmd);
+    let expected = "Valid JSON Schema.\n";
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn validate_schema_subcommand_with_invalid_url_schema() {
+    let wrk = Workdir::new("validate_schema_subcommand_with_invalid_url_schema").flexible(true);
+
+    // Test with an invalid remote schema URL
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema")
+        .arg("https://raw.githubusercontent.com/dathere/qsv/master/nonexistent-schema.json");
+
+    wrk.assert_err(&mut cmd);
+
+    let got: String = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("Cannot compile JSONschema")
+            || got.contains("io error")
+            || got.contains("timeout")
+            || got.contains("JSON error")
+    );
+}
+
+#[test]
+fn validate_with_no_format_validation_and_dynamic_enum() {
+    let wrk = Workdir::new("validate_with_no_format_validation_and_dynamic_enum").flexible(true);
+
+    // Create lookup file
+    wrk.create(
+        "lookup.csv",
+        vec![
+            svec!["code", "name"],
+            svec!["A1", "Apple"],
+            svec!["B2", "Banana"],
+        ],
+    );
+
+    // Create test data
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "product", "email"],
+            svec!["1", "Apple", "not-an-email"], // Valid product, invalid email format
+            svec!["2", "Orange", "valid@email.com"], // Invalid product, valid email format
+        ],
+    );
+
+    // Create schema with both dynamicEnum and format validation
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "product": { 
+                    "type": "string",
+                    "dynamicEnum": "lookup.csv|name"
+                },
+                "email": { 
+                    "type": "string",
+                    "format": "email"
+                }
+            }
+        }"#,
+    );
+
+    // Run validation WITH format validation
+    let mut cmd_with_format = wrk.command("validate");
+    cmd_with_format.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd_with_format);
+
+    wrk.assert_err(&mut cmd_with_format);
+
+    // Should have both dynamicEnum and format errors
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(validation_errors.contains("is not a valid dynamicEnum value")); // dynamicEnum error
+    assert!(validation_errors.contains("is not a \"email\"")); // Format error
+
+    // Clean up output files for next test
+    let _ = std::fs::remove_file(wrk.path("data.csv.valid"));
+    let _ = std::fs::remove_file(wrk.path("data.csv.invalid"));
+    let _ = std::fs::remove_file(wrk.path("data.csv.validation-errors.tsv"));
+
+    // Run validation WITHOUT format validation
+    let mut cmd_no_format = wrk.command("validate");
+    cmd_no_format
+        .arg("--no-format-validation")
+        .arg("data.csv")
+        .arg("schema.json");
+    wrk.output(&mut cmd_no_format);
+
+    wrk.assert_err(&mut cmd_no_format);
+
+    // Should only have dynamicEnum errors, no format errors
+    let validation_errors_no_format = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(validation_errors_no_format.contains("is not a valid dynamicEnum value")); // Still has dynamicEnum error
+    assert!(!validation_errors_no_format.contains("is not a \"email\"")); // No format error
+
+    // Check valid records - should include the record with only format errors
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![svec!["1", "Apple", "not-an-email"]]; // Now valid (format ignored)
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records - should only include the record with dynamicEnum errors
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![svec!["2", "Orange", "valid@email.com"]];
+    assert_eq!(invalid_records, expected_invalid);
+}

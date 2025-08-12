@@ -27,7 +27,7 @@
           "name": "stddev","value": 9013895.3358
         },
         {
-          "name": "variance","value": 81250309125279.28
+          "name": "variance","value": 81250309125279.27
         },
         {
           "name": "cv","value": 27.5756
@@ -39,36 +39,33 @@
       ]
     },
     {
-      "field": "Created Date","type": "String","cardinality": 841014,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.841,"stats": [
+      "field": "Created Date","type": "DateTime","cardinality": 841014,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.841,"stats": [
         {
-          "name": "min","value": "01/01/2010 01:05:51 PM"
+          "name": "min","value": "2010-01-01T00:00:00+00:00"
         },
         {
-          "name": "max","value": "12/31/2019 12:58:50 PM"
+          "name": "max","value": "2020-12-23T01:25:51+00:00"
+        },
+        {
+          "name": "range","value": 4009.05962
         },
         {
           "name": "sort_order","value": "Unsorted"
         },
         {
-          "name": "min_length","value": 22
+          "name": "mean","value": 0
         },
         {
-          "name": "max_length","value": 22
+          "name": "sem","value": 1.15502
         },
         {
-          "name": "sum_length","value": 22000000
+          "name": "stddev","value": 1155.01606
         },
         {
-          "name": "avg_length","value": 22
+          "name": "variance","value": 1334062.09198
         },
         {
-          "name": "stddev_length","value": 0
-        },
-        {
-          "name": "variance_length","value": 0
-        },
-        {
-          "name": "cv_length","value": 0
+          "name": "cv","value": 6.8957
         }
       ],"frequencies": [
         {
@@ -107,36 +104,33 @@
       ]
     },
     {
-      "field": "Closed Date","type": "String","cardinality": 688837,"nullcount": 28619,"sparsity": 0.0286,"uniqueness_ratio": 0.6888,"stats": [
+      "field": "Closed Date","type": "DateTime","cardinality": 688837,"nullcount": 28619,"sparsity": 0.0286,"uniqueness_ratio": 0.6888,"stats": [
         {
-          "name": "min","value": "01/01/1900 12:00:00 AM"
+          "name": "min","value": "1900-01-01T00:00:00+00:00"
         },
         {
-          "name": "max","value": "12/31/2019 12:59:00 PM"
+          "name": "max","value": "2100-01-01T00:00:00+00:00"
+        },
+        {
+          "name": "range","value": 73049
         },
         {
           "name": "sort_order","value": "Unsorted"
         },
         {
-          "name": "min_length","value": 0
+          "name": "mean","value": 0
         },
         {
-          "name": "max_length","value": 22
+          "name": "sem","value": 1.33393
         },
         {
-          "name": "sum_length","value": 21370382
+          "name": "stddev","value": 1314.70016
         },
         {
-          "name": "avg_length","value": 21.3704
+          "name": "variance","value": 1728436.50813
         },
         {
-          "name": "stddev_length","value": 3.6681
-        },
-        {
-          "name": "variance_length","value": 13.4552
-        },
-        {
-          "name": "cv_length","value": 0.1716
+          "name": "cv","value": 7.8474
         }
       ],"frequencies": [
         {
@@ -1298,36 +1292,33 @@
       ]
     },
     {
-      "field": "Due Date","type": "String","cardinality": 345077,"nullcount": 647794,"sparsity": 0.6478,"uniqueness_ratio": 0.3451,"stats": [
+      "field": "Due Date","type": "DateTime","cardinality": 345077,"nullcount": 647794,"sparsity": 0.6478,"uniqueness_ratio": 0.3451,"stats": [
         {
-          "name": "min","value": "01/01/2010 01:26:03 PM"
+          "name": "min","value": "1900-01-02T00:00:00+00:00"
         },
         {
-          "name": "max","value": "12/31/2018 12:59:20 PM"
+          "name": "max","value": "2021-06-17T16:34:13+00:00"
+        },
+        {
+          "name": "range","value": 44361.69043
         },
         {
           "name": "sort_order","value": "Unsorted"
         },
         {
-          "name": "min_length","value": 0
+          "name": "mean","value": 0
         },
         {
-          "name": "max_length","value": 22
+          "name": "sem","value": 1.74433
         },
         {
-          "name": "sum_length","value": 7748532
+          "name": "stddev","value": 1035.204
         },
         {
-          "name": "avg_length","value": 7.7485
+          "name": "variance","value": 1071647.31812
         },
         {
-          "name": "stddev_length","value": 10.5085
-        },
-        {
-          "name": "variance_length","value": 110.4287
-        },
-        {
-          "name": "cv_length","value": 1.3562
+          "name": "cv","value": 6.2418
         }
       ],"frequencies": [
         {
@@ -1434,36 +1425,33 @@
       ]
     },
     {
-      "field": "Resolution Action Updated Date","type": "String","cardinality": 690314,"nullcount": 15072,"sparsity": 0.0151,"uniqueness_ratio": 0.6903,"stats": [
+      "field": "Resolution Action Updated Date","type": "DateTime","cardinality": 690314,"nullcount": 15072,"sparsity": 0.0151,"uniqueness_ratio": 0.6903,"stats": [
         {
-          "name": "min","value": "01/01/2010 01:50:45 PM"
+          "name": "min","value": "2009-12-31T01:35:00+00:00"
         },
         {
-          "name": "max","value": "12/31/2019 12:58:00 PM"
+          "name": "max","value": "2020-12-23T06:56:14+00:00"
+        },
+        {
+          "name": "range","value": 4010.22308
         },
         {
           "name": "sort_order","value": "Unsorted"
         },
         {
-          "name": "min_length","value": 0
+          "name": "mean","value": 0
         },
         {
-          "name": "max_length","value": 22
+          "name": "sem","value": 1.16204
         },
         {
-          "name": "sum_length","value": 21668416
+          "name": "stddev","value": 1153.24922
         },
         {
-          "name": "avg_length","value": 21.6684
+          "name": "variance","value": 1329983.75668
         },
         {
-          "name": "stddev_length","value": 2.6805
-        },
-        {
-          "name": "variance_length","value": 7.1849
-        },
-        {
-          "name": "cv_length","value": 0.1237
+          "name": "cv","value": 6.8814
         }
       ],"frequencies": [
         {

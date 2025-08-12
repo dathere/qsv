@@ -140,8 +140,13 @@ If piped from stdin, the filenames will use `stdin.csv` as the base filename. Fo
    * stdin.csv.invalid
    * stdin.csv.validation-errors.tsv
 
-`validate` also has a `schema` subcommand to validate JSON Schema files. For example:
-  `qsv validate schema myjsonschema.json`
+
+JSON SCHEMA SCHEMA VALIDATION SUBMODE:
+---------------------------------------
+`validate` also has a `schema` subcommand to validate JSON Schema files themselves. E.g.
+     `qsv validate schema myjsonschema.json`
+     // ignore format validation
+     `qsv validate schema --no-format-validation myjsonschema.json`
 
 RFC 4180 VALIDATION MODE:
 ========================
@@ -158,7 +163,7 @@ For examples, see the tests included in this file (denoted by '#[test]') or see
 https://github.com/dathere/qsv/blob/master/tests/test_validate.rs.
 
 Usage:
-    qsv validate schema [<json-schema>]
+    qsv validate schema [--no-format-validation] [<json-schema>]
     qsv validate [options] [<input>] [<json-schema>]
     qsv validate --help
 
@@ -1071,6 +1076,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         let validated = jsonschema::meta::try_validate(&schema_json);
                         match validated {
                             Ok(Ok(())) => {
+                                if !args.flag_no_format_validation {
+                                    let test_validator = Validator::options()
+                                        .should_validate_formats(true)
+                                        .should_ignore_unknown_formats(false)
+                                        .build(&schema_json);
+                                    if let Err(e) = test_validator {
+                                        return fail_clierror!(
+                                            "JSON Schema Format Validation Error: {e}"
+                                        );
+                                    }
+                                }
                                 if !args.flag_quiet {
                                     winfo!("Valid JSON Schema.");
                                 }

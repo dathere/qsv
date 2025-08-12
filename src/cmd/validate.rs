@@ -1076,16 +1076,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         let validated = jsonschema::meta::try_validate(&schema_json);
                         match validated {
                             Ok(Ok(())) => {
-                                if !args.flag_no_format_validation {
-                                    let test_validator = Validator::options()
+                                let test_validator = if args.flag_no_format_validation {
+                                    Validator::options()
+                                        .should_validate_formats(false)
+                                        .should_ignore_unknown_formats(true)
+                                        .build(&schema_json)
+                                } else {
+                                    Validator::options()
                                         .should_validate_formats(true)
                                         .should_ignore_unknown_formats(false)
-                                        .build(&schema_json);
-                                    if let Err(e) = test_validator {
-                                        return fail_clierror!(
-                                            "JSON Schema Format Validation Error: {e}"
-                                        );
-                                    }
+                                        .build(&schema_json)
+                                };
+                                if let Err(e) = test_validator {
+                                    return fail_clierror!(
+                                        "JSON Schema Format Validation Error: {e}"
+                                    );
                                 }
                                 if !args.flag_quiet {
                                     winfo!("Valid JSON Schema.");

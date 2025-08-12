@@ -371,7 +371,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_print_package {
         println!(
             "{}",
-            serde_json::to_string_pretty(&output).expect("values should be serializable")
+            simd_json::to_string_pretty(&output).expect("values should be serializable")
         );
     } else if !args.flag_quiet && !args.flag_dump {
         let empty_array = vec![];

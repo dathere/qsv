@@ -934,7 +934,7 @@ impl Args {
             fieldcount,
             fields,
         };
-        let mut json_output = serde_json::to_string_pretty(&output)?;
+        let mut json_output = simd_json::to_string_pretty(&output)?;
 
         // remove all empty stats properties from the JSON output using regex
         let re = regex::Regex::new(r#""stats": \[\],\n\s*"#).unwrap();

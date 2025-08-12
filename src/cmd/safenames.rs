@@ -256,10 +256,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 if safenames_mode == SafeNameMode::VerifyVerbosePrettyJSON {
                     println!(
                         "{}",
-                        serde_json::to_string_pretty(&safenames_struct).unwrap()
+                        simd_json::to_string_pretty(&safenames_struct).unwrap()
                     );
                 } else {
-                    println!("{}", serde_json::to_string(&safenames_struct).unwrap());
+                    println!("{}", simd_json::to_string(&safenames_struct).unwrap());
                 }
             },
             _ => eprintln!("{unsafe_count}"),

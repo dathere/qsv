@@ -215,10 +215,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if args.flag_pretty_json {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&sortcheck_struct).unwrap()
+                simd_json::to_string_pretty(&sortcheck_struct).unwrap()
             );
         } else {
-            println!("{}", serde_json::to_string(&sortcheck_struct).unwrap());
+            println!("{}", simd_json::to_string(&sortcheck_struct).unwrap());
         }
     }
 

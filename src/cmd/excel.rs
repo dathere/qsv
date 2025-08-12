@@ -683,13 +683,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 wtr.flush()?;
             },
             MetadataMode::Json => {
-                let Ok(json_result) = serde_json::to_string(&excelmetadata_struct) else {
+                let Ok(json_result) = simd_json::to_string(&excelmetadata_struct) else {
                     return fail!("Cannot create JSON");
                 };
                 println!("{json_result}");
             },
             MetadataMode::PrettyJSON => {
-                let Ok(json_result) = serde_json::to_string_pretty(&excelmetadata_struct) else {
+                let Ok(json_result) = simd_json::to_string_pretty(&excelmetadata_struct) else {
                     return fail!("Cannot create pretty JSON");
                 };
                 println!("{json_result}");
@@ -711,7 +711,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     };
                     short_excelmetadata_struct.sheet.push(short_sheetmetadata);
                 }
-                let Ok(json_result) = serde_json::to_string(&short_excelmetadata_struct) else {
+                let Ok(json_result) = simd_json::to_string(&short_excelmetadata_struct) else {
                     return fail!("Cannot create short JSON");
                 };
                 println!("{json_result}");

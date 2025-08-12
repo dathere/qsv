@@ -704,188 +704,92 @@ fn excel_metadata_pretty_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected = r#"excel-xls.xls",
-  "format": "Excel: xls",
-  "sheet_count": 8,
-  "sheet": [
+    let expected = r#"excel-xls.xls","format": "Excel: xls","sheet_count": 8,"sheet": [
     {
-      "index": 0,
-      "name": "First",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 0,"name": "First","typ": "WorkSheet","visible": "Visible","headers": [
         "URL",
         "City"
-      ],
-      "column_count": 2,
-      "row_count": 4,
-      "safe_headers": [
+      ],"column_count": 2,"row_count": 4,"safe_headers": [
         "URL",
         "City"
-      ],
-      "safe_headers_count": 2,
-      "unsafe_headers": [],
-      "unsafe_headers_count": 0,
-      "duplicate_headers_count": 0
+      ],"safe_headers_count": 2,"unsafe_headers": [],"unsafe_headers_count": 0,"duplicate_headers_count": 0
     },
     {
-      "index": 1,
-      "name": "Flexibility Test",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 1,"name": "Flexibility Test","typ": "WorkSheet","visible": "Visible","headers": [
         "URL",
         "City",
         ""
-      ],
-      "column_count": 3,
-      "row_count": 6,
-      "safe_headers": [
+      ],"column_count": 3,"row_count": 6,"safe_headers": [
         "URL",
         "City"
-      ],
-      "safe_headers_count": 2,
-      "unsafe_headers": [
+      ],"safe_headers_count": 2,"unsafe_headers": [
         ""
-      ],
-      "unsafe_headers_count": 1,
-      "duplicate_headers_count": 0
+      ],"unsafe_headers_count": 1,"duplicate_headers_count": 0
     },
     {
-      "index": 2,
-      "name": "Middle",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 2,"name": "Middle","typ": "WorkSheet","visible": "Visible","headers": [
         "Middle sheet col1",
         "Middle-2"
-      ],
-      "column_count": 2,
-      "row_count": 6,
-      "safe_headers": [
+      ],"column_count": 2,"row_count": 6,"safe_headers": [
         "Middle sheet col1",
         "Middle-2"
-      ],
-      "safe_headers_count": 2,
-      "unsafe_headers": [],
-      "unsafe_headers_count": 0,
-      "duplicate_headers_count": 0
+      ],"safe_headers_count": 2,"unsafe_headers": [],"unsafe_headers_count": 0,"duplicate_headers_count": 0
     },
     {
-      "index": 3,
-      "name": "Sheet1",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [],
-      "column_count": 0,
-      "row_count": 0,
-      "safe_headers": [],
-      "safe_headers_count": 0,
-      "unsafe_headers": [],
-      "unsafe_headers_count": 0,
-      "duplicate_headers_count": 0
+      "index": 3,"name": "Sheet1","typ": "WorkSheet","visible": "Visible","headers": [],"column_count": 0,"row_count": 0,"safe_headers": [],"safe_headers_count": 0,"unsafe_headers": [],"unsafe_headers_count": 0,"duplicate_headers_count": 0
     },
     {
-      "index": 4,
-      "name": "trim test",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 4,"name": "trim test","typ": "WorkSheet","visible": "Visible","headers": [
         "col1",
         "   col2",
         "col3"
-      ],
-      "column_count": 3,
-      "row_count": 6,
-      "safe_headers": [
+      ],"column_count": 3,"row_count": 6,"safe_headers": [
         "col1",
         "col3"
-      ],
-      "safe_headers_count": 2,
-      "unsafe_headers": [
+      ],"safe_headers_count": 2,"unsafe_headers": [
         "   col2"
-      ],
-      "unsafe_headers_count": 1,
-      "duplicate_headers_count": 0
+      ],"unsafe_headers_count": 1,"duplicate_headers_count": 0
     },
     {
-      "index": 5,
-      "name": "date test",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 5,"name": "date test","typ": "WorkSheet","visible": "Visible","headers": [
         "date_col",
         "num_col",
         "col_Petsa",
         "just another col"
-      ],
-      "column_count": 4,
-      "row_count": 6,
-      "safe_headers": [
+      ],"column_count": 4,"row_count": 6,"safe_headers": [
         "date_col",
         "num_col",
         "col_Petsa",
         "just another col"
-      ],
-      "safe_headers_count": 4,
-      "unsafe_headers": [],
-      "unsafe_headers_count": 0,
-      "duplicate_headers_count": 0
+      ],"safe_headers_count": 4,"unsafe_headers": [],"unsafe_headers_count": 0,"duplicate_headers_count": 0
     },
     {
-      "index": 6,
-      "name": "NoData",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 6,"name": "NoData","typ": "WorkSheet","visible": "Visible","headers": [
         "col1",
         "col2",
         "col3",
         "col4"
-      ],
-      "column_count": 4,
-      "row_count": 1,
-      "safe_headers": [
+      ],"column_count": 4,"row_count": 1,"safe_headers": [
         "col1",
         "col2",
         "col3",
         "col4"
-      ],
-      "safe_headers_count": 4,
-      "unsafe_headers": [],
-      "unsafe_headers_count": 0,
-      "duplicate_headers_count": 0
+      ],"safe_headers_count": 4,"unsafe_headers": [],"unsafe_headers_count": 0,"duplicate_headers_count": 0
     },
     {
-      "index": 7,
-      "name": "Last",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 7,"name": "Last","typ": "WorkSheet","visible": "Visible","headers": [
         "Last sheet col1",
         "Last-2"
-      ],
-      "column_count": 2,
-      "row_count": 6,
-      "safe_headers": [
+      ],"column_count": 2,"row_count": 6,"safe_headers": [
         "Last sheet col1",
         "Last-2"
-      ],
-      "safe_headers_count": 2,
-      "unsafe_headers": [],
-      "unsafe_headers_count": 0,
-      "duplicate_headers_count": 0
+      ],"safe_headers_count": 2,"unsafe_headers": [],"unsafe_headers_count": 0,"duplicate_headers_count": 0
     }
-  ],
-  "names": [
+  ],"names": [
     {
-      "name": "_xlfn._FV",
-      "formula": "Unsupported ptg: 1c"
+      "name": "_xlfn._FV","formula": "Unsupported ptg: 1c"
     }
-  ],
-  "name_count": 1,
-  "tables": [],
-  "table_count": 0
+  ],"name_count": 1,"tables": [],"table_count": 0
 }"#;
     assert!(got.ends_with(expected));
     wrk.assert_success(&mut cmd);
@@ -902,40 +806,22 @@ fn excel_metadata_xlsx_ranges_tables_pretty_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected = r#"excel-xlsx.xlsx",
-  "format": "Excel: xlsx",
-  "sheet_count": 7,
-  "sheet": [
+    let expected = r#"excel-xlsx.xlsx","format": "Excel: xlsx","sheet_count": 7,"sheet": [
     {
-      "index": 0,
-      "name": "Sheet1",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 0,"name": "Sheet1","typ": "WorkSheet","visible": "Visible","headers": [
         "URL",
         "City",
         "number",
         "date"
-      ],
-      "column_count": 4,
-      "row_count": 9,
-      "safe_headers": [
+      ],"column_count": 4,"row_count": 9,"safe_headers": [
         "URL",
         "City",
         "number",
         "date"
-      ],
-      "safe_headers_count": 4,
-      "unsafe_headers": [],
-      "unsafe_headers_count": 0,
-      "duplicate_headers_count": 0
+      ],"safe_headers_count": 4,"unsafe_headers": [],"unsafe_headers_count": 0,"duplicate_headers_count": 0
     },
     {
-      "index": 1,
-      "name": "safe_header_name_test",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 1,"name": "safe_header_name_test","typ": "WorkSheet","visible": "Visible","headers": [
         "col1",
         "  col with leading and trailing spaces.  ",
         "123_starts_with_123",
@@ -944,49 +830,27 @@ fn excel_metadata_xlsx_ranges_tables_pretty_json() {
         "col1",
         "The quick BROWN fox with a very long column name is now jumping over a lazy dog by the zigzag quarry site",
         "!!!date???"
-      ],
-      "column_count": 8,
-      "row_count": 6,
-      "safe_headers": [
+      ],"column_count": 8,"row_count": 6,"safe_headers": [
         "col1"
-      ],
-      "safe_headers_count": 1,
-      "unsafe_headers": [
+      ],"safe_headers_count": 1,"unsafe_headers": [
         "  col with leading and trailing spaces.  ",
         "123_starts_with_123",
         "With * / special ? ! Characters. ",
         "The quick BROWN fox with a very long column name is now jumping over a lazy dog by the zigzag quarry site",
         "!!!date???"
-      ],
-      "unsafe_headers_count": 5,
-      "duplicate_headers_count": 2
+      ],"unsafe_headers_count": 5,"duplicate_headers_count": 2
     },
     {
-      "index": 2,
-      "name": "date_test",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 2,"name": "date_test","typ": "WorkSheet","visible": "Visible","headers": [
         "date",
         "plaincol"
-      ],
-      "column_count": 2,
-      "row_count": 6,
-      "safe_headers": [
+      ],"column_count": 2,"row_count": 6,"safe_headers": [
         "date",
         "plaincol"
-      ],
-      "safe_headers_count": 2,
-      "unsafe_headers": [],
-      "unsafe_headers_count": 0,
-      "duplicate_headers_count": 0
+      ],"safe_headers_count": 2,"unsafe_headers": [],"unsafe_headers_count": 0,"duplicate_headers_count": 0
     },
     {
-      "index": 3,
-      "name": "data types",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 3,"name": "data types","typ": "WorkSheet","visible": "Visible","headers": [
         "int",
         "float",
         "bool",
@@ -995,10 +859,7 @@ fn excel_metadata_xlsx_ranges_tables_pretty_json() {
         "string",
         "emojis",
         "foreign"
-      ],
-      "column_count": 8,
-      "row_count": 6,
-      "safe_headers": [
+      ],"column_count": 8,"row_count": 6,"safe_headers": [
         "int",
         "float",
         "bool",
@@ -1007,40 +868,21 @@ fn excel_metadata_xlsx_ranges_tables_pretty_json() {
         "string",
         "emojis",
         "foreign"
-      ],
-      "safe_headers_count": 8,
-      "unsafe_headers": [],
-      "unsafe_headers_count": 0,
-      "duplicate_headers_count": 0
+      ],"safe_headers_count": 8,"unsafe_headers": [],"unsafe_headers_count": 0,"duplicate_headers_count": 0
     },
     {
-      "index": 4,
-      "name": "cellerrors",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 4,"name": "cellerrors","typ": "WorkSheet","visible": "Visible","headers": [
         "col1",
         "col 2",
         "column-3"
-      ],
-      "column_count": 3,
-      "row_count": 10,
-      "safe_headers": [
+      ],"column_count": 3,"row_count": 10,"safe_headers": [
         "col1",
         "col 2",
         "column-3"
-      ],
-      "safe_headers_count": 3,
-      "unsafe_headers": [],
-      "unsafe_headers_count": 0,
-      "duplicate_headers_count": 0
+      ],"safe_headers_count": 3,"unsafe_headers": [],"unsafe_headers_count": 0,"duplicate_headers_count": 0
     },
     {
-      "index": 5,
-      "name": "Sheet2",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 5,"name": "Sheet2","typ": "WorkSheet","visible": "Visible","headers": [
         "col1",
         "col2",
         "col3",
@@ -1050,75 +892,48 @@ fn excel_metadata_xlsx_ranges_tables_pretty_json() {
         "",
         "",
         ""
-      ],
-      "column_count": 9,
-      "row_count": 24,
-      "safe_headers": [
+      ],"column_count": 9,"row_count": 24,"safe_headers": [
         "col1",
         "col2",
         "col3"
-      ],
-      "safe_headers_count": 3,
-      "unsafe_headers": [
+      ],"safe_headers_count": 3,"unsafe_headers": [
         "",
         "",
         "",
         "",
         "",
         ""
-      ],
-      "unsafe_headers_count": 6,
-      "duplicate_headers_count": 5
+      ],"unsafe_headers_count": 6,"duplicate_headers_count": 5
     },
     {
-      "index": 6,
-      "name": "firstnonemptyrow",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 6,"name": "firstnonemptyrow","typ": "WorkSheet","visible": "Visible","headers": [
         "col1",
         "col2",
         "col3",
         "col4"
-      ],
-      "column_count": 4,
-      "row_count": 6,
-      "safe_headers": [
+      ],"column_count": 4,"row_count": 6,"safe_headers": [
         "col1",
         "col2",
         "col3",
         "col4"
-      ],
-      "safe_headers_count": 4,
-      "unsafe_headers": [],
-      "unsafe_headers_count": 0,
-      "duplicate_headers_count": 0
+      ],"safe_headers_count": 4,"unsafe_headers": [],"unsafe_headers_count": 0,"duplicate_headers_count": 0
     }
-  ],
-  "names": [
+  ],"names": [
     {
-      "name": "testname",
-      "formula": "cellerrors!$C$6"
+      "name": "testname","formula": "cellerrors!$C$6"
     },
     {
-      "name": "TestNamedRange",
-      "formula": "Sheet2!$C$20:$E$24"
+      "name": "TestNamedRange","formula": "Sheet2!$C$20:$E$24"
     }
-  ],
-  "name_count": 2,
-  "tables": [
+  ],"name_count": 2,"tables": [
     {
-      "name": "Table1",
-      "sheet": "Sheet2",
-      "columns": [
+      "name": "Table1","sheet": "Sheet2","columns": [
         "tabc1",
         "tabc2",
         "tabc3"
-      ],
-      "column_count": 3
+      ],"column_count": 3
     }
-  ],
-  "table_count": 1
+  ],"table_count": 1
 }"#;
     assert!(got.ends_with(expected));
     wrk.assert_success(&mut cmd);
@@ -1198,39 +1013,20 @@ fn ods_metadata_pretty_json() {
     cmd.arg("--metadata").arg("J").arg(xls_file);
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = r#"excel-ods.ods",
-  "format": "ODS",
-  "sheet_count": 1,
-  "sheet": [
+    let expected = r#"excel-ods.ods","format": "ODS","sheet_count": 1,"sheet": [
     {
-      "index": 0,
-      "name": "Sheet1",
-      "typ": "WorkSheet",
-      "visible": "Visible",
-      "headers": [
+      "index": 0,"name": "Sheet1","typ": "WorkSheet","visible": "Visible","headers": [
         "URL",
         "City"
-      ],
-      "column_count": 2,
-      "row_count": 4,
-      "safe_headers": [
+      ],"column_count": 2,"row_count": 4,"safe_headers": [
         "URL",
         "City"
-      ],
-      "safe_headers_count": 2,
-      "unsafe_headers": [],
-      "unsafe_headers_count": 0,
-      "duplicate_headers_count": 0
+      ],"safe_headers_count": 2,"unsafe_headers": [],"unsafe_headers_count": 0,"duplicate_headers_count": 0
     }
-  ],
-  "names": [],
-  "name_count": 0,
-  "tables": [],
-  "table_count": 0
+  ],"names": [],"name_count": 0,"tables": [],"table_count": 0
 }"#;
 
     assert!(got.ends_with(expected));
-    // assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
 

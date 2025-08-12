@@ -2627,7 +2627,7 @@ pub fn csv_to_jsonl(
             json_object.insert(key.to_string(), value);
         }
 
-        json_line = serde_json::to_string(&json_object)?;
+        json_line = simd_json::to_string(&json_object)?;
         writeln!(writer, "{json_line}")?;
     }
 
@@ -3083,7 +3083,7 @@ pub fn infer_polars_schema(
         );
     }
     let stats_schema = std::sync::Arc::new(schema);
-    let stats_schema_json = serde_json::to_string_pretty(&stats_schema)?;
+    let stats_schema_json = simd_json::to_string_pretty(&stats_schema)?;
     let mut file = std::io::BufWriter::new(File::create(schema_file)?);
     file.write_all(stats_schema_json.as_bytes())?;
     file.flush()?;

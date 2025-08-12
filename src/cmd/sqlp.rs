@@ -882,7 +882,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // update the pschema.json file, if necessary
             if create_schema {
                 let schema = lf.collect_schema()?;
-                let schema_json = serde_json::to_string_pretty(&schema)?;
+                let schema_json = simd_json::to_string_pretty(&schema)?;
 
                 let schema_file = table.canonicalize()?.with_extension("pschema.json");
                 let mut file = BufWriter::new(File::create(&schema_file)?);

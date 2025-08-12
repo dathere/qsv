@@ -774,7 +774,7 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
                     }
                 });
                 if args.flag_pretty_json {
-                    woutinfo!("{}", serde_json::to_string_pretty(&json_result).unwrap());
+                    woutinfo!("{}", simd_json::to_string_pretty(&json_result).unwrap());
                     return Ok(());
                 }
                 woutinfo!("{json_result}");
@@ -793,7 +793,7 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
                 }]
             });
             if args.flag_pretty_json {
-                return fail_clierror!("{}", serde_json::to_string_pretty(&json_result).unwrap());
+                return fail_clierror!("{}", simd_json::to_string_pretty(&json_result).unwrap());
             }
             return fail_clierror!("{json_result}");
         }
@@ -998,10 +998,10 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
             if args.flag_pretty_json {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&processed_results).unwrap()
+                    simd_json::to_string_pretty(&processed_results).unwrap()
                 );
             } else {
-                println!("{}", serde_json::to_string(&processed_results).unwrap());
+                println!("{}", simd_json::to_string(&processed_results).unwrap());
             }
             return Ok(());
         }
@@ -1016,9 +1016,9 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
             }
         });
         let error_msg = if args.flag_pretty_json {
-            serde_json::to_string_pretty(&sniff_error_json).unwrap()
+            simd_json::to_string_pretty(&sniff_error_json).unwrap()
         } else {
-            serde_json::to_string(&sniff_error_json).unwrap()
+            simd_json::to_string(&sniff_error_json).unwrap()
         };
         return fail_clierror!("{error_msg}");
     }

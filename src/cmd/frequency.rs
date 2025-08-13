@@ -850,10 +850,10 @@ impl Args {
             let dtype = stats_record.map_or(String::new(), |sr| sr.r#type.clone());
             let nullcount = stats_record.map_or(0, |sr| sr.nullcount);
             let sparsity =
-                fast_float2::parse(&util::round_num(nullcount as f64 / rowcount as f64, 4))
+                fast_float2::parse(util::round_num(nullcount as f64 / rowcount as f64, 4))
                     .unwrap_or(0.0);
             let uniqueness_ratio =
-                fast_float2::parse(&util::round_num(cardinality as f64 / rowcount as f64, 4))
+                fast_float2::parse(util::round_num(cardinality as f64 / rowcount as f64, 4))
                     .unwrap_or(0.0);
 
             // Build stats vector from stats record if type is not empty and not NULL or Boolean

@@ -434,6 +434,14 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
         .delimiter(args.flag_delimiter)
         .writer()?;
 
+    let retries = reqwest::retry::for_host(uri.to_string()).classify_fn(|req_rep| {
+        if req_rep.status() == Some(reqwest::StatusCode::SERVICE_UNAVAILABLE) {
+            req_rep.retryable()
+        } else {
+            req_rep.success()
+        }
+    });
+
     let client = reqwest::Client::builder()
         .user_agent(util::set_user_agent(args.flag_user_agent.clone())?)
         .brotli(true)
@@ -448,6 +456,7 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
         .read_timeout(std::time::Duration::from_secs(
             util::timeout_secs(args.flag_timeout.unwrap_or(30)).unwrap_or(30),
         ))
+        .retry(retries)
         .build()?;
 
     // Get the response

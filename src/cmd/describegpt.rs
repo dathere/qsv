@@ -139,6 +139,18 @@ fn print_status(args: &Args, msg: &str) {
 fn create_client(args: &Args) -> CliResult<Client> {
     // Create client with timeout
     let timeout_duration = Duration::from_secs(args.flag_timeout.into());
+    let retries = reqwest::retry::for_host(
+        args.flag_base_url
+            .clone()
+            .unwrap_or("api.openai.com".to_string()),
+    )
+    .classify_fn(|req_rep| {
+        if req_rep.status() == Some(reqwest::StatusCode::SERVICE_UNAVAILABLE) {
+            req_rep.retryable()
+        } else {
+            req_rep.success()
+        }
+    });
     let client = Client::builder()
         .user_agent(util::set_user_agent(args.flag_user_agent.clone())?)
         .brotli(true)
@@ -149,6 +161,7 @@ fn create_client(args: &Args) -> CliResult<Client> {
         .http2_adaptive_window(true)
         .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
         .timeout(timeout_duration)
+        .retry(retries)
         .build()?;
     Ok(client)
 }

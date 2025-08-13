@@ -1880,6 +1880,14 @@ fn load_json(uri: &str) -> Result<String, String> {
             let client_timeout =
                 std::time::Duration::from_secs(TIMEOUT_SECS.load(Ordering::Relaxed) as u64);
 
+            let retries = reqwest::retry::for_host(uri.to_string()).classify_fn(|req_rep| {
+                if req_rep.status() == Some(reqwest::StatusCode::SERVICE_UNAVAILABLE) {
+                    req_rep.retryable()
+                } else {
+                    req_rep.success()
+                }
+            });
+
             let client = match Client::builder()
                 // safety: we're using a validated QSV_USER_AGENT or the default user agent
                 .user_agent(util::set_user_agent(None).unwrap())
@@ -1893,6 +1901,7 @@ fn load_json(uri: &str) -> Result<String, String> {
                     log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace),
                 )
                 .timeout(client_timeout)
+                .retry(retries)
                 .build()
             {
                 Ok(c) => c,

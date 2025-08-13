@@ -210,6 +210,14 @@ fn download_lookup_table(
     cache_csv_last_modified: Option<SystemTime>,
     opts: &LookupTableOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let retries = reqwest::retry::for_host(lookup_table_uri.to_string()).classify_fn(|req_rep| {
+        if req_rep.status() == Some(reqwest::StatusCode::SERVICE_UNAVAILABLE) {
+            req_rep.retryable()
+        } else {
+            req_rep.success()
+        }
+    });
+
     let client = Client::builder()
         .user_agent(crate::util::set_user_agent(None).unwrap())
         .brotli(true)
@@ -220,6 +228,7 @@ fn download_lookup_table(
         .http2_adaptive_window(true)
         .connection_verbose(log::log_enabled!(log::Level::Trace))
         .timeout(std::time::Duration::from_secs(opts.timeout_secs as u64))
+        .retry(retries)
         .build()?;
 
     let now = SystemTime::now();

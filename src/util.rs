@@ -1702,6 +1702,14 @@ pub async fn download_file(
         None => std::time::Duration::from_secs(30),
     };
 
+    let retries = reqwest::retry::for_host(url.to_string()).classify_fn(|req_rep| {
+        if req_rep.status() == Some(reqwest::StatusCode::SERVICE_UNAVAILABLE) {
+            req_rep.retryable()
+        } else {
+            req_rep.success()
+        }
+    });
+
     // setup the reqwest client
     let client = match Client::builder()
         .user_agent(user_agent)
@@ -1713,6 +1721,7 @@ pub async fn download_file(
         .http2_adaptive_window(true)
         .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
         .read_timeout(download_timeout)
+        .retry(retries)
         .build()
     {
         Ok(c) => c,

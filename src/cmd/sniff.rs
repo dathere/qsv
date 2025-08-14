@@ -320,7 +320,7 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                 // setup the reqwest client
                 let client = util::create_reqwest_async_client(
                     args.flag_user_agent.clone(),
-                    util::timeout_secs(args.flag_timeout).unwrap_or(30) as u16,
+                    util::timeout_secs(args.flag_timeout).unwrap_or(30).min(u16::MAX as u64) as u16,
                     None,
                 )?;
 

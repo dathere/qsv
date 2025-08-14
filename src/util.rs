@@ -321,6 +321,106 @@ pub fn set_user_agent(user_agent: Option<String>) -> CliResult<String> {
     Ok(ua)
 }
 
+/// Creates a standardized async reqwest client with common configuration options.
+/// This function centralizes the client creation logic used across multiple commands.
+///
+/// # Arguments
+///
+/// * `user_agent` - Optional custom user agent string
+/// * `timeout_secs` - Timeout in seconds for HTTP requests
+/// * `base_url` - Optional base URL for retry configuration
+///
+/// # Returns
+///
+/// Returns a configured reqwest client with:
+/// - Custom user agent (or default)
+/// - Compression support (brotli, gzip, deflate, zstd)
+/// - Rustls TLS backend
+/// - HTTP/2 adaptive window
+/// - Connection verbose logging (when debug/trace enabled)
+/// - Timeout configuration
+/// - Retry logic for service unavailable errors
+pub fn create_reqwest_async_client(
+    user_agent: Option<String>,
+    timeout_secs: u16,
+    base_url: Option<String>,
+) -> CliResult<Client> {
+    use std::time::Duration;
+
+    let timeout_duration = Duration::from_secs(timeout_secs.into());
+    let base_url_for_retry = base_url.unwrap_or_default();
+
+    let retries = reqwest::retry::for_host(base_url_for_retry).classify_fn(|req_rep| {
+        if req_rep.status() == Some(reqwest::StatusCode::SERVICE_UNAVAILABLE) {
+            req_rep.retryable()
+        } else {
+            req_rep.success()
+        }
+    });
+
+    let client = Client::builder()
+        .user_agent(set_user_agent(user_agent)?)
+        .brotli(true)
+        .gzip(true)
+        .deflate(true)
+        .zstd(true)
+        .use_rustls_tls()
+        .http2_adaptive_window(true)
+        .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
+        .timeout(timeout_duration)
+        .retry(retries)
+        .build()?;
+
+    Ok(client)
+}
+
+/// Creates a standardized blocking reqwest client with common configuration options.
+/// This function centralizes the blocking client creation logic used across multiple commands.
+///
+/// # Arguments
+///
+/// * `user_agent` - Optional custom user agent string
+/// * `timeout_secs` - Timeout in seconds for HTTP requests
+/// * `base_url` - Optional base URL for retry configuration
+///
+/// # Returns
+///
+/// Returns a configured blocking reqwest client with the same options
+/// as create_reqwest_async_client
+pub fn create_reqwest_blocking_client(
+    user_agent: Option<String>,
+    timeout_secs: u16,
+    base_url: Option<String>,
+) -> CliResult<reqwest::blocking::Client> {
+    use std::time::Duration;
+
+    let timeout_duration = Duration::from_secs(timeout_secs.into());
+    let base_url_for_retry = base_url.unwrap_or_default();
+
+    let retries = reqwest::retry::for_host(base_url_for_retry).classify_fn(|req_rep| {
+        if req_rep.status() == Some(reqwest::StatusCode::SERVICE_UNAVAILABLE) {
+            req_rep.retryable()
+        } else {
+            req_rep.success()
+        }
+    });
+
+    let client = reqwest::blocking::Client::builder()
+        .user_agent(set_user_agent(user_agent)?)
+        .brotli(true)
+        .gzip(true)
+        .deflate(true)
+        .zstd(true)
+        .use_rustls_tls()
+        .http2_adaptive_window(true)
+        .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
+        .timeout(timeout_duration)
+        .retry(retries)
+        .build()?;
+
+    Ok(client)
+}
+
 pub fn version() -> String {
     let mut enabled_features = String::new();
 
@@ -1153,16 +1253,11 @@ fn send_hwsurvey(
     if dry_run {
         log::info!("Survey dry run. hw survey compiled successfully, but not sent.");
     } else {
-        let client = match reqwest::blocking::Client::builder()
-            .user_agent(default_user_agent())
-            .brotli(true)
-            .gzip(true)
-            .deflate(true)
-            .zstd(true)
-            .use_rustls_tls()
-            .http2_adaptive_window(true)
-            .build()
-        {
+        let client = match create_reqwest_blocking_client(
+            Some(default_user_agent()),
+            30, // default timeout for hw survey
+            None,
+        ) {
             Ok(c) => c,
             Err(e) => return fail_format!("Cannot build hw_survey reqwest client: {e}"),
         };
@@ -1702,33 +1797,9 @@ pub async fn download_file(
         None => std::time::Duration::from_secs(30),
     };
 
-    let retries = reqwest::retry::for_host(url.to_string()).classify_fn(|req_rep| {
-        if req_rep.status() == Some(reqwest::StatusCode::SERVICE_UNAVAILABLE) {
-            req_rep.retryable()
-        } else {
-            req_rep.success()
-        }
-    });
-
     // setup the reqwest client
-    let client = match Client::builder()
-        .user_agent(user_agent)
-        .brotli(true)
-        .gzip(true)
-        .deflate(true)
-        .zstd(true)
-        .use_rustls_tls()
-        .http2_adaptive_window(true)
-        .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
-        .read_timeout(download_timeout)
-        .retry(retries)
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            return fail_clierror!("Cannot build reqwest client: {e}.");
-        },
-    };
+    let client =
+        create_reqwest_async_client(Some(user_agent), download_timeout.as_secs() as u16, None)?;
 
     let res = client.get(url).send().await?;
 

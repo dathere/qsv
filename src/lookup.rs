@@ -210,8 +210,12 @@ fn download_lookup_table(
     cache_csv_last_modified: Option<SystemTime>,
     opts: &LookupTableOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let client = crate::util::create_reqwest_blocking_client(None, opts.timeout_secs, None)
-        .map_err(|e| Box::new(std::io::Error::other(e.to_string())))?;
+    let client = crate::util::create_reqwest_blocking_client(
+        None,
+        opts.timeout_secs,
+        Some(lookup_table_uri.to_string()),
+    )
+    .map_err(|e| Box::new(std::io::Error::other(e.to_string())))?;
 
     let now = SystemTime::now();
     let now_dt_utc: chrono::DateTime<chrono::Utc> = now.into();

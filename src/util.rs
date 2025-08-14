@@ -1798,8 +1798,11 @@ pub async fn download_file(
     };
 
     // setup the reqwest client
-    let client =
-        create_reqwest_async_client(Some(user_agent), download_timeout.as_secs() as u16, None)?;
+    let client = create_reqwest_async_client(
+        Some(user_agent),
+        download_timeout.as_secs() as u16,
+        Some(url.to_string()),
+    )?;
 
     let res = client.get(url).send().await?;
 

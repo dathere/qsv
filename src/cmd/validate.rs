@@ -1878,7 +1878,7 @@ fn load_json(uri: &str) -> Result<String, String> {
             let client = match util::create_reqwest_blocking_client(
                 None,
                 TIMEOUT_SECS.load(Ordering::Relaxed),
-                None,
+                Some(uri.to_string()),
             ) {
                 Ok(c) => c,
                 Err(e) => return fail_format!("Cannot build reqwest client: {e}."),

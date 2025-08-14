@@ -436,7 +436,7 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
     let client = util::create_reqwest_async_client(
         args.flag_user_agent.clone(),
         util::timeout_secs(args.flag_timeout.unwrap_or(30)).unwrap_or(30) as u16,
-        None,
+        Some(uri.to_string()),
     )?;
 
     // Get the response

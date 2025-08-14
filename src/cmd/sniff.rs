@@ -323,7 +323,7 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                     util::timeout_secs(args.flag_timeout)
                         .unwrap_or(30)
                         .min(u16::MAX as u64) as u16,
-                    None,
+                    Some(url.clone()),
                 )?;
 
                 let res = client

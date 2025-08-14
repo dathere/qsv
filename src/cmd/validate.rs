@@ -272,7 +272,7 @@ use jsonschema::{
     output::BasicOutput,
     paths::{LazyLocation, Location},
 };
-use log::{debug, info, log_enabled};
+use log::{debug, info};
 use qsv_currency::Currency;
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
@@ -1875,39 +1875,13 @@ fn get_json_types(headers: &ByteRecord, schema: &Value) -> CliResult<Vec<(String
 fn load_json(uri: &str) -> Result<String, String> {
     let json_string = match uri {
         url if url.to_lowercase().starts_with("http") => {
-            use reqwest::blocking::Client;
-
-            let client_timeout =
-                std::time::Duration::from_secs(TIMEOUT_SECS.load(Ordering::Relaxed) as u64);
-
-            let retries = reqwest::retry::for_host(uri.to_string()).classify_fn(|req_rep| {
-                if req_rep.status() == Some(reqwest::StatusCode::SERVICE_UNAVAILABLE) {
-                    req_rep.retryable()
-                } else {
-                    req_rep.success()
-                }
-            });
-
-            let client = match Client::builder()
-                // safety: we're using a validated QSV_USER_AGENT or the default user agent
-                .user_agent(util::set_user_agent(None).unwrap())
-                .brotli(true)
-                .gzip(true)
-                .deflate(true)
-                .zstd(true)
-                .use_rustls_tls()
-                .http2_adaptive_window(true)
-                .connection_verbose(
-                    log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace),
-                )
-                .timeout(client_timeout)
-                .retry(retries)
-                .build()
-            {
+            let client = match util::create_reqwest_blocking_client(
+                None,
+                TIMEOUT_SECS.load(Ordering::Relaxed),
+                None,
+            ) {
                 Ok(c) => c,
-                Err(e) => {
-                    return fail_format!("Cannot build reqwest client: {e}.");
-                },
+                Err(e) => return fail_format!("Cannot build reqwest client: {e}."),
             };
 
             match client.get(url).send() {

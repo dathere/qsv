@@ -175,7 +175,6 @@ use rand::{
 use rand_hc::Hc128Rng;
 use rand_xoshiro::Xoshiro256Plus;
 use rayon::prelude::ParallelSliceMut;
-use reqwest;
 use serde::Deserialize;
 use strum_macros::EnumString;
 use tempfile::NamedTempFile;
@@ -434,30 +433,11 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
         .delimiter(args.flag_delimiter)
         .writer()?;
 
-    let retries = reqwest::retry::for_host(uri.to_string()).classify_fn(|req_rep| {
-        if req_rep.status() == Some(reqwest::StatusCode::SERVICE_UNAVAILABLE) {
-            req_rep.retryable()
-        } else {
-            req_rep.success()
-        }
-    });
-
-    let client = reqwest::Client::builder()
-        .user_agent(util::set_user_agent(args.flag_user_agent.clone())?)
-        .brotli(true)
-        .gzip(true)
-        .deflate(true)
-        .zstd(true)
-        .use_rustls_tls()
-        .http2_adaptive_window(true)
-        .connection_verbose(
-            log::log_enabled!(log::Level::Debug) || log::log_enabled!(log::Level::Trace),
-        )
-        .read_timeout(std::time::Duration::from_secs(
-            util::timeout_secs(args.flag_timeout.unwrap_or(30)).unwrap_or(30),
-        ))
-        .retry(retries)
-        .build()?;
+    let client = util::create_reqwest_async_client(
+        args.flag_user_agent.clone(),
+        util::timeout_secs(args.flag_timeout.unwrap_or(30)).unwrap_or(30) as u16,
+        None,
+    )?;
 
     // Get the response
     let response = client.get(uri).send().await?;

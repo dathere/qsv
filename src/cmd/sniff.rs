@@ -116,7 +116,6 @@ use indicatif::HumanCount;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{HumanBytes, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use qsv_sniffer::{DatePreference, SampleSize, Sniffer};
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tabwriter::TabWriter;
@@ -319,20 +318,11 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                 let snappy_flag = url.to_lowercase().ends_with(".sz");
 
                 // setup the reqwest client
-                let client = match Client::builder()
-                    .user_agent(util::set_user_agent(args.flag_user_agent.clone())?)
-                    .brotli(true)
-                    .gzip(true)
-                    .deflate(true)
-                    .use_rustls_tls()
-                    .http2_adaptive_window(true)
-                    .build()
-                {
-                    Ok(c) => c,
-                    Err(e) => {
-                        return fail_clierror!("Cannot build reqwest client: {e}.");
-                    },
-                };
+                let client = util::create_reqwest_async_client(
+                    args.flag_user_agent.clone(),
+                    util::timeout_secs(args.flag_timeout).unwrap_or(30) as u16,
+                    None,
+                )?;
 
                 let res = client
                     .get(url.clone())

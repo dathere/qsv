@@ -55,9 +55,8 @@ Common options:
     -q, --quiet            Do not print status messages to stderr.
 "#;
 
-use std::{env, fs, io::Write, path::PathBuf, process::Command, time::Duration};
+use std::{env, fs, io::Write, path::PathBuf, process::Command};
 
-use log::log_enabled;
 use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::json;
@@ -134,36 +133,6 @@ fn print_status(args: &Args, msg: &str) {
     if !args.flag_quiet {
         eprintln!("{msg}");
     }
-}
-
-fn create_client(args: &Args) -> CliResult<Client> {
-    // Create client with timeout
-    let timeout_duration = Duration::from_secs(args.flag_timeout.into());
-    let retries = reqwest::retry::for_host(
-        args.flag_base_url
-            .clone()
-            .unwrap_or("api.openai.com".to_string()),
-    )
-    .classify_fn(|req_rep| {
-        if req_rep.status() == Some(reqwest::StatusCode::SERVICE_UNAVAILABLE) {
-            req_rep.retryable()
-        } else {
-            req_rep.success()
-        }
-    });
-    let client = Client::builder()
-        .user_agent(util::set_user_agent(args.flag_user_agent.clone())?)
-        .brotli(true)
-        .gzip(true)
-        .deflate(true)
-        .zstd(true)
-        .use_rustls_tls()
-        .http2_adaptive_window(true)
-        .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
-        .timeout(timeout_duration)
-        .retry(retries)
-        .build()?;
-    Ok(client)
 }
 
 // Send an HTTP request using a client to a URL
@@ -363,7 +332,11 @@ fn get_completion(
     messages: &serde_json::Value,
 ) -> CliResult<String> {
     // Create client with timeout
-    let client = create_client(args)?;
+    let client = util::create_reqwest_blocking_client(
+        args.flag_user_agent.clone(),
+        args.flag_timeout,
+        args.flag_base_url.clone(),
+    )?;
     let prompt_file = get_prompt_file(args)?;
 
     // Verify model is valid

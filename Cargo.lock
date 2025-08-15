@@ -371,9 +371,9 @@ dependencies = [
 
 [[package]]
 name = "arbitrary"
-version = "1.4.1"
+version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dde20b3d026af13f561bdd0f15edf01fc734f0dafcedbaf42bba506a9517f223"
+checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
 dependencies = [
  "derive_arbitrary",
 ]
@@ -826,9 +826,9 @@ checksum = "8b75356056920673b02621b35afd0f7dda9306d03c79a30f5c56c44cf256e3de"
 
 [[package]]
 name = "async-trait"
-version = "0.1.88"
+version = "0.1.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e539d3fca749fcee5236ab05e93a52867dd549cc157c8cb7f99595f3cedffdb5"
+checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1993,9 +1993,9 @@ dependencies = [
 
 [[package]]
 name = "derive_arbitrary"
-version = "1.4.1"
+version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30542c1ad912e0e3d22a1935c290e12e8a29d704a420177a31faad4a601a0800"
+checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2812,9 +2812,9 @@ dependencies = [
 
 [[package]]
 name = "get-size-derive2"
-version = "0.3.0"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9058c6b7243b6e56c9c095c89b90f53ae6d5a5d0d54f826509dd49bef1d44a49"
+checksum = "75a17a226478b2e8294ded60782c03efe54476aa8cd1371d0e5ad9d1071e74e0"
 dependencies = [
  "attribute-derive",
  "quote",
@@ -2823,9 +2823,9 @@ dependencies = [
 
 [[package]]
 name = "get-size2"
-version = "0.3.0"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c7d3404c6b1dd2c9c2acede99e4498e3ccd82b9c8ee60372db1f725c0344a74"
+checksum = "5697765925a05c9d401dd04a93dfd662d336cc25fdcc3301220385a1ffcfdde5"
 dependencies = [
  "get-size-derive2",
 ]
@@ -5934,6 +5934,7 @@ version = "0.38.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9845d9dccf565065824e69f9f235fafba1587031eda353c1f1561cd6a6be78f4"
 dependencies = [
+ "encoding_rs",
  "memchr",
  "serde",
 ]
@@ -7167,9 +7168,9 @@ dependencies = [
 
 [[package]]
 name = "sorted-vec"
-version = "0.8.7"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f40f1aa8c0f688ae6d6ffd5e9e351d635acc176dfad05816494b321be7e01007"
+checksum = "ee66d25213bcbd4feb55704c0c8eee3f95d022c693dab42d796e1b8f23666d9a"
 
 [[package]]
 name = "spin"
@@ -7201,9 +7202,9 @@ dependencies = [
 
 [[package]]
 name = "spreadsheet-ods"
-version = "0.25.0"
+version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c03e50b07309dcacb07d7334c11eb462a7cf7c197b4bb88b43fb1d9916827d7"
+checksum = "d2a6757a54c463151b5da73f1757dec65304262810ffc32d47550e00d04395a1"
 dependencies = [
  "base64",
  "chrono",
@@ -7214,7 +7215,7 @@ dependencies = [
  "lazy_static",
  "nom",
  "nom_locate",
- "quick-xml 0.37.5",
+ "quick-xml 0.38.1",
  "rust_decimal",
  "rust_decimal_macros",
  "string_cache",

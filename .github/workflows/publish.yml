@@ -137,6 +137,16 @@ jobs:
           #   use-cross: true
           #   addl-build-args: --features=apply,luau,fetch,foreach,self_update
           #   default-features: --no-default-features
+          - os: ubuntu-24.04
+            os-name: linux
+            target: powerpc64le-unknown-linux-gnu
+            architecture: powerpc64le
+            use-cross: true
+            addl-build-args: --features=apply,fetch,foreach,self_update,lens
+            default-features:
+            addl-qsvlite-features:
+            addl-qsvdp-features:
+            addl-rustflags:
 
     steps:
     - name: Installing Rust toolchain

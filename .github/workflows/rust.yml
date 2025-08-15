@@ -57,5 +57,5 @@ jobs:
     #     key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Run tests
       env:
-        RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+avx512f
+        RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
       run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,feature_capable,lens

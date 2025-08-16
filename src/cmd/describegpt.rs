@@ -7,8 +7,7 @@ inaccurate information being produced. Verify output results before using them.
 Let's say you have Ollama installed (must be v0.2.0 or above) to use LLMs locally with qsv describegpt.
 To attempt generating a data dictionary of a spreadsheet file you may run (replace <> values):
 
-  $ qsv describegpt <filepath> --base-url http://localhost:11434/v1 --api-key ollama \
-      --model <model> --max-tokens <number> --dictionary
+  $ qsv describegpt <filepath> -u http://localhost:11434/v1 -k ollama -m <model> -t <number> --dictionary
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs.
 
@@ -26,21 +25,21 @@ describegpt options:
                            human-readable label, a description, and stats.
     --tags                 Prints tags that categorize the dataset. Useful
                            for grouping datasets and filtering.
-    --api-key <key>        The API key to use. The default API key for Ollama is ollama.
+    -k, --api-key <key>    The API key to use. The default API key for Ollama is ollama.
                            If the QSV_LLM_APIKEY envvar is set, it will be used instead.
-    --max-tokens <value>   Limits the number of generated tokens in the output.
-                           [default: 50]
+    -t, --max-tokens <value>   Limits the number of generated tokens in the output.
+                           [default: 1000]
     --json                 Return results in JSON format.
     --jsonl                Return results in JSON Lines format.
     --prompt <prompt>      Custom prompt passed as text (alternative to --description, etc.).
                            Replaces {stats}, {frequency}, & {headers} in prompt with qsv command outputs.
     --prompt-file <file>   The JSON file containing the prompts to use for inferencing.
                            If not specified, default prompts will be used.
-    --base-url <url>       The URL of the API for interacting with LLMs. Supports APIs
+    -u, --base-url <url>   The URL of the API for interacting with LLMs. Supports APIs
                            compatible with the OpenAI API specification (Ollama, Jan, etc.).
                            The default base URL for Ollama is http://localhost:11434/v1.
                            [default: https://api.openai.com/v1]
-    --model <model>        The model to use for inferencing.
+    -m, --model <model>    The model to use for inferencing.
                            [default: gpt-3.5-turbo-16k]
     --timeout <secs>       Timeout for completions in seconds.
                            [default: 60]
@@ -631,18 +630,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Check for QSV_LLM_APIKEY in environment variables
     let api_key = match env::var("QSV_LLM_APIKEY") {
-        Ok(val) => {
-            if val.is_empty() {
-                return fail!("Error: QSV_LLM_APIKEY environment variable is empty.");
-            }
-            val
-        },
+        Ok(val) => val,
         Err(_) => {
             // Check if the --api-key flag is present
             if let Some(api_key) = args.flag_api_key.clone() {
-                if api_key.is_empty() {
-                    return fail!(LLM_APIKEY_ERROR);
-                }
                 api_key
             } else {
                 return fail!(LLM_APIKEY_ERROR);

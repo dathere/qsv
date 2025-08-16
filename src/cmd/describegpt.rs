@@ -258,7 +258,7 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
         if let Some(model_id) = model["id"].as_str()
             && model_id.ends_with(&given_model)
         {
-            println!("Using model: {model_id}");
+            print_status(args, format!("Using model: {model_id}").as_str());
             return Ok(model_id.to_string());
         }
     }

@@ -8,8 +8,11 @@ fn is_local_llm_available() -> bool {
         if base_url.contains("localhost") {
             // check if local LLM is listening by checking the model list
             let mut cmd = Command::new("curl");
-            cmd.arg(base_url);
-            cmd.output().unwrap().status.success()
+            cmd.arg(format!("{}/models", base_url.trim_end_matches('/')));
+            match cmd.output() {
+                Ok(output) => output.status.success(),
+                Err(_) => false,
+            }
         } else {
             false
         }

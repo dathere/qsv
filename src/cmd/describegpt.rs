@@ -48,6 +48,8 @@ describegpt options:
                            used instead.
                            [default: https://api.openai.com/v1]
     -m, --model <model>    The model to use for inferencing.
+                           If the QSV_LLM_MODEL environment variable is set, it will be
+                           used instead.
                            [default: gpt-oss-20b]
     --timeout <secs>       Timeout for completions in seconds. If 0, no timeout is used.
                            [default: 120]
@@ -212,7 +214,7 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
     let base_url = if args.flag_prompt_file.is_some() {
         prompt_file.base_url
     } else {
-        // safety: base_url is set in run()
+        // safety: base_url has a docopt default
         args.flag_base_url.as_deref().unwrap().to_string()
     };
     let response = send_request(
@@ -233,17 +235,18 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
         );
     };
 
-    let given_model = args
-        .flag_model
-        .as_deref()
+    let given_model = env::var("QSV_LLM_MODEL")
+        .ok()
+        .or_else(|| args.flag_model.clone())
         .or_else(|| {
             args.flag_prompt_file
                 .as_ref()
-                .map(|_| prompt_file.model.as_str())
+                .map(|_| prompt_file.model.clone())
         })
-        // safety: model is set in run()
-        .unwrap_or_else(|| args.flag_model.as_deref().unwrap())
+        // safety: model has a docopt default
+        .unwrap_or_else(|| args.flag_model.clone().unwrap())
         .to_string();
+
     // Check for exact model match
     for model in models {
         if let Some(model_id) = model["id"].as_str()
@@ -386,7 +389,7 @@ fn get_completion(
     let base_url = if args.flag_prompt_file.is_some() {
         prompt_file.base_url
     } else {
-        // safety: base_url is set in run()
+        // safety: base_url has a docopt default
         args.flag_base_url.as_deref().unwrap().to_string()
     };
 

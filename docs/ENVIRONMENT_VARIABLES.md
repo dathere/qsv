@@ -19,6 +19,7 @@
 | `QSV_NO_UPDATE` | if set, prohibit self-update version check for the latest qsv release published on GitHub. |
 | `QSV_LLM_BASE_URL` | The LLM API URL to use with the `describegpt` command. |
 | `QSV_LLM_APIKEY` | The API key of the supported LLM service to use with the `describegpt` command. |
+| `QSV_LLM_MODEL` | The LLM Model to use with the `describegpt` command. |
 | `QSV_OUTPUT_BOM` | if set, the output will have a Byte Order Mark (BOM) at the beginning. This is used to generate Excel-friendly CSVs on Windows. |
 | `QSV_POLARS_FLOAT_PRECISION` | The precision to use when converting Polars-enabled formats (Avro,Arrow,Parquet,JSON,JSONL and gz,zlib & zst compressed files) to CSV. If set, this will also override the --float-precision option of the `sqlp` command. |
 | `QSV_PREFER_DMY` | if set, date parsing will use DMY format. Otherwise, use MDY format (used with `datefmt`, `schema`, `sniff` & `stats` commands). |

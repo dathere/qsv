@@ -374,7 +374,11 @@ fn get_completion(
 
     let max_tokens = if args.flag_max_tokens == 0 {
         None
-    } else if args.flag_prompt_file.is_some() {
+    // If max_tokens is 0, always disable the limit, even if a prompt file is present.
+    let max_tokens = if args.flag_max_tokens == 0 {
+        None
+    } else if args.flag_prompt_file.is_some() && args.flag_max_tokens < 0 {
+        // Only use prompt_file.tokens if max_tokens is not explicitly set to 0
         Some(prompt_file.tokens)
     } else {
         Some(args.flag_max_tokens)

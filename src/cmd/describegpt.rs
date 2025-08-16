@@ -28,6 +28,7 @@ describegpt options:
     -k, --api-key <key>    The API key to use. If the QSV_LLM_APIKEY envvar is set,
                            it will be used instead.
     -t, --max-tokens <n>   Limits the number of generated tokens in the output.
+                           Set to 0 to disable token limits.
                            [default: 1000]
     --json                 Return results in JSON format.
     --jsonl                Return results in JSON Lines format.
@@ -41,8 +42,14 @@ describegpt options:
                            The default base URL for Ollama is http://localhost:11434/v1.
                            The default for Jan is https://localhost:1337/v1.
                            The default for LM Studio is http://localhost:1234/v1.
+                           If --prompt-file is used, the base URL will be the base URL
+                           of the prompt file.
+                           If the QSV_LLM_BASE_URL environment variable is set, it will be
+                           used instead.
                            [default: https://api.openai.com/v1]
     -m, --model <model>    The model to use for inferencing.
+                           If the QSV_LLM_MODEL environment variable is set, it will be
+                           used instead.
                            [default: gpt-oss-20b]
     --timeout <secs>       Timeout for completions in seconds. If 0, no timeout is used.
                            [default: 120]
@@ -64,6 +71,14 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::{CliResult, util, util::process_input};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PromptType {
+    Dictionary,
+    Description,
+    Tags,
+    Custom,
+}
 
 #[derive(Deserialize)]
 struct Args {
@@ -146,93 +161,112 @@ fn send_request(
     method: &str,
     url: &str,
 ) -> CliResult<reqwest::blocking::Response> {
-    // Send request to API
+    // Build request based on method
     let mut request = match method {
-        "GET" => client.get(url),
-        "POST" => client.post(url).body(request_data.unwrap().to_string()),
+        "GET" => {
+            if request_data.is_some() {
+                return fail_clierror!("GET requests cannot include request data");
+            }
+            client.get(url)
+        },
+        "POST" => {
+            let Some(data) = request_data else {
+                return fail_clierror!("POST requests require request data");
+            };
+            client
+                .post(url)
+                .header("Content-Type", "application/json")
+                .body(data.to_string())
+        },
         other => {
             let error_json = json!({"Error: Unsupported HTTP method ": other});
             return fail_clierror!("{error_json}");
         },
     };
 
-    // If API key is provided, add it to the request header
+    // Add API key header if provided
     if let Some(key) = api_key {
         request = request.header("Authorization", format!("Bearer {key}"));
     }
-    // If request data is provided, add it to the request header
-    if let Some(data) = request_data {
-        request = request
-            .header("Content-Type", "application/json")
-            .body(data.to_string());
-    }
 
-    // Get response
+    // Send request and handle response
     let response = request.send()?;
 
-    // If response is an error, return response
+    // Check for HTTP error status
     if !response.status().is_success() {
-        let output = response.text()?;
-        return fail_clierror!("Error response when making request: {output}");
+        let status = response.status();
+        let output = response
+            .text()
+            .unwrap_or_else(|_| "Unable to read error response".to_string());
+        return fail_clierror!("HTTP {status} error: {output}");
     }
 
     Ok(response)
 }
 
-// Check if model is valid, including the default model
-fn check_model(
-    client: &Client,
-    arg_is_some: impl Fn(&str) -> bool,
-    api_key: Option<&str>,
-    args: &Args,
-) -> CliResult<()> {
+/// Check if model is valid, including the default model
+/// If the model is not valid, try to find a valid model that matches the end of the given model
+/// If no valid model is found, fail with list of valid models
+fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult<String> {
     // Get prompt file if --prompt-file is used, otherwise get default prompt file
     let prompt_file = get_prompt_file(args)?;
     let models_endpoint = "/models";
+    let base_url = if args.flag_prompt_file.is_some() {
+        prompt_file.base_url
+    } else {
+        // safety: base_url has a docopt default
+        args.flag_base_url.as_deref().unwrap().to_string()
+    };
     let response = send_request(
         client,
         api_key,
         None,
         "GET",
-        format!(
-            "{0}{1}",
-            if arg_is_some("--prompt-file") {
-                prompt_file.base_url
-            } else {
-                args.flag_base_url.clone().unwrap()
-            },
-            models_endpoint
-        )
-        .as_str(),
+        format!("{base_url}{models_endpoint}").as_str(),
     );
 
-    // If response is an error, return the error with fail!
-    if let Err(e) = response {
-        return fail_clierror!("Error while requesting models: {e}",);
-    }
-
-    // Verify model is valid from response {"data": [{"id": "model-id", ...}, ...]
-    let response_json: serde_json::Value = response?.json()?;
-    let given_model = if arg_is_some("--model") {
-        args.flag_model.clone().unwrap()
-    } else if args.flag_prompt_file.is_some() {
-        prompt_file.model
-    } else {
-        args.flag_model.clone().unwrap()
-    };
+    // Get response and parse JSON
+    let response = response?;
+    let response_json: serde_json::Value = response.json()?;
     let Some(models) = response_json["data"].as_array() else {
         return fail_clierror!(
             "Invalid response: 'data' field is not an array or is missing\n\n{}",
             simd_json::to_string_pretty(&response_json).unwrap_or_default()
         );
     };
+
+    let given_model = env::var("QSV_LLM_MODEL")
+        .ok()
+        .or_else(|| args.flag_model.clone())
+        .or_else(|| {
+            args.flag_prompt_file
+                .as_ref()
+                .map(|_| prompt_file.model.clone())
+        })
+        // safety: model has a docopt default
+        .unwrap()
+        .to_string();
+
+    // Check for exact model match
     for model in models {
-        if model["id"].as_str().unwrap() == given_model {
-            return Ok(());
+        if let Some(model_id) = model["id"].as_str()
+            && model_id == given_model
+        {
+            return Ok(given_model);
         }
     }
 
-    // If model is not valid, fail with list of valid models
+    // Check for partial model match (suffix matching)
+    for model in models {
+        if let Some(model_id) = model["id"].as_str()
+            && model_id.ends_with(&given_model)
+        {
+            print_status(args, format!("Using model: {model_id}").as_str());
+            return Ok(model_id.to_string());
+        }
+    }
+
+    // Otherwise, fail with list of valid models
     let models_list = models
         .iter()
         .filter_map(|m| m["id"].as_str())
@@ -243,7 +277,7 @@ fn check_model(
 
 fn get_prompt_file(args: &Args) -> CliResult<PromptFile> {
     // Get prompt file if --prompt-file is used
-    let prompt_file = if let Some(prompt_file) = args.flag_prompt_file.clone() {
+    let prompt_file = if let Some(prompt_file) = &args.flag_prompt_file {
         // Read prompt file
         let prompt_file = fs::read_to_string(prompt_file)?;
         // Try to parse prompt file as JSON, if error then show it in JSON format
@@ -284,7 +318,7 @@ fn get_prompt_file(args: &Args) -> CliResult<PromptFile> {
 
 // Generate prompt for prompt type based on either the prompt file (if given) or default prompts
 fn get_prompt(
-    prompt_type: &str,
+    prompt_type: PromptType,
     stats: Option<&str>,
     frequency: Option<&str>,
     headers: Option<&str>,
@@ -295,18 +329,15 @@ fn get_prompt(
 
     // Get prompt from prompt file
     let prompt = match prompt_type {
-        "dictionary_prompt" => prompt_file.dictionary_prompt,
-        "description_prompt" => prompt_file.description_prompt,
-        "tags_prompt" => prompt_file.tags_prompt,
-        "custom" => {
-            if args.flag_prompt.is_some() {
-                args.flag_prompt.clone().unwrap()
+        PromptType::Dictionary => prompt_file.dictionary_prompt,
+        PromptType::Description => prompt_file.description_prompt,
+        PromptType::Tags => prompt_file.tags_prompt,
+        PromptType::Custom => {
+            if let Some(prompt) = &args.flag_prompt {
+                prompt.clone()
             } else {
                 prompt_file.prompt
             }
-        },
-        _ => {
-            return fail_incorrectusage_clierror!("Error: Invalid prompt type: {prompt_type}");
         },
     };
     // Replace variable data in prompt
@@ -334,56 +365,40 @@ fn get_prompt(
 
 fn get_completion(
     args: &Args,
-    arg_is_some: impl Fn(&str) -> bool,
+    client: &Client,
+    model: &str,
     api_key: &str,
     messages: &serde_json::Value,
 ) -> CliResult<String> {
-    // Create client with timeout
-    let client = util::create_reqwest_blocking_client(
-        args.flag_user_agent.clone(),
-        args.flag_timeout,
-        args.flag_base_url.clone(),
-    )?;
     let prompt_file = get_prompt_file(args)?;
 
-    // Verify model is valid
-    check_model(&client, &arg_is_some, Some(api_key), args)?;
-
-    // If --max-tokens is specified, use it
-    let max_tokens = if arg_is_some("--max-tokens") {
-        args.flag_max_tokens
-    }
-    // If --prompt-file is used, use the tokens field from the prompt file
-    else if args.flag_prompt_file.clone().is_some() {
-        let prompt_file = get_prompt_file(args)?;
-        prompt_file.tokens
-    }
-    // Else use the default max tokens value in USAGE
-    else {
-        args.flag_max_tokens
+    // If max_tokens is 0, always disable the limit, even if a prompt file is present.
+    let max_tokens = if args.flag_max_tokens == 0 {
+        None
+    } else if args.flag_prompt_file.is_some() && args.flag_max_tokens > 0 {
+        // Only use prompt_file.tokens if max_tokens is not explicitly set to 0
+        Some(prompt_file.tokens)
+    } else {
+        Some(args.flag_max_tokens)
     };
 
-    let model = if arg_is_some("--model") {
-        args.flag_model.clone().unwrap()
-    } else if args.flag_prompt_file.is_some() {
-        let prompt_file = get_prompt_file(args)?;
+    let model_to_use = if args.flag_prompt_file.is_some() {
         prompt_file.model
     } else {
-        args.flag_model.clone().unwrap()
+        model.to_string()
     };
 
-    let base_url = if arg_is_some("--base-url") {
-        args.flag_base_url.clone().unwrap()
-    } else if args.flag_prompt_file.is_some() {
+    let base_url = if args.flag_prompt_file.is_some() {
         prompt_file.base_url
     } else {
-        args.flag_base_url.clone().unwrap()
+        // safety: base_url has a docopt default
+        args.flag_base_url.as_deref().unwrap().to_string()
     };
 
     // Create request data
     let request_data = json!({
-        "model": model,
-        "max_completion_tokens": max_tokens,
+        "model": model_to_use,
+        "max_tokens": max_tokens,
         "messages": messages,
         "stream": false
     });
@@ -391,7 +406,7 @@ fn get_completion(
     // Get response from POST request to chat completions endpoint
     let completions_endpoint = "/chat/completions";
     let response = send_request(
-        &client,
+        client,
         Some(api_key),
         Some(&request_data),
         "POST",
@@ -408,9 +423,12 @@ fn get_completion(
     }
 
     // Get completion from response
-    let completion = response_json["choices"][0]["message"]["content"]
-        .as_str()
-        .unwrap();
+    let Some(completion) = response_json["choices"]
+        .get(0)
+        .and_then(|choice| choice["message"]["content"].as_str())
+    else {
+        return fail_clierror!("Invalid response: missing or malformed completion content");
+    };
     Ok(completion.to_string())
 }
 
@@ -452,7 +470,6 @@ fn is_jsonl_output(args: &Args) -> CliResult<bool> {
 // Generates output for all inference options
 fn run_inference_options(
     args: &Args,
-    arg_is_some: impl Fn(&str) -> bool,
     api_key: &str,
     stats_str: Option<&str>,
     frequency_str: Option<&str>,
@@ -504,7 +521,7 @@ fn run_inference_options(
             let formatted_output = format_output(output);
             println!("{formatted_output}");
             // If --output is used, append plaintext to file, do not overwrite
-            if let Some(output) = args.flag_output.clone() {
+            if let Some(output) = &args.flag_output {
                 fs::OpenOptions::new()
                     .create(true)
                     .append(true)
@@ -518,6 +535,15 @@ fn run_inference_options(
     // Get completion from API
     print_status(args, "Interacting with LLM...\n");
 
+    let client = util::create_reqwest_blocking_client(
+        args.flag_user_agent.clone(),
+        args.flag_timeout,
+        args.flag_base_url.clone(),
+    )?;
+
+    // Verify model is valid
+    let valid_model = check_model(&client, Some(api_key), args)?;
+
     let mut total_json_output: serde_json::Value = json!({});
     let mut prompt: String;
     let mut messages: serde_json::Value;
@@ -526,10 +552,16 @@ fn run_inference_options(
 
     // Generate custom prompt output
     if args.flag_prompt.is_some() {
-        prompt = get_prompt("custom", stats_str, frequency_str, headers_str, args)?;
+        prompt = get_prompt(
+            PromptType::Custom,
+            stats_str,
+            frequency_str,
+            headers_str,
+            args,
+        )?;
         print_status(args, "Generating custom prompt output from LLM...");
         messages = get_messages(&prompt, &dictionary_completion);
-        dictionary_completion = get_completion(args, &arg_is_some, api_key, &messages)?;
+        dictionary_completion = get_completion(args, &client, &valid_model, api_key, &messages)?;
         print_status(args, "Received custom prompt completion.");
         process_output(
             "prompt",
@@ -542,7 +574,7 @@ fn run_inference_options(
     // Generate dictionary output
     if args.flag_dictionary || args.flag_all {
         prompt = get_prompt(
-            "dictionary_prompt",
+            PromptType::Dictionary,
             stats_str,
             frequency_str,
             headers_str,
@@ -550,7 +582,7 @@ fn run_inference_options(
         )?;
         print_status(args, "Generating data dictionary from LLM...");
         messages = get_messages(&prompt, &dictionary_completion);
-        dictionary_completion = get_completion(args, &arg_is_some, api_key, &messages)?;
+        dictionary_completion = get_completion(args, &client, &valid_model, api_key, &messages)?;
         print_status(args, "Received dictionary completion.");
         process_output(
             "dictionary",
@@ -563,10 +595,10 @@ fn run_inference_options(
     // Generate description output
     if args.flag_description || args.flag_all {
         prompt = if args.flag_dictionary {
-            get_prompt("description_prompt", None, None, None, args)?
+            get_prompt(PromptType::Description, None, None, None, args)?
         } else {
             get_prompt(
-                "description_prompt",
+                PromptType::Description,
                 stats_str,
                 frequency_str,
                 headers_str,
@@ -575,7 +607,7 @@ fn run_inference_options(
         };
         messages = get_messages(&prompt, &dictionary_completion);
         print_status(args, "Generating description from LLM...");
-        completion = get_completion(args, &arg_is_some, api_key, &messages)?;
+        completion = get_completion(args, &client, &valid_model, api_key, &messages)?;
         print_status(args, "Received description completion.");
         process_output("description", &completion, &mut total_json_output, args)?;
     }
@@ -583,13 +615,19 @@ fn run_inference_options(
     // Generate tags output
     if args.flag_tags || args.flag_all {
         prompt = if args.flag_dictionary {
-            get_prompt("tags_prompt", None, None, None, args)?
+            get_prompt(PromptType::Tags, None, None, None, args)?
         } else {
-            get_prompt("tags_prompt", stats_str, frequency_str, headers_str, args)?
+            get_prompt(
+                PromptType::Tags,
+                stats_str,
+                frequency_str,
+                headers_str,
+                args,
+            )?
         };
         messages = get_messages(&prompt, &dictionary_completion);
         print_status(args, "Generating tags from LLM...");
-        completion = get_completion(args, &arg_is_some, api_key, &messages)?;
+        completion = get_completion(args, &client, &valid_model, api_key, &messages)?;
         print_status(args, "Received tags completion.");
         process_output("tags", &completion, &mut total_json_output, args)?;
     }
@@ -597,27 +635,26 @@ fn run_inference_options(
     // Expecting JSON output
     if is_json_output(args)? && !is_jsonl_output(args)? {
         // Format & print JSON output
-        let formatted_output =
-            format_output(&simd_json::to_string_pretty(&total_json_output).unwrap());
+        let formatted_output = format_output(&simd_json::to_string_pretty(&total_json_output)?);
         println!("{formatted_output}");
         // Write to file if --output is used, or overwrite if already exists
-        if let Some(output_file_path) = args.flag_output.clone() {
+        if let Some(output_file_path) = &args.flag_output {
             fs::write(output_file_path, formatted_output)?;
         }
     }
     // Expecting JSONL output
     else if is_jsonl_output(args)? {
         // If --prompt-file is used, add prompt file name and timestamp to JSONL output
-        if args.flag_prompt_file.clone().is_some() {
+        if args.flag_prompt_file.is_some() {
             let prompt_file = get_prompt_file(args)?;
             total_json_output["prompt_file"] = json!(prompt_file.name);
             total_json_output["timestamp"] = json!(chrono::offset::Utc::now().to_rfc3339());
         }
         // Format & print JSONL output
-        let formatted_output = format_output(&simd_json::to_string(&total_json_output).unwrap());
+        let formatted_output = format_output(&simd_json::to_string(&total_json_output)?);
         println!("{formatted_output}");
         // Write to file if --output is used, or append if already exists
-        if let Some(output_file_path) = args.flag_output.clone() {
+        if let Some(output_file_path) = &args.flag_output {
             fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -630,17 +667,20 @@ fn run_inference_options(
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
-    let args: Args = util::get_args(USAGE, argv)?;
-    // Closure to check if the user gives an argument
-    let arg_is_some = |arg: &str| -> bool { argv.contains(&arg) };
+    let mut args: Args = util::get_args(USAGE, argv)?;
 
-    // Check for QSV_LLM_APIKEY in environment variables
+    // Check if QSV_LLM_BASE_URL is set
+    if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {
+        args.flag_base_url = Some(base_url);
+    }
+
+    // Check for QSV_LLM_APIKEY is set
     let api_key = match env::var("QSV_LLM_APIKEY") {
         Ok(val) => val,
         Err(_) => {
             // Check if the --api-key flag is present
-            if let Some(api_key) = args.flag_api_key.clone() {
-                api_key
+            if let Some(api_key) = &args.flag_api_key {
+                api_key.clone()
             } else {
                 return fail!(LLM_APIKEY_ERROR);
             }
@@ -660,7 +700,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let work_input = process_input(
         vec![PathBuf::from(
             // if no input file is specified, read from stdin "-"
-            args.arg_input.clone().unwrap_or_else(|| "-".to_string()),
+            args.arg_input.as_deref().unwrap_or("-"),
         )],
         &tmpdir,
         "",
@@ -692,8 +732,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
     // If --prompt-file flag is specified but the prompt file does not exist, print error message.
-    if let Some(prompt_file) = args.flag_prompt_file.clone()
-        && !PathBuf::from(prompt_file.clone()).exists()
+    if let Some(prompt_file) = &args.flag_prompt_file
+        && !PathBuf::from(prompt_file).exists()
     {
         return fail_incorrectusage_clierror!("Error: Prompt file '{prompt_file}' does not exist.");
     }
@@ -705,19 +745,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Get qsv executable's path
-    let qsv_path = env::current_exe().unwrap();
+    let qsv_path = env::current_exe()?;
     // Get input file's name
-    let input_filename = args.arg_input.clone().unwrap();
+    // safety: we just checked that there is at least one input file
+    let input_filename = args.arg_input.as_deref().unwrap();
 
     // Get stats from qsv stats on input file with --everything flag
     print_status(
         &args,
         format!("Generating stats from {input_filename} using qsv stats --everything...").as_str(),
     );
-    let Ok(stats) = Command::new(qsv_path.clone())
+    let Ok(stats) = Command::new(&qsv_path)
         .arg("stats")
         .arg("--everything")
-        .arg(input_path.clone())
+        .arg(&input_path)
         .output()
     else {
         return fail!("Error: Error while generating stats.");
@@ -733,11 +774,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         &args,
         format!("Generating frequency from {input_filename} using qsv frequency...").as_str(),
     );
-    let Ok(frequency) = Command::new(qsv_path.clone())
+    let Ok(frequency) = Command::new(&qsv_path)
         .arg("frequency")
         .args(["--limit", "50"])
         // .args(["--lmt-threshold", "10"])
-        .arg(input_path.clone())
+        .arg(&input_path)
         .output()
     else {
         return fail!("Error: Error while generating frequency.");
@@ -753,9 +794,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         &args,
         format!("Getting headers from {input_filename} using qsv slice...").as_str(),
     );
-    let Ok(headers) = Command::new(qsv_path)
+    let Ok(headers) = Command::new(&qsv_path)
         .arg("slice")
-        .arg(input_path)
+        .arg(&input_path)
         .args(["--len", "1"])
         .arg("--no-headers")
         .output()
@@ -771,7 +812,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Run inference options
     run_inference_options(
         &args,
-        arg_is_some,
         &api_key,
         Some(stats_str),
         Some(frequency_str),

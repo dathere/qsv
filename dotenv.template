@@ -76,8 +76,14 @@ QSV_NO_HEADERS = False
 # when using the "ckan://" scheme. Only required to access private resources.
 # QSV_CKAN_TOKEN = YOUR_CKAN_API_TOKEN
 
+# The LLM API URL to use with the `describegpt` command.
+# QSV_LLM_BASE_URL = http://localhost:1234/v1
+
 # The API key of the supported LLM service to use with the `describegpt` command.
 # QSV_LLM_APIKEY = YOUR_LLM_APIKEY
+
+# The LLM Model to use with the `describegpt` command.
+# QSV_LLM_MODEL = gpt-oss-20b
 
 # set to an ascii character. If set, any lines(including the header) that start
 # with this character are ignored. Note that when you want to use the pound sign

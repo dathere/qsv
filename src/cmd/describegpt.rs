@@ -1,5 +1,5 @@
 static USAGE: &str = r#"
-Infers extended metadata about a CSV using a large language model.
+Infers extended metadata about a CSV using a Large Language Model (LLM).
 
 Note that this command uses LLMs for inferencing and is therefore prone to
 inaccurate information being produced. Verify output results before using them.
@@ -45,7 +45,7 @@ describegpt options:
     -m, --model <model>    The model to use for inferencing.
                            [default: gpt-oss-20b]
     --timeout <secs>       Timeout for completions in seconds.
-                           [default: 90]
+                           [default: 120]
     --user-agent <agent>   Specify custom user agent. It supports the following variables -
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
                            Try to follow the syntax here -
@@ -180,12 +180,12 @@ fn send_request(
 }
 
 // Check if model is valid, including the default model
-fn is_valid_model(
+fn check_model(
     client: &Client,
     arg_is_some: impl Fn(&str) -> bool,
     api_key: Option<&str>,
     args: &Args,
-) -> CliResult<bool> {
+) -> CliResult<()> {
     // Get prompt file if --prompt-file is used, otherwise get default prompt file
     let prompt_file = get_prompt_file(args)?;
     let models_endpoint = "/models";
@@ -228,12 +228,17 @@ fn is_valid_model(
     };
     for model in models {
         if model["id"].as_str().unwrap() == given_model {
-            return Ok(true);
+            return Ok(());
         }
     }
 
-    // If model is not valid, return false
-    Ok(false)
+    // If model is not valid, fail with list of valid models
+    let models_list = models
+        .iter()
+        .filter_map(|m| m["id"].as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    fail_clierror!("Error: Invalid model: {given_model}\n  Valid models: {models_list}")
 }
 
 fn get_prompt_file(args: &Args) -> CliResult<PromptFile> {
@@ -269,8 +274,8 @@ fn get_prompt_file(args: &Args) -> CliResult<PromptFile> {
             json:               true,
             jsonl:              false,
             base_url:           "https://api.openai.com/v1".to_owned(),
-            model:              "gpt-3.5-turbo-16k".to_owned(),
-            timeout:            60,
+            model:              "gpt-oss-20b".to_owned(),
+            timeout:            120,
         };
         default_prompt_file
     };
@@ -342,9 +347,7 @@ fn get_completion(
     let prompt_file = get_prompt_file(args)?;
 
     // Verify model is valid
-    if !is_valid_model(&client, &arg_is_some, Some(api_key), args)? {
-        return fail!("Error: Invalid model.");
-    }
+    check_model(&client, &arg_is_some, Some(api_key), args)?;
 
     // If --max-tokens is specified, use it
     let max_tokens = if arg_is_some("--max-tokens") {
@@ -401,7 +404,7 @@ fn get_completion(
     if let serde_json::Value::Object(ref map) = response_json
         && map.contains_key("error")
     {
-        return fail_clierror!("API Error: {}", map["error"]);
+        return fail_clierror!("LLM API Error: {}", map["error"]);
     }
 
     // Get completion from response
@@ -513,7 +516,7 @@ fn run_inference_options(
     }
 
     // Get completion from API
-    print_status(args, "Interacting with API...\n");
+    print_status(args, "Interacting with LLM...\n");
 
     let mut total_json_output: serde_json::Value = json!({});
     let mut prompt: String;
@@ -524,7 +527,7 @@ fn run_inference_options(
     // Generate custom prompt output
     if args.flag_prompt.is_some() {
         prompt = get_prompt("custom", stats_str, frequency_str, headers_str, args)?;
-        print_status(args, "Generating custom prompt output from API...");
+        print_status(args, "Generating custom prompt output from LLM...");
         messages = get_messages(&prompt, &dictionary_completion);
         dictionary_completion = get_completion(args, &arg_is_some, api_key, &messages)?;
         print_status(args, "Received custom prompt completion.");
@@ -545,7 +548,7 @@ fn run_inference_options(
             headers_str,
             args,
         )?;
-        print_status(args, "Generating data dictionary from API...");
+        print_status(args, "Generating data dictionary from LLM...");
         messages = get_messages(&prompt, &dictionary_completion);
         dictionary_completion = get_completion(args, &arg_is_some, api_key, &messages)?;
         print_status(args, "Received dictionary completion.");
@@ -571,7 +574,7 @@ fn run_inference_options(
             )?
         };
         messages = get_messages(&prompt, &dictionary_completion);
-        print_status(args, "Generating description from API...");
+        print_status(args, "Generating description from LLM...");
         completion = get_completion(args, &arg_is_some, api_key, &messages)?;
         print_status(args, "Received description completion.");
         process_output("description", &completion, &mut total_json_output, args)?;
@@ -585,7 +588,7 @@ fn run_inference_options(
             get_prompt("tags_prompt", stats_str, frequency_str, headers_str, args)?
         };
         messages = get_messages(&prompt, &dictionary_completion);
-        print_status(args, "Generating tags from API...");
+        print_status(args, "Generating tags from LLM...");
         completion = get_completion(args, &arg_is_some, api_key, &messages)?;
         print_status(args, "Received tags completion.");
         process_output("tags", &completion, &mut total_json_output, args)?;

@@ -1783,7 +1783,7 @@ Consider renaming the file or using a different input."#,
 /// if show_progress is true, a progress bar will be shown
 /// if custom_user_agent is Some, it will be used as the user agent
 /// if download_timeout is Some, it will be used as the timeout in seconds. If 0, no timeout is
-/// used. if sample_size is Some, it will be used as the number of bytes to download
+/// used. If sample_size is Some, it will be used as the number of bytes to download.
 pub async fn download_file(
     url: &str,
     path: PathBuf,

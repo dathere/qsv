@@ -74,7 +74,7 @@ sniff options:
     --pretty-json            Return results in pretty JSON format.
     --save-urlsample <file>  Save the URL sample to a file.
                              Valid only when input is a URL.
-    --timeout <secs>         Timeout when sniffing URLs in seconds.
+    --timeout <secs>         Timeout when sniffing URLs in seconds. If 0, no timeout is used.
                              [default: 30]
     --user-agent <agent>     Specify custom user agent to use when sniffing a CSV on a URL.
                              It supports the following variables - $QSV_VERSION, $QSV_TARGET,

@@ -219,7 +219,8 @@ Validate options:
                                [default: 10]
 
     --timeout <seconds>        Timeout for downloading json-schemas on URLs and for
-                               'dynamicEnum' lookups on URLs. [default: 30]
+                               'dynamicEnum' lookups on URLs. If 0, no timeout is used.
+                               [default: 30]
     --cache-dir <dir>          The directory to use for caching downloaded dynamicEnum resources.
                                If the directory does not exist, qsv will attempt to create it.
                                If the QSV_CACHE_DIR envvar is set, it will be used instead.

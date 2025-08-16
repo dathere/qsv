@@ -15,7 +15,7 @@ use std::{
     path::{Path, PathBuf},
     str,
     sync::OnceLock,
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 use csv::ByteRecord;
@@ -327,7 +327,7 @@ pub fn set_user_agent(user_agent: Option<String>) -> CliResult<String> {
 /// # Arguments
 ///
 /// * `user_agent` - Optional custom user agent string
-/// * `timeout_secs` - Timeout in seconds for HTTP requests
+/// * `timeout_secs` - Timeout in seconds for HTTP requests. If 0, no timeout is used.
 /// * `base_url` - Optional base URL for retry configuration
 ///
 /// # Returns
@@ -345,9 +345,6 @@ pub fn create_reqwest_async_client(
     timeout_secs: u16,
     base_url: Option<String>,
 ) -> CliResult<Client> {
-    use std::time::Duration;
-
-    let timeout_duration = Duration::from_secs(timeout_secs.into());
     let base_url_for_retry = base_url.unwrap_or_default();
 
     let retries = reqwest::retry::for_host(base_url_for_retry).classify_fn(|req_rep| {
@@ -358,7 +355,7 @@ pub fn create_reqwest_async_client(
         }
     });
 
-    let client = Client::builder()
+    let mut builder = Client::builder()
         .user_agent(set_user_agent(user_agent)?)
         .brotli(true)
         .gzip(true)
@@ -367,11 +364,13 @@ pub fn create_reqwest_async_client(
         .use_rustls_tls()
         .http2_adaptive_window(true)
         .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
-        .timeout(timeout_duration)
-        .retry(retries)
-        .build()?;
+        .retry(retries);
 
-    Ok(client)
+    if timeout_secs > 0 {
+        builder = builder.timeout(Duration::from_secs(timeout_secs.into()));
+    }
+
+    Ok(builder.build()?)
 }
 
 /// Creates a standardized blocking reqwest client with common configuration options.
@@ -380,7 +379,7 @@ pub fn create_reqwest_async_client(
 /// # Arguments
 ///
 /// * `user_agent` - Optional custom user agent string
-/// * `timeout_secs` - Timeout in seconds for HTTP requests
+/// * `timeout_secs` - Timeout in seconds for HTTP requests. If 0, no timeout is used.
 /// * `base_url` - Optional base URL for retry configuration
 ///
 /// # Returns
@@ -392,8 +391,6 @@ pub fn create_reqwest_blocking_client(
     timeout_secs: u16,
     base_url: Option<String>,
 ) -> CliResult<reqwest::blocking::Client> {
-    use std::time::Duration;
-
     let timeout_duration = Duration::from_secs(timeout_secs.into());
     let base_url_for_retry = base_url.unwrap_or_default();
 
@@ -414,7 +411,11 @@ pub fn create_reqwest_blocking_client(
         .use_rustls_tls()
         .http2_adaptive_window(true)
         .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
-        .timeout(timeout_duration)
+        .timeout(if timeout_secs == 0 {
+            None
+        } else {
+            Some(timeout_duration)
+        })
         .retry(retries)
         .build()?;
 
@@ -1778,8 +1779,8 @@ Consider renaming the file or using a different input."#,
 /// downloads a file from a url and saves it to a path
 /// if show_progress is true, a progress bar will be shown
 /// if custom_user_agent is Some, it will be used as the user agent
-/// if download_timeout is Some, it will be used as the timeout in seconds
-/// if sample_size is Some, it will be used as the number of bytes to download
+/// if download_timeout is Some, it will be used as the timeout in seconds. If 0, no timeout is
+/// used. If sample_size is Some, it will be used as the number of bytes to download.
 pub async fn download_file(
     url: &str,
     path: PathBuf,

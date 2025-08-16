@@ -212,7 +212,7 @@ fn is_valid_model(
     }
 
     // Verify model is valid from response {"data": [{"id": "model-id", ...}, ...]
-    let response_json: serde_json::Value = response.unwrap().json().unwrap();
+    let response_json: serde_json::Value = response?.json()?;
     let given_model = if arg_is_some("--model") {
         args.flag_model.clone().unwrap()
     } else if args.flag_prompt_file.is_some() {

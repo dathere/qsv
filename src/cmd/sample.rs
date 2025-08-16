@@ -140,7 +140,7 @@ sample options:
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
                            Try to follow the syntax here -
                            https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
-    --timeout <secs>       Timeout for downloading URLs in seconds.
+    --timeout <secs>       Timeout for downloading URLs in seconds. If 0, no timeout is used.
                            [default: 30]
     --max-size <mb>        Maximum size of the file to download in MB before sampling.
                            Will download the entire file if not specified.

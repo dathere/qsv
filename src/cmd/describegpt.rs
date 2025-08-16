@@ -44,7 +44,7 @@ describegpt options:
                            [default: https://api.openai.com/v1]
     -m, --model <model>    The model to use for inferencing.
                            [default: gpt-oss-20b]
-    --timeout <secs>       Timeout for completions in seconds.
+    --timeout <secs>       Timeout for completions in seconds. If 0, no timeout is used.
                            [default: 120]
     --user-agent <agent>   Specify custom user agent. It supports the following variables -
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.

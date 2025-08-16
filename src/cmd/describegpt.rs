@@ -380,7 +380,7 @@ fn get_completion(
     // Create request data
     let request_data = json!({
         "model": model,
-        "max_tokens": max_tokens,
+        "max_completion_tokens": max_tokens,
         "messages": messages,
         "stream": false
     });

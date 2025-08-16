@@ -244,7 +244,7 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
                 .map(|_| prompt_file.model.clone())
         })
         // safety: model has a docopt default
-        .unwrap_or_else(|| args.flag_model.clone().unwrap())
+        .unwrap()
         .to_string();
 
     // Check for exact model match

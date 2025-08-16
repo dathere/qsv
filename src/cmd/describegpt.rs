@@ -25,8 +25,8 @@ describegpt options:
                            human-readable label, a description, and stats.
     --tags                 Prints tags that categorize the dataset. Useful
                            for grouping datasets and filtering.
-    -k, --api-key <key>    The API key to use. The default API key for Ollama is ollama.
-                           If the QSV_LLM_APIKEY envvar is set, it will be used instead.
+    -k, --api-key <key>    The API key to use. If the QSV_LLM_APIKEY envvar is set,
+                           it will be used instead.
     -t, --max-tokens <n>   Limits the number of generated tokens in the output.
                            [default: 1000]
     --json                 Return results in JSON format.

@@ -4,7 +4,7 @@ Infers extended metadata about a CSV using a large language model.
 Note that this command uses LLMs for inferencing and is therefore prone to
 inaccurate information being produced. Verify output results before using them.
 
-Let's say you have Ollama installed (must be v0.2.0 or above) to use LLMs locally with qsv describegpt.
+Let's say you have Ollama installed (v0.2.0 or above) to use LLMs locally with qsv describegpt.
 To attempt generating a data dictionary of a spreadsheet file you may run (replace <> values):
 
   $ qsv describegpt <filepath> -u http://localhost:11434/v1 -k ollama -m <model> -t <number> --dictionary
@@ -27,22 +27,25 @@ describegpt options:
                            for grouping datasets and filtering.
     -k, --api-key <key>    The API key to use. The default API key for Ollama is ollama.
                            If the QSV_LLM_APIKEY envvar is set, it will be used instead.
-    -t, --max-tokens <value>   Limits the number of generated tokens in the output.
+    -t, --max-tokens <n>   Limits the number of generated tokens in the output.
                            [default: 1000]
     --json                 Return results in JSON format.
     --jsonl                Return results in JSON Lines format.
     --prompt <prompt>      Custom prompt passed as text (alternative to --description, etc.).
-                           Replaces {stats}, {frequency}, & {headers} in prompt with qsv command outputs.
+                           Replaces {stats}, {frequency} & {headers} in prompt with
+                           corresponding qsv command outputs.
     --prompt-file <file>   The JSON file containing the prompts to use for inferencing.
                            If not specified, default prompts will be used.
-    -u, --base-url <url>   The URL of the API for interacting with LLMs. Supports APIs
-                           compatible with the OpenAI API specification (Ollama, Jan, etc.).
+    -u, --base-url <url>   The LLM API URL. Supports APIs & local LLMs compatible with
+                           the OpenAI API specification (Ollama, Jan, LM Studio, etc.).
                            The default base URL for Ollama is http://localhost:11434/v1.
+                           The default for Jan is https://localhost:1337/v1.
+                           The default for LM Studio is http://localhost:1234/v1.
                            [default: https://api.openai.com/v1]
     -m, --model <model>    The model to use for inferencing.
-                           [default: gpt-3.5-turbo-16k]
+                           [default: gpt-oss-20b]
     --timeout <secs>       Timeout for completions in seconds.
-                           [default: 60]
+                           [default: 90]
     --user-agent <agent>   Specify custom user agent. It supports the following variables -
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
                            Try to follow the syntax here -

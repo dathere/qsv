@@ -159,6 +159,11 @@ pub fn reset_sigpipe() {
     // no-op
 }
 
+pub fn current_exe() -> CliResult<PathBuf> {
+    let exe_path = std::env::current_exe()?;
+    Ok(exe_path)
+}
+
 /// Visualizes whitespace characters in a string by replacing them with visible markers
 ///
 /// This function takes a string and returns a new string where whitespace characters
@@ -1089,7 +1094,7 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
         return Ok(false);
     }
 
-    let bin_name = match std::env::current_exe() {
+    let bin_name = match current_exe() {
         Ok(pb) => {
             if let Some(fs) = pb.file_stem() {
                 fs.to_string_lossy().into_owned()
@@ -1652,7 +1657,7 @@ pub fn load_dotenv() -> CliResult<()> {
         // no .env file in the current directory or it was invalid
         // now check if there is an .env file with the same name as the executable
         // in the same directory as the executable
-        let qsv_binary_path = std::env::current_exe()?;
+        let qsv_binary_path = current_exe()?;
 
         let qsv_dir = qsv_binary_path.parent().ok_or("No parent directory")?;
 
@@ -2559,7 +2564,7 @@ pub fn get_stats_records(
 
         let stats_args_vec: Vec<&str> = stats_args_str.split('\t').collect();
 
-        let qsv_bin = std::env::current_exe()?;
+        let qsv_bin = current_exe()?;
         let mut stats_cmd = std::process::Command::new(qsv_bin);
         if requested_mode == StatsMode::Outliers {
             // set the max length for antimodes

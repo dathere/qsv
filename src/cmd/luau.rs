@@ -2046,7 +2046,7 @@ fn setup_helpers(
     //               A Luau runtime error if the command cannot be executed.
     //
     let qsv_cmd = luau.create_function(|luau, args: mlua::String| {
-        let qsv_binary = env::current_exe().unwrap();
+        let qsv_binary = util::current_exe().unwrap();
 
         let mut cmd = std::process::Command::new(qsv_binary);
         let qsv_args = args.to_string_lossy();

@@ -343,7 +343,7 @@ fn get_prompt(
     frequency: Option<&str>,
     headers: Option<&str>,
     args: &Args,
-) -> CliResult<String> {
+) -> CliResult<(String, String)> {
     // Get prompt file if --prompt-file is used, otherwise get default prompt file
     let prompt_file = get_prompt_file(args)?;
 
@@ -380,7 +380,7 @@ fn get_prompt(
         );
 
     // Return prompt
-    Ok(prompt)
+    Ok((prompt, prompt_file.system_prompt))
 }
 
 fn get_completion(
@@ -507,14 +507,19 @@ fn run_inference_options(
     headers_str: Option<&str>,
 ) -> CliResult<()> {
     // Add --dictionary output as context if it is not empty
-    fn get_messages(prompt: &str, dictionary_completion: &str) -> serde_json::Value {
+    fn get_messages(
+        prompt: &str,
+        system_prompt: &str,
+        dictionary_completion: &str,
+    ) -> serde_json::Value {
         if dictionary_completion.is_empty() {
-            json!([{"role": "user", "content": prompt},
-            {"role": "system", "content": DEFAULT_SYSTEM_PROMPT}])
+            json!([{"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}])
         } else {
-            json!([{"role": "assistant", "content": dictionary_completion},
+            json!([{"role": "system", "content": system_prompt},
+            {"role": "assistant", "content": dictionary_completion},
             {"role": "user", "content": prompt},
-            {"role": "system", "content": DEFAULT_SYSTEM_PROMPT}])
+            ])
         }
     }
     // Format output by replacing escape characters
@@ -621,6 +626,7 @@ fn run_inference_options(
 
     let mut total_json_output: serde_json::Value = json!({});
     let mut prompt: String;
+    let mut system_prompt: String;
     let mut messages: serde_json::Value;
     let mut data_dict = String::new();
     let mut completion: String;
@@ -628,7 +634,7 @@ fn run_inference_options(
 
     // Generate dictionary output
     if args.flag_dictionary || args.flag_all {
-        prompt = get_prompt(
+        (prompt, system_prompt) = get_prompt(
             PromptType::Dictionary,
             stats_str,
             frequency_str,
@@ -637,7 +643,7 @@ fn run_inference_options(
         )?;
         let start_time = Instant::now();
         print_status(args, "  Generating data dictionary...", None);
-        messages = get_messages(&prompt, &data_dict);
+        messages = get_messages(&prompt, &system_prompt, &data_dict);
         (data_dict, token_usage) = get_completion(args, &client, &model, api_key, &messages)?;
         print_status(
             args,
@@ -649,7 +655,7 @@ fn run_inference_options(
 
     // Generate description output
     if args.flag_description || args.flag_all {
-        prompt = if args.flag_dictionary {
+        (prompt, system_prompt) = if args.flag_dictionary {
             get_prompt(PromptType::Description, None, None, None, args)?
         } else {
             get_prompt(
@@ -660,7 +666,7 @@ fn run_inference_options(
                 args,
             )?
         };
-        messages = get_messages(&prompt, &data_dict);
+        messages = get_messages(&prompt, &system_prompt, &data_dict);
         let start_time = Instant::now();
         print_status(args, "  Generating description...", None);
         (completion, token_usage) = get_completion(args, &client, &model, api_key, &messages)?;
@@ -674,7 +680,7 @@ fn run_inference_options(
 
     // Generate tags output
     if args.flag_tags || args.flag_all {
-        prompt = if args.flag_dictionary {
+        (prompt, system_prompt) = if args.flag_dictionary {
             get_prompt(PromptType::Tags, None, None, None, args)?
         } else {
             get_prompt(
@@ -685,7 +691,7 @@ fn run_inference_options(
                 args,
             )?
         };
-        messages = get_messages(&prompt, &data_dict);
+        messages = get_messages(&prompt, &system_prompt, &data_dict);
         let start_time = Instant::now();
         print_status(args, "  Generating tags...", None);
         (completion, token_usage) = get_completion(args, &client, &model, api_key, &messages)?;
@@ -699,7 +705,7 @@ fn run_inference_options(
 
     // Generate custom prompt output
     if args.flag_prompt.is_some() {
-        prompt = get_prompt(
+        (prompt, system_prompt) = get_prompt(
             PromptType::Custom,
             stats_str,
             frequency_str,
@@ -708,7 +714,7 @@ fn run_inference_options(
         )?;
         let start_time = Instant::now();
         print_status(args, "  Generating custom prompt output...", None);
-        messages = get_messages(&prompt, &data_dict);
+        messages = get_messages(&prompt, &system_prompt, &data_dict);
         (completion, token_usage) = get_completion(args, &client, &model, api_key, &messages)?;
         print_status(
             args,
@@ -849,7 +855,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Get qsv executable's path
-    let qsv_path = util::current_exe()?;
+    let qsv_path = std::env::current_exe()?;
     // Get input file's name
     // safety: we just checked that there is at least one input file
     let input_filename = args.arg_input.as_deref().unwrap();

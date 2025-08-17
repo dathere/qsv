@@ -240,7 +240,7 @@ Common options:
 use std::{
     cell::RefCell,
     collections::HashMap,
-    env, fs, io,
+    fs, io,
     io::Write,
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, AtomicI8, AtomicU16, Ordering},

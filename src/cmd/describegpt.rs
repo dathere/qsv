@@ -21,8 +21,8 @@ Usage:
 describegpt options:
     -A, --all              Print all extended metadata options output.
     --description          Print a general description of the dataset.
-    --dictionary           For each field, prints an inferred type, a
-                           human-readable label, a description, and stats.
+    --dictionary           Create a data dictionary. For each field, prints an inferred type,
+                           a human-readable label, a description, and stats.
     --tags                 Prints tags that categorize the dataset. Useful
                            for grouping datasets and filtering.
     -k, --api-key <key>    The API key to use. If the QSV_LLM_APIKEY envvar is set,
@@ -70,7 +70,7 @@ use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{CliResult, util, util::process_input};
+use crate::{CliError, CliResult, regex_oncelock, util, util::process_input};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PromptType {
@@ -109,6 +109,7 @@ struct PromptFile {
     author:             String,
     version:            String,
     tokens:             u32,
+    system_prompt:      String,
     dictionary_prompt:  String,
     description_prompt: String,
     tags_prompt:        String,
@@ -125,13 +126,18 @@ const LLM_APIKEY_ERROR: &str = "Error: QSV_LLM_APIKEY environment variable not f
                                 inaccurate information being produced. Verify output results \
                                 before using them.";
 
+const DEFAULT_SYSTEM_PROMPT: &str =
+    "You are an expert library scientist with a background in statistics and data science. \
+    You are also an expert on the DCAT-US 3 specification (https://doi-do.github.io/dcat-us/).";
+
 const DEFAULT_DICTIONARY_PROMPT: &str =
     "Here are the columns for each field in a data dictionary:\n\n- Type: the data type of this \
-     column\n- Label: a human-friendly label for this column\n- Description: a full description \
-     for this column (can be multiple sentences)\n\nGenerate a data dictionary as aforementioned \
-     (in JSON output) where each field has Name, Type, Label, and Description (so four columns in \
-     total) based on the following summary statistics and frequency data from a CSV \
-     file.\n\nSummary Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}";
+     column as indicated in the Summary Statistics below.\n- Label: a human-friendly label for \
+     this column\n- Description: a full description for this column (can be multiple \
+     sentences)\n\nGenerate a data dictionary as aforementioned {json_add} where each field has \
+     Name, Type, Label, and Description (so four columns in total) based on the following summary \
+     statistics and frequency data (both in CSV format) of the input CSV file.\n\nSummary \
+     Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}";
 const DEFAULT_DESCRIPTION_PROMPT: &str =
     "Generate only a description that is within 8 sentences about the entire dataset{json_add} \
      based on the following summary statistics and frequency data derived from the CSV file it \
@@ -141,10 +147,19 @@ const DEFAULT_DESCRIPTION_PROMPT: &str =
      in one 1-8 sentence description.";
 const DEFAULT_TAGS_PROMPT: &str =
     "A tag is a keyword or label that categorizes datasets with other, similar datasets. Using \
-     the right tags makes it easier for others to find and use datasets.\n\nGenerate thematic \
-     tags{json_add} about the dataset (lowercase only and use _ for all whitespace) based on the \
-     following summary statistics and frequency data from a CSV file.\n\nSummary \
-     Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}";
+     the right tags makes it easier for others to find and use datasets.\n\nGenerate no more than \
+     15 most thematic tags{json_add} about the contents of the dataset in descending order of \
+     importance (lowercase only and use _ to separate words) based on the following summary \
+     statistics and frequency data (both in CSV format) of the input CSV file. Do not use field \
+     names in the tags. \n\nSummary Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}";
+
+#[allow(dead_code)]
+#[derive(Debug, Default)]
+struct TokenUsage {
+    prompt:     u64,
+    completion: u64,
+    total:      u64,
+}
 
 fn print_status(args: &Args, msg: &str, elapsed: Option<std::time::Duration>) {
     if !args.flag_quiet {
@@ -302,7 +317,8 @@ fn get_prompt_file(args: &Args) -> CliResult<PromptFile> {
             description:        "My prompt file for qsv's describegpt command.".to_string(),
             author:             "My Name".to_string(),
             version:            "1.0.0".to_string(),
-            tokens:             50,
+            tokens:             1000,
+            system_prompt:      DEFAULT_SYSTEM_PROMPT.to_owned(),
             dictionary_prompt:  DEFAULT_DICTIONARY_PROMPT.to_owned(),
             description_prompt: DEFAULT_DESCRIPTION_PROMPT.to_owned(),
             tags_prompt:        DEFAULT_TAGS_PROMPT.to_owned(),
@@ -357,7 +373,7 @@ fn get_prompt(
                 || prompt_file.jsonl
                 || (args.flag_prompt_file.is_none() && (args.flag_json || args.flag_jsonl))
             {
-                " (in JSON format)"
+                " (in valid JSON format. Surround it with ```json and ```)"
             } else {
                 ""
             },
@@ -373,7 +389,7 @@ fn get_completion(
     model: &str,
     api_key: &str,
     messages: &serde_json::Value,
-) -> CliResult<String> {
+) -> CliResult<(String, TokenUsage)> {
     let prompt_file = get_prompt_file(args)?;
 
     // If max_tokens is 0, always disable the limit, even if a prompt file is present.
@@ -433,7 +449,18 @@ fn get_completion(
     else {
         return fail_clierror!("Invalid response: missing or malformed completion content");
     };
-    Ok(completion.to_string())
+
+    // Get token usage from response
+    let Some(usage) = response_json["usage"].as_object() else {
+        return fail_clierror!("Invalid response: missing or malformed usage");
+    };
+    let token_usage = TokenUsage {
+        prompt:     usage["prompt_tokens"].as_u64().unwrap_or(0),
+        completion: usage["completion_tokens"].as_u64().unwrap_or(0),
+        total:      usage["total_tokens"].as_u64().unwrap_or(0),
+    };
+
+    Ok((completion.to_string(), token_usage))
 }
 
 // Check if JSON output is expected
@@ -482,9 +509,12 @@ fn run_inference_options(
     // Add --dictionary output as context if it is not empty
     fn get_messages(prompt: &str, dictionary_completion: &str) -> serde_json::Value {
         if dictionary_completion.is_empty() {
-            json!([{"role": "user", "content": prompt}])
+            json!([{"role": "user", "content": prompt},
+            {"role": "system", "content": DEFAULT_SYSTEM_PROMPT}])
         } else {
-            json!([{"role": "assistant", "content": dictionary_completion}, {"role": "user", "content": prompt}])
+            json!([{"role": "assistant", "content": dictionary_completion},
+            {"role": "user", "content": prompt},
+            {"role": "system", "content": DEFAULT_SYSTEM_PROMPT}])
         }
     }
     // Format output by replacing escape characters
@@ -495,6 +525,59 @@ fn run_inference_options(
             .replace("\\'", "'")
             .replace("\\`", "`")
     }
+
+    // Helper function to extract JSON from various LLM response formats
+    fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
+        // Helper function to validate and return JSON candidate
+        fn validate_json_candidate(candidate: &str) -> Option<serde_json::Value> {
+            serde_json::from_str::<serde_json::Value>(candidate.trim()).ok()
+        }
+
+        // Pattern 1: JSON wrapped in ```json and ``` blocks
+        if let Some(caps) = regex_oncelock!(r"(?s)```json\n(.*?)\n```").captures(output)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = validate_json_candidate(m.as_str())
+        {
+            return Ok(valid_json);
+        }
+
+        // Pattern 2: JSON wrapped in ``` and ``` blocks (without json specifier)
+        if let Some(caps) = regex_oncelock!(r"(?s)```\n(.*?)\n```").captures(output)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = validate_json_candidate(m.as_str())
+        {
+            return Ok(valid_json);
+        }
+
+        // Pattern 3: Try to find JSON array or object at the start of the response
+        if let Some(caps) = regex_oncelock!(r"(?s)^\s*(\[.*?\]|\{.*?\})").captures(output)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = validate_json_candidate(m.as_str())
+        {
+            return Ok(valid_json);
+        }
+
+        // Pattern 4: Try to find JSON array or object anywhere in the response (non-greedy)
+        if let Some(caps) = regex_oncelock!(r"(?s)(\[.*?\]|\{.*?\})").captures(output)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = validate_json_candidate(m.as_str())
+        {
+            return Ok(valid_json);
+        }
+
+        // If no pattern matches, return the entire output (might be raw JSON)
+        if (output.trim().starts_with('[') || output.trim().starts_with('{'))
+            && let Some(valid_json) = validate_json_candidate(output)
+        {
+            return Ok(valid_json);
+        }
+
+        Err(CliError::Other(format!(
+            "Failed to extract JSON content from LLM response. Output: {}",
+            if output.is_empty() { "<empty>" } else { output }
+        )))
+    }
+
     // Generate the plaintext and/or JSON output of an inference option
     fn process_output(
         option: &str,
@@ -504,20 +587,7 @@ fn run_inference_options(
     ) -> CliResult<()> {
         // Process JSON output if expected or JSONL output is expected
         if is_json_output(args)? || is_jsonl_output(args)? {
-            // Parse the completion JSON
-            let completion_json: serde_json::Value = if let Ok(val) = serde_json::from_str(output) {
-                // Output is valid JSON
-                val
-            } else {
-                // Output is invalid JSON
-                // Default error message in JSON format
-                let error_message = format!("Error: Invalid JSON output for {option}.");
-                let error_json = json!({"error": error_message});
-                // Print error message in JSON format
-                print_status(args, format!("{error_json}").as_str(), None);
-                print_status(args, format!("Output: {output}").as_str(), None);
-                error_json
-            };
+            let completion_json = extract_json_from_output(output)?;
             total_json_output[option] = completion_json;
         }
         // Process plaintext output
@@ -547,39 +617,14 @@ fn run_inference_options(
     )?;
 
     // Verify model is valid
-    let valid_model = check_model(&client, Some(api_key), args)?;
+    let model = check_model(&client, Some(api_key), args)?;
 
     let mut total_json_output: serde_json::Value = json!({});
     let mut prompt: String;
     let mut messages: serde_json::Value;
+    let mut data_dict = String::new();
     let mut completion: String;
-    let mut dictionary_completion = String::new();
-
-    // Generate custom prompt output
-    if args.flag_prompt.is_some() {
-        prompt = get_prompt(
-            PromptType::Custom,
-            stats_str,
-            frequency_str,
-            headers_str,
-            args,
-        )?;
-        let start_time = Instant::now();
-        print_status(args, "  Generating custom prompt output...", None);
-        messages = get_messages(&prompt, &dictionary_completion);
-        dictionary_completion = get_completion(args, &client, &valid_model, api_key, &messages)?;
-        print_status(
-            args,
-            "  Received custom prompt completion.",
-            Some(start_time.elapsed()),
-        );
-        process_output(
-            "prompt",
-            &dictionary_completion,
-            &mut total_json_output,
-            args,
-        )?;
-    }
+    let mut token_usage: TokenUsage;
 
     // Generate dictionary output
     if args.flag_dictionary || args.flag_all {
@@ -592,19 +637,14 @@ fn run_inference_options(
         )?;
         let start_time = Instant::now();
         print_status(args, "  Generating data dictionary...", None);
-        messages = get_messages(&prompt, &dictionary_completion);
-        dictionary_completion = get_completion(args, &client, &valid_model, api_key, &messages)?;
+        messages = get_messages(&prompt, &data_dict);
+        (data_dict, token_usage) = get_completion(args, &client, &model, api_key, &messages)?;
         print_status(
             args,
-            "  Received dictionary completion.",
+            &format!("   Received dictionary completion.\n   {token_usage:?}\n  "),
             Some(start_time.elapsed()),
         );
-        process_output(
-            "dictionary",
-            &dictionary_completion,
-            &mut total_json_output,
-            args,
-        )?;
+        process_output("dictionary", &data_dict, &mut total_json_output, args)?;
     }
 
     // Generate description output
@@ -620,13 +660,13 @@ fn run_inference_options(
                 args,
             )?
         };
-        messages = get_messages(&prompt, &dictionary_completion);
+        messages = get_messages(&prompt, &data_dict);
         let start_time = Instant::now();
         print_status(args, "  Generating description...", None);
-        completion = get_completion(args, &client, &valid_model, api_key, &messages)?;
+        (completion, token_usage) = get_completion(args, &client, &model, api_key, &messages)?;
         print_status(
             args,
-            "  Received description completion.",
+            &format!("   Received description completion.\n   {token_usage:?}\n  "),
             Some(start_time.elapsed()),
         );
         process_output("description", &completion, &mut total_json_output, args)?;
@@ -645,16 +685,37 @@ fn run_inference_options(
                 args,
             )?
         };
-        messages = get_messages(&prompt, &dictionary_completion);
+        messages = get_messages(&prompt, &data_dict);
         let start_time = Instant::now();
         print_status(args, "  Generating tags...", None);
-        completion = get_completion(args, &client, &valid_model, api_key, &messages)?;
+        (completion, token_usage) = get_completion(args, &client, &model, api_key, &messages)?;
         print_status(
             args,
-            "  Received tags completion.",
+            &format!("   Received tags completion.\n   {token_usage:?}\n  "),
             Some(start_time.elapsed()),
         );
         process_output("tags", &completion, &mut total_json_output, args)?;
+    }
+
+    // Generate custom prompt output
+    if args.flag_prompt.is_some() {
+        prompt = get_prompt(
+            PromptType::Custom,
+            stats_str,
+            frequency_str,
+            headers_str,
+            args,
+        )?;
+        let start_time = Instant::now();
+        print_status(args, "  Generating custom prompt output...", None);
+        messages = get_messages(&prompt, &data_dict);
+        (completion, token_usage) = get_completion(args, &client, &model, api_key, &messages)?;
+        print_status(
+            args,
+            &format!("   Received custom prompt completion.\n   {token_usage:?}\n  "),
+            Some(start_time.elapsed()),
+        );
+        process_output("prompt", &completion, &mut total_json_output, args)?;
     }
 
     print_status(args, "LLM completions received.", Some(llm_start.elapsed()));
@@ -662,7 +723,7 @@ fn run_inference_options(
     // Expecting JSON output
     if is_json_output(args)? && !is_jsonl_output(args)? {
         // Format & print JSON output
-        let formatted_output = format_output(&simd_json::to_string_pretty(&total_json_output)?);
+        let formatted_output = &simd_json::to_string_pretty(&total_json_output)?;
         println!("{formatted_output}");
         // Write to file if --output is used, or overwrite if already exists
         if let Some(output_file_path) = &args.flag_output {
@@ -678,7 +739,7 @@ fn run_inference_options(
             total_json_output["timestamp"] = json!(chrono::offset::Utc::now().to_rfc3339());
         }
         // Format & print JSONL output
-        let formatted_output = format_output(&simd_json::to_string(&total_json_output)?);
+        let formatted_output = &simd_json::to_string(&total_json_output)?;
         println!("{formatted_output}");
         // Write to file if --output is used, or append if already exists
         if let Some(output_file_path) = &args.flag_output {
@@ -788,7 +849,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Get qsv executable's path
-    let qsv_path = env::current_exe()?;
+    let qsv_path = util::current_exe()?;
     // Get input file's name
     // safety: we just checked that there is at least one input file
     let input_filename = args.arg_input.as_deref().unwrap();
@@ -821,7 +882,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Parse the stats as &str
     let Ok(stats_str) = std::str::from_utf8(&stats.stdout) else {
-        return fail!("Error: Unable to parse stats as &str.");
+        return fail!("Error: Unable to parse stats.");
     };
 
     // Get frequency from qsv frequency on input file
@@ -842,7 +903,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     // Get headers from qsv slice on input file
-    print_status(&args, format!("  Getting headers...").as_str(), None);
+    print_status(&args, "  Getting headers...", None);
     let Ok(headers) = Command::new(&qsv_path)
         .arg("slice")
         .arg(&input_path)

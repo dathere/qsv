@@ -855,7 +855,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Get qsv executable's path
-    let qsv_path = std::env::current_exe()?;
+    let qsv_path = util::current_exe()?;
     // Get input file's name
     // safety: we just checked that there is at least one input file
     let input_filename = args.arg_input.as_deref().unwrap();

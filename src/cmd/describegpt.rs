@@ -617,7 +617,7 @@ fn run_inference_options(
 
     let client = util::create_reqwest_blocking_client(
         args.flag_user_agent.clone(),
-        args.flag_timeout,
+        util::timeout_secs(args.flag_timeout).unwrap_or(120) as u16,
         args.flag_base_url.clone(),
     )?;
 

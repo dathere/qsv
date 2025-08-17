@@ -4,15 +4,18 @@ use serial_test::serial;
 
 use crate::workdir::Workdir;
 
+/* NOTE: If you want to run these tests, install LM Studio (https://lmstudio.ai)
+and load the deepseek/deepseek-r1-0528-qwen3-8b and openai/gpt-4o models with
+context window set to at least 10,000 tokens.
+*/
+
 // Set QSV_TIMEOUT=0 for all tests to disable timeouts
 // Set QSV_LLM_BASE_URL to localhost:1234/v1
 // Set QSV_LLM_API_KEY to empty string
-fn set_describegpt_testing_envvars() {
-    unsafe {
-        env::set_var("QSV_TIMEOUT", "0");
-        env::set_var("QSV_LLM_BASE_URL", "http://localhost:1234/v1");
-        env::set_var("QSV_LLM_API_KEY", "");
-    }
+fn set_describegpt_testing_envvars(cmd: &mut std::process::Command) {
+    cmd.env("QSV_TIMEOUT", "0")
+        .env("QSV_LLM_BASE_URL", "http://localhost:1234/v1")
+        .env("QSV_LLM_API_KEY", "");
 }
 
 fn is_local_llm_available() -> bool {
@@ -26,7 +29,41 @@ fn is_local_llm_available() -> bool {
                 let mut cmd = Command::new("curl");
                 cmd.arg(format!("{}/models", base_url.trim_end_matches('/')));
                 match cmd.output() {
-                    Ok(output) => output.status.success(),
+                    Ok(output) => {
+                        if !output.status.success() {
+                            return false;
+                        }
+
+                        // Parse the JSON response to check for required models
+                        if let Ok(response_str) = String::from_utf8(output.stdout) {
+                            if let Ok(json_value) =
+                                serde_json::from_str::<serde_json::Value>(&response_str)
+                            {
+                                if let Some(data) = json_value.get("data") {
+                                    if let Some(models) = data.as_array() {
+                                        let mut has_deepseek = false;
+                                        let mut has_openai = false;
+
+                                        for model in models {
+                                            if let Some(id) =
+                                                model.get("id").and_then(|v| v.as_str())
+                                            {
+                                                if id.contains("deepseek/deepseek-r1") {
+                                                    has_deepseek = true;
+                                                }
+                                                if id.contains("openai/gpt-oss") {
+                                                    has_openai = true;
+                                                }
+                                            }
+                                        }
+
+                                        return has_deepseek && has_openai;
+                                    }
+                                }
+                            }
+                        }
+                        false
+                    },
                     Err(_) => false,
                 }
             } else {
@@ -42,7 +79,6 @@ fn is_local_llm_available() -> bool {
 // the environment variable set should result in an error
 #[test]
 fn describegpt_invalid_api_key() {
-    set_describegpt_testing_envvars();
     if is_local_llm_available() {
         // skip test if local LLM is available as they often
         // dont require API keys
@@ -62,6 +98,7 @@ fn describegpt_invalid_api_key() {
 
     // Run the command
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--all")
         .arg("--json")
@@ -75,7 +112,6 @@ fn describegpt_invalid_api_key() {
 #[test]
 #[serial]
 fn describegpt_user_agent() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -93,6 +129,7 @@ fn describegpt_user_agent() {
 
     // Run the command
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").arg("--all").arg("--json").args([
         "--user-agent",
         "Mozilla/5.0 (platform; rv:geckoversion) Gecko/geckotrail Firefox/firefoxversion",
@@ -106,7 +143,6 @@ fn describegpt_user_agent() {
 #[test]
 #[serial]
 fn describegpt_valid() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -125,6 +161,7 @@ fn describegpt_valid() {
 
     // Run the command
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").arg("--all");
 
     // Check that the command ran successfully
@@ -135,7 +172,6 @@ fn describegpt_valid() {
 #[test]
 #[serial]
 fn describegpt_valid_json() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -154,6 +190,7 @@ fn describegpt_valid_json() {
 
     // Run the command
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").arg("--all").arg("--json");
 
     // Check that the output is valid JSON
@@ -170,7 +207,6 @@ fn describegpt_valid_json() {
 #[test]
 #[serial]
 fn describegpt_description_flag() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -190,6 +226,7 @@ fn describegpt_description_flag() {
     // Run the command with only --description
 
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").arg("--description");
 
     // Check that the command ran successfully
@@ -200,7 +237,6 @@ fn describegpt_description_flag() {
 #[test]
 #[serial]
 fn describegpt_dictionary_flag() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -219,6 +255,7 @@ fn describegpt_dictionary_flag() {
 
     // Run the command with only --dictionary
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").arg("--dictionary");
 
     // Check that the command ran successfully
@@ -229,7 +266,6 @@ fn describegpt_dictionary_flag() {
 #[test]
 #[serial]
 fn describegpt_tags_flag() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -248,6 +284,7 @@ fn describegpt_tags_flag() {
 
     // Run the command with only --tags
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").arg("--tags");
 
     // Check that the command ran successfully
@@ -258,7 +295,6 @@ fn describegpt_tags_flag() {
 #[test]
 #[serial]
 fn describegpt_custom_prompt() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -277,6 +313,7 @@ fn describegpt_custom_prompt() {
 
     // Run the command with custom prompt
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .args(["--prompt", "What is the main theme of this dataset?"]);
 
@@ -288,7 +325,6 @@ fn describegpt_custom_prompt() {
 #[test]
 #[serial]
 fn describegpt_custom_prompt_with_variables() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -307,6 +343,7 @@ fn describegpt_custom_prompt_with_variables() {
 
     // Run the command with custom prompt using variables
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").args([
         "--prompt",
         "Based on {stats} and {frequency}, what patterns do you see?",
@@ -320,7 +357,6 @@ fn describegpt_custom_prompt_with_variables() {
 #[test]
 #[serial]
 fn describegpt_jsonl_output() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -339,6 +375,7 @@ fn describegpt_jsonl_output() {
 
     // Run the command with --jsonl
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").arg("--all").arg("--jsonl");
 
     // Check that the output is valid JSON
@@ -356,7 +393,6 @@ fn describegpt_jsonl_output() {
 #[test]
 #[serial]
 fn describegpt_max_tokens() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -375,6 +411,7 @@ fn describegpt_max_tokens() {
 
     // Run the command with max tokens limit
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
         .args(["--max-tokens", "200"]);
@@ -387,7 +424,6 @@ fn describegpt_max_tokens() {
 #[test]
 #[serial]
 fn describegpt_max_tokens_zero() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -406,6 +442,7 @@ fn describegpt_max_tokens_zero() {
 
     // Run the command with max tokens set to 0
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
         .args(["--max-tokens", "0"]);
@@ -418,7 +455,6 @@ fn describegpt_max_tokens_zero() {
 #[test]
 #[serial]
 fn describegpt_timeout() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -437,6 +473,7 @@ fn describegpt_timeout() {
 
     // Run the command with custom timeout
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
         .args(["--timeout", "60"]);
@@ -449,7 +486,6 @@ fn describegpt_timeout() {
 #[test]
 #[serial]
 fn describegpt_output_to_file() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -468,6 +504,7 @@ fn describegpt_output_to_file() {
 
     // Run the command with output to file
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
         .args(["--output", "output.txt"]);
@@ -483,7 +520,6 @@ fn describegpt_output_to_file() {
 #[test]
 #[serial]
 fn describegpt_output_to_file_json() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -502,6 +538,7 @@ fn describegpt_output_to_file_json() {
 
     // Run the command with output to file and JSON
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
         .arg("--json")
@@ -525,7 +562,6 @@ fn describegpt_output_to_file_json() {
 #[test]
 #[serial]
 fn describegpt_quiet_mode() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -544,6 +580,7 @@ fn describegpt_quiet_mode() {
 
     // Run the command with quiet mode
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").arg("--description").arg("--quiet");
 
     // Check that the command ran successfully
@@ -554,7 +591,6 @@ fn describegpt_quiet_mode() {
 #[test]
 #[serial]
 fn describegpt_prompt_file() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -593,6 +629,7 @@ fn describegpt_prompt_file() {
 
     // Run the command with prompt file
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
         .args(["--prompt-file", "prompt.json"]);
@@ -604,11 +641,11 @@ fn describegpt_prompt_file() {
 // Test error: no input file specified
 #[test]
 fn describegpt_no_input_file() {
-    set_describegpt_testing_envvars();
     let wrk = Workdir::new("describegpt");
 
     // Run the command without input file
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("--description");
 
     wrk.assert_err(&mut cmd);
@@ -617,7 +654,6 @@ fn describegpt_no_input_file() {
 // Test error: no inference options specified
 #[test]
 fn describegpt_no_inference_options() {
-    set_describegpt_testing_envvars();
     let wrk = Workdir::new("describegpt");
 
     // Create a CSV file with sample data
@@ -633,6 +669,7 @@ fn describegpt_no_inference_options() {
 
     // Run the command without any inference options
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv");
 
     wrk.assert_err(&mut cmd);
@@ -641,7 +678,6 @@ fn describegpt_no_inference_options() {
 // Test error: --all with other inference flags
 #[test]
 fn describegpt_all_with_other_flags() {
-    set_describegpt_testing_envvars();
     let wrk = Workdir::new("describegpt");
 
     // Create a CSV file with sample data
@@ -657,6 +693,7 @@ fn describegpt_all_with_other_flags() {
 
     // Run the command with --all and --description (should fail)
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").arg("--all").arg("--description");
 
     wrk.assert_err(&mut cmd);
@@ -665,7 +702,6 @@ fn describegpt_all_with_other_flags() {
 // Test error: --json and --jsonl together
 #[test]
 fn describegpt_json_and_jsonl_together() {
-    set_describegpt_testing_envvars();
     let wrk = Workdir::new("describegpt");
 
     // Create a CSV file with sample data
@@ -681,6 +717,7 @@ fn describegpt_json_and_jsonl_together() {
 
     // Run the command with both --json and --jsonl (should fail)
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
         .arg("--json")
@@ -692,7 +729,6 @@ fn describegpt_json_and_jsonl_together() {
 // Test error: non-existent prompt file
 #[test]
 fn describegpt_nonexistent_prompt_file() {
-    set_describegpt_testing_envvars();
     let wrk = Workdir::new("describegpt");
 
     // Create a CSV file with sample data
@@ -708,6 +744,7 @@ fn describegpt_nonexistent_prompt_file() {
 
     // Run the command with non-existent prompt file
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
         .args(["--prompt-file", "nonexistent.json"]);
@@ -718,7 +755,6 @@ fn describegpt_nonexistent_prompt_file() {
 // Test error: invalid prompt file JSON
 #[test]
 fn describegpt_invalid_prompt_file_json() {
-    set_describegpt_testing_envvars();
     let wrk = Workdir::new("describegpt");
 
     // Create a CSV file with sample data
@@ -737,6 +773,7 @@ fn describegpt_invalid_prompt_file_json() {
 
     // Run the command with invalid prompt file
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
         .args(["--prompt-file", "invalid.json"]);
@@ -748,7 +785,6 @@ fn describegpt_invalid_prompt_file_json() {
 #[test]
 #[serial]
 fn describegpt_larger_dataset() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -783,6 +819,7 @@ fn describegpt_larger_dataset() {
 
     // Run the command
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--all")
         .arg("--json")
@@ -803,7 +840,6 @@ fn describegpt_larger_dataset() {
 #[test]
 #[serial]
 fn describegpt_special_characters() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -823,6 +859,7 @@ fn describegpt_special_characters() {
 
     // Run the command
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").arg("--description");
 
     // Check that the command ran successfully
@@ -833,7 +870,6 @@ fn describegpt_special_characters() {
 #[test]
 #[serial]
 fn describegpt_empty_dataset() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -844,6 +880,7 @@ fn describegpt_empty_dataset() {
 
     // Run the command
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").arg("--description");
 
     // Check that the command ran successfully
@@ -854,7 +891,6 @@ fn describegpt_empty_dataset() {
 #[test]
 #[serial]
 fn describegpt_null_values() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -874,6 +910,7 @@ fn describegpt_null_values() {
 
     // Run the command
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").arg("--description");
 
     // Check that the command ran successfully
@@ -884,7 +921,6 @@ fn describegpt_null_values() {
 #[test]
 #[serial]
 fn describegpt_env_var_overrides() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -901,31 +937,21 @@ fn describegpt_env_var_overrides() {
         ],
     );
 
-    // Set environment variables
-    unsafe {
-        env::set_var("QSV_LLM_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b");
-        env::set_var("QSV_LLM_BASE_URL", "http://localhost:1234/v1");
-    }
-
     // Run the command
     let mut cmd = wrk.command("describegpt");
-    cmd.arg("in.csv").arg("--description");
+    cmd.env("QSV_LLM_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b")
+        .env("QSV_LLM_BASE_URL", "http://localhost:1234/v1")
+        .arg("in.csv")
+        .arg("--description");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
-
-    // Clean up environment variables
-    unsafe {
-        env::remove_var("QSV_LLM_MODEL");
-        env::remove_var("QSV_LLM_BASE_URL");
-    }
 }
 
 // Test with different model specification
 #[test]
 #[serial]
 fn describegpt_different_model() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -944,6 +970,7 @@ fn describegpt_different_model() {
 
     // Run the command with a different model
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
         .args(["--model", "deepseek/deepseek-r1-0528-qwen3-8b"]);
@@ -956,7 +983,6 @@ fn describegpt_different_model() {
 #[test]
 #[serial]
 fn describegpt_different_base_url() {
-    set_describegpt_testing_envvars();
     if !is_local_llm_available() {
         return;
     }
@@ -975,6 +1001,7 @@ fn describegpt_different_base_url() {
 
     // Run the command with a different base URL
     let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
         .args(["--base-url", "http://localhost:11434/v1"]);

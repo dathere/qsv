@@ -729,11 +729,11 @@ fn run_inference_options(
     // Expecting JSON output
     if is_json_output(args)? && !is_jsonl_output(args)? {
         // Format & print JSON output
-        let formatted_output = &simd_json::to_string_pretty(&total_json_output)?;
-        println!("{formatted_output}");
+        let json_output = &simd_json::to_string_pretty(&total_json_output)?;
+        println!("{json_output}");
         // Write to file if --output is used, or overwrite if already exists
         if let Some(output_file_path) = &args.flag_output {
-            fs::write(output_file_path, formatted_output)?;
+            fs::write(output_file_path, json_output)?;
         }
     }
     // Expecting JSONL output
@@ -745,15 +745,15 @@ fn run_inference_options(
             total_json_output["timestamp"] = json!(chrono::offset::Utc::now().to_rfc3339());
         }
         // Format & print JSONL output
-        let formatted_output = &simd_json::to_string(&total_json_output)?;
-        println!("{formatted_output}");
+        let json_output = &simd_json::to_string(&total_json_output)?;
+        println!("{json_output}");
         // Write to file if --output is used, or append if already exists
         if let Some(output_file_path) = &args.flag_output {
             fs::OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(output_file_path)?
-                .write_all(format!("\n{formatted_output}").as_bytes())?;
+                .write_all(format!("\n{json_output}").as_bytes())?;
         }
     }
 

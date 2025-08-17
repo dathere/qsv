@@ -1,5 +1,7 @@
 use std::{env, process::Command};
 
+use serial_test::serial;
+
 use crate::workdir::Workdir;
 
 fn is_local_llm_available() -> bool {
@@ -55,6 +57,7 @@ fn describegpt_invalid_api_key() {
 
 // Verify --user-agent is passed to LLM API
 #[test]
+#[serial]
 fn describegpt_user_agent() {
     if !is_local_llm_available() {
         return;
@@ -73,14 +76,10 @@ fn describegpt_user_agent() {
 
     // Run the command
     let mut cmd = wrk.command("describegpt");
-    cmd.arg("in.csv")
-        .arg("--all")
-        .arg("--json")
-        .args([
-            "--user-agent",
-            "Mozilla/5.0 (platform; rv:geckoversion) Gecko/geckotrail Firefox/firefoxversion",
-        ])
-        .args(["--max-tokens", "100"]);
+    cmd.arg("in.csv").arg("--all").arg("--json").args([
+        "--user-agent",
+        "Mozilla/5.0 (platform; rv:geckoversion) Gecko/geckotrail Firefox/firefoxversion",
+    ]);
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -88,6 +87,7 @@ fn describegpt_user_agent() {
 
 // Valid use of describegpt
 #[test]
+#[serial]
 fn describegpt_valid() {
     if !is_local_llm_available() {
         return;
@@ -115,6 +115,7 @@ fn describegpt_valid() {
 
 // Valid use of describegpt with --json
 #[test]
+#[serial]
 fn describegpt_valid_json() {
     if !is_local_llm_available() {
         return;

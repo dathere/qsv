@@ -26,7 +26,7 @@ describegpt options:
     --tags                 Prints tags that categorize the dataset. Useful
                            for grouping datasets and filtering.
     -k, --api-key <key>    The API key to use. If the QSV_LLM_APIKEY envvar is set,
-                           it will be used instead.
+                           it will be used instead. Required when the base URL is not localhost.
     -t, --max-tokens <n>   Limits the number of generated tokens in the output.
                            Set to 0 to disable token limits.
                            [default: 1000]
@@ -64,7 +64,7 @@ Common options:
     -q, --quiet            Do not print status messages to stderr.
 "#;
 
-use std::{env, fs, io::Write, path::PathBuf, process::Command};
+use std::{env, fs, io::Write, path::PathBuf, process::Command, time::Instant};
 
 use reqwest::blocking::Client;
 use serde::Deserialize;
@@ -141,14 +141,18 @@ const DEFAULT_DESCRIPTION_PROMPT: &str =
      in one 1-8 sentence description.";
 const DEFAULT_TAGS_PROMPT: &str =
     "A tag is a keyword or label that categorizes datasets with other, similar datasets. Using \
-     the right tags makes it easier for others to find and use datasets.\n\nGenerate single-word \
-     tags{json_add} about the dataset (lowercase only and remove all whitespace) based on the \
+     the right tags makes it easier for others to find and use datasets.\n\nGenerate thematic \
+     tags{json_add} about the dataset (lowercase only and use _ for all whitespace) based on the \
      following summary statistics and frequency data from a CSV file.\n\nSummary \
      Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}";
 
-fn print_status(args: &Args, msg: &str) {
+fn print_status(args: &Args, msg: &str, elapsed: Option<std::time::Duration>) {
     if !args.flag_quiet {
-        eprintln!("{msg}");
+        if let Some(duration) = elapsed {
+            eprintln!("{msg} (elapsed: {:.2}s)", duration.as_secs_f64());
+        } else {
+            eprintln!("{msg}");
+        }
     }
 }
 
@@ -261,7 +265,7 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
         if let Some(model_id) = model["id"].as_str()
             && model_id.ends_with(&given_model)
         {
-            print_status(args, format!("Using model: {model_id}").as_str());
+            print_status(args, format!("  Using model: {model_id}").as_str(), None);
             return Ok(model_id.to_string());
         }
     }
@@ -510,8 +514,8 @@ fn run_inference_options(
                 let error_message = format!("Error: Invalid JSON output for {option}.");
                 let error_json = json!({"error": error_message});
                 // Print error message in JSON format
-                print_status(args, format!("{error_json}").as_str());
-                print_status(args, format!("Output: {output}").as_str());
+                print_status(args, format!("{error_json}").as_str(), None);
+                print_status(args, format!("Output: {output}").as_str(), None);
                 error_json
             };
             total_json_output[option] = completion_json;
@@ -533,7 +537,8 @@ fn run_inference_options(
     }
 
     // Get completion from API
-    print_status(args, "Interacting with LLM...\n");
+    let llm_start = Instant::now();
+    print_status(args, "\nInteracting with LLM...", None);
 
     let client = util::create_reqwest_blocking_client(
         args.flag_user_agent.clone(),
@@ -559,10 +564,15 @@ fn run_inference_options(
             headers_str,
             args,
         )?;
-        print_status(args, "Generating custom prompt output from LLM...");
+        let start_time = Instant::now();
+        print_status(args, "  Generating custom prompt output...", None);
         messages = get_messages(&prompt, &dictionary_completion);
         dictionary_completion = get_completion(args, &client, &valid_model, api_key, &messages)?;
-        print_status(args, "Received custom prompt completion.");
+        print_status(
+            args,
+            "  Received custom prompt completion.",
+            Some(start_time.elapsed()),
+        );
         process_output(
             "prompt",
             &dictionary_completion,
@@ -580,10 +590,15 @@ fn run_inference_options(
             headers_str,
             args,
         )?;
-        print_status(args, "Generating data dictionary from LLM...");
+        let start_time = Instant::now();
+        print_status(args, "  Generating data dictionary...", None);
         messages = get_messages(&prompt, &dictionary_completion);
         dictionary_completion = get_completion(args, &client, &valid_model, api_key, &messages)?;
-        print_status(args, "Received dictionary completion.");
+        print_status(
+            args,
+            "  Received dictionary completion.",
+            Some(start_time.elapsed()),
+        );
         process_output(
             "dictionary",
             &dictionary_completion,
@@ -606,9 +621,14 @@ fn run_inference_options(
             )?
         };
         messages = get_messages(&prompt, &dictionary_completion);
-        print_status(args, "Generating description from LLM...");
+        let start_time = Instant::now();
+        print_status(args, "  Generating description...", None);
         completion = get_completion(args, &client, &valid_model, api_key, &messages)?;
-        print_status(args, "Received description completion.");
+        print_status(
+            args,
+            "  Received description completion.",
+            Some(start_time.elapsed()),
+        );
         process_output("description", &completion, &mut total_json_output, args)?;
     }
 
@@ -626,11 +646,18 @@ fn run_inference_options(
             )?
         };
         messages = get_messages(&prompt, &dictionary_completion);
-        print_status(args, "Generating tags from LLM...");
+        let start_time = Instant::now();
+        print_status(args, "  Generating tags...", None);
         completion = get_completion(args, &client, &valid_model, api_key, &messages)?;
-        print_status(args, "Received tags completion.");
+        print_status(
+            args,
+            "  Received tags completion.",
+            Some(start_time.elapsed()),
+        );
         process_output("tags", &completion, &mut total_json_output, args)?;
     }
+
+    print_status(args, "LLM completions received.", Some(llm_start.elapsed()));
 
     // Expecting JSON output
     if is_json_output(args)? && !is_jsonl_output(args)? {
@@ -667,6 +694,7 @@ fn run_inference_options(
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
+    let start_time = Instant::now();
     let mut args: Args = util::get_args(USAGE, argv)?;
 
     // Check if QSV_LLM_BASE_URL is set
@@ -675,16 +703,31 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Check for QSV_LLM_APIKEY is set
-    let api_key = match env::var("QSV_LLM_APIKEY") {
-        Ok(val) => val,
-        Err(_) => {
-            // Check if the --api-key flag is present
-            if let Some(api_key) = &args.flag_api_key {
-                api_key.clone()
-            } else {
-                return fail!(LLM_APIKEY_ERROR);
-            }
-        },
+    let apikey_env_var = env::var("QSV_LLM_APIKEY");
+    let api_key: String = if args
+        .flag_base_url
+        .as_deref()
+        .unwrap_or_default()
+        .contains("localhost")
+    {
+        // Allow empty API key for localhost
+        args.flag_api_key
+            .clone()
+            .or_else(|| apikey_env_var.ok())
+            .unwrap_or_default()
+    } else {
+        // Require API key for non-localhost
+        match apikey_env_var {
+            Ok(val) => val,
+            Err(_) => {
+                // Check if the --api-key flag is present
+                if let Some(api_key) = &args.flag_api_key {
+                    api_key.clone()
+                } else {
+                    return fail!(LLM_APIKEY_ERROR);
+                }
+            },
+        }
     };
 
     // Check if user gives arg_input
@@ -750,11 +793,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // safety: we just checked that there is at least one input file
     let input_filename = args.arg_input.as_deref().unwrap();
 
+    print_status(&args, &format!("Analyzing {input_filename}..."), None);
+
+    // index the input file
+    let index_start = Instant::now();
+    let Ok(_index) = Command::new(&qsv_path)
+        .arg("index")
+        .arg(&input_path)
+        .output()
+    else {
+        return fail!("Error: Error while indexing.");
+    };
+    print_status(&args, "  Indexed.", Some(index_start.elapsed()));
+
     // Get stats from qsv stats on input file with --everything flag
-    print_status(
-        &args,
-        format!("Generating stats from {input_filename} using qsv stats --everything...").as_str(),
-    );
+    let stats_start = Instant::now();
+    print_status(&args, "  Generating stats...", None);
     let Ok(stats) = Command::new(&qsv_path)
         .arg("stats")
         .arg("--everything")
@@ -763,6 +817,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     else {
         return fail!("Error: Error while generating stats.");
     };
+    print_status(&args, "  Generated stats.", Some(stats_start.elapsed()));
 
     // Parse the stats as &str
     let Ok(stats_str) = std::str::from_utf8(&stats.stdout) else {
@@ -770,30 +825,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     // Get frequency from qsv frequency on input file
-    print_status(
-        &args,
-        format!("Generating frequency from {input_filename} using qsv frequency...").as_str(),
-    );
+    let freq_start = Instant::now();
+    print_status(&args, "  Generating frequency...", None);
     let Ok(frequency) = Command::new(&qsv_path)
         .arg("frequency")
-        .args(["--limit", "50"])
-        // .args(["--lmt-threshold", "10"])
+        .args(["--limit", "10"])
         .arg(&input_path)
         .output()
     else {
         return fail!("Error: Error while generating frequency.");
     };
-
+    print_status(&args, "  Generated frequency.", Some(freq_start.elapsed()));
     // Parse the frequency as &str
     let Ok(frequency_str) = std::str::from_utf8(&frequency.stdout) else {
         return fail!("Error: Unable to parse frequency as &str.");
     };
 
     // Get headers from qsv slice on input file
-    print_status(
-        &args,
-        format!("Getting headers from {input_filename} using qsv slice...").as_str(),
-    );
+    print_status(&args, format!("  Getting headers...").as_str(), None);
     let Ok(headers) = Command::new(&qsv_path)
         .arg("slice")
         .arg(&input_path)
@@ -809,6 +858,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail!("Error: Unable to parse headers as &str.");
     };
 
+    print_status(&args, "Analyzed data.", Some(index_start.elapsed()));
+
     // Run inference options
     run_inference_options(
         &args,
@@ -817,6 +868,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Some(frequency_str),
         Some(headers_str),
     )?;
+
+    // Print total elapsed time
+    print_status(&args, "\ndescribegpt DONE!", Some(start_time.elapsed()));
 
     Ok(())
 }

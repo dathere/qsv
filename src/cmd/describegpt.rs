@@ -78,7 +78,7 @@ describegpt options:
                              QSV_REDIS_TTL_REFRESH env vars respectively to change Redis settings.
                              This option is ignored if the --disk-cache option is enabled.
     --fresh                  Send a fresh request to the LLM API, refreshing a cached response if it exists.
-    --forget                 Send a request to the LLM API, forgetting and removing a cached response if it exists.
+    --forget                 Remove a cached response if it exists and then exit.
     --flush-cache            Flush all the keys in the current cache on startup.
 
 Common options:
@@ -92,11 +92,16 @@ use std::{
     io::Write,
     path::PathBuf,
     process::Command,
-    sync::OnceLock,
+    sync::{
+        OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
-use cached::{RedisCache, Return, proc_macro::io_cached, stores::DiskCacheBuilder};
+use cached::{
+    DiskCache, IOCached, RedisCache, Return, proc_macro::io_cached, stores::DiskCacheBuilder,
+};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -176,12 +181,12 @@ const DEFAULT_DICTIONARY_PROMPT: &str =
      statistics and frequency data (both in CSV format) of the input CSV file.\n\nSummary \
      Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}";
 const DEFAULT_DESCRIPTION_PROMPT: &str =
-    "Generate only a description that is within 8 sentences about the entire dataset{json_add} \
-     based on the following summary statistics and frequency data derived from the CSV file it \
-     came from.\n\nSummary Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}\n\nDo not output \
-     the summary statistics for each field. Do not output the frequency for each field. Do not \
-     output data about each field individually, but instead output about the dataset as a whole \
-     in one 1-8 sentence description.";
+    "Generate only a description that is within 8 sentences about the entire dataset based on the \
+     following summary statistics and frequency data derived from the CSV file it came \
+     from.\n\nSummary Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}\n\nDo not output the \
+     summary statistics for each field. Do not output the frequency for each field. Do not output \
+     data about each field individually, but instead output about the dataset as a whole in one \
+     1-8 sentence description.";
 const DEFAULT_TAGS_PROMPT: &str =
     "A tag is a keyword or label that categorizes datasets with other, similar datasets. Using \
      the right tags makes it easier for others to find and use datasets.\n\nGenerate no more than \
@@ -198,12 +203,13 @@ struct TokenUsage {
     total:      u64,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub enum CacheType {
     #[default]
     None,
     Disk,
     Redis,
+    Fresh, // Forces fresh API call but still updates cache
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
@@ -212,6 +218,20 @@ struct CompletionResponse {
     token_usage: TokenUsage,
 }
 
+static QSV_REDIS_CONNSTR_ENV: &str = "QSV_REDIS_CONNSTR";
+static QSV_REDIS_MAX_POOL_SIZE_ENV: &str = "QSV_REDIS_MAX_POOL_SIZE";
+static QSV_REDIS_TTL_SECS_ENV: &str = "QSV_REDIS_TTL_SECS";
+static QSV_REDIS_TTL_REFRESH_ENV: &str = "QSV_REDIS_TTL_REFRESH";
+static DEFAULT_REDIS_CONN_STRING: OnceLock<String> = OnceLock::new();
+static DEFAULT_REDIS_TTL_SECS: u64 = 60 * 60 * 24 * 28; // 28 days in seconds
+static DEFAULT_REDIS_POOL_SIZE: u32 = 20;
+
+// disk cache TTL is also 28 days by default
+static DEFAULT_DISKCACHE_TTL_SECS: u64 = 60 * 60 * 24 * 28;
+
+static DISKCACHE_DIR: OnceLock<String> = OnceLock::new();
+static REDISCONFIG: OnceLock<RedisConfig> = OnceLock::new();
+static DISKCACHECONFIG: OnceLock<DiskCacheConfig> = OnceLock::new();
 #[derive(Debug)]
 struct RedisConfig {
     conn_str:      String,
@@ -258,23 +278,12 @@ impl DiskCacheConfig {
     }
 }
 
-static QSV_REDIS_CONNSTR_ENV: &str = "QSV_REDIS_CONNSTR";
-static QSV_REDIS_MAX_POOL_SIZE_ENV: &str = "QSV_REDIS_MAX_POOL_SIZE";
-static QSV_REDIS_TTL_SECS_ENV: &str = "QSV_REDIS_TTL_SECS";
-static QSV_REDIS_TTL_REFRESH_ENV: &str = "QSV_REDIS_TTL_REFRESH";
-static DEFAULT_REDIS_CONN_STRING: OnceLock<String> = OnceLock::new();
-static DEFAULT_REDIS_TTL_SECS: u64 = 60 * 60 * 24 * 28; // 28 days in seconds
-static DEFAULT_REDIS_POOL_SIZE: u32 = 20;
+static QUIET_FLAG: OnceLock<AtomicBool> = OnceLock::new();
+static QSV_PATH: OnceLock<String> = OnceLock::new();
 
-// disk cache TTL is also 28 days by default
-static DEFAULT_DISKCACHE_TTL_SECS: u64 = 60 * 60 * 24 * 28;
-
-static DISKCACHE_DIR: OnceLock<String> = OnceLock::new();
-static REDISCONFIG: OnceLock<RedisConfig> = OnceLock::new();
-static DISKCACHECONFIG: OnceLock<DiskCacheConfig> = OnceLock::new();
-
-fn print_status(args: &Args, msg: &str, elapsed: Option<std::time::Duration>) {
-    if !args.flag_quiet {
+fn print_status(msg: &str, elapsed: Option<std::time::Duration>) {
+    let quiet_flag = QUIET_FLAG.get().unwrap();
+    if !quiet_flag.load(Ordering::Relaxed) {
         if let Some(duration) = elapsed {
             eprintln!("{msg} (elapsed: {:.2}s)", duration.as_secs_f64());
         } else {
@@ -310,7 +319,7 @@ fn send_request(
                 .body(data.to_string())
         },
         other => {
-            let error_json = json!({"Error: Unsupported HTTP method ": other});
+            let error_json = json!({"Unsupported HTTP method ": other});
             return fail_clierror!("{error_json}");
         },
     };
@@ -392,7 +401,7 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
         if let Some(model_id) = model["id"].as_str()
             && model_id.ends_with(&given_model)
         {
-            print_status(args, format!("  Using model: {model_id}").as_str(), None);
+            print_status(format!("  Using model: {model_id}").as_str(), None);
             return Ok(model_id.to_string());
         }
     }
@@ -403,7 +412,7 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
         .filter_map(|m| m["id"].as_str())
         .collect::<Vec<_>>()
         .join(", ");
-    fail_clierror!("Error: Invalid model: {given_model}\n  Valid models: {models_list}")
+    fail_clierror!("Invalid model: {given_model}\n  Valid models: {models_list}")
 }
 
 fn get_prompt_file(args: &Args) -> CliResult<PromptFile> {
@@ -584,11 +593,11 @@ fn get_completion(
     ty = "cached::DiskCache<String, CompletionResponse>",
     cache_prefix_block = r##"{ "descdc_" }"##,
     key = "String",
-    convert = r##"{ format!("{:?}{:?}{:?}{:?}{:?}{:?}", args.arg_input, args.flag_prompt_file, args.flag_prompt, model, api_key, messages) }"##,
+    convert = r##"{ format!("{:?}{:?}{:?}{:?}{:?}", args.arg_input, args.flag_prompt_file, args.flag_prompt, model, kind) }"##,
     create = r##"{
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
-        let diskcache = DiskCacheBuilder::new("describegpt")
+        let diskcache: DiskCache<String, CompletionResponse> = DiskCacheBuilder::new("describegpt")
             .set_disk_directory(cache_dir)
             .set_lifespan(diskcache_config.ttl_secs)
             .set_refresh(diskcache_config.ttl_refresh)
@@ -596,7 +605,6 @@ fn get_completion(
             .expect("error building diskcache");
         log::info!("Disk cache created - dir: {cache_dir} - ttl: {ttl_secs:?}",
             ttl_secs = diskcache_config.ttl_secs);
-        diskcache.remove_expired_entries().expect("error removing expired diskcache entries");
         diskcache
     }"##,
     map_error = r##"|e| CliError::Other(format!("Diskcache Error: {:?}", e))"##,
@@ -607,6 +615,7 @@ fn get_diskcache_completion(
     client: &Client,
     model: &str,
     api_key: &str,
+    #[allow(unused_variables)] kind: &str,
     messages: &serde_json::Value,
 ) -> CliResult<Return<CompletionResponse>> {
     Ok(Return::new(get_completion(
@@ -618,10 +627,10 @@ fn get_diskcache_completion(
 #[io_cached(
     ty = "cached::RedisCache<String, CompletionResponse>",
     key = "String",
-    convert = r##"{ format!("{:?}{}{}{}", args, model, api_key, messages) }"##,
+    convert = r##"{ format!("{:?}{:?}{:?}{:?}{:?}", args.arg_input, args.flag_prompt_file, args.flag_prompt, model, kind) }"##,
     create = r##" {
         let redis_config = REDISCONFIG.get().unwrap();
-        let rediscache = RedisCache::new("f", redis_config.ttl_secs)
+        let rediscache: RedisCache<String, CompletionResponse> = RedisCache::new("f", redis_config.ttl_secs)
             .set_namespace("descq")
             .set_refresh(redis_config.ttl_refresh)
             .set_connection_string(&redis_config.conn_str)
@@ -643,6 +652,7 @@ fn get_redis_completion(
     client: &Client,
     model: &str,
     api_key: &str,
+    #[allow(unused_variables)] kind: &str,
     messages: &serde_json::Value,
 ) -> CliResult<Return<CompletionResponse>> {
     Ok(Return::new(get_completion(
@@ -685,10 +695,51 @@ fn is_jsonl_output(args: &Args) -> CliResult<bool> {
     Ok(jsonl_output)
 }
 
+// Unified function to handle cached completions
+fn get_cached_completion(
+    args: &Args,
+    client: &Client,
+    model: &str,
+    api_key: &str,
+    cache_type: &CacheType,
+    kind: &str,
+    messages: &serde_json::Value,
+) -> CliResult<CompletionResponse> {
+    match cache_type {
+        CacheType::Disk => {
+            let dc_result = get_diskcache_completion(args, client, model, api_key, kind, messages)?;
+            if dc_result.was_cached {
+                print_status("    Disk cache hit!", None);
+            }
+            Ok(dc_result.value)
+        },
+        CacheType::Redis => {
+            let rc_result = get_redis_completion(args, client, model, api_key, kind, messages)?;
+            if rc_result.was_cached {
+                print_status("    Redis cache hit!", None);
+            }
+            Ok(rc_result.value)
+        },
+        CacheType::Fresh => {
+            // Make fresh API call and manually update cache
+            let fresh_result = get_completion(args, client, model, api_key, messages)?;
+            // Manually update the appropriate cache with the fresh result
+            if args.flag_redis_cache {
+                let _ = get_redis_completion(args, client, model, api_key, kind, messages);
+            } else {
+                let _ = get_diskcache_completion(args, client, model, api_key, kind, messages);
+            }
+            Ok(fresh_result)
+        },
+        CacheType::None => get_completion(args, client, model, api_key, messages),
+    }
+}
+
 // Generates output for all inference options
 fn run_inference_options(
     args: &Args,
     api_key: &str,
+    cache_type: CacheType,
     stats_str: Option<&str>,
     frequency_str: Option<&str>,
     headers_str: Option<&str>,
@@ -765,10 +816,10 @@ fn run_inference_options(
             return Ok(valid_json);
         }
 
-        Err(CliError::Other(format!(
+        fail_clierror!(
             "Failed to extract JSON content from LLM response. Output: {}",
             if output.is_empty() { "<empty>" } else { output }
-        )))
+        )
     }
 
     // Generate the plaintext and/or JSON output of an inference option
@@ -780,8 +831,11 @@ fn run_inference_options(
     ) -> CliResult<()> {
         // Process JSON output if expected or JSONL output is expected
         if is_json_output(args)? || is_jsonl_output(args)? {
-            let completion_json = extract_json_from_output(output)?;
-            total_json_output[option] = completion_json;
+            total_json_output[option] = if option == "description" {
+                serde_json::Value::String(output.to_string())
+            } else {
+                extract_json_from_output(output)?
+            };
         }
         // Process plaintext output
         else {
@@ -801,11 +855,11 @@ fn run_inference_options(
 
     // Get completion from API
     let llm_start = Instant::now();
-    print_status(args, "\nInteracting with LLM...", None);
+    print_status("\nInteracting with LLM...", None);
 
     let client = util::create_reqwest_blocking_client(
         args.flag_user_agent.clone(),
-        util::timeout_secs(args.flag_timeout).unwrap_or(120) as u16,
+        util::timeout_secs(args.flag_timeout).unwrap_or(0) as u16,
         args.flag_base_url.clone(),
     )?;
 
@@ -818,13 +872,6 @@ fn run_inference_options(
     let mut messages: serde_json::Value;
     let mut data_dict: CompletionResponse = CompletionResponse::default();
     let mut completion_response: CompletionResponse;
-    let cache_type = if args.flag_disk_cache {
-        CacheType::Disk
-    } else if args.flag_redis_cache {
-        CacheType::Redis
-    } else {
-        CacheType::None
-    };
 
     // Generate dictionary output
     if args.flag_dictionary || args.flag_all {
@@ -836,33 +883,23 @@ fn run_inference_options(
             args,
         )?;
         let start_time = Instant::now();
-        print_status(args, "  Generating data dictionary...", None);
+        print_status("  Generating data dictionary...", None);
         messages = get_messages(&prompt, &system_prompt, "");
-        data_dict = match cache_type {
-            CacheType::Disk => {
-                let dc_result =
-                    get_diskcache_completion(args, &client, &model, api_key, &messages)?;
-                eprintln!("was_cached: {:?}", dc_result.was_cached);
-                if dc_result.was_cached {
-                    eprintln!("Disk cache hit");
-                }
-                dc_result.value
-            },
-            CacheType::Redis => {
-                let rc_result = get_redis_completion(args, &client, &model, api_key, &messages)?;
-                if rc_result.was_cached {
-                    eprintln!("Redis cache hit");
-                }
-                rc_result.value
-            },
-            CacheType::None => get_completion(args, &client, &model, api_key, &messages)?,
-        };
-        print_status(
+        data_dict = get_cached_completion(
             args,
-            &format!(
+            &client,
+            &model,
+            api_key,
+            &cache_type,
+            "dictionary",
+            &messages,
+        )?;
+        print_status(
+            format!(
                 "   Received dictionary completion.\n   {:?}\n  ",
                 data_dict.token_usage
-            ),
+            )
+            .as_str(),
             Some(start_time.elapsed()),
         );
         process_output(
@@ -888,32 +925,22 @@ fn run_inference_options(
         };
         messages = get_messages(&prompt, &system_prompt, &data_dict.response);
         let start_time = Instant::now();
-        print_status(args, "  Generating description...", None);
-        completion_response = match cache_type {
-            CacheType::Disk => {
-                let dc_result =
-                    get_diskcache_completion(args, &client, &model, api_key, &messages)?;
-                eprintln!("was_cached: {:?}", dc_result.was_cached);
-                if dc_result.was_cached {
-                    eprintln!("Disk cache hit");
-                }
-                dc_result.value
-            },
-            CacheType::Redis => {
-                let rc_result = get_redis_completion(args, &client, &model, api_key, &messages)?;
-                if rc_result.was_cached {
-                    eprintln!("Redis cache hit");
-                }
-                rc_result.value
-            },
-            CacheType::None => get_completion(args, &client, &model, api_key, &messages)?,
-        };
-        print_status(
+        print_status("  Generating description...", None);
+        completion_response = get_cached_completion(
             args,
-            &format!(
+            &client,
+            &model,
+            api_key,
+            &cache_type,
+            "description",
+            &messages,
+        )?;
+        print_status(
+            format!(
                 "   Received description completion.\n   {:?}\n  ",
                 completion_response.token_usage
-            ),
+            )
+            .as_str(),
             Some(start_time.elapsed()),
         );
         process_output(
@@ -937,34 +964,30 @@ fn run_inference_options(
                 args,
             )?
         };
-        messages = get_messages(&prompt, &system_prompt, &data_dict.response);
-        let start_time = Instant::now();
-        print_status(args, "  Generating tags...", None);
-        completion_response = match cache_type {
-            CacheType::Disk => {
-                let dc_result =
-                    get_diskcache_completion(args, &client, &model, api_key, &messages)?;
-                eprintln!("was_cached: {:?}", dc_result.was_cached);
-                if dc_result.was_cached {
-                    eprintln!("Disk cache hit");
-                }
-                dc_result.value
-            },
-            CacheType::Redis => {
-                let rc_result = get_redis_completion(args, &client, &model, api_key, &messages)?;
-                if rc_result.was_cached {
-                    eprintln!("Redis cache hit");
-                }
-                rc_result.value
-            },
-            CacheType::None => get_completion(args, &client, &model, api_key, &messages)?,
+        // Only include dictionary context if dictionary was actually generated
+        let dictionary_context = if args.flag_dictionary || args.flag_all {
+            &data_dict.response
+        } else {
+            ""
         };
-        print_status(
+        messages = get_messages(&prompt, &system_prompt, dictionary_context);
+        let start_time = Instant::now();
+        print_status("  Generating tags...", None);
+        completion_response = get_cached_completion(
             args,
-            &format!(
+            &client,
+            &model,
+            api_key,
+            &cache_type,
+            "tags",
+            &messages,
+        )?;
+        print_status(
+            format!(
                 "   Received tags completion.\n   {:?}\n  ",
                 completion_response.token_usage
-            ),
+            )
+            .as_str(),
             Some(start_time.elapsed()),
         );
         process_output(
@@ -985,33 +1008,23 @@ fn run_inference_options(
             args,
         )?;
         let start_time = Instant::now();
-        print_status(args, "  Generating custom prompt output...", None);
+        print_status("  Generating custom prompt output...", None);
         messages = get_messages(&prompt, &system_prompt, &data_dict.response);
-        completion_response = match cache_type {
-            CacheType::Disk => {
-                let dc_result =
-                    get_diskcache_completion(args, &client, &model, api_key, &messages)?;
-                eprintln!("was_cached: {:?}", dc_result.was_cached);
-                if dc_result.was_cached {
-                    eprintln!("Disk cache hit");
-                }
-                dc_result.value
-            },
-            CacheType::Redis => {
-                let rc_result = get_redis_completion(args, &client, &model, api_key, &messages)?;
-                if rc_result.was_cached {
-                    eprintln!("Redis cache hit");
-                }
-                rc_result.value
-            },
-            CacheType::None => get_completion(args, &client, &model, api_key, &messages)?,
-        };
-        print_status(
+        completion_response = get_cached_completion(
             args,
-            &format!(
+            &client,
+            &model,
+            api_key,
+            &cache_type,
+            "prompt",
+            &messages,
+        )?;
+        print_status(
+            format!(
                 "   Received custom prompt completion.\n   {:?}\n  ",
                 completion_response.token_usage
-            ),
+            )
+            .as_str(),
             Some(start_time.elapsed()),
         );
         process_output(
@@ -1022,7 +1035,7 @@ fn run_inference_options(
         )?;
     }
 
-    print_status(args, "LLM completions received.", Some(llm_start.elapsed()));
+    print_status("LLM completions received.", Some(llm_start.elapsed()));
 
     // Expecting JSON output
     if is_json_output(args)? && !is_jsonl_output(args)? {
@@ -1058,9 +1071,54 @@ fn run_inference_options(
     Ok(())
 }
 
+// Helper function to run qsv commands with consistent error handling and timing
+fn run_qsv_cmd(
+    command: &str,
+    args: &[&str],
+    input_path: &str,
+    status_msg: &str,
+) -> CliResult<String> {
+    let start_time = Instant::now();
+
+    let qsv_path = QSV_PATH.get().unwrap();
+    let mut cmd = Command::new(qsv_path);
+    cmd.arg(command).args(args).arg(input_path);
+
+    let output = cmd
+        .output()
+        .map_err(|e| CliError::Other(format!("Error while executing command {command}: {e:?}")))?;
+
+    print_status(&format!("  {status_msg}."), Some(start_time.elapsed()));
+
+    let output_str = std::str::from_utf8(&output.stdout).map_err(|e| {
+        CliError::Other(format!(
+            "Unable to parse output of qsv command {command}: {e:?}"
+        ))
+    })?;
+
+    Ok(output_str.to_string())
+}
+
+fn determine_cache_kinds_to_remove(args: &Args) -> Vec<&'static str> {
+    if args.flag_dictionary {
+        vec!["dictionary"]
+    } else if args.flag_description {
+        vec!["description"]
+    } else if args.flag_tags {
+        vec!["tags"]
+    } else if args.flag_prompt.is_some() {
+        vec!["prompt"]
+    } else {
+        vec!["dictionary", "description", "tags", "prompt"]
+    }
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let start_time = Instant::now();
     let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // Initialize the global quiet flag
+    QUIET_FLAG.set(AtomicBool::new(args.flag_quiet)).unwrap();
 
     // Check if QSV_LLM_BASE_URL is set
     if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {
@@ -1097,7 +1155,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Check if user gives arg_input
     if args.arg_input.is_none() {
-        return fail_incorrectusage_clierror!("Error: No input file specified.");
+        return fail_incorrectusage_clierror!("No input file specified.");
     }
 
     // Process input file
@@ -1127,7 +1185,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && !args.flag_tags
         && args.flag_prompt.is_none()
     {
-        return fail_incorrectusage_clierror!("Error: No inference options specified.");
+        return fail_incorrectusage_clierror!("No inference options specified.");
     // If --all flag is specified, but other inference flags are also set, print error message.
     } else if args.flag_all
         && (args.flag_dictionary
@@ -1136,19 +1194,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             || args.flag_prompt.is_some())
     {
         return fail_incorrectusage_clierror!(
-            "Error: --all option cannot be specified with other inference flags."
+            "--all option cannot be specified with other inference flags."
         );
     }
     // If --prompt-file flag is specified but the prompt file does not exist, print error message.
     if let Some(prompt_file) = &args.flag_prompt_file
         && !PathBuf::from(prompt_file).exists()
     {
-        return fail_incorrectusage_clierror!("Error: Prompt file '{prompt_file}' does not exist.");
+        return fail_incorrectusage_clierror!("Prompt file '{prompt_file}' does not exist.");
     }
     // If --json and --jsonl flags are specified, print error message.
     if is_json_output(&args)? && is_jsonl_output(&args)? {
         return fail_incorrectusage_clierror!(
-            "Error: --json and --jsonl options cannot be specified together."
+            "--json and --jsonl options cannot be specified together."
         );
     }
 
@@ -1175,7 +1233,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             if let Err(e) = fs::remove_dir_all(&diskcache_dir) {
                 return fail_clierror!(r#"Cannot remove cache directory "{diskcache_dir}": {e:?}"#);
             }
-            log::info!("flushed DiskCache directory: {diskcache_dir}");
+            print_status(
+                &format!("flushed DiskCache directory: {diskcache_dir}"),
+                None,
+            );
+            return Ok(());
         }
         // check if the cache directory exists, if it doesn't, create it
         if !diskcache_dir.is_empty()
@@ -1183,10 +1245,57 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         {
             return fail_clierror!(r#"Cannot create cache directory "{diskcache_dir}": {e:?}"#);
         }
-        DISKCACHE_DIR.set(diskcache_dir).unwrap();
+
         // initialize DiskCache Config
+        // safety: we set and get in the next few lines
+        DISKCACHE_DIR.set(diskcache_dir).unwrap();
         DISKCACHECONFIG.set(DiskCacheConfig::new()).unwrap();
-        CacheType::Disk
+
+        // If --forget is set, remove cache entries and exit
+        if args.flag_forget {
+            // Determine which cache entries to remove
+            let kinds_to_remove = determine_cache_kinds_to_remove(&args);
+
+            // Create the same cache instance that the #[io_cached] macro uses
+            let cache_dir = DISKCACHE_DIR.get().unwrap();
+            let diskcache_config = DISKCACHECONFIG.get().unwrap();
+            let io_cache: DiskCache<String, CompletionResponse> =
+                DiskCacheBuilder::new("describegpt")
+                    .set_disk_directory(cache_dir)
+                    .set_lifespan(diskcache_config.ttl_secs)
+                    .set_refresh(diskcache_config.ttl_refresh)
+                    .build()
+                    .expect("error building diskcache");
+
+            // Remove cache entries for all specified kinds using the same key format as the macro
+            for kind in kinds_to_remove {
+                let key = format!(
+                    "{:?}{:?}{:?}{:?}{:?}",
+                    args.arg_input,
+                    args.flag_prompt_file,
+                    args.flag_prompt,
+                    args.flag_model.as_deref().unwrap_or(""),
+                    kind
+                );
+                if let Err(e) = io_cache.cache_remove(&key) {
+                    print_status(
+                        format!("Warning: Cannot remove cache entry for {kind}: {e:?}").as_str(),
+                        None,
+                    );
+                } else {
+                    print_status(
+                        format!("Found and removed cache entry for {kind}").as_str(),
+                        None,
+                    );
+                }
+            }
+            return Ok(());
+        } else if args.flag_fresh {
+            // If --fresh is set, use CacheType::Fresh to force refresh but still update cache
+            CacheType::Fresh
+        } else {
+            CacheType::Disk
+        }
     } else if args.flag_redis_cache {
         // initialize Redis Config
         REDISCONFIG.set(RedisConfig::new()).unwrap();
@@ -1216,96 +1325,96 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .map_err(|_| "Cannot flush Redis cache")?;
             log::info!("flushed Redis database.");
         }
-        CacheType::Redis
+
+        // If --forget is set, remove cache entries and exit
+        if args.flag_forget {
+            // Determine which cache entries to remove
+            let kinds_to_remove = determine_cache_kinds_to_remove(&args);
+
+            // Remove cache entries for all specified kinds using the same key format as the macro
+            for kind in kinds_to_remove {
+                let key = format!(
+                    "{:?}{:?}{:?}{:?}{:?}",
+                    args.arg_input,
+                    args.flag_prompt_file,
+                    args.flag_prompt,
+                    args.flag_model.as_deref().unwrap_or(""),
+                    kind
+                );
+                if let Err(e) = redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
+                    print_status(
+                        format!("Warning: Cannot remove cache entry for {kind}: {e:?}").as_str(),
+                        None,
+                    );
+                } else {
+                    print_status(
+                        format!("Found and removed cache entry for {kind}").as_str(),
+                        None,
+                    );
+                }
+            }
+            return Ok(());
+        } else if args.flag_fresh {
+            // If --fresh is set, use CacheType::Fresh to force refresh but still update cache
+            CacheType::Fresh
+        } else {
+            CacheType::Redis
+        }
     } else {
         CacheType::None
     };
     log::info!("Cache Type: {cache_type:?}");
 
-    // Get qsv executable's path
-    let qsv_path = util::current_exe()?;
+    // Initialize the global qsv path
+    QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
+
     // Get input file's name
     // safety: we just checked that there is at least one input file
     let input_filename = args.arg_input.as_deref().unwrap();
 
-    print_status(&args, &format!("Analyzing {input_filename}..."), None);
+    let analysis_start = Instant::now();
+    print_status(format!("Analyzing {input_filename}...").as_str(), None);
 
-    // index the input file
-    let index_start = Instant::now();
-    let Ok(_index) = Command::new(&qsv_path)
-        .arg("index")
-        .arg(&input_path)
-        .output()
-    else {
-        return fail!("Error: Error while indexing.");
-    };
-    print_status(&args, "  Indexed.", Some(index_start.elapsed()));
+    let _ = run_qsv_cmd("index", &[], &input_path, "Indexed")?;
 
-    // Get stats from qsv stats on input file with --everything flag
-    let stats_start = Instant::now();
-    print_status(&args, "  Generating stats...", None);
-    let Ok(stats) = Command::new(&qsv_path)
-        .arg("stats")
-        .arg("--everything")
-        .arg(&input_path)
-        .output()
-    else {
-        return fail!("Error: Error while generating stats.");
-    };
-    print_status(&args, "  Generated stats.", Some(stats_start.elapsed()));
+    // Run qsv commands to gather data
+    let stats = run_qsv_cmd("stats", &["--everything"], &input_path, "Generated stats")?;
 
-    // Parse the stats as &str
-    let Ok(stats_str) = std::str::from_utf8(&stats.stdout) else {
-        return fail!("Error: Unable to parse stats.");
-    };
+    let frequency = run_qsv_cmd(
+        "frequency",
+        &["--limit", "10"],
+        &input_path,
+        "Generated frequency",
+    )?;
 
-    // Get frequency from qsv frequency on input file
-    let freq_start = Instant::now();
-    print_status(&args, "  Generating frequency...", None);
-    let Ok(frequency) = Command::new(&qsv_path)
-        .arg("frequency")
-        .args(["--limit", "10"])
-        .arg(&input_path)
-        .output()
-    else {
-        return fail!("Error: Error while generating frequency.");
-    };
-    print_status(&args, "  Generated frequency.", Some(freq_start.elapsed()));
-    // Parse the frequency as &str
-    let Ok(frequency_str) = std::str::from_utf8(&frequency.stdout) else {
-        return fail!("Error: Unable to parse frequency as &str.");
-    };
+    let headers = run_qsv_cmd(
+        "slice",
+        &["--len", "1", "--no-headers"],
+        &input_path,
+        "Got headers",
+    )?;
 
-    // Get headers from qsv slice on input file
-    print_status(&args, "  Getting headers...", None);
-    let Ok(headers) = Command::new(&qsv_path)
-        .arg("slice")
-        .arg(&input_path)
-        .args(["--len", "1"])
-        .arg("--no-headers")
-        .output()
-    else {
-        return fail!("Error: Error while getting headers.");
-    };
-
-    // Parse the headers as &str
-    let Ok(headers_str) = std::str::from_utf8(&headers.stdout) else {
-        return fail!("Error: Unable to parse headers as &str.");
-    };
-
-    print_status(&args, "Analyzed data.", Some(index_start.elapsed()));
+    print_status("Analyzed data.", Some(analysis_start.elapsed()));
 
     // Run inference options
     run_inference_options(
         &args,
         &api_key,
-        Some(stats_str),
-        Some(frequency_str),
-        Some(headers_str),
+        cache_type.clone(),
+        Some(&stats),
+        Some(&frequency),
+        Some(&headers),
     )?;
 
     // Print total elapsed time
-    print_status(&args, "\ndescribegpt DONE!", Some(start_time.elapsed()));
+    print_status("\ndescribegpt DONE!", Some(start_time.elapsed()));
 
+    // if using a Diskcache, explicitly flush it to ensure entries are written to disk
+    if cache_type == CacheType::Disk {
+        GET_DISKCACHE_COMPLETION
+            .connection()
+            .flush()
+            .map_err(|e| CliError::Other(format!("Error flushing DiskCache: {e}")))?;
+    }
     Ok(())
 }

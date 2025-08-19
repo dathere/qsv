@@ -1,13 +1,30 @@
 static USAGE: &str = r#"
-Infers extended metadata about a CSV using a Large Language Model (LLM).
+Infer a Description, a Data Dictionary & Tags about a CSV using a Large Language Model (LLM).
 
-Note that this command uses LLMs for inferencing and is therefore prone to
-inaccurate information being produced. Verify output results before using them.
+You can also use the --prompt option to issue a custom prompt, with the ability to embed
+summary statistics, frequency data & headers in the prompt using the {stats}, {frequency} &
+{headers} variables respectively.
 
-Let's say you have Ollama installed (v0.2.0 or above) to use LLMs locally with qsv describegpt.
-To attempt generating a data dictionary of a spreadsheet file you may run (replace <> values):
+Note that LLMs are prone to inaccurate information being produced.
+Verify output results before using them.
 
-  $ qsv describegpt <filepath> -u http://localhost:11434/v1 -k ollama -m <model> -t <number> --dictionary
+Examples:
+
+  # Generate a data dictionary of a CSV file using Ollama using the DeepSeek R1:14b model
+  $ qsv describegpt data.csv -u http://localhost:11434/v1 -k ollama -m deepseek-r1:14b --dictionary
+
+  # Generate a data dictionary, description & tags of a CSV file using OpenAI's gpt-oss-20b model
+  # (replace <API_KEY> with your OpenAI API key)
+  $ qsv describegpt data.csv -k <API_KEY> --all
+
+  # use the disk cache to speed up the process and save on API calls
+  $ qsv describegpt data.csv -k <API_KEY> --all --disk-cache
+
+  # save the response to a JSON file
+  $ qsv describegpt data.csv -k <API_KEY> --all --json > data.json
+
+  # Ask a question about the sample NYC 311 dataset using LM Studio using the default model
+  $ qsv describegpt NYC_311.csv -u http://localhost:1234/v1 --prompt "What is the most common complaint?"
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs.
 
@@ -34,7 +51,9 @@ describegpt options:
     --jsonl                Return results in JSON Lines format.
     --prompt <prompt>      Custom prompt passed as text (alternative to --description, etc.).
                            Replaces {stats}, {frequency} & {headers} in prompt with
-                           corresponding qsv command outputs.
+                           corresponding qsv command outputs. If the prompt does not
+                           contain {stats}, {frequency} or {headers}, they will be
+                           automatically added to the prompt.
     --prompt-file <file>   The JSON file containing the prompts to use for inferencing.
                            If not specified, default prompts will be used.
     -u, --base-url <url>   The LLM API URL. Supports APIs & local LLMs compatible with
@@ -71,7 +90,7 @@ describegpt options:
                              for different describegpt jobs (e.g. one for a data portal, another for internal
                              data exchange, etc.)
                              [default: ~/.qsv/cache/describegpt]
-    --redis-cache            Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/3"
+    --redis-cache            Use Redis to cache LLM completions. It connects to "redis://127.0.0.1:6379/3"
                              with a connection pool size of 20, with a TTL of 28 days, and a cache hit
                              NOT renewing an entry's TTL.
                              Adjust the QSV_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS &
@@ -475,7 +494,18 @@ fn get_prompt(
         PromptType::Tags => prompt_file.tags_prompt,
         PromptType::Custom => {
             if let Some(prompt) = &args.flag_prompt {
-                prompt.clone()
+                let mut working_prompt = prompt.clone();
+                // if the prompt does not contain {stats}, {frequency} and {headers},
+                // automatically add them to the prompt
+                let contains_stats = working_prompt.contains("{stats}");
+                let contains_frequency = working_prompt.contains("{frequency}");
+                let contains_headers = working_prompt.contains("{headers}");
+                if !contains_stats && !contains_frequency && !contains_headers {
+                    working_prompt += "\n\nSummary statistics of the dataset (CSV format): \
+                                       {stats}\n\nFrequency of the dataset (CSV format): \
+                                       {frequency}\n\nHeaders of the dataset: {headers}";
+                }
+                working_prompt
             } else {
                 prompt_file.prompt
             }
@@ -593,7 +623,7 @@ fn get_completion(
     ty = "cached::DiskCache<String, CompletionResponse>",
     cache_prefix_block = r##"{ "descdc_" }"##,
     key = "String",
-    convert = r##"{ format!("{:?}{:?}{:?}{:?}{:?}", args.arg_input, args.flag_prompt_file, args.flag_prompt, model, kind) }"##,
+    convert = r##"{ format!("{:?}{:?}{:?}{}{}", args.arg_input, args.flag_prompt_file, args.flag_prompt, model, kind) }"##,
     create = r##"{
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
@@ -627,7 +657,7 @@ fn get_diskcache_completion(
 #[io_cached(
     ty = "cached::RedisCache<String, CompletionResponse>",
     key = "String",
-    convert = r##"{ format!("{:?}{:?}{:?}{:?}{:?}", args.arg_input, args.flag_prompt_file, args.flag_prompt, model, kind) }"##,
+    convert = r##"{ format!("{:?}{:?}{:?}{}{}", args.arg_input, args.flag_prompt_file, args.flag_prompt, model, kind) }"##,
     create = r##" {
         let redis_config = REDISCONFIG.get().unwrap();
         let rediscache: RedisCache<String, CompletionResponse> = RedisCache::new("f", redis_config.ttl_secs)
@@ -739,7 +769,7 @@ fn get_cached_completion(
 fn run_inference_options(
     args: &Args,
     api_key: &str,
-    cache_type: CacheType,
+    cache_type: &CacheType,
     stats_str: Option<&str>,
     frequency_str: Option<&str>,
     headers_str: Option<&str>,
@@ -892,7 +922,7 @@ fn run_inference_options(
             &client,
             &model,
             api_key,
-            &cache_type,
+            cache_type,
             "dictionary",
             &messages,
         )?;
@@ -933,7 +963,7 @@ fn run_inference_options(
             &client,
             &model,
             api_key,
-            &cache_type,
+            cache_type,
             "description",
             &messages,
         )?;
@@ -976,13 +1006,7 @@ fn run_inference_options(
         let start_time = Instant::now();
         print_status("  Generating tags...", None);
         completion_response = get_cached_completion(
-            args,
-            &client,
-            &model,
-            api_key,
-            &cache_type,
-            "tags",
-            &messages,
+            args, &client, &model, api_key, cache_type, "tags", &messages,
         )?;
         print_status(
             format!(
@@ -1013,13 +1037,7 @@ fn run_inference_options(
         print_status("  Generating custom prompt output...", None);
         messages = get_messages(&prompt, &system_prompt, &data_dict.response);
         completion_response = get_cached_completion(
-            args,
-            &client,
-            &model,
-            api_key,
-            &cache_type,
-            "prompt",
-            &messages,
+            args, &client, &model, api_key, cache_type, "prompt", &messages,
         )?;
         print_status(
             format!(
@@ -1402,7 +1420,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     run_inference_options(
         &args,
         &api_key,
-        cache_type.clone(),
+        &cache_type,
         Some(&stats),
         Some(&frequency),
         Some(&headers),

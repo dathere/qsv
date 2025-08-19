@@ -420,7 +420,7 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
         if let Some(model_id) = model["id"].as_str()
             && model_id.ends_with(&given_model)
         {
-            print_status(format!("  Using model: {model_id}").as_str(), None);
+            print_status(&format!("  Using model: {model_id}"), None);
             return Ok(model_id.to_string());
         }
     }
@@ -930,11 +930,10 @@ fn run_inference_options(
             &messages,
         )?;
         print_status(
-            format!(
+            &format!(
                 "   Received dictionary completion.\n   {:?}\n  ",
                 data_dict.token_usage
-            )
-            .as_str(),
+            ),
             Some(start_time.elapsed()),
         );
         process_output(
@@ -1012,11 +1011,10 @@ fn run_inference_options(
             args, &client, &model, api_key, cache_type, "tags", &messages,
         )?;
         print_status(
-            format!(
+            &format!(
                 "   Received tags completion.\n   {:?}\n  ",
                 completion_response.token_usage
-            )
-            .as_str(),
+            ),
             Some(start_time.elapsed()),
         );
         process_output(
@@ -1043,11 +1041,10 @@ fn run_inference_options(
             args, &client, &model, api_key, cache_type, "prompt", &messages,
         )?;
         print_status(
-            format!(
+            &format!(
                 "   Received custom prompt completion.\n   {:?}\n  ",
                 completion_response.token_usage
-            )
-            .as_str(),
+            ),
             Some(start_time.elapsed()),
         );
         process_output(
@@ -1302,14 +1299,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 );
                 if let Err(e) = io_cache.cache_remove(&key) {
                     print_status(
-                        format!("Warning: Cannot remove cache entry for {kind}: {e:?}").as_str(),
+                        &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
                         None,
                     );
                 } else {
-                    print_status(
-                        format!("Found and removed cache entry for {kind}").as_str(),
-                        None,
-                    );
+                    print_status(&format!("Found and removed cache entry for {kind}"), None);
                 }
             }
             return Ok(());
@@ -1366,14 +1360,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 );
                 if let Err(e) = redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
                     print_status(
-                        format!("Warning: Cannot remove cache entry for {kind}: {e:?}").as_str(),
+                        &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
                         None,
                     );
                 } else {
-                    print_status(
-                        format!("Found and removed cache entry for {kind}").as_str(),
-                        None,
-                    );
+                    print_status(&format!("Found and removed cache entry for {kind}"), None);
                 }
             }
             return Ok(());
@@ -1396,7 +1387,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let input_filename = args.arg_input.as_deref().unwrap();
 
     let analysis_start = Instant::now();
-    print_status(format!("Analyzing {input_filename}...").as_str(), None);
+    print_status(&format!("Analyzing {input_filename}..."), None);
 
     let _ = run_qsv_cmd("index", &[], &input_path, "Indexed")?;
 

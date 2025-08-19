@@ -859,6 +859,8 @@ fn run_inference_options(
 
     let client = util::create_reqwest_blocking_client(
         args.flag_user_agent.clone(),
+        // we do unwrap_or 0 here as we allow 0 as a valid timeout
+        // per the usage text (normally, when using a local LLM)
         util::timeout_secs(args.flag_timeout).unwrap_or(0) as u16,
         args.flag_base_url.clone(),
     )?;

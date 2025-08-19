@@ -18,13 +18,15 @@ Examples:
   $ qsv describegpt data.csv -k <API_KEY> --all
 
   # use the disk cache to speed up the process and save on API calls
-  $ qsv describegpt data.csv -k <API_KEY> --all --disk-cache
+  $ export QSV_LLM_APIKEY=<API_KEY>
+  $ qsv describegpt data.csv --all --disk-cache
+  # immediately save the same LLM completions to a JSON file without incurring API calls
+  $ qsv describegpt data.csv --all --disk-cache --json > data.json
 
-  # save the response to a JSON file
-  $ qsv describegpt data.csv -k <API_KEY> --all --json > data.json
-
-  # Ask a question about the sample NYC 311 dataset using LM Studio using the default model
-  $ qsv describegpt NYC_311.csv -u http://localhost:1234/v1 --prompt "What is the most common complaint?"
+  # Ask questions about the sample NYC 311 dataset using LM Studio using the default model
+  $ export QSV_LLM_BASE_URL=http://localhost:1234/v1
+  $ qsv describegpt NYC_311.csv --prompt "What is the most common complaint?"
+  $ qsv describegpt NYC_311.csv --prompt "List the top 10 complaints."
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs.
 

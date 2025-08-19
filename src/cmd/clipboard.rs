@@ -49,7 +49,7 @@ impl From<arboard::Error> for CliError {
                     .to_string(),
             ),
             arboard::Error::ClipboardOccupied => CliError::Other(
-                "The clipboard was unaccessible when attempting to access/use it. It may have \
+                "The clipboard was inaccessible when attempting to access/use it. It may have \
                  been held by another process/thread."
                     .to_string(),
             ),

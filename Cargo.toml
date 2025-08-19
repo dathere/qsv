@@ -84,7 +84,7 @@ cached = { version = "0.56", features = [
     "ahash",
     "disk_store",
     "redis_ahash",
-], optional = true }
+] }
 calamine = { version = "0.30", features = ["dates"] }
 censor = { version = "0.3", optional = true }
 chrono = { version = "0.4", default-features = false }
@@ -231,7 +231,7 @@ rayon = "1.11"
 redis = { version = "0.32", features = [
     "ahash",
     "tcp_nodelay",
-], default-features = false, optional = true }
+], default-features = false }
 regex = "1"
 reqwest = { version = "0.12", features = [
     "blocking",
@@ -388,20 +388,17 @@ apply = [
 ]
 clipboard = ["arboard"]
 fetch = [
-    "cached",
     "console",
     "flate2",
     "governor",
     "hashbrown",
     "publicsuffix",
-    "redis",
     "serde_urlencoded",
     "sled",
 ]
 foreach = []
 geocode = [
     "bytemuck",
-    "cached",
     "dns-lookup",
     "geosuggest-core",
     "geosuggest-utils",

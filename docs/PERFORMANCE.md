@@ -108,13 +108,13 @@ If you don't want to use mimalloc, use the `--no-default-features` flag when ins
 #### To use jemalloc
 
 ```bash
-cargo install qsv --path . --no-default-features --features all_features,jemallocator
+cargo install qsv --path . --no-default-features --features all_features,tikv-jemallocator
 ```
 
 or
 
 ```bash
-cargo build --release --no-default-features --features all_features,jemallocator
+cargo build --release --no-default-features --features all_features,tikv-jemallocator
 ```
 
 #### To use the standard allocator

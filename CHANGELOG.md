@@ -6,6 +6,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## What's Changed
+* `deps`: bump mlua from 0.10.5 to 0.11.1 - upgrading Luau from 0.663 to 0.682 by @jqnatividad in https://github.com/dathere/qsv/pull/2842
+* fix: `json` more robust error-handling of invalid JSON input;  by @jqnatividad in https://github.com/dathere/qsv/pull/2844
+* `feat`: `validate` add `--fancy-regex` option by @jqnatividad in https://github.com/dathere/qsv/pull/2845
+* build(deps): bump sysinfo from 0.36.0 to 0.36.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2846
+* build(deps): bump serde_json from 1.0.140 to 1.0.141 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2847
+* build(deps): bump strum from 0.27.1 to 0.27.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2848
+* build(deps): bump strum_macros from 0.27.1 to 0.27.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2849
+* build(deps): bump dynfmt2 from 0.2.0 to 0.3.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2850
+* build(deps): bump rand from 0.9.1 to 0.9.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2851
+* feat: `stats` faster precision calculation by @jqnatividad in https://github.com/dathere/qsv/pull/2852
+* deps: bump cached to 0.56 and remove our patched fork by @jqnatividad in https://github.com/dathere/qsv/pull/2853
+* build(deps): bump criterion from 0.6.0 to 0.7.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2855
+* build(deps): bump qsv-stats from 0.36.0 to 0.37.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2856
+* build(deps): bump tokio from 1.46.1 to 1.47.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2857
+* docs: fix inconsistent formatting in command help examples by @abobov in https://github.com/dathere/qsv/pull/2862
+* `feat`: `apply` use SIMD-accelerated base64-simd crate for Encode64 and Decode64 operations by @jqnatividad in https://github.com/dathere/qsv/pull/2863
+* build(deps): bump serde_json from 1.0.141 to 1.0.142 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2865
+* build(deps): bump tokio from 1.47.0 to 1.47.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2866
+* `feat`: `frequency` add `--json` output option by @jqnatividad in https://github.com/dathere/qsv/pull/2868
+* deps: bump polars from 0.49 to 0.50 by @jqnatividad in https://github.com/dathere/qsv/pull/2869
+* build(deps): bump governor from 0.10.0 to 0.10.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2871
+* build(deps): bump calamine from 0.29.0 to 0.30.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2872
+* build(deps): bump bytemuck from 1.23.1 to 1.23.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2876
+* build(deps): bump file-format from 0.27.0 to 0.28.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2873
+* build(deps): bump hashbrown from 0.15.4 to 0.15.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2874
+* deps: bump polars to 0.50.0 at the py-1.32.2 tag by @jqnatividad in https://github.com/dathere/qsv/pull/2877
+* feat: `frequency` add rank info to frequency table by @jqnatividad in https://github.com/dathere/qsv/pull/2878
+* build(deps): bump mlua from 0.11.1 to 0.11.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2879
+* build(deps): bump redis from 0.32.4 to 0.32.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2880
+* build(deps): bump sysinfo from 0.36.1 to 0.37.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2881
+* build(deps): bump libc from 0.2.174 to 0.2.175 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2882
+* build(deps): bump uuid from 1.17.0 to 1.18.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2883
+* perf: Use simd_json instead of serde_json to serialize to JSON by @jqnatividad in https://github.com/dathere/qsv/pull/2884
+* build(deps): bump reqwest from 0.12.22 to 0.12.23 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2885
+* build(deps): bump actions/checkout from 4 to 5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2886
+* build(deps): bump rayon from 1.10.0 to 1.11.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2887
+* refactor: create and use reqwest client helpers to eliminate redundant code by @jqnatividad in https://github.com/dathere/qsv/pull/2888
+* deps: bump polars to 0.50.0 at py-1.32.3 tag by @jqnatividad in https://github.com/dathere/qsv/pull/2889
+* refactor: `describegpt` by @jqnatividad in https://github.com/dathere/qsv/pull/2890
+* refactor: setting `--timeout` to 0 sets no timeout by @jqnatividad in https://github.com/dathere/qsv/pull/2891
+* refactor: `describegpt` more refinements by @jqnatividad in https://github.com/dathere/qsv/pull/2892
+* feat: `describegpt` refactor round3 by @jqnatividad in https://github.com/dathere/qsv/pull/2893
+* feat: `describegpt` disk & redis caching by @jqnatividad in https://github.com/dathere/qsv/pull/2895
+* refactor: `describegpt` by @jqnatividad in https://github.com/dathere/qsv/pull/2896
+* build(deps): bump serde_json from 1.0.142 to 1.0.143 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2898
+
+## New Contributors
+* @abobov made their first contribution in https://github.com/dathere/qsv/pull/2862
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/6.0.1...7.0.0
+
 ## [6.0.1] - 2025-07-12
 
 This is a patch release with bug fixes and minor improvements.

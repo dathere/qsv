@@ -15,12 +15,12 @@ Examples:
 
   # Generate a data dictionary, description & tags of a CSV file using OpenAI's gpt-oss-20b model
   # (replace <API_KEY> with your OpenAI API key)
-  $ qsv describegpt data.csv -k <API_KEY> --all
+  $ qsv describegpt data.csv --api-key <API_KEY> --all
 
   # use the disk cache to speed up the process and save on API calls
   $ export QSV_LLM_APIKEY=<API_KEY>
   $ qsv describegpt data.csv --all --disk-cache
-  # immediately save the same LLM completions to a JSON file without incurring API calls
+  # save the cached LLM completions to a JSON file without incurring additional API calls
   $ qsv describegpt data.csv --all --disk-cache --json > data.json
 
   # Ask questions about the sample NYC 311 dataset using LM Studio using the default model
@@ -81,11 +81,10 @@ describegpt options:
 
                              CACHING OPTIONS:
     --disk-cache             Use a persistent disk cache for LLM completions. The cache is stored in the
-                             directory specified by --disk-cache-dir. If the directory does not exist, it will
-                             be created. If the directory exists, it will be used as is. It has a default
-                             Time To Live (TTL)/lifespan of 28 days and cache hits do not refresh the TTL
-                             of cached values. Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH
-                             env vars to change DiskCache settings.
+                             directory specified by --disk-cache-dir. It has a default Time To Live (TTL)
+                             of 28 days and cache hits NOT refreshing an existing cached value's TTL.
+                             Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars
+                             to change disk cache settings.
     --disk-cache-dir <dir>   The directory <dir> to store the disk cache. Note that if the directory
                              does not exist, it will be created. If the directory exists, it will be used as is,
                              and will not be flushed. This option allows you to maintain several disk caches
@@ -93,10 +92,10 @@ describegpt options:
                              data exchange, etc.)
                              [default: ~/.qsv/cache/describegpt]
     --redis-cache            Use Redis to cache LLM completions. It connects to "redis://127.0.0.1:6379/3"
-                             with a connection pool size of 20, with a TTL of 28 days, and a cache hit
-                             NOT renewing an entry's TTL.
+                             with a connection pool size of 20, with a TTL of 28 days, and cache hits
+                             NOT refreshing an existing cached value's TTL.
                              Adjust the QSV_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS &
-                             QSV_REDIS_TTL_REFRESH env vars respectively to change Redis settings.
+                             QSV_REDIS_TTL_REFRESH env vars respectively to change Redis cache settings.
                              This option is ignored if the --disk-cache option is enabled.
     --fresh                  Send a fresh request to the LLM API, refreshing a cached response if it exists.
     --forget                 Remove a cached response if it exists and then exit.
@@ -405,8 +404,7 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
                 .map(|_| prompt_file.model.clone())
         })
         // safety: model has a docopt default
-        .unwrap()
-        .to_string();
+        .unwrap();
 
     // Check for exact model match
     for model in models {
@@ -499,13 +497,16 @@ fn get_prompt(
                 let mut working_prompt = prompt.clone();
                 // if the prompt does not contain {stats}, {frequency} and {headers},
                 // automatically add them to the prompt
-                let contains_stats = working_prompt.contains("{stats}");
-                let contains_frequency = working_prompt.contains("{frequency}");
-                let contains_headers = working_prompt.contains("{headers}");
-                if !contains_stats && !contains_frequency && !contains_headers {
-                    working_prompt += "\n\nSummary statistics of the dataset (CSV format): \
-                                       {stats}\n\nFrequency of the dataset (CSV format): \
-                                       {frequency}\n\nHeaders of the dataset: {headers}";
+                #[allow(clippy::literal_string_with_formatting_args)]
+                {
+                    if !working_prompt.contains("{stats}")
+                        && !working_prompt.contains("{frequency}")
+                        && !working_prompt.contains("{headers}")
+                    {
+                        working_prompt += "\n\nSummary statistics of the dataset (CSV format): \
+                                           {stats}\n\nFrequency of the dataset (CSV format): \
+                                           {frequency}\n\nHeaders of the dataset: {headers}";
+                    }
                 }
                 working_prompt
             } else {
@@ -583,7 +584,7 @@ fn get_completion(
         Some(api_key),
         Some(&request_data),
         "POST",
-        format!("{base_url}{completions_endpoint}").as_str(),
+        &format!("{base_url}{completions_endpoint}"),
     )?;
 
     // Parse response as JSON

@@ -1,13 +1,17 @@
 static USAGE: &str = r#"
-Infer a Data Dictionary, Description & Tags about a CSV using any OpenAI API-compatible
+Infer a Data Dictionary, Description & Tags about a Dataset using any OpenAI API-compatible
 Large Language Model (LLM).
 
-You can also use the --prompt option to issue a custom LLM prompt, with the ability to embed
-summary statistics, frequency data & headers in the prompt using the {stats}, {frequency} &
-{headers} variables respectively.
+It infers these extended metadata by compiling Summary Statistics & a Frequency Distribution
+of the Dataset, and prompting the LLM with this information.
 
-Note that LLMs are prone to inaccurate information being produced.
-Verify output results before using them.
+You can also use the --prompt option to ask a natural languge question about the Dataset.
+
+If the question cannot be answered using the Dataset's Summary Statistics & Frequency Distribution,
+it will auto-infer a Data Dictionary as well & provide it to the LLM  to create a SQL query that
+DETERMINISTICALLY answers the natural language question.
+
+NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
 
 Examples:
 
@@ -52,10 +56,13 @@ describegpt options:
                            CUSTOM PROMPT OPTIONS:
     --prompt <prompt>      Custom prompt to answer questions about the dataset.
                            The prompt will be answered based on the dataset's Summary Statistics,
-                           Frequency data and Data Dictionary. If the prompt cannot be answered by
-                           looking at these metadata, a SQL query will be generated to answer the
-                           question. If the "polars" feature is enabled, the SQL query will be
-                           automatically executed, otherwise the SQL query will be returned.
+                           Frequency data & Data Dictionary. If the prompt CANNOT be answered by looking
+                           at these metadata, a SQL query will be generated to answer the question.
+                           If the "polars" feature is enabled & the `--sql-results` option is
+                           used, the SQL query will be automatically executed and its results returned.
+                           Otherwise, only the SQL query will be returned.
+    --sql-results <csv>    The CSV to save the SQL query results to.
+                           Only valid if the --prompt option is used & the "polars" feature is enabled. 
     --prompt-file <file>   The JSON file containing custom prompts to use for inferencing.
                            If not specified, default prompts will be used.
 
@@ -155,6 +162,7 @@ struct Args {
     flag_all:            bool,
     flag_stats_options:  String,
     flag_prompt:         Option<String>,
+    flag_sql_results:    Option<String>,
     flag_prompt_file:    Option<String>,
     flag_base_url:       Option<String>,
     flag_model:          Option<String>,
@@ -245,10 +253,10 @@ const DEFAULT_CUSTOM_PROMPT_GUIDANCE: &str =
     "\n\nIf the user's question about the dataset above cannot be answered by using its Summary \
      Statistics and Frequency Distribution data below, use its Summary Statistics and Frequency \
      Distribution along with its Data Dictionary below to create a Postgres SQL query that can be \
-     used to answer the question. Use INPUT_TABLE_NAME as the name of the table to query. Return \
-     the SQL query as a SQL code block. If the question is not about the dataset, return 'I'm \
-     sorry, I can only answer questions about the Dataset.'\n\nData \
-     Dictionary:\n\n{dictionary}\n\nSummary Statistics:\n\n{stats}\n\nFrequency \
+     used to answer the question. Use INPUT_TABLE_NAME as the name of the table to query.\nReturn \
+     the Data Dictionary as a JSON code block and the SQL query as a SQL code block. If the \
+     question is not about the dataset, return 'I'm sorry, I can only answer questions about the \
+     Dataset.'\n\nData Dictionary:\n\n{dictionary}\n\nSummary Statistics:\n\n{stats}\n\nFrequency \
      Distribution:\n\n{frequency}";
 
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
@@ -813,6 +821,7 @@ fn get_cached_completion(
 
 // Generates output for all inference options
 fn run_inference_options(
+    input_path: &str,
     args: &Args,
     api_key: &str,
     cache_type: &CacheType,
@@ -954,7 +963,7 @@ fn run_inference_options(
     let mut system_prompt: String;
     let mut messages: serde_json::Value;
     let mut data_dict: CompletionResponse = CompletionResponse::default();
-    let mut completion_response: CompletionResponse;
+    let mut completion_response: CompletionResponse = CompletionResponse::default();
 
     // Generate dictionary output
     if args.flag_dictionary || args.flag_all || args.flag_prompt.is_some() {
@@ -1104,6 +1113,29 @@ fn run_inference_options(
     }
 
     print_status("LLM inference/s completed.", Some(llm_start.elapsed()));
+
+    if let Some(sql_results) = &args.flag_sql_results {
+        // TODO: check if the sql_results_CSV is a valid path
+
+        let sql_query_start = Instant::now();
+        print_status("\nRunning SQL query...", None);
+
+        // TODO: extract SQL query code block
+        // and replace the INPUT_TABLE_NAME placeholder with the canonical input path
+        let custom_prompt_response = completion_response.response;
+
+        run_qsv_cmd(
+            "sqlp",
+            &["--try-parse-dates", "--output", &sql_results],
+            input_path,
+            "SQL query executed.",
+        )?;
+
+        print_status(
+            &format!("Saved SQL query results to {sql_results}"),
+            Some(sql_query_start.elapsed()),
+        );
+    }
 
     // Expecting JSON output
     if is_json_output(args)? && !is_jsonl_output(args)? {
@@ -1450,6 +1482,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Run inference options
     run_inference_options(
+        &input_path,
         &args,
         &api_key,
         &cache_type,

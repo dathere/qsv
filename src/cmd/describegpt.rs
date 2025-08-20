@@ -1389,7 +1389,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // check if the input file is indexed, if not, index it for performance
     let config = Config::new(Some(&input_path));
     if config.index_files().is_err() {
-        let _ = run_qsv_cmd("index", &[], args.arg_input.as_deref().unwrap(), "Indexed")?;
+        let _ = run_qsv_cmd("index", &[], &input_path, "Indexed")?;
     }
 
     // Run qsv commands to analyze data

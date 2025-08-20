@@ -38,26 +38,26 @@ Usage:
     qsv describegpt --help
 
 describegpt options:
-    -A, --all              Print all extended metadata options output.
-    --description          Print a general description of the dataset.
-    --dictionary           Create a data dictionary. For each field, prints an inferred type,
+                           DATA ANALYSIS/INFERENCING OPTIONS:
+    --dictionary           Infer a Data Dictionary. For each field, prints an inferred type,
                            a human-readable label, a description, and stats.
-    --tags                 Prints tags that categorize the dataset. Useful
+    --description          Infer a general Description of the dataset.
+    --tags                 Infer Tags that categorize the dataset. Useful
                            for grouping datasets and filtering.
-    -k, --api-key <key>    The API key to use. If the QSV_LLM_APIKEY envvar is set,
-                           it will be used instead. Required when the base URL is not localhost.
-    -t, --max-tokens <n>   Limits the number of generated tokens in the output.
-                           Set to 0 to disable token limits.
-                           [default: 2000]
-    --json                 Return results in JSON format.
-    --jsonl                Return results in JSON Lines format.
+    -A, --all              Shortcut for --dictionary --description --tags.
+    --stats-options <arg>  Options for the stats command used to generate summary statistics.
+                           [default: --infer-dates --everything]
+
+                           CUSTOM PROMPT OPTIONS:
     --prompt <prompt>      Custom prompt passed as text (alternative to --description, etc.).
                            Replaces {stats}, {frequency} & {headers} in prompt with
                            corresponding qsv command outputs. If the prompt does not
                            contain {stats}, {frequency} or {headers}, they will be
                            automatically added to the prompt.
-    --prompt-file <file>   The JSON file containing the prompts to use for inferencing.
+    --prompt-file <file>   The JSON file containing custom prompts to use for inferencing.
                            If not specified, default prompts will be used.
+
+                           LLM API OPTIONS:
     -u, --base-url <url>   The LLM API URL. Supports APIs & local LLMs compatible with
                            the OpenAI API specification (Ollama, Jan, LM Studio, etc.).
                            The default base URL for Ollama is http://localhost:11434/v1.
@@ -72,14 +72,20 @@ describegpt options:
                            If the QSV_LLM_MODEL environment variable is set, it will be
                            used instead.
                            [default: gpt-oss-20b]
+    -k, --api-key <key>    The API key to use. If the QSV_LLM_APIKEY envvar is set,
+                           it will be used instead. Required when the base URL is not localhost.
+    -t, --max-tokens <n>   Limits the number of generated tokens in the output.
+                           Set to 0 to disable token limits.
+                           [default: 2000]
     --timeout <secs>       Timeout for completions in seconds. If 0, no timeout is used.
                            [default: 120]
-    --stats-options <arg>  Options for the stats command used to generate summary statistics.
-                           [default: --infer-dates --everything]
     --user-agent <agent>   Specify custom user agent. It supports the following variables -
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
                            Try to follow the syntax here -
                            https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
+
+    --json                 Return results in JSON format.
+    --jsonl                Return results in JSON Lines format.
 
                              CACHING OPTIONS:
     --disk-cache             Use a persistent disk cache for LLM completions. The cache is stored in the
@@ -141,29 +147,29 @@ enum PromptType {
 #[derive(Debug, Deserialize)]
 struct Args {
     arg_input:           Option<String>,
-    flag_all:            bool,
-    flag_description:    bool,
     flag_dictionary:     bool,
+    flag_description:    bool,
     flag_tags:           bool,
-    flag_api_key:        Option<String>,
-    flag_max_tokens:     u32,
-    flag_base_url:       Option<String>,
-    flag_model:          Option<String>,
-    flag_json:           bool,
-    flag_jsonl:          bool,
+    flag_all:            bool,
+    flag_stats_options:  String,
     flag_prompt:         Option<String>,
     flag_prompt_file:    Option<String>,
-    flag_user_agent:     Option<String>,
+    flag_base_url:       Option<String>,
+    flag_model:          Option<String>,
+    flag_api_key:        Option<String>,
+    flag_max_tokens:     u32,
     flag_timeout:        u16,
-    flag_stats_options:  String,
-    flag_output:         Option<String>,
-    flag_quiet:          bool,
+    flag_user_agent:     Option<String>,
+    flag_json:           bool,
+    flag_jsonl:          bool,
     flag_disk_cache:     bool,
     flag_disk_cache_dir: Option<String>,
     flag_redis_cache:    bool,
     flag_fresh:          bool,
     flag_forget:         bool,
     flag_flush_cache:    bool,
+    flag_output:         Option<String>,
+    flag_quiet:          bool,
 }
 
 #[derive(Deserialize)]

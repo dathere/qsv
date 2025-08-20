@@ -48,7 +48,7 @@ describegpt options:
                            it will be used instead. Required when the base URL is not localhost.
     -t, --max-tokens <n>   Limits the number of generated tokens in the output.
                            Set to 0 to disable token limits.
-                           [default: 1000]
+                           [default: 2000]
     --json                 Return results in JSON format.
     --jsonl                Return results in JSON Lines format.
     --prompt <prompt>      Custom prompt passed as text (alternative to --description, etc.).
@@ -74,6 +74,8 @@ describegpt options:
                            [default: gpt-oss-20b]
     --timeout <secs>       Timeout for completions in seconds. If 0, no timeout is used.
                            [default: 120]
+    --stats-options <arg>  Options for the stats command used to generate summary statistics.
+                           [default: --infer-dates --everything]
     --user-agent <agent>   Specify custom user agent. It supports the following variables -
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
                            Try to follow the syntax here -
@@ -126,7 +128,7 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::{CliError, CliResult, regex_oncelock, util, util::process_input};
+use crate::{CliError, CliResult, config::Config, regex_oncelock, util, util::process_input};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PromptType {
@@ -153,6 +155,7 @@ struct Args {
     flag_prompt_file:    Option<String>,
     flag_user_agent:     Option<String>,
     flag_timeout:        u16,
+    flag_stats_options:  String,
     flag_output:         Option<String>,
     flag_quiet:          bool,
     flag_disk_cache:     bool,
@@ -620,13 +623,25 @@ fn get_completion(
     })
 }
 
+fn get_cache_key(args: &Args, kind: &str) -> String {
+    format!(
+        "{:?}{:?}{:?}{:?}{:?}{}",
+        args.arg_input,
+        args.flag_prompt_file,
+        args.flag_prompt,
+        args.flag_max_tokens,
+        args.flag_model,
+        kind
+    )
+}
+
 // this is a disk cache that can be used across qsv sessions
 #[io_cached(
     disk = true,
     ty = "cached::DiskCache<String, CompletionResponse>",
     cache_prefix_block = r##"{ "descdc_" }"##,
     key = "String",
-    convert = r##"{ format!("{:?}{:?}{:?}{}{}", args.arg_input, args.flag_prompt_file, args.flag_prompt, model, kind) }"##,
+    convert = r##"{ get_cache_key(args, kind) }"##,
     create = r##"{
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
@@ -660,7 +675,7 @@ fn get_diskcache_completion(
 #[io_cached(
     ty = "cached::RedisCache<String, CompletionResponse>",
     key = "String",
-    convert = r##"{ format!("{:?}{:?}{:?}{}{}", args.arg_input, args.flag_prompt_file, args.flag_prompt, model, kind) }"##,
+    convert = r##"{ get_cache_key(args, kind) }"##,
     create = r##" {
         let redis_config = REDISCONFIG.get().unwrap();
         let rediscache: RedisCache<String, CompletionResponse> = RedisCache::new("f", redis_config.ttl_secs)
@@ -918,7 +933,7 @@ fn run_inference_options(
             args,
         )?;
         let start_time = Instant::now();
-        print_status("  Generating data dictionary...", None);
+        print_status("  Inferring data dictionary...", None);
         messages = get_messages(&prompt, &system_prompt, "");
         data_dict = get_cached_completion(
             args,
@@ -931,7 +946,7 @@ fn run_inference_options(
         )?;
         print_status(
             &format!(
-                "   Received dictionary completion.\n   {:?}\n  ",
+                "   Received dictionary inference.\n   {:?}\n  ",
                 data_dict.token_usage
             ),
             Some(start_time.elapsed()),
@@ -959,7 +974,7 @@ fn run_inference_options(
         };
         messages = get_messages(&prompt, &system_prompt, &data_dict.response);
         let start_time = Instant::now();
-        print_status("  Generating description...", None);
+        print_status("  Inferring description...", None);
         completion_response = get_cached_completion(
             args,
             &client,
@@ -971,7 +986,7 @@ fn run_inference_options(
         )?;
         print_status(
             format!(
-                "   Received description completion.\n   {:?}\n  ",
+                "   Received description inference.\n   {:?}\n  ",
                 completion_response.token_usage
             )
             .as_str(),
@@ -1006,13 +1021,13 @@ fn run_inference_options(
         };
         messages = get_messages(&prompt, &system_prompt, dictionary_context);
         let start_time = Instant::now();
-        print_status("  Generating tags...", None);
+        print_status("  Inferring tags...", None);
         completion_response = get_cached_completion(
             args, &client, &model, api_key, cache_type, "tags", &messages,
         )?;
         print_status(
             &format!(
-                "   Received tags completion.\n   {:?}\n  ",
+                "   Received tags inference.\n   {:?}\n  ",
                 completion_response.token_usage
             ),
             Some(start_time.elapsed()),
@@ -1035,14 +1050,14 @@ fn run_inference_options(
             args,
         )?;
         let start_time = Instant::now();
-        print_status("  Generating custom prompt output...", None);
+        print_status("  Answering custom prompt...", None);
         messages = get_messages(&prompt, &system_prompt, &data_dict.response);
         completion_response = get_cached_completion(
             args, &client, &model, api_key, cache_type, "prompt", &messages,
         )?;
         print_status(
             &format!(
-                "   Received custom prompt completion.\n   {:?}\n  ",
+                "   Received custom prompt answer.\n   {:?}\n  ",
                 completion_response.token_usage
             ),
             Some(start_time.elapsed()),
@@ -1055,7 +1070,7 @@ fn run_inference_options(
         )?;
     }
 
-    print_status("LLM completions received.", Some(llm_start.elapsed()));
+    print_status("LLM inference/s completed.", Some(llm_start.elapsed()));
 
     // Expecting JSON output
     if is_json_output(args)? && !is_jsonl_output(args)? {
@@ -1285,18 +1300,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     .set_lifespan(diskcache_config.ttl_secs)
                     .set_refresh(diskcache_config.ttl_refresh)
                     .build()
-                    .expect("error building diskcache");
+                    .map_err(|e| CliError::Other(format!("Error building DiskCache: {e}")))?;
 
             // Remove cache entries for all specified kinds using the same key format as the macro
             for kind in kinds_to_remove {
-                let key = format!(
-                    "{:?}{:?}{:?}{:?}{:?}",
-                    args.arg_input,
-                    args.flag_prompt_file,
-                    args.flag_prompt,
-                    args.flag_model.as_deref().unwrap_or(""),
-                    kind
-                );
+                let key = get_cache_key(&args, kind);
                 if let Err(e) = io_cache.cache_remove(&key) {
                     print_status(
                         &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
@@ -1350,14 +1358,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // Remove cache entries for all specified kinds using the same key format as the macro
             for kind in kinds_to_remove {
-                let key = format!(
-                    "{:?}{:?}{:?}{:?}{:?}",
-                    args.arg_input,
-                    args.flag_prompt_file,
-                    args.flag_prompt,
-                    args.flag_model.as_deref().unwrap_or(""),
-                    kind
-                );
+                let key = get_cache_key(&args, kind);
                 if let Err(e) = redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
                     print_status(
                         &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
@@ -1382,17 +1383,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Initialize the global qsv path
     QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
 
-    // Get input file's name
-    // safety: we just checked that there is at least one input file
-    let input_filename = args.arg_input.as_deref().unwrap();
-
     let analysis_start = Instant::now();
-    print_status(&format!("Analyzing {input_filename}..."), None);
+    print_status(&format!("Analyzing {input_path}..."), None);
 
-    let _ = run_qsv_cmd("index", &[], &input_path, "Indexed")?;
+    // check if the input file is indexed, if not, index it for performance
+    let config = Config::new(Some(&input_path));
+    if config.index_files().is_err() {
+        let _ = run_qsv_cmd("index", &[], args.arg_input.as_deref().unwrap(), "Indexed")?;
+    }
 
-    // Run qsv commands to gather data
-    let stats = run_qsv_cmd("stats", &["--everything"], &input_path, "Generated stats")?;
+    // Run qsv commands to analyze data
+    let stats_args_vec = args
+        .flag_stats_options
+        .split_whitespace()
+        .collect::<Vec<&str>>();
+    let stats = run_qsv_cmd("stats", &stats_args_vec, &input_path, "Generated stats")?;
 
     let frequency = run_qsv_cmd(
         "frequency",
@@ -1424,7 +1429,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     print_status("\ndescribegpt DONE!", Some(start_time.elapsed()));
 
     // if using a Diskcache, explicitly flush it to ensure entries are written to disk
-    if cache_type == CacheType::Disk {
+    if cache_type == CacheType::Disk || (args.flag_disk_cache && cache_type == CacheType::Fresh) {
         GET_DISKCACHE_COMPLETION
             .connection()
             .flush()

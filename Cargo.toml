@@ -269,7 +269,7 @@ strum = { version = "0.27", features = ["phf"] }
 strum_macros = "0.27"
 sysinfo = "0.37"
 tabwriter = "1.4"
-tempfile = "3.20"
+tempfile = "3.21"
 thousands = { version = "0.2", optional = true }
 tikv-jemallocator = { version = "0.6", optional = true }
 threadpool = "1.8"

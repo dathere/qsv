@@ -3,15 +3,17 @@ Infer a Data Dictionary, Description & Tags about a Dataset using any OpenAI API
 Large Language Model (LLM).
 
 It infers these extended metadata by compiling Summary Statistics & a Frequency Distribution
-of the Dataset, and prompting the LLM with this information.
+of the Dataset, and then prompting the LLM with this information.
 
 You can also use the --prompt option to ask a natural languge question about the Dataset.
 
 If the question cannot be answered using the Dataset's Summary Statistics & Frequency Distribution,
-it will auto-infer a Data Dictionary as well & provide it to the LLM  to create a SQL query that
-DETERMINISTICALLY answers the natural language question.
+it will auto-infer a Data Dictionary & provide it to the LLM as context to create a SQL query that
+DETERMINISTICALLY answers the natural language question ("SQL RAG" mode).
 
 NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
+Even in "SQL RAG" mode, though the SQL query is guaranteed to be deterministic, the query itself
+may not be correct.
 
 Examples:
 
@@ -227,37 +229,83 @@ For Dataset fields with all unique values (cardinality is equal to the number of
 the count column will be the number of records, the percentage column will be 100, and the rank column will be 1.
 "#;
 
-const DEFAULT_DICTIONARY_PROMPT: &str =
-    "Here are the columns for each field in a Data Dictionary:\n\n- Type: the data type of this \
-     column as indicated in the Summary Statistics below.\n- Label: a human-friendly label for \
-     this column\n- Description: a full description for this column (can be multiple \
-     sentences)\n\nGenerate a Data Dictionary as aforementioned {json_add} where each field has \
-     Name, Type, Label, and Description (so four columns in total) based on the following Summary \
-     Statistics and Frequency Distribution data of the Dataset.\n\nSummary \
-     Statistics:\n\n{stats}\n\nFrequency Distribution:\n\n{frequency}";
-const DEFAULT_DESCRIPTION_PROMPT: &str =
-    "Generate a Description based on the following Summary statistics and Frequency Distribution \
-     data about the Dataset.\n\nSummary Statistics:\n\n{stats}\n\nFrequency \
-     Distribution:\n\n{frequency}\n\nDo not output the summary statistics for each field. Do not \
-     output the frequency for each field. Do not output data about each field individually, but \
-     instead output about the dataset as a whole in one 1-8 sentence description.";
-const DEFAULT_TAGS_PROMPT: &str =
-    "A Tag is a keyword or label that categorizes datasets with other, similar datasets. Using \
-     the right Tags makes it easier for others to find and use datasets.\n\nGenerate no more than \
-     15 most thematic Tags{json_add} about the contents of the Dataset in descending order of \
-     importance (lowercase only and use _ to separate words) based on the following Summary \
-     Statistics and Frequency Distribution data about the Dataset. Do not use field names in the \
-     tags. \n\nSummary Statistics:\n\n{stats}\n\nFrequency Distribution:\n\n{frequency}";
+const DEFAULT_DICTIONARY_PROMPT: &str = r#"
+Here are the columns for each field in a Data Dictionary:
 
-const DEFAULT_CUSTOM_PROMPT_GUIDANCE: &str =
-    "\n\nIf the user's question about the dataset above cannot be answered by using its Summary \
-     Statistics and Frequency Distribution data below, use its Summary Statistics and Frequency \
-     Distribution along with its Data Dictionary below to create a Postgres SQL query that can be \
-     used to answer the question. Use INPUT_TABLE_NAME as the name of the table to query.\nReturn \
-     the Data Dictionary as a JSON code block and the SQL query as a SQL code block. If the \
-     question is not about the dataset, return 'I'm sorry, I can only answer questions about the \
-     Dataset.'\n\nData Dictionary:\n\n{dictionary}\n\nSummary Statistics:\n\n{stats}\n\nFrequency \
-     Distribution:\n\n{frequency}";
+- Type: the data type of this column as indicated in the Summary Statistics below.
+- Label: a human-friendly label for this column
+- Description: a full description for this column (can be multiple sentences)
+
+Generate a Data Dictionary as aforementioned {json_add} where each field has Name, Type, Label, and Description
+(so four columns in total) based on the following Summary Statistics and Frequency Distribution data of the Dataset.
+
+Summary Statistics:
+
+{stats}
+
+Frequency Distribution:
+
+{frequency}"#;
+const DEFAULT_DESCRIPTION_PROMPT: &str = r#"
+Generate a Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
+
+Summary Statistics:
+
+{stats}
+
+Frequency Distribution:
+
+{frequency}
+
+Do not output the summary statistics for each field. Do not output the frequency for each field.
+Do not output data about each field individually, but instead output about the dataset as a whole
+in one 1-8 sentence description.
+
+After the Description, add a section titled "Notable Characteristics" with a bulleted list of notable
+characteristics of the Dataset. e.g. if there are any outliers, missing values, duplicates, PII data
+and other data quality issues that the User should be aware of.
+
+The entire output should be in Markdown format."#;
+
+const DEFAULT_TAGS_PROMPT: &str = r#"
+A Tag is a keyword or label that categorizes datasets with other, similar datasets.
+Using the right Tags makes it easier for others to find and use datasets.
+
+Generate no more than 15 most thematic Tags{json_add} about the contents of the Dataset in descending
+order of importance (lowercase only and use _ to separate words) based on the following Summary Statistics and
+Frequency Distribution data about the Dataset. Do not use field names in the tags. 
+
+Summary Statistics:
+
+{stats}
+
+Frequency Distribution:
+
+{frequency}"#;
+
+const DEFAULT_CUSTOM_PROMPT_GUIDANCE: &str = r#"
+
+If the user's question about the dataset above cannot be answered by using its Summary Statistics and
+Frequency Distribution data below, use its Summary Statistics and Frequency Distribution along with its
+Data Dictionary below to create a Postgres SQL query that can be used to answer the question.
+
+Use INPUT_TABLE_NAME as the name of the table to query.
+
+Return the Data Dictionary as a JSON code block and the SQL query as a SQL code block.
+
+If the question is not about the dataset, return 'I'm sorry, I can only answer questions about the Dataset.'
+
+Data Dictionary:
+
+{dictionary}
+
+Summary Statistics:
+
+{stats}
+
+Frequency Distribution:
+
+{frequency}"#;
 
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
 #[allow(dead_code)]

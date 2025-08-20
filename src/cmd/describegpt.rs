@@ -913,7 +913,9 @@ fn run_inference_options(
                 extract_json_from_output(output)?
             };
             if kind == "dictionary" {
-                DATA_DICTIONARY_JSON.get_or_init(|| serde_json::to_string_pretty(&total_json_output["dictionary"]).unwrap());
+                DATA_DICTIONARY_JSON.get_or_init(|| {
+                    serde_json::to_string_pretty(&total_json_output["dictionary"]).unwrap()
+                });
             }
         }
         // Process plaintext output

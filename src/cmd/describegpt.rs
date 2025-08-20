@@ -1,7 +1,8 @@
 static USAGE: &str = r#"
-Infer a Description, a Data Dictionary & Tags about a CSV using a Large Language Model (LLM).
+Infer a Data Dictionary, Description & Tags about a CSV using any OpenAI API-compatible
+Large Language Model (LLM).
 
-You can also use the --prompt option to issue a custom prompt, with the ability to embed
+You can also use the --prompt option to issue a custom LLM prompt, with the ability to embed
 summary statistics, frequency data & headers in the prompt using the {stats}, {frequency} &
 {headers} variables respectively.
 

@@ -64,7 +64,7 @@ describegpt options:
                            used, the SQL query will be automatically executed and its results returned.
                            Otherwise, only the SQL query will be returned.
     --sql-results <csv>    The CSV to save the SQL query results to.
-                           Only valid if the --prompt option is used & the "polars" feature is enabled. 
+                           Only valid if the --prompt option is used & the "polars" feature is enabled.
     --prompt-file <file>   The JSON file containing custom prompts to use for inferencing.
                            If not specified, default prompts will be used.
 
@@ -1221,6 +1221,7 @@ fn run_inference_options(
         log::debug!("SQL query:\n{sql_query}");
 
         // save sql query to a temporary file with a .sql extension
+        // this tempfile is automatically deleted after the command finishes
         let sql_query_file = tempfile::Builder::new().suffix(".sql").tempfile()?;
         fs::write(&sql_query_file, sql_query)?;
 

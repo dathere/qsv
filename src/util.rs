@@ -3185,7 +3185,7 @@ pub fn infer_polars_schema(
 
 /// CPU-accelerated sha256 hash of a file
 /// designed for performance, and memory-mapped chunked to process larger than memory files
-pub fn hash_sha256_file(path: &str) -> Result<String, Box<dyn std::error::Error>> {
+pub fn hash_sha256_file(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
     // Process in chunks to avoid mapping entire huge files
     const CHUNK_SIZE: usize = 1024 * 1024 * 1024; // 1GB chunks
 
@@ -3197,9 +3197,10 @@ pub fn hash_sha256_file(path: &str) -> Result<String, Box<dyn std::error::Error>
     while offset < file_size {
         let chunk_size = std::cmp::min(CHUNK_SIZE, file_size - offset);
 
-        // SAFETY: The file is opened immediately before mapping and is not modified, truncated, or deleted
-        // during the lifetime of the mapping. The mapping is read-only, and we assume no concurrent writes
-        // or truncations to the file while it is being mapped and read.
+        // SAFETY: The file is opened immediately before mapping and is not modified, truncated, or
+        // deleted during the lifetime of the mapping. The mapping is read-only, and we
+        // assume no concurrent writes or truncations to the file while it is being mapped
+        // and read.
         let mmap = unsafe {
             MmapOptions::new()
                 .offset(offset as u64)

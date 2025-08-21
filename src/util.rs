@@ -24,12 +24,14 @@ use filetime::FileTime;
 use human_panic::setup_panic;
 use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use log::{info, log_enabled};
+use memmap2::MmapOptions;
 #[cfg(feature = "polars")]
 use polars::prelude::Schema;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use serde::de::{Deserialize, Deserializer, Error};
+use sha2::{Digest, Sha256};
 use sysinfo::System;
 use zip::read::root_dir_common_filter;
 
@@ -3179,4 +3181,32 @@ pub fn infer_polars_schema(
         log::debug!("Saved stats_schema to file: {}", schema_file.display());
     }
     Ok(true)
+}
+
+/// CPU-accelerated sha256 hash of a file
+/// designed for performance, and memory-mapped chunked to process larger than memory files
+fn hash_sha256_file(path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    // Process in chunks to avoid mapping entire huge files
+    const CHUNK_SIZE: usize = 1024 * 1024 * 1024; // 1GB chunks
+
+    let file = File::open(path)?;
+    let file_size = file.metadata()?.len() as usize;
+    let mut hasher = Sha256::new();
+
+    let mut offset = 0;
+    while offset < file_size {
+        let chunk_size = std::cmp::min(CHUNK_SIZE, file_size - offset);
+
+        let mmap = unsafe {
+            MmapOptions::new()
+                .offset(offset as u64)
+                .len(chunk_size)
+                .map(&file)?
+        };
+
+        hasher.update(&mmap);
+        offset += chunk_size;
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
 }

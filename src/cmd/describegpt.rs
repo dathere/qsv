@@ -1252,9 +1252,11 @@ fn run_inference_options(
     }
 
     #[cfg(not(feature = "polars"))]
-    if args.flag_sql_results {
+    if args.flag_sql_results.is_some() {
         return fail_clierror!(
-            "\"SQL RAG\" mode is only supported when the polars feature is enabled"
+            "Cannot answer the prompt using just Summary Statistics & Frequency Distribution \
+             data. However, \"SQL RAG\" mode is only supported when the `polars` feature is \
+             enabled."
         );
     }
 

@@ -1,13 +1,19 @@
 static USAGE: &str = r#"
-Infer a Data Dictionary, Description & Tags about a CSV using any OpenAI API-compatible
+Infer a Data Dictionary, Description & Tags about a Dataset using any OpenAI API-compatible
 Large Language Model (LLM).
 
-You can also use the --prompt option to issue a custom LLM prompt, with the ability to embed
-summary statistics, frequency data & headers in the prompt using the {stats}, {frequency} &
-{headers} variables respectively.
+It infers these extended metadata by compiling Summary Statistics & a Frequency Distribution
+of the Dataset, and then prompting the LLM with this information.
 
-Note that LLMs are prone to inaccurate information being produced.
-Verify output results before using them.
+You can also use the --prompt option to ask a natural language question about the Dataset.
+
+If the question cannot be answered using the Dataset's Summary Statistics & Frequency Distribution,
+it will auto-infer a Data Dictionary & provide it to the LLM as additional context to create a
+SQL query that DETERMINISTICALLY answers the natural language question ("SQL RAG" mode).
+
+NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
+Even in "SQL RAG" mode, though the SQL query is guaranteed to be deterministic, the query itself
+may not be correct.
 
 Examples:
 
@@ -28,6 +34,9 @@ Examples:
   $ export QSV_LLM_BASE_URL=http://localhost:1234/v1
   $ qsv describegpt NYC_311.csv --prompt "What is the most common complaint?"
   $ qsv describegpt NYC_311.csv --prompt "List the top 10 complaints."
+
+  # Ask detailed questions that require SQL queries and auto-invoke SQL RAG mode
+  $ qsv describegpt NYC_311.csv --prompt "What's the breakdown of complaint types by borough descending order?"
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs.
 
@@ -50,11 +59,15 @@ describegpt options:
                            [default: --infer-dates --everything]
 
                            CUSTOM PROMPT OPTIONS:
-    --prompt <prompt>      Custom prompt passed as text (alternative to --description, etc.).
-                           Replaces {stats}, {frequency} & {headers} in prompt with
-                           corresponding qsv command outputs. If the prompt does not
-                           contain {stats}, {frequency} or {headers}, they will be
-                           automatically added to the prompt.
+    --prompt <prompt>      Custom prompt to answer questions about the dataset.
+                           The prompt will be answered based on the dataset's Summary Statistics,
+                           Frequency data & Data Dictionary. If the prompt CANNOT be answered by looking
+                           at these metadata, a SQL query will be generated to answer the question.
+                           If the "polars" feature is enabled & the `--sql-results` option is
+                           used, the SQL query will be automatically executed and its results returned.
+                           Otherwise, only the SQL query will be returned.
+    --sql-results <csv>    The CSV to save the SQL query results to.
+                           Only valid if the --prompt option is used & the "polars" feature is enabled.
     --prompt-file <file>   The JSON file containing custom prompts to use for inferencing.
                            If not specified, default prompts will be used.
 
@@ -77,9 +90,10 @@ describegpt options:
                            it will be used instead. Required when the base URL is not localhost.
     -t, --max-tokens <n>   Limits the number of generated tokens in the output.
                            Set to 0 to disable token limits.
+                           If the --base-url is localhost, the default is automatically set to 0.
                            [default: 2000]
     --timeout <secs>       Timeout for completions in seconds. If 0, no timeout is used.
-                           [default: 120]
+                           [default: 600]
     --user-agent <agent>   Specify custom user agent. It supports the following variables -
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
                            Try to follow the syntax here -
@@ -119,7 +133,7 @@ Common options:
 use std::{
     env, fs,
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
     sync::{
         OnceLock,
@@ -154,6 +168,7 @@ struct Args {
     flag_all:            bool,
     flag_stats_options:  String,
     flag_prompt:         Option<String>,
+    flag_sql_results:    Option<String>,
     flag_prompt_file:    Option<String>,
     flag_base_url:       Option<String>,
     flag_model:          Option<String>,
@@ -198,33 +213,115 @@ const LLM_APIKEY_ERROR: &str = "Error: QSV_LLM_APIKEY environment variable not f
                                 inaccurate information being produced. Verify output results \
                                 before using them.";
 
-const DEFAULT_SYSTEM_PROMPT: &str =
-    "You are an expert library scientist with a background in statistics and data science. \
-    You are also an expert on the DCAT-US 3 specification (https://doi-do.github.io/dcat-us/).";
+const DEFAULT_SYSTEM_PROMPT: &str = r#"
+You are an expert library scientist with extensive expertise in Statistics, Data Science and PostgreSQL.
+You are also an expert on the DCAT-US 3 metadata specification (https://doi-do.github.io/dcat-us/).
 
-const DEFAULT_DICTIONARY_PROMPT: &str =
-    "Here are the columns for each field in a data dictionary:\n\n- Type: the data type of this \
-     column as indicated in the Summary Statistics below.\n- Label: a human-friendly label for \
-     this column\n- Description: a full description for this column (can be multiple \
-     sentences)\n\nGenerate a data dictionary as aforementioned {json_add} where each field has \
-     Name, Type, Label, and Description (so four columns in total) based on the following summary \
-     statistics and frequency data (both in CSV format) of the input CSV file.\n\nSummary \
-     Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}";
-const DEFAULT_DESCRIPTION_PROMPT: &str =
-    "Generate only a description that is within 8 sentences about the entire dataset based on the \
-     following summary statistics and frequency data derived from the CSV file it came \
-     from.\n\nSummary Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}\n\nDo not output the \
-     summary statistics for each field. Do not output the frequency for each field. Do not output \
-     data about each field individually, but instead output about the dataset as a whole in one \
-     1-8 sentence description.";
-const DEFAULT_TAGS_PROMPT: &str =
-    "A tag is a keyword or label that categorizes datasets with other, similar datasets. Using \
-     the right tags makes it easier for others to find and use datasets.\n\nGenerate no more than \
-     15 most thematic tags{json_add} about the contents of the dataset in descending order of \
-     importance (lowercase only and use _ to separate words) based on the following summary \
-     statistics and frequency data (both in CSV format) of the input CSV file. Do not use field \
-     names in the tags. \n\nSummary Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}";
+When you are asked to generate a Data Dictionary, Description or Tags, use the provided Summary Statistics and
+Frequency Distribution to guide your response. They both describe the same Dataset.
 
+The provided Summary Statistics is a CSV file. Each record contains statistics for each Dataset field.
+For a detailed explanation of the Summary Statistics columns,
+see https://github.com/dathere/qsv/wiki/Supplemental#stats-command-output-explanation
+
+The provided Frequency Distribution is a CSV file with the following columns - field, value, count, percentage, rank.
+For each Dataset field, it lists the top 10 (or less if there are less than 10 unique values) most frequent unique values
+sorted in descending order, with the special value "Other (N)" indicating "other" unique values beyond the top 10.
+The "(N)" in "Other (N)" indicates the count of "other" unique values.
+
+For Dataset fields with all unique values (cardinality is equal to the number of records), the value column will be "<ALL_UNIQUE>",
+the count column will be the number of records, the percentage column will be 100, and the rank column will be 1.
+"#;
+
+const DEFAULT_DICTIONARY_PROMPT: &str = r#"
+Here are the columns for each field in a Data Dictionary:
+
+- Type: the data type of this column as indicated in the Summary Statistics below.
+- Label: a human-friendly label for this column
+- Description: a full description for this column (can be multiple sentences)
+
+Generate a Data Dictionary as aforementioned {json_add} where each field has Name, Type, Label, and Description
+(so four columns in total) based on the following Summary Statistics and Frequency Distribution data of the Dataset.
+
+Summary Statistics:
+
+{stats}
+
+Frequency Distribution:
+
+{frequency}"#;
+
+const DEFAULT_DESCRIPTION_PROMPT: &str = r#"
+Generate a Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
+
+Summary Statistics:
+
+{stats}
+
+Frequency Distribution:
+
+{frequency}
+
+Do not output the summary statistics for each field. Do not output the frequency for each field.
+Do not output data about each field individually, but instead output about the dataset as a whole
+in one 1-8 sentence description.
+
+After the Description, add a section titled "Notable Characteristics" with a bulleted list of notable
+characteristics of the Dataset. e.g. if there are any outliers, missing values, duplicates, PII data
+and other data quality issues that the User should be aware of.
+
+The entire output should be in Markdown format."#;
+
+const DEFAULT_TAGS_PROMPT: &str = r#"
+A Tag is a keyword or label that categorizes datasets with other, similar datasets.
+Using the right Tags makes it easier for others to find and use datasets.
+
+Generate no more than 15 most thematic Tags{json_add} about the contents of the Dataset in descending
+order of importance (lowercase only and use _ to separate words) based on the following Summary Statistics and
+Frequency Distribution data about the Dataset. Do not use field names in the tags. 
+
+Summary Statistics:
+
+{stats}
+
+Frequency Distribution:
+
+{frequency}"#;
+
+const DEFAULT_CUSTOM_PROMPT_GUIDANCE: &str = r#"
+
+If the user's question above is not about the Dataset, immediately return
+'I'm sorry, I can only answer questions about the Dataset.'
+
+If the user's question can be answered by using the Dataset's Summary Statistics and
+Frequency Distribution data below, immediately return the answer.
+
+Otherwise, using the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary below,
+create a PostgreSQL query that can be used to answer the question.
+
+Use these guidelines when generating the SQL query:
+
+- Use the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary data to generate the SQL query.
+- Use INPUT_TABLE_NAME as the placeholder for the table name to query.
+- Do not use window expressions in aggregations.
+- Make sure the generated SQL query is valid and has comments to explain the query.
+- However, comments can only be used on new lines. Do not use inline comments.
+
+Return the SQL query as a SQL code block preceded by a newline.
+
+Data Dictionary:
+
+{dictionary}
+
+Summary Statistics:
+
+{stats}
+
+Frequency Distribution:
+
+{frequency}"#;
+
+static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
 #[allow(dead_code)]
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 struct TokenUsage {
@@ -472,9 +569,7 @@ fn get_prompt_file(args: &Args) -> CliResult<PromptFile> {
             dictionary_prompt:  DEFAULT_DICTIONARY_PROMPT.to_owned(),
             description_prompt: DEFAULT_DESCRIPTION_PROMPT.to_owned(),
             tags_prompt:        DEFAULT_TAGS_PROMPT.to_owned(),
-            prompt:             "Summary statistics: {stats}\n\nFrequency: {frequency}\n\nWhat is \
-                                 this dataset about?"
-                .to_owned(),
+            prompt:             "What is this dataset about?".to_owned(),
             json:               true,
             jsonl:              false,
             base_url:           "https://api.openai.com/v1".to_owned(),
@@ -503,25 +598,9 @@ fn get_prompt(
         PromptType::Description => prompt_file.description_prompt,
         PromptType::Tags => prompt_file.tags_prompt,
         PromptType::Custom => {
-            if let Some(prompt) = &args.flag_prompt {
-                let mut working_prompt = prompt.clone();
-                // if the prompt does not contain {stats}, {frequency} and {headers},
-                // automatically add them to the prompt
-                #[allow(clippy::literal_string_with_formatting_args)]
-                {
-                    if !working_prompt.contains("{stats}")
-                        && !working_prompt.contains("{frequency}")
-                        && !working_prompt.contains("{headers}")
-                    {
-                        working_prompt += "\n\nSummary statistics of the dataset (CSV format): \
-                                           {stats}\n\nFrequency of the dataset (CSV format): \
-                                           {frequency}\n\nHeaders of the dataset: {headers}";
-                    }
-                }
-                working_prompt
-            } else {
-                prompt_file.prompt
-            }
+            let mut working_prompt = args.flag_prompt.clone().unwrap_or(prompt_file.prompt);
+            working_prompt += DEFAULT_CUSTOM_PROMPT_GUIDANCE;
+            working_prompt
         },
     };
     // Replace variable data in prompt
@@ -531,6 +610,10 @@ fn get_prompt(
         .replace("{stats}", stats.unwrap_or(""))
         .replace("{frequency}", frequency.unwrap_or(""))
         .replace("{headers}", headers.unwrap_or(""))
+        .replace(
+            "{dictionary}",
+            DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),
+        )
         .replace(
             "{json_add}",
             if prompt_file.json
@@ -586,6 +669,10 @@ fn get_completion(
         "messages": messages,
         "stream": false
     });
+    // deserializing request_data is relatively expensive, so only do it if debug is enabled
+    if log::log_enabled!(log::Level::Debug) {
+        log::debug!("Request data: {request_data:?}");
+    }
 
     // Get response from POST request to chat completions endpoint
     let completions_endpoint = "/chat/completions";
@@ -599,6 +686,10 @@ fn get_completion(
 
     // Parse response as JSON
     let response_json: serde_json::Value = response.json()?;
+    if log::log_enabled!(log::Level::Debug) {
+        log::debug!("Response: {response_json:?}");
+    }
+
     // If response is an error, print error message
     if let serde_json::Value::Object(ref map) = response_json
         && map.contains_key("error")
@@ -792,6 +883,7 @@ fn get_cached_completion(
 
 // Generates output for all inference options
 fn run_inference_options(
+    input_path: &str,
     args: &Args,
     api_key: &str,
     cache_type: &CacheType,
@@ -879,18 +971,23 @@ fn run_inference_options(
 
     // Generate the plaintext and/or JSON output of an inference option
     fn process_output(
-        option: &str,
+        kind: &str,
         output: &str,
         total_json_output: &mut serde_json::Value,
         args: &Args,
     ) -> CliResult<()> {
         // Process JSON output if expected or JSONL output is expected
         if is_json_output(args)? || is_jsonl_output(args)? {
-            total_json_output[option] = if option == "description" {
+            total_json_output[kind] = if kind == "description" {
                 serde_json::Value::String(output.to_string())
             } else {
                 extract_json_from_output(output)?
             };
+            if kind == "dictionary" {
+                DATA_DICTIONARY_JSON.get_or_init(|| {
+                    serde_json::to_string_pretty(&total_json_output["dictionary"]).unwrap()
+                });
+            }
         }
         // Process plaintext output
         else {
@@ -928,10 +1025,10 @@ fn run_inference_options(
     let mut system_prompt: String;
     let mut messages: serde_json::Value;
     let mut data_dict: CompletionResponse = CompletionResponse::default();
-    let mut completion_response: CompletionResponse;
+    let mut completion_response: CompletionResponse = CompletionResponse::default();
 
     // Generate dictionary output
-    if args.flag_dictionary || args.flag_all {
+    if args.flag_dictionary || args.flag_all || args.flag_prompt.is_some() {
         (prompt, system_prompt) = get_prompt(
             PromptType::Dictionary,
             stats_str,
@@ -1079,6 +1176,88 @@ fn run_inference_options(
 
     print_status("LLM inference/s completed.", Some(llm_start.elapsed()));
 
+    let has_sql_query = completion_response.response.contains("```sql");
+
+    #[cfg(feature = "polars")]
+    if let Some(sql_results) = &args.flag_sql_results
+        && has_sql_query
+    {
+        // Check if file exists and is writeable, or can be created
+        let sql_results_path = Path::new(sql_results);
+        if sql_results_path.exists() {
+            if fs::metadata(sql_results_path)?.permissions().readonly() {
+                return fail_clierror!(
+                    "SQL results file exists but is not writeable: {}",
+                    sql_results_path.display()
+                );
+            }
+        } else {
+            // Try creating the file to verify we can write to it
+            match fs::File::create(sql_results_path) {
+                Ok(_) => {
+                    // Clean up the test file
+                    fs::remove_file(sql_results_path)?;
+                },
+                Err(e) => {
+                    return fail_clierror!(
+                        "Cannot create SQL results file {}: {}",
+                        sql_results_path.display(),
+                        e
+                    );
+                },
+            }
+        }
+
+        let sql_query_start = Instant::now();
+        print_status("\nRunning SQL query...", None);
+
+        // Extract SQL query code block using regex
+        // and replace the INPUT_TABLE_NAME placeholder with the _t_1 placeholder
+        let sql_query = regex_oncelock!(r"(?s)```sql\n(.*?)\n```")
+            .captures(&completion_response.response)
+            .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()));
+        if sql_query.is_none() {
+            return fail_clierror!("Failed to extract SQL query from custom prompt response");
+        }
+        let sql_query = sql_query.unwrap();
+        let sql_query = sql_query.replace("INPUT_TABLE_NAME", "_t_1");
+        log::debug!("SQL query:\n{sql_query}");
+
+        // save sql query to a temporary file with a .sql extension
+        // this tempfile is automatically deleted after the command finishes
+        let sql_query_file = tempfile::Builder::new().suffix(".sql").tempfile()?;
+        fs::write(&sql_query_file, sql_query)?;
+
+        let (_, stderr) = run_qsv_cmd(
+            "sqlp",
+            &[
+                &sql_query_file.path().display().to_string(),
+                "--try-parsedates",
+                "--output",
+                sql_results,
+            ],
+            input_path,
+            "SQL query issued.",
+        )?;
+
+        // Check stderr
+        if stderr.contains("error:") {
+            return fail_clierror!("SQL query execution failed: {stderr}");
+        }
+
+        print_status(
+            &format!("SQL query successful. Saved results to {sql_results} {stderr}"),
+            Some(sql_query_start.elapsed()),
+        );
+    }
+
+    #[cfg(not(feature = "polars"))]
+    if args.flag_sql_results {
+        return fail_clierror!(
+            "\"SQL RAG\" mode is only supported when the polars feature is enabled"
+        );
+    }
+
     // Expecting JSON output
     if is_json_output(args)? && !is_jsonl_output(args)? {
         // Format & print JSON output
@@ -1119,26 +1298,32 @@ fn run_qsv_cmd(
     args: &[&str],
     input_path: &str,
     status_msg: &str,
-) -> CliResult<String> {
+) -> CliResult<(String, String)> {
     let start_time = Instant::now();
 
     let qsv_path = QSV_PATH.get().unwrap();
     let mut cmd = Command::new(qsv_path);
-    cmd.arg(command).args(args).arg(input_path);
+    cmd.arg(command).arg(input_path).args(args);
 
     let output = cmd
         .output()
         .map_err(|e| CliError::Other(format!("Error while executing command {command}: {e:?}")))?;
+    log::debug!("qsv command {command} output: {output:?}");
 
     print_status(&format!("  {status_msg}."), Some(start_time.elapsed()));
 
-    let output_str = std::str::from_utf8(&output.stdout).map_err(|e| {
+    let stdout_str = std::str::from_utf8(&output.stdout).map_err(|e| {
         CliError::Other(format!(
             "Unable to parse output of qsv command {command}: {e:?}"
         ))
     })?;
+    let stderr_str = std::str::from_utf8(&output.stderr).map_err(|e| {
+        CliError::Other(format!(
+            "Unable to parse stderr of qsv command {command}: {e:?}"
+        ))
+    })?;
 
-    Ok(output_str.to_string())
+    Ok((stdout_str.to_string(), stderr_str.to_string()))
 }
 
 fn determine_cache_kinds_to_remove(args: &Args) -> Vec<&'static str> {
@@ -1404,16 +1589,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .flag_stats_options
         .split_whitespace()
         .collect::<Vec<&str>>();
-    let stats = run_qsv_cmd("stats", &stats_args_vec, &input_path, "Generated stats")?;
+    let (stats, _) = run_qsv_cmd("stats", &stats_args_vec, &input_path, "Generated stats")?;
 
-    let frequency = run_qsv_cmd(
+    let (frequency, _) = run_qsv_cmd(
         "frequency",
         &["--limit", "10"],
         &input_path,
         "Generated frequency",
     )?;
 
-    let headers = run_qsv_cmd(
+    let (headers, _) = run_qsv_cmd(
         "slice",
         &["--len", "1", "--no-headers"],
         &input_path,
@@ -1424,6 +1609,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Run inference options
     run_inference_options(
+        &input_path,
         &args,
         &api_key,
         &cache_type,

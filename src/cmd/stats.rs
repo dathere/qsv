@@ -306,6 +306,7 @@ use itertools::Itertools;
 use phf::phf_map;
 use qsv_dateparser::parse_with_preference;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use simd_json::{OwnedValue, prelude::ValueAsScalar};
 use smallvec::SmallVec;
 use stats::{Commute, MinMax, OnlineStats, Unsorted, merge_all};
@@ -1172,7 +1173,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         format!("{record_count}\x1F{ds_column_count}\x1F{ds_filesize_bytes}\n")
                             .as_bytes(),
                     );
-                    sha256::digest(hash_input.as_slice())
+                    Sha256::digest(hash_input.as_slice())
                 };
 
                 dataset_stats_br.clear();
@@ -1182,7 +1183,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     dataset_stats_br.push_field(b"");
                 }
                 // write qsv__value as last column
-                dataset_stats_br.push_field(stats_hash.as_bytes());
+                dataset_stats_br.push_field(format!("{stats_hash:x}").as_bytes());
                 wtr.write_byte_record(&dataset_stats_br)?;
             }
 

@@ -6,7 +6,6 @@
 [![Security audit](https://github.com/dathere/qsv/actions/workflows/security-audit.yml/badge.svg)](https://github.com/dathere/qsv/actions/workflows/security-audit.yml)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/29e587760af64abcb115ba23efe1b365)](https://app.codacy.com/gh/dathere/qsv/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 [![Crates.io](https://img.shields.io/crates/v/qsv.svg?logo=crates.io)](https://crates.io/crates/qsv)
-[![Clones](https://img.shields.io/badge/dynamic/json?color=success&label=clones%20since%202025-05-03&query=count&url=https://gist.githubusercontent.com/jqnatividad/13f60ad0b54856a55f60b8e653079349/raw/clone.json&logo=github)](https://gist.github.com/jqnatividad/13f60ad0b54856a55f60b8e653079349)
 [![Discussions](https://img.shields.io/github/discussions/dathere/qsv)](https://github.com/dathere/qsv/discussions)
 [![Crates.io downloads](https://img.shields.io/crates/d/qsv?color=orange&label=crates.io%20downloads)](https://crates.io/crates/qsv)
 [![Prebuilt Downloads](https://img.shields.io/github/downloads/dathere/qsv/total?logo=github&label=prebuilt%20downloads)](https://github.com/dathere/qsv/releases/latest)

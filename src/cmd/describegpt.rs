@@ -5,11 +5,11 @@ Large Language Model (LLM).
 It infers these extended metadata by compiling Summary Statistics & a Frequency Distribution
 of the Dataset, and then prompting the LLM with this information.
 
-You can also use the --prompt option to ask a natural languge question about the Dataset.
+You can also use the --prompt option to ask a natural language question about the Dataset.
 
 If the question cannot be answered using the Dataset's Summary Statistics & Frequency Distribution,
-it will auto-infer a Data Dictionary & provide it to the LLM as context to create a SQL query that
-DETERMINISTICALLY answers the natural language question ("SQL RAG" mode).
+it will auto-infer a Data Dictionary & provide it to the LLM as additional context to create a
+SQL query that DETERMINISTICALLY answers the natural language question ("SQL RAG" mode).
 
 NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
 Even in "SQL RAG" mode, though the SQL query is guaranteed to be deterministic, the query itself

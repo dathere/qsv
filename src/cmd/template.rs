@@ -276,11 +276,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut rdr = rconfig.reader()?;
 
     // Get width of rowcount for padding leading zeroes and early return
-    let rowcount = util::count_rows(&rconfig)?;
-    if rconfig.no_headers && rowcount == 1 {
-        return Ok(());
-    }
-    let width = rowcount.to_string().len();
+    // For stdin, we can't pre-count rows as it would consume the stream
+    let (rowcount, width) = if rconfig.is_stdin() {
+        // For stdin, we'll use a reasonable default width and skip early return check
+        (0, 6) // Default width of 6 for up to 999,999 rows
+    } else {
+        let rowcount = util::count_rows(&rconfig)?;
+        if rconfig.no_headers && rowcount == 1 {
+            return Ok(());
+        }
+        let width = rowcount.to_string().len();
+        (rowcount, width)
+    };
 
     // read headers - the headers are used as MiniJinja variables in the template
     let headers = if args.flag_no_headers {

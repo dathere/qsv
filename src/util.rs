@@ -3185,7 +3185,7 @@ pub fn infer_polars_schema(
 
 /// CPU-accelerated sha256 hash of a file
 /// designed for performance, and memory-mapped chunked to process larger than memory files
-fn hash_sha256_file(path: &str) -> Result<String, Box<dyn std::error::Error>> {
+pub fn hash_sha256_file(path: &str) -> Result<String, Box<dyn std::error::Error>> {
     // Process in chunks to avoid mapping entire huge files
     const CHUNK_SIZE: usize = 1024 * 1024 * 1024; // 1GB chunks
 

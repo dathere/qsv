@@ -3197,6 +3197,9 @@ pub fn hash_sha256_file(path: &str) -> Result<String, Box<dyn std::error::Error>
     while offset < file_size {
         let chunk_size = std::cmp::min(CHUNK_SIZE, file_size - offset);
 
+        // SAFETY: The file is opened immediately before mapping and is not modified, truncated, or deleted
+        // during the lifetime of the mapping. The mapping is read-only, and we assume no concurrent writes
+        // or truncations to the file while it is being mapped and read.
         let mmap = unsafe {
             MmapOptions::new()
                 .offset(offset as u64)

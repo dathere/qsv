@@ -87,9 +87,10 @@ describegpt options:
                            it will be used instead. Required when the base URL is not localhost.
     -t, --max-tokens <n>   Limits the number of generated tokens in the output.
                            Set to 0 to disable token limits.
+                           If the --base-url is localhost, the default is automatically set to 0.
                            [default: 2000]
     --timeout <secs>       Timeout for completions in seconds. If 0, no timeout is used.
-                           [default: 120]
+                           [default: 600]
     --user-agent <agent>   Specify custom user agent. It supports the following variables -
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
                            Try to follow the syntax here -
@@ -129,7 +130,7 @@ Common options:
 use std::{
     env, fs,
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
     sync::{
         OnceLock,
@@ -246,6 +247,7 @@ Summary Statistics:
 Frequency Distribution:
 
 {frequency}"#;
+
 const DEFAULT_DESCRIPTION_PROMPT: &str = r#"
 Generate a Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
 
@@ -285,15 +287,24 @@ Frequency Distribution:
 
 const DEFAULT_CUSTOM_PROMPT_GUIDANCE: &str = r#"
 
-If the user's question about the dataset above cannot be answered by using its Summary Statistics and
-Frequency Distribution data below, use its Summary Statistics and Frequency Distribution along with its
-Data Dictionary below to create a Postgres SQL query that can be used to answer the question.
+If the user's question above is not about the Dataset, immediately return
+'I'm sorry, I can only answer questions about the Dataset.'
 
-Use INPUT_TABLE_NAME as the name of the table to query.
+If the user's question can be answered by using the Dataset's Summary Statistics and
+Frequency Distribution data below, immediately return the answer.
 
-Return the Data Dictionary as a JSON code block and the SQL query as a SQL code block.
+Otherwise, using the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary below,
+create a PostgreSQL query that can be used to answer the question.
 
-If the question is not about the dataset, return 'I'm sorry, I can only answer questions about the Dataset.'
+Use these guidelines when generating the SQL query:
+
+- Use the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary data to generate the SQL query.
+- Use INPUT_TABLE_NAME as the placeholder for the table name to query.
+- Do not use window expressions in aggregations.
+- Make sure the generated SQL query is valid and has comments to explain the query.
+- However, comments can only be used on new lines. Do not use inline comments.
+
+Return the SQL query as a SQL code block preceded by a newline.
 
 Data Dictionary:
 
@@ -1162,26 +1173,84 @@ fn run_inference_options(
 
     print_status("LLM inference/s completed.", Some(llm_start.elapsed()));
 
-    if let Some(sql_results) = &args.flag_sql_results {
-        // TODO: check if the sql_results_CSV is a valid path
+    let has_sql_query = completion_response.response.contains("```sql");
+
+    #[cfg(feature = "polars")]
+    if let Some(sql_results) = &args.flag_sql_results
+        && has_sql_query
+    {
+        // Check if file exists and is writeable, or can be created
+        let sql_results_path = Path::new(sql_results);
+        if sql_results_path.exists() {
+            if fs::metadata(sql_results_path)?.permissions().readonly() {
+                return fail_clierror!(
+                    "SQL results file exists but is not writeable: {}",
+                    sql_results_path.display()
+                );
+            }
+        } else {
+            // Try creating the file to verify we can write to it
+            match fs::File::create(sql_results_path) {
+                Ok(_) => {
+                    // Clean up the test file
+                    fs::remove_file(sql_results_path)?;
+                },
+                Err(e) => {
+                    return fail_clierror!(
+                        "Cannot create SQL results file {}: {}",
+                        sql_results_path.display(),
+                        e
+                    );
+                },
+            }
+        }
 
         let sql_query_start = Instant::now();
         print_status("\nRunning SQL query...", None);
 
-        // TODO: extract SQL query code block
-        // and replace the INPUT_TABLE_NAME placeholder with the canonical input path
-        let custom_prompt_response = completion_response.response;
+        // Extract SQL query code block using regex
+        // and replace the INPUT_TABLE_NAME placeholder with the _t_1 placeholder
+        let sql_query = regex_oncelock!(r"(?s)```sql\n(.*?)\n```")
+            .captures(&completion_response.response)
+            .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()));
+        if sql_query.is_none() {
+            return fail_clierror!("Failed to extract SQL query from custom prompt response");
+        }
+        let sql_query = sql_query.unwrap();
+        let sql_query = sql_query.replace("INPUT_TABLE_NAME", "_t_1");
+        log::debug!("SQL query:\n{sql_query}");
 
-        run_qsv_cmd(
+        // save sql query to a temporary file with a .sql extension
+        let sql_query_file = tempfile::Builder::new().suffix(".sql").tempfile()?;
+        fs::write(&sql_query_file, sql_query)?;
+
+        let (_, stderr) = run_qsv_cmd(
             "sqlp",
-            &["--try-parse-dates", "--output", &sql_results],
+            &[
+                &sql_query_file.path().display().to_string(),
+                "--try-parsedates",
+                "--output",
+                sql_results,
+            ],
             input_path,
-            "SQL query executed.",
+            "SQL query issued.",
         )?;
 
+        // Check stderr
+        if stderr.contains("error:") {
+            return fail_clierror!("SQL query execution failed: {stderr}");
+        }
+
         print_status(
-            &format!("Saved SQL query results to {sql_results}"),
+            &format!("SQL query successful. Saved results to {sql_results} {stderr}"),
             Some(sql_query_start.elapsed()),
+        );
+    }
+
+    #[cfg(not(feature = "polars"))]
+    if args.flag_sql_results {
+        return fail_clierror!(
+            "\"SQL RAG\" mode is only supported when the polars feature is enabled"
         );
     }
 
@@ -1225,26 +1294,32 @@ fn run_qsv_cmd(
     args: &[&str],
     input_path: &str,
     status_msg: &str,
-) -> CliResult<String> {
+) -> CliResult<(String, String)> {
     let start_time = Instant::now();
 
     let qsv_path = QSV_PATH.get().unwrap();
     let mut cmd = Command::new(qsv_path);
-    cmd.arg(command).args(args).arg(input_path);
+    cmd.arg(command).arg(input_path).args(args);
 
     let output = cmd
         .output()
         .map_err(|e| CliError::Other(format!("Error while executing command {command}: {e:?}")))?;
+    log::debug!("qsv command {command} output: {output:?}");
 
     print_status(&format!("  {status_msg}."), Some(start_time.elapsed()));
 
-    let output_str = std::str::from_utf8(&output.stdout).map_err(|e| {
+    let stdout_str = std::str::from_utf8(&output.stdout).map_err(|e| {
         CliError::Other(format!(
             "Unable to parse output of qsv command {command}: {e:?}"
         ))
     })?;
+    let stderr_str = std::str::from_utf8(&output.stderr).map_err(|e| {
+        CliError::Other(format!(
+            "Unable to parse stderr of qsv command {command}: {e:?}"
+        ))
+    })?;
 
-    Ok(output_str.to_string())
+    Ok((stdout_str.to_string(), stderr_str.to_string()))
 }
 
 fn determine_cache_kinds_to_remove(args: &Args) -> Vec<&'static str> {
@@ -1510,16 +1585,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .flag_stats_options
         .split_whitespace()
         .collect::<Vec<&str>>();
-    let stats = run_qsv_cmd("stats", &stats_args_vec, &input_path, "Generated stats")?;
+    let (stats, _) = run_qsv_cmd("stats", &stats_args_vec, &input_path, "Generated stats")?;
 
-    let frequency = run_qsv_cmd(
+    let (frequency, _) = run_qsv_cmd(
         "frequency",
         &["--limit", "10"],
         &input_path,
         "Generated frequency",
     )?;
 
-    let headers = run_qsv_cmd(
+    let (headers, _) = run_qsv_cmd(
         "slice",
         &["--len", "1", "--no-headers"],
         &input_path,

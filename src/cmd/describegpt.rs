@@ -35,6 +35,9 @@ Examples:
   $ qsv describegpt NYC_311.csv --prompt "What is the most common complaint?"
   $ qsv describegpt NYC_311.csv --prompt "List the top 10 complaints."
 
+  # Ask detailed questions that require SQL queries and auto-invoke SQL RAG mode
+  $ qsv describegpt NYC_311.csv --prompt "What's the breakdown of complaint types by borough descending order?"
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs.
 
 For more detailed info on how describegpt works and how to prepare a prompt file,

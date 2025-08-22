@@ -17,10 +17,10 @@ may not be correct.
 
 Examples:
 
-  # Generate a data dictionary of a CSV file using Ollama using the DeepSeek R1:14b model
+  # Generate a data dictionary of a data.csv using Ollama using the DeepSeek R1:14b model
   $ qsv describegpt data.csv -u http://localhost:11434/v1 -k ollama -m deepseek-r1:14b --dictionary
 
-  # Generate a data dictionary, description & tags of a CSV file using OpenAI's gpt-oss-20b model
+  # Generate a data dictionary, description & tags of data.csv using OpenAI's gpt-oss-20b model
   # (replace <API_KEY> with your OpenAI API key)
   $ qsv describegpt data.csv --api-key <API_KEY> --all
 
@@ -30,13 +30,27 @@ Examples:
   # save the cached LLM completions to a JSON file without incurring additional API calls
   $ qsv describegpt data.csv --all --disk-cache --json > data.json
 
-  # Ask questions about the sample NYC 311 dataset using LM Studio using the default model
+  # Ask questions about the sample NYC 311 dataset using LM Studio using the default gpt-oss-20b model
   $ export QSV_LLM_BASE_URL=http://localhost:1234/v1
   $ qsv describegpt NYC_311.csv --prompt "What is the most common complaint?"
   $ qsv describegpt NYC_311.csv --prompt "List the top 10 complaints."
 
   # Ask detailed questions that require SQL queries and auto-invoke SQL RAG mode
   $ qsv describegpt NYC_311.csv --prompt "What's the breakdown of complaint types by borough descending order?"
+
+  # Cache dictionary inference results using disk cache
+  $ qsv describegpt data.csv --dictionary --disk-cache
+  # Cache dictionary, description & tags inference results using the Redis cache
+  $ qsv describegpt data.csv --all --redis-cache
+  # Get fresh description & tags inference results from the LLM and refresh both disk cache entries
+  $ qsv describegpt data.csv --description --tags --disk-cache --fresh
+  # Get fresh inference results from the LLM and refresh the Redis cache entries
+  $ qsv describegpt data.csv --all --redis-cache --fresh
+
+  # Flush the disk cache
+  $ qsv describegpt --disk-cache --flush-cache
+  # Flush the Redis cache
+  $ qsv describegpt --redis-cache --flush-cache
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs.
 
@@ -45,12 +59,13 @@ see https://github.com/dathere/qsv/blob/master/docs/Describegpt.md
 
 Usage:
     qsv describegpt [options] [<input>]
+    qsv describegpt (--disk-cache | --redis-cache) (--flush-cache)
     qsv describegpt --help
 
 describegpt options:
                            DATA ANALYSIS/INFERENCING OPTIONS:
     --dictionary           Infer a Data Dictionary. For each field, prints an inferred type,
-                           a human-readable label, a description, and stats.
+                           a human-readable label and a description.
     --description          Infer a general Description of the dataset.
     --tags                 Infer Tags that categorize the dataset. Useful
                            for grouping datasets and filtering.
@@ -68,8 +83,8 @@ describegpt options:
                            Otherwise, only the SQL query will be returned.
     --sql-results <csv>    The CSV to save the SQL query results to.
                            Only valid if the --prompt option is used & the "polars" feature is enabled.
-    --prompt-file <file>   The JSON file containing custom prompts to use for inferencing.
-                           If not specified, default prompts will be used.
+    --prompt-file <file>   The JSON file containing prompts to use for inferencing.
+                           [default: describegpt_defaults.json]
 
                            LLM API OPTIONS:
     -u, --base-url <url>   The LLM API URL. Supports APIs & local LLMs compatible with
@@ -77,8 +92,7 @@ describegpt options:
                            The default base URL for Ollama is http://localhost:11434/v1.
                            The default for Jan is https://localhost:1337/v1.
                            The default for LM Studio is http://localhost:1234/v1.
-                           If --prompt-file is used, the base URL will be the base URL
-                           of the prompt file.
+                           The base URL will be the base URL of the prompt file.
                            If the QSV_LLM_BASE_URL environment variable is set, it will be
                            used instead.
                            [default: https://api.openai.com/v1]
@@ -191,135 +205,28 @@ struct Args {
 #[derive(Deserialize)]
 #[allow(dead_code)]
 struct PromptFile {
-    name:               String,
-    description:        String,
-    author:             String,
-    version:            String,
-    tokens:             u32,
-    system_prompt:      String,
-    dictionary_prompt:  String,
-    description_prompt: String,
-    tags_prompt:        String,
-    prompt:             String,
-    json:               bool,
-    jsonl:              bool,
-    base_url:           String,
-    model:              String,
-    timeout:            u32,
+    name:                   String,
+    description:            String,
+    author:                 String,
+    version:                String,
+    tokens:                 u32,
+    system_prompt:          String,
+    dictionary_prompt:      String,
+    description_prompt:     String,
+    tags_prompt:            String,
+    prompt:                 String,
+    json:                   bool,
+    jsonl:                  bool,
+    base_url:               String,
+    model:                  String,
+    timeout:                u32,
+    custom_prompt_guidance: String,
 }
 
 const LLM_APIKEY_ERROR: &str = "Error: QSV_LLM_APIKEY environment variable not found.\nNote that \
                                 this command uses LLMs for inferencing and is therefore prone to \
                                 inaccurate information being produced. Verify output results \
                                 before using them.";
-
-const DEFAULT_SYSTEM_PROMPT: &str = r#"
-You are an expert library scientist with extensive expertise in Statistics, Data Science and PostgreSQL.
-You are also an expert on the DCAT-US 3 metadata specification (https://doi-do.github.io/dcat-us/).
-
-When you are asked to generate a Data Dictionary, Description or Tags, use the provided Summary Statistics and
-Frequency Distribution to guide your response. They both describe the same Dataset.
-
-The provided Summary Statistics is a CSV file. Each record contains statistics for each Dataset field.
-For a detailed explanation of the Summary Statistics columns,
-see https://github.com/dathere/qsv/wiki/Supplemental#stats-command-output-explanation
-
-The provided Frequency Distribution is a CSV file with the following columns - field, value, count, percentage, rank.
-For each Dataset field, it lists the top 10 (or less if there are less than 10 unique values) most frequent unique values
-sorted in descending order, with the special value "Other (N)" indicating "other" unique values beyond the top 10.
-The "(N)" in "Other (N)" indicates the count of "other" unique values.
-
-For Dataset fields with all unique values (cardinality is equal to the number of records), the value column will be "<ALL_UNIQUE>",
-the count column will be the number of records, the percentage column will be 100, and the rank column will be 1.
-"#;
-
-const DEFAULT_DICTIONARY_PROMPT: &str = r#"
-Here are the columns for each field in a Data Dictionary:
-
-- Type: the data type of this column as indicated in the Summary Statistics below.
-- Label: a human-friendly label for this column
-- Description: a full description for this column (can be multiple sentences)
-
-Generate a Data Dictionary as aforementioned {json_add} where each field has Name, Type, Label, and Description
-(so four columns in total) based on the following Summary Statistics and Frequency Distribution data of the Dataset.
-
-Summary Statistics:
-
-{stats}
-
-Frequency Distribution:
-
-{frequency}"#;
-
-const DEFAULT_DESCRIPTION_PROMPT: &str = r#"
-Generate a Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
-
-Summary Statistics:
-
-{stats}
-
-Frequency Distribution:
-
-{frequency}
-
-Do not output the summary statistics for each field. Do not output the frequency for each field.
-Do not output data about each field individually, but instead output about the dataset as a whole
-in one 1-8 sentence description.
-
-After the Description, add a section titled "Notable Characteristics" with a bulleted list of notable
-characteristics of the Dataset. e.g. if there are any outliers, missing values, duplicates, PII data
-and other data quality issues that the User should be aware of.
-
-The entire output should be in Markdown format."#;
-
-const DEFAULT_TAGS_PROMPT: &str = r#"
-A Tag is a keyword or label that categorizes datasets with other, similar datasets.
-Using the right Tags makes it easier for others to find and use datasets.
-
-Generate no more than 15 most thematic Tags{json_add} about the contents of the Dataset in descending
-order of importance (lowercase only and use _ to separate words) based on the following Summary Statistics and
-Frequency Distribution data about the Dataset. Do not use field names in the tags. 
-
-Summary Statistics:
-
-{stats}
-
-Frequency Distribution:
-
-{frequency}"#;
-
-const DEFAULT_CUSTOM_PROMPT_GUIDANCE: &str = r#"
-
-If the user's question above is not about the Dataset, immediately return
-'I'm sorry, I can only answer questions about the Dataset.'
-
-If the user's question can be answered by using the Dataset's Summary Statistics and
-Frequency Distribution data below, immediately return the answer.
-
-Otherwise, using the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary below,
-create a PostgreSQL query that can be used to answer the question.
-
-Use these guidelines when generating the SQL query:
-
-- Use the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary data to generate the SQL query.
-- Use INPUT_TABLE_NAME as the placeholder for the table name to query.
-- Do not use window expressions in aggregations.
-- Make sure the generated SQL query is valid and has comments to explain the query.
-- However, comments can only be used on new lines. Do not use inline comments.
-
-Return the SQL query as a SQL code block preceded by a newline.
-
-Data Dictionary:
-
-{dictionary}
-
-Summary Statistics:
-
-{stats}
-
-Frequency Distribution:
-
-{frequency}"#;
 
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
 #[allow(dead_code)]
@@ -407,6 +314,7 @@ impl DiskCacheConfig {
 
 static QUIET_FLAG: OnceLock<AtomicBool> = OnceLock::new();
 static QSV_PATH: OnceLock<String> = OnceLock::new();
+static FILE_HASH: OnceLock<String> = OnceLock::new();
 
 fn print_status(msg: &str, elapsed: Option<std::time::Duration>) {
     let quiet_flag = QUIET_FLAG.get().unwrap();
@@ -502,16 +410,7 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
         );
     };
 
-    let given_model = env::var("QSV_LLM_MODEL")
-        .ok()
-        .or_else(|| args.flag_model.clone())
-        .or_else(|| {
-            args.flag_prompt_file
-                .as_ref()
-                .map(|_| prompt_file.model.clone())
-        })
-        // safety: model has a docopt default
-        .unwrap();
+    let given_model = prompt_file.model.clone();
 
     // Check for exact model match
     for model in models {
@@ -542,42 +441,47 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
 }
 
 fn get_prompt_file(args: &Args) -> CliResult<PromptFile> {
-    // Get prompt file if --prompt-file is used
-    let prompt_file = if let Some(prompt_file) = &args.flag_prompt_file {
-        // Read prompt file
-        let prompt_file = fs::read_to_string(prompt_file)?;
-        // Try to parse prompt file as JSON, if error then show it in JSON format
-        let prompt_file: PromptFile = match serde_json::from_str(&prompt_file) {
-            Ok(val) => val,
-            Err(e) => {
-                let error_json = json!({"error": e.to_string()});
-                return fail_clierror!("{error_json}");
-            },
-        };
-        prompt_file
-    }
-    // Otherwise, get default prompt file
-    else {
-        #[allow(clippy::let_and_return)]
-        let default_prompt_file = PromptFile {
-            name:               "My Prompt File".to_string(),
-            description:        "My prompt file for qsv's describegpt command.".to_string(),
-            author:             "My Name".to_string(),
-            version:            "1.0.0".to_string(),
-            tokens:             1000,
-            system_prompt:      DEFAULT_SYSTEM_PROMPT.to_owned(),
-            dictionary_prompt:  DEFAULT_DICTIONARY_PROMPT.to_owned(),
-            description_prompt: DEFAULT_DESCRIPTION_PROMPT.to_owned(),
-            tags_prompt:        DEFAULT_TAGS_PROMPT.to_owned(),
-            prompt:             "What is this dataset about?".to_owned(),
-            json:               true,
-            jsonl:              false,
-            base_url:           "https://api.openai.com/v1".to_owned(),
-            model:              "gpt-oss-20b".to_owned(),
-            timeout:            120,
-        };
-        default_prompt_file
+    // Read prompt file (now always required since we have a default)
+    let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
+    let prompt_file_content = fs::read_to_string(prompt_file_path)?;
+
+    // Try to parse prompt file as JSON, if error then show it in JSON format
+    let mut prompt_file: PromptFile = match serde_json::from_str(&prompt_file_content) {
+        Ok(val) => val,
+        Err(e) => {
+            let error_json = json!({"error": e.to_string()});
+            return fail_clierror!("{error_json}");
+        },
     };
+
+    // If QSV_LLM_BASE_URL environment variable is set, use it as the base URL
+    if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {
+        prompt_file.base_url = base_url;
+    }
+
+    let model_to_use = env::var("QSV_LLM_MODEL")
+        .ok()
+        .or_else(|| args.flag_model.clone())
+        .or_else(|| {
+            args.flag_prompt_file
+                .as_ref()
+                .map(|_| prompt_file.model.clone())
+        })
+        // safety: model has a docopt default
+        .unwrap();
+
+    prompt_file.model = model_to_use;
+
+    // If max_tokens is 0 or the base URL contains "localhost", always disable the limit
+    let max_tokens = if args.flag_max_tokens == 0 || prompt_file.base_url.contains("localhost") {
+        0
+    } else if args.flag_max_tokens > 0 {
+        args.flag_max_tokens
+    } else {
+        prompt_file.tokens
+    };
+    prompt_file.tokens = max_tokens;
+
     Ok(prompt_file)
 }
 
@@ -599,7 +503,7 @@ fn get_prompt(
         PromptType::Tags => prompt_file.tags_prompt,
         PromptType::Custom => {
             let mut working_prompt = args.flag_prompt.clone().unwrap_or(prompt_file.prompt);
-            working_prompt += DEFAULT_CUSTOM_PROMPT_GUIDANCE;
+            working_prompt += &prompt_file.custom_prompt_guidance;
             working_prompt
         },
     };
@@ -616,10 +520,7 @@ fn get_prompt(
         )
         .replace(
             "{json_add}",
-            if prompt_file.json
-                || prompt_file.jsonl
-                || (args.flag_prompt_file.is_none() && (args.flag_json || args.flag_jsonl))
-            {
+            if prompt_file.json || prompt_file.jsonl || args.flag_json || args.flag_jsonl {
                 " (in valid JSON format. Surround it with ```json and ```)"
             } else {
                 ""
@@ -639,28 +540,15 @@ fn get_completion(
 ) -> CliResult<CompletionResponse> {
     let prompt_file = get_prompt_file(args)?;
 
-    // If max_tokens is 0, always disable the limit, even if a prompt file is present.
-    let max_tokens = if args.flag_max_tokens == 0 {
-        None
-    } else if args.flag_prompt_file.is_some() && args.flag_max_tokens > 0 {
-        // Only use prompt_file.tokens if max_tokens is not explicitly set to 0
+    let base_url = prompt_file.base_url;
+
+    let max_tokens = if prompt_file.tokens > 0 {
         Some(prompt_file.tokens)
     } else {
-        Some(args.flag_max_tokens)
+        None
     };
 
-    let model_to_use = if args.flag_prompt_file.is_some() {
-        prompt_file.model
-    } else {
-        model.to_string()
-    };
-
-    let base_url = if args.flag_prompt_file.is_some() {
-        prompt_file.base_url
-    } else {
-        // safety: base_url has a docopt default
-        args.flag_base_url.as_deref().unwrap().to_string()
-    };
+    let model_to_use = prompt_file.model;
 
     // Create request data
     let request_data = json!({
@@ -715,21 +603,32 @@ fn get_completion(
         total:      usage["total_tokens"].as_u64().unwrap_or(0),
     };
 
+    // Replace "GENERATED_BY_SIGNATURE" with the model name and the date and time the query was
+    // generated
+    let completion = completion.replace(
+        "GENERATED_BY_SIGNATURE",
+        &format!(
+            "Generated by qsv's describegpt command using {model} on {}",
+            chrono::Utc::now().to_rfc3339()
+        ),
+    );
+
     Ok(CompletionResponse {
-        response: completion.to_string(),
+        response: completion,
         token_usage,
     })
 }
 
 fn get_cache_key(args: &Args, kind: &str) -> String {
+    let file_hash = FILE_HASH.get().unwrap_or(&String::new()).clone();
     format!(
-        "{:?}{:?}{:?}{:?}{:?}{}",
+        "{:?}{:?}{:?}{:?}{}{}",
         args.arg_input,
         args.flag_prompt_file,
-        args.flag_prompt,
         args.flag_max_tokens,
         args.flag_model,
-        kind
+        kind,
+        file_hash
     )
 }
 
@@ -810,15 +709,13 @@ fn get_redis_completion(
 fn is_json_output(args: &Args) -> CliResult<bool> {
     // By default expect plaintext output
     let mut json_output = false;
-    // Set expect_json to true if --prompt-file is used & the "json" field is true
-    if args.flag_prompt_file.is_some() {
-        let prompt_file = get_prompt_file(args)?;
-        if prompt_file.json {
-            json_output = true;
-        }
+    // Set expect_json to true if the "json" field is true in prompt file
+    let prompt_file = get_prompt_file(args)?;
+    if prompt_file.json {
+        json_output = true;
     }
-    // Set expect_json to true if --prompt-file is not used & --json is used
-    else if args.flag_json {
+    // Set expect_json to true if --json is used
+    if args.flag_json {
         json_output = true;
     }
     Ok(json_output)
@@ -827,15 +724,13 @@ fn is_json_output(args: &Args) -> CliResult<bool> {
 fn is_jsonl_output(args: &Args) -> CliResult<bool> {
     // By default expect plaintext output
     let mut jsonl_output = false;
-    // Set expect_jsonl to true if --prompt-file is used & the "jsonl" field is true
-    if args.flag_prompt_file.is_some() {
-        let prompt_file = get_prompt_file(args)?;
-        if prompt_file.jsonl {
-            jsonl_output = true;
-        }
+    // Set expect_jsonl to true if the "jsonl" field is true in prompt file
+    let prompt_file = get_prompt_file(args)?;
+    if prompt_file.jsonl {
+        jsonl_output = true;
     }
-    // Set expect_jsonl to true if --prompt-file is not used & --jsonl is used
-    else if args.flag_jsonl {
+    // Set expect_jsonl to true if --jsonl is used
+    if args.flag_jsonl {
         jsonl_output = true;
     }
     Ok(jsonl_output)
@@ -1007,7 +902,6 @@ fn run_inference_options(
 
     // Get completion from API
     let llm_start = Instant::now();
-    print_status("\nInteracting with LLM...", None);
 
     let client = util::create_reqwest_blocking_client(
         args.flag_user_agent.clone(),
@@ -1037,7 +931,7 @@ fn run_inference_options(
             args,
         )?;
         let start_time = Instant::now();
-        print_status("  Inferring data dictionary...", None);
+        print_status("  Inferring Data Dictionary...", None);
         messages = get_messages(&prompt, &system_prompt, "");
         data_dict = get_cached_completion(
             args,
@@ -1078,7 +972,7 @@ fn run_inference_options(
         };
         messages = get_messages(&prompt, &system_prompt, &data_dict.response);
         let start_time = Instant::now();
-        print_status("  Inferring description...", None);
+        print_status("  Inferring Description...", None);
         completion_response = get_cached_completion(
             args,
             &client,
@@ -1090,7 +984,7 @@ fn run_inference_options(
         )?;
         print_status(
             format!(
-                "   Received description inference.\n   {:?}\n  ",
+                "   Received Description Inference.\n   {:?}\n  ",
                 completion_response.token_usage
             )
             .as_str(),
@@ -1125,13 +1019,13 @@ fn run_inference_options(
         };
         messages = get_messages(&prompt, &system_prompt, dictionary_context);
         let start_time = Instant::now();
-        print_status("  Inferring tags...", None);
+        print_status("  Inferring Tags...", None);
         completion_response = get_cached_completion(
             args, &client, &model, api_key, cache_type, "tags", &messages,
         )?;
         print_status(
             &format!(
-                "   Received tags inference.\n   {:?}\n  ",
+                "   Received Tags inference.\n   {:?}\n  ",
                 completion_response.token_usage
             ),
             Some(start_time.elapsed()),
@@ -1154,14 +1048,14 @@ fn run_inference_options(
             args,
         )?;
         let start_time = Instant::now();
-        print_status("  Answering custom prompt...", None);
+        print_status("  Answering Custom Prompt...", None);
         messages = get_messages(&prompt, &system_prompt, &data_dict.response);
         completion_response = get_cached_completion(
             args, &client, &model, api_key, cache_type, "prompt", &messages,
         )?;
         print_status(
             &format!(
-                "   Received custom prompt answer.\n   {:?}\n  ",
+                "   Received Custom Prompt Answer.\n   {:?}\n  ",
                 completion_response.token_usage
             ),
             Some(start_time.elapsed()),
@@ -1272,12 +1166,10 @@ fn run_inference_options(
     }
     // Expecting JSONL output
     else if is_jsonl_output(args)? {
-        // If --prompt-file is used, add prompt file name and timestamp to JSONL output
-        if args.flag_prompt_file.is_some() {
-            let prompt_file = get_prompt_file(args)?;
-            total_json_output["prompt_file"] = json!(prompt_file.name);
-            total_json_output["timestamp"] = json!(chrono::offset::Utc::now().to_rfc3339());
-        }
+        // Add prompt file name and timestamp to JSONL output
+        let prompt_file = get_prompt_file(args)?;
+        total_json_output["prompt_file"] = json!(prompt_file.name);
+        total_json_output["timestamp"] = json!(chrono::offset::Utc::now().to_rfc3339());
         // Format & print JSONL output
         let json_output = &simd_json::to_string(&total_json_output)?;
         println!("{json_output}");
@@ -1312,7 +1204,7 @@ fn run_qsv_cmd(
         .map_err(|e| CliError::Other(format!("Error while executing command {command}: {e:?}")))?;
     log::debug!("qsv command {command} output: {output:?}");
 
-    print_status(&format!("  {status_msg}."), Some(start_time.elapsed()));
+    print_status(status_msg, Some(start_time.elapsed()));
 
     let stdout_str = std::str::from_utf8(&output.stdout).map_err(|e| {
         CliError::Other(format!(
@@ -1345,6 +1237,13 @@ fn determine_cache_kinds_to_remove(args: &Args) -> Vec<&'static str> {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let start_time = Instant::now();
     let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // Initialize Redis default connection string to localhost, using database 3 by default
+    // when --redis-cache is enabled
+    // describegpt uses database 3 by default, fetch uses database 1, and fetchpost uses database 2
+    DEFAULT_REDIS_CONN_STRING
+        .set("redis://127.0.0.1:6379/3".to_string())
+        .unwrap();
 
     // Initialize the global quiet flag
     QUIET_FLAG.set(AtomicBool::new(args.flag_quiet)).unwrap();
@@ -1382,60 +1281,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     };
 
-    // Check if user gives arg_input
-    if args.arg_input.is_none() {
-        return fail_incorrectusage_clierror!("No input file specified.");
-    }
-
-    // Process input file
-    // support stdin and auto-decompress snappy file
-    // stdin/decompressed file is written to a temporary file in tmpdir
-    // which is automatically deleted after the command finishes
-    let tmpdir = tempfile::tempdir()?;
-    let work_input = process_input(
-        vec![PathBuf::from(
-            // if no input file is specified, read from stdin "-"
-            args.arg_input.as_deref().unwrap_or("-"),
-        )],
-        &tmpdir,
-        "",
-    )?;
-    // safety: we just checked that there is at least one input file
-    let input_path = work_input[0]
-        .canonicalize()?
-        .into_os_string()
-        .into_string()
-        .unwrap();
-
-    // If no inference flags specified, print error message.
-    if !args.flag_all
-        && !args.flag_dictionary
-        && !args.flag_description
-        && !args.flag_tags
-        && args.flag_prompt.is_none()
-    {
-        return fail_incorrectusage_clierror!("No inference options specified.");
-    // If --all flag is specified, but other inference flags are also set, print error message.
-    } else if args.flag_all
-        && (args.flag_dictionary
-            || args.flag_description
-            || args.flag_tags
-            || args.flag_prompt.is_some())
-    {
-        return fail_incorrectusage_clierror!(
-            "--all option cannot be specified with other inference flags."
-        );
-    }
-    // If --prompt-file flag is specified but the prompt file does not exist, print error message.
-    if let Some(prompt_file) = &args.flag_prompt_file
-        && !PathBuf::from(prompt_file).exists()
-    {
-        return fail_incorrectusage_clierror!("Prompt file '{prompt_file}' does not exist.");
+    // Check if the prompt file exists
+    let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
+    if !PathBuf::from(prompt_file_path).exists() {
+        return fail_incorrectusage_clierror!("Prompt file '{prompt_file_path}' does not exist.");
     }
     // If --json and --jsonl flags are specified, print error message.
     if is_json_output(&args)? && is_jsonl_output(&args)? {
         return fail_incorrectusage_clierror!(
             "--json and --jsonl options cannot be specified together."
+        );
+    }
+
+    if args.flag_disk_cache && args.flag_redis_cache {
+        return fail_incorrectusage_clierror!(
+            "--disk-cache and --redis-cache options cannot be specified together."
+        );
+    }
+
+    if args.flag_flush_cache && !args.flag_disk_cache && !args.flag_redis_cache {
+        return fail_incorrectusage_clierror!(
+            "--flush-cache option requires --disk-cache or --redis-cache."
         );
     }
 
@@ -1463,7 +1329,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 return fail_clierror!(r#"Cannot remove cache directory "{diskcache_dir}": {e:?}"#);
             }
             print_status(
-                &format!("flushed DiskCache directory: {diskcache_dir}"),
+                &format!("Flushed DiskCache directory: {diskcache_dir}"),
                 None,
             );
             return Ok(());
@@ -1542,7 +1408,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             redis::cmd("FLUSHDB")
                 .exec(&mut redis_conn)
                 .map_err(|_| "Cannot flush Redis cache")?;
-            log::info!("flushed Redis database.");
+            print_status("Flushed Redis database.", None);
+            return Ok(());
         }
 
         // If --forget is set, remove cache entries and exit
@@ -1574,6 +1441,51 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
     log::info!("Cache Type: {cache_type:?}");
 
+    // Check if user gives arg_input
+    if args.arg_input.is_none() {
+        return fail_incorrectusage_clierror!("No input file specified.");
+    }
+
+    // Process input file
+    // support stdin and auto-decompress snappy file
+    // stdin/decompressed file is written to a temporary file in tmpdir
+    // which is automatically deleted after the command finishes
+    let tmpdir = tempfile::tempdir()?;
+    let work_input = process_input(
+        vec![PathBuf::from(
+            // if no input file is specified, read from stdin "-"
+            args.arg_input.as_deref().unwrap_or("-"),
+        )],
+        &tmpdir,
+        "",
+    )?;
+    // safety: we just checked that there is at least one input file
+    let input_path = work_input[0]
+        .canonicalize()?
+        .into_os_string()
+        .into_string()
+        .unwrap();
+
+    // If no inference flags specified, print error message.
+    if !args.flag_all
+        && !args.flag_dictionary
+        && !args.flag_description
+        && !args.flag_tags
+        && args.flag_prompt.is_none()
+    {
+        return fail_incorrectusage_clierror!("No inference options specified.");
+    // If --all flag is specified, but other inference flags are also set, print error message.
+    } else if args.flag_all
+        && (args.flag_dictionary
+            || args.flag_description
+            || args.flag_tags
+            || args.flag_prompt.is_some())
+    {
+        return fail_incorrectusage_clierror!(
+            "--all option cannot be specified with other inference flags."
+        );
+    }
+
     // Initialize the global qsv path
     QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
 
@@ -1581,34 +1493,45 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     print_status(&format!("Analyzing {input_path}..."), None);
 
     // check if the input file is indexed, if not, index it for performance
+    // no need to print start/end status, it's very fast even for large files
     let config = Config::new(Some(&input_path));
     if config.index_files().is_err() {
-        let _ = run_qsv_cmd("index", &[], &input_path, "Indexed")?;
+        let _ = run_qsv_cmd("index", &[], &input_path, "  Indexed")?;
     }
 
     // Run qsv commands to analyze data
+    print_status("  Compiling Summary Statistics...", None);
     let stats_args_vec = args
         .flag_stats_options
         .split_whitespace()
         .collect::<Vec<&str>>();
-    let (stats, _) = run_qsv_cmd("stats", &stats_args_vec, &input_path, "Generated stats")?;
+    let (stats, _) = run_qsv_cmd("stats", &stats_args_vec, &input_path, " ")?;
 
-    let (frequency, _) = run_qsv_cmd(
-        "frequency",
-        &["--limit", "10"],
-        &input_path,
-        "Generated frequency",
-    )?;
+    print_status("  Compiling Frequency Distribution...", None);
+    let (frequency, _) = run_qsv_cmd("frequency", &["--limit", "10"], &input_path, " ")?;
 
+    // this is instantaneous, so no need to print start/end status
     let (headers, _) = run_qsv_cmd(
         "slice",
         &["--len", "1", "--no-headers"],
         &input_path,
-        "Got headers",
+        "  Headers retrieved",
     )?;
+
+    // Calculate SHA256 hash of the input file for cache key generation
+    print_status("  Calculating SHA256 hash...", None);
+    let start_hash_time = Instant::now();
+    let file_hash = util::hash_sha256_file(Path::new(&input_path))
+        .map_err(|e| CliError::Other(format!("Failed to calculate sha256 hash: {e}")))?;
+    FILE_HASH.set(file_hash.clone()).unwrap();
+    print_status(
+        &format!("  (elapsed: {:.2?})", start_hash_time.elapsed()),
+        None,
+    );
 
     print_status("Analyzed data.", Some(analysis_start.elapsed()));
 
+    print_status("\nInteracting with LLM...", None);
     // Run inference options
     run_inference_options(
         &input_path,

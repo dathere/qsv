@@ -307,6 +307,10 @@ csv       = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimiz
 csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimized-non-allocating-byterecord-trim" }
 csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimized-non-allocating-byterecord-trim" }
 
+# use released though not yet published version of cpc, which gets rid of
+# unmaintained ord_subset & decimal crate dependencies
+cpc = { git = "https://github.com/probablykasper/cpc", rev = "b09827c" }
+
 # use our patched fork of csvlens to add natural sort until our PR is merged
 csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "133-natural-sort" }
 
@@ -321,9 +325,6 @@ json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-cs
 
 # use our patched fork of localzone to bump dependencies until our PR is merged
 localzone = { git = "https://github.com/jqnatividad/localzone", branch = "bump-deps-may2025" }
-
-# use patched fork of ord_subset to fix issue with nightly Rust
-ord_subset = { git = "https://github.com/jqnatividad/ord_subset", rev = "69dd81f" }
 
 # use v1 branch with unreleased fixes and features
 rust_decimal = { git = "https://github.com/paupino/rust-decimal", branch = "v1" }

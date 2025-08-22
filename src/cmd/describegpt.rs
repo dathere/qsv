@@ -513,7 +513,7 @@ fn get_prompt(
             let mut working_prompt = args
                 .flag_prompt
                 .clone()
-                .unwrap_or(prompt_file.prompt.clone());
+                .unwrap_or_else(|| prompt_file.prompt.clone());
             working_prompt += &prompt_file.custom_prompt_guidance;
             working_prompt
         },
@@ -1535,7 +1535,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let start_hash_time = Instant::now();
     let file_hash = util::hash_sha256_file(Path::new(&input_path))
         .map_err(|e| CliError::Other(format!("Failed to calculate sha256 hash: {e}")))?;
-    FILE_HASH.set(file_hash.clone()).unwrap();
+    FILE_HASH.set(file_hash).unwrap();
     print_status(
         &format!("  (elapsed: {:.2?})", start_hash_time.elapsed()),
         None,

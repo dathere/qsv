@@ -2019,7 +2019,7 @@ pub fn process_input(
     // check the input files
     for path in work_input {
         // check if the path is "-" (stdin)
-        if path == PathBuf::from("-") {
+        if path.to_string_lossy() == "-" {
             if !stdin_file_created {
                 // if stdin was not copied to a file, copy stdin to a file named "stdin"
                 let tmp_filename = tmpdir.path().join("stdin.csv");

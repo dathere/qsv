@@ -619,16 +619,11 @@ fn get_completion(
     })
 }
 
-fn get_cache_key(args: &Args, kind: &str) -> String {
+fn get_cache_key(args: &Args, kind: &str, actual_model: &str) -> String {
     let file_hash = FILE_HASH.get().unwrap_or(&String::new()).clone();
     format!(
         "{:?}{:?}{:?}{:?}{}{}",
-        args.arg_input,
-        args.flag_prompt_file,
-        args.flag_max_tokens,
-        args.flag_model,
-        kind,
-        file_hash
+        args.arg_input, args.flag_prompt_file, args.flag_max_tokens, actual_model, kind, file_hash
     )
 }
 
@@ -638,7 +633,7 @@ fn get_cache_key(args: &Args, kind: &str) -> String {
     ty = "cached::DiskCache<String, CompletionResponse>",
     cache_prefix_block = r##"{ "descdc_" }"##,
     key = "String",
-    convert = r##"{ get_cache_key(args, kind) }"##,
+    convert = r##"{ get_cache_key(args, kind, model) }"##,
     create = r##"{
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
@@ -672,7 +667,7 @@ fn get_diskcache_completion(
 #[io_cached(
     ty = "cached::RedisCache<String, CompletionResponse>",
     key = "String",
-    convert = r##"{ get_cache_key(args, kind) }"##,
+    convert = r##"{ get_cache_key(args, kind, model) }"##,
     create = r##" {
         let redis_config = REDISCONFIG.get().unwrap();
         let rediscache: RedisCache<String, CompletionResponse> = RedisCache::new("f", redis_config.ttl_secs)
@@ -1362,9 +1357,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     .build()
                     .map_err(|e| CliError::Other(format!("Error building DiskCache: {e}")))?;
 
+            // Get the model from prompt file for cache key generation
+            let prompt_file = get_prompt_file(&args)?;
+
             // Remove cache entries for all specified kinds using the same key format as the macro
             for kind in kinds_to_remove {
-                let key = get_cache_key(&args, kind);
+                let key = get_cache_key(&args, kind, &prompt_file.model);
                 if let Err(e) = io_cache.cache_remove(&key) {
                     print_status(
                         &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
@@ -1417,9 +1415,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // Determine which cache entries to remove
             let kinds_to_remove = determine_cache_kinds_to_remove(&args);
 
+            // Get the model from prompt file for cache key generation
+            let prompt_file = get_prompt_file(&args)?;
+
             // Remove cache entries for all specified kinds using the same key format as the macro
             for kind in kinds_to_remove {
-                let key = get_cache_key(&args, kind);
+                let key = get_cache_key(&args, kind, &prompt_file.model);
                 if let Err(e) = redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
                     print_status(
                         &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),

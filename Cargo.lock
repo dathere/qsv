@@ -4543,8 +4543,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 [[package]]
 name = "ord_subset"
 version = "3.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7ce14664caf5b27f5656ff727defd68ae1eb75ef3c4d95259361df1eb376bef"
+source = "git+https://github.com/jqnatividad/ord_subset?rev=69dd81f#69dd81fb1074b5fcf925fc6e4731fb53c28d5a6f"
 
 [[package]]
 name = "ordered-float"

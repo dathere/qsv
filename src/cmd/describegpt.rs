@@ -202,7 +202,7 @@ struct Args {
     flag_quiet:          bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct PromptFile {
     name:                   String,
@@ -315,6 +315,7 @@ impl DiskCacheConfig {
 static QUIET_FLAG: OnceLock<AtomicBool> = OnceLock::new();
 static QSV_PATH: OnceLock<String> = OnceLock::new();
 static FILE_HASH: OnceLock<String> = OnceLock::new();
+static PROMPT_FILE: OnceLock<PromptFile> = OnceLock::new();
 
 fn print_status(msg: &str, elapsed: Option<std::time::Duration>) {
     let quiet_flag = QUIET_FLAG.get().unwrap();
@@ -387,7 +388,7 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
     let prompt_file = get_prompt_file(args)?;
     let models_endpoint = "/models";
     let base_url = if args.flag_prompt_file.is_some() {
-        prompt_file.base_url
+        prompt_file.base_url.clone()
     } else {
         // safety: base_url has a docopt default
         args.flag_base_url.as_deref().unwrap().to_string()
@@ -440,49 +441,56 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
     fail_clierror!("Invalid model: {given_model}\n  Valid models: {models_list}")
 }
 
-fn get_prompt_file(args: &Args) -> CliResult<PromptFile> {
-    // Read prompt file (now always required since we have a default)
-    let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
-    let prompt_file_content = fs::read_to_string(prompt_file_path)?;
-
-    // Try to parse prompt file as JSON, if error then show it in JSON format
-    let mut prompt_file: PromptFile = match serde_json::from_str(&prompt_file_content) {
-        Ok(val) => val,
-        Err(e) => {
-            let error_json = json!({"error": e.to_string()});
-            return fail_clierror!("{error_json}");
-        },
-    };
-
-    // If QSV_LLM_BASE_URL environment variable is set, use it as the base URL
-    if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {
-        prompt_file.base_url = base_url;
-    }
-
-    let model_to_use = env::var("QSV_LLM_MODEL")
-        .ok()
-        .or_else(|| args.flag_model.clone())
-        .or_else(|| {
-            args.flag_prompt_file
-                .as_ref()
-                .map(|_| prompt_file.model.clone())
-        })
-        // safety: model has a docopt default
-        .unwrap();
-
-    prompt_file.model = model_to_use;
-
-    // If max_tokens is 0 or the base URL contains "localhost", always disable the limit
-    let max_tokens = if args.flag_max_tokens == 0 || prompt_file.base_url.contains("localhost") {
-        0
-    } else if args.flag_max_tokens > 0 {
-        args.flag_max_tokens
+fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
+    if let Some(prompt_file) = PROMPT_FILE.get() {
+        Ok(prompt_file)
     } else {
-        prompt_file.tokens
-    };
-    prompt_file.tokens = max_tokens;
+        // Read prompt file (now always required since we have a default)
+        let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
+        let prompt_file_content = fs::read_to_string(prompt_file_path)?;
 
-    Ok(prompt_file)
+        // Try to parse prompt file as JSON, if error then show it in JSON format
+        let mut prompt_file: PromptFile = match serde_json::from_str(&prompt_file_content) {
+            Ok(val) => val,
+            Err(e) => {
+                let error_json = json!({"error": e.to_string()});
+                return fail_clierror!("{error_json}");
+            },
+        };
+
+        // If QSV_LLM_BASE_URL environment variable is set, use it as the base URL
+        if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {
+            prompt_file.base_url = base_url;
+        }
+
+        let model_to_use = env::var("QSV_LLM_MODEL")
+            .ok()
+            .or_else(|| args.flag_model.clone())
+            .or_else(|| {
+                args.flag_prompt_file
+                    .as_ref()
+                    .map(|_| prompt_file.model.clone())
+            })
+            // safety: model has a docopt default
+            .unwrap();
+
+        prompt_file.model = model_to_use;
+
+        // If max_tokens is 0 or the base URL contains "localhost", always disable the limit
+        let max_tokens = if args.flag_max_tokens == 0 || prompt_file.base_url.contains("localhost")
+        {
+            0
+        } else if args.flag_max_tokens > 0 {
+            args.flag_max_tokens
+        } else {
+            prompt_file.tokens
+        };
+        prompt_file.tokens = max_tokens;
+
+        // Set the global prompt file
+        PROMPT_FILE.set(prompt_file).unwrap();
+        Ok(PROMPT_FILE.get().unwrap())
+    }
 }
 
 // Generate prompt for prompt type based on either the prompt file (if given) or default prompts
@@ -498,11 +506,14 @@ fn get_prompt(
 
     // Get prompt from prompt file
     let prompt = match prompt_type {
-        PromptType::Dictionary => prompt_file.dictionary_prompt,
-        PromptType::Description => prompt_file.description_prompt,
-        PromptType::Tags => prompt_file.tags_prompt,
+        PromptType::Dictionary => prompt_file.dictionary_prompt.clone(),
+        PromptType::Description => prompt_file.description_prompt.clone(),
+        PromptType::Tags => prompt_file.tags_prompt.clone(),
         PromptType::Custom => {
-            let mut working_prompt = args.flag_prompt.clone().unwrap_or(prompt_file.prompt);
+            let mut working_prompt = args
+                .flag_prompt
+                .clone()
+                .unwrap_or(prompt_file.prompt.clone());
             working_prompt += &prompt_file.custom_prompt_guidance;
             working_prompt
         },
@@ -528,7 +539,7 @@ fn get_prompt(
         );
 
     // Return prompt
-    Ok((prompt, prompt_file.system_prompt))
+    Ok((prompt, prompt_file.system_prompt.clone()))
 }
 
 fn get_completion(
@@ -540,7 +551,7 @@ fn get_completion(
 ) -> CliResult<CompletionResponse> {
     let prompt_file = get_prompt_file(args)?;
 
-    let base_url = prompt_file.base_url;
+    let base_url = prompt_file.base_url.clone();
 
     let max_tokens = if prompt_file.tokens > 0 {
         Some(prompt_file.tokens)
@@ -548,7 +559,7 @@ fn get_completion(
         None
     };
 
-    let model_to_use = prompt_file.model;
+    let model_to_use = prompt_file.model.clone();
 
     // Create request data
     let request_data = json!({

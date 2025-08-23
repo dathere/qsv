@@ -3188,9 +3188,6 @@ pub fn infer_polars_schema(
 pub fn hash_sha256_file(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
     const CHUNK_SIZE: usize = 64 * 1024 * 1024; // 64MB chunks
 
-    // Use a larger buffer for reading to reduce system calls
-    const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer
-
     // Threshold for parallel processing (files larger than 1GB)
     const PARALLEL_THRESHOLD: usize = 1024 * 1024 * 1024; // 1GB
 
@@ -3220,14 +3217,8 @@ pub fn hash_sha256_file(path: &Path) -> Result<String, Box<dyn std::error::Error
                     .map(&file)?
             };
 
-            // Process the chunk in smaller buffers for better cache performance
-            let mut chunk_offset = 0;
-            while chunk_offset < chunk_size {
-                let read_size = std::cmp::min(BUFFER_SIZE, chunk_size - chunk_offset);
-                let slice = &mmap[chunk_offset..chunk_offset + read_size];
-                hasher.update(slice);
-                chunk_offset += read_size;
-            }
+            // Directly update hasher with the entire mmap chunk for best performance
+            hasher.update(&mmap);
 
             offset += chunk_size;
         }

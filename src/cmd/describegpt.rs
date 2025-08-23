@@ -955,8 +955,12 @@ fn run_inference_options(
         total_json_output: &mut serde_json::Value,
         args: &Args,
     ) -> CliResult<()> {
+        // Check if this is a custom prompt response that contains SQL code
+        let is_sql_response =
+            kind == "prompt" && args.flag_sql_results.is_some() && output.contains("```sql");
+
         // Process JSON output if expected or JSONL output is expected
-        if is_json_output(args)? || is_jsonl_output(args)? {
+        if (is_json_output(args)? || is_jsonl_output(args)?) && !is_sql_response {
             total_json_output[kind] = if kind == "description" {
                 serde_json::Value::String(output.to_string())
             } else {

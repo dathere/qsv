@@ -252,6 +252,14 @@ struct CompletionResponse {
     token_usage: TokenUsage,
 }
 
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+struct AnalysisResults {
+    stats:     String,
+    frequency: String,
+    headers:   String,
+    file_hash: String,
+}
+
 static QSV_REDIS_CONNSTR_ENV: &str = "QSV_REDIS_CONNSTR";
 static QSV_REDIS_MAX_POOL_SIZE_ENV: &str = "QSV_REDIS_MAX_POOL_SIZE";
 static QSV_REDIS_TTL_SECS_ENV: &str = "QSV_REDIS_TTL_SECS";
@@ -638,6 +646,13 @@ fn get_cache_key(args: &Args, kind: &str, actual_model: &str) -> String {
     )
 }
 
+fn get_analysis_cache_key(args: &Args, file_hash: &str) -> String {
+    format!(
+        "analysis_{:?}{:?}{}",
+        args.arg_input, args.flag_stats_options, file_hash
+    )
+}
+
 // this is a disk cache that can be used across qsv sessions
 #[io_cached(
     disk = true,
@@ -709,6 +724,69 @@ fn get_redis_completion(
     Ok(Return::new(get_completion(
         args, client, model, api_key, messages,
     )?))
+}
+
+// Cached analysis results for disk cache
+#[io_cached(
+    disk = true,
+    ty = "cached::DiskCache<String, AnalysisResults>",
+    cache_prefix_block = r##"{ "desc_analysis_dc_" }"##,
+    key = "String",
+    convert = r##"{ get_analysis_cache_key(args, file_hash) }"##,
+    create = r##"{
+        let cache_dir = DISKCACHE_DIR.get().unwrap();
+        let diskcache_config = DISKCACHECONFIG.get().unwrap();
+        let diskcache: DiskCache<String, AnalysisResults> = DiskCacheBuilder::new("describegpt_analysis")
+            .set_disk_directory(cache_dir)
+            .set_lifespan(diskcache_config.ttl_secs)
+            .set_refresh(diskcache_config.ttl_refresh)
+            .build()
+            .expect("error building analysis diskcache");
+        log::info!("Analysis disk cache created - dir: {cache_dir} - ttl: {ttl_secs:?}",
+            ttl_secs = diskcache_config.ttl_secs);
+        diskcache
+    }"##,
+    map_error = r##"|e| CliError::Other(format!("Analysis Diskcache Error: {:?}", e))"##,
+    with_cached_flag = true
+)]
+fn get_diskcache_analysis(
+    args: &Args,
+    #[allow(unused_variables)] file_hash: &str,
+    input_path: &str,
+) -> CliResult<Return<AnalysisResults>> {
+    Ok(Return::new(perform_analysis(args, input_path)?))
+}
+
+// Cached analysis results for redis cache
+#[io_cached(
+    ty = "cached::RedisCache<String, AnalysisResults>",
+    key = "String",
+    convert = r##"{ get_analysis_cache_key(args, file_hash) }"##,
+    create = r##" {
+        let redis_config = REDISCONFIG.get().unwrap();
+        let rediscache: RedisCache<String, AnalysisResults> = RedisCache::new("analysis", redis_config.ttl_secs)
+            .set_namespace("descq")
+            .set_refresh(redis_config.ttl_refresh)
+            .set_connection_string(&redis_config.conn_str)
+            .set_connection_pool_max_size(redis_config.max_pool_size)
+            .build()
+            .expect("error building analysis redis cache");
+        log::info!("Analysis Redis cache created - conn_str: {conn_str} - refresh: {ttl_refresh} - ttl: {ttl_secs:?} - pool_size: {pool_size}",
+            conn_str = redis_config.conn_str,
+            ttl_refresh = redis_config.ttl_refresh,
+            ttl_secs = redis_config.ttl_secs,
+            pool_size = redis_config.max_pool_size);
+        rediscache
+    } "##,
+    map_error = r##"|e| CliError::Other(format!("Analysis Redis Error: {:?}", e))"##,
+    with_cached_flag = true
+)]
+fn get_redis_analysis(
+    args: &Args,
+    #[allow(unused_variables)] file_hash: &str,
+    input_path: &str,
+) -> CliResult<Return<AnalysisResults>> {
+    Ok(Return::new(perform_analysis(args, input_path)?))
 }
 
 // Check if JSON output is expected
@@ -1501,47 +1579,43 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Initialize the global qsv path
     QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
 
-    let analysis_start = Instant::now();
-    print_status(&format!("Analyzing {input_path}..."), None);
-
-    // check if the input file is indexed, if not, index it for performance
-    // no need to print start/end status, it's very fast even for large files
-    let config = Config::new(Some(&input_path));
-    if config.index_files().is_err() {
-        let _ = run_qsv_cmd("index", &[], &input_path, "  Indexed")?;
-    }
-
-    // Run qsv commands to analyze data
-    print_status("  Compiling Summary Statistics...", None);
-    let stats_args_vec = args
-        .flag_stats_options
-        .split_whitespace()
-        .collect::<Vec<&str>>();
-    let (stats, _) = run_qsv_cmd("stats", &stats_args_vec, &input_path, " ")?;
-
-    print_status("  Compiling Frequency Distribution...", None);
-    let (frequency, _) = run_qsv_cmd("frequency", &["--limit", "10"], &input_path, " ")?;
-
-    // this is instantaneous, so no need to print start/end status
-    let (headers, _) = run_qsv_cmd(
-        "slice",
-        &["--len", "1", "--no-headers"],
-        &input_path,
-        "  Headers retrieved",
-    )?;
-
-    // Calculate SHA256 hash of the input file for cache key generation
+    // Calculate SHA256 hash of the input file early for cache key generation
     print_status("  Calculating SHA256 hash...", None);
     let start_hash_time = Instant::now();
     let file_hash = util::hash_sha256_file(Path::new(&input_path))
         .map_err(|e| CliError::Other(format!("Failed to calculate sha256 hash: {e}")))?;
-    FILE_HASH.set(file_hash).unwrap();
+    FILE_HASH.set(file_hash.clone()).unwrap();
     print_status(
         &format!("  (elapsed: {:.2?})", start_hash_time.elapsed()),
         None,
     );
 
-    print_status("Analyzed data.", Some(analysis_start.elapsed()));
+    // Perform analysis
+    let analysis_results = if cache_type == CacheType::None {
+        // No caching enabled, perform analysis directly
+        let analysis_start = Instant::now();
+        print_status(&format!("Analyzing {input_path}..."), None);
+
+        let results = perform_analysis(&args, &input_path)?;
+        print_status("Analyzed data.", Some(analysis_start.elapsed()));
+        results
+    } else {
+        // Caching enabled, check cache
+        print_status("  Checking analysis cache...", None);
+
+        if let Some(results) = get_cached_analysis(&args, &cache_type, &file_hash, &input_path)? {
+            print_status("  Analysis cache hit! Skipping data analysis.", None);
+            results
+        } else {
+            print_status("  Analysis cache miss. Performing data analysis...", None);
+            let analysis_start = Instant::now();
+            print_status(&format!("Analyzing {input_path}..."), None);
+
+            let results = perform_analysis(&args, &input_path)?;
+            print_status("Analyzed data.", Some(analysis_start.elapsed()));
+            results
+        }
+    };
 
     print_status("\nInteracting with LLM...", None);
     // Run inference options
@@ -1550,9 +1624,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         &args,
         &api_key,
         &cache_type,
-        Some(&stats),
-        Some(&frequency),
-        Some(&headers),
+        Some(&analysis_results.stats),
+        Some(&analysis_results.frequency),
+        Some(&analysis_results.headers),
     )?;
 
     // Print total elapsed time
@@ -1564,6 +1638,96 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .connection()
             .flush()
             .map_err(|e| CliError::Other(format!("Error flushing DiskCache: {e}")))?;
+
+        // Also flush the analysis cache
+        GET_DISKCACHE_ANALYSIS
+            .connection()
+            .flush()
+            .map_err(|e| CliError::Other(format!("Error flushing Analysis DiskCache: {e}")))?;
     }
     Ok(())
+}
+
+// Perform the actual data analysis (stats, frequency, headers)
+fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults> {
+    // Initialize the global qsv path if not already set
+    if QSV_PATH.get().is_none() {
+        QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
+    }
+
+    // check if the input file is indexed, if not, index it for performance
+    let config = Config::new(Some(&input_path.to_string()));
+    if config.index_files().is_err() {
+        let _ = run_qsv_cmd("index", &[], input_path, "  Indexed")?;
+    }
+
+    // Run qsv commands to analyze data
+    print_status("  Compiling Summary Statistics...", None);
+    let stats_args_vec = args
+        .flag_stats_options
+        .split_whitespace()
+        .collect::<Vec<&str>>();
+    let (stats, _) = run_qsv_cmd("stats", &stats_args_vec, input_path, " ")?;
+
+    print_status("  Compiling Frequency Distribution...", None);
+    let (frequency, _) = run_qsv_cmd("frequency", &["--limit", "10"], input_path, " ")?;
+
+    // this is instantaneous, so no need to print start/end status
+    let (headers, _) = run_qsv_cmd(
+        "slice",
+        &["--len", "1", "--no-headers"],
+        input_path,
+        "  Headers retrieved",
+    )?;
+
+    // Get the file hash that was already calculated
+    let file_hash = FILE_HASH.get().unwrap_or(&String::new()).clone();
+
+    Ok(AnalysisResults {
+        stats,
+        frequency,
+        headers,
+        file_hash,
+    })
+}
+
+// Get cached analysis results
+fn get_cached_analysis(
+    args: &Args,
+    cache_type: &CacheType,
+    file_hash: &str,
+    input_path: &str,
+) -> CliResult<Option<AnalysisResults>> {
+    match cache_type {
+        CacheType::Disk => {
+            let result = get_diskcache_analysis(args, file_hash, input_path)?;
+            if result.was_cached {
+                print_status("    Analysis disk cache hit!", None);
+                Ok(Some(result.value))
+            } else {
+                Ok(None)
+            }
+        },
+        CacheType::Redis => {
+            let result = get_redis_analysis(args, file_hash, input_path)?;
+            if result.was_cached {
+                print_status("    Analysis Redis cache hit!", None);
+                Ok(Some(result.value))
+            } else {
+                Ok(None)
+            }
+        },
+        CacheType::Fresh => {
+            // Force fresh analysis but still update cache
+            let fresh_result = perform_analysis(args, input_path)?;
+            // Manually update the appropriate cache with the fresh result
+            if args.flag_redis_cache {
+                let _ = get_redis_analysis(args, file_hash, input_path);
+            } else {
+                let _ = get_diskcache_analysis(args, file_hash, input_path);
+            }
+            Ok(Some(fresh_result))
+        },
+        CacheType::None => Ok(None),
+    }
 }

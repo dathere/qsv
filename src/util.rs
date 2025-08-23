@@ -3209,7 +3209,6 @@ pub fn hash_sha256_file(path: &Path) -> Result<String, Box<dyn std::error::Error
         while offset < file_size {
             let chunk_size = std::cmp::min(CHUNK_SIZE, file_size - offset);
 
-            // Use memory mapping for chunks but with better error handling
             let mmap = unsafe {
                 MmapOptions::new()
                     .offset(offset as u64)
@@ -3250,14 +3249,14 @@ pub fn hash_sha256_file(path: &Path) -> Result<String, Box<dyn std::error::Error
                             .offset(start as u64)
                             .len(chunk_len)
                             .map(&file)
-                            .map_err(|e| format!("Memory mapping error: {e}"))?
+                            .map_err(|e| format!("SHA256 Hashing memory mapping error: {e}"))?
                     };
 
                     chunk_hasher.update(&mmap);
                     Ok::<_, String>(chunk_hasher.finalize())
                 })
                 .collect::<Result<Vec<_>, String>>()
-                .map_err(|e| format!("Parallel processing error: {e}"))?;
+                .map_err(|e| format!("SHA256 Hashing parallel processing error: {e}"))?;
 
             // Combine all chunk hashes
             for chunk_hash in chunk_hashes {
@@ -3267,7 +3266,7 @@ pub fn hash_sha256_file(path: &Path) -> Result<String, Box<dyn std::error::Error
 
         #[cfg(not(feature = "feature_capable"))]
         {
-            // Fallback to sequential processing for lite version
+            // Fallback to sequential, chunked processing for lite version
             let mut offset = 0;
             while offset < file_size {
                 let chunk_size = std::cmp::min(CHUNK_SIZE, file_size - offset);

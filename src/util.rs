@@ -3351,6 +3351,10 @@ mod tests {
             "Speed: {:.2} MB/s",
             (test_content.len() as f64 / 1024.0 / 1024.0) / duration.as_secs_f64()
         );
+        assert_eq!(
+            hash,
+            "86bfdffb3eaf9cb23ff62ab8ccb7e85fe059621d73f4762273f73c8dc24fd76d"
+        );
     }
 
     #[test]
@@ -3373,6 +3377,10 @@ mod tests {
         println!(
             "Large file speed: {:.2} MB/s",
             (test_content.len() as f64 / 1024.0 / 1024.0) / duration.as_secs_f64()
+        );
+        assert_eq!(
+            hash,
+            "edb134ce61bffa77bf5c9a0eacb880a20a02d41dd8c7543e6c58b35383424c7e"
         );
     }
 }

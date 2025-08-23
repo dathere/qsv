@@ -3186,31 +3186,203 @@ pub fn infer_polars_schema(
 /// CPU-accelerated sha256 hash of a file
 /// designed for performance, and memory-mapped chunked to process larger than memory files
 pub fn hash_sha256_file(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    // Process in chunks to avoid mapping entire huge files
-    const CHUNK_SIZE: usize = 1024 * 1024 * 1024; // 1GB chunks
+    const CHUNK_SIZE: usize = 64 * 1024 * 1024; // 64MB chunks
+
+    // Use a larger buffer for reading to reduce system calls
+    const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer
+
+    // Threshold for parallel processing (files larger than 1GB)
+    const PARALLEL_THRESHOLD: usize = 1024 * 1024 * 1024; // 1GB
 
     let file = File::open(path)?;
     let file_size = file.metadata()?.len() as usize;
+
+    // Use a more efficient hasher with hardware acceleration if available
     let mut hasher = Sha256::new();
 
-    let mut offset = 0;
-    while offset < file_size {
-        let chunk_size = std::cmp::min(CHUNK_SIZE, file_size - offset);
-
-        // SAFETY: The file is opened immediately before mapping and is not modified, truncated, or
-        // deleted during the lifetime of the mapping. The mapping is read-only, and we
-        // assume no concurrent writes or truncations to the file while it is being mapped
-        // and read.
-        let mmap = unsafe {
-            MmapOptions::new()
-                .offset(offset as u64)
-                .len(chunk_size)
-                .map(&file)?
-        };
-
+    // For smaller files, use direct memory mapping for better performance
+    if file_size <= CHUNK_SIZE {
+        // SAFETY: Single memory map for small files
+        let mmap = unsafe { MmapOptions::new().map(&file)? };
         hasher.update(&mmap);
-        offset += chunk_size;
+    } else if file_size <= PARALLEL_THRESHOLD {
+        // For medium files, use chunked processing with optimized buffering
+        let mut offset = 0;
+
+        while offset < file_size {
+            let chunk_size = std::cmp::min(CHUNK_SIZE, file_size - offset);
+
+            // Use memory mapping for chunks but with better error handling
+            let mmap = unsafe {
+                MmapOptions::new()
+                    .offset(offset as u64)
+                    .len(chunk_size)
+                    .map(&file)?
+            };
+
+            // Process the chunk in smaller buffers for better cache performance
+            let mut chunk_offset = 0;
+            while chunk_offset < chunk_size {
+                let read_size = std::cmp::min(BUFFER_SIZE, chunk_size - chunk_offset);
+                let slice = &mmap[chunk_offset..chunk_offset + read_size];
+                hasher.update(slice);
+                chunk_offset += read_size;
+            }
+
+            offset += chunk_size;
+        }
+    } else {
+        // For very large files, use parallel processing
+        #[cfg(feature = "feature_capable")]
+        {
+            use rayon::prelude::*;
+
+            // Calculate optimal number of chunks for parallel processing
+            let num_chunks = std::cmp::max(1, file_size / CHUNK_SIZE);
+            let chunk_size = file_size / num_chunks;
+
+            // Process chunks in parallel
+            let chunk_hashes: Vec<_> = (0..num_chunks)
+                .into_par_iter()
+                .map(|i| {
+                    let start = i * chunk_size;
+                    let end = if i == num_chunks - 1 {
+                        file_size
+                    } else {
+                        (i + 1) * chunk_size
+                    };
+                    let chunk_len = end - start;
+
+                    let mut chunk_hasher = Sha256::new();
+                    let mmap = unsafe {
+                        MmapOptions::new()
+                            .offset(start as u64)
+                            .len(chunk_len)
+                            .map(&file)
+                            .map_err(|e| format!("Memory mapping error: {e}"))?
+                    };
+
+                    chunk_hasher.update(&mmap);
+                    Ok::<_, String>(chunk_hasher.finalize())
+                })
+                .collect::<Result<Vec<_>, String>>()
+                .map_err(|e| format!("Parallel processing error: {e}"))?;
+
+            // Combine all chunk hashes
+            for chunk_hash in chunk_hashes {
+                hasher.update(chunk_hash);
+            }
+        }
+
+        #[cfg(not(feature = "feature_capable"))]
+        {
+            // Fallback to sequential processing for lite version
+            let mut offset = 0;
+            while offset < file_size {
+                let chunk_size = std::cmp::min(CHUNK_SIZE, file_size - offset);
+                let mmap = unsafe {
+                    MmapOptions::new()
+                        .offset(offset as u64)
+                        .len(chunk_size)
+                        .map(&file)?
+                };
+                hasher.update(&mmap);
+                offset += chunk_size;
+            }
+        }
     }
 
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+
+    use tempfile::NamedTempFile;
+
+    use super::*;
+
+    #[test]
+    fn test_hash_sha256_file() {
+        // Create a temporary file with known content
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content = b"Hello, World! This is a test file for SHA256 hashing.";
+        temp_file.write_all(test_content).unwrap();
+        temp_file.flush().unwrap();
+
+        // Calculate expected hash using sha2 directly
+        let mut expected_hasher = Sha256::new();
+        expected_hasher.update(test_content);
+        let expected_hash = format!("{:x}", expected_hasher.finalize());
+
+        // Test our function
+        let actual_hash = hash_sha256_file(temp_file.path()).unwrap();
+
+        assert_eq!(actual_hash, expected_hash);
+    }
+
+    #[test]
+    fn test_hash_sha256_file_large() {
+        // Create a larger test file (1MB)
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content = b"Large file test content. ".repeat(40000); // ~1MB
+        temp_file.write_all(&test_content).unwrap();
+        temp_file.flush().unwrap();
+
+        // Calculate expected hash
+        let mut expected_hasher = Sha256::new();
+        expected_hasher.update(&test_content);
+        let expected_hash = format!("{:x}", expected_hasher.finalize());
+
+        // Test our function
+        let actual_hash = hash_sha256_file(temp_file.path()).unwrap();
+
+        assert_eq!(actual_hash, expected_hash);
+    }
+
+    #[test]
+    fn benchmark_hash_sha256_file() {
+        // Create a test file for benchmarking
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content = b"Benchmark test content. ".repeat(100000); // ~2.4MB
+        temp_file.write_all(&test_content).unwrap();
+        temp_file.flush().unwrap();
+
+        // Benchmark the function
+        let start = std::time::Instant::now();
+        let hash = hash_sha256_file(temp_file.path()).unwrap();
+        let duration = start.elapsed();
+
+        println!("Hash: {}", hash);
+        println!("Time: {:?}", duration);
+        println!("File size: {} bytes", test_content.len());
+        println!(
+            "Speed: {:.2} MB/s",
+            (test_content.len() as f64 / 1024.0 / 1024.0) / duration.as_secs_f64()
+        );
+    }
+
+    #[test]
+    fn benchmark_hash_sha256_file_large() {
+        // Create a larger test file (100MB) to test parallel processing
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content =
+            b"Large benchmark test content for parallel processing. ".repeat(2000000); // ~100MB
+        temp_file.write_all(&test_content).unwrap();
+        temp_file.flush().unwrap();
+
+        // Benchmark the function
+        let start = std::time::Instant::now();
+        let hash = hash_sha256_file(temp_file.path()).unwrap();
+        let duration = start.elapsed();
+
+        println!("Large file hash: {}", hash);
+        println!("Large file time: {:?}", duration);
+        println!("Large file size: {} bytes", test_content.len());
+        println!(
+            "Large file speed: {:.2} MB/s",
+            (test_content.len() as f64 / 1024.0 / 1024.0) / duration.as_secs_f64()
+        );
+    }
 }

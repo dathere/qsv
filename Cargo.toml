@@ -248,7 +248,6 @@ rfd = { version = "0.15", optional = true }
 rust_decimal = { version = "1.37", default-features = false }
 ryu = "1"
 sanitize-filename = { version = "0.6", optional = true }
-sha2 = { version = "0.10", features = ["asm", "compress"] }
 simd-json = "0.15"
 self_update = { version = "0.42", features = [
     "archive-zip",
@@ -280,6 +279,12 @@ url = "2.5"
 whatlang = { version = "0.16", optional = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zip = "4.5"
+
+[target.'cfg(windows)'.dependencies]
+# asm (assembly) feature is not supported on Windows
+sha2 = { version = "0.10", features = ["compress"] }
+[target.'cfg(not(windows))'.dependencies]
+sha2 = { version = "0.10", features = ["asm", "compress"] }
 
 [dev-dependencies]
 actix-governor = "0.8"

@@ -23,6 +23,7 @@ include = [
     "README.md",
     "CHANGELOG.md",
     "resources/luau/vendor/luadate/date.lua",
+    "resources/describegpt_defaults.json",
 ]
 
 [[bin]]

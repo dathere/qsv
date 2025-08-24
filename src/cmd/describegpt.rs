@@ -84,7 +84,7 @@ describegpt options:
     --sql-results <csv>    The CSV to save the SQL query results to.
                            Only valid if the --prompt option is used & the "polars" feature is enabled.
     --prompt-file <file>   The JSON file containing prompts to use for inferencing.
-                           [default: describegpt_defaults.json]
+                           If no prompt file is provided, default prompts will be used.
 
                            LLM API OPTIONS:
     -u, --base-url <url>   The LLM API URL. Supports APIs & local LLMs compatible with
@@ -454,12 +454,17 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
     if let Some(prompt_file) = PROMPT_FILE.get() {
         Ok(prompt_file)
     } else {
-        // Read prompt file (now always required since we have a default)
-        let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
-        let prompt_file_content = fs::read_to_string(prompt_file_path)?;
+        let prompt_file_content = if args.flag_prompt_file.is_none() {
+            // If no prompt file is provided, use the default prompt file
+            let default_prompt_file = include_str!("../../resources/describegpt_defaults.json");
+            default_prompt_file
+        } else {
+            let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
+            &fs::read_to_string(prompt_file_path)?
+        };
 
         // Try to parse prompt file as JSON, if error then show it in JSON format
-        let mut prompt_file: PromptFile = match serde_json::from_str(&prompt_file_content) {
+        let mut prompt_file: PromptFile = match serde_json::from_str(prompt_file_content) {
             Ok(val) => val,
             Err(e) => {
                 let error_json = json!({"error": e.to_string()});
@@ -612,12 +617,11 @@ fn get_completion(
     else {
         return fail_clierror!("Invalid response: missing or malformed completion content");
     };
-    let Some(reasoning) = response_json["choices"]
+    // Reasoning is optional - use empty string if not provided
+    let reasoning = response_json["choices"]
         .get(0)
         .and_then(|choice| choice["message"]["reasoning"].as_str())
-    else {
-        return fail_clierror!("Invalid response: missing or malformed reasoning content");
-    };
+        .unwrap_or("");
 
     // Get token usage from response
     let Some(usage) = response_json["usage"].as_object() else {
@@ -799,33 +803,29 @@ fn get_redis_analysis(
 
 // Check if JSON output is expected
 fn is_json_output(args: &Args) -> CliResult<bool> {
-    // By default expect plaintext output
-    let mut json_output = false;
-    // Set expect_json to true if the "json" field is true in prompt file
-    let prompt_file = get_prompt_file(args)?;
-    if prompt_file.json {
-        json_output = true;
-    }
-    // Set expect_json to true if --json is used
+    // Command-line flags take precedence over prompt file settings
     if args.flag_json {
-        json_output = true;
+        return Ok(true);
     }
-    Ok(json_output)
+    if args.flag_jsonl {
+        return Ok(false);
+    }
+    // If no command-line flags, check prompt file
+    let prompt_file = get_prompt_file(args)?;
+    Ok(prompt_file.json)
 }
 // Check if JSONL output is expected
 fn is_jsonl_output(args: &Args) -> CliResult<bool> {
-    // By default expect plaintext output
-    let mut jsonl_output = false;
-    // Set expect_jsonl to true if the "jsonl" field is true in prompt file
-    let prompt_file = get_prompt_file(args)?;
-    if prompt_file.jsonl {
-        jsonl_output = true;
-    }
-    // Set expect_jsonl to true if --jsonl is used
+    // Command-line flags take precedence over prompt file settings
     if args.flag_jsonl {
-        jsonl_output = true;
+        return Ok(true);
     }
-    Ok(jsonl_output)
+    if args.flag_json {
+        return Ok(false);
+    }
+    // If no command-line flags, check prompt file
+    let prompt_file = get_prompt_file(args)?;
+    Ok(prompt_file.jsonl)
 }
 
 // Unified function to handle cached completions
@@ -890,7 +890,7 @@ fn run_inference_options(
         } else {
             json!([{"role": "system", "content": system_prompt},
             {"role": "assistant",
-            "content": format!("The following is the data dictionary for the input data:\n\n{dictionary_completion}")},
+            "content": format!("The following is the Data Dictionary for the Dataset:\n\n{dictionary_completion}")},
             {"role": "user", "content": prompt},
             ])
         }
@@ -969,10 +969,14 @@ fn run_inference_options(
 
         // Process JSON output if expected or JSONL output is expected
         if (is_json_output(args)? || is_jsonl_output(args)?) && !is_sql_response {
-            total_json_output[kind] = if kind == "description" {
+            total_json_output[kind] = if kind == "description" || kind == "prompt" {
                 serde_json::Value::String(output.to_string())
             } else {
-                extract_json_from_output(output)?
+                // Try to extract JSON, but fall back to string if it fails
+                match extract_json_from_output(output) {
+                    Ok(json_value) => json_value,
+                    Err(_) => serde_json::Value::String(output.to_string()),
+                }
             };
             if kind == "dictionary" {
                 DATA_DICTIONARY_JSON.get_or_init(|| {
@@ -1377,11 +1381,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     };
 
-    // Check if the prompt file exists
-    let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
-    if !PathBuf::from(prompt_file_path).exists() {
-        return fail_incorrectusage_clierror!("Prompt file '{prompt_file_path}' does not exist.");
-    }
     // If --json and --jsonl flags are specified, print error message.
     if is_json_output(&args)? && is_jsonl_output(&args)? {
         return fail_incorrectusage_clierror!(

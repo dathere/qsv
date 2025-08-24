@@ -619,6 +619,7 @@ fn describegpt_prompt_file() {
         "description_prompt": "Describe this dataset in detail{json_add} based on the following summary statistics and frequency data.\n\nSummary Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}",
         "tags_prompt": "Generate tags for this dataset.",
         "prompt": "What is this dataset about?",
+        "custom_prompt_guidance": "Provide a clear and concise answer.",
         "json": true,
         "jsonl": false,
         "base_url": "http://localhost:1234/v1",

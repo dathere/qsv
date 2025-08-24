@@ -3185,7 +3185,7 @@ pub fn infer_polars_schema(
 
 /// CPU-accelerated sha256 hash of a file
 /// designed for performance, and memory-mapped chunked to process larger than memory files
-pub fn hash_sha256_file(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+pub fn hash_sha256_file(path: &Path) -> CliResult<String> {
     const CHUNK_SIZE: usize = 64 * 1024 * 1024; // 64MB chunks
 
     // Threshold for parallel processing (files larger than 1GB)
@@ -3381,6 +3381,42 @@ mod tests {
         assert_eq!(
             hash,
             "edb134ce61bffa77bf5c9a0eacb880a20a02d41dd8c7543e6c58b35383424c7e"
+        );
+    }
+
+    #[test]
+    fn benchmark_hash_sha256_file_very_large() {
+        // Create a larger test file (>1.2GB) to test parallel processing
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content =
+            b"Large benchmark test content for parallel processing. ".repeat(25000000); // ~1.3GB
+        temp_file.write_all(&test_content).unwrap();
+        temp_file.flush().unwrap();
+
+        // Benchmark the function
+        let start = std::time::Instant::now();
+        let hash = hash_sha256_file(temp_file.path()).unwrap();
+        let duration = start.elapsed();
+
+        println!("Very large file hash: {}", hash);
+        println!("Very large file time: {:?}", duration);
+        println!("Very large file size: {} bytes", test_content.len());
+        println!(
+            "Very large file speed: {:.2} MB/s",
+            (test_content.len() as f64 / 1024.0 / 1024.0) / duration.as_secs_f64()
+        );
+
+        // Verify the file is actually larger than 1.2GB
+        let file_size_gb = test_content.len() as f64 / 1024.0 / 1024.0 / 1024.0;
+        assert!(
+            file_size_gb > 1.2,
+            "File size is {:.2} GB, should be > 1.2 GB",
+            file_size_gb
+        );
+
+        assert_eq!(
+            hash,
+            "94b6b51db44e0ecad8a035dd5db44ae661d3b60413601df849f807d390e8023d"
         );
     }
 }

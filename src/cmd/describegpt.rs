@@ -84,7 +84,7 @@ describegpt options:
     --sql-results <csv>    The CSV to save the SQL query results to.
                            Only valid if the --prompt option is used & the "polars" feature is enabled.
     --prompt-file <file>   The JSON file containing prompts to use for inferencing.
-                           [default: describegpt_defaults.json]
+                           If no prompt file is provided, default prompts will be used.
 
                            LLM API OPTIONS:
     -u, --base-url <url>   The LLM API URL. Supports APIs & local LLMs compatible with
@@ -454,9 +454,15 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
     if let Some(prompt_file) = PROMPT_FILE.get() {
         Ok(prompt_file)
     } else {
-        // Read prompt file (now always required since we have a default)
-        let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
-        let prompt_file_content = fs::read_to_string(prompt_file_path)?;
+        let prompt_file_content = if args.flag_prompt_file.is_none() {
+            // If no prompt file is provided, use the default prompt file
+            let default_prompt_file = include_bytes!("../../resources/describegpt_defaults.json");
+            // safety: default_prompt_file is a valid UTF-8 string
+            String::from_utf8(default_prompt_file.to_vec()).unwrap()
+        } else {
+            let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
+            fs::read_to_string(prompt_file_path)?
+        };
 
         // Try to parse prompt file as JSON, if error then show it in JSON format
         let mut prompt_file: PromptFile = match serde_json::from_str(&prompt_file_content) {
@@ -890,7 +896,7 @@ fn run_inference_options(
         } else {
             json!([{"role": "system", "content": system_prompt},
             {"role": "assistant",
-            "content": format!("The following is the data dictionary for the input data:\n\n{dictionary_completion}")},
+            "content": format!("The following is the Data Dictionary for the Dataset:\n\n{dictionary_completion}")},
             {"role": "user", "content": prompt},
             ])
         }
@@ -1377,11 +1383,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     };
 
-    // Check if the prompt file exists
-    let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
-    if !PathBuf::from(prompt_file_path).exists() {
-        return fail_incorrectusage_clierror!("Prompt file '{prompt_file_path}' does not exist.");
-    }
     // If --json and --jsonl flags are specified, print error message.
     if is_json_output(&args)? && is_jsonl_output(&args)? {
         return fail_incorrectusage_clierror!(

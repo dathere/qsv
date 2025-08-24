@@ -456,9 +456,8 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
     } else {
         let prompt_file_content = if args.flag_prompt_file.is_none() {
             // If no prompt file is provided, use the default prompt file
-            let default_prompt_file = include_bytes!("../../resources/describegpt_defaults.json");
-            // safety: default_prompt_file is a valid UTF-8 string
-            String::from_utf8(default_prompt_file.to_vec()).unwrap()
+            let default_prompt_file = include_str!("../../resources/describegpt_defaults.json");
+            default_prompt_file.to_string()
         } else {
             let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
             fs::read_to_string(prompt_file_path)?

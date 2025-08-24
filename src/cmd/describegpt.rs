@@ -1713,19 +1713,19 @@ fn get_cached_analysis(
             let result = get_diskcache_analysis(args, file_hash, input_path)?;
             if result.was_cached {
                 print_status("    Analysis disk cache hit!", None);
-                Ok(Some(result.value))
-            } else {
-                Ok(None)
             }
+            // Always return the result, whether it was cached or not,
+            // since the cache function has already performed the analysis
+            Ok(Some(result.value))
         },
         CacheType::Redis => {
             let result = get_redis_analysis(args, file_hash, input_path)?;
             if result.was_cached {
                 print_status("    Analysis Redis cache hit!", None);
-                Ok(Some(result.value))
-            } else {
-                Ok(None)
             }
+            // Always return the result, whether it was cached or not,
+            // since the cache function has already performed the analysis
+            Ok(Some(result.value))
         },
         CacheType::Fresh => {
             // Force fresh analysis but still update cache

@@ -249,6 +249,7 @@ pub enum CacheType {
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 struct CompletionResponse {
     response:    String,
+    reasoning:   String,
     token_usage: TokenUsage,
 }
 
@@ -604,12 +605,18 @@ fn get_completion(
         return fail_clierror!("LLM API Error: {}", map["error"]);
     }
 
-    // Get completion from response
+    // Get completion and reasoning from response
     let Some(completion) = response_json["choices"]
         .get(0)
         .and_then(|choice| choice["message"]["content"].as_str())
     else {
         return fail_clierror!("Invalid response: missing or malformed completion content");
+    };
+    let Some(reasoning) = response_json["choices"]
+        .get(0)
+        .and_then(|choice| choice["message"]["reasoning"].as_str())
+    else {
+        return fail_clierror!("Invalid response: missing or malformed reasoning content");
     };
 
     // Get token usage from response
@@ -634,6 +641,7 @@ fn get_completion(
 
     Ok(CompletionResponse {
         response: completion,
+        reasoning: reasoning.to_string(),
         token_usage,
     })
 }
@@ -1586,8 +1594,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Calculate SHA256 hash of the input file early for cache key generation
     print_status("  Calculating SHA256 hash...", None);
     let start_hash_time = Instant::now();
-    let file_hash = util::hash_sha256_file(Path::new(&input_path))
-        .map_err(|e| CliError::Other(format!("Failed to calculate sha256 hash: {e}")))?;
+    let file_hash = util::hash_sha256_file(Path::new(&input_path))?;
     FILE_HASH.set(file_hash.clone()).unwrap();
     print_status(
         &format!("  (elapsed: {:.2?})", start_hash_time.elapsed()),

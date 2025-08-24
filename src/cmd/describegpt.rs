@@ -997,7 +997,8 @@ fn run_inference_options(
             };
             if kind == "dictionary" {
                 DATA_DICTIONARY_JSON.get_or_init(|| {
-                    serde_json::to_string_pretty(&total_json_output["dictionary"]["response"]).unwrap()
+                    serde_json::to_string_pretty(&total_json_output["dictionary"]["response"])
+                        .unwrap()
                 });
             }
         }

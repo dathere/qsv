@@ -99,7 +99,8 @@ fn describegpt_invalid_api_key() {
     // Run the command
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
-    cmd.arg("in.csv")
+    cmd.env("QSV_LLM_BASE_URL", "")
+        .arg("in.csv")
         .arg("--all")
         .arg("--json")
         .args(["--api-key", "INVALIDKEY"])

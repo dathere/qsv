@@ -959,34 +959,51 @@ fn run_inference_options(
     // Generate the plaintext and/or JSON output of an inference option
     fn process_output(
         kind: &str,
-        output: &str,
+        completion_response: &CompletionResponse,
         total_json_output: &mut serde_json::Value,
         args: &Args,
     ) -> CliResult<()> {
         // Check if this is a custom prompt response that contains SQL code
-        let is_sql_response =
-            kind == "prompt" && args.flag_sql_results.is_some() && output.contains("```sql");
+        let is_sql_response = kind == "prompt"
+            && args.flag_sql_results.is_some()
+            && completion_response.response.contains("```sql");
 
         // Process JSON output if expected or JSONL output is expected
         if (is_json_output(args)? || is_jsonl_output(args)?) && !is_sql_response {
             total_json_output[kind] = if kind == "description" || kind == "prompt" {
-                serde_json::Value::String(output.to_string())
+                // For description and prompt, create an object with both response and reasoning
+                json!({
+                    "response": completion_response.response,
+                    "reasoning": completion_response.reasoning
+                })
             } else {
-                // Try to extract JSON, but fall back to string if it fails
-                match extract_json_from_output(output) {
-                    Ok(json_value) => json_value,
-                    Err(_) => serde_json::Value::String(output.to_string()),
+                // For dictionary and tags, try to extract JSON from response, but include reasoning
+                match extract_json_from_output(&completion_response.response) {
+                    Ok(json_value) => {
+                        // Create a structured object with data and reasoning
+                        json!({
+                            "response": json_value,
+                            "reasoning": completion_response.reasoning
+                        })
+                    },
+                    Err(_) => {
+                        // Fall back to string format with reasoning
+                        json!({
+                            "response": completion_response.response,
+                            "reasoning": completion_response.reasoning
+                        })
+                    },
                 }
             };
             if kind == "dictionary" {
                 DATA_DICTIONARY_JSON.get_or_init(|| {
-                    serde_json::to_string_pretty(&total_json_output["dictionary"]).unwrap()
+                    serde_json::to_string_pretty(&total_json_output["dictionary"]["response"]).unwrap()
                 });
             }
         }
         // Process plaintext output
         else {
-            let formatted_output = format_output(output);
+            let formatted_output = format_output(&completion_response.response);
             println!("{formatted_output}");
             // If --output is used, append plaintext to file, do not overwrite
             if let Some(output) = &args.flag_output {
@@ -1049,12 +1066,7 @@ fn run_inference_options(
             ),
             Some(start_time.elapsed()),
         );
-        process_output(
-            "dictionary",
-            &data_dict.response,
-            &mut total_json_output,
-            args,
-        )?;
+        process_output("dictionary", &data_dict, &mut total_json_output, args)?;
     }
 
     // Generate description output
@@ -1092,7 +1104,7 @@ fn run_inference_options(
         );
         process_output(
             "description",
-            &completion_response.response,
+            &completion_response,
             &mut total_json_output,
             args,
         )?;
@@ -1130,12 +1142,7 @@ fn run_inference_options(
             ),
             Some(start_time.elapsed()),
         );
-        process_output(
-            "tags",
-            &completion_response.response,
-            &mut total_json_output,
-            args,
-        )?;
+        process_output("tags", &completion_response, &mut total_json_output, args)?;
     }
 
     // Generate custom prompt output
@@ -1160,12 +1167,7 @@ fn run_inference_options(
             ),
             Some(start_time.elapsed()),
         );
-        process_output(
-            "prompt",
-            &completion_response.response,
-            &mut total_json_output,
-            args,
-        )?;
+        process_output("prompt", &completion_response, &mut total_json_output, args)?;
     }
 
     print_status("LLM inference/s completed.", Some(llm_start.elapsed()));

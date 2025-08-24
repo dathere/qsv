@@ -1651,8 +1651,9 @@ dependencies = [
 
 [[package]]
 name = "cpc"
-version = "2.0.0"
-source = "git+https://github.com/probablykasper/cpc?rev=b09827c#b09827cec123651247fee21a91413b51f2901071"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1af078cb1471206c0ebd2d1b076da014af35dcbe4c631d7e9c8926d51cea467a"
 dependencies = [
  "console_error_panic_hook",
  "fastnum",

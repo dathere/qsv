@@ -457,14 +457,14 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
         let prompt_file_content = if args.flag_prompt_file.is_none() {
             // If no prompt file is provided, use the default prompt file
             let default_prompt_file = include_str!("../../resources/describegpt_defaults.json");
-            default_prompt_file.to_string()
+            default_prompt_file
         } else {
             let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
-            fs::read_to_string(prompt_file_path)?
+            &fs::read_to_string(prompt_file_path)?
         };
 
         // Try to parse prompt file as JSON, if error then show it in JSON format
-        let mut prompt_file: PromptFile = match serde_json::from_str(&prompt_file_content) {
+        let mut prompt_file: PromptFile = match serde_json::from_str(prompt_file_content) {
             Ok(val) => val,
             Err(e) => {
                 let error_json = json!({"error": e.to_string()});

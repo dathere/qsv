@@ -3188,9 +3188,6 @@ pub fn infer_polars_schema(
 pub fn hash_sha256_file(path: &Path) -> CliResult<String> {
     const CHUNK_SIZE: usize = 64 * 1024 * 1024; // 64MB chunks
 
-    // Threshold for parallel processing (files larger than 1GB)
-    const PARALLEL_THRESHOLD: usize = 1024 * 1024 * 1024; // 1GB
-
     let file = File::open(path)?;
     let file_size = file.metadata()?.len() as usize;
 
@@ -3202,83 +3199,18 @@ pub fn hash_sha256_file(path: &Path) -> CliResult<String> {
         // SAFETY: Single memory map for small files
         let mmap = unsafe { MmapOptions::new().map(&file)? };
         hasher.update(&mmap);
-    } else if file_size <= PARALLEL_THRESHOLD {
-        // For medium files, use chunked processing with optimized buffering
+    } else {
         let mut offset = 0;
-
         while offset < file_size {
             let chunk_size = std::cmp::min(CHUNK_SIZE, file_size - offset);
-
             let mmap = unsafe {
                 MmapOptions::new()
                     .offset(offset as u64)
                     .len(chunk_size)
                     .map(&file)?
             };
-
-            // Directly update hasher with the entire mmap chunk for best performance
             hasher.update(&mmap);
-
             offset += chunk_size;
-        }
-    } else {
-        // For very large files, use parallel processing
-        #[cfg(feature = "feature_capable")]
-        {
-            use rayon::prelude::*;
-
-            // Calculate optimal number of chunks for parallel processing
-            let num_chunks = std::cmp::max(1, file_size / CHUNK_SIZE);
-            let chunk_size = file_size / num_chunks;
-
-            // Process chunks in parallel
-            let chunk_hashes: Vec<_> = (0..num_chunks)
-                .into_par_iter()
-                .map(|i| {
-                    let start = i * chunk_size;
-                    let end = if i == num_chunks - 1 {
-                        file_size
-                    } else {
-                        (i + 1) * chunk_size
-                    };
-                    let chunk_len = end - start;
-
-                    let mut chunk_hasher = Sha256::new();
-                    let mmap = unsafe {
-                        MmapOptions::new()
-                            .offset(start as u64)
-                            .len(chunk_len)
-                            .map(&file)
-                            .map_err(|e| format!("SHA256 Hashing memory mapping error: {e}"))?
-                    };
-
-                    chunk_hasher.update(&mmap);
-                    Ok::<_, String>(chunk_hasher.finalize())
-                })
-                .collect::<Result<Vec<_>, String>>()
-                .map_err(|e| format!("SHA256 Hashing parallel processing error: {e}"))?;
-
-            // Combine all chunk hashes
-            for chunk_hash in chunk_hashes {
-                hasher.update(chunk_hash);
-            }
-        }
-
-        #[cfg(not(feature = "feature_capable"))]
-        {
-            // Fallback to sequential, chunked processing for lite version
-            let mut offset = 0;
-            while offset < file_size {
-                let chunk_size = std::cmp::min(CHUNK_SIZE, file_size - offset);
-                let mmap = unsafe {
-                    MmapOptions::new()
-                        .offset(offset as u64)
-                        .len(chunk_size)
-                        .map(&file)?
-                };
-                hasher.update(&mmap);
-                offset += chunk_size;
-            }
         }
     }
 

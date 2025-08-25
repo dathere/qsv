@@ -52,6 +52,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * feat: `describegpt` disk & redis caching by @jqnatividad in https://github.com/dathere/qsv/pull/2895
 * refactor: `describegpt` by @jqnatividad in https://github.com/dathere/qsv/pull/2896
 * build(deps): bump serde_json from 1.0.142 to 1.0.143 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2898
+* build(deps): bump tempfile from 3.20.0 to 3.21.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2900
+* refactor: `describegpt` create `get_cache_key` helper; customizable stats options by @jqnatividad in https://github.com/dathere/qsv/pull/2902
+* build(deps): bump filetime from 0.2.25 to 0.2.26 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2906
+* feat: `describegpt` auto SQL RAG for `--prompt` by @jqnatividad in https://github.com/dathere/qsv/pull/2904
+* fix: `template` fix stdin regression by @jqnatividad in https://github.com/dathere/qsv/pull/2907
+* feat: add CPU-accelerated, mem-mapped, chunked sha256 file checksum helper by @jqnatividad in https://github.com/dathere/qsv/pull/2909
+* build(deps): bump url from 2.5.4 to 2.5.6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2912
+* build(deps): bump zip from 4.3.0 to 4.5.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2911
+* feat: `describegpt` major refactor by @jqnatividad in https://github.com/dathere/qsv/pull/2913
+* build(deps): bump memmap2 from 0.9.7 to 0.9.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2914
+* build(deps): bump dns-lookup from 2.1.0 to 3.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2915
+* build(deps): bump indexmap from 2.10.0 to 2.11.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2917
+* Faster parallelized sha256 hash file by @jqnatividad in https://github.com/dathere/qsv/pull/2918
+* build(deps): bump foldhash from 0.1.5 to 0.2.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2922
+* build(deps): bump phf from 0.12.1 to 0.13.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2921
+* build(deps): bump arboard from 3.6.0 to 3.6.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2920
+* build(deps): bump url from 2.5.6 to 2.5.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2919
+* build(deps): bump minijinja-contrib from 2.11.0 to 2.12.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2923
+* refactor: `describegpt` default promptfile is now embedded in qsv binary; fine-tune tests by @jqnatividad in https://github.com/dathere/qsv/pull/2924
+* build(deps): bump regex from 1.11.1 to 1.11.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2925
+* feat: `describegpt` returning reasoning with --json option by @jqnatividad in https://github.com/dathere/qsv/pull/2926
+* feat: `describegpt` add DuckDB support in SQL RAG mode by @jqnatividad in https://github.com/dathere/qsv/pull/2929
+* build(deps): bump jsonschema from 0.32.1 to 0.33.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2928
+* fix:`rename` add `--positional` option by @jqnatividad in https://github.com/dathere/qsv/pull/2930
 
 ## New Contributors
 * @abobov made their first contribution in https://github.com/dathere/qsv/pull/2862

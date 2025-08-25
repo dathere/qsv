@@ -1,10 +1,9 @@
 static USAGE: &str = r#"
 Rename the columns of a CSV efficiently. It has two modes of operation:
-positional and pairwise.
 
 Positional mode (default):
 The new column names are given as a comma-separated list of names.
-The number of column names given must match the number of columns in the
+The number of column names given MUST match the number of columns in the
 CSV unless "_all_generic" is used.
 
 Pairwise mode:
@@ -41,6 +40,7 @@ rename arguments:
                            the format "_col_N" where N is the 1-based column index.
                            Alternatively, specify pairs of old,new column names
                            to rename only specific columns.
+    --pairwise             Invoke pairwise renaming.
 
 Common options:
     -h, --help             Display this message
@@ -48,7 +48,6 @@ Common options:
     -n, --no-headers       When set, the header will be inserted on top.
     -d, --delimiter <arg>  The field delimiter for reading CSV data.
                            Must be a single character. (default: ,)
-    --pairwise             Invoke pairwise renaming.
 "#;
 
 use std::collections::HashMap;

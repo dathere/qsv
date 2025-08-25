@@ -539,12 +539,14 @@ fn get_prompt(
         PromptType::Description => prompt_file.description_prompt.clone(),
         PromptType::Tags => prompt_file.tags_prompt.clone(),
         PromptType::Custom => {
-            let mut working_prompt = args
+            let working_prompt = args
                 .flag_prompt
                 .clone()
                 .unwrap_or_else(|| prompt_file.prompt.clone());
-            working_prompt += &prompt_file.custom_prompt_guidance;
-            working_prompt
+            format!(
+                "User's Prompt: {working_prompt}\n\n{}",
+                prompt_file.custom_prompt_guidance
+            )
         },
     };
 
@@ -552,8 +554,8 @@ fn get_prompt(
     // guidelines
     if prompt_type == PromptType::Custom && should_use_duckdb() {
         // Look for the SQL query generation guidelines section & replace it with DuckDB guidance
-        let sql_guidelines_start = "SQL query generation guidelines:\n\n";
-        let sql_guidelines_end = "\n\n";
+        let sql_guidelines_start = "SQL Query Generation Guidelines:\n\n";
+        let sql_guidelines_end = "\nEND SQL Query Generation Guidelines\n";
 
         if let Some(start_pos) = prompt.find(sql_guidelines_start)
             && let Some(end_pos) = prompt[start_pos..].find(sql_guidelines_end)
@@ -565,9 +567,7 @@ fn get_prompt(
             let duckdb_guidelines = r#"
 - Use DuckDB syntax
 - Use DuckDB's `read_csv` table function to read the input CSV
-- Use the placeholder `INPUT_TABLE_NAME` for the input csv
-- Use the Data Dictionary to set the read_csv's `columns` parameter
-- Map the Data Dictionary data types to the proper DuckDB data type in the read_csv's `columns` parameter
+- Use the placeholder `'INPUT_TABLE_NAME'` for the input csv. INPUT_TABLE_NAME must be enclosed in single quotes.
 - Make sure the generated SQL query is valid and has comments to explain the query
 - Add a comment with the placeholder "GENERATED_BY_SIGNATURE" at the top of the query"#;
 
@@ -619,11 +619,9 @@ fn get_completion(
         None
     };
 
-    let model_to_use = prompt_file.model.clone();
-
     // Create request data
     let request_data = json!({
-        "model": model_to_use,
+        "model": model,
         "max_tokens": max_tokens,
         "messages": messages,
         "stream": false
@@ -1264,7 +1262,12 @@ fn run_inference_options(
         }
 
         let sql_query_start = Instant::now();
-        print_status("\nRunning SQL query...", None);
+        print_status(
+            r#"
+Cannot answer the prompt using just Summary Statistics & Frequency Distribution data.
+Generating a SQL query to answer the prompt deterministically..."#,
+            None,
+        );
 
         // Extract SQL query code block using regex
         let sql_query = regex_oncelock!(r"(?s)```sql\n(.*?)\n```")
@@ -1279,7 +1282,7 @@ fn run_inference_options(
         if should_use_duckdb() {
             if let Some(duckdb_path) = get_duckdb_path() {
                 // For DuckDB, replace INPUT_TABLE_NAME with read_csv function call
-                sql_query = sql_query.replace("INPUT_TABLE_NAME", &format!("'{input_path}'"));
+                sql_query = sql_query.replace("INPUT_TABLE_NAME", input_path);
                 log::debug!("DuckDB SQL query:\n{sql_query}");
 
                 let (_, stderr) = run_duckdb_query(
@@ -1291,7 +1294,7 @@ fn run_inference_options(
                 )?;
 
                 // Check stderr
-                if stderr.contains("error:") {
+                if stderr.to_lowercase().contains("error:") {
                     return fail_clierror!("DuckDB SQL query execution failed: {stderr}");
                 }
 
@@ -1429,7 +1432,7 @@ fn run_duckdb_query(
     let start_time = Instant::now();
 
     let mut cmd = Command::new(duckdb_path);
-    cmd.arg("-c").arg(sql_query).arg("--csv");
+    cmd.arg("-csv").arg("-c").arg(sql_query);
 
     let output = cmd
         .output()

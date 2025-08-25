@@ -1011,3 +1011,47 @@ fn describegpt_different_base_url() {
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
 }
+
+// Test that --prompt does not output dictionary
+#[test]
+#[serial]
+fn describegpt_prompt_no_dictionary_output() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt");
+
+    // Create a CSV file with sample data
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+            svec!["gamma", "37"],
+        ],
+    );
+
+    // Run the command with --prompt
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .args(["--prompt", "What is the main theme of this dataset?"]);
+
+    // Check that the command ran successfully
+    wrk.assert_success(&mut cmd);
+
+    // Get the output and verify that it does not contain dictionary output
+    let output = wrk.stdout::<String>(&mut cmd);
+    
+    // The output should not contain typical dictionary markers
+    // Dictionary output typically contains structured JSON with field definitions
+    // Look for dictionary-specific patterns rather than just column names
+    assert!(!output.contains("\"Name\":"), "Dictionary output should not be present when using --prompt");
+    assert!(!output.contains("\"Type\":"), "Dictionary output should not be present when using --prompt");
+    assert!(!output.contains("\"Label\":"), "Dictionary output should not be present when using --prompt");
+    assert!(!output.contains("\"Description\":"), "Dictionary output should not be present when using --prompt");
+    
+    // The output should contain the prompt response
+    assert!(!output.is_empty(), "Output should not be empty");
+}

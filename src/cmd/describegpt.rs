@@ -1019,6 +1019,16 @@ fn run_inference_options(
         total_json_output: &mut serde_json::Value,
         args: &Args,
     ) -> CliResult<()> {
+        // Skip outputting dictionary when using --prompt (but still generate it for context)
+        if kind == "dictionary" && args.flag_prompt.is_some() {
+            // Still store the dictionary in DATA_DICTIONARY_JSON for context, but don't output it
+            DATA_DICTIONARY_JSON.get_or_init(|| {
+                completion_response.response.clone()
+            });
+            // Don't add to total_json_output and don't output anything
+            return Ok(());
+        }
+
         // Check if this is a custom prompt response that contains SQL code
         let is_sql_response = kind == "prompt"
             && args.flag_sql_results.is_some()

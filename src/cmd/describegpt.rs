@@ -551,18 +551,18 @@ fn get_prompt(
     // If this is a custom prompt and DuckDB should be used, modify the SQL query generation
     // guidelines
     if prompt_type == PromptType::Custom && should_use_duckdb() {
-        // Look for the SQL query generation guidelines section and replace it with DuckDB-specific
-        // guidance
+        // Look for the SQL query generation guidelines section & replace it with DuckDB guidance
         let sql_guidelines_start = "SQL query generation guidelines:\n\n";
         let sql_guidelines_end = "\n\n";
 
-        if let Some(start_pos) = prompt.find(sql_guidelines_start) {
-            if let Some(end_pos) = prompt[start_pos..].find(sql_guidelines_end) {
-                let end_pos = start_pos + end_pos;
-                let before_guidelines = &prompt[..start_pos];
-                let after_guidelines = &prompt[end_pos..];
+        if let Some(start_pos) = prompt.find(sql_guidelines_start)
+            && let Some(end_pos) = prompt[start_pos..].find(sql_guidelines_end)
+        {
+            let end_pos = start_pos + end_pos;
+            let before_guidelines = &prompt[..start_pos];
+            let after_guidelines = &prompt[end_pos..];
 
-                let duckdb_guidelines = r#"
+            let duckdb_guidelines = r#"
 - Use DuckDB syntax
 - Use DuckDB's `read_csv` table function to read the input CSV
 - Use the placeholder `INPUT_TABLE_NAME` for the input csv
@@ -571,11 +571,9 @@ fn get_prompt(
 - Make sure the generated SQL query is valid and has comments to explain the query
 - Add a comment with the placeholder "GENERATED_BY_SIGNATURE" at the top of the query"#;
 
-                prompt = format!(
-                    "{}{}{}{}",
-                    before_guidelines, sql_guidelines_start, duckdb_guidelines, after_guidelines
-                );
-            }
+            prompt = format!(
+                "{before_guidelines}{sql_guidelines_start}{duckdb_guidelines}{after_guidelines}"
+            );
         }
         log::debug!("prompt using DuckDB: {prompt}");
     }
@@ -1281,7 +1279,7 @@ fn run_inference_options(
         if should_use_duckdb() {
             if let Some(duckdb_path) = get_duckdb_path() {
                 // For DuckDB, replace INPUT_TABLE_NAME with read_csv function call
-                sql_query = sql_query.replace("INPUT_TABLE_NAME", &format!("'{}'", input_path));
+                sql_query = sql_query.replace("INPUT_TABLE_NAME", &format!("'{input_path}'"));
                 log::debug!("DuckDB SQL query:\n{sql_query}");
 
                 let (_, stderr) = run_duckdb_query(
@@ -1446,7 +1444,7 @@ fn run_duckdb_query(
         .map_err(|e| CliError::Other(format!("Unable to parse stderr of DuckDB command: {e:?}")))?;
 
     // Write the output to the specified file
-    fs::write(output_path, &stdout_str)?;
+    fs::write(output_path, stdout_str)?;
 
     Ok((stdout_str.to_string(), stderr_str.to_string()))
 }

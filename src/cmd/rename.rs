@@ -14,6 +14,9 @@ only specific columns. The format is "old1,new1,old2,new2,...".
   Rename only specific columns using pairs:
   $ qsv rename oldname,newname,oldcol,newcol
 
+  Force positional renaming (useful when first argument matches first column):
+  $ qsv rename --positional id,birthdate
+
   Replace the column names with generic ones (_col_N):
   $ qsv rename _all_generic
 
@@ -44,6 +47,8 @@ Common options:
     -n, --no-headers       When set, the header will be inserted on top.
     -d, --delimiter <arg>  The field delimiter for reading CSV data.
                            Must be a single character. (default: ,)
+    --positional           Force positional renaming even when arguments match
+                           column names.
 "#;
 
 use std::collections::HashMap;
@@ -63,6 +68,7 @@ struct Args {
     flag_output:     Option<String>,
     flag_no_headers: bool,
     flag_delimiter:  Option<Delimiter>,
+    flag_positional: bool,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -125,7 +131,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let s = rename_headers_all_generic(headers.len());
             let mut new_rdr = csv::Reader::from_reader(s.as_bytes());
             new_rdr.byte_headers()?.clone()
-        } else if is_pairs && has_matching_old {
+        } else if is_pairs && has_matching_old && !args.flag_positional {
             if let Ok(renamed_headers) = parse_rename_pairs(&args.arg_headers, headers) {
                 renamed_headers
             } else {

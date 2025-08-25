@@ -1022,9 +1022,7 @@ fn run_inference_options(
         // Skip outputting dictionary when using --prompt (but still generate it for context)
         if kind == "dictionary" && args.flag_prompt.is_some() {
             // Still store the dictionary in DATA_DICTIONARY_JSON for context, but don't output it
-            DATA_DICTIONARY_JSON.get_or_init(|| {
-                completion_response.response.clone()
-            });
+            DATA_DICTIONARY_JSON.get_or_init(|| completion_response.response.clone());
             // Don't add to total_json_output and don't output anything
             return Ok(());
         }

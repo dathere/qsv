@@ -1043,15 +1043,27 @@ fn describegpt_prompt_no_dictionary_output() {
 
     // Get the output and verify that it does not contain dictionary output
     let output = wrk.stdout::<String>(&mut cmd);
-    
+
     // The output should not contain typical dictionary markers
     // Dictionary output typically contains structured JSON with field definitions
     // Look for dictionary-specific patterns rather than just column names
-    assert!(!output.contains("\"Name\":"), "Dictionary output should not be present when using --prompt");
-    assert!(!output.contains("\"Type\":"), "Dictionary output should not be present when using --prompt");
-    assert!(!output.contains("\"Label\":"), "Dictionary output should not be present when using --prompt");
-    assert!(!output.contains("\"Description\":"), "Dictionary output should not be present when using --prompt");
-    
+    assert!(
+        !output.contains("\"Name\":"),
+        "Dictionary output should not be present when using --prompt"
+    );
+    assert!(
+        !output.contains("\"Type\":"),
+        "Dictionary output should not be present when using --prompt"
+    );
+    assert!(
+        !output.contains("\"Label\":"),
+        "Dictionary output should not be present when using --prompt"
+    );
+    assert!(
+        !output.contains("\"Description\":"),
+        "Dictionary output should not be present when using --prompt"
+    );
+
     // The output should contain the prompt response
     assert!(!output.is_empty(), "Output should not be empty");
 }

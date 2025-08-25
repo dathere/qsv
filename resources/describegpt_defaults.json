@@ -9,7 +9,7 @@
     "description_prompt": "Generate a Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.\n\nSummary Statistics:\n\n{stats}\n\nFrequency Distribution:\n\n{frequency}\n\nDo not output the summary statistics for each field. Do not output the frequency for each field.\nDo not output data about each field individually, but instead output about the dataset as a whole\nin one 1-8 sentence description.\n\nAfter the Description, add a section titled \"Notable Characteristics\" with a bulleted list of notable\ncharacteristics of the Dataset. e.g. if there are any outliers, missing values, duplicates, PII data\nand other data quality issues that the User should be aware of.\n\nAdd a Footnote with the placeholder \"GENERATED_BY_SIGNATURE\" at the bottom of the output.\n\nThe entire output should be in Markdown format.",
     "tags_prompt": "A Tag is a keyword or label that categorizes datasets with other, similar datasets.\nUsing the right Tags makes it easier for others to find and use datasets.\n\nGenerate no more than 15 most thematic Tags{json_add} about the contents of the Dataset in descending\norder of importance (lowercase only and use _ to separate words) based on the following Summary Statistics and\nFrequency Distribution data about the Dataset. Do not use field names in the tags.\n\nSummary Statistics:\n\n{stats}\n\nFrequency Distribution:\n\n{frequency}",
     "prompt": "What is this dataset about?",
-    "json": true,
+    "json": false,
     "jsonl": false,
     "base_url": "https://api.openai.com/v1",
     "model": "openai/gpt-oss-20b",

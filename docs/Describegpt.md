@@ -70,9 +70,11 @@ Note that `--jsonl` may not be used alongside `--json`, nor may they both be set
 
 `--max-tokens` is an option that allows you to specify the maximum number of tokens in the completion **output**. This is limited by the maximum number of tokens allowed by the model including the input tokens.
 
-Input tokens may include the output of `qsv stats` and `qsv frequency` from your dataset, which can be large based on your dataset's size. Therefore we use `gpt-3.5-turbo-16k` as the default model for `describegpt` as it has a maximum token limit of 16,384.
+Input tokens may include the output of `qsv stats` and `qsv frequency` from your dataset, which can be large based on your dataset's size. Therefore we use `gpt-oss-20b` as the default model for `describegpt` as it has a maximum token limit of 131,072.
 
-It is highly recommended to set the `--max-tokens` option to set the maximum number of tokens in the completion output. Your output may be truncated if you set this value too low or you may receive errors depending on your options. The default is set to `50` as a safety measure.
+It is highly recommended to set the `--max-tokens` option to set the maximum number of tokens in the completion output. Your output may be truncated if you set this value too low or you may receive errors depending on your options. The default is set to `2000` as a safety measure.
+
+When running a Local LLM (detected if the `base_url` contains localhost), the max token limit is automatically disabled. Your completions are only limited by the LLM model you're using.
 
 ## `--prompt-file`
 
@@ -80,18 +82,23 @@ With `describegpt` you can use a prompt file to add your own custom prompts and 
 
 If you do not specify a prompt file, default prompts will be used.
 
-| Field                | Description                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------- |
-| `name`               | The name of your prompt file.                                                               |
-| `description`        | A description of your prompt file.                                                          |
-| `author`             | Your name.                                                                                  |
-| `version`            | The version of your prompt file.                                                            |
-| `tokens`             | The maximum number of tokens in the completion output.                                      |
-| `dictionary_prompt`  | The prompt for the `--dictionary` option.                                                   |
-| `description_prompt` | The prompt for the `--description` option.                                                  |
-| `tags_prompt`        | The prompt for the `--tags` option.                                                         |
-| `json`               | Whether or not the output should be in JSON format (refer to [`--json`](#json) section).    |
-| `jsonl`              | Whether or not the output should be in JSONL format (refer to [`--jsonl`](#jsonl) section). |
+| Field                    | Description                                                                                 |
+| --------------------     | ------------------------------------------------------------------------------------------- |
+| `name`                   | The name of your prompt file.                                                               |
+| `description`            | A description of your prompt file.                                                          |
+| `author`                 | Your name.                                                                                  |
+| `version`                | The version of your prompt file.                                                            |
+| `tokens`                 | The maximum number of tokens in the completion output.                                      |
+| `system_prompt`          | Overall guidance prompt to the LLM.                                                         |
+| `dictionary_prompt`      | The prompt for the `--dictionary` option.                                                   |
+| `description_prompt`     | The prompt for the `--description` option.                                                  |
+| `tags_prompt`            | The prompt for the `--tags` option.                                                         |
+| `json`                   | Whether or not the output should be in JSON format (refer to [`--json`](#json) section).    |
+| `jsonl`                  | Whether or not the output should be in JSONL format (refer to [`--jsonl`](#jsonl) section). |
+| `base_url`               | The URL of the LLM API. When it contains "localhost", aumatically sets `tokens` to 0.       |
+| `model`                  | The LLM model to use.                                                                       |
+| `timeout`                | The timeout in seconds to use when waiting for LLM prompt completions.                      |
+| `custom_prompt_guidance` | The guidance used to generate SQL queries in SQL RAG mode.                                  | 
 
 All fields must be present in your prompt file. If you do not want to use a certain prompt, you can set it to an empty string.
 
@@ -103,28 +110,7 @@ Within your prompts, you can use the following variables:
 
 These are replaced with the output of `qsv stats`, `qsv frequency` and conditionally ` (in JSON format)`. Note that `{json_add}` adds a space before `(in JSON format)`.
 
-Here is an example of a prompt:
-
-```json
-{
-    "name": "Sample prompt",
-    "description": "A sample prompt file for describegpt.",
-    "author": "qsv",
-    "version": "1.0.0",
-    "tokens": 50,
-    "dictionary_prompt": "Here are the columns for each field in a data dictionary:\n\n- Type: the data type of this column\n- Label: a human-friendly label for this column\n- Description: a full description for this column (can be multiple sentences)\n\nGenerate a data dictionary as aforementioned{json_add} where each field has Name, Type, Label, and Description (so four columns in total) based on the following summary statistics and frequency data from a CSV file.\n\nSummary Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}",
-    "description_prompt": "Generate only a description that is within 8 sentences about the entire dataset{json_add} based on the following summary statistics and frequency data derived from the CSV file it came from.\n\nSummary Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}\n\nDo not output the summary statistics for each field. Do not output the frequency for each field. Do not output data about each field individually, but instead output about the dataset as a whole in one 1-8 sentence description.",
-    "tags_prompt": "A tag is a keyword or label that categorizes datasets with other, similar datasets. Using the right tags makes it easier for others to find and use datasets.\n\nGenerate single-word tags{json_add} about the dataset (lowercase only and remove all whitespace) based on the following summary statistics and frequency data from a CSV file.\n\nSummary Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}",
-    "prompt": "Summary Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}\n\nWhat's the dataset about?",
-    "json": true,
-    "jsonl": false,
-    "base_url": "https://api.openai.com/v1",
-    "model": "gpt-3.5-turbo-16k",
-    "timeout": 60
-}
-```
-
-Note that this example has `tokens` set to `50` by default but you may want to increase this value to not result in errors as mentioned in the [`--json`](#json) & [`--max-tokens`](#max-tokens-value) section.
+See `resources/describegpt_defaults.json` for the default values.
 
 ## Running LLMs locally with Ollama
 
@@ -137,3 +123,52 @@ qsv describegpt <filepath> --base-url http://localhost:11434/v1 --api-key ollama
 ```
 
 Remove the arrow brackets `<>` and replace `filepath` with your file's path, `<model>` with the model you want to use, and `number` with the max tokens you want to set based on your model's context size.
+
+## SQL Query Generation and Execution ("SQL RAG" mode)
+
+When using the `--prompt` option, `describegpt` can automatically generate and execute SQL queries to answer questions that cannot be answered using just the summary statistics and frequency distribution data. This is called "SQL RAG" mode.
+
+### Using SQL with Polars (default)
+
+By default, when the `polars` feature is enabled, `describegpt` uses qsv's `sqlp` command to execute SQL queries. You can specify the `--sql-results` option to save the query results to a CSV file:
+
+```bash
+qsv describegpt data.csv --prompt "What's the breakdown of complaint types by borough?" --sql-results results.csv
+```
+
+### Using SQL with DuckDB
+
+You can also use DuckDB to execute SQL queries by setting the `QSV_DESCRIBEGPT_DB_ENGINE` environment variable to a path containing "duckdb" (case-insensitive). The environment variable value should be the fully qualified path to the DuckDB binary:
+
+```bash
+export QSV_DESCRIBEGPT_DB_ENGINE=/usr/local/bin/duckdb
+qsv describegpt data.csv --prompt "What's the breakdown of complaint types by borough?" --sql-results results.csv
+```
+
+When DuckDB is used, the SQL query generation guidelines are automatically modified to use DuckDB generation guidelines (see below).
+
+### SQL Query Generation Guidelines
+
+When in SQL RAG mode, the LLM generates SQL queries following these guidelines:
+
+**For PostgreSQL (default):**
+- Use PostgreSQL syntax
+- Use `INPUT_TABLE_NAME` as the placeholder for the table name
+- Column names with spaces and special characters should be enclosed in double quotes
+- Avoid certain SQL functions and expressions (see default prompt file for details)
+- Add comments with `--` prefix only
+- Include a comment with "GENERATED_BY_SIGNATURE" placeholder
+
+The generated SQL query will automatically replace `INPUT_TABLE_NAME` with the fully qualified name of the input CSV file.
+
+**For DuckDB:**
+- Use DuckDB syntax
+- Use DuckDB's `read_csv` table function to read the input CSV
+- Use the placeholder `INPUT_TABLE_NAME` for the input CSV
+- Use the Data Dictionary to set the read_csv's `columns` parameter
+- Map Data Dictionary data types to proper DuckDB data types in the read_csv's `columns` parameter
+- Make sure the generated SQL query is valid and has comments to explain the query
+- Add a comment with the placeholder "GENERATED_BY_SIGNATURE" at the top of the query
+
+The generated SQL query will automatically replace `INPUT_TABLE_NAME` with a `read_csv` table function call that reads your CSV file directly.
+

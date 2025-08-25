@@ -78,11 +78,13 @@ describegpt options:
                            The prompt will be answered based on the dataset's Summary Statistics,
                            Frequency data & Data Dictionary. If the prompt CANNOT be answered by looking
                            at these metadata, a SQL query will be generated to answer the question.
-                           If the "polars" feature is enabled & the `--sql-results` option is
-                           used, the SQL query will be automatically executed and its results returned.
+                           If the "polars" or the "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set
+                           & the `--sql-results` option is used, the SQL query will be automatically
+                           executed and its results returned.
                            Otherwise, only the SQL query will be returned.
     --sql-results <csv>    The CSV to save the SQL query results to.
-                           Only valid if the --prompt option is used & the "polars" feature is enabled.
+                           Only valid if the --prompt option is used & the "polars" or the
+                           "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set.
     --prompt-file <file>   The JSON file containing prompts to use for inferencing.
                            If no prompt file is provided, default prompts will be used.
 
@@ -265,6 +267,7 @@ static QSV_REDIS_CONNSTR_ENV: &str = "QSV_REDIS_CONNSTR";
 static QSV_REDIS_MAX_POOL_SIZE_ENV: &str = "QSV_REDIS_MAX_POOL_SIZE";
 static QSV_REDIS_TTL_SECS_ENV: &str = "QSV_REDIS_TTL_SECS";
 static QSV_REDIS_TTL_REFRESH_ENV: &str = "QSV_REDIS_TTL_REFRESH";
+static QSV_DESCRIBEGPT_DB_ENGINE_ENV: &str = "QSV_DESCRIBEGPT_DB_ENGINE";
 static DEFAULT_REDIS_CONN_STRING: OnceLock<String> = OnceLock::new();
 static DEFAULT_REDIS_TTL_SECS: u64 = 60 * 60 * 24 * 28; // 28 days in seconds
 static DEFAULT_REDIS_POOL_SIZE: u32 = 20;
@@ -335,6 +338,18 @@ fn print_status(msg: &str, elapsed: Option<std::time::Duration>) {
             eprintln!("{msg}");
         }
     }
+}
+
+// Check if DuckDB should be used based on environment variable
+fn should_use_duckdb() -> bool {
+    env::var(QSV_DESCRIBEGPT_DB_ENGINE_ENV)
+        .map(|val| val.to_lowercase().contains("duckdb"))
+        .unwrap_or(false)
+}
+
+// Get DuckDB binary path from environment variable
+fn get_duckdb_path() -> Option<String> {
+    env::var(QSV_DESCRIBEGPT_DB_ENGINE_ENV).ok()
 }
 
 // Send an HTTP request using a client to a URL
@@ -519,7 +534,7 @@ fn get_prompt(
     let prompt_file = get_prompt_file(args)?;
 
     // Get prompt from prompt file
-    let prompt = match prompt_type {
+    let mut prompt = match prompt_type {
         PromptType::Dictionary => prompt_file.dictionary_prompt.clone(),
         PromptType::Description => prompt_file.description_prompt.clone(),
         PromptType::Tags => prompt_file.tags_prompt.clone(),
@@ -532,6 +547,37 @@ fn get_prompt(
             working_prompt
         },
     };
+
+    // If this is a custom prompt and DuckDB should be used, modify the SQL query generation
+    // guidelines
+    if prompt_type == PromptType::Custom && should_use_duckdb() {
+        // Look for the SQL query generation guidelines section & replace it with DuckDB guidance
+        let sql_guidelines_start = "SQL query generation guidelines:\n\n";
+        let sql_guidelines_end = "\n\n";
+
+        if let Some(start_pos) = prompt.find(sql_guidelines_start)
+            && let Some(end_pos) = prompt[start_pos..].find(sql_guidelines_end)
+        {
+            let end_pos = start_pos + end_pos;
+            let before_guidelines = &prompt[..start_pos];
+            let after_guidelines = &prompt[end_pos..];
+
+            let duckdb_guidelines = r#"
+- Use DuckDB syntax
+- Use DuckDB's `read_csv` table function to read the input CSV
+- Use the placeholder `INPUT_TABLE_NAME` for the input csv
+- Use the Data Dictionary to set the read_csv's `columns` parameter
+- Map the Data Dictionary data types to the proper DuckDB data type in the read_csv's `columns` parameter
+- Make sure the generated SQL query is valid and has comments to explain the query
+- Add a comment with the placeholder "GENERATED_BY_SIGNATURE" at the top of the query"#;
+
+            prompt = format!(
+                "{before_guidelines}{sql_guidelines_start}{duckdb_guidelines}{after_guidelines}"
+            );
+        }
+        log::debug!("prompt using DuckDB: {prompt}");
+    }
+
     // Replace variable data in prompt
     #[allow(clippy::to_string_in_format_args)]
     #[allow(clippy::literal_string_with_formatting_args)]
@@ -652,9 +698,21 @@ fn get_completion(
 
 fn get_cache_key(args: &Args, kind: &str, actual_model: &str) -> String {
     let file_hash = FILE_HASH.get().unwrap_or(&String::new()).clone();
+    // Only include prompt content in cache key for "prompt" kind
+    let prompt_content = if kind == "prompt" {
+        args.flag_prompt.as_ref()
+    } else {
+        None
+    };
     format!(
-        "{:?}{:?}{:?}{:?}{}{}",
-        args.arg_input, args.flag_prompt_file, args.flag_max_tokens, actual_model, kind, file_hash
+        "{:?}{:?}{:?}{:?}{:?}{}{}",
+        args.arg_input,
+        args.flag_prompt_file,
+        prompt_content,
+        args.flag_max_tokens,
+        actual_model,
+        kind,
+        file_hash
     )
 }
 
@@ -1005,7 +1063,6 @@ fn run_inference_options(
         // Process plaintext output
         else {
             let formatted_output = format_output(&completion_response.response);
-            println!("{formatted_output}");
             // If --output is used, append plaintext to file, do not overwrite
             if let Some(output) = &args.flag_output {
                 fs::OpenOptions::new()
@@ -1013,6 +1070,8 @@ fn run_inference_options(
                     .append(true)
                     .open(output)?
                     .write_all(formatted_output.as_bytes())?;
+            } else {
+                println!("{formatted_output}");
             }
         }
         Ok(())
@@ -1175,7 +1234,6 @@ fn run_inference_options(
 
     let has_sql_query = completion_response.response.contains("```sql");
 
-    #[cfg(feature = "polars")]
     if let Some(sql_results) = &args.flag_sql_results
         && has_sql_query
     {
@@ -1209,62 +1267,98 @@ fn run_inference_options(
         print_status("\nRunning SQL query...", None);
 
         // Extract SQL query code block using regex
-        // and replace the INPUT_TABLE_NAME placeholder with the _t_1 placeholder
         let sql_query = regex_oncelock!(r"(?s)```sql\n(.*?)\n```")
             .captures(&completion_response.response)
             .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()));
         if sql_query.is_none() {
             return fail_clierror!("Failed to extract SQL query from custom prompt response");
         }
-        let sql_query = sql_query.unwrap();
-        let sql_query = sql_query.replace("INPUT_TABLE_NAME", "_t_1");
-        log::debug!("SQL query:\n{sql_query}");
+        let mut sql_query = sql_query.unwrap();
 
-        // save sql query to a temporary file with a .sql extension
-        // this tempfile is automatically deleted after the command finishes
-        let sql_query_file = tempfile::Builder::new().suffix(".sql").tempfile()?;
-        fs::write(&sql_query_file, sql_query)?;
+        // Check if DuckDB should be used
+        if should_use_duckdb() {
+            if let Some(duckdb_path) = get_duckdb_path() {
+                // For DuckDB, replace INPUT_TABLE_NAME with read_csv function call
+                sql_query = sql_query.replace("INPUT_TABLE_NAME", &format!("'{input_path}'"));
+                log::debug!("DuckDB SQL query:\n{sql_query}");
 
-        let (_, stderr) = run_qsv_cmd(
-            "sqlp",
-            &[
-                &sql_query_file.path().display().to_string(),
-                "--try-parsedates",
-                "--output",
-                sql_results,
-            ],
-            input_path,
-            "SQL query issued.",
-        )?;
+                let (_, stderr) = run_duckdb_query(
+                    &duckdb_path,
+                    &sql_query,
+                    input_path,
+                    sql_results,
+                    "DuckDB SQL query issued.",
+                )?;
 
-        // Check stderr
-        if stderr.contains("error:") {
-            return fail_clierror!("SQL query execution failed: {stderr}");
+                // Check stderr
+                if stderr.contains("error:") {
+                    return fail_clierror!("DuckDB SQL query execution failed: {stderr}");
+                }
+
+                print_status(
+                    &format!(
+                        "DuckDB SQL query successful. Saved results to {sql_results} {stderr}"
+                    ),
+                    Some(sql_query_start.elapsed()),
+                );
+            } else {
+                return fail_clierror!("DuckDB environment variable is set but no path provided");
+            }
+        } else {
+            #[cfg(feature = "polars")]
+            {
+                // Use the existing sqlp functionality
+                sql_query = sql_query.replace("INPUT_TABLE_NAME", "_t_1");
+                log::debug!("SQL query:\n{sql_query}");
+
+                // save sql query to a temporary file with a .sql extension
+                // this tempfile is automatically deleted after the command finishes
+                let sql_query_file = tempfile::Builder::new().suffix(".sql").tempfile()?;
+                fs::write(&sql_query_file, sql_query)?;
+
+                let (_, stderr) = run_qsv_cmd(
+                    "sqlp",
+                    &[
+                        &sql_query_file.path().display().to_string(),
+                        "--try-parsedates",
+                        "--output",
+                        sql_results,
+                    ],
+                    input_path,
+                    "Polars SQL query issued.",
+                )?;
+
+                // Check stderr
+                if stderr.contains("error:") {
+                    return fail_clierror!("Polars SQL query execution failed: {stderr}");
+                }
+
+                print_status(
+                    &format!(
+                        "Polars SQL query successful. Saved results to {sql_results} {stderr}"
+                    ),
+                    Some(sql_query_start.elapsed()),
+                );
+            }
+            #[cfg(not(feature = "polars"))]
+            return fail_clierror!(
+                "Cannot answer the prompt using just Summary Statistics & Frequency Distribution \
+                 data. However, \"SQL RAG\" mode is only supported when the `polars` feature is \
+                 enabled, or when using DuckDB via the QSV_DESCRIBEGPT_DB_ENGINE environment \
+                 variable."
+            );
         }
-
-        print_status(
-            &format!("SQL query successful. Saved results to {sql_results} {stderr}"),
-            Some(sql_query_start.elapsed()),
-        );
-    }
-
-    #[cfg(not(feature = "polars"))]
-    if args.flag_sql_results.is_some() {
-        return fail_clierror!(
-            "Cannot answer the prompt using just Summary Statistics & Frequency Distribution \
-             data. However, \"SQL RAG\" mode is only supported when the `polars` feature is \
-             enabled."
-        );
     }
 
     // Expecting JSON output
     if is_json_output(args)? && !is_jsonl_output(args)? {
         // Format & print JSON output
         let json_output = &simd_json::to_string_pretty(&total_json_output)?;
-        println!("{json_output}");
         // Write to file if --output is used, or overwrite if already exists
         if let Some(output_file_path) = &args.flag_output {
             fs::write(output_file_path, json_output)?;
+        } else {
+            println!("{json_output}");
         }
     }
     // Expecting JSONL output
@@ -1275,7 +1369,6 @@ fn run_inference_options(
         total_json_output["timestamp"] = json!(chrono::offset::Utc::now().to_rfc3339());
         // Format & print JSONL output
         let json_output = &simd_json::to_string(&total_json_output)?;
-        println!("{json_output}");
         // Write to file if --output is used, or append if already exists
         if let Some(output_file_path) = &args.flag_output {
             fs::OpenOptions::new()
@@ -1283,6 +1376,8 @@ fn run_inference_options(
                 .append(true)
                 .open(output_file_path)?
                 .write_all(format!("\n{json_output}").as_bytes())?;
+        } else {
+            println!("{json_output}");
         }
     }
 
@@ -1319,6 +1414,37 @@ fn run_qsv_cmd(
             "Unable to parse stderr of qsv command {command}: {e:?}"
         ))
     })?;
+
+    Ok((stdout_str.to_string(), stderr_str.to_string()))
+}
+
+// Helper function to run DuckDB queries
+fn run_duckdb_query(
+    duckdb_path: &str,
+    sql_query: &str,
+    _input_path: &str,
+    output_path: &str,
+    status_msg: &str,
+) -> CliResult<(String, String)> {
+    let start_time = Instant::now();
+
+    let mut cmd = Command::new(duckdb_path);
+    cmd.arg("-c").arg(sql_query).arg("--csv");
+
+    let output = cmd
+        .output()
+        .map_err(|e| CliError::Other(format!("Error while executing DuckDB command: {e:?}")))?;
+    log::debug!("DuckDB command output: {output:?}");
+
+    print_status(status_msg, Some(start_time.elapsed()));
+
+    let stdout_str = std::str::from_utf8(&output.stdout)
+        .map_err(|e| CliError::Other(format!("Unable to parse output of DuckDB command: {e:?}")))?;
+    let stderr_str = std::str::from_utf8(&output.stderr)
+        .map_err(|e| CliError::Other(format!("Unable to parse stderr of DuckDB command: {e:?}")))?;
+
+    // Write the output to the specified file
+    fs::write(output_path, stdout_str)?;
 
     Ok((stdout_str.to_string(), stderr_str.to_string()))
 }

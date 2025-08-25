@@ -108,7 +108,7 @@ fn rename_pairs() {
     );
 
     let mut cmd = wrk.command("rename");
-    cmd.arg("R,cola,S,colb").arg("in.csv");
+    cmd.arg("--pairwise").arg("R,cola,S,colb").arg("in.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -134,7 +134,7 @@ fn rename_pairs_single() {
     );
 
     let mut cmd = wrk.command("rename");
-    cmd.arg("R,cola").arg("in.csv");
+    cmd.arg("--pairwise").arg("R,cola").arg("in.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -159,7 +159,7 @@ fn rename_pairs_multiple() {
     );
 
     let mut cmd = wrk.command("rename");
-    cmd.arg("A,alpha,C,gamma").arg("in.csv");
+    cmd.arg("--pairwise").arg("A,alpha,C,gamma").arg("in.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -221,8 +221,8 @@ fn rename_pairs_fallback_to_original() {
 }
 
 #[test]
-fn rename_issue_2908_fix() {
-    let wrk = Workdir::new("rename_issue_2908_fix");
+fn rename_issue_2908_fixed_behavior() {
+    let wrk = Workdir::new("rename_issue_2908_fixed_behavior");
     wrk.create(
         "in.csv",
         vec![
@@ -233,11 +233,36 @@ fn rename_issue_2908_fix() {
     );
 
     let mut cmd = wrk.command("rename");
-    cmd.arg("--positional").arg("id,birthdate").arg("in.csv");
+    cmd.arg("id,birthdate").arg("in.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["id", "birthdate"],
+        svec!["1", "1990-01-01"],
+        svec!["2", "1991-02-02"],
+    ];
+    // this is the desired default behavior that fixes #2908
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn rename_pairwise_flag() {
+    let wrk = Workdir::new("rename_pairwise_flag");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["id", "dob"],
+            svec!["1", "1990-01-01"],
+            svec!["2", "1991-02-02"],
+        ],
+    );
+
+    let mut cmd = wrk.command("rename");
+    cmd.arg("--pairwise").arg("id,birthdate").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["birthdate", "dob"],
         svec!["1", "1990-01-01"],
         svec!["2", "1991-02-02"],
     ];

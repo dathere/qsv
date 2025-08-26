@@ -69,10 +69,12 @@ use serde::Deserialize;
 use crate::{
     CliResult,
     config::{Config, Delimiter},
+    regex_oncelock,
     select::SelectColumns,
     util::{self, FilenameTemplate},
 };
 
+#[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Deserialize)]
 struct Args {
     arg_column:         SelectColumns,
@@ -170,7 +172,11 @@ impl Args {
             } else {
                 wtr.write_byte_record(&row)?;
             }
-            wtr.flush()?;
+        }
+
+        // Final flush of all writers
+        for (_, mut writer) in writers {
+            writer.flush()?;
         }
         Ok(())
     }
@@ -192,7 +198,7 @@ impl WriterGenerator {
             template,
             counter: 1,
             used: HashSet::new(),
-            non_word_char: Regex::new(r"\W").unwrap(),
+            non_word_char: regex_oncelock!(r"\W").clone(),
         }
     }
 
@@ -210,8 +216,10 @@ impl WriterGenerator {
     /// different values. Also handles case-insensitive file system collisions.
     fn unique_value(&mut self, key: &[u8]) -> String {
         // Sanitize our key.
-        let utf8 = String::from_utf8_lossy(key);
-        let safe = self.non_word_char.replace_all(&utf8, "").into_owned();
+        let safe = self
+            .non_word_char
+            .replace_all(&String::from_utf8_lossy(key), "")
+            .into_owned();
         let base = if safe.is_empty() {
             "empty".to_owned()
         } else {

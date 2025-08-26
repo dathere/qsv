@@ -7,6 +7,10 @@ by kb-size.
 The files are written to the output directory with filenames based on the
 values in the partition column and the `--filename` flag.
 
+Note: To account for case-insensitive file system collisions (e.g. macOS APFS
+and Windows NTFS), the command will add a number suffix to the filename if the
+value is already in use.
+
 EXAMPLE:
 
 Partition nyc311.csv file into separate files based on the value of the
@@ -56,11 +60,7 @@ Common options:
                              Must be a single character. (default: ,)
 "#;
 
-use std::{
-    collections::{HashSet, hash_map::Entry},
-    fs, io,
-    path::Path,
-};
+use std::{collections::HashSet, fs, io, path::Path};
 
 use foldhash::{HashMap, HashMapExt};
 use regex::Regex;
@@ -134,25 +134,30 @@ impl Args {
                 Some(len) if len < column.len() => &column[0..len],
                 _ => column,
             };
-            let mut entry = writers.entry(key.to_vec());
-            let wtr =
-                match entry {
-                    Entry::Occupied(ref mut occupied) => occupied.get_mut(),
-                    Entry::Vacant(vacant) => {
-                        // We have a new key, so make a new writer.
-                        let mut wtr = r#gen.writer(&*self.arg_outdir, key)?;
-                        if !rconfig.no_headers {
-                            if self.flag_drop {
-                                wtr.write_record(headers.iter().enumerate().filter_map(
-                                    |(i, e)| if i == key_col { None } else { Some(e) },
-                                ))?;
-                            } else {
-                                wtr.write_record(&headers)?;
-                            }
-                        }
-                        vacant.insert(wtr)
-                    },
-                };
+            // Create a stable key by cloning the bytes to avoid any potential issues
+            // with borrowing or data corruption
+            let key_vec = key.to_vec();
+            let wtr = if let Some(writer) = writers.get_mut(&key_vec) {
+                writer
+            } else {
+                // We have a new key, so make a new writer.
+                let mut wtr = r#gen.writer(&*self.arg_outdir, key)?;
+                if !rconfig.no_headers {
+                    if self.flag_drop {
+                        wtr.write_record(
+                            headers
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(i, e)| if i == key_col { None } else { Some(e) }),
+                        )?;
+                    } else {
+                        wtr.write_record(&headers)?;
+                    }
+                }
+                writers.insert(key_vec.clone(), wtr);
+                writers.get_mut(&key_vec).unwrap()
+            };
+
             if self.flag_drop {
                 wtr.write_record(
                     row.iter().enumerate().filter_map(
@@ -201,7 +206,7 @@ impl WriterGenerator {
 
     /// Generate a unique value for `key`, suitable for use in a
     /// "shell-safe" filename.  If you pass `key` twice, you'll get two
-    /// different values.
+    /// different values. Also handles case-insensitive file system collisions.
     fn unique_value(&mut self, key: &[u8]) -> String {
         // Sanitize our key.
         let utf8 = String::from_utf8_lossy(key);
@@ -212,17 +217,34 @@ impl WriterGenerator {
             safe
         };
 
-        // Now check for collisions.
-        if self.used.contains(&base) {
+        // Check for both exact and case-insensitive collisions
+        // to ensure uniqueness on case-insensitive file systems
+        let base_lower = base.to_lowercase();
+        let has_collision = self.used.contains(&base)
+            || self
+                .used
+                .iter()
+                .any(|used| used.to_lowercase() == base_lower);
+
+        if has_collision {
             loop {
                 let candidate = format!("{}_{}", &base, self.counter);
+                let candidate_lower = candidate.to_lowercase();
                 self.counter = self.counter.checked_add(1).unwrap_or_else(|| {
                     // We'll run out of other things long before we ever
                     // reach this, but we'll check just for correctness and
                     // completeness.
                     panic!("Cannot generate unique value")
                 });
-                if !self.used.contains(&candidate) {
+
+                // Check for both exact and case-insensitive collisions
+                let candidate_has_collision = self.used.contains(&candidate)
+                    || self
+                        .used
+                        .iter()
+                        .any(|used| used.to_lowercase() == candidate_lower);
+
+                if !candidate_has_collision {
                     self.used.insert(candidate.clone());
                     return candidate;
                 }

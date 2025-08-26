@@ -11,10 +11,19 @@ If the question cannot be answered using the Dataset's Summary Statistics & Freq
 it will auto-infer a Data Dictionary & provide it to the LLM as additional context to create a
 SQL query that DETERMINISTICALLY answers the natural language question ("SQL RAG" mode).
 
+SQL RAG MODE:
+Two SQL dialects are currently supported - DuckDB (recommended) & Polars. If the
+QSV_DESCRIBEGPT_DB_ENGINE environment variable is set to the absolute path of the DuckDB binary,
+DuckDB will be used to answer the question. Otherwise, if the "polars" feature is enabled,
+Polars SQL will be used.
+
+If neither DuckDB nor Polars is available, the SQL query will be returned as is.
+
 NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
 Even in "SQL RAG" mode, though the SQL query is guaranteed to be deterministic, the query itself
-may not be correct. OpenAI's open-weights gpt-oss-20b model was used during development and testing
-and is recommended for most use cases.
+may not be correct.
+
+OpenAI's open-weights gpt-oss-20b model was used during development & is recommended for most use cases.
 
 Examples:
 

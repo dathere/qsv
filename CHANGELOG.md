@@ -78,6 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * fix:`rename` add `--positional` option by @jqnatividad in https://github.com/dathere/qsv/pull/2930
 * fix: `rename` the real fix - positional is now the default and pairwise is the option by @jqnatividad in https://github.com/dathere/qsv/pull/2931
 * fix: partition case insensitive filesystems by @jqnatividad in https://github.com/dathere/qsv/pull/2934
+* build(deps): bump mimalloc from 0.1.47 to 0.1.48 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2935
+* feat: `describegpt` various DuckDB improvements by @jqnatividad in https://github.com/dathere/qsv/pull/2936
+* build(deps): bump base62 from 2.2.1 to 2.2.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2937
 
 ## New Contributors
 * @abobov made their first contribution in https://github.com/dathere/qsv/pull/2862

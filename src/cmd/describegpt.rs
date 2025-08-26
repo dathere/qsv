@@ -168,9 +168,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cached::{
-    DiskCache, IOCached, RedisCache, Return, proc_macro::io_cached, stores::DiskCacheBuilder,
-};
+use cached::{DiskCache, RedisCache, Return, proc_macro::io_cached, stores::DiskCacheBuilder};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -293,6 +291,7 @@ static DEFAULT_DISKCACHE_TTL_SECS: u64 = 60 * 60 * 24 * 28;
 static DISKCACHE_DIR: OnceLock<String> = OnceLock::new();
 static REDISCONFIG: OnceLock<RedisConfig> = OnceLock::new();
 static DISKCACHECONFIG: OnceLock<DiskCacheConfig> = OnceLock::new();
+
 #[derive(Debug)]
 struct RedisConfig {
     conn_str:      String,
@@ -339,14 +338,16 @@ impl DiskCacheConfig {
     }
 }
 
-static QUIET_FLAG: OnceLock<AtomicBool> = OnceLock::new();
+static QUIET_FLAG: AtomicBool = AtomicBool::new(false);
 static QSV_PATH: OnceLock<String> = OnceLock::new();
 static FILE_HASH: OnceLock<String> = OnceLock::new();
 static PROMPT_FILE: OnceLock<PromptFile> = OnceLock::new();
+static PROMPT_VALIDITY_FLAGS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, String>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 fn print_status(msg: &str, elapsed: Option<std::time::Duration>) {
-    let quiet_flag = QUIET_FLAG.get().unwrap();
-    if !quiet_flag.load(Ordering::Relaxed) {
+    if !QUIET_FLAG.load(Ordering::Relaxed) {
         if let Some(duration) = elapsed {
             eprintln!("{msg} (elapsed: {:.2}s)", duration.as_secs_f64());
         } else {
@@ -604,8 +605,7 @@ fn get_prompt(
 - Use DuckDB v1.0 syntax
 - Use DuckDB's `read_csv` table function to read the input CSV
 - Use the placeholder `'INPUT_TABLE_NAME'` for the input csv. INPUT_TABLE_NAME must be enclosed in single quotes
-- Enclose column names in double quotes
-- Only use functions from the LoadedDuckDB extensions listed below
+- Only use functions from the Loaded DuckDB extensions listed below
 - Make sure the generated SQL query is valid and has comments to explain the query
 - Add a comment with the placeholder "GENERATED_BY_SIGNATURE" at the top of the query"#;
 
@@ -754,15 +754,25 @@ fn get_cache_key(args: &Args, kind: &str, actual_model: &str) -> String {
     } else {
         None
     };
+
+    // For prompt kind, include a validity flag that can be invalidated
+    let validity_flag = if kind == "prompt" {
+        // Check if there's a validity flag stored for this prompt
+        get_prompt_validity_flag(args, prompt_content)
+    } else {
+        "valid".to_string()
+    };
+
     format!(
-        "{:?}{:?}{:?}{:?}{:?}{}{}",
+        "{:?}{:?}{:?}{:?}{:?}{}{}{}",
         args.arg_input,
         args.flag_prompt_file,
         prompt_content,
         args.flag_max_tokens,
         actual_model,
         kind,
-        file_hash
+        file_hash,
+        validity_flag
     )
 }
 
@@ -771,6 +781,70 @@ fn get_analysis_cache_key(args: &Args, file_hash: &str) -> String {
         "analysis_{:?}{:?}{}",
         args.arg_input, args.flag_stats_options, file_hash
     )
+}
+
+// Get the validity flag for a prompt
+fn get_prompt_validity_flag(args: &Args, prompt_content: Option<&String>) -> String {
+    let flags = PROMPT_VALIDITY_FLAGS.lock().unwrap();
+
+    // Create a key for this prompt
+    let prompt_key = if let Some(content) = prompt_content {
+        format!("{:?}{:?}{}", args.arg_input, args.flag_prompt_file, content)
+    } else {
+        format!("{:?}{:?}", args.arg_input, args.flag_prompt_file)
+    };
+
+    // Return the validity flag, or "valid" if not found
+    flags
+        .get(&prompt_key)
+        .cloned()
+        .unwrap_or_else(|| "valid".to_string())
+}
+
+// Invalidate the validity flag for a prompt
+fn invalidate_prompt_validity_flag(args: &Args, prompt_content: Option<&String>) {
+    let mut flags = PROMPT_VALIDITY_FLAGS.lock().unwrap();
+
+    // Create a key for this prompt
+    let prompt_key = if let Some(content) = prompt_content {
+        format!("{:?}{:?}{}", args.arg_input, args.flag_prompt_file, content)
+    } else {
+        format!("{:?}{:?}", args.arg_input, args.flag_prompt_file)
+    };
+
+    // Simply mark as invalid - no need for timestamps
+    flags.insert(prompt_key, "invalid".to_string());
+}
+
+// Try to remove prompt cache entries with different validity flags
+fn try_remove_prompt_cache_entries(base_key: &str) -> bool {
+    let mut removed = false;
+
+    // Try with "valid" flag
+    let key_with_valid = format!("{base_key}valid");
+    if GET_DISKCACHE_COMPLETION
+        .connection()
+        .remove(&key_with_valid)
+        .is_ok()
+    {
+        removed = true;
+    }
+
+    // Try with "invalid" flag
+    let key_with_invalid = format!("{base_key}invalid");
+    if GET_DISKCACHE_COMPLETION
+        .connection()
+        .remove(&key_with_invalid)
+        .is_ok()
+    {
+        removed = true;
+    }
+
+    // Flush the disk cache to ensure changes are persisted
+    // safety: we just checked that the cache is initialized
+    GET_DISKCACHE_COMPLETION.connection().flush().unwrap();
+
+    removed
 }
 
 // this is a disk cache that can be used across qsv sessions
@@ -1358,6 +1432,11 @@ Executing the SQL query..."#,
             .captures(&completion_response.response)
             .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
         else {
+            // Invalidate the prompt cache entry so user can try again without reinferring
+            // dictionary
+            if args.flag_disk_cache || args.flag_redis_cache {
+                let _ = invalidate_cache_entry(args, "prompt");
+            }
             return fail_clierror!("Failed to extract SQL query from custom prompt response");
         };
 
@@ -1368,12 +1447,28 @@ Executing the SQL query..."#,
             log::debug!("DuckDB SQL query:\n{sql_query}");
 
             let (_, stderr) =
-                run_duckdb_query(&sql_query, sql_results, "DuckDB SQL query issued.")?;
-
-            // Check stderr
-            if stderr.to_lowercase().contains("error:") {
-                return fail_clierror!("DuckDB SQL query execution failed: {stderr}");
-            }
+                match run_duckdb_query(&sql_query, sql_results, "DuckDB SQL query issued.") {
+                    Ok((stdout, stderr)) => {
+                        // Check stderr for error messages
+                        if stderr.to_ascii_lowercase().contains("error:") {
+                            // Invalidate the prompt cache entry so user can try again without
+                            // reinferring dictionary
+                            if args.flag_disk_cache || args.flag_redis_cache {
+                                let _ = invalidate_cache_entry(args, "prompt");
+                            }
+                            return fail_clierror!("DuckDB SQL query execution failed: {stderr}");
+                        }
+                        (stdout, stderr)
+                    },
+                    Err(e) => {
+                        // Invalidate the prompt cache entry so user can try again without
+                        // reinferring dictionary
+                        if args.flag_disk_cache || args.flag_redis_cache {
+                            let _ = invalidate_cache_entry(args, "prompt");
+                        }
+                        return Err(e);
+                    },
+                };
 
             print_status(
                 &format!("DuckDB SQL query successful. Saved results to {sql_results} {stderr}"),
@@ -1391,7 +1486,7 @@ Executing the SQL query..."#,
                 let sql_query_file = tempfile::Builder::new().suffix(".sql").tempfile()?;
                 fs::write(&sql_query_file, sql_query)?;
 
-                let (_, stderr) = run_qsv_cmd(
+                let (_, stderr) = match run_qsv_cmd(
                     "sqlp",
                     &[
                         &sql_query_file.path().display().to_string(),
@@ -1401,12 +1496,28 @@ Executing the SQL query..."#,
                     ],
                     input_path,
                     "Polars SQL query issued.",
-                )?;
-
-                // Check stderr
-                if stderr.contains("error:") {
-                    return fail_clierror!("Polars SQL query execution failed: {stderr}");
-                }
+                ) {
+                    Ok((stdout, stderr)) => {
+                        // Check stderr for error messages
+                        if stderr.to_ascii_lowercase().contains("error:") {
+                            // Invalidate the prompt cache entry so user can try again without
+                            // reinferring dictionary
+                            if args.flag_disk_cache || args.flag_redis_cache {
+                                let _ = invalidate_cache_entry(args, "prompt");
+                            }
+                            return fail_clierror!("Polars SQL query execution failed: {stderr}");
+                        }
+                        (stdout, stderr)
+                    },
+                    Err(e) => {
+                        // Invalidate the prompt cache entry so user can try again without
+                        // reinferring dictionary
+                        if args.flag_disk_cache || args.flag_redis_cache {
+                            let _ = invalidate_cache_entry(args, "prompt");
+                        }
+                        return Err(e);
+                    },
+                };
 
                 print_status(
                     &format!(
@@ -1416,12 +1527,19 @@ Executing the SQL query..."#,
                 );
             }
             #[cfg(not(feature = "polars"))]
-            return fail_clierror!(
-                "Cannot answer the prompt using just Summary Statistics & Frequency Distribution \
-                 data. However, \"SQL RAG\" mode is only supported when the `polars` feature is \
-                 enabled, or when using DuckDB via the QSV_DESCRIBEGPT_DB_ENGINE environment \
-                 variable."
-            );
+            {
+                // Invalidate the prompt cache entry so user can try again without reinferring
+                // dictionary
+                if args.flag_disk_cache || args.flag_redis_cache {
+                    let _ = invalidate_cache_entry(args, "prompt");
+                }
+                return fail_clierror!(
+                    "Cannot answer the prompt using just Summary Statistics & Frequency \
+                     Distribution data. However, \"SQL RAG\" mode is only supported when the \
+                     `polars` feature is enabled, or when using DuckDB via the \
+                     QSV_DESCRIBEGPT_DB_ENGINE environment variable."
+                );
+            }
         }
     }
 
@@ -1519,6 +1637,23 @@ fn run_duckdb_query(
     let stderr_str = std::str::from_utf8(&output.stderr)
         .map_err(|e| CliError::Other(format!("Unable to parse stderr of DuckDB command: {e:?}")))?;
 
+    // Check if DuckDB command failed (non-zero exit status)
+    if !output.status.success() {
+        log::debug!("DuckDB command failed with exit status: {output:?}");
+        log::debug!("DuckDB stderr: {stderr_str}");
+        return Err(CliError::Other(format!(
+            "DuckDB SQL query execution failed: {stderr_str}"
+        )));
+    }
+
+    // Also check stderr for error messages even if exit status is 0
+    if stderr_str.to_ascii_lowercase().contains("error:") {
+        log::debug!("DuckDB stderr contains error: {stderr_str}");
+        return Err(CliError::Other(format!(
+            "DuckDB SQL query execution failed: {stderr_str}"
+        )));
+    }
+
     // Write the output to the specified file
     if !output_path.is_empty() {
         fs::write(output_path, stdout_str).map_err(|e| {
@@ -1543,6 +1678,65 @@ fn determine_cache_kinds_to_remove(args: &Args) -> Vec<&'static str> {
     }
 }
 
+// Helper function to invalidate a specific cache entry by modifying the cache key
+fn invalidate_cache_entry(args: &Args, kind: &str) -> CliResult<()> {
+    if kind == "prompt" {
+        // For prompt kind, invalidate the validity flag
+        let prompt_content = args.flag_prompt.as_ref();
+        invalidate_prompt_validity_flag(args, prompt_content);
+        print_status(
+            "Invalidated prompt cache entry due to SQL execution failure",
+            None,
+        );
+    } else {
+        // For other kinds, try to remove the cache entry directly
+        let prompt_file = get_prompt_file(args)?;
+        let key = get_cache_key(args, kind, &prompt_file.model);
+
+        if args.flag_disk_cache {
+            // Use the existing cache instance from the #[io_cached] macro
+            if let Err(e) = GET_DISKCACHE_COMPLETION.connection().remove(&key) {
+                print_status(
+                    &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
+                    None,
+                );
+            } else {
+                print_status(
+                    &format!("Removed cache entry for {kind} due to SQL execution failure"),
+                    None,
+                );
+                // Flush the disk cache to ensure changes are persisted
+                if let Err(e) = GET_DISKCACHE_COMPLETION.connection().flush() {
+                    print_status(&format!("Warning: Cannot flush disk cache: {e:?}"), None);
+                } else {
+                    print_status("Flushed disk cache after removing cache entry", None);
+                }
+            }
+        } else if args.flag_redis_cache {
+            let conn_str = &REDISCONFIG.get().unwrap().conn_str;
+            let redis_client = redis::Client::open(conn_str.to_string())
+                .map_err(|e| CliError::Other(format!("Invalid Redis connection string: {e:?}")))?;
+
+            let mut redis_conn = redis_client
+                .get_connection()
+                .map_err(|e| CliError::Other(format!("Cannot connect to Redis: {e:?}")))?;
+
+            match redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
+                Ok(_) => print_status(
+                    &format!("Removed cache entry for {kind} due to SQL execution failure"),
+                    None,
+                ),
+                Err(e) => print_status(
+                    &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
+                    None,
+                ),
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let start_time = Instant::now();
     let mut args: Args = util::get_args(USAGE, argv)?;
@@ -1555,7 +1749,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .unwrap();
 
     // Initialize the global quiet flag
-    QUIET_FLAG.set(AtomicBool::new(args.flag_quiet)).unwrap();
+    QUIET_FLAG.store(args.flag_quiet, Ordering::Relaxed);
 
     // Check if QSV_LLM_BASE_URL is set
     if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {
@@ -1655,30 +1849,47 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // Determine which cache entries to remove
             let kinds_to_remove = determine_cache_kinds_to_remove(&args);
 
-            // Create the same cache instance that the #[io_cached] macro uses
-            let cache_dir = DISKCACHE_DIR.get().unwrap();
-            let diskcache_config = DISKCACHECONFIG.get().unwrap();
-            let io_cache: DiskCache<String, CompletionResponse> =
-                DiskCacheBuilder::new("describegpt")
-                    .set_disk_directory(cache_dir)
-                    .set_lifespan(diskcache_config.ttl_secs)
-                    .set_refresh(diskcache_config.ttl_refresh)
-                    .build()
-                    .map_err(|e| CliError::Other(format!("Error building DiskCache: {e}")))?;
-
             // Get the model from prompt file for cache key generation
             let prompt_file = get_prompt_file(&args)?;
 
             // Remove cache entries for all specified kinds using the same key format as the macro
             for kind in kinds_to_remove {
-                let key = get_cache_key(&args, kind, &prompt_file.model);
-                if let Err(e) = io_cache.cache_remove(&key) {
-                    print_status(
-                        &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
-                        None,
+                if kind == "prompt" {
+                    // For prompt kind, we need to remove cache entries with any validity flag
+                    // Get the base key without validity flag
+                    let base_key = format!(
+                        "{:?}{:?}{:?}{:?}{:?}{}{}",
+                        args.arg_input,
+                        args.flag_prompt_file,
+                        args.flag_prompt,
+                        args.flag_max_tokens,
+                        prompt_file.model,
+                        kind,
+                        FILE_HASH.get().unwrap_or(&String::new())
                     );
+
+                    // Try to remove cache entries with different validity flags
+                    let removed = try_remove_prompt_cache_entries(&base_key);
+
+                    if removed {
+                        print_status(&format!("Found and removed cache entry for {kind}"), None);
+                    } else {
+                        print_status(
+                            &format!("Warning: Cannot remove cache entry for {kind}"),
+                            None,
+                        );
+                    }
                 } else {
-                    print_status(&format!("Found and removed cache entry for {kind}"), None);
+                    // For other kinds, use the normal key format
+                    let key = get_cache_key(&args, kind, &prompt_file.model);
+                    if let Err(e) = GET_DISKCACHE_COMPLETION.connection().remove(&key) {
+                        print_status(
+                            &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
+                            None,
+                        );
+                    } else {
+                        print_status(&format!("Found and removed cache entry for {kind}"), None);
+                    }
                 }
             }
             return Ok(());
@@ -1730,13 +1941,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // Remove cache entries for all specified kinds using the same key format as the macro
             for kind in kinds_to_remove {
                 let key = get_cache_key(&args, kind, &prompt_file.model);
-                if let Err(e) = redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
-                    print_status(
+                match redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
+                    Ok(_) => {
+                        print_status(&format!("Found and removed cache entry for {kind}"), None)
+                    },
+                    Err(e) => print_status(
                         &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
                         None,
-                    );
-                } else {
-                    print_status(&format!("Found and removed cache entry for {kind}"), None);
+                    ),
                 }
             }
             return Ok(());
@@ -1938,7 +2150,13 @@ fn get_cached_analysis(
         },
         CacheType::Fresh => {
             // Force fresh analysis but still update cache
+            // set quiet flag to true to avoid printing status messages
+            let old_quiet_flag = QUIET_FLAG.load(Ordering::Relaxed);
+            QUIET_FLAG.store(true, Ordering::Relaxed);
             let fresh_result = perform_analysis(args, input_path)?;
+            // restore quiet flag setting
+            QUIET_FLAG.store(old_quiet_flag, Ordering::Relaxed);
+
             // Manually update the appropriate cache with the fresh result
             if args.flag_redis_cache {
                 let _ = get_redis_analysis(args, file_hash, input_path);

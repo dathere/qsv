@@ -76,6 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * feat: `describegpt` add DuckDB support in SQL RAG mode by @jqnatividad in https://github.com/dathere/qsv/pull/2929
 * build(deps): bump jsonschema from 0.32.1 to 0.33.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2928
 * fix:`rename` add `--positional` option by @jqnatividad in https://github.com/dathere/qsv/pull/2930
+* fix: `rename` the real fix - positional is now the default and pairwise is the option by @jqnatividad in https://github.com/dathere/qsv/pull/2931
+* fix: partition case insensitive filesystems by @jqnatividad in https://github.com/dathere/qsv/pull/2934
 
 ## New Contributors
 * @abobov made their first contribution in https://github.com/dathere/qsv/pull/2862

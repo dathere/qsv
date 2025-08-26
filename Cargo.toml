@@ -153,7 +153,7 @@ libc = "0.2"
 localzone = { version = "0.3", features = ["auto_validation"] }
 log = "0.4"
 memmap2 = "0.9"
-mimalloc = { version = "0.1", default-features = false, optional = true }
+mimalloc = { version = "0.1", default-features = false, features = ["v3"], optional = true }
 minijinja = { version = "2", features = [
     "json",
     "loop_controls",

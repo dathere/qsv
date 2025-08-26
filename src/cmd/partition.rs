@@ -155,7 +155,8 @@ impl Args {
                     }
                 }
                 writers.insert(key_vec.clone(), wtr);
-                writers.get_mut(&key_vec).unwrap()
+                // safety: we just inserted the key into the map, so it must be present
+                unsafe { writers.get_mut(&key_vec).unwrap_unchecked() }
             };
 
             if self.flag_drop {

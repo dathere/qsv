@@ -1303,10 +1303,10 @@ fn run_inference_options(
             Some(start_time.elapsed()),
         );
         has_sql_query = completion_response.response.contains("```sql");
-        // append the reasoning to the sql query as a block comment
+        // append the reasoning to the sql query as a separate markdown section
         if has_sql_query {
             completion_response.response = format!(
-                "{}\n/* Reasoning:\n{}\n*/\n",
+                "{}\n\n## Reasoning\n\n{}\n",
                 completion_response.response, completion_response.reasoning
             );
         }

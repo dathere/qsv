@@ -118,16 +118,17 @@ describegpt options:
                            If the QSV_LLM_MODEL environment variable is set, it will be
                            used instead.
                            [default: gpt-oss-20b]
-    --addl-props <props>   Additional model properties to pass to the LLM chat/completion API.
+    --addl-props <json>    Additional model properties to pass to the LLM chat/completion API.
                            Various models support different properties beyond the standard ones.
-                           For example, gpt-oss-20b supports the "reasoning_effort" property.
-                           To set the "reasoning_effort" property to "high", use --addl-props
-                           '{"reasoning_effort": "high"}'
+                           For instance, gpt-oss-20b supports the "reasoning_effort" property.
+                           e.g. to set the "reasoning_effort" property to "high" & "temperature"
+                           to 0.5, use '{"reasoning_effort": "high", "temperature": 0.5}'
     -k, --api-key <key>    The API key to use. If the QSV_LLM_APIKEY envvar is set,
                            it will be used instead. Required when the base URL is not localhost.
     -t, --max-tokens <n>   Limits the number of generated tokens in the output.
                            Set to 0 to disable token limits.
-                           If the --base-url is localhost, the default is automatically set to 0.
+                           If the --base-url is localhost, indicating a local LLM,
+                           the default is automatically set to 0.
                            [default: 2000]
     --timeout <secs>       Timeout for completions in seconds. If 0, no timeout is used.
                            [default: 600]
@@ -390,13 +391,16 @@ fn get_duckdb_path() -> CliResult<String> {
     let duckdb_path = env::var(QSV_DESCRIBEGPT_DB_ENGINE_ENV)
         .map_err(|_| "QSV_DESCRIBEGPT_DB_ENGINE env var not set")?;
 
-    // Check if the binary exists and is executable
+    // Check if the binary exists
     let path = Path::new(&duckdb_path);
     if !path.exists() {
         return fail_clierror!("DuckDB binary not found at path: {duckdb_path}");
     }
     if !path.is_file() {
         return fail_clierror!("DuckDB path is not a file: {duckdb_path}");
+    }
+    if !util::is_executable(&duckdb_path)? {
+        return fail_clierror!("DuckDB path is not executable: {duckdb_path}");
     }
 
     // Cache the path
@@ -791,11 +795,12 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
     };
 
     format!(
-        "{:?}{:?}{:?}{:?}{:?}{}{}{}",
+        "{:?}{:?}{:?}{:?}{:?}{:?}{}{}{}",
         args.arg_input,
         args.flag_prompt_file,
         prompt_content,
         args.flag_max_tokens,
+        args.flag_addl_props,
         actual_model,
         kind,
         file_hash,
@@ -1442,7 +1447,7 @@ fn run_inference_options(
         // append the reasoning to the sql query as a separate markdown section
         if has_sql_query {
             completion_response.response = format!(
-                "{}\n\n## Reasoning\n\n{}\n",
+                "{}\n\n## REASONING\n\n{}\n",
                 completion_response.response, completion_response.reasoning
             );
         }
@@ -1765,11 +1770,12 @@ fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
             let prompt_content_for_key = args.flag_prompt.as_ref();
 
             format!(
-                "{:?}{:?}{:?}{:?}{:?}{}{}",
+                "{:?}{:?}{:?}{:?}{:?}{:?}{}{}",
                 args.arg_input,
                 args.flag_prompt_file,
                 prompt_content_for_key,
                 args.flag_max_tokens,
+                args.flag_addl_props,
                 &prompt_file.model,
                 kind,
                 file_hash
@@ -1957,11 +1963,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     // For prompt kind, we need to remove cache entries with any validity flag
                     // Get the base key without validity flag
                     let base_key = format!(
-                        "{:?}{:?}{:?}{:?}{:?}{}{}",
+                        "{:?}{:?}{:?}{:?}{:?}{:?}{}{}",
                         args.arg_input,
                         args.flag_prompt_file,
                         args.flag_prompt,
                         args.flag_max_tokens,
+                        args.flag_addl_props,
                         prompt_file.model,
                         kind,
                         FILE_HASH.get().unwrap_or(&String::new())

@@ -20,8 +20,10 @@ Polars SQL will be used.
 If neither DuckDB nor Polars is available, the SQL query will be returned as is.
 
 NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
+
 Even in "SQL RAG" mode, though the SQL query is guaranteed to be deterministic, the query itself
-may not be correct.
+may not be correct. In the event of a SQL query execution failure, run the same --prompt with
+the --fresh option to request the LLM to generate a new SQL query.
 
 OpenAI's open-weights gpt-oss-20b model was used during development & is recommended for most use cases.
 
@@ -112,6 +114,11 @@ describegpt options:
                            If the QSV_LLM_MODEL environment variable is set, it will be
                            used instead.
                            [default: gpt-oss-20b]
+    --addl-props <props>   Additional model properties to pass to the LLM chat/completion API.
+                           Various models support different properties beyond the standard ones.
+                           For example, gpt-oss-20b supports the "reasoning_effort" property.
+                           To set the "reasoning_effort" property to "high", use --addl-props
+                           '{"reasoning_effort": "high"}'
     -k, --api-key <key>    The API key to use. If the QSV_LLM_APIKEY envvar is set,
                            it will be used instead. Required when the base URL is not localhost.
     -t, --max-tokens <n>   Limits the number of generated tokens in the output.
@@ -198,6 +205,7 @@ struct Args {
     flag_prompt_file:    Option<String>,
     flag_base_url:       Option<String>,
     flag_model:          Option<String>,
+    flag_addl_props:     Option<String>,
     flag_api_key:        Option<String>,
     flag_max_tokens:     u32,
     flag_timeout:        u16,
@@ -674,12 +682,22 @@ fn get_completion(
     };
 
     // Create request data
-    let request_data = json!({
+    let mut request_data = json!({
         "model": model,
         "max_tokens": max_tokens,
         "messages": messages,
         "stream": false
     });
+
+    // Add additional model properties if provided
+    if let Some(addl_props) = args.flag_addl_props.as_ref() {
+        let addl_props_json: serde_json::Value = serde_json::from_str(addl_props)
+            .map_err(|e| CliError::Other(format!("Invalid JSON in --addl-props: {e:?}")))?;
+        for (key, value) in addl_props_json.as_object().unwrap() {
+            request_data[key] = value.clone();
+        }
+    }
+
     // deserializing request_data is relatively expensive, so only do it if debug is enabled
     if log::log_enabled!(log::Level::Debug) {
         log::debug!("Request data: {request_data:?}");
@@ -1258,12 +1276,24 @@ fn run_inference_options(
         let start_time = Instant::now();
         print_status("  Inferring Data Dictionary...", None);
         messages = get_messages(&prompt, &system_prompt, "");
+
+        // Special case: if --prompt is used with --fresh, use normal cache for dictionary
+        let dictionary_cache_type = if args.flag_prompt.is_some() && args.flag_fresh {
+            if args.flag_redis_cache {
+                &CacheType::Redis
+            } else {
+                &CacheType::Disk
+            }
+        } else {
+            cache_type
+        };
+
         data_dict = get_cached_completion(
             args,
             &client,
             &model,
             api_key,
-            cache_type,
+            dictionary_cache_type,
             "dictionary",
             &messages,
         )?;
@@ -1420,10 +1450,17 @@ fn run_inference_options(
 
         let sql_query_start = Instant::now();
         print_status(
-            r#"
+            &format!(
+                r#"
 Cannot answer the prompt using just Summary Statistics & Frequency Distribution data.
 Generated a SQL query to answer the prompt deterministically.
-Executing the SQL query..."#,
+Executing the {} SQL query..."#,
+                if should_use_duckdb() {
+                    "DuckDB"
+                } else {
+                    "Polars"
+                }
+            ),
             None,
         );
 

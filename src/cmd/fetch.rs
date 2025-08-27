@@ -1397,23 +1397,19 @@ fn get_response(
             let remaining =
                 parse_ratelimit_header_value(ratelimit_remaining.or(ratelimit_remaining_sec), 9999);
 
-            // if there's a ratelimit_reset field in the response header, get it
-            // otherwise, set reset to sentinel value 0
-            let mut reset_secs =
-                parse_ratelimit_header_value(ratelimit_reset.or(ratelimit_reset_sec), 0);
-
             // if there's a retry_after field in the response header, get it
             // and set reset to it
-            if let Some(retry_after) = retry_after {
-                let retry_str = retry_after.to_str().unwrap();
+            let reset_secs = if let Some(retry_after) = retry_after {
                 // if we cannot parse its value as u64, the retry after value
                 // is most likely an rfc2822 date and not number of seconds to
                 // wait before retrying, which is a valid value
                 // however, we don't want to do date-parsing here, so we just
                 // wait timeout_secs seconds before retrying
-                reset_secs =
-                    atoi_simd::parse_pos::<u64>(retry_str.as_bytes()).unwrap_or(timeout_secs);
-            }
+                atoi_simd::parse_pos::<u64>(retry_after.to_str().unwrap().as_bytes())
+                    .unwrap_or(timeout_secs)
+            } else {
+                parse_ratelimit_header_value(ratelimit_reset.or(ratelimit_reset_sec), 0)
+            };
 
             // if reset_secs > timeout, then just time out and skip the retries
             if reset_secs > timeout_secs {

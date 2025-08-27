@@ -154,6 +154,8 @@ describegpt options:
                              QSV_REDIS_TTL_REFRESH env vars respectively to change Redis cache settings.
                              This option is ignored if the --disk-cache option is enabled.
     --fresh                  Send a fresh request to the LLM API, refreshing a cached response if it exists.
+                             When a --prompt SQL query fails, you can also use this option to request the
+                             LLM to generate a new SQL query.
     --forget                 Remove a cached response if it exists and then exit.
     --flush-cache            Flush all the keys in the current cache on startup.
 

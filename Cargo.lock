@@ -689,9 +689,9 @@ dependencies = [
 
 [[package]]
 name = "async-executor"
-version = "1.13.2"
+version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb812ffb58524bdd10860d7d974e2f01cc0950c2438a74ee5ec2e2280c6c4ffa"
+checksum = "497c00e0fd83a72a79a39fcbd8e3e2f055d6f6c7e025f3b3d91f4f8e76527fb8"
 dependencies = [
  "async-task",
  "concurrent-queue",
@@ -2976,7 +2976,7 @@ dependencies = [
 [[package]]
 name = "grex"
 version = "1.4.5"
-source = "git+https://github.com/jqnatividad/grex?branch=bumped-dependencies-202502#7b9b6cc831f8090a81c48f6091a1ca36c35a498c"
+source = "git+https://github.com/jqnatividad/grex?rev=7b9b6cc#7b9b6cc831f8090a81c48f6091a1ca36c35a498c"
 dependencies = [
  "itertools 0.14.0",
  "lazy_static",
@@ -3832,9 +3832,9 @@ dependencies = [
 
 [[package]]
 name = "liblzma"
-version = "0.4.3"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "272b875472a046e39ff7408374a5a050b112d2142211a0f54a295c0bd1c3c757"
+checksum = "10bf66f4598dc77ff96677c8e763655494f00ff9c1cf79e2eb5bb07bc31f807d"
 dependencies = [
  "liblzma-sys",
 ]
@@ -5839,6 +5839,7 @@ dependencies = [
  "num_cpus",
  "odht",
  "phf 0.13.1",
+ "planus",
  "polars",
  "polars-ops",
  "polars-utils",

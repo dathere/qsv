@@ -314,8 +314,8 @@ csv       = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimiz
 csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimized-non-allocating-byterecord-trim" }
 csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimized-non-allocating-byterecord-trim" }
 
-# use our patched fork of csvlens to add natural sort until our PR is merged
-csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "133-natural-sort" }
+# use our patched fork of csvlens to add natural sort until our PR is merged; updated with upstream fixes
+csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "natural-sort-with-upstream" }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88" }

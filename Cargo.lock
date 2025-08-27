@@ -1841,7 +1841,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.13.0"
-source = "git+https://github.com/jqnatividad/csvlens?branch=133-natural-sort#9069422a6545c2ec9fe7a84351ea1c4df66dfc11"
+source = "git+https://github.com/jqnatividad/csvlens?branch=natural-sort-with-upstream#d47bf98a594d769e352902dbf15b72da0557528b"
 dependencies = [
  "ansi-to-tui",
  "anyhow",

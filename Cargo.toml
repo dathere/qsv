@@ -178,7 +178,7 @@ mlua = { version = "0.11", features = [
 num_cpus = "1"
 odht = "0.3"
 phf = { version = "0.13", features = ["macros"] }
-planus = { version = "=1.1.1", optional = true }
+planus = { version = "=1.2.0", optional = true }
 polars = { version = "0.50", features = [
     "asof_join",
     "avro",

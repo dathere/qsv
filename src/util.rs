@@ -3217,6 +3217,26 @@ pub fn hash_sha256_file(path: &Path) -> CliResult<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+#[cfg(unix)]
+pub fn is_executable(path: &str) -> std::io::Result<bool> {
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    let metadata = fs::metadata(path)?;
+    Ok(metadata.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(windows)]
+pub fn is_executable(path: &str) -> std::io::Result<bool> {
+    use std::path::Path;
+    let p = Path::new(path);
+    Ok(p.extension().and_then(|e| e.to_str()).map_or(false, |ext| {
+        matches!(
+            ext.to_ascii_lowercase().as_str(),
+            "exe" | "bat" | "cmd" | "com"
+        )
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Write;

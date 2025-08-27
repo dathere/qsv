@@ -23,9 +23,9 @@ Even in "SQL RAG" mode, though the SQL query is guaranteed to be deterministic, 
 may not be correct. In the event of a SQL query execution failure, run the same --prompt with
 the --fresh option to request the LLM to generate a new SQL query.
 
-When using DuckDB, all loaded DuckDB extensions will be passed to the LLM to let it know what
-functions (even UDFs!) it can use in the SQL queries it generates. If you want a specific function or
-technique to be used in the SQL query, mention it in the prompt.
+When using DuckDB, all loaded DuckDB extensions will be sent as additional context to the LLM to let
+it know what functions (even UDFs!) it can use in the SQL queries it generates. If you want a
+specific function or technique to be used in the SQL query, mention it in the prompt.
 
 OpenAI's open-weights gpt-oss-20b model was used during development & is recommended for most use cases.
 

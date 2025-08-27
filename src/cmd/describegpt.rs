@@ -187,17 +187,18 @@ use cached::{
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use strum_macros::{Display, EnumString};
 
 use crate::{CliError, CliResult, config::Config, regex_oncelock, util, util::process_input};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
 enum PromptType {
     Dictionary,
     Description,
     Tags,
-    Custom,
+    Prompt,
 }
-
 #[derive(Debug, Deserialize)]
 struct Args {
     arg_input:           Option<String>,
@@ -591,7 +592,7 @@ fn get_prompt(
         PromptType::Dictionary => prompt_file.dictionary_prompt.clone(),
         PromptType::Description => prompt_file.description_prompt.clone(),
         PromptType::Tags => prompt_file.tags_prompt.clone(),
-        PromptType::Custom => {
+        PromptType::Prompt => {
             let working_prompt = args
                 .flag_prompt
                 .clone()
@@ -605,7 +606,7 @@ fn get_prompt(
 
     // If this is a custom prompt and DuckDB should be used, modify the SQL query generation
     // guidelines
-    if prompt_type == PromptType::Custom && should_use_duckdb() {
+    if prompt_type == PromptType::Prompt && should_use_duckdb() {
         // Look for the SQL query generation guidelines section & replace it with DuckDB guidance
         let sql_guidelines_start = "SQL Query Generation Guidelines:\n\n";
         let sql_guidelines_end = "\nEND SQL Query Generation Guidelines\n";
@@ -772,17 +773,17 @@ fn get_completion(
     })
 }
 
-fn get_cache_key(args: &Args, kind: &str, actual_model: &str) -> String {
+fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
     let file_hash = FILE_HASH.get().unwrap_or(&String::new()).clone();
     // Only include prompt content in cache key for "prompt" kind
-    let prompt_content = if kind == "prompt" {
+    let prompt_content = if kind == PromptType::Prompt {
         args.flag_prompt.as_ref()
     } else {
         None
     };
 
     // For prompt kind, include a validity flag that can be invalidated
-    let validity_flag = if kind == "prompt" {
+    let validity_flag = if kind == PromptType::Prompt {
         // Check if there's a validity flag stored for this prompt
         get_prompt_validity_flag(args, prompt_content)
     } else {
@@ -891,7 +892,7 @@ fn try_remove_prompt_cache_entries(base_key: &str) -> bool {
             ttl_secs = diskcache_config.ttl_secs);
         diskcache
     }"##,
-    map_error = r##"|e| CliError::Other(format!("Diskcache Error: {:?}", e))"##,
+    map_error = r##"|e| CliError::Other(format!("Diskcache Error: {e:?}"))"##,
     with_cached_flag = true
 )]
 fn get_diskcache_completion(
@@ -899,7 +900,8 @@ fn get_diskcache_completion(
     client: &Client,
     model: &str,
     api_key: &str,
-    #[allow(unused_variables)] kind: &str,
+    // this unused_variable lint is a false positive as we use kind in the io_cached macro
+    #[allow(unused_variables)] kind: PromptType,
     messages: &serde_json::Value,
 ) -> CliResult<Return<CompletionResponse>> {
     Ok(Return::new(get_completion(
@@ -928,7 +930,7 @@ fn get_diskcache_completion(
             pool_size = redis_config.max_pool_size);
         rediscache
     } "##,
-    map_error = r##"|e| CliError::Other(format!("Redis Error: {:?}", e))"##,
+    map_error = r##"|e| CliError::Other(format!("Redis Error: {e:?}"))"##,
     with_cached_flag = true
 )]
 fn get_redis_completion(
@@ -936,7 +938,7 @@ fn get_redis_completion(
     client: &Client,
     model: &str,
     api_key: &str,
-    #[allow(unused_variables)] kind: &str,
+    #[allow(unused_variables)] kind: PromptType,
     messages: &serde_json::Value,
 ) -> CliResult<Return<CompletionResponse>> {
     Ok(Return::new(get_completion(
@@ -964,7 +966,7 @@ fn get_redis_completion(
             ttl_secs = diskcache_config.ttl_secs);
         diskcache
     }"##,
-    map_error = r##"|e| CliError::Other(format!("Analysis Diskcache Error: {:?}", e))"##,
+    map_error = r##"|e| CliError::Other(format!("Analysis Diskcache Error: {e:?}"))"##,
     with_cached_flag = true
 )]
 fn get_diskcache_analysis(
@@ -996,7 +998,7 @@ fn get_diskcache_analysis(
             pool_size = redis_config.max_pool_size);
         rediscache
     } "##,
-    map_error = r##"|e| CliError::Other(format!("Analysis Redis Error: {:?}", e))"##,
+    map_error = r##"|e| CliError::Other(format!("Analysis Redis Error: {e:?}"))"##,
     with_cached_flag = true
 )]
 fn get_redis_analysis(
@@ -1041,7 +1043,7 @@ fn get_cached_completion(
     model: &str,
     api_key: &str,
     cache_type: &CacheType,
-    kind: &str,
+    kind: PromptType,
     messages: &serde_json::Value,
 ) -> CliResult<CompletionResponse> {
     match cache_type {
@@ -1165,13 +1167,13 @@ fn run_inference_options(
 
     // Generate the plaintext and/or JSON output of an inference option
     fn process_output(
-        kind: &str,
+        kind: PromptType,
         completion_response: &CompletionResponse,
         total_json_output: &mut serde_json::Value,
         args: &Args,
     ) -> CliResult<()> {
         // Skip outputting dictionary when using --prompt (but still generate it for context)
-        if kind == "dictionary" && args.flag_prompt.is_some() {
+        if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
             // Still store the dictionary in DATA_DICTIONARY_JSON for context, but don't output it
             DATA_DICTIONARY_JSON.get_or_init(|| completion_response.response.clone());
             // Don't add to total_json_output and don't output anything
@@ -1179,13 +1181,15 @@ fn run_inference_options(
         }
 
         // Check if this is a custom prompt response that contains SQL code
-        let is_sql_response = kind == "prompt"
+        let is_sql_response = kind == PromptType::Prompt
             && args.flag_sql_results.is_some()
             && completion_response.response.contains("```sql");
 
         // Process JSON output if expected or JSONL output is expected
         if (is_json_output(args)? || is_jsonl_output(args)?) && !is_sql_response {
-            total_json_output[kind] = if kind == "description" || kind == "prompt" {
+            total_json_output[kind.to_string()] = if kind == PromptType::Description
+                || kind == PromptType::Prompt
+            {
                 // For description and prompt, create an object with both response and reasoning
                 json!({
                     "response": completion_response.response,
@@ -1210,7 +1214,7 @@ fn run_inference_options(
                     },
                 }
             };
-            if kind == "dictionary" {
+            if kind == PromptType::Dictionary {
                 DATA_DICTIONARY_JSON.get_or_init(|| {
                     serde_json::to_string_pretty(&total_json_output["dictionary"]["response"])
                         .unwrap()
@@ -1220,7 +1224,7 @@ fn run_inference_options(
         // Process plaintext output
         else {
             let mut formatted_output = format_output(&completion_response.response);
-            if kind == "prompt" && is_sql_response {
+            if kind == PromptType::Prompt && is_sql_response {
                 // replace INPUT_TABLE_NAME with input_path
                 formatted_output = formatted_output.replace(
                     INPUT_TABLE_NAME,
@@ -1300,7 +1304,7 @@ fn run_inference_options(
             &model,
             api_key,
             dictionary_cache_type,
-            "dictionary",
+            PromptType::Dictionary,
             &messages,
         )?;
         print_status(
@@ -1310,7 +1314,12 @@ fn run_inference_options(
             ),
             Some(start_time.elapsed()),
         );
-        process_output("dictionary", &data_dict, &mut total_json_output, args)?;
+        process_output(
+            PromptType::Dictionary,
+            &data_dict,
+            &mut total_json_output,
+            args,
+        )?;
     }
 
     // Generate description output
@@ -1335,7 +1344,7 @@ fn run_inference_options(
             &model,
             api_key,
             cache_type,
-            "description",
+            PromptType::Description,
             &messages,
         )?;
         print_status(
@@ -1347,7 +1356,7 @@ fn run_inference_options(
             Some(start_time.elapsed()),
         );
         process_output(
-            "description",
+            PromptType::Description,
             &completion_response,
             &mut total_json_output,
             args,
@@ -1377,7 +1386,13 @@ fn run_inference_options(
         let start_time = Instant::now();
         print_status("  Inferring Tags...", None);
         completion_response = get_cached_completion(
-            args, &client, &model, api_key, cache_type, "tags", &messages,
+            args,
+            &client,
+            &model,
+            api_key,
+            cache_type,
+            PromptType::Tags,
+            &messages,
         )?;
         print_status(
             &format!(
@@ -1386,14 +1401,19 @@ fn run_inference_options(
             ),
             Some(start_time.elapsed()),
         );
-        process_output("tags", &completion_response, &mut total_json_output, args)?;
+        process_output(
+            PromptType::Tags,
+            &completion_response,
+            &mut total_json_output,
+            args,
+        )?;
     }
 
     // Generate custom prompt output
     let mut has_sql_query = false;
     if args.flag_prompt.is_some() {
         (prompt, system_prompt) = get_prompt(
-            PromptType::Custom,
+            PromptType::Prompt,
             stats_str,
             frequency_str,
             headers_str,
@@ -1403,7 +1423,13 @@ fn run_inference_options(
         print_status("  Answering Custom Prompt...", None);
         messages = get_messages(&prompt, &system_prompt, &data_dict.response);
         completion_response = get_cached_completion(
-            args, &client, &model, api_key, cache_type, "prompt", &messages,
+            args,
+            &client,
+            &model,
+            api_key,
+            cache_type,
+            PromptType::Prompt,
+            &messages,
         )?;
         print_status(
             &format!(
@@ -1420,7 +1446,12 @@ fn run_inference_options(
                 completion_response.response, completion_response.reasoning
             );
         }
-        process_output("prompt", &completion_response, &mut total_json_output, args)?;
+        process_output(
+            PromptType::Prompt,
+            &completion_response,
+            &mut total_json_output,
+            args,
+        )?;
     }
 
     print_status("LLM inference/s completed.", Some(llm_start.elapsed()));
@@ -1478,7 +1509,7 @@ Executing the {} SQL query..."#,
             // Invalidate the prompt cache entry so user can try again without reinferring
             // dictionary
             if args.flag_disk_cache || args.flag_redis_cache {
-                let _ = invalidate_cache_entry(args, "prompt");
+                let _ = invalidate_cache_entry(args, PromptType::Prompt);
             }
             return fail_clierror!("Failed to extract SQL query from custom prompt response");
         };
@@ -1497,7 +1528,7 @@ Executing the {} SQL query..."#,
                             // Invalidate the prompt cache entry so user can try again without
                             // reinferring dictionary
                             if args.flag_disk_cache || args.flag_redis_cache {
-                                let _ = invalidate_cache_entry(args, "prompt");
+                                let _ = invalidate_cache_entry(args, PromptType::Prompt);
                             }
                             return fail_clierror!("DuckDB SQL query execution failed: {stderr}");
                         }
@@ -1507,7 +1538,7 @@ Executing the {} SQL query..."#,
                         // Invalidate the prompt cache entry so user can try again without
                         // reinferring dictionary
                         if args.flag_disk_cache || args.flag_redis_cache {
-                            let _ = invalidate_cache_entry(args, "prompt");
+                            let _ = invalidate_cache_entry(args, PromptType::Prompt);
                         }
                         return Err(e);
                     },
@@ -1546,7 +1577,7 @@ Executing the {} SQL query..."#,
                             // Invalidate cache entry so user can try again without
                             // reinferring dictionary
                             if args.flag_disk_cache || args.flag_redis_cache {
-                                let _ = invalidate_cache_entry(args, "prompt");
+                                let _ = invalidate_cache_entry(args, PromptType::Prompt);
                             }
                             return fail_clierror!("Polars SQL query execution failed: {stderr}");
                         }
@@ -1556,7 +1587,7 @@ Executing the {} SQL query..."#,
                         // Invalidate cache entry so user can try again without
                         // reinferring dictionary
                         if args.flag_disk_cache || args.flag_redis_cache {
-                            let _ = invalidate_cache_entry(args, "prompt");
+                            let _ = invalidate_cache_entry(args, PromptType::Prompt);
                         }
                         return Err(e);
                     },
@@ -1573,7 +1604,7 @@ Executing the {} SQL query..."#,
             {
                 // Invalidate cache entry so user can try again without reinferring dictionary
                 if args.flag_disk_cache || args.flag_redis_cache {
-                    let _ = invalidate_cache_entry(args, "prompt");
+                    let _ = invalidate_cache_entry(args, PromptType::Prompt);
                 }
                 return fail_clierror!(
                     "Cannot answer the prompt using just Summary Statistics & Frequency \
@@ -1700,23 +1731,28 @@ fn run_duckdb_query(
     Ok((stdout_str.to_string(), stderr_str.to_string()))
 }
 
-fn determine_cache_kinds_to_remove(args: &Args) -> Vec<&'static str> {
+fn determine_cache_kinds_to_remove(args: &Args) -> Vec<PromptType> {
     if args.flag_dictionary {
-        vec!["dictionary"]
+        vec![PromptType::Dictionary]
     } else if args.flag_description {
-        vec!["description"]
+        vec![PromptType::Description]
     } else if args.flag_tags {
-        vec!["tags"]
+        vec![PromptType::Tags]
     } else if args.flag_prompt.is_some() {
-        vec!["prompt"]
+        vec![PromptType::Prompt]
     } else {
-        vec!["dictionary", "description", "tags", "prompt"]
+        vec![
+            PromptType::Dictionary,
+            PromptType::Description,
+            PromptType::Tags,
+            PromptType::Prompt,
+        ]
     }
 }
 
 // Helper function to invalidate a specific cache entry by modifying the cache key
-fn invalidate_cache_entry(args: &Args, kind: &str) -> CliResult<()> {
-    if kind == "prompt" {
+fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
+    if kind == PromptType::Prompt {
         // For prompt kind, invalidate the validity flag
         let prompt_content = args.flag_prompt.as_ref();
         invalidate_prompt_validity_flag(args, prompt_content);
@@ -1917,7 +1953,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // Remove cache entries for all specified kinds using the same key format as the macro
             for kind in kinds_to_remove {
-                if kind == "prompt" {
+                if kind == PromptType::Prompt {
                     // For prompt kind, we need to remove cache entries with any validity flag
                     // Get the base key without validity flag
                     let base_key = format!(
@@ -2005,7 +2041,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 let key = get_cache_key(&args, kind, &prompt_file.model);
                 match redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
                     Ok(()) => {
-                        print_status(&format!("Found and removed cache entry for {kind}"), None)
+                        print_status(&format!("Found and removed cache entry for {kind}"), None);
                     },
                     Err(e) => print_status(
                         &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),

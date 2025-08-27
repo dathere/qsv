@@ -20,19 +20,21 @@ Polars SQL will be used.
 If neither DuckDB nor Polars is available, the SQL query will be returned as is.
 
 NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
+
 Even in "SQL RAG" mode, though the SQL query is guaranteed to be deterministic, the query itself
-may not be correct.
+may not be correct. In the event of a SQL query execution failure, run the same --prompt with
+the --fresh option to request the LLM to generate a new SQL query.
 
 OpenAI's open-weights gpt-oss-20b model was used during development & is recommended for most use cases.
 
 Examples:
 
-  # Generate a data dictionary of a data.csv using Ollama using the DeepSeek R1:14b model
-  $ qsv describegpt data.csv -u http://localhost:11434/v1 -k ollama -m deepseek-r1:14b --dictionary
-
-  # Generate a data dictionary, description & tags of data.csv using OpenAI's gpt-oss-20b model
+  # Generate a data dictionary, description & tags of data.csv using default OpenAI gpt-oss-20b model
   # (replace <API_KEY> with your OpenAI API key)
   $ qsv describegpt data.csv --api-key <API_KEY> --all
+
+  # Generate a data dictionary of a data.csv using Ollama using the DeepSeek R1:14b model
+  $ qsv describegpt data.csv -u http://localhost:11434/v1 -k ollama -m deepseek-r1:14b --dictionary
 
   # use the disk cache to speed up the process and save on API calls
   $ export QSV_LLM_APIKEY=<API_KEY>
@@ -112,6 +114,11 @@ describegpt options:
                            If the QSV_LLM_MODEL environment variable is set, it will be
                            used instead.
                            [default: gpt-oss-20b]
+    --addl-props <props>   Additional model properties to pass to the LLM chat/completion API.
+                           Various models support different properties beyond the standard ones.
+                           For example, gpt-oss-20b supports the "reasoning_effort" property.
+                           To set the "reasoning_effort" property to "high", use --addl-props
+                           '{"reasoning_effort": "high"}'
     -k, --api-key <key>    The API key to use. If the QSV_LLM_APIKEY envvar is set,
                            it will be used instead. Required when the base URL is not localhost.
     -t, --max-tokens <n>   Limits the number of generated tokens in the output.
@@ -147,6 +154,8 @@ describegpt options:
                              QSV_REDIS_TTL_REFRESH env vars respectively to change Redis cache settings.
                              This option is ignored if the --disk-cache option is enabled.
     --fresh                  Send a fresh request to the LLM API, refreshing a cached response if it exists.
+                             When a --prompt SQL query fails, you can also use this option to request the
+                             LLM to generate a new SQL query.
     --forget                 Remove a cached response if it exists and then exit.
     --flush-cache            Flush all the keys in the current cache on startup.
 
@@ -168,7 +177,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cached::{DiskCache, RedisCache, Return, proc_macro::io_cached, stores::DiskCacheBuilder};
+use cached::{
+    DiskCache, IOCached, RedisCache, Return, proc_macro::io_cached, stores::DiskCacheBuilder,
+};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -196,6 +207,7 @@ struct Args {
     flag_prompt_file:    Option<String>,
     flag_base_url:       Option<String>,
     flag_model:          Option<String>,
+    flag_addl_props:     Option<String>,
     flag_api_key:        Option<String>,
     flag_max_tokens:     u32,
     flag_timeout:        u16,
@@ -672,12 +684,22 @@ fn get_completion(
     };
 
     // Create request data
-    let request_data = json!({
+    let mut request_data = json!({
         "model": model,
         "max_tokens": max_tokens,
         "messages": messages,
         "stream": false
     });
+
+    // Add additional model properties if provided
+    if let Some(addl_props) = args.flag_addl_props.as_ref() {
+        let addl_props_json: serde_json::Value = serde_json::from_str(addl_props)
+            .map_err(|e| CliError::Other(format!("Invalid JSON in --addl-props: {e:?}")))?;
+        for (key, value) in addl_props_json.as_object().unwrap() {
+            request_data[key] = value.clone();
+        }
+    }
+
     // deserializing request_data is relatively expensive, so only do it if debug is enabled
     if log::log_enabled!(log::Level::Debug) {
         log::debug!("Request data: {request_data:?}");
@@ -823,8 +845,7 @@ fn try_remove_prompt_cache_entries(base_key: &str) -> bool {
     // Try with "valid" flag
     let key_with_valid = format!("{base_key}valid");
     if GET_DISKCACHE_COMPLETION
-        .connection()
-        .remove(&key_with_valid)
+        .cache_remove(&key_with_valid)
         .is_ok()
     {
         removed = true;
@@ -833,8 +854,7 @@ fn try_remove_prompt_cache_entries(base_key: &str) -> bool {
     // Try with "invalid" flag
     let key_with_invalid = format!("{base_key}invalid");
     if GET_DISKCACHE_COMPLETION
-        .connection()
-        .remove(&key_with_invalid)
+        .cache_remove(&key_with_invalid)
         .is_ok()
     {
         removed = true;
@@ -1258,12 +1278,24 @@ fn run_inference_options(
         let start_time = Instant::now();
         print_status("  Inferring Data Dictionary...", None);
         messages = get_messages(&prompt, &system_prompt, "");
+
+        // Special case: if --prompt is used with --fresh, use normal cache for dictionary
+        let dictionary_cache_type = if args.flag_prompt.is_some() && args.flag_fresh {
+            if args.flag_redis_cache {
+                &CacheType::Redis
+            } else {
+                &CacheType::Disk
+            }
+        } else {
+            cache_type
+        };
+
         data_dict = get_cached_completion(
             args,
             &client,
             &model,
             api_key,
-            cache_type,
+            dictionary_cache_type,
             "dictionary",
             &messages,
         )?;
@@ -1420,10 +1452,17 @@ fn run_inference_options(
 
         let sql_query_start = Instant::now();
         print_status(
-            r#"
+            &format!(
+                r#"
 Cannot answer the prompt using just Summary Statistics & Frequency Distribution data.
 Generated a SQL query to answer the prompt deterministically.
-Executing the SQL query..."#,
+Executing the {} SQL query..."#,
+                if should_use_duckdb() {
+                    "DuckDB"
+                } else {
+                    "Polars"
+                }
+            ),
             None,
         );
 
@@ -1500,7 +1539,7 @@ Executing the SQL query..."#,
                     Ok((stdout, stderr)) => {
                         // Check stderr for error messages
                         if stderr.to_ascii_lowercase().contains("error:") {
-                            // Invalidate the prompt cache entry so user can try again without
+                            // Invalidate cache entry so user can try again without
                             // reinferring dictionary
                             if args.flag_disk_cache || args.flag_redis_cache {
                                 let _ = invalidate_cache_entry(args, "prompt");
@@ -1510,7 +1549,7 @@ Executing the SQL query..."#,
                         (stdout, stderr)
                     },
                     Err(e) => {
-                        // Invalidate the prompt cache entry so user can try again without
+                        // Invalidate cache entry so user can try again without
                         // reinferring dictionary
                         if args.flag_disk_cache || args.flag_redis_cache {
                             let _ = invalidate_cache_entry(args, "prompt");
@@ -1528,8 +1567,7 @@ Executing the SQL query..."#,
             }
             #[cfg(not(feature = "polars"))]
             {
-                // Invalidate the prompt cache entry so user can try again without reinferring
-                // dictionary
+                // Invalidate cache entry so user can try again without reinferring dictionary
                 if args.flag_disk_cache || args.flag_redis_cache {
                     let _ = invalidate_cache_entry(args, "prompt");
                 }
@@ -1626,39 +1664,33 @@ fn run_duckdb_query(
     let output = cmd
         .output()
         .map_err(|e| CliError::Other(format!("Error while executing DuckDB command: {e:?}")))?;
-    log::debug!("DuckDB command output: {output:?}");
 
     if !status_msg.is_empty() {
         print_status(status_msg, Some(start_time.elapsed()));
     }
 
-    let stdout_str = std::str::from_utf8(&output.stdout)
-        .map_err(|e| CliError::Other(format!("Unable to parse output of DuckDB command: {e:?}")))?;
-    let stderr_str = std::str::from_utf8(&output.stderr)
-        .map_err(|e| CliError::Other(format!("Unable to parse stderr of DuckDB command: {e:?}")))?;
-
     // Check if DuckDB command failed (non-zero exit status)
     if !output.status.success() {
-        log::debug!("DuckDB command failed with exit status: {output:?}");
-        log::debug!("DuckDB stderr: {stderr_str}");
-        return Err(CliError::Other(format!(
-            "DuckDB SQL query execution failed: {stderr_str}"
-        )));
+        return fail_clierror!("DuckDB SQL query execution failed: {output:?}");
     }
+
+    let Ok(stdout_str) = simdutf8::basic::from_utf8(&output.stdout) else {
+        return fail_clierror!("Unable to parse stdout of DuckDB command: {output:?}");
+    };
+    let Ok(stderr_str) = simdutf8::basic::from_utf8(&output.stderr) else {
+        return fail_clierror!("Unable to parse stderr of DuckDB command: {output:?}");
+    };
 
     // Also check stderr for error messages even if exit status is 0
     if stderr_str.to_ascii_lowercase().contains("error:") {
-        log::debug!("DuckDB stderr contains error: {stderr_str}");
-        return Err(CliError::Other(format!(
-            "DuckDB SQL query execution failed: {stderr_str}"
-        )));
+        return fail_clierror!("DuckDB SQL query execution failed: {stderr_str}");
     }
 
     // Write the output to the specified file
-    if !output_path.is_empty() {
-        fs::write(output_path, stdout_str).map_err(|e| {
-            CliError::Other(format!("Failed to write SQL results to {output_path}: {e}"))
-        })?;
+    if !output_path.is_empty()
+        && let Err(e) = fs::write(output_path, stdout_str)
+    {
+        return fail_clierror!("Failed to write SQL results to {output_path}: {e}");
     }
 
     Ok((stdout_str.to_string(), stderr_str.to_string()))
@@ -1684,18 +1716,45 @@ fn invalidate_cache_entry(args: &Args, kind: &str) -> CliResult<()> {
         // For prompt kind, invalidate the validity flag
         let prompt_content = args.flag_prompt.as_ref();
         invalidate_prompt_validity_flag(args, prompt_content);
-        print_status(
-            "Invalidated prompt cache entry due to SQL execution failure",
-            None,
-        );
+
+        // Use the existing helper function to remove cache entries with both "valid" and "invalid"
+        // flags
+        let prompt_file = get_prompt_file(args)?;
+        let base_key = {
+            let file_hash = FILE_HASH.get().unwrap_or(&String::new()).clone();
+            let prompt_content_for_key = args.flag_prompt.as_ref();
+
+            format!(
+                "{:?}{:?}{:?}{:?}{:?}{}{}",
+                args.arg_input,
+                args.flag_prompt_file,
+                prompt_content_for_key,
+                args.flag_max_tokens,
+                &prompt_file.model,
+                kind,
+                file_hash
+            )
+        };
+
+        let removed = try_remove_prompt_cache_entries(&base_key);
+        if removed {
+            print_status(
+                &format!("Removed cache entry for {kind} due to SQL execution failure"),
+                None,
+            );
+        } else {
+            print_status(
+                &format!("Warning: Could not remove cache entry for {kind}"),
+                None,
+            );
+        }
     } else {
         // For other kinds, try to remove the cache entry directly
         let prompt_file = get_prompt_file(args)?;
         let key = get_cache_key(args, kind, &prompt_file.model);
 
         if args.flag_disk_cache {
-            // Use the existing cache instance from the #[io_cached] macro
-            if let Err(e) = GET_DISKCACHE_COMPLETION.connection().remove(&key) {
+            if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key) {
                 print_status(
                     &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
                     None,
@@ -1722,7 +1781,7 @@ fn invalidate_cache_entry(args: &Args, kind: &str) -> CliResult<()> {
                 .map_err(|e| CliError::Other(format!("Cannot connect to Redis: {e:?}")))?;
 
             match redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
-                Ok(_) => print_status(
+                Ok(()) => print_status(
                     &format!("Removed cache entry for {kind} due to SQL execution failure"),
                     None,
                 ),
@@ -1743,7 +1802,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Initialize Redis default connection string to localhost, using database 3 by default
     // when --redis-cache is enabled
-    // describegpt uses database 3 by default, fetch uses database 1, and fetchpost uses database 2
+    // describegpt uses db 3 by default, fetch uses db 1, and fetchpost uses db 2
     DEFAULT_REDIS_CONN_STRING
         .set("redis://127.0.0.1:6379/3".to_string())
         .unwrap();
@@ -1840,7 +1899,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
 
         // initialize DiskCache Config
-        // safety: we set and get in the next few lines
+        // safety: the init values were just set above
         DISKCACHE_DIR.set(diskcache_dir).unwrap();
         DISKCACHECONFIG.set(DiskCacheConfig::new()).unwrap();
 
@@ -1868,7 +1927,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         FILE_HASH.get().unwrap_or(&String::new())
                     );
 
-                    // Try to remove cache entries with different validity flags
                     let removed = try_remove_prompt_cache_entries(&base_key);
 
                     if removed {
@@ -1882,7 +1940,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 } else {
                     // For other kinds, use the normal key format
                     let key = get_cache_key(&args, kind, &prompt_file.model);
-                    if let Err(e) = GET_DISKCACHE_COMPLETION.connection().remove(&key) {
+                    if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key) {
                         print_status(
                             &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
                             None,
@@ -1938,11 +1996,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // Get the model from prompt file for cache key generation
             let prompt_file = get_prompt_file(&args)?;
 
-            // Remove cache entries for all specified kinds using the same key format as the macro
+            // Remove cache entries for all specified kinds
             for kind in kinds_to_remove {
                 let key = get_cache_key(&args, kind, &prompt_file.model);
                 match redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
-                    Ok(_) => {
+                    Ok(()) => {
                         print_status(&format!("Found and removed cache entry for {kind}"), None)
                     },
                     Err(e) => print_status(
@@ -1953,7 +2011,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
             return Ok(());
         } else if args.flag_fresh {
-            // If --fresh is set, use CacheType::Fresh to force refresh but still update cache
+            // If --fresh is set, use CacheType::Fresh to force refresh and update cache
             CacheType::Fresh
         } else {
             CacheType::Redis
@@ -2012,41 +2070,36 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
 
     // Calculate SHA256 hash of the input file early for cache key generation
-    print_status("  Calculating SHA256 hash...", None);
+    print_status(&format!("Calculating SHA256 hash of {input_path}..."), None);
     let start_hash_time = Instant::now();
     let file_hash = util::hash_sha256_file(Path::new(&input_path))?;
     FILE_HASH.set(file_hash.clone()).unwrap();
     print_status(
-        &format!("  (elapsed: {:.2?})", start_hash_time.elapsed()),
+        &format!("(elapsed: {:.2?})", start_hash_time.elapsed()),
         None,
     );
 
     // Perform analysis
+    print_status("Analyzing data...", None);
+    let analysis_start = Instant::now();
     let analysis_results = if cache_type == CacheType::None {
         // No caching enabled, perform analysis directly
-        let analysis_start = Instant::now();
-        print_status(&format!("Analyzing {input_path}..."), None);
-
-        let results = perform_analysis(&args, &input_path)?;
-        print_status("Analyzed data.", Some(analysis_start.elapsed()));
-        results
+        perform_analysis(&args, &input_path)?
     } else {
         // Caching enabled, check cache
         print_status("  Checking analysis cache...", None);
-
         if let Some(results) = get_cached_analysis(&args, &cache_type, &file_hash, &input_path)? {
-            print_status("  Analysis cache hit! Skipping data analysis.", None);
+            // Cache hit, return cached results
             results
         } else {
             print_status("  Analysis cache miss. Performing data analysis...", None);
-            let analysis_start = Instant::now();
-            print_status(&format!("Analyzing {input_path}..."), None);
-
+            let analysis_cachemiss_start = Instant::now();
             let results = perform_analysis(&args, &input_path)?;
-            print_status("Analyzed data.", Some(analysis_start.elapsed()));
+            print_status("Analyzed data.", Some(analysis_cachemiss_start.elapsed()));
             results
         }
     };
+    print_status("Analyzed data.", Some(analysis_start.elapsed()));
 
     print_status("\nInteracting with LLM...", None);
     // Run inference options
@@ -2150,18 +2203,14 @@ fn get_cached_analysis(
         },
         CacheType::Fresh => {
             // Force fresh analysis but still update cache
-            // set quiet flag to true to avoid printing status messages
-            let old_quiet_flag = QUIET_FLAG.load(Ordering::Relaxed);
-            QUIET_FLAG.store(true, Ordering::Relaxed);
             let fresh_result = perform_analysis(args, input_path)?;
-            // restore quiet flag setting
-            QUIET_FLAG.store(old_quiet_flag, Ordering::Relaxed);
 
             // Manually update the appropriate cache with the fresh result
+            let key = get_analysis_cache_key(args, file_hash);
             if args.flag_redis_cache {
-                let _ = get_redis_analysis(args, file_hash, input_path);
+                GET_REDIS_ANALYSIS.cache_set(key, fresh_result.clone())?;
             } else {
-                let _ = get_diskcache_analysis(args, file_hash, input_path);
+                GET_DISKCACHE_ANALYSIS.cache_set(key, fresh_result.clone())?;
             }
             Ok(Some(fresh_result))
         },

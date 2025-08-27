@@ -322,7 +322,9 @@ csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "
 
 # use our patched fork of grex to bump dependencies and Unicode tables from 15 to 16 until our PR is merged
 grex = { git = "https://github.com/jqnatividad/grex", rev = "7b9b6cc" }
-#branch = "bumped-dependencies-202502" }
+
+# use upstream hashbrown with unreleased fixes and performance improvements
+hashbrown = { git = "https://github.com/rust-lang/hashbrown", rev = "e2a634b" }
 
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }

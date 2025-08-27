@@ -1784,7 +1784,7 @@ dependencies = [
 [[package]]
 name = "csv"
 version = "1.3.1"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-optimized-non-allocating-byterecord-trim#19b358205aa16095b0492eb28ed84b23f7dfa056"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-optimized-non-allocating-byterecord-trim#e92fe1efb764a1d39578aa478b10bd5046e16230"
 dependencies = [
  "csv-core",
  "itoa",
@@ -1796,7 +1796,7 @@ dependencies = [
 [[package]]
 name = "csv-core"
 version = "0.1.12"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-optimized-non-allocating-byterecord-trim#19b358205aa16095b0492eb28ed84b23f7dfa056"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-optimized-non-allocating-byterecord-trim#e92fe1efb764a1d39578aa478b10bd5046e16230"
 dependencies = [
  "memchr",
 ]
@@ -1819,7 +1819,7 @@ dependencies = [
 [[package]]
 name = "csv-index"
 version = "0.1.6"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-optimized-non-allocating-byterecord-trim#19b358205aa16095b0492eb28ed84b23f7dfa056"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-optimized-non-allocating-byterecord-trim#e92fe1efb764a1d39578aa478b10bd5046e16230"
 dependencies = [
  "byteorder",
  "csv",

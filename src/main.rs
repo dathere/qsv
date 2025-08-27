@@ -27,6 +27,7 @@
         clippy::use_self,
         clippy::cognitive_complexity,
         clippy::option_if_let_else,
+        clippy::implicit_clone,
     ),
     warn(
         clippy::missing_asserts_for_indexing,

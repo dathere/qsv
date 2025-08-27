@@ -20,7 +20,7 @@
 | `QSV_LLM_BASE_URL` | The LLM API URL to use with the `describegpt` command. |
 | `QSV_LLM_APIKEY` | The API key of the supported LLM service to use with the `describegpt` command. |
 | `QSV_LLM_MODEL` | The LLM Model to use with the `describegpt` command. |
-| `QSV_DESCRIBEGPT_DB_ENGINE` | The database engine to use for SQL query execution in the `describegpt` command. When set to a path containing "duckdb" (case-insensitive), DuckDB will be used instead of the default Polars SQL engine. The environment variable value should be the fully qualified path to the DuckDB binary. |
+| `QSV_DESCRIBEGPT_DB_ENGINE` | The database engine to use for SQL query execution in the `describegpt` command. When set to a path containing "duckdb" (case-insensitive), DuckDB will be used instead of the default Polars SQL engine. The environment variable value should be the fully qualified path to the DuckDB binary. Note that all loaded DuckDB extensions will be passed to the LLM to let it know what functions (even UDFs!) it can use in the SQL queries it generates. |
 | `QSV_OUTPUT_BOM` | if set, the output will have a Byte Order Mark (BOM) at the beginning. This is used to generate Excel-friendly CSVs on Windows. |
 | `QSV_POLARS_FLOAT_PRECISION` | The precision to use when converting Polars-enabled formats (Avro,Arrow,Parquet,JSON,JSONL and gz,zlib & zst compressed files) to CSV. If set, this will also override the --float-precision option of the `sqlp` command. |
 | `QSV_PREFER_DMY` | if set, date parsing will use DMY format. Otherwise, use MDY format (used with `datefmt`, `schema`, `sniff` & `stats` commands). |

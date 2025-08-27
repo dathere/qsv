@@ -143,18 +143,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut hash_index = None;
 
     let mut copy_index = 0;
-    let mut copy_operation = false;
-
-    if let Some(column_name) = args.flag_copy {
+    let copy_operation = if let Some(column_name) = args.flag_copy {
         rconfig = rconfig.select(column_name);
         let sel = rconfig.selection(&headers)?;
         copy_index = *sel.iter().next().unwrap();
-        copy_operation = true;
-    }
+        true
+    } else {
+        false
+    };
 
-    let mut hash_sel = None;
-
-    if let Some(hash_columns) = &args.flag_hash {
+    let hash_sel = if let Some(hash_columns) = &args.flag_hash {
         // get the index of the column named "hash", if it exists
         hash_index = headers.iter().position(|col| col == b"hash");
 
@@ -183,8 +181,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // Update the configuration with the new selection
         rconfig = rconfig.select(no_hash_column_selection);
-        hash_sel = Some(rconfig.selection(&headers)?);
-    }
+        Some(rconfig.selection(&headers)?)
+    } else {
+        None
+    };
 
     let constant_value = if args.flag_constant == Some(NULL_VALUE.to_string()) {
         b""

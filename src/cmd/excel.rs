@@ -566,10 +566,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     let mut safenames_vec: Vec<String> = Vec::with_capacity(column_count);
                     let mut unsafenames_vec: Vec<String> = Vec::new();
                     let mut dupe_count = 0_usize;
-                    let mut header_vec: Vec<String> = Vec::with_capacity(column_count);
-
-                    if let Some(first_row) = sheet_rows.next() {
-                        header_vec = first_row
+                    let header_vec: Vec<String> = if let Some(first_row) = sheet_rows.next() {
+                        first_row
                             .iter()
                             .map(|h| {
                                 let header = h.to_string();
@@ -591,8 +589,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                                 header
                             })
-                            .collect();
-                    }
+                            .collect()
+                    } else {
+                        Vec::with_capacity(column_count)
+                    };
 
                     (
                         header_vec,

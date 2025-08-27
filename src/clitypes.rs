@@ -5,6 +5,8 @@ use std::{
     sync::OnceLock,
 };
 
+use cached::{DiskCacheError, RedisCacheError};
+
 /// write to stdout
 macro_rules! wout {
     ($($arg:tt)*) => ({
@@ -277,5 +279,17 @@ impl From<zip::result::ZipError> for CliError {
             },
             _ => CliError::Other(format!("Zip error: {err:?}")),
         }
+    }
+}
+
+impl From<DiskCacheError> for CliError {
+    fn from(err: DiskCacheError) -> CliError {
+        CliError::Other(format!("DiskCache error: {err:?}"))
+    }
+}
+
+impl From<RedisCacheError> for CliError {
+    fn from(err: RedisCacheError) -> CliError {
+        CliError::Other(format!("RedisCache error: {err:?}"))
     }
 }

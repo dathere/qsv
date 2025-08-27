@@ -52,6 +52,8 @@ Examples:
   $ qsv describegpt NYC_311.csv --prompt "List the top 10 complaints."
 
   # Ask detailed questions that require SQL queries and auto-invoke SQL RAG mode
+  # use DuckDB to answer the question
+  $ export QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb
   $ qsv describegpt NYC_311.csv --prompt "What's the breakdown of complaint types by borough descending order?"
 
   # Cache dictionary inference results using disk cache

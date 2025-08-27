@@ -85,6 +85,10 @@ QSV_NO_HEADERS = False
 # The LLM Model to use with the `describegpt` command.
 # QSV_LLM_MODEL = gpt-oss-20b
 
+# The database engine to use for SQL query execution.
+# To use DuckDB, set to the fully qualified path for the duckdb binary.
+# QSV_DESCRIBEGPT_DB_ENGINE = /usr/local/bin/duckdb
+
 # set to an ascii character. If set, any lines(including the header) that start
 # with this character are ignored. Note that when you want to use the pound sign
 # as a comment char, you need to enclose it in single quotes as its a reserved

@@ -178,7 +178,6 @@ mlua = { version = "0.11", features = [
 num_cpus = "1"
 odht = "0.3"
 phf = { version = "0.13", features = ["macros"] }
-planus = { version = "=1.1.1", optional = true }
 polars = { version = "0.50", features = [
     "asof_join",
     "avro",
@@ -416,7 +415,7 @@ geocode = [
     "sled",
 ]
 luau = ["mlua", "sanitize-filename"]
-polars = ["dep:polars", "bytemuck", "dep:polars-ops", "dep:polars-utils", "dep:planus"]
+polars = ["dep:polars", "bytemuck", "dep:polars-ops", "dep:polars-utils"]
 prompt = ["rfd"]
 python = ["pyo3"]
 to = ["csvs_convert"]

@@ -1110,14 +1110,14 @@ fn run_inference_options(
             ])
         }
     }
-    // Format output by replacing escape characters
+    // Format output by replacing escape characters & adding two newlines
     fn format_output(str: &str) -> String {
         str.replace("\\n", "\n")
             .replace("\\t", "\t")
             .replace("\\\"", "\"")
             .replace("\\'", "'")
             .replace("\\`", "`")
-            + "\n"
+            + "\n\n"
     }
 
     // Helper function to extract JSON from various LLM response formats

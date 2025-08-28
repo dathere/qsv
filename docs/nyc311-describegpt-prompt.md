@@ -2,7 +2,7 @@ Generated using the command:
 ```bash
 QSV_LLM_BASE_URL=http://localhost:1234/v1 QSV_DESCRIBEGPT_DB_ENGINE=/opt/homebrew/bin/duckdb \
 qsv describegpt /tmp/NYC_311_SR_2010-2020-sample-1M.csv --output nyc311-describegpt-prompt.md \
---sql-results nyc311-describegpt-prompt.md \
+--sql-results nyc311-describegpt-prompt.csv \
 --prompt "What are the top 10 complaint types per community board and borough?" \
 --addl-props '{"reasoning_effort": "high"}'
 ```

@@ -1,3 +1,9 @@
+Generated using the command:
+```bash
+QSV_LLM_BASE_URL=http://localhost:1234/v1 qsv describegpt /tmp/NYC_311_SR_2010-2020-sample-1M.csv --all \
+--output nyc311-describegpt.md
+```
+---
 **Data Dictionary – NYC 311 Complaint Dataset**
 
 | Name | Type | Label | Description |

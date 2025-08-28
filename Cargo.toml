@@ -434,6 +434,7 @@ nightly = [
     "rand/nightly",
     "rand/simd_support",
     "simd-json/hints",
+    "foldhash/nightly",
 ]
 
 [package.metadata.deb]

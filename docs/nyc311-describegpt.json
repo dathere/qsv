@@ -1,277 +1,277 @@
 {
-  "dictionary": {
+  "Dictionary": {
     "response": [
       {
         "Name": "Unique Key",
         "Type": "Integer",
-        "Label": "Record ID",
-        "Description": "A system‑generated unique identifier for each 311 complaint record."
+        "Label": "Unique Identifier",
+        "Description": "A system-generated integer that uniquely identifies each record. All 1,000,000 values are distinct (cardinality equals the number of records)."
       },
       {
         "Name": "Created Date",
         "Type": "DateTime",
-        "Label": "Complaint Creation Timestamp",
-        "Description": "The date and time the complaint was entered into the NYC 311 system, expressed in UTC."
+        "Label": "Record Creation Timestamp",
+        "Description": "The date and time when the record was created in the system. The most common dates are early 2013–2015, with a mode of January 24 2013 (347 occurrences). Approximately 99.73% of values fall into the top ten dates; the remaining 0.27% are distributed across many other dates."
       },
       {
         "Name": "Closed Date",
         "Type": "DateTime",
-        "Label": "Resolution Timestamp",
-        "Description": "The date and time when the complaint was closed or marked as resolved. May be null for open complaints."
+        "Label": "Record Closure Timestamp",
+        "Description": "The date and time when the record was closed or finalized. The majority (≈2.86%) of records have a null closure date; otherwise, dates cluster in late 2010–2014 with the mode on November 15 2010."
       },
       {
         "Name": "Agency",
         "Type": "String",
-        "Label": "Responsible Agency Code",
-        "Description": "Abbreviated code indicating the agency tasked with addressing the complaint (e.g., NYPD, HPD)."
+        "Label": "Primary Agency",
+        "Description": "The agency responsible for addressing the issue. NYPD is the most frequent (26.5% of records), followed by HPD, DOT, DSNY, and others."
       },
       {
         "Name": "Agency Name",
         "Type": "String",
-        "Label": "Responsible Agency Full Name",
-        "Description": "The full name of the agency responsible for handling the complaint."
+        "Label": "Agency Full Name",
+        "Description": "Full official name of the agency handling the complaint. New York City Police Department dominates (26.5%)."
       },
       {
         "Name": "Complaint Type",
         "Type": "String",
-        "Label": "Primary Complaint Category",
-        "Description": "High‑level category describing the nature of the complaint (e.g., Noise – Residential, HEAT/HOT WATER)."
+        "Label": "Complaint Category",
+        "Description": "High‑level category of the complaint, e.g., Noise – Residential or HEAT/HOT WATER. Noise – Residential is most common (8.94%)."
       },
       {
         "Name": "Descriptor",
         "Type": "String",
-        "Label": "Detailed Issue Descriptor",
-        "Description": "A more specific description within the Complaint Type, such as Loud Music/Party or Pothole."
+        "Label": "Detailed Descriptor",
+        "Description": "Specific description of the issue, such as Loud Music/Party or ENTIRE BUILDING. Loud Music/Party accounts for 9.36%."
       },
       {
         "Name": "Location Type",
         "Type": "String",
-        "Label": "Physical Location Category",
-        "Description": "The type of place where the issue was reported, e.g., Residential Building, Street/Sidewalk."
+        "Label": "Physical Location Type",
+        "Description": "The type of location where the complaint was reported (e.g., RESIDENTIAL BUILDING, STREET). Residential buildings comprise ~25.6%."
       },
       {
         "Name": "Incident Zip",
         "Type": "String",
-        "Label": "ZIP Code of Incident",
-        "Description": "Five‑digit ZIP code indicating the geographic area of the incident. May be null for missing data."
+        "Label": "ZIP Code",
+        "Description": "5‑digit ZIP code of the incident location. The most common codes are 11226 (1.71%) and 10467 (1.45%)."
       },
       {
         "Name": "Incident Address",
         "Type": "String",
-        "Label": "Street Address of Incident",
-        "Description": "Full street address where the complaint was reported, if available."
+        "Label": "Street Address",
+        "Description": "Full street address of the incident. Most addresses are null (17.47%); otherwise, they include typical New York street names."
       },
       {
         "Name": "Street Name",
         "Type": "String",
         "Label": "Primary Street Name",
-        "Description": "The name of the primary street associated with the incident. Null when not applicable."
+        "Description": "Main street where the complaint was filed; BROADWAY is the most frequent (0.97%)."
       },
       {
         "Name": "Cross Street 1",
         "Type": "String",
         "Label": "First Cross Street",
-        "Description": "The first cross street intersecting or nearest to the incident location, if identified."
+        "Description": "Primary cross street intersecting at the incident location. The most common value is NULL, followed by BEND and BROADWAY."
       },
       {
         "Name": "Cross Street 2",
         "Type": "String",
         "Label": "Second Cross Street",
-        "Description": "The second cross street at or near the incident location, when provided."
+        "Description": "Secondary cross street; NULL dominates (32.36%); BEND and BROADWAY are also common."
       },
       {
         "Name": "Intersection Street 1",
         "Type": "String",
         "Label": "First Intersection Street",
-        "Description": "One of the streets forming an intersection at or close to the complaint site."
+        "Description": "Primary intersection street. BROADWAY appears in 3.76% of records; NULL is most frequent (76.74%)."
       },
       {
         "Name": "Intersection Street 2",
         "Type": "String",
         "Label": "Second Intersection Street",
-        "Description": "The other street making up the intersection near the incident."
+        "Description": "Secondary intersection street; BROADWAY accounts for 3.46%, with NULL again the most common."
       },
       {
         "Name": "Address Type",
         "Type": "String",
-        "Label": "Address Classification",
-        "Description": "Classification of the address format (e.g., ADDRESS, INTERSECTION, BLOCKFACE)."
+        "Label": "Address Category",
+        "Description": "Classification of the address type (e.g., ADDRESS, INTERSECTION). ADDRESS is by far the majority (71%)."
       },
       {
         "Name": "City",
         "Type": "String",
-        "Label": "Municipal City",
-        "Description": "The city or borough name where the complaint was filed; may include null for unspecified."
+        "Label": "City/Neighborhood",
+        "Description": "City or neighborhood where the incident occurred. Brooklyn is most common (29.6%); NULL values appear in 6.2%."
       },
       {
         "Name": "Landmark",
         "Type": "String",
-        "Label": "Notable Landmark",
-        "Description": "A significant landmark near or at the incident location, if provided."
+        "Label": "Nearby Landmark",
+        "Description": "Notable landmark near the incident; most records are null (91.3%)."
       },
       {
         "Name": "Facility Type",
         "Type": "String",
-        "Label": "Associated Facility Category",
-        "Description": "Category of facility related to the complaint (e.g., DSNY Garage, School District)."
+        "Label": "Facility Category",
+        "Description": "Type of facility involved (e.g., DSNY Garage, N/A). DSNY Garage is most frequent (3.23%)."
       },
       {
         "Name": "Status",
         "Type": "String",
-        "Label": "Complaint Status",
-        "Description": "Current status of the complaint (Closed, Pending, Open, etc.)."
+        "Label": "Current Status",
+        "Description": "Operational status of the complaint. Closed dominates (95.25%); other statuses include Pending, Open, and In Progress."
       },
       {
         "Name": "Due Date",
         "Type": "DateTime",
-        "Label": "Target Resolution Date",
-        "Description": "The date and time by which the complaint is expected to be resolved; often null if not set."
+        "Label": "Expected Resolution Date",
+        "Description": "Target date for resolution. Null values are common (64.78%). The most frequent non‑null dates are in early 2015–2016."
       },
       {
         "Name": "Resolution Description",
         "Type": "String",
         "Label": "Resolution Narrative",
-        "Description": "Narrative text describing how the complaint was resolved or any action taken."
+        "Description": "Textual description of how the complaint was resolved or the outcome. The leading resolution is a police response with no evidence found (9.14%)."
       },
       {
         "Name": "Resolution Action Updated Date",
         "Type": "DateTime",
         "Label": "Last Resolution Update Timestamp",
-        "Description": "Timestamp of the most recent update to the resolution description; may be null for no updates."
+        "Description": "Timestamp of the most recent update to the resolution action. NULL values are common (1.5%); otherwise, dates cluster around 2010–2016."
       },
       {
         "Name": "Community Board",
         "Type": "String",
-        "Label": "Community Board Identifier",
-        "Description": "The community board number or designation responsible for the area where the complaint occurred."
+        "Label": "Community Board Number",
+        "Description": "The community board responsible for the area. The majority of records are null (75%). When present, values range from 0 Unspecified to 12 Queens."
       },
       {
         "Name": "BBL",
         "Type": "String",
-        "Label": "Borough/Block/Lot Number",
-        "Description": "NYC property identifier composed of borough, block, and lot numbers."
+        "Label": "Borough‑Block‑Lot Identifier",
+        "Description": "Unique property identifier. Null values appear in 24.3%; otherwise, BBLs are distributed across many properties."
       },
       {
         "Name": "Borough",
         "Type": "String",
-        "Label": "City Borough",
-        "Description": "The NYC borough in which the complaint was filed (Brooklyn, Queens, Manhattan, Bronx, Staten Island)."
+        "Label": "NYC Borough",
+        "Description": "The borough where the incident occurred (Brooklyn, Queens, Manhattan, Bronx). Brooklyn is most common (29.6%)."
       },
       {
         "Name": "X Coordinate (State Plane)",
         "Type": "Integer",
-        "Label": "State Plane X Coordinate",
-        "Description": "Easting coordinate in State Plane coordinates for the incident location."
+        "Label": "X Coordinate (State Plane)",
+        "Description": "East–west coordinate in the State Plane system; null values are 8.53%. The majority of coordinates cluster around 1,020,000."
       },
       {
         "Name": "Y Coordinate (State Plane)",
         "Type": "Integer",
-        "Label": "State Plane Y Coordinate",
-        "Description": "Northing coordinate in State Plane coordinates for the incident location."
+        "Label": "Y Coordinate (State Plane)",
+        "Description": "North–south coordinate in the State Plane system; null values are 8.53%. Typical values range near 200,000."
       },
       {
         "Name": "Open Data Channel Type",
         "Type": "String",
         "Label": "Submission Channel",
-        "Description": "The method used to submit the complaint (Phone, Online, Mobile, etc.)."
+        "Description": "Method used to submit the complaint (PHONE, ONLINE, MOBILE). PHONE accounts for 49.8% of submissions."
       },
       {
         "Name": "Park Facility Name",
         "Type": "String",
-        "Label": "Park Facility Identifier",
-        "Description": "Name of the park facility involved in the complaint, if applicable."
+        "Label": "Park Facility Name",
+        "Description": "If applicable, the name of the park facility; most records are Unspecified (99.3%)."
       },
       {
         "Name": "Park Borough",
         "Type": "String",
         "Label": "Park Borough",
-        "Description": "Borough where the park facility is located."
+        "Description": "Borough where a park facility is located. Brooklyn dominates (29.6%)."
       },
       {
         "Name": "Vehicle Type",
         "Type": "String",
-        "Label": "Associated Vehicle Type",
-        "Description": "If a vehicle is involved, this indicates its type (e.g., Car Service, Green Taxi)."
+        "Label": "Vehicle Category",
+        "Description": "Type of vehicle involved in the incident. The vast majority are null (99.97%); among those, Car Service is most frequent."
       },
       {
         "Name": "Taxi Company Borough",
         "Type": "String",
-        "Label": "Taxi Company Operating Borough",
-        "Description": "Borough in which the taxi company operates or the incident occurred."
+        "Label": "Taxi Company Borough",
+        "Description": "Borough where the taxi company operates; nearly all records are null (99.9%)."
       },
       {
         "Name": "Taxi Pick Up Location",
         "Type": "String",
-        "Label": "Taxi Pickup Site",
-        "Description": "Location where a taxi was requested, including major landmarks or transit hubs."
+        "Label": "Taxi Pick‑Up Location",
+        "Description": "Location where a taxi was picked up. Null values dominate (99.2%); other locations include airports and intersections."
       },
       {
         "Name": "Bridge Highway Name",
         "Type": "String",
         "Label": "Bridge/Highway Name",
-        "Description": "Name of the bridge or highway involved in a traffic‑related complaint."
+        "Description": "Name of the bridge or highway; most records are null (99.77%). When present, common names include Belt Pkwy and BQE/Gowanus Expwy."
       },
       {
         "Name": "Bridge Highway Direction",
         "Type": "String",
-        "Label": "Bridge/Highway Travel Direction",
-        "Description": "Direction of travel on the bridge or highway (e.g., Bronx Bound, Eastbound)."
+        "Label": "Bridge/Highway Direction",
+        "Description": "Direction of travel on the bridge/highway; null values dominate (99.77%). Common directions include East/Long Island Bound and North/Bronx Bound."
       },
       {
         "Name": "Road Ramp",
         "Type": "String",
-        "Label": "Ramp Type",
-        "Description": "Designation for road ramps involved in the complaint (e.g., Roadway, N/A)."
+        "Label": "Road Ramp Type",
+        "Description": "Classification of a road ramp; null values are 99.77%. The most common non‑null value is Roadway (17.3%)."
       },
       {
         "Name": "Bridge Highway Segment",
         "Type": "String",
-        "Label": "Bridge/Highway Segment Identifier",
-        "Description": "Specific segment or exit number on a bridge or highway referenced in the complaint."
+        "Label": "Bridge/Highway Segment",
+        "Description": "Specific segment of a bridge or highway; null values are 99.76%. Common segments include Ramps and Roadways."
       },
       {
         "Name": "Latitude",
         "Type": "Float",
         "Label": "Geographic Latitude",
-        "Description": "WGS84 latitude coordinate of the incident location, expressed in decimal degrees."
+        "Description": "Latitude coordinate in decimal degrees; null values account for 25.47% of records. Typical latitudes range from 40.11° to 40.91°."
       },
       {
         "Name": "Longitude",
         "Type": "Float",
         "Label": "Geographic Longitude",
-        "Description": "WGS84 longitude coordinate of the incident location, expressed in decimal degrees."
+        "Description": "Longitude coordinate in decimal degrees; null values are 25.47%. Values span from -77.52° to -73.70°."
       },
       {
         "Name": "Location",
         "Type": "String",
-        "Label": "Coordinate Pair",
-        "Description": "String representation of latitude and longitude formatted as (lat, lon)."
+        "Label": "Latitude/Longitude Pair",
+        "Description": "Combined latitude and longitude as a string. Null values cover 25.47%; when present, the format is \"(lat, lon)\"."
       }
     ],
-    "reasoning": "We need to produce JSON Data Dictionary with Name, Type, Label, Description for each field based on summary stats and freq distribution. Need human-friendly labels, descriptions. Use type from stats column 'type'. Provide description using domain knowledge of NYC 311 dataset? The fields include Unique Key (int), Created Date, Closed Date, Agency, etc. We'll produce concise description.\n\nAlso note: Frequency Distribution includes most frequent values but not necessary for description. We just need to create dictionary with Name, Type, Label, Description. Use type string from summary stats. For missing types maybe 'String'? But we have 'type' field in summary stats. For some fields type is empty? e.g., Unique Key has no type? Actually first row: \"Unique Key,Integer,,...\" The type column shows Integer but then blank after that? Wait summary line: \"Unique Key,Integer,,32687965858032,11465364,...\" So second column 'type' is 'Integer', third maybe 'is_ascii'? yes. So type is correct.\n\nFor Created Date: type DateTime etc. Good.\n\nSo produce JSON array of objects each with Name field value same as field name.\n\nLabels: human-friendly: e.g., \"Unique Key\" -> \"Record ID\". \"Created Date\" -> \"Complaint Creation Timestamp\". Provide descriptive text.\n\nWe must ensure valid JSON, surrounded by ```json tags.\n\nLet's craft dictionary for all fields listed. Count them: Unique Key, Created Date, Closed Date, Agency, Agency Name, Complaint Type, Descriptor, Location Type, Incident Zip, Incident Address, Street Name, Cross Street 1, Cross Street 2, Intersection Street 1, Intersection Street 2, Address Type, City, Landmark, Facility Type, Status, Due Date, Resolution Description, Resolution Action Updated Date, Community Board, BBL, Borough, X Coordinate (State Plane), Y Coordinate (State Plane), Open Data Channel Type, Park Facility Name, Park Borough, Vehicle Type, Taxi Company Borough, Taxi Pick Up Location, Bridge Highway Name, Bridge Highway Direction, Road Ramp, Bridge Highway Segment, Latitude, Longitude, Location.\n\nAlso maybe some duplicates? We'll include all unique fields.\n\nFor description: provide info about dataset field. Use typical NYC 311 context.\n\nLet's produce."
+    "reasoning": "We need to produce Data Dictionary JSON with fields: Name, Type, Label, Description.\n\nUse Summary Statistics for data type and cardinality etc. Use frequency distribution for label maybe? They want human-friendly label and description. We can derive label from field names cleaned. Description should be full explanation using stats and freq top values. Provide JSON array of objects. Ensure valid JSON surrounded by ```json.\n\nWe have many fields (~70). Might be large but acceptable. We'll craft concise labels: e.g., Unique Key, Created Date etc.\n\nDescription: mention type, cardinality, uniqueness ratio, maybe top value.\n\nWe need to use provided stats for each field: type is from 'type' column. For string types, label as human-friendly.\n\nLet's produce JSON with 70 objects.\n\nWill craft description generically.\n\nWe'll reference frequency distribution: e.g., \"Unique Key\" all unique values; Created Date has most frequent dates; etc.\n\nLet's write code."
   },
-  "description": {
-    "response": "**Description**\n\nThe dataset comprises one million NYC 311 service‑request records spanning from January 2010 to December 2020. Each record includes metadata about the complaint—agency, type, descriptor, status, and resolution—as well as detailed location information (address, ZIP code, latitude/longitude, borough). Temporal fields such as *Created Date*, *Closed Date*, and *Due Date* cover a ten‑year window, with most complaints concentrated between 2013 and 2015. The data also record the channel of submission (*Open Data Channel Type*) and, for a subset, vehicle or taxi‑related details.\n\n**Notable Characteristics**\n\n- **Missing values**:  \n  - *Closed Date* ≈ 2.9 % null, *Due Date* > 64 % null, *Location Type* 23 % null, *City* 6 % null, *Latitude/Longitude* 25 % null.  \n- **High “Other” categories**:  \n  - Categorical fields such as *Complaint Type*, *Descriptor*, *Community Board*, and *Resolution Description* contain large “Other (N)” bins that absorb the majority of observations, indicating many low‑frequency or unstandardised entries.  \n- **Coordinate outliers**:  \n  - State‑plane X/Y values range over millions; extreme coordinates suggest occasional entry errors or non‑standard reference frames.  \n- **Date outliers**:  \n  - *Created Date* ranges from 2010‑01‑01 to 2020‑12‑23, with a few anomalous early dates (1900/2100) in the *Closed Date* field that likely represent placeholders or missing data.  \n- **Duplicate handling**:  \n  - The *Unique Key* is truly unique across all records; no record duplicates exist at the row level.  \n- **Privacy considerations**:  \n  - While personal identifiers are absent, detailed addresses and precise latitude/longitude can potentially reveal individual residences or businesses, so downstream use should consider appropriate de‑identification or spatial aggregation.  \n- **Data quality**:  \n  - Several numeric fields (e.g., *X/Y Coordinate*, *Latitude*, *Longitude*) have high variance but low skewness, reflecting the geographic spread of NYC rather than measurement error.\n\n---  \n\n*Footnote: Generated by qsv's describegpt command using gpt-oss-20b on 2025-08-25T04:39:04.364231+00:00*",
-    "reasoning": "We need to produce dataset description: overall description, 1-8 sentences. Then Notable Characteristics bullet list summarizing notable data quality issues: missing values, outliers, duplicates etc. Use summary stats and freq. Provide footnote placeholder.\n\nDataset is NYC 311 complaints dataset (maybe 2010-2020). Need not output per field.\n\nWe should mention dataset size: unique keys 1M. Data spans 2010-2020. Contains complaint metadata: agency, type, descriptor, location info, etc. Contains many missing values (~2%? but some fields have high null). Notable outliers: Created Date distribution heavily concentrated in 2013-2015; large 'Other' counts for frequency distributions. Many fields with <10 unique values or high cardinality. Duplicate keys (unique key all distinct). PII: no direct personal info, but location addresses might identify individuals? Possibly not.\n\nAlso note that some numeric columns have extreme ranges e.g., X,Y coordinate huge variance but that's expected due to coordinate scale. Some fields have 'Other (N)' counts > 800k for Complaint Type etc indicating many unclassified types.\n\nMissing values: Closed Date 2.86% null; Due Date 64% null; Location type null 23%; City null 6%. Many missing.\n\nOutliers: Created/Closed dates with extreme date ranges? The min max show early 2010 to late 2020.\n\nAlso note that 'Resolution Description' has a huge outlier of 532,002 occurrences for \"Other (1,206)\" meaning many unclassified resolution text. So not much quality.\n\nNeed to mention duplicates: Unique Key all distinct so no duplicates at record level.\n\nPII: No obvious PII but location addresses could be considered sensitive.\n\nWe can include bullet list: high missing rates in certain fields; 'Other' categories dominate some categorical variables; coordinate values may have outliers due to measurement error; date ranges wide; unique key ensures uniqueness; potential privacy concerns with addresses; etc.\n\nFootnote placeholder at bottom.\n\nLet's craft description 3-4 sentences. Then bullets.\n\nOkay produce Markdown output."
+  "Description": {
+    "response": "**Description**\n\nThe dataset contains one million records of NYC 311 service requests collected from January 1 2010 to December 23 2020. Each record is uniquely identified by an integer key and includes a creation timestamp, optional closure date, agency handling the request, complaint category, descriptive text, and geographic information (street address, ZIP code, latitude/longitude). The most common agencies are NYPD, HPD, and DOT, while “Noise – Residential” and “HEAT/HOT WATER” dominate the complaint types. Geographic fields show a high proportion of missing or “Other” values, especially for precise street addresses, coordinates, and ZIP codes, reflecting incomplete reporting. The dataset is largely non‑duplicate (unique key) but contains substantial nulls in status‑related fields such as closed date and due date.\n\n**Notable Characteristics**\n\n- **Unique identifiers:** Every record has a distinct `Unique Key`; no duplicate rows exist.\n- **Missingness:**  \n  - `Closed Date` is null for ~2.9 % of records, while `Due Date` is missing for ~64.8 %.  \n ‑ Many geographic fields (`Incident Address`, `Latitude/Longitude`, `ZIP code`) have >70 % “Other” or null values, indicating incomplete location reporting.  \n- **High cardinality / sparsity:** Fields such as `Agency`, `Descriptor`, and `Location Type` contain a large number of low‑frequency categories (“Other (N)”), leading to sparse distributions.  \n- **Temporal spread:** Creation dates range from 2010‑01‑01 to 2020‑12‑23; the dataset captures an 11‑year period with seasonal peaks in certain complaint types.  \n- **Potential outliers:** Extreme latitude/longitude values beyond typical NYC bounds (e.g., coordinates near –77 °) suggest data entry errors or misclassifications.  \n- **PII considerations:** Street addresses, ZIP codes, and precise geographic coordinates can be used to approximate individual locations; users should apply de‑identification or aggregation when sharing or publishing this data.  \n- **Data quality issues:** The presence of many “Other (N)” entries indicates a need for better standardization in free‑text fields such as `Descriptor` and `Complaint Type`.  \n\n---\n\n*Footnote: Generated by qsv's describegpt command using openai/gpt-oss-20b on 2025-08-28T03:03:35.660578+00:00*",
+    "reasoning": "We need to produce description 1-8 sentences about dataset as a whole, not per field. Use summary statistics and frequency distribution data for guidance. Provide Notable Characteristics bullet list: outliers, missing values, duplicates (Unique Key all unique), PII? Possibly addresses and coordinates could be PII. Data quality issues: many nulls in Created Date? Actually Created Date has 0% null. But Closed Date has many null (2.86%). Also many fields have high percentage of other. Many location fields missing or \"Other\" large.\n\nAlso note that Unique Key all unique. The dataset seems to be NYC 311 complaint data. Contains 1,000,000 records.\n\nWe need footnote placeholder: GENERATED_BY_SIGNATURE\n\nLet's craft description: mention size, time span 2010-2020, major agencies, top complaint types, high missingness in closed date and location fields etc.\n\nAlso mention that dataset includes geographic coordinates; addresses are partially missing but can be used for mapping. Provide bullet list of notable characteristics: duplicates? None due to unique key; but many records with null values; \"Other\" categories indicate data sparsity; potential outliers: extreme coordinates or dates beyond range? Created date min 2010, max 2020.\n\nAlso PII: addresses, phone numbers maybe not present. But location addresses could be considered sensitive.\n\nLet's craft final answer."
   },
-  "tags": {
+  "Tags": {
     "response": [
-      "new_york_city_311_complaints",
-      "city_agencies",
-      "noise_complaints",
-      "heat_and_hot_water",
-      "illegal_parking",
-      "street_conditions",
-      "residential_building_incidents",
-      "street_sidewalk_issues",
-      "borough_distribution",
-      "geolocated_incidents",
-      "phone_submissions",
-      "open_data_channel_type",
-      "complaint_resolution_status",
-      "data_quality_and_missing_values",
-      "incident_zip_code_distribution"
+      "nyc_311",
+      "public_complaints",
+      "city_governance",
+      "open_data",
+      "geospatial_data",
+      "noise_complaint",
+      "housing_and_building",
+      "transportation_infrastructure",
+      "environmental_protection",
+      "taxi_service",
+      "consumer_feedback",
+      "time_series_analysis",
+      "data_quality",
+      "urban_planning",
+      "municipal_services"
     ],
-    "reasoning": "We need to generate up to 15 tags in JSON array. Use the summary statistics and frequency distribution to inform themes: NYC 311 complaints, city services, noise, heat, parking, location types, agencies, etc.\n\nTags must be lowercase only, use underscore. No field names.\n\nPossible tags: new_york_city_311_complaints, citizen_service_requests, noise_complaints, heat_and_hot_water, illegal_parking, street_conditions, residential_building_incidents, city_agencies, boroughs, zip_code_distribution, geolocated_incidents, open_data_channel, mobile_app_submissions, complaint_resolution_status, data_quality_issues.\n\nNeed 15. Ensure order descending importance: most important tags first. Based on frequency distribution and summary stats.\n\nHighest cardinalities: Unique Key all unique - not relevant for tag. Highest freq fields: Agency with top agencies. But theme: city agencies. So tag 'city_agencies' high.\n\nComplaint type: noise, heat/hot water etc; noise highest 8.94% but other is 56%; but overall still noise significant. So tags: 'noise_complaints', 'heat_and_hot_water'.\n\nLocation Type: residential building (25%), street/sidewalk (14%). So tag 'residential_building_incidents', 'street_sidewalk_issues'.\n\nCity distribution: Brooklyn 29%, Manhattan 19%. Could use 'brooklyn_incidents' but maybe too specific. General tag 'borough_distribution'.\n\nOpen Data Channel: phone most common, then unknown, online. Tag 'phone_submissions'.\n\nResolution status: closed majority. Tag 'complaint_resolution_status'.\n\nLatitude/longitude high uniqueness; but geolocation tags.\n\nLet's craft list:\n\n1. new_york_city_311_complaints\n2. city_agencies\n3. noise_complaints\n4. heat_and_hot_water\n5. illegal_parking\n6. street_conditions\n7. residential_building_incidents\n8. street_sidewalk_issues\n9. borough_distribution\n10. geolocated_incidents\n11. phone_submissions\n12. open_data_channel_type\n13. complaint_resolution_status\n14. data_quality_and_missing_values\n15. incident_zip_code_distribution\n\nEnsure all lowercase with underscores, no spaces.\n\nReturn JSON array inside ```json ... ```."
+    "reasoning": "We need to generate no more than 15 most thematic tags in descending order of importance, lowercase only and use underscores.\n\nBased on dataset: NYC 311 complaints dataset. So tags like \"nyc_311\", \"complaint_data\", \"public_services\", \"city_governance\", \"open_data\", \"consumer_complaints\", \"noise_complaints\", \"housing_and_building\", \"transportation_infrastructure\", \"environmental_protection\", \"taxi_service\", \"geospatial_data\", \"data_quality\", \"time_series\".\n\nWe need to consider summary stats and frequency distribution: high cardinalities, missing values, top categories.\n\nBut tags should be thematic; not field names. So 15 tags.\n\nLet's produce JSON array.\n\nMake sure lower case and underscores.\n\nOrder by importance descending.\n\nPotential priority:\n\n1. nyc_311 (most specific)\n2. public_complaints\n3. city_governance\n4. open_data\n5. geospatial_data\n6. noise_complaint\n7. housing_and_building\n8. transportation_infrastructure\n9. environmental_protection\n10. taxi_service\n11. consumer_feedback\n12. time_series_analysis\n13. data_quality\n14. urban_planning\n15. municipal_services\n\nBut maybe we should reflect dataset: majority complaint types noise, heat/hot water, etc.\n\nAlso top agencies: NYPD, HPD, DOT.\n\nSo tags like \"public_safety\", \"housing_and_building\", \"transportation\".\n\nLet's produce final JSON."
   }
 }

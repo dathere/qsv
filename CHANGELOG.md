@@ -6,32 +6,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.1] - 2025-08-28
+
+A patch release with some minor bug fixes, benchmark tweaks and build system improvements.
+
+## Added
+* publish: add dedicated powerpc64le-unknown-linux-gnu publishing workflow (WIP)
+
+## Changed
+* docs: `describegpt` expanded error message about LLM URL or API key 
+* deps: remove planus pinned dependency
+
+## Fixed
+* fix: `geocode` `--batch 0` causes panic when polars feature is enabled 
+* publish: remove luau feature from x86_64-pc-windows builds that was causing builds to fail
+* publish: remove powerpc64le from main publish workflow
+* benchmarks: updated to v6.8.0 with fixes to luau and clustered sample benchmarks
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/7.0.0...7.0.1
+
 ## [7.0.0] - 2025-08-28
 
-# Open Weights with Open Data, Local LLM edition
+# 🥳 Open Weights with Open Data, Local LLM 🤖 edition 🚀
 
 This is the biggest release yet - 470+ commits since v6.0.1! Packed with new AI-powered features, fixes and significant performance improvements suite-wide!
 
-With the release of [OpenAI's gpt-oss open-weight reasoning model](https://openai.com/index/introducing-gpt-oss/) earlier this month setting the stage, we continue on our ["Automagical Metadata"](https://dathere.com/2023/11/automagical-metadata/) journey by revamping `describegpt` - building on the great foundation laid by @rzmk when he first created the command in June 2023.
+With the release of [OpenAI's gpt-oss open-weight reasoning model](https://openai.com/index/introducing-gpt-oss/) earlier this month setting the stage, we continue on our ["Automagical Metadata"](https://dathere.com/2023/11/automagical-metadata/) journey by revamping `describegpt`.
 
 🤖 **Revamped `describegpt` - AI-Powered Metadata Inferencing and Data Analysis:**
-- **Intelligent Metadata Generation**: Automatically generate comprehensive metadata - Data Dictionaries, Description and Tags for your Datasets using Large Language Models (LLM) prompted with summary statistics and frequency tables as detailed context - without sending your data to the cloud!
+- **Intelligent Metadata Generation**: Automatically generate comprehensive metadata - Data Dictionaries, Description and Tags for your Datasets using Large Language Models (LLM) prompted with summary statistics and frequency tables as detailed context - **without sending your data to the cloud**!
 - **Chat with your Data**: If your prompt can be answered using this high-quality, high-resolution Metadata, `describegpt` can answer it! If your prompt is not remotely related to the data, it will politely refuse - _"I'm sorry, I can only answer questions about the Dataset."_
-- **SQL RAG Mode**:  Should the LLM decide that it doesn't have the necessary information in the metadata it compiled to answer your prompt, it will automatically enter SQL Retrieval-Augmented Generation (RAG) mode - using the rich metadata instead to craft expert-level deterministic, reproducible, hallucination-free SQL queries[^1].
-- **Database Engine Support**: If DuckDB is installed or the Polars feature is enabled, and the `--sql-results <ANSWER.CSV>` is specified, an optimized SQL query will be automatically executed and saved to the specified file. As both are purpose-built OLAP engines that support direct queries (no database pre-loading required), you get answers in a few seconds - even for very large datasets.
-- **Multi-LLM Support**: Works with _any_ OpenAI-API compatible LLM - with special support for local LLMs like Ollama, Jan and LM Studio and the ability to customize model behavior with the `--addl-props` option.
+- **Auto SQL RAG Mode**:  Should the LLM decide that it doesn't have the necessary information in the metadata it compiled to answer your prompt, it will automatically enter SQL [Retrieval-Augmented Generation (RAG)](https://en.wikipedia.org/wiki/Retrieval-augmented_generation) mode - using the rich metadata instead as context to craft an expert-level, deterministic, reproducible, "hallucination-free" SQL query[^1] to respond to your prompt.
+- **Database Engine Support**: If [DuckDB](https://duckdb.org/) is installed or the Polars feature is enabled, and the `--sql-results <ANSWER.CSV>` is specified, an optimized SQL query will be automatically executed and the query results are saved to the specified file. As both are purpose-built [OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) engines that support direct queries (no database pre-loading required), you get answers in a few seconds[^2] - even for very large datasets.
+- **Multi-LLM Support**: Works with _any_ [OpenAI-API compatible](https://platform.openai.com/docs/api-reference/chat) LLM - with special support for local LLMs like [Ollama](https://ollama.com/), [Jan](https://jan.ai/) and [LM Studio](https://lmstudio.ai/) and the ability to customize model behavior with the `--addl-props` option.
 - **Advanced Caching**: Disk and Redis caching support for performance and cost optimization.
 - **Flexible Prompting**: Custom prompt files and built-in intelligent templates for various analysis tasks.
 
-Check out these examples!
+Check out these examples using a [1 million row sample of NYC's 311 data](https://raw.githubusercontent.com/wiki/dathere/qsv/files/NYC_311_SR_2010-2020-sample-1M.7z)!
 - `--all` option produces a Data Dictionary, Description and Tags - [Markdown](docs/nyc311-describegpt.md), [JSON](https://raw.githubusercontent.com/dathere/qsv/refs/heads/master/docs/nyc311-describegpt.json)
 - [--prompt "What are the top 10 complaint types per community board and borough?"](docs/nyc311-describegpt-prompt.md) - [SQL result](docs/nyc311-describegpt-prompt.csv)
 
-If you want to see more, we're Bologna-bound to attend [csv,conf,v9](https://csvconf.com) to present and share how we're using this to auto-infer metadata in CKAN.
+On top of other improvements in [Datapusher+](https://github.com/dathere/datapusher-plus) with its new [Jinja](https://jinja.palletsprojects.com/en/stable/)-based _*"metadata suggestion engine"*_ - we're using this AI-inferred metadata along with other precalcs to prepopulate [DCATv3](https://www.w3.org/TR/vocab-dcat-3/) (both [US](https://doi-do.github.io/dcat-us/) and [European](https://semiceu.github.io/DCAT-AP/releases/3.0.0/) profiles) and [Croissant](https://research.google/blog/croissant-a-metadata-format-for-ml-ready-datasets/) metadata fields that are otherwise too hard and expensive to compile manually.
 
-On top of other improvements in [Datapusher+](https://github.com/dathere/datapusher-plus) with its new [Jinja](https://jinja.palletsprojects.com/en/stable/)-based _*"metadata suggestion engine"*_ - we'll be pre-calculating [DCAT 3](https://www.w3.org/TR/vocab-dcat-3/) (both [US](https://doi-do.github.io/dcat-us/) and [European](https://semiceu.github.io/DCAT-AP/releases/3.0.0/) profiles) and [Croissant](https://research.google/blog/croissant-a-metadata-format-for-ml-ready-datasets/) metadata fields that are otherwise too hard and expensive to compile manually. 
+The inferred and precalculated metadata values are offered as "suggestions", using a UI/UX purpose-built to facilitate interactive **_metadata curation chats_**.
 
-This allows Data Stewards to compile high-quality, high-resolution metadata catalogs with an acceelerated ["Data Steward in the Loop"](https://en.wikipedia.org/wiki/Human-in-the-loop) data ingestion and metadata curation workflow.
+This allows Data Stewards to compile high-quality, high-resolution metadata catalogs with an accelerated ["Data Steward in the Loop"](https://en.wikipedia.org/wiki/Human-in-the-loop) data ingestion and metadata curation workflow.
+
+If you want to see and learn more, we're Bologna-bound to attend [csv,conf,v9](https://csvconf.com) to present and share how we're using this to auto-infer metadata in CKAN.
 
 Hope to see you there!
 
@@ -47,21 +68,22 @@ Hope to see you there!
 - **Unix Epoch Support**: Proper handling of Unix timestamp 0 as valid date
 - **Enhanced Date Inference**: Better date and boolean type inference capabilities
 
-🔧 **Validation & Schema Enhancements**:
-- **Fancy Regex Support**: Added `--fancy-regex` option with "advanced" regex features (e.g. backreferences or look-around) that the standard Rust regex does not support ([for performance reasons](https://crates.io/crates/regex))
+🔧 **`validate` & `schema` Enhancements**:
+- **Fancy Regex Support**: You can now use "advanced" regex features with your [JSON Schema patterns](regular_expressions) with the `--fancy-regex` option.  Previously, you can only use the standard Rust regex engine which does not support  backreferences or look-arounds  ([for performance reasons](https://crates.io/crates/regex))
 - **JSON Schema Improvements**: Better error handling and format validation options
 - **Schema Validation Refinements**: More granular validation control with `--no-format-validation`
 
-🔄 **Rename Reverted and Improved**:<br>
-When pairwise renaming was introduced in v6.0.0, it broke old workflows. It's now fixed by introducing two modes:
+🔄 **`rename` Reverted and Improved**:<br>
+When [pairwise renaming was introduced in v6.0.0](https://github.com/dathere/qsv/issues/1292), it [broke some some workflows](https://github.com/dathere/qsv/issues/2908). It's now fixed by introducing two modes:
 - **Positional Mode**: Renaming by position is now once again the default
 - **Pairwise Mode**: New `--pairwise` flag for column renaming by column pairs
 
-🗂️ **Partition Improvements**:
+🗂️ **`partition` Improvements**:
 - **Case-Insensitive Safety**:  Improved case-aware partitioning algorithm. Previously, case insensitive file systems like macOS APFS and Windows NTFS was causing incorrect partitioning of case-sensitive values
 - **Faster still**: With better use of I/O bufferring - with deferred, batched, async writes instead of after every record
 
 [^1]: LLMs can still hallucinate a syntactically wrong SQL query. But once a valid SQL query is produced, its fully reproducible.
+[^2]: Depending on your LLM setup, SQL query generation may take some time, but once generated, the SQL query itself is **_blazing-fast_**.
 ---
 
 ### Added
@@ -153,6 +175,7 @@ When pairwise renaming was introduced in v6.0.0, it broke old workflows. It's no
 * @abobov made their first contribution in https://github.com/dathere/qsv/pull/2862
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/6.0.1...7.0.0
+---
 
 ## [6.0.1] - 2025-07-12
 

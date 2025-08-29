@@ -1,4 +1,4 @@
-local date = require "date";
+local date = require "./date";
 
 createdate = date(col["Created Date"]);
 

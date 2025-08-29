@@ -34,17 +34,18 @@ This is the biggest release yet - 470+ commits since v6.0.1! Packed with new AI-
 With the release of [OpenAI's gpt-oss open-weight reasoning model](https://openai.com/index/introducing-gpt-oss/) earlier this month setting the stage, we continue on our ["Automagical Metadata"](https://dathere.com/2023/11/automagical-metadata/) journey by revamping `describegpt`.
 
 🤖 **Revamped `describegpt` - AI-Powered Metadata Inferencing and Data Analysis:**
-- **Intelligent Metadata Generation**: Automatically generate comprehensive metadata - Data Dictionaries, Description and Tags for your Datasets using Large Language Models (LLM) prompted with summary statistics and frequency tables as detailed context - **without sending your data to the cloud**!
-- **Chat with your Data**: If your prompt can be answered using this high-quality, high-resolution Metadata, `describegpt` can answer it! If your prompt is not remotely related to the data, it will politely refuse - _"I'm sorry, I can only answer questions about the Dataset."_
+- **Intelligent Metadata Generation**: Automatically generate comprehensive metadata - Data Dictionaries, Description and Tags for your Datasets using Large Language Models (LLM) prompted with summary statistics and frequency tables as detailed context - **without sending your data to the cloud**!<br>Even if you elect to use a cloud-based LLM, your [Raw Data is never sent](https://github.com/dathere/qsv/blob/master/docs/Describegpt.md).
+- **Chat with your Data**: If your prompt can be answered using this high-quality, high-resolution Metadata, `describegpt` will answer it! If your prompt is not remotely related to the data, it will politely refuse - _"I'm sorry, I can only answer questions about the Dataset."_
 - **Auto SQL RAG Mode**:  Should the LLM decide that it doesn't have the necessary information in the metadata it compiled to answer your prompt, it will automatically enter SQL [Retrieval-Augmented Generation (RAG)](https://en.wikipedia.org/wiki/Retrieval-augmented_generation) mode - using the rich metadata instead as context to craft an expert-level, deterministic, reproducible, "hallucination-free" SQL query[^1] to respond to your prompt.
-- **Database Engine Support**: If [DuckDB](https://duckdb.org/) is installed or the Polars feature is enabled, and the `--sql-results <ANSWER.CSV>` is specified, an optimized SQL query will be automatically executed and the query results are saved to the specified file. As both are purpose-built [OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) engines that support direct queries (no database pre-loading required), you get answers in a few seconds[^2] - even for very large datasets.
-- **Multi-LLM Support**: Works with _any_ [OpenAI-API compatible](https://platform.openai.com/docs/api-reference/chat) LLM - with special support for local LLMs like [Ollama](https://ollama.com/), [Jan](https://jan.ai/) and [LM Studio](https://lmstudio.ai/) and the ability to customize model behavior with the `--addl-props` option.
-- **Advanced Caching**: Disk and Redis caching support for performance and cost optimization.
-- **Flexible Prompting**: Custom prompt files and built-in intelligent templates for various analysis tasks.
+- **Database Engine Support**: If [DuckDB](https://duckdb.org/) is installed or the Polars feature is enabled, and `--sql-results <ANSWER.CSV>` is specified - an optimized SQL query will be automatically executed with the query results saved to the specified file.<br>As both DuckDB and Polars are purpose-built [OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) engines that support direct queries (no database pre-loading required), you get answers in a few seconds[^2] - even for very large datasets.
+- **Multi-LLM Support**: Works with _any_ [OpenAI-API compatible](https://platform.openai.com/docs/api-reference/chat) LLM - with special support for local LLMs like [Ollama](https://ollama.com/), [Jan](https://jan.ai/) and [LM Studio](https://lmstudio.ai/), with the ability to customize model behavior with the [`--addl-props` option](https://github.com/dathere/qsv/blob/311b1e6d15e41477095e425079243ccda33e1c1e/src/cmd/describegpt.rs#L123-L127).
+- **Advanced Caching**: [Disk and Redis caching support](https://github.com/dathere/qsv/blob/311b1e6d15e41477095e425079243ccda33e1c1e/src/cmd/describegpt.rs#L145-L167) for performance and cost optimization.
+- **Flexible Prompting**: [Custom prompt files](https://github.com/dathere/qsv/blob/311b1e6d15e41477095e425079243ccda33e1c1e/src/cmd/describegpt.rs#L106-L107) and built-in intelligent [templates](https://raw.githubusercontent.com/dathere/qsv/refs/heads/master/resources/describegpt_defaults.json) for various analysis tasks.
 
 Check out these examples using a [1 million row sample of NYC's 311 data](https://raw.githubusercontent.com/wiki/dathere/qsv/files/NYC_311_SR_2010-2020-sample-1M.7z)!
 - `--all` option produces a Data Dictionary, Description and Tags - [Markdown](docs/nyc311-describegpt.md), [JSON](https://raw.githubusercontent.com/dathere/qsv/refs/heads/master/docs/nyc311-describegpt.json)
 - [--prompt "What are the top 10 complaint types per community board and borough?"](docs/nyc311-describegpt-prompt.md) - [SQL result](docs/nyc311-describegpt-prompt.csv)
+- `--prompt "How tall is the Empire State Building?"` - _"I'm sorry, I can only answer questions about the Dataset."_
 
 On top of other improvements in [Datapusher+](https://github.com/dathere/datapusher-plus) with its new [Jinja](https://jinja.palletsprojects.com/en/stable/)-based _*"metadata suggestion engine"*_ - we're using this AI-inferred metadata along with other precalcs to prepopulate [DCATv3](https://www.w3.org/TR/vocab-dcat-3/) (both [US](https://doi-do.github.io/dcat-us/) and [European](https://semiceu.github.io/DCAT-AP/releases/3.0.0/) profiles) and [Croissant](https://research.google/blog/croissant-a-metadata-format-for-ml-ready-datasets/) metadata fields that are otherwise too hard and expensive to compile manually.
 
@@ -82,8 +83,8 @@ When [pairwise renaming was introduced in v6.0.0](https://github.com/dathere/qsv
 - **Case-Insensitive Safety**:  Improved case-aware partitioning algorithm. Previously, case insensitive file systems like macOS APFS and Windows NTFS was causing incorrect partitioning of case-sensitive values
 - **Faster still**: With better use of I/O bufferring - with deferred, batched, async writes instead of after every record
 
-[^1]: LLMs can still hallucinate a syntactically wrong SQL query. But once a valid SQL query is produced, its fully reproducible.
-[^2]: Depending on your LLM setup, SQL query generation may take some time, but once generated, the SQL query itself is **_blazing-fast_**.
+[^1]: LLMs can still hallucinate a syntactically wrong SQL query. But once a valid SQL query is generated, its fully reproducible.
+[^2]: Depending on your LLM setup, SQL query generation may take some time. Once generated however, the SQL query itself will be **_blazing-fast_**.
 ---
 
 ### Added
@@ -155,9 +156,9 @@ When [pairwise renaming was introduced in v6.0.0](https://github.com/dathere/qsv
 * build(deps): bump tempfile from 3.20.0 to 3.21.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2900
 * build(deps): bump tokio from 1.46.1 to 1.47.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2857
 * build(deps): bump tokio from 1.47.0 to 1.47.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2866
-* build(deps): bump uuid from 1.17.0 to 1.18.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2883
 * build(deps): bump url from 2.5.4 to 2.5.6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2912
 * build(deps): bump url from 2.5.6 to 2.5.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2919
+* build(deps): bump uuid from 1.17.0 to 1.18.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2883
 * build(deps): bump zip from 4.3.0 to 4.5.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2911
 * applied select clippy suggestions
 * updated indirect dependencies

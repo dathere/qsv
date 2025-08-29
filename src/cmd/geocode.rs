@@ -1169,7 +1169,7 @@ async fn geocode_main(args: Args) -> CliResult<()> {
 
     // reuse batch buffers
     let batchsize: usize = if args.flag_batch == 0 {
-        std::cmp::max(1000, util::count_rows(&rconfig)? as usize)
+        std::cmp::max(1000, util::count_rows_regular(&rconfig)? as usize)
     } else {
         args.flag_batch
     };

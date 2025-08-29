@@ -253,10 +253,11 @@ struct PromptFile {
     custom_prompt_guidance: String,
 }
 
-const LLM_APIKEY_ERROR: &str = "Error: QSV_LLM_APIKEY environment variable not found.\nNote that \
-                                this command uses LLMs for inferencing and is therefore prone to \
-                                inaccurate information being produced. Verify output results \
-                                before using them.";
+const LLM_APIKEY_ERROR: &str = r#"Error: Neither QSV_LLM_BASE_URL nor QSV_LLM_APIKEY environment variables are set.
+Either set the URL to an address with "localhost" in it (indicating a local LLM), or set the API key.
+
+Note that this command uses LLMs for inferencing and is therefore prone to inaccurate information being produced.
+Verify output results before using them."#;
 
 const INPUT_TABLE_NAME: &str = "INPUT_TABLE_NAME";
 

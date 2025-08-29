@@ -721,7 +721,7 @@ run table "$qsv_bin" table "$data"
 run template "$qsv_bin" template --template-file template.tpl "$data" >/dev/null
 run template_lookup_outdir "$qsv_bin" template --template-file template-with-cb-lookup.tpl "$data" >/dev/null
 run to_xlsx "$qsv_bin" to xlsx benchmark_work.xlsx "$data"
-run to_sqlite "$qsv_bin" to sqlite benchmark_work.db "$data"
+run to_sqlite "$qsv_bin" to sqlite benchmark_work.db "$data";rm benchmark_work.db
 run to_datapackage "$qsv_bin" to datapackage benchmark_work.json "$data"
 run tojsonl "$qsv_bin" tojsonl "$data"
 run tojsonl_batchall "$qsv_bin" tojsonl --batch 0 "$data"

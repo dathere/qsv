@@ -1,6 +1,8 @@
 # `describegpt` command
 
-`describegpt` allows users to infer extended metadata about a CSV dataset using large language models, in particular GPT chat completion models from OpenAI's API, Ollama, or an API compatible with the OpenAI API specification such as Jan. `describegpt` uses `qsv stats` and `qsv frequency` in the background to provide context to the model.
+`describegpt` allows users to infer extended metadata about a CSV dataset using large language models, in particular GPT chat completion models from OpenAI's API, Ollama, or an API compatible with the OpenAI API specification such as Jan.
+
+`describegpt` uses `qsv stats` and `qsv frequency` in the background to provide context to the model. It does not send the entire dataset to the model. This "zero-copy" approach is not only ideal for reducing costs (as detailed metadata, even for very large dataset is "tiny" in comparison) and increasing performance, it also protects the privacy of sensitive data.
 
 Note that this command uses LLMs for inferencing and is therefore prone to inaccurate information being produced. Verify output results before using them.
 

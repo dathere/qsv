@@ -5828,7 +5828,6 @@ dependencies = [
  "governor 0.10.1",
  "grex",
  "gzp",
- "hashbrown 0.15.5",
  "human-panic",
  "indexmap",
  "indicatif",

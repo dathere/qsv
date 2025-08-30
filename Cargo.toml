@@ -135,7 +135,6 @@ geozero = { version = "0.14.0", features = [
 governor = { version = "0.10", optional = true }
 grex = { version = "=1.4.5", default-features = false }
 gzp = { version = "1", default-features = false, features = ["snappy_default"] }
-hashbrown = { version = "0.15", optional = true }
 human-panic = "2"
 indexmap = "2.11"
 indicatif = "0.18"
@@ -388,7 +387,6 @@ apply = [
     "crc32fast",
     "eudex",
     "gender_guesser",
-    "hashbrown",
     "qsv_vader_sentiment_analysis",
     "strsim",
     "thousands",
@@ -400,7 +398,6 @@ fetch = [
     "console",
     "flate2",
     "governor",
-    "hashbrown",
     "publicsuffix",
     "serde_urlencoded",
     "sled",
@@ -426,7 +423,6 @@ ui = ["clipboard", "prompt", "lens"]
 feature_capable = []
 nightly = [
     "crc32fast/nightly",
-    "hashbrown/nightly",
     "polars/nightly",
     "polars/simd",
     "pyo3/nightly",

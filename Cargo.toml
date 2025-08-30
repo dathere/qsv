@@ -215,7 +215,7 @@ polars = { version = "0.50", features = [
 polars-ops = { version = "0.50", optional = true }
 polars-utils = { version = "0.50", optional = true }
 publicsuffix = { version = "2.2", optional = true }
-pyo3 = { version = "0.25", features = ["auto-initialize"], optional = true }
+pyo3 = { version = "0.26", features = ["auto-initialize"], optional = true }
 qsv-dateparser = "0.13"
 qsv_docopt = "1.8"
 qsv-stats = "0.38"

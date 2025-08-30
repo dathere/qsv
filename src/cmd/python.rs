@@ -199,7 +199,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let debug_flag = log::log_enabled!(log::Level::Debug);
 
     if debug_flag {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let msg = format!("Detected Python={}", py.version());
             winfo!("{msg}");
         });
@@ -320,7 +320,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             break 'batch_loop;
         }
 
-        Python::with_gil(|py| -> PyResult<()> {
+        Python::attach(|py| -> PyResult<()> {
             let batch_ref = &mut batch;
             let helpers =
                 PyModule::from_code(py, &helpers_code, &helpers_filename, &helpers_module_name)?;

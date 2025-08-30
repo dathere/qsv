@@ -472,7 +472,7 @@ pub fn version() -> String {
     #[cfg(all(feature = "python", not(feature = "lite")))]
     {
         enabled_features.push_str("python-");
-        pyo3::Python::with_gil(|py| {
+        pyo3::Python::attach(|py| {
             enabled_features.push_str(py.version());
             enabled_features.push(';');
         });

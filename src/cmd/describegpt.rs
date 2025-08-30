@@ -90,6 +90,9 @@ describegpt options:
     -A, --all              Shortcut for --dictionary --description --tags.
     --stats-options <arg>  Options for the stats command used to generate summary statistics.
                            [default: --infer-dates --everything]
+    --enum-threshold <n>   The threshold for compiling enumerations with the frequency command
+                           before bucketing other unique values into the "Other" category.
+                           [default: 50]
 
                            CUSTOM PROMPT OPTIONS:
     --prompt <prompt>      Custom prompt to answer questions about the dataset.
@@ -210,6 +213,7 @@ struct Args {
     flag_tags:           bool,
     flag_all:            bool,
     flag_stats_options:  String,
+    flag_enum_threshold: usize,
     flag_prompt:         Option<String>,
     flag_sql_results:    Option<String>,
     flag_prompt_file:    Option<String>,
@@ -576,6 +580,9 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
             prompt_file.tokens
         };
         prompt_file.tokens = max_tokens;
+        prompt_file.system_prompt = prompt_file
+            .system_prompt
+            .replace("{TOP_N}", &args.flag_enum_threshold.to_string());
 
         // Set the global prompt file
         PROMPT_FILE.set(prompt_file).unwrap();
@@ -813,8 +820,8 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
 
 fn get_analysis_cache_key(args: &Args, file_hash: &str) -> String {
     format!(
-        "analysis_{:?}{:?}{}",
-        args.arg_input, args.flag_stats_options, file_hash
+        "analysis_{:?}{:?}{:?}{}",
+        args.arg_input, args.flag_stats_options, args.flag_enum_threshold, file_hash
     )
 }
 
@@ -2196,15 +2203,32 @@ fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults>
     }
 
     // Run qsv commands to analyze data
-    print_status("  Compiling Summary Statistics...", None);
+    print_status(
+        &format!(
+            "  Compiling Summary Statistics (options: '{}')...",
+            args.flag_stats_options
+        ),
+        None,
+    );
     let stats_args_vec = args
         .flag_stats_options
         .split_whitespace()
         .collect::<Vec<&str>>();
     let (stats, _) = run_qsv_cmd("stats", &stats_args_vec, input_path, " ")?;
 
-    print_status("  Compiling Frequency Distribution...", None);
-    let (frequency, _) = run_qsv_cmd("frequency", &["--limit", "10"], input_path, " ")?;
+    print_status(
+        &format!(
+            "  Compiling Frequency Distribution (enum threshold: {})...",
+            args.flag_enum_threshold
+        ),
+        None,
+    );
+    let (frequency, _) = run_qsv_cmd(
+        "frequency",
+        &["--limit", &args.flag_enum_threshold.to_string()],
+        input_path,
+        " ",
+    )?;
 
     // this is instantaneous, so no need to print start/end status
     let (headers, _) = run_qsv_cmd(

@@ -625,10 +625,12 @@ fn get_prompt(
         },
     };
 
-    let stats = &analysis_results.unwrap().stats;
-    let frequency = &analysis_results.unwrap().frequency;
-    let headers = &analysis_results.unwrap().headers;
-    let delimiter = &analysis_results.unwrap().delimiter;
+    let (stats, frequency, headers, delimiter) = match analysis_results {
+        Some(ar) => (&ar.stats, &ar.frequency, &ar.headers, &ar.delimiter),
+        None => {
+            return Err(anyhow::anyhow!("Missing analysis results required for prompt generation."));
+        }
+    };
 
     // If this is a custom prompt and DuckDB should be used, modify the SQL query generation
     // guidelines

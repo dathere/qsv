@@ -628,8 +628,8 @@ fn get_prompt(
     let (stats, frequency, headers, delimiter) = match analysis_results {
         Some(ar) => (&ar.stats, &ar.frequency, &ar.headers, &ar.delimiter),
         None => {
-            return Err(anyhow::anyhow!("Missing analysis results required for prompt generation."));
-        }
+            return fail!("Analysis results required for prompt generation.");
+        },
     };
 
     // If this is a custom prompt and DuckDB should be used, modify the SQL query generation
@@ -1512,8 +1512,8 @@ fn run_inference_options(
         let sql_query_start = Instant::now();
         print_status(
             &format!(
-                "`--sql-results` specified.\nExecuting SQL query and saving results to {}...",
-                { sql_results }
+                "`--sql-results` specified.\nExecuting SQL query and saving results to \
+                 {sql_results}..."
             ),
             None,
         );

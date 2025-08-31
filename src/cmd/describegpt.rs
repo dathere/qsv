@@ -34,7 +34,7 @@ OpenAI's open-weights gpt-oss-20b model was used during development & is recomme
 NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
 
 CACHING:
-As LLM inferecing takes time and can be expensive, describegpt caches the LLM inferencing results
+As LLM inferencing takes time and can be expensive, describegpt caches the LLM inferencing results
 in a either a disk cache (default) or a Redis cache. It does so by calculating the SHA256 hash of the
 input file and using it as the primary cache key along with the prompt type, model and other parameters
 as required.
@@ -315,6 +315,11 @@ static QSV_REDIS_MAX_POOL_SIZE_ENV: &str = "QSV_REDIS_MAX_POOL_SIZE";
 static QSV_REDIS_TTL_SECS_ENV: &str = "QSV_REDIS_TTL_SECS";
 static QSV_REDIS_TTL_REFRESH_ENV: &str = "QSV_REDIS_TTL_REFRESH";
 static QSV_DESCRIBEGPT_DB_ENGINE_ENV: &str = "QSV_DESCRIBEGPT_DB_ENGINE";
+
+// Shared regex for matching read_csv_auto function calls
+static READ_CSV_AUTO_REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("read_csv_auto\\([^)]*\\)").expect("Invalid regex pattern")
+});
 static DEFAULT_REDIS_CONN_STRING: OnceLock<String> = OnceLock::new();
 static DEFAULT_REDIS_TTL_SECS: u64 = 60 * 60 * 24 * 28; // 28 days in seconds
 static DEFAULT_REDIS_POOL_SIZE: u32 = 20;
@@ -646,6 +651,8 @@ fn get_prompt(
             let before_guidelines = &prompt[..start_pos];
             let after_guidelines = &prompt[end_pos..];
 
+            // {delimiter} and {INPUT_TABLE_NAME} are replaced at run time
+            // with actual values
             let duckdb_guidelines = format!(
                 r#"
 - Use DuckDB v1.0 syntax
@@ -1257,14 +1264,14 @@ fn run_inference_options(
                 // replace INPUT_TABLE_NAME with input_path
                 formatted_output = {
                     let input_path = args.arg_input.as_deref().unwrap_or("input.csv");
-                    let re = regex_oncelock!("read_csv_auto\\([^)]*\\)");
-                    if re.is_match(&formatted_output) {
+                    if READ_CSV_AUTO_REGEX.is_match(&formatted_output) {
                         // DuckDB with read_csv_auto so replace with quoted path
-                        re.replace_all(
-                            &formatted_output,
-                            format!("read_csv_auto('{}')", input_path),
-                        )
-                        .into_owned()
+                        READ_CSV_AUTO_REGEX
+                            .replace_all(
+                                &formatted_output,
+                                format!("read_csv_auto('{}')", input_path),
+                            )
+                            .into_owned()
                     } else {
                         // Polars SQL - use table alias _t_1
                         formatted_output.replace(INPUT_TABLE_NAME, "_t_1")
@@ -1534,14 +1541,15 @@ fn run_inference_options(
         // Check if DuckDB should be used
         if should_use_duckdb() {
             // For DuckDB, replace INPUT_TABLE_NAME with read_csv function call
-            let re = regex_oncelock!("read_csv_auto\\([^)]*\\)");
-            if re.is_match(&sql_query) {
+            if READ_CSV_AUTO_REGEX.is_match(&sql_query) {
                 // DuckDB with read_csv_auto so replace with quoted path
-                sql_query = re
+                sql_query = READ_CSV_AUTO_REGEX
                     .replace_all(&sql_query, format!("read_csv_auto('{}')", input_path))
                     .into_owned()
             } else {
-                return fail_clierror!("Failed to extract SQL query from custom prompt response");
+                return fail_clierror!(
+                    "Expected SQL query to contain `read_csv_auto` function call but none found"
+                );
             };
             log::debug!("DuckDB SQL query:\n{sql_query}");
 

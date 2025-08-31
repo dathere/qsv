@@ -3,7 +3,8 @@ Infer a Data Dictionary, Description & Tags about a Dataset using any OpenAI API
 Large Language Model (LLM).
 
 It infers these extended metadata by compiling Summary Statistics & a Frequency Distribution
-of the Dataset, and then prompting the LLM with this information.
+of the Dataset, and then prompting the LLM with detailed, configurable prompts with these
+extended context.
 
 You can also use the --prompt option to ask a natural language question about the Dataset.
 
@@ -17,7 +18,8 @@ QSV_DESCRIBEGPT_DB_ENGINE environment variable is set to the absolute path of th
 DuckDB will be used to answer the question. Otherwise, if the "polars" feature is enabled,
 Polars SQL will be used.
 
-If neither DuckDB nor Polars is available, the SQL query will be returned as is.
+If neither DuckDB nor Polars is available, the SQL query will be returned in a Markdown code block,
+along with the reasoning behind the query.
 
 Even in "SQL RAG" mode, though the SQL query is guaranteed to be deterministic, the query itself
 may not be correct. In the event of a SQL query execution failure, run the same --prompt with
@@ -31,42 +33,52 @@ OpenAI's open-weights gpt-oss-20b model was used during development & is recomme
 
 NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
 
+CACHING:
+As LLM inferencing takes time and can be expensive, describegpt caches the LLM inferencing results
+in a either a disk cache (default) or a Redis cache. It does so by calculating the SHA256 hash of the
+input file and using it as the primary cache key along with the prompt type, model and other parameters
+as required.
+
+The default disk cache is stored in the ~/.qsv/cache/describegpt directory with a default TTL of 28 days
+and cache hits NOT refreshing an existing cached value's TTL.
+Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars to change disk cache settings.
+
+Alternatively a Redis cache can be used instead of the disk cache. This is especially useful if you want
+to share the cache across the network with other users or computers.
+The Redis cache is stored in database 3 by default with a TTL of 28 days and cache hits NOT refreshing
+an existing cached value's TTL. Adjust the QSV_DG_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE,
+QSV_REDIS_TTL_SECONDS & QSV_REDIS_TTL_REFRESH env vars to change Redis cache settings.
+
 Examples:
 
-  # Generate a data dictionary, description & tags of data.csv using default OpenAI gpt-oss-20b model
+  # Generate a Data Dictionary, Description & Tags of data.csv using default OpenAI gpt-oss-20b model
   # (replace <API_KEY> with your OpenAI API key)
   $ qsv describegpt data.csv --api-key <API_KEY> --all
 
-  # Generate a data dictionary of a data.csv using Ollama using the DeepSeek R1:14b model
-  $ qsv describegpt data.csv -u http://localhost:11434/v1 -k ollama -m deepseek-r1:14b --dictionary
+  # Generate a Data Dictionary of data.csv using the DeepSeek R1:14b model
+  $ qsv describegpt data.csv -u http://localhost:11434/v1 --model deepseek-r1:14b --dictionary
 
-  # use the disk cache to speed up the process and save on API calls
-  $ export QSV_LLM_APIKEY=<API_KEY>
-  $ qsv describegpt data.csv --all --disk-cache
-  # save the cached LLM completions to a JSON file without incurring additional API calls
-  $ qsv describegpt data.csv --all --disk-cache --json > data.json
-
-  # Ask questions about the sample NYC 311 dataset using LM Studio using the default gpt-oss-20b model
+  # Ask questions about the sample NYC 311 dataset using LM Studio with the default gpt-oss-20b model.
+  # Questions that can be answered using the Summary Statistics & Frequency Distribution of the dataset.
   $ export QSV_LLM_BASE_URL=http://localhost:1234/v1
   $ qsv describegpt NYC_311.csv --prompt "What is the most common complaint?"
   $ qsv describegpt NYC_311.csv --prompt "List the top 10 complaints."
+  $ qsv describegpt NYC_311.csv -p "Can you tell me how many complaints were resolved?"
 
   # Ask detailed questions that require SQL queries and auto-invoke SQL RAG mode
   # use DuckDB to answer the question
   $ export QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb
-  $ qsv describegpt NYC_311.csv --prompt "What's the breakdown of complaint types by borough descending order?"
+  $ qsv describegpt NYC_311.csv -p "What's the breakdown of complaint types by borough descending order?"
 
-  # Cache dictionary inference results using disk cache
-  $ qsv describegpt data.csv --dictionary --disk-cache
-  # Cache dictionary, description & tags inference results using the Redis cache
+  # Cache Dictionary, Description & Tags inference results using the Redis cache instead of the disk cache
   $ qsv describegpt data.csv --all --redis-cache
-  # Get fresh description & tags inference results from the LLM and refresh both disk cache entries
-  $ qsv describegpt data.csv --description --tags --disk-cache --fresh
-  # Get fresh inference results from the LLM and refresh the Redis cache entries
+  # Get fresh Description & Tags inference results from the LLM and refresh disk cache entries for both
+  $ qsv describegpt data.csv --description --tags --fresh
+  # Get fresh inference results from the LLM and refresh the Redis cache entries for all three
   $ qsv describegpt data.csv --all --redis-cache --fresh
 
   # Flush the disk cache
-  $ qsv describegpt --disk-cache --flush-cache
+  $ qsv describegpt --flush-cache
   # Flush the Redis cache
   $ qsv describegpt --redis-cache --flush-cache
 
@@ -77,7 +89,7 @@ see https://github.com/dathere/qsv/blob/master/docs/Describegpt.md
 
 Usage:
     qsv describegpt [options] [<input>]
-    qsv describegpt (--disk-cache | --redis-cache) (--flush-cache)
+    qsv describegpt (--redis-cache) (--flush-cache)
     qsv describegpt --help
 
 describegpt options:
@@ -92,10 +104,10 @@ describegpt options:
                            [default: --infer-dates --everything]
     --enum-threshold <n>   The threshold for compiling enumerations with the frequency command
                            before bucketing other unique values into the "Other" category.
-                           [default: 50]
+                           [default: 20]
 
                            CUSTOM PROMPT OPTIONS:
-    --prompt <prompt>      Custom prompt to answer questions about the dataset.
+    -p, --prompt <prompt>  Custom prompt to answer questions about the dataset.
                            The prompt will be answered based on the dataset's Summary Statistics,
                            Frequency data & Data Dictionary. If the prompt CANNOT be answered by looking
                            at these metadata, a SQL query will be generated to answer the question.
@@ -146,28 +158,24 @@ describegpt options:
     --jsonl                Return results in JSON Lines format.
 
                              CACHING OPTIONS:
-    --disk-cache             Use a persistent disk cache for LLM completions. The cache is stored in the
-                             directory specified by --disk-cache-dir. It has a default Time To Live (TTL)
-                             of 28 days and cache hits NOT refreshing an existing cached value's TTL.
-                             Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars
-                             to change disk cache settings.
+    --no-cache               Disable default disk cache.
     --disk-cache-dir <dir>   The directory <dir> to store the disk cache. Note that if the directory
                              does not exist, it will be created. If the directory exists, it will be used as is,
                              and will not be flushed. This option allows you to maintain several disk caches
                              for different describegpt jobs (e.g. one for a data portal, another for internal
                              data exchange, etc.)
                              [default: ~/.qsv/cache/describegpt]
-    --redis-cache            Use Redis to cache LLM completions. It connects to "redis://127.0.0.1:6379/3"
-                             with a connection pool size of 20, with a TTL of 28 days, and cache hits
-                             NOT refreshing an existing cached value's TTL.
-                             Adjust the QSV_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS &
-                             QSV_REDIS_TTL_REFRESH env vars respectively to change Redis cache settings.
-                             This option is ignored if the --disk-cache option is enabled.
+    --redis-cache            Use Redis instead of the default disk cache to cache LLM completions.
+                             It connects to "redis://127.0.0.1:6379/3" by default, with a connection pool
+                             size of 20, with a TTL of 28 days, and cache hits NOT refreshing an existing
+                             cached value's TTL.
+                             This option automatically disables the disk cache.
     --fresh                  Send a fresh request to the LLM API, refreshing a cached response if it exists.
                              When a --prompt SQL query fails, you can also use this option to request the
                              LLM to generate a new SQL query.
     --forget                 Remove a cached response if it exists and then exit.
-    --flush-cache            Flush all the keys in the current cache on startup.
+    --flush-cache            Flush the current cache entries on startup.
+                             WARNING: This operation is irreversible.
 
 Common options:
     -h, --help             Display this message
@@ -226,7 +234,7 @@ struct Args {
     flag_user_agent:     Option<String>,
     flag_json:           bool,
     flag_jsonl:          bool,
-    flag_disk_cache:     bool,
+    flag_no_cache:       bool,
     flag_disk_cache_dir: Option<String>,
     flag_redis_cache:    bool,
     flag_fresh:          bool,
@@ -263,7 +271,7 @@ Either set the URL to an address with "localhost" in it (indicating a local LLM)
 Note that this command uses LLMs for inferencing and is therefore prone to inaccurate information being produced.
 Verify output results before using them."#;
 
-const INPUT_TABLE_NAME: &str = "INPUT_TABLE_NAME";
+const INPUT_TABLE_NAME: &str = "<INPUT_TABLE_NAME>";
 
 // Global variable to store DuckDB binary path
 static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
@@ -299,13 +307,19 @@ struct AnalysisResults {
     frequency: String,
     headers:   String,
     file_hash: String,
+    delimiter: char,
 }
 
-static QSV_REDIS_CONNSTR_ENV: &str = "QSV_REDIS_CONNSTR";
+static QSV_REDIS_CONNSTR_ENV: &str = "QSV_DG_REDIS_CONNSTR";
 static QSV_REDIS_MAX_POOL_SIZE_ENV: &str = "QSV_REDIS_MAX_POOL_SIZE";
 static QSV_REDIS_TTL_SECS_ENV: &str = "QSV_REDIS_TTL_SECS";
 static QSV_REDIS_TTL_REFRESH_ENV: &str = "QSV_REDIS_TTL_REFRESH";
 static QSV_DESCRIBEGPT_DB_ENGINE_ENV: &str = "QSV_DESCRIBEGPT_DB_ENGINE";
+
+// Shared regex for matching read_csv_auto function calls
+static READ_CSV_AUTO_REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("read_csv_auto\\([^)]*\\)").expect("Invalid regex pattern")
+});
 static DEFAULT_REDIS_CONN_STRING: OnceLock<String> = OnceLock::new();
 static DEFAULT_REDIS_TTL_SECS: u64 = 60 * 60 * 24 * 28; // 28 days in seconds
 static DEFAULT_REDIS_POOL_SIZE: u32 = 20;
@@ -593,9 +607,7 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
 // Generate prompt for prompt type based on either the prompt file (if given) or default prompts
 fn get_prompt(
     prompt_type: PromptType,
-    stats: Option<&str>,
-    frequency: Option<&str>,
-    headers: Option<&str>,
+    analysis_results: Option<&AnalysisResults>,
     args: &Args,
 ) -> CliResult<(String, String)> {
     // Get prompt file if --prompt-file is used, otherwise get default prompt file
@@ -618,6 +630,13 @@ fn get_prompt(
         },
     };
 
+    let (stats, frequency, headers, delimiter) = match analysis_results {
+        Some(ar) => (&ar.stats, &ar.frequency, &ar.headers, &ar.delimiter),
+        None => {
+            return fail!("Analysis results required for prompt generation.");
+        },
+    };
+
     // If this is a custom prompt and DuckDB should be used, modify the SQL query generation
     // guidelines
     if prompt_type == PromptType::Prompt && should_use_duckdb() {
@@ -632,13 +651,18 @@ fn get_prompt(
             let before_guidelines = &prompt[..start_pos];
             let after_guidelines = &prompt[end_pos..];
 
-            let duckdb_guidelines = r#"
+            // {delimiter} and {INPUT_TABLE_NAME} are replaced at run time
+            // with actual values
+            let duckdb_guidelines = format!(
+                r#"
 - Use DuckDB v1.0 syntax
-- Use DuckDB's `read_csv` table function to read the input CSV
-- Use the placeholder `'INPUT_TABLE_NAME'` for the input csv. INPUT_TABLE_NAME must be enclosed in single quotes
+- The input csv has headers and uses {delimiter} as the delimiter
+- Only use the `read_csv_auto` table function to read the input CSV
+- Use the placeholder {INPUT_TABLE_NAME} for the input csv in the `read_csv_auto` table function call
 - Only use functions from the Loaded DuckDB extensions listed below
 - Make sure the generated SQL query is valid and has comments to explain the query
-- Add a comment with the placeholder "GENERATED_BY_SIGNATURE" at the top of the query"#;
+- Add a comment with the placeholder "GENERATED_BY_SIGNATURE" at the top of the query"#
+            );
 
             prompt = format!(
                 "{before_guidelines}{sql_guidelines_start}{duckdb_guidelines}{after_guidelines}"
@@ -665,9 +689,9 @@ fn get_prompt(
     #[allow(clippy::to_string_in_format_args)]
     #[allow(clippy::literal_string_with_formatting_args)]
     let prompt = prompt
-        .replace("{stats}", stats.unwrap_or(""))
-        .replace("{frequency}", frequency.unwrap_or(""))
-        .replace("{headers}", headers.unwrap_or(""))
+        .replace("{stats}", &stats)
+        .replace("{frequency}", &frequency)
+        .replace("{headers}", &headers)
         .replace(
             "{dictionary}",
             DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),
@@ -805,23 +829,22 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
     };
 
     format!(
-        "{:?}{:?}{:?}{:?}{:?}{:?}{}{}{}",
-        args.arg_input,
+        "{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}",
+        file_hash,
         args.flag_prompt_file,
         prompt_content,
         args.flag_max_tokens,
         args.flag_addl_props,
         actual_model,
         kind,
-        file_hash,
         validity_flag
     )
 }
 
 fn get_analysis_cache_key(args: &Args, file_hash: &str) -> String {
     format!(
-        "analysis_{:?}{:?}{:?}{}",
-        args.arg_input, args.flag_stats_options, args.flag_enum_threshold, file_hash
+        "analysis_{:?}{:?}{:?}",
+        file_hash, args.flag_stats_options, args.flag_enum_threshold,
     )
 }
 
@@ -1097,9 +1120,7 @@ fn run_inference_options(
     args: &Args,
     api_key: &str,
     cache_type: &CacheType,
-    stats_str: Option<&str>,
-    frequency_str: Option<&str>,
-    headers_str: Option<&str>,
+    analysis_results: &AnalysisResults,
 ) -> CliResult<()> {
     // Add --dictionary output as context if it is not empty
     fn get_messages(
@@ -1241,16 +1262,21 @@ fn run_inference_options(
             let mut formatted_output = format_output(&completion_response.response);
             if kind == PromptType::Prompt && is_sql_response {
                 // replace INPUT_TABLE_NAME with input_path
-                formatted_output = formatted_output.replace(
-                    INPUT_TABLE_NAME,
-                    if formatted_output.contains("read_csv") {
-                        // DuckDB with read_csv so can be used directly
-                        args.arg_input.as_deref().unwrap_or("input.csv")
+                formatted_output = {
+                    let input_path = args.arg_input.as_deref().unwrap_or("input.csv");
+                    if READ_CSV_AUTO_REGEX.is_match(&formatted_output) {
+                        // DuckDB with read_csv_auto so replace with quoted path
+                        READ_CSV_AUTO_REGEX
+                            .replace_all(
+                                &formatted_output,
+                                format!("read_csv_auto('{}')", input_path),
+                            )
+                            .into_owned()
                     } else {
                         // Polars SQL - use table alias _t_1
-                        "_t_1"
-                    },
-                );
+                        formatted_output.replace(INPUT_TABLE_NAME, "_t_1")
+                    }
+                };
             }
             // If --output is used, append plaintext to file, do not overwrite
             if let Some(output) = &args.flag_output {
@@ -1291,13 +1317,8 @@ fn run_inference_options(
 
     // Generate dictionary output
     if args.flag_dictionary || args.flag_all || args.flag_prompt.is_some() {
-        (prompt, system_prompt) = get_prompt(
-            PromptType::Dictionary,
-            stats_str,
-            frequency_str,
-            headers_str,
-            args,
-        )?;
+        (prompt, system_prompt) =
+            get_prompt(PromptType::Dictionary, Some(&analysis_results), args)?;
         let start_time = Instant::now();
         print_status("  Inferring Data Dictionary...", None);
         messages = get_messages(&prompt, &system_prompt, "");
@@ -1340,15 +1361,9 @@ fn run_inference_options(
     // Generate description output
     if args.flag_description || args.flag_all {
         (prompt, system_prompt) = if args.flag_dictionary {
-            get_prompt(PromptType::Description, None, None, None, args)?
+            get_prompt(PromptType::Description, None, args)?
         } else {
-            get_prompt(
-                PromptType::Description,
-                stats_str,
-                frequency_str,
-                headers_str,
-                args,
-            )?
+            get_prompt(PromptType::Description, Some(&analysis_results), args)?
         };
         messages = get_messages(&prompt, &system_prompt, &data_dict.response);
         let start_time = Instant::now();
@@ -1381,15 +1396,9 @@ fn run_inference_options(
     // Generate tags output
     if args.flag_tags || args.flag_all {
         (prompt, system_prompt) = if args.flag_dictionary {
-            get_prompt(PromptType::Tags, None, None, None, args)?
+            get_prompt(PromptType::Tags, None, args)?
         } else {
-            get_prompt(
-                PromptType::Tags,
-                stats_str,
-                frequency_str,
-                headers_str,
-                args,
-            )?
+            get_prompt(PromptType::Tags, Some(&analysis_results), args)?
         };
         // Only include dictionary context if dictionary was actually generated
         let dictionary_context = if args.flag_dictionary || args.flag_all {
@@ -1427,13 +1436,7 @@ fn run_inference_options(
     // Generate custom prompt output
     let mut has_sql_query = false;
     if args.flag_prompt.is_some() {
-        (prompt, system_prompt) = get_prompt(
-            PromptType::Prompt,
-            stats_str,
-            frequency_str,
-            headers_str,
-            args,
-        )?;
+        (prompt, system_prompt) = get_prompt(PromptType::Prompt, Some(&analysis_results), args)?;
         let start_time = Instant::now();
         print_status("  Answering Custom Prompt...", None);
         messages = get_messages(&prompt, &system_prompt, &data_dict.response);
@@ -1454,8 +1457,21 @@ fn run_inference_options(
             Some(start_time.elapsed()),
         );
         has_sql_query = completion_response.response.contains("```sql");
-        // append the reasoning to the sql query as a separate markdown section
         if has_sql_query {
+            print_status(
+                &format!(
+                    "Cannot answer the prompt using just Summary Statistics & Frequency \
+                     Distribution data.\nGenerated a SQL {} query to answer the prompt \
+                     deterministically.",
+                    if should_use_duckdb() {
+                        "DuckDB"
+                    } else {
+                        "Polars"
+                    }
+                ),
+                None,
+            );
+            // append the reasoning to the sql query as a separate markdown section
             completion_response.response = format!(
                 "{}\n\n## REASONING\n\n{}\n",
                 completion_response.response, completion_response.reasoning
@@ -1503,15 +1519,8 @@ fn run_inference_options(
         let sql_query_start = Instant::now();
         print_status(
             &format!(
-                r#"
-Cannot answer the prompt using just Summary Statistics & Frequency Distribution data.
-Generated a SQL query to answer the prompt deterministically.
-Executing the {} SQL query..."#,
-                if should_use_duckdb() {
-                    "DuckDB"
-                } else {
-                    "Polars"
-                }
+                "`--sql-results` specified.\nExecuting SQL query and saving results to \
+                 {sql_results}..."
             ),
             None,
         );
@@ -1523,7 +1532,7 @@ Executing the {} SQL query..."#,
         else {
             // Invalidate the prompt cache entry so user can try again without reinferring
             // dictionary
-            if args.flag_disk_cache || args.flag_redis_cache {
+            if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
                 let _ = invalidate_cache_entry(args, PromptType::Prompt);
             }
             return fail_clierror!("Failed to extract SQL query from custom prompt response");
@@ -1532,17 +1541,26 @@ Executing the {} SQL query..."#,
         // Check if DuckDB should be used
         if should_use_duckdb() {
             // For DuckDB, replace INPUT_TABLE_NAME with read_csv function call
-            sql_query = sql_query.replace(INPUT_TABLE_NAME, input_path);
+            if READ_CSV_AUTO_REGEX.is_match(&sql_query) {
+                // DuckDB with read_csv_auto so replace with quoted path
+                sql_query = READ_CSV_AUTO_REGEX
+                    .replace_all(&sql_query, format!("read_csv_auto('{}')", input_path))
+                    .into_owned()
+            } else {
+                return fail_clierror!(
+                    "Expected SQL query to contain `read_csv_auto` function call but none found"
+                );
+            };
             log::debug!("DuckDB SQL query:\n{sql_query}");
 
             let (_, stderr) =
                 match run_duckdb_query(&sql_query, sql_results, "DuckDB SQL query issued.") {
                     Ok((stdout, stderr)) => {
                         // Check stderr for error messages
-                        if stderr.to_ascii_lowercase().contains("error:") {
+                        if stderr.to_ascii_lowercase().contains(" error:") {
                             // Invalidate the prompt cache entry so user can try again without
                             // reinferring dictionary
-                            if args.flag_disk_cache || args.flag_redis_cache {
+                            if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
                                 let _ = invalidate_cache_entry(args, PromptType::Prompt);
                             }
                             return fail_clierror!("DuckDB SQL query execution failed: {stderr}");
@@ -1550,9 +1568,8 @@ Executing the {} SQL query..."#,
                         (stdout, stderr)
                     },
                     Err(e) => {
-                        // Invalidate the prompt cache entry so user can try again without
-                        // reinferring dictionary
-                        if args.flag_disk_cache || args.flag_redis_cache {
+                        // Invalidate the prompt cache entry so user can try again
+                        if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
                             let _ = invalidate_cache_entry(args, PromptType::Prompt);
                         }
                         return Err(e);
@@ -1591,7 +1608,7 @@ Executing the {} SQL query..."#,
                         if stderr.to_ascii_lowercase().contains("error:") {
                             // Invalidate cache entry so user can try again without
                             // reinferring dictionary
-                            if args.flag_disk_cache || args.flag_redis_cache {
+                            if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
                                 let _ = invalidate_cache_entry(args, PromptType::Prompt);
                             }
                             return fail_clierror!("Polars SQL query execution failed: {stderr}");
@@ -1601,7 +1618,7 @@ Executing the {} SQL query..."#,
                     Err(e) => {
                         // Invalidate cache entry so user can try again without
                         // reinferring dictionary
-                        if args.flag_disk_cache || args.flag_redis_cache {
+                        if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
                             let _ = invalidate_cache_entry(args, PromptType::Prompt);
                         }
                         return Err(e);
@@ -1618,7 +1635,7 @@ Executing the {} SQL query..."#,
             #[cfg(not(feature = "polars"))]
             {
                 // Invalidate cache entry so user can try again without reinferring dictionary
-                if args.flag_disk_cache || args.flag_redis_cache {
+                if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
                     let _ = invalidate_cache_entry(args, PromptType::Prompt);
                 }
                 return fail_clierror!(
@@ -1732,7 +1749,7 @@ fn run_duckdb_query(
     };
 
     // Also check stderr for error messages even if exit status is 0
-    if stderr_str.to_ascii_lowercase().contains("error:") {
+    if stderr_str.to_ascii_lowercase().contains(" error:") {
         return fail_clierror!("DuckDB SQL query execution failed: {stderr_str}");
     }
 
@@ -1809,7 +1826,7 @@ fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
         let prompt_file = get_prompt_file(args)?;
         let key = get_cache_key(args, kind, &prompt_file.model);
 
-        if args.flag_disk_cache {
+        if !args.flag_no_cache {
             if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key) {
                 print_status(
                     &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
@@ -1899,182 +1916,201 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     };
 
-    // If --json and --jsonl flags are specified, print error message.
+    // If both --json and --jsonl flags are specified, print error message.
     if is_json_output(&args)? && is_jsonl_output(&args)? {
         return fail_incorrectusage_clierror!(
             "--json and --jsonl options cannot be specified together."
         );
     }
 
-    if args.flag_disk_cache && args.flag_redis_cache {
-        return fail_incorrectusage_clierror!(
-            "--disk-cache and --redis-cache options cannot be specified together."
-        );
-    }
+    let cache_type = match (args.flag_no_cache, args.flag_redis_cache) {
+        (false, false) => {
+            // DISK CACHE
+            let diskcache_dir = match &args.flag_disk_cache_dir {
+                Some(dir) => {
+                    if dir.starts_with('~') {
+                        // expand the tilde
+                        let expanded_dir = util::expand_tilde(dir).unwrap();
+                        expanded_dir.to_string_lossy().to_string()
+                    } else {
+                        dir.to_string()
+                    }
+                },
+                _ => {
+                    // Default disk cache directory
+                    let default_dir = util::expand_tilde("~/.qsv/cache/describegpt").unwrap();
+                    default_dir.to_string_lossy().to_string()
+                },
+            };
 
-    if args.flag_flush_cache && !args.flag_disk_cache && !args.flag_redis_cache {
-        return fail_incorrectusage_clierror!(
-            "--flush-cache option requires --disk-cache or --redis-cache."
-        );
-    }
+            // if --flush-cache is set, flush the cache directory
+            if args.flag_flush_cache {
+                if fs::metadata(&diskcache_dir).is_ok() {
+                    if let Err(e) = fs::remove_dir_all(&diskcache_dir) {
+                        return fail_clierror!(
+                            r#"Cannot remove cache directory "{diskcache_dir}": {e:?}"#
+                        );
+                    }
+                    print_status(
+                        &format!("Flushed DiskCache directory: {diskcache_dir}"),
+                        None,
+                    );
+                } else {
+                    print_status(
+                        &format!("Warning: DiskCache directory does not exist: {diskcache_dir}"),
+                        None,
+                    );
+                }
+                return Ok(());
+            }
 
-    // setup diskcache dir response caching
-    let diskcache_dir = match &args.flag_disk_cache_dir {
-        Some(dir) => {
-            if dir.starts_with('~') {
-                // expand the tilde
-                let expanded_dir = util::expand_tilde(dir).unwrap();
-                expanded_dir.to_string_lossy().to_string()
+            // check if the cache directory exists, if it doesn't, create it
+            if !diskcache_dir.is_empty()
+                && let Err(e) = fs::create_dir_all(&diskcache_dir)
+            {
+                return fail_clierror!(r#"Cannot create cache directory "{diskcache_dir}": {e:?}"#);
+            }
+
+            // initialize DiskCache Config
+            // safety: the init values were just set above
+            DISKCACHE_DIR.set(diskcache_dir).unwrap();
+            DISKCACHECONFIG.set(DiskCacheConfig::new()).unwrap();
+
+            // If --forget is set, remove cache entries and exit
+            if args.flag_forget {
+                // Determine which cache entries to remove
+                let kinds_to_remove = determine_cache_kinds_to_remove(&args);
+
+                // Get the model from prompt file for cache key generation
+                let prompt_file = get_prompt_file(&args)?;
+
+                // Remove cache entries for all specified kinds using the same key format as the
+                // macro
+                for kind in kinds_to_remove {
+                    if kind == PromptType::Prompt {
+                        // For prompt kind, we need to remove cache entries with any validity flag
+                        // Get the base key without validity flag
+                        let base_key = format!(
+                            "{:?}{:?}{:?}{:?}{:?}{:?}{}{}",
+                            args.arg_input,
+                            args.flag_prompt_file,
+                            args.flag_prompt,
+                            args.flag_max_tokens,
+                            args.flag_addl_props,
+                            prompt_file.model,
+                            kind,
+                            FILE_HASH.get().unwrap_or(&String::new())
+                        );
+
+                        let removed = try_remove_prompt_cache_entries(&base_key);
+
+                        if removed {
+                            print_status(
+                                &format!("Found and removed cache entry for {kind}"),
+                                None,
+                            );
+                        } else {
+                            print_status(
+                                &format!("Warning: Cannot remove cache entry for {kind}"),
+                                None,
+                            );
+                        }
+                    } else {
+                        // For other kinds, use the normal key format
+                        let key = get_cache_key(&args, kind, &prompt_file.model);
+                        if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key) {
+                            print_status(
+                                &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
+                                None,
+                            );
+                        } else {
+                            print_status(
+                                &format!("Found and removed cache entry for {kind}"),
+                                None,
+                            );
+                        }
+                    }
+                }
+                return Ok(());
+            }
+
+            if args.flag_fresh {
+                CacheType::Fresh
             } else {
-                dir.to_string()
+                CacheType::Disk
             }
         },
-        _ => String::new(),
-    };
+        (false, true) => {
+            // REDIS CACHE
+            // initialize Redis Config
+            REDISCONFIG.set(RedisConfig::new()).unwrap();
 
-    let cache_type = if args.flag_disk_cache {
-        // if --flush-cache is set, flush the cache directory first if it exists
-        if args.flag_flush_cache
-            && !diskcache_dir.is_empty()
-            && fs::metadata(&diskcache_dir).is_ok()
-        {
-            if let Err(e) = fs::remove_dir_all(&diskcache_dir) {
-                return fail_clierror!(r#"Cannot remove cache directory "{diskcache_dir}": {e:?}"#);
-            }
-            print_status(
-                &format!("Flushed DiskCache directory: {diskcache_dir}"),
-                None,
-            );
-            return Ok(());
-        }
-        // check if the cache directory exists, if it doesn't, create it
-        if !diskcache_dir.is_empty()
-            && let Err(e) = fs::create_dir_all(&diskcache_dir)
-        {
-            return fail_clierror!(r#"Cannot create cache directory "{diskcache_dir}": {e:?}"#);
-        }
-
-        // initialize DiskCache Config
-        // safety: the init values were just set above
-        DISKCACHE_DIR.set(diskcache_dir).unwrap();
-        DISKCACHECONFIG.set(DiskCacheConfig::new()).unwrap();
-
-        // If --forget is set, remove cache entries and exit
-        if args.flag_forget {
-            // Determine which cache entries to remove
-            let kinds_to_remove = determine_cache_kinds_to_remove(&args);
-
-            // Get the model from prompt file for cache key generation
-            let prompt_file = get_prompt_file(&args)?;
-
-            // Remove cache entries for all specified kinds using the same key format as the macro
-            for kind in kinds_to_remove {
-                if kind == PromptType::Prompt {
-                    // For prompt kind, we need to remove cache entries with any validity flag
-                    // Get the base key without validity flag
-                    let base_key = format!(
-                        "{:?}{:?}{:?}{:?}{:?}{:?}{}{}",
-                        args.arg_input,
-                        args.flag_prompt_file,
-                        args.flag_prompt,
-                        args.flag_max_tokens,
-                        args.flag_addl_props,
-                        prompt_file.model,
-                        kind,
-                        FILE_HASH.get().unwrap_or(&String::new())
+            // check if redis connection is valid
+            let conn_str = &REDISCONFIG.get().unwrap().conn_str;
+            let redis_client = match redis::Client::open(conn_str.to_string()) {
+                Ok(rc) => rc,
+                Err(e) => {
+                    return fail_incorrectusage_clierror!(
+                        r#"Invalid Redis connection string "{conn_str}": {e:?}"#
                     );
+                },
+            };
 
-                    let removed = try_remove_prompt_cache_entries(&base_key);
+            let mut redis_conn;
+            match redis_client.get_connection() {
+                Err(e) => {
+                    return fail_clierror!(r#"Cannot connect to Redis using "{conn_str}": {e:?}"#);
+                },
+                Ok(x) => redis_conn = x,
+            }
 
-                    if removed {
-                        print_status(&format!("Found and removed cache entry for {kind}"), None);
-                    } else {
-                        print_status(
-                            &format!("Warning: Cannot remove cache entry for {kind}"),
-                            None,
-                        );
-                    }
-                } else {
-                    // For other kinds, use the normal key format
+            if args.flag_flush_cache {
+                redis::cmd("FLUSHDB")
+                    .exec(&mut redis_conn)
+                    .map_err(|_| "Cannot flush Redis cache")?;
+                print_status("Flushed Redis database.", None);
+                return Ok(());
+            }
+
+            // If --forget is set, remove cache entries and exit
+            if args.flag_forget {
+                // Determine which cache entries to remove
+                let kinds_to_remove = determine_cache_kinds_to_remove(&args);
+
+                // Get the model from prompt file for cache key generation
+                let prompt_file = get_prompt_file(&args)?;
+
+                // Remove cache entries for all specified kinds
+                for kind in kinds_to_remove {
                     let key = get_cache_key(&args, kind, &prompt_file.model);
-                    if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key) {
-                        print_status(
+                    match redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
+                        Ok(()) => {
+                            print_status(
+                                &format!("Found and removed cache entry for {kind}"),
+                                None,
+                            );
+                        },
+                        Err(e) => print_status(
                             &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
                             None,
-                        );
-                    } else {
-                        print_status(&format!("Found and removed cache entry for {kind}"), None);
+                        ),
                     }
                 }
+                return Ok(());
             }
-            return Ok(());
-        } else if args.flag_fresh {
-            // If --fresh is set, use CacheType::Fresh to force refresh but still update cache
-            CacheType::Fresh
-        } else {
-            CacheType::Disk
-        }
-    } else if args.flag_redis_cache {
-        // initialize Redis Config
-        REDISCONFIG.set(RedisConfig::new()).unwrap();
 
-        // check if redis connection is valid
-        let conn_str = &REDISCONFIG.get().unwrap().conn_str;
-        let redis_client = match redis::Client::open(conn_str.to_string()) {
-            Ok(rc) => rc,
-            Err(e) => {
-                return fail_incorrectusage_clierror!(
-                    r#"Invalid Redis connection string "{conn_str}": {e:?}"#
-                );
-            },
-        };
-
-        let mut redis_conn;
-        match redis_client.get_connection() {
-            Err(e) => {
-                return fail_clierror!(r#"Cannot connect to Redis using "{conn_str}": {e:?}"#);
-            },
-            Ok(x) => redis_conn = x,
-        }
-
-        if args.flag_flush_cache {
-            redis::cmd("FLUSHDB")
-                .exec(&mut redis_conn)
-                .map_err(|_| "Cannot flush Redis cache")?;
-            print_status("Flushed Redis database.", None);
-            return Ok(());
-        }
-
-        // If --forget is set, remove cache entries and exit
-        if args.flag_forget {
-            // Determine which cache entries to remove
-            let kinds_to_remove = determine_cache_kinds_to_remove(&args);
-
-            // Get the model from prompt file for cache key generation
-            let prompt_file = get_prompt_file(&args)?;
-
-            // Remove cache entries for all specified kinds
-            for kind in kinds_to_remove {
-                let key = get_cache_key(&args, kind, &prompt_file.model);
-                match redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
-                    Ok(()) => {
-                        print_status(&format!("Found and removed cache entry for {kind}"), None);
-                    },
-                    Err(e) => print_status(
-                        &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
-                        None,
-                    ),
-                }
+            if args.flag_fresh {
+                CacheType::Fresh
+            } else {
+                CacheType::Redis
             }
-            return Ok(());
-        } else if args.flag_fresh {
-            // If --fresh is set, use CacheType::Fresh to force refresh and update cache
-            CacheType::Fresh
-        } else {
-            CacheType::Redis
-        }
-    } else {
-        CacheType::None
+        },
+        (true, false) => CacheType::None,
+        (true, true) => {
+            // This case shouldn't be possible due to CLI arg validation,
+            // but handle it gracefully just in case
+            CacheType::None
+        },
     };
     log::info!("Cache Type: {cache_type:?}");
 
@@ -2160,21 +2196,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     print_status("\nInteracting with LLM...", None);
     // Run inference options
-    run_inference_options(
-        &input_path,
-        &args,
-        &api_key,
-        &cache_type,
-        Some(&analysis_results.stats),
-        Some(&analysis_results.frequency),
-        Some(&analysis_results.headers),
-    )?;
+    run_inference_options(&input_path, &args, &api_key, &cache_type, &analysis_results)?;
 
     // Print total elapsed time
     print_status("\ndescribegpt DONE!", Some(start_time.elapsed()));
 
     // if using a Diskcache, explicitly flush it to ensure entries are written to disk
-    if cache_type == CacheType::Disk || (args.flag_disk_cache && cache_type == CacheType::Fresh) {
+    if cache_type == CacheType::Disk || (!args.flag_no_cache && cache_type == CacheType::Fresh) {
         GET_DISKCACHE_COMPLETION
             .connection()
             .flush()
@@ -2201,6 +2229,9 @@ fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults>
     if config.index_files().is_err() {
         let _ = run_qsv_cmd("index", &[], input_path, "  Indexed")?;
     }
+
+    // get the delimiter of the input file
+    let delimiter = config.get_delimiter();
 
     // Run qsv commands to analyze data
     print_status(
@@ -2246,6 +2277,7 @@ fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults>
         frequency,
         headers,
         file_hash,
+        delimiter: delimiter as char,
     })
 }
 

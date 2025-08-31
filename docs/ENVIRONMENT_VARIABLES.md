@@ -38,7 +38,8 @@
 | `QSV_DISKCACHE_TTL_SECONDS` | set time-to-live of diskcache cached values (default (seconds): 2419200 (28 days)). |
 | `QSV_DISKCACHE_TTL_REFRESH`| if set, enables cache hits to refresh TTL of diskcache cached values. |
 | `QSV_REDIS_CONNSTR` | the `fetch` command can use [Redis](https://redis.io/) to cache responses. Set to connect to the desired Redis instance. (default: `redis:127.0.0.1:6379/1`). For more info on valid Redis connection string formats, click [here](https://docs.rs/redis/latest/redis/#connection-parameters). |
-| `QSV_FP_REDIS_CONNSTR` | the `fetchpost` command can also use Redis to cache responses (default: `redis:127.0.0.1:6379/2`). Note that `fetchpost` connects to database 2, as opposed to `fetch` which connects to database 1. |
+| `QSV_FP_REDIS_CONNSTR` | the `fetchpost` command can also use Redis to cache responses (default: `redis:127.0.0.1:6379/2`). |
+| `QSV_DG_REDIS_CONNSTR` | the `describegpt` command can also use Redis to cache responses (default: `redis:127.0.0.1:6379/3`). |
 | `QSV_REDIS_MAX_POOL_SIZE` | the maximum Redis connection pool size. (default: 20). |
 | `QSV_REDIS_TTL_SECONDS` | set time-to-live of Redis cached values (default (seconds): 2419200 (28 days)). |
 | `QSV_REDIS_TTL_REFRESH`| if set, enables cache hits to refresh TTL of Redis cached values. |

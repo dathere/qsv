@@ -3,7 +3,7 @@ Infer a Data Dictionary, Description & Tags about a Dataset using any OpenAI API
 Large Language Model (LLM).
 
 It infers these extended metadata by compiling Summary Statistics & a Frequency Distribution
-of the Dataset, and then prompting the LLM with detailed, configuble prompts with these
+of the Dataset, and then prompting the LLM with detailed, configurable prompts with these
 extended context.
 
 You can also use the --prompt option to ask a natural language question about the Dataset.
@@ -625,6 +625,11 @@ fn get_prompt(
         },
     };
 
+    let stats = &analysis_results.unwrap().stats;
+    let frequency = &analysis_results.unwrap().frequency;
+    let headers = &analysis_results.unwrap().headers;
+    let delimiter = &analysis_results.unwrap().delimiter;
+
     // If this is a custom prompt and DuckDB should be used, modify the SQL query generation
     // guidelines
     if prompt_type == PromptType::Prompt && should_use_duckdb() {
@@ -638,7 +643,6 @@ fn get_prompt(
             let end_pos = start_pos + end_pos;
             let before_guidelines = &prompt[..start_pos];
             let after_guidelines = &prompt[end_pos..];
-            let delimiter = analysis_results.unwrap().delimiter;
 
             let duckdb_guidelines = format!(
                 r#"
@@ -676,9 +680,9 @@ fn get_prompt(
     #[allow(clippy::to_string_in_format_args)]
     #[allow(clippy::literal_string_with_formatting_args)]
     let prompt = prompt
-        .replace("{stats}", &analysis_results.unwrap().stats)
-        .replace("{frequency}", &analysis_results.unwrap().frequency)
-        .replace("{headers}", &analysis_results.unwrap().headers)
+        .replace("{stats}", &stats)
+        .replace("{frequency}", &frequency)
+        .replace("{headers}", &headers)
         .replace(
             "{dictionary}",
             DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),
@@ -1251,7 +1255,7 @@ fn run_inference_options(
                 // replace INPUT_TABLE_NAME with input_path
                 formatted_output = {
                     let input_path = args.arg_input.as_deref().unwrap_or("input.csv");
-                    let re = regex::Regex::new("read_csv_auto\\([^)]*\\)").unwrap();
+                    let re = regex_oncelock!("read_csv_auto\\([^)]*\\)");
                     if re.is_match(&formatted_output) {
                         // DuckDB with read_csv_auto so replace with quoted path
                         re.replace_all(
@@ -1528,7 +1532,7 @@ fn run_inference_options(
         // Check if DuckDB should be used
         if should_use_duckdb() {
             // For DuckDB, replace INPUT_TABLE_NAME with read_csv function call
-            let re = regex::Regex::new("read_csv_auto\\([^)]*\\)").unwrap();
+            let re = regex_oncelock!("read_csv_auto\\([^)]*\\)");
             if re.is_match(&sql_query) {
                 // DuckDB with read_csv_auto so replace with quoted path
                 sql_query = re

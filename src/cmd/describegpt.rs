@@ -120,6 +120,15 @@ describegpt options:
                            "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set.
     --prompt-file <file>   The TOML file containing prompts to use for inferencing.
                            If no prompt file is provided, default prompts will be used.
+    --fewshot-examples     By default, few-shot examples are not included in the LLM prompt when
+                           generating SQL queries.
+                           When this option is set, few-shot examples are included.
+                           Though this will increase the quality of the generated SQL, it comes at
+                           a cost - increased LLM API call cost in terms of tokens and execution time.
+                           See https://en.wikipedia.org/wiki/Prompt_engineering for more info.
+
+                           See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml
+                           for the default prompts and few-shot examples.
 
                            LLM API OPTIONS:
     -u, --base-url <url>   The LLM API URL. Supports APIs & local LLMs compatible with
@@ -216,33 +225,34 @@ enum PromptType {
 }
 #[derive(Debug, Deserialize)]
 struct Args {
-    arg_input:           Option<String>,
-    flag_dictionary:     bool,
-    flag_description:    bool,
-    flag_tags:           bool,
-    flag_all:            bool,
-    flag_stats_options:  String,
-    flag_enum_threshold: usize,
-    flag_prompt:         Option<String>,
-    flag_sql_results:    Option<String>,
-    flag_prompt_file:    Option<String>,
-    flag_base_url:       Option<String>,
-    flag_model:          Option<String>,
-    flag_addl_props:     Option<String>,
-    flag_api_key:        Option<String>,
-    flag_max_tokens:     u32,
-    flag_timeout:        u16,
-    flag_user_agent:     Option<String>,
-    flag_json:           bool,
-    flag_jsonl:          bool,
-    flag_no_cache:       bool,
-    flag_disk_cache_dir: Option<String>,
-    flag_redis_cache:    bool,
-    flag_fresh:          bool,
-    flag_forget:         bool,
-    flag_flush_cache:    bool,
-    flag_output:         Option<String>,
-    flag_quiet:          bool,
+    arg_input:             Option<String>,
+    flag_dictionary:       bool,
+    flag_description:      bool,
+    flag_tags:             bool,
+    flag_all:              bool,
+    flag_stats_options:    String,
+    flag_enum_threshold:   usize,
+    flag_prompt:           Option<String>,
+    flag_sql_results:      Option<String>,
+    flag_prompt_file:      Option<String>,
+    flag_fewshot_examples: bool,
+    flag_base_url:         Option<String>,
+    flag_model:            Option<String>,
+    flag_addl_props:       Option<String>,
+    flag_api_key:          Option<String>,
+    flag_max_tokens:       u32,
+    flag_timeout:          u16,
+    flag_user_agent:       Option<String>,
+    flag_json:             bool,
+    flag_jsonl:            bool,
+    flag_no_cache:         bool,
+    flag_disk_cache_dir:   Option<String>,
+    flag_redis_cache:      bool,
+    flag_fresh:            bool,
+    flag_forget:           bool,
+    flag_flush_cache:      bool,
+    flag_output:           Option<String>,
+    flag_quiet:            bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -264,6 +274,10 @@ struct PromptFile {
     model:                  String,
     timeout:                u32,
     custom_prompt_guidance: String,
+    duckdb_sql_guidance:    String,
+    polars_sql_guidance:    String,
+    dd_fewshot_examples:    String,
+    p_fewshot_examples:     String,
 }
 
 const LLM_APIKEY_ERROR: &str = r#"Error: Neither QSV_LLM_BASE_URL nor QSV_LLM_APIKEY environment variables are set.
@@ -639,33 +653,21 @@ fn get_prompt(
 
     // If this is a custom prompt and DuckDB should be used, modify the SQL query generation
     // guidelines
-    if prompt_type == PromptType::Prompt && should_use_duckdb() {
+    if prompt_type == PromptType::Prompt {
         // Look for the SQL query generation guidelines section & replace it with DuckDB guidance
-        let sql_guidelines_start = "SQL Query Generation Guidelines:\n\n";
+        let sql_guidelines_start = "SQL Query Generation Guidelines:\n";
         let sql_guidelines_end = "\nEND SQL Query Generation Guidelines\n";
 
-        if let Some(start_pos) = prompt.find(sql_guidelines_start)
-            && let Some(end_pos) = prompt[start_pos..].find(sql_guidelines_end)
-        {
-            let end_pos = start_pos + end_pos;
-            let before_guidelines = &prompt[..start_pos];
-            let after_guidelines = &prompt[end_pos..];
+        let start_pos = prompt.find(sql_guidelines_start).unwrap_or(0);
+        let end_pos = prompt[start_pos..].find(sql_guidelines_end).unwrap_or(0);
+        let before_guidelines = &prompt[..start_pos];
+        let after_guidelines = &prompt[end_pos..];
 
-            // {delimiter} and {INPUT_TABLE_NAME} are replaced at run time
-            // with actual values
-            let duckdb_guidelines = format!(
-                r#"
-- Use DuckDB v1.0 syntax
-- The input csv has headers and uses {delimiter} as the delimiter
-- Only use the `read_csv_auto` table function to read the input CSV
-- Use the placeholder {INPUT_TABLE_NAME} for the input csv in the `read_csv_auto` table function call
-- Only use functions from the Loaded DuckDB extensions listed below
-- Make sure the generated SQL query is valid and has comments to explain the query
-- Add a comment with the placeholder "GENERATED_BY_SIGNATURE" at the top of the query"#
-            );
-
+        if should_use_duckdb() {
+            // Generate prompt for DuckDB SQL
             prompt = format!(
-                "{before_guidelines}{sql_guidelines_start}{duckdb_guidelines}{after_guidelines}"
+                "{before_guidelines}{sql_guidelines_start}{duckdb_sql_guidance}{after_guidelines}",
+                duckdb_sql_guidance = prompt_file.duckdb_sql_guidance,
             );
 
             // call DuckDB to get the list of valid extensions
@@ -681,23 +683,43 @@ fn get_prompt(
                 .join(", ");
             // add the valid extensions to the prompt
             prompt = format!("{prompt}\n\nLoaded DuckDB extensions: {valid_extensions}");
+            if args.flag_fewshot_examples {
+                prompt = format!(
+                    "{prompt}\n\n{dd_fewshot_examples}",
+                    dd_fewshot_examples = prompt_file.dd_fewshot_examples
+                );
+            }
+            log::debug!("prompt using DuckDB: {prompt}");
+        } else {
+            // Generate prompt for Polars SQL
+            prompt = format!(
+                "{before_guidelines}{sql_guidelines_start}{polars_sql_guidance}{after_guidelines}",
+                polars_sql_guidance = prompt_file.polars_sql_guidance
+            );
+            if args.flag_fewshot_examples {
+                prompt = format!(
+                    "{prompt}\n\n{p_fewshot_examples}",
+                    p_fewshot_examples = prompt_file.p_fewshot_examples
+                );
+            }
+            log::debug!("prompt using Polars: {prompt}");
         }
-        log::debug!("prompt using DuckDB: {prompt}");
     }
 
     // Replace variable data in prompt
     #[allow(clippy::to_string_in_format_args)]
     #[allow(clippy::literal_string_with_formatting_args)]
     let prompt = prompt
-        .replace("{stats}", &stats)
-        .replace("{frequency}", &frequency)
-        .replace("{headers}", &headers)
+        .replace("{STATS}", &stats)
+        .replace("{FREQUENCY}", &frequency)
+        .replace("{HEADERS}", &headers)
+        .replace("{DELIMITER}", &delimiter.to_string())
         .replace(
-            "{dictionary}",
+            "{DICTIONARY}",
             DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),
         )
         .replace(
-            "{json_add}",
+            "{JSON_ADD}",
             if prompt_file.json || prompt_file.jsonl || args.flag_json || args.flag_jsonl {
                 " (in valid JSON format. Surround it with ```json and ```)"
             } else {

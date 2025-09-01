@@ -131,20 +131,21 @@ duckdb_sql_guidance = """
 """
 
 polars_sql_guidance = """
-- Use PostgreSQL syntax
+- Use Polars SQL syntax (which is a dialect of PostgreSQL)
 - Use the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary data to generate the SQL query
 - Use {INPUT_TABLE_NAME} as the placeholder for the table name to query
 - Column names with embedded spaces and special characters are case-sensitive and should be enclosed in double quotes
 - Do not use window expressions in aggregations
-- Do not use the following SQL functions: `age`, `current_date`, `current_timestamp`, `date_bin`,
-  `date_trunc`, `isfinite`, justify_days`, `justify_hours`, `justify_minutes`, `localtime`, `localtimestamp`,
+- Do not use the following SQL functions which are not supported by Polars SQL: `age`, `current_date`, `current_timestamp`,
+  `date_bin`, `date_trunc`, `isfinite`, justify_days`, `justify_hours`, `justify_minutes`, `localtime`, `localtimestamp`,
   `make_interval`, `make_time`, `make_timestamp`, `make_timestamptz`, `now`, `timeofday`, `to_timestamp`,
   `regexp_match`, `regexp_replace`, `regexp_substr`, `repeat`, `substring`, `format`
 - Do not use IN (subquery), SIMILAR TO and CROSS JOIN in the generated SQL query
 - Only use comments with the `--` prefix. Comments can only start on a new line. No inline comments
-- Do not use comments using the `/*` and `*/` syntax
+- Do not use comments using the `/*` and `*/` syntax, as Polars SQL does not support it
 """
 
+### DuckDB SQL Few-Shot Learning Examples
 dd_fewshot_examples = """
 ## Few-Shot Learning Examples
 
@@ -156,7 +157,7 @@ Here are examples of common query patterns to follow:
 ```sql
 -- GENERATED_BY_SIGNATURE
 -- Calculate kurtosis of a given numerical column
-SELECT kurtosis(column_name) as kurtosis
+SELECT kurtosis(column_name) as kurtosis_value
 FROM read_csv_auto({INPUT_TABLE_NAME});
 ```
 
@@ -276,9 +277,9 @@ ORDER BY rank;
 - Use appropriate aggregation functions (COUNT, SUM, AVG, MIN, MAX)
 - Consider using CTEs (WITH clauses) for complex queries
 - Use CASE statements for conditional logic
-- Leverage window functions for ranking and running totals"#
-"""
+- Leverage window functions for ranking and running totals"""
 
+### Polars SQL Few-Shot Learning Examples
 p_fewshot_examples = """
 ## Polars SQL Few-Shot Learning Examples
 
@@ -351,7 +352,7 @@ LIMIT 10;
 -- Count records that meet specific conditions
 SELECT 
     COUNT(*) as matching_records,
-    COUNT(*) * 100.0 / (SELECT COUNT(*) FROM read_csv_auto({INPUT_TABLE_NAME})) as percentage
+    COUNT(*) * 100.0 / (SELECT COUNT(*) FROM {INPUT_TABLE_NAME} as percentage
 FROM {INPUT_TABLE_NAME}
 WHERE condition1 = 'value1' 
   AND condition2 > 100;
@@ -435,7 +436,7 @@ SELECT
     array_column,
     ARRAY_AGG(array_column ORDER BY array_column) as array_agg_sorted,
     ARRAY_CONTAINS(array_column, 'value') as contains_value,
-    ARRAY_GET(array_column 1) as araay_col_at_1,
+    ARRAY_GET(array_column 1) as array_col_at_1,
     ARRAY_LENGTH(array_column) as array_length,
     ARRAY_MAX(array_column) as max_value,
     ARRAY_MIN(array_column) as min_value,

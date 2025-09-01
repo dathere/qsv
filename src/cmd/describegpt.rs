@@ -1278,6 +1278,11 @@ fn run_inference_options(
                     }
                 };
             }
+            // append the reasoning to the output as a separate markdown section
+            formatted_output = format!(
+                "{}\n\n## REASONING\n\n{}\n",
+                formatted_output, completion_response.reasoning
+            );
             // If --output is used, append plaintext to file, do not overwrite
             if let Some(output) = &args.flag_output {
                 fs::OpenOptions::new()

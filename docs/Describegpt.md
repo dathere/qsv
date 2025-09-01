@@ -112,7 +112,7 @@ Within your prompts, you can use the following variables:
 
 These are replaced with the output of `qsv stats`, `qsv frequency` and conditionally ` (in JSON format)`. Note that `{json_add}` adds a space before `(in JSON format)`.
 
-See `resources/describegpt_defaults.json` for the default values.
+See `resources/describegpt_defaults.toml` for the default values.
 
 ## Running LLMs locally with Ollama
 

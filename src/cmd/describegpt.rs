@@ -658,8 +658,14 @@ fn get_prompt(
         let sql_guidelines_start = "SQL Query Generation Guidelines:\n";
         let sql_guidelines_end = "\nEND SQL Query Generation Guidelines\n";
 
-        let start_pos = prompt.find(sql_guidelines_start).unwrap_or(0);
-        let end_pos = prompt[start_pos..].find(sql_guidelines_end).unwrap_or(0);
+        let start_pos = prompt.find(sql_guidelines_start).ok_or_else(|| {
+            CliError::Other("Could not find SQL guidelines start marker in prompt".to_string())
+        })?;
+        let end_pos = prompt[start_pos..]
+            .find(sql_guidelines_end)
+            .ok_or_else(|| {
+                CliError::Other("Could not find SQL guidelines end marker in prompt".to_string())
+            })?;
         let before_guidelines = &prompt[..start_pos];
         let after_guidelines = &prompt[end_pos..];
 

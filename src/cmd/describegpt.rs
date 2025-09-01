@@ -118,7 +118,7 @@ describegpt options:
     --sql-results <csv>    The CSV to save the SQL query results to.
                            Only valid if the --prompt option is used & the "polars" or the
                            "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set.
-    --prompt-file <file>   The JSON file containing prompts to use for inferencing.
+    --prompt-file <file>   The TOML file containing prompts to use for inferencing.
                            If no prompt file is provided, default prompts will be used.
 
                            LLM API OPTIONS:
@@ -202,6 +202,7 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use strum_macros::{Display, EnumString};
+use toml;
 
 use crate::{CliError, CliResult, config::Config, regex_oncelock, util, util::process_input};
 
@@ -550,19 +551,19 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
     } else {
         let prompt_file_content = if args.flag_prompt_file.is_none() {
             // If no prompt file is provided, use the default prompt file
-            let default_prompt_file = include_str!("../../resources/describegpt_defaults.json");
+            let default_prompt_file = include_str!("../../resources/describegpt_defaults.toml");
             default_prompt_file
         } else {
             let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
             &fs::read_to_string(prompt_file_path)?
         };
 
-        // Try to parse prompt file as JSON, if error then show it in JSON format
-        let mut prompt_file: PromptFile = match serde_json::from_str(prompt_file_content) {
+        // Try to parse prompt file as TOML, if error then show it in TOML format
+        let mut prompt_file: PromptFile = match toml::from_str(prompt_file_content) {
             Ok(val) => val,
             Err(e) => {
-                let error_json = json!({"error": e.to_string()});
-                return fail_clierror!("{error_json}");
+                let error_toml = json!({"error": e.to_string()});
+                return fail_clierror!("{error_toml}");
             },
         };
 

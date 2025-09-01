@@ -558,12 +558,11 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
             &fs::read_to_string(prompt_file_path)?
         };
 
-        // Try to parse prompt file as TOML, if error then show it in TOML format
+        // Try to parse prompt file as TOML
         let mut prompt_file: PromptFile = match toml::from_str(prompt_file_content) {
             Ok(val) => val,
             Err(e) => {
-                let error_toml = json!({"error": e.to_string()});
-                return fail_clierror!("{error_toml}");
+                return fail_clierror!("{e}");
             },
         };
 

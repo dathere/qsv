@@ -1,0 +1,135 @@
+name = "QSV Default Prompt File"
+description = "Default prompt file for qsv's describegpt command."
+author = "QSV Team"
+version = "2.1.0"
+tokens = 3000
+base_url = "https://api.openai.com/v1"
+model = "openai/gpt-oss-20b"
+timeout = 120
+json = false
+jsonl = false
+
+system_prompt = """
+You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.
+You are also an expert on the DCAT-US 3 metadata specification (https://doi-do.github.io/dcat-us/).
+
+When you are asked to generate a Data Dictionary, Description or Tags, use the provided Summary Statistics and
+Frequency Distribution to guide your response. They both describe the same Dataset.
+
+The provided Summary Statistics is a CSV file. Each record contains statistics for each Dataset field.
+For a detailed explanation of the Summary Statistics columns,
+see https://github.com/dathere/qsv/wiki/Supplemental#stats-command-output-explanation
+
+The provided Frequency Distribution is a CSV file with the following columns - field, value, count, percentage, rank.
+For each Dataset field, it lists the top {TOP_N} (or less if there are less than {TOP_N} unique values) most frequent unique values
+sorted in descending order, with the special value "Other (N)" indicating "other" unique values beyond the top {TOP_N}.
+The "(N)" in "Other (N)" indicates the count of "other" unique values.
+
+For Dataset fields with all unique values (cardinality is equal to the number of records), the value column is the
+special value "<ALL_UNIQUE>", the count column is the number of records, the percentage column is 100, and the rank column is 1.
+"""
+
+dictionary_prompt = """
+Here are the columns for each field in a Data Dictionary:
+
+- Type: the data type of this column as indicated in the Summary Statistics below.
+- Label: a human-friendly label for this column
+- Description: a full description for this column (can be multiple sentences)
+
+Generate a Data Dictionary as aforementioned {json_add} where each field has Name, Type, Label, and Description
+(so four columns in total) based on the following Summary Statistics and Frequency Distribution data of the Dataset.
+
+Summary Statistics:
+
+{stats}
+
+Frequency Distribution:
+
+{frequency}
+"""
+
+description_prompt = """
+Generate a Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
+
+Summary Statistics:
+
+{stats}
+
+Frequency Distribution:
+
+{frequency}
+
+Do not output the summary statistics for each field. Do not output the frequency for each field.
+Do not output data about each field individually, but instead output about the dataset as a whole
+in one 1-8 sentence description.
+
+After the Description, add a section titled "Notable Characteristics" with a bulleted list of notable
+characteristics of the Dataset. e.g. if there are any outliers, missing values, duplicates, PII data
+and other data quality issues that the User should be aware of.
+
+Add a Footnote with the placeholder "GENERATED_BY_SIGNATURE" at the bottom of the output.
+
+The entire output should be in Markdown format.
+"""
+
+tags_prompt = """
+A Tag is a keyword or label that categorizes datasets with other, similar datasets.
+Using the right Tags makes it easier for others to find and use datasets.
+
+Generate no more than 15 most thematic Tags{json_add} about the contents of the Dataset in descending
+order of importance (lowercase only and use _ to separate words) based on the following Summary Statistics and
+Frequency Distribution data about the Dataset. Do not use field names in the tags.
+
+Summary Statistics:
+
+{stats}
+
+Frequency Distribution:
+
+{frequency}
+"""
+
+prompt = "What is this dataset about?"
+
+custom_prompt_guidance = """
+If the User's Prompt above is not about the Dataset, immediately return
+'I'm sorry. I can only answer questions about the Dataset.'
+
+If the User's Prompt can be answered by using the Dataset's Summary Statistics and
+Frequency Distribution data below, immediately return the answer.
+
+Otherwise, using the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary below,
+create a SQL query that can be used to answer the User's Prompt.
+
+SQL Query Generation Guidelines:
+
+- Use PostgreSQL syntax.
+- Use the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary data to generate the SQL query.
+- Use INPUT_TABLE_NAME as the placeholder for the table name to query.
+- Column names with embedded spaces and special characters are case-sensitive and should be enclosed in double quotes.
+- Do not use window expressions in aggregations.
+- Do not use the following SQL functions: `age`, `current_date`, `current_timestamp`, `date_bin`,
+  `date_trunc`, `isfinite`, justify_days`, `justify_hours`, `justify_minutes`, `localtime`, `localtimestamp`,
+  `make_interval`, `make_time`, `make_timestamp`, `make_timestamptz`, `now`, `timeofday`, `to_timestamp`,
+  `regexp_match`, `regexp_replace`, `regexp_substr`, `repeat`, `substring`, `format`
+- Do not use IN (subquery), SIMILAR TO and CROSS JOIN in the generated SQL query.
+- Only use comments with the `--` prefix. Comments can only start on a new line. No inline comments.
+- Do not use comments using the `/*` and `*/` syntax.
+- Make sure the generated SQL query is valid and has comments to explain the query.
+- Add a comment with the placeholder "GENERATED_BY_SIGNATURE" at the top of the query.
+END SQL Query Generation Guidelines
+
+Return the SQL query as a SQL code block preceded by a newline.
+
+Data Dictionary:
+
+{dictionary}
+
+Summary Statistics:
+
+{stats}
+
+Frequency Distribution:
+
+{frequency}
+"""

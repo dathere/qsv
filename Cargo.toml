@@ -23,7 +23,7 @@ include = [
     "README.md",
     "CHANGELOG.md",
     "resources/luau/vendor/luadate/date.lua",
-    "resources/describegpt_defaults.json",
+    "resources/describegpt_defaults.toml",
 ]
 
 [[bin]]
@@ -260,6 +260,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_urlencoded = { version = "0.7", optional = true }
 simdutf8 = "0.1"
+toml = "0.9"
 sled = { version = "0.34", optional = true }
 smallvec = "1"
 snap = "1"

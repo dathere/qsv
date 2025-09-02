@@ -1,13 +1,20 @@
 name = "QSV Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "QSV Team"
-version = "2.1.0"
+version = "3.0.0"
 tokens = 3000
 base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
 timeout = 120
 json = false
 jsonl = false
+
+### NOTE: The following VARIABLES are automatically replaced by the qsv describegpt command in the prompts below:
+# {STATS}
+# {FREQUENCY}
+# {DICTIONARY}
+# {JSON_ADD} - if --json or --jsonl is set
+# {INPUT_TABLE_NAME}
 
 system_prompt = """
 You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.
@@ -122,6 +129,7 @@ Frequency Distribution:
 {FREQUENCY}
 """
 
+### DuckDB SQL "One-Shot" Query Generation Guidelines
 duckdb_sql_guidance = """
 - Use DuckDB v1.0 syntax
 - The input csv has headers and uses {DELIMITER} as the delimiter
@@ -130,6 +138,7 @@ duckdb_sql_guidance = """
 - Only use functions from the Loaded DuckDB extensions listed below
 """
 
+### Polars SQL "One-Shot" Query Generation Guidelines
 polars_sql_guidance = """
 - Use Polars SQL syntax (which is a dialect of PostgreSQL)
 - Use the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary data to generate the SQL query
@@ -145,7 +154,7 @@ polars_sql_guidance = """
 - Do not use comments using the `/*` and `*/` syntax, as Polars SQL does not support it
 """
 
-### DuckDB SQL Few-Shot Learning Examples
+### Additional DuckDB SQL Few-Shot Learning Examples when --fewshot-examples is set
 dd_fewshot_examples = """
 ## Few-Shot Learning Examples
 
@@ -279,7 +288,7 @@ ORDER BY rank;
 - Use CASE statements for conditional logic
 - Leverage window functions for ranking and running totals"""
 
-### Polars SQL Few-Shot Learning Examples
+### Additional Polars SQL Few-Shot Learning Examples when --fewshot-examples is set
 p_fewshot_examples = """
 ## Polars SQL Few-Shot Learning Examples
 

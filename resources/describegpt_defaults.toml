@@ -325,7 +325,7 @@ SELECT
 FROM {INPUT_TABLE_NAME}
 WHERE date_column IS NOT NULL
 GROUP BY date_part('day', date_column)
-ORDER BY date;
+ORDER BY date_column;
 ```
 
 ### Example 4: Top N Analysis
@@ -352,7 +352,7 @@ LIMIT 10;
 -- Count records that meet specific conditions
 SELECT 
     COUNT(*) as matching_records,
-    COUNT(*) * 100.0 / (SELECT COUNT(*) FROM {INPUT_TABLE_NAME} as percentage
+    COUNT(*) * 100.0 / (SELECT COUNT(*) FROM {INPUT_TABLE_NAME}) as percentage
 FROM {INPUT_TABLE_NAME}
 WHERE condition1 = 'value1' 
   AND condition2 > 100;
@@ -421,7 +421,7 @@ SELECT
     CONCAT(text_column, 'concatenated_text') as concatenated_text,
     TRIM(text_column) as trimmed_text,
     LTRIM(text_column) as ltrimmed_text,
-    RTRIM(text_column) as rtrimmed_text,
+    RTRIM(text_column) as rtrimmed_text
 FROM {INPUT_TABLE_NAME}
 WHERE text_column IS NOT NULL;
 ```
@@ -436,10 +436,10 @@ SELECT
     array_column,
     ARRAY_AGG(array_column ORDER BY array_column) as array_agg_sorted,
     ARRAY_CONTAINS(array_column, 'value') as contains_value,
-    ARRAY_GET(array_column 1) as array_col_at_1,
+    ARRAY_GET(array_column, 1) as array_col_at_1,
     ARRAY_LENGTH(array_column) as array_length,
     ARRAY_MAX(array_column) as max_value,
-    ARRAY_MIN(array_column) as min_value,
+    ARRAY_MIN(array_column) as min_value
 FROM {INPUT_TABLE_NAME}
 WHERE array_column IS NOT NULL;
 ```

@@ -249,8 +249,7 @@ WHERE condition1 = 'value1'
   AND condition2 > 100;
 ```
 
-### Example 6: Cross-Column Analysis
-**User Question:** What's the relationship between two columns?
+**User Question:** "What's the relationship between two columns?"
 **SQL Query:**
 ```sql
 -- {GENERATED_BY_SIGNATURE}

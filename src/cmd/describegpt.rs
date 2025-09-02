@@ -115,9 +115,12 @@ describegpt options:
                            & the `--sql-results` option is used, the SQL query will be automatically
                            executed and its results returned.
                            Otherwise, only the SQL query will be returned.
-    --sql-results <csv>    The CSV to save the SQL query results to.
+    --sql-results <file>   The file to save the SQL query results to.
                            Only valid if the --prompt option is used & the "polars" or the
                            "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set.
+                           If the SQL query executes successfully, the results will be saved with a
+                           ".csv" extension. Otherwise, it will be saved with a ".sql" extension so
+                           the user can inspect why it failed and modify it.
     --prompt-file <file>   The TOML file containing prompts to use for inferencing.
                            If no prompt file is provided, default prompts will be used.
     --fewshot-examples     By default, few-shot examples are NOT included in the LLM prompt when
@@ -685,7 +688,7 @@ fn get_prompt(
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            // get the DuckDB version
+            // get the DuckDB minor version
             let duckdb_version_query = "SELECT version()";
             let duckdb_version_response = run_duckdb_query(duckdb_version_query, "", "")?;
             duckdb_version = duckdb_version_response
@@ -694,6 +697,13 @@ fn get_prompt(
                 .next()
                 .unwrap_or("")
                 .to_string();
+            // extract only up to the minor version
+            duckdb_version = duckdb_version
+                .split('.')
+                .take(2)
+                .collect::<Vec<_>>()
+                .join(".");
+            log::debug!("DuckDB minor version: {duckdb_version}");
 
             // Generate prompt for DuckDB SQL
             prompt = format!(
@@ -1783,26 +1793,36 @@ fn run_duckdb_query(
 
     // Check if DuckDB command failed (non-zero exit status)
     if !output.status.success() {
-        return fail_clierror!("DuckDB SQL query execution failed: {output:?}");
+        // If SQL execution failed, write the SQL query to output file with a .sql extension
+        let output_path = Path::new(output_path).with_extension("sql");
+        if let Err(e) = fs::write(&output_path, sql_query) {
+            return fail_clierror!("Failed to write SQL query to {output_path:?}: {e}");
+        }
+        return fail_clierror!(
+            "DuckDB SQL query execution failed:\n{output:?}\nFailed SQL query saved to \
+             {output_path:?}"
+        );
     }
 
     let Ok(stdout_str) = simdutf8::basic::from_utf8(&output.stdout) else {
-        return fail_clierror!("Unable to parse stdout of DuckDB command: {output:?}");
+        return fail_clierror!("Unable to parse stdout of DuckDB command:\n{output:?}");
     };
     let Ok(stderr_str) = simdutf8::basic::from_utf8(&output.stderr) else {
-        return fail_clierror!("Unable to parse stderr of DuckDB command: {output:?}");
+        return fail_clierror!("Unable to parse stderr of DuckDB command:\n{output:?}");
     };
 
     // Also check stderr for error messages even if exit status is 0
     if stderr_str.to_ascii_lowercase().contains(" error:") {
-        return fail_clierror!("DuckDB SQL query execution failed: {stderr_str}");
+        return fail_clierror!("DuckDB SQL query error detected:\n{stderr_str}");
     }
 
-    // Write the output to the specified file
-    if !output_path.is_empty()
-        && let Err(e) = fs::write(output_path, stdout_str)
-    {
-        return fail_clierror!("Failed to write SQL results to {output_path}: {e}");
+    // SQL successful, write the output to the specified file with a .csv extension
+    if !output_path.is_empty() {
+        let output_path = Path::new(output_path).with_extension("csv");
+
+        if let Err(e) = fs::write(&output_path, stdout_str) {
+            return fail_clierror!("Failed to write SQL results to {output_path:?}: {e}");
+        }
     }
 
     Ok((stdout_str.to_string(), stderr_str.to_string()))

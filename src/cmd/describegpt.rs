@@ -1666,15 +1666,27 @@ fn run_inference_options(
                             if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
                                 let _ = invalidate_cache_entry(args, PromptType::Prompt);
                             }
+                            // SQL execution failed, copy sql_query_file to sql_results_path
+                            if let Err(e) = fs::copy(&sql_query_file, &sql_results_path) {
+                                return fail_clierror!(
+                                    "Failed to copy SQL query to {sql_results_path:?}: {e}"
+                                );
+                            }
+
                             return fail_clierror!("Polars SQL query execution failed: {stderr}");
                         }
                         (stdout, stderr)
                     },
                     Err(e) => {
-                        // Invalidate cache entry so user can try again without
-                        // reinferring dictionary
+                        // Invalidate cache entry so user can try again
                         if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
                             let _ = invalidate_cache_entry(args, PromptType::Prompt);
+                        }
+                        // SQL execution failed, copy sql_query_file to sql_results_path
+                        if let Err(e) = fs::copy(&sql_query_file, &sql_results_path) {
+                            return fail_clierror!(
+                                "Failed to copy SQL query to {sql_results_path:?}: {e}"
+                            );
                         }
                         return Err(e);
                     },

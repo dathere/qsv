@@ -2,10 +2,10 @@ name = "QSV Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "QSV Team"
 version = "3.0.0"
-tokens = 3000
+tokens = 5000
 base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
-timeout = 120
+timeout = 300
 json = false
 jsonl = false
 
@@ -15,6 +15,7 @@ jsonl = false
 # {DICTIONARY}
 # {JSON_ADD} - if --json or --jsonl is set
 # {INPUT_TABLE_NAME}
+# {GENERATED_BY_SIGNATURE}
 
 system_prompt = """
 You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.
@@ -46,6 +47,10 @@ Here are the columns for each field in a Data Dictionary:
 Generate a Data Dictionary as aforementioned {JSON_ADD} where each field has Name, Type, Label, and Description
 (so four columns in total) based on the following Summary Statistics and Frequency Distribution data of the Dataset.
 
+Let's think step by step.
+
+---
+
 Summary Statistics:
 
 {STATS}
@@ -58,6 +63,10 @@ Frequency Distribution:
 description_prompt = """
 Generate a Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
 
+Let's think step by step.
+
+---
+
 Summary Statistics:
 
 {STATS}
@@ -65,6 +74,8 @@ Summary Statistics:
 Frequency Distribution:
 
 {FREQUENCY}
+
+---
 
 Do not output the summary statistics for each field. Do not output the frequency for each field.
 Do not output data about each field individually, but instead output about the dataset as a whole
@@ -87,19 +98,24 @@ Generate no more than 15 most thematic Tags{JSON_ADD} about the contents of the 
 order of importance (lowercase only and use _ to separate words) based on the following Summary Statistics and
 Frequency Distribution data about the Dataset. Do not use field names in the tags.
 
+Let's think step by step.
+
+---
+
 Summary Statistics:
 
 {STATS}
 
 Frequency Distribution:
 
-{FREQUENCY}
-"""
+{FREQUENCY}"""
 
 prompt = "What is this dataset about?"
 
 custom_prompt_guidance = """
-If the User's Prompt above is not about the Dataset, immediately return
+We need to answer the User's Prompt above. Let's think step by step.
+
+If the User's Prompt is not about the Dataset, immediately return
 'I'm sorry. I can only answer questions about the Dataset.'
 
 If the User's Prompt can be answered by using the Dataset's Summary Statistics and
@@ -112,13 +128,11 @@ SQL Query Generation Guidelines:
 
 END SQL Query Generation Guidelines
 - Make sure the generated SQL query is valid and has comments to explain the query
-- Add a comment with the placeholder "{GENERATED_BY_SIGNATURE}" at the top of the query
+- Add "-- {GENERATED_BY_SIGNATURE}" at the top of the query
 
 Return the SQL query as a SQL code block preceded by a newline.
 
-Data Dictionary:
-
-{DICTIONARY}
+---
 
 Summary Statistics:
 
@@ -127,15 +141,20 @@ Summary Statistics:
 Frequency Distribution:
 
 {FREQUENCY}
-"""
+
+Data Dictionary:
+
+{DICTIONARY}"""
 
 ### DuckDB SQL "One-Shot" Query Generation Guidelines
 duckdb_sql_guidance = """
-- Use DuckDB v1.0 syntax
+- Use DuckDB syntax
 - The input csv has headers and uses {DELIMITER} as the delimiter
+- Column names with spaces and special characters are case-sensitive and should be enclosed in double quotes
 - Only use the `read_csv_auto` table function to read the input CSV
 - Use the placeholder {INPUT_TABLE_NAME} for the input csv in the `read_csv_auto` table function call
-- Only use functions from the Loaded DuckDB extensions listed below
+- Remember that the date format specifier is the second parameter for the date functions `strftime()` and `strptime()`
+- Remember that the date format specifier for seconds is `%S`, NOT `%s`
 """
 
 ### Polars SQL "One-Shot" Query Generation Guidelines
@@ -164,7 +183,7 @@ Here are examples of common query patterns to follow:
 **User Question:** "What is the kurtosis of a given numerical column?"
 **SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Calculate kurtosis of a given numerical column
 SELECT kurtosis(column_name) as kurtosis_value
 FROM read_csv_auto({INPUT_TABLE_NAME});
@@ -174,7 +193,7 @@ FROM read_csv_auto({INPUT_TABLE_NAME});
 **User Question:** "Show me the count by category"
 **SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Group records by category and count occurrences
 SELECT 
     category,
@@ -188,7 +207,7 @@ ORDER BY count DESC;
 **User Question:** "What are the trends over time?"
 **SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Analyze trends by date, assuming there's a date column
 SELECT 
     DATE(date_column) as date,
@@ -204,7 +223,7 @@ ORDER BY date;
 **User Question:** "What are the top 10 most frequent values?"
 **SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Find top 10 most frequent values in a column
 SELECT 
     column_name,
@@ -220,7 +239,7 @@ LIMIT 10;
 **User Question:** "How many records meet specific criteria?"
 **SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Count records that meet specific conditions
 SELECT 
     COUNT(*) as matching_records,
@@ -234,7 +253,7 @@ WHERE condition1 = 'value1'
 **User Question:** What's the relationship between two columns?
 **SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Calculate relationship between two columns
 SELECT corr(column2, column1) as correlation,
        covar_pop(column2, column1) as covariance_population,
@@ -250,7 +269,7 @@ FROM read_csv_auto({INPUT_TABLE_NAME});
 **User Question:** "Show records above the average"
 **SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Find records above the average value
 SELECT *
 FROM read_csv_auto({INPUT_TABLE_NAME})
@@ -266,7 +285,7 @@ ORDER BY numeric_column DESC;
 **User Question:** "Rank the data by some criteria"
 **SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Rank records using window functions
 SELECT 
     *,
@@ -290,7 +309,7 @@ ORDER BY rank;
 
 ### Additional Polars SQL Few-Shot Learning Examples when --fewshot-examples is set
 p_fewshot_examples = """
-## Polars SQL Few-Shot Learning Examples
+## Few-Shot Learning Examples
 
 Polars SQL is a SQL dialect patterned after PostgreSQL's syntax,
 but with Polars-specific functions and operators.
@@ -301,7 +320,7 @@ Here are examples of common Polars SQL query patterns to follow:
 **User Question:** "What is the continuous quantile element of a given numerical column?"
 **Polars SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Calculate kurtosis of a given numerical column
 SELECT QUANTILE_CONT(column_name, 0.30) as column_name_q30
 FROM {INPUT_TABLE_NAME};
@@ -311,7 +330,7 @@ FROM {INPUT_TABLE_NAME};
 **User Question:** "Show me the count by category"
 **Polars SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Group records by category and count occurrences
 SELECT 
     category,
@@ -325,7 +344,7 @@ ORDER BY count DESC;
 **User Question:** "What are the trends over time?"
 **Polars SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Analyze trends by date, assuming there's a date column
 SELECT 
     date_column,
@@ -341,7 +360,7 @@ ORDER BY date_column;
 **User Question:** "What are the top 10 most frequent values?"
 **Polars SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE} 
 -- Find top 10 most frequent values in a column
 SELECT 
     column_name,
@@ -357,7 +376,7 @@ LIMIT 10;
 **User Question:** "How many records meet specific criteria?"
 **Polars SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Count records that meet specific conditions
 SELECT 
     COUNT(*) as matching_records,
@@ -371,10 +390,11 @@ WHERE condition1 = 'value1'
 **User Question:** "What's the relationship between two columns?"
 **Polars SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Calculate relationship between two columns
 SELECT 
-    corr(column2, column1) as correlation,
+    corr(column1, column2) as pearson_correlation,
+    covar(column1, column2) as covariance
 FROM {INPUT_TABLE_NAME};
 ```
 
@@ -382,7 +402,7 @@ FROM {INPUT_TABLE_NAME};
 **User Question:** "Show records above the average"
 **Polars SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Find records above the average value
 SELECT *
 FROM {INPUT_TABLE_NAME}
@@ -398,7 +418,7 @@ ORDER BY numeric_column DESC;
 **User Question:** "Rank the data by some criteria"
 **Polars SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Rank records using window functions
 SELECT 
     *,
@@ -412,7 +432,7 @@ ORDER BY rank;
 **User Question:** "Extract patterns from text columns"
 **Polars SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Extract patterns and analyze string data
 SELECT 
     text_column,
@@ -439,7 +459,7 @@ WHERE text_column IS NOT NULL;
 **User Question:** "Work with array columns"
 **Polars SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Analyze array column data
 SELECT 
     array_column,
@@ -457,7 +477,7 @@ WHERE array_column IS NOT NULL;
 **User Question:** "Access nested struct fields"
 **Polars SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Extract and analyze nested struct data
 SELECT 
     struct_column.field1 as extracted_field1,
@@ -471,7 +491,7 @@ WHERE struct_column IS NOT NULL;
 **User Question:** "Create a pivot table"
 **Polars SQL Query:**
 ```sql
--- GENERATED_BY_SIGNATURE
+-- {GENERATED_BY_SIGNATURE}
 -- Create a pivot table from the data
 SELECT 
     category,

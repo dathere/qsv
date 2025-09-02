@@ -120,6 +120,14 @@ describegpt options:
                            "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set.
     --prompt-file <file>   The TOML file containing prompts to use for inferencing.
                            If no prompt file is provided, default prompts will be used.
+    --fewshot-examples     By default, few-shot examples are NOT included in the LLM prompt when
+                           generating SQL queries. When this option is set, few-shot examples are included.
+                           Though this will increase the quality of the generated SQL, it comes at
+                           a cost - increased LLM API call cost in terms of tokens and execution time.
+                           See https://en.wikipedia.org/wiki/Prompt_engineering for more info.
+
+                           See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml
+                           for the default prompts and few-shot examples.
 
                            LLM API OPTIONS:
     -u, --base-url <url>   The LLM API URL. Supports APIs & local LLMs compatible with
@@ -134,7 +142,7 @@ describegpt options:
     -m, --model <model>    The model to use for inferencing.
                            If the QSV_LLM_MODEL environment variable is set, it will be
                            used instead.
-                           [default: gpt-oss-20b]
+                           [default: openai/gpt-oss-20b]
     --addl-props <json>    Additional model properties to pass to the LLM chat/completion API.
                            Various models support different properties beyond the standard ones.
                            For instance, gpt-oss-20b supports the "reasoning_effort" property.
@@ -146,9 +154,9 @@ describegpt options:
                            Set to 0 to disable token limits.
                            If the --base-url is localhost, indicating a local LLM,
                            the default is automatically set to 0.
-                           [default: 2000]
+                           [default: 5000]
     --timeout <secs>       Timeout for completions in seconds. If 0, no timeout is used.
-                           [default: 600]
+                           [default: 300]
     --user-agent <agent>   Specify custom user agent. It supports the following variables -
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
                            Try to follow the syntax here -
@@ -216,33 +224,34 @@ enum PromptType {
 }
 #[derive(Debug, Deserialize)]
 struct Args {
-    arg_input:           Option<String>,
-    flag_dictionary:     bool,
-    flag_description:    bool,
-    flag_tags:           bool,
-    flag_all:            bool,
-    flag_stats_options:  String,
-    flag_enum_threshold: usize,
-    flag_prompt:         Option<String>,
-    flag_sql_results:    Option<String>,
-    flag_prompt_file:    Option<String>,
-    flag_base_url:       Option<String>,
-    flag_model:          Option<String>,
-    flag_addl_props:     Option<String>,
-    flag_api_key:        Option<String>,
-    flag_max_tokens:     u32,
-    flag_timeout:        u16,
-    flag_user_agent:     Option<String>,
-    flag_json:           bool,
-    flag_jsonl:          bool,
-    flag_no_cache:       bool,
-    flag_disk_cache_dir: Option<String>,
-    flag_redis_cache:    bool,
-    flag_fresh:          bool,
-    flag_forget:         bool,
-    flag_flush_cache:    bool,
-    flag_output:         Option<String>,
-    flag_quiet:          bool,
+    arg_input:             Option<String>,
+    flag_dictionary:       bool,
+    flag_description:      bool,
+    flag_tags:             bool,
+    flag_all:              bool,
+    flag_stats_options:    String,
+    flag_enum_threshold:   usize,
+    flag_prompt:           Option<String>,
+    flag_sql_results:      Option<String>,
+    flag_prompt_file:      Option<String>,
+    flag_fewshot_examples: bool,
+    flag_base_url:         Option<String>,
+    flag_model:            Option<String>,
+    flag_addl_props:       Option<String>,
+    flag_api_key:          Option<String>,
+    flag_max_tokens:       u32,
+    flag_timeout:          u16,
+    flag_user_agent:       Option<String>,
+    flag_json:             bool,
+    flag_jsonl:            bool,
+    flag_no_cache:         bool,
+    flag_disk_cache_dir:   Option<String>,
+    flag_redis_cache:      bool,
+    flag_fresh:            bool,
+    flag_forget:           bool,
+    flag_flush_cache:      bool,
+    flag_output:           Option<String>,
+    flag_quiet:            bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -264,6 +273,10 @@ struct PromptFile {
     model:                  String,
     timeout:                u32,
     custom_prompt_guidance: String,
+    duckdb_sql_guidance:    String,
+    polars_sql_guidance:    String,
+    dd_fewshot_examples:    String, //DuckDB few-shot examples
+    p_fewshot_examples:     String, //Polars SQL few-shot examples
 }
 
 const LLM_APIKEY_ERROR: &str = r#"Error: Neither QSV_LLM_BASE_URL nor QSV_LLM_APIKEY environment variables are set.
@@ -637,37 +650,29 @@ fn get_prompt(
         },
     };
 
-    // If this is a custom prompt and DuckDB should be used, modify the SQL query generation
-    // guidelines
-    if prompt_type == PromptType::Prompt && should_use_duckdb() {
+    let mut duckdb_version = String::new();
+
+    // If custom prompt and DuckDB should be used, modify SQL generation guidelines
+    if prompt_type == PromptType::Prompt {
         // Look for the SQL query generation guidelines section & replace it with DuckDB guidance
-        let sql_guidelines_start = "SQL Query Generation Guidelines:\n\n";
+        let sql_guidelines_start = "SQL Query Generation Guidelines:\n";
         let sql_guidelines_end = "\nEND SQL Query Generation Guidelines\n";
 
-        if let Some(start_pos) = prompt.find(sql_guidelines_start)
-            && let Some(end_pos) = prompt[start_pos..].find(sql_guidelines_end)
-        {
-            let end_pos = start_pos + end_pos;
-            let before_guidelines = &prompt[..start_pos];
-            let after_guidelines = &prompt[end_pos..];
+        let start_pos = prompt.find(sql_guidelines_start).ok_or_else(|| {
+            CliError::Other("Could not find SQL guidelines start marker in prompt".to_string())
+        })?;
+        let end_pos = start_pos
+            + prompt[start_pos..]
+                .find(sql_guidelines_end)
+                .ok_or_else(|| {
+                    CliError::Other(
+                        "Could not find SQL guidelines end marker in prompt".to_string(),
+                    )
+                })?;
+        let before_guidelines = &prompt[..start_pos];
+        let after_guidelines = &prompt[(end_pos + sql_guidelines_end.len())..].trim_end();
 
-            // {delimiter} and {INPUT_TABLE_NAME} are replaced at run time
-            // with actual values
-            let duckdb_guidelines = format!(
-                r#"
-- Use DuckDB v1.0 syntax
-- The input csv has headers and uses {delimiter} as the delimiter
-- Only use the `read_csv_auto` table function to read the input CSV
-- Use the placeholder {INPUT_TABLE_NAME} for the input csv in the `read_csv_auto` table function call
-- Only use functions from the Loaded DuckDB extensions listed below
-- Make sure the generated SQL query is valid and has comments to explain the query
-- Add a comment with the placeholder "GENERATED_BY_SIGNATURE" at the top of the query"#
-            );
-
-            prompt = format!(
-                "{before_guidelines}{sql_guidelines_start}{duckdb_guidelines}{after_guidelines}"
-            );
-
+        if should_use_duckdb() {
             // call DuckDB to get the list of valid extensions
             let duckdb_query = "SELECT extension_name FROM duckdb_extensions() where loaded = true";
             let duckdb_response = run_duckdb_query(duckdb_query, "", "")?;
@@ -679,25 +684,63 @@ fn get_prompt(
                 .skip(1) // Skip header row
                 .collect::<Vec<_>>()
                 .join(", ");
-            // add the valid extensions to the prompt
-            prompt = format!("{prompt}\n\nLoaded DuckDB extensions: {valid_extensions}");
+
+            // get the DuckDB version
+            let duckdb_version_query = "SELECT version()";
+            let duckdb_version_response = run_duckdb_query(duckdb_version_query, "", "")?;
+            duckdb_version = duckdb_version_response
+                .0
+                .lines()
+                .next()
+                .unwrap_or("")
+                .to_string();
+
+            // Generate prompt for DuckDB SQL
+            prompt = format!(
+                "{before_guidelines}{sql_guidelines_start}{duckdb_sql_guidance}\n- Only use \
+                 functions from the following Loaded DuckDB extensions: \
+                 {valid_extensions}\n{after_guidelines}",
+                duckdb_sql_guidance = prompt_file.duckdb_sql_guidance.trim_end(),
+            );
+
+            if args.flag_fewshot_examples {
+                prompt = format!(
+                    "{prompt}\n\n{dd_fewshot_examples}",
+                    dd_fewshot_examples = prompt_file.dd_fewshot_examples
+                );
+            }
+            log::debug!("DuckDB SQL prompt:\n{prompt}");
+        } else {
+            // Generate prompt for Polars SQL
+            prompt = format!(
+                "{before_guidelines}{sql_guidelines_start}{polars_sql_guidance}{after_guidelines}",
+                polars_sql_guidance = prompt_file.polars_sql_guidance.trim_end(),
+            );
+            if args.flag_fewshot_examples {
+                prompt = format!(
+                    "{prompt}\n\n{p_fewshot_examples}",
+                    p_fewshot_examples = prompt_file.p_fewshot_examples
+                );
+            }
+            log::debug!("Polars SQL prompt:\n{prompt}");
         }
-        log::debug!("prompt using DuckDB: {prompt}");
     }
 
     // Replace variable data in prompt
     #[allow(clippy::to_string_in_format_args)]
     #[allow(clippy::literal_string_with_formatting_args)]
     let prompt = prompt
-        .replace("{stats}", &stats)
-        .replace("{frequency}", &frequency)
-        .replace("{headers}", &headers)
+        .replace("{STATS}", &stats)
+        .replace("{FREQUENCY}", &frequency)
+        .replace("{HEADERS}", &headers)
+        .replace("{DELIMITER}", &delimiter.to_string())
+        .replace("{DUCKDB_VERSION}", &duckdb_version)
         .replace(
-            "{dictionary}",
+            "{DICTIONARY}",
             DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),
         )
         .replace(
-            "{json_add}",
+            "{JSON_ADD}",
             if prompt_file.json || prompt_file.jsonl || args.flag_json || args.flag_jsonl {
                 " (in valid JSON format. Surround it with ```json and ```)"
             } else {
@@ -794,10 +837,9 @@ fn get_completion(
         total:      usage["total_tokens"].as_u64().unwrap_or(0),
     };
 
-    // Replace "GENERATED_BY_SIGNATURE" with the model name and the date and time the query was
-    // generated
+    // Replace "{GENERATED_BY_SIGNATURE}" with model name & datetime the query was generated
     let completion = completion.replace(
-        "GENERATED_BY_SIGNATURE",
+        "{GENERATED_BY_SIGNATURE}",
         &format!(
             "Generated by qsv's describegpt command using {model} on {}",
             chrono::Utc::now().to_rfc3339()
@@ -914,7 +956,6 @@ fn try_remove_prompt_cache_entries(base_key: &str) -> bool {
 #[io_cached(
     disk = true,
     ty = "cached::DiskCache<String, CompletionResponse>",
-    cache_prefix_block = r##"{ "descdc_" }"##,
     key = "String",
     convert = r##"{ get_cache_key(args, kind, model) }"##,
     create = r##"{
@@ -924,6 +965,7 @@ fn try_remove_prompt_cache_entries(base_key: &str) -> bool {
             .set_disk_directory(cache_dir)
             .set_lifespan(diskcache_config.ttl_secs)
             .set_refresh(diskcache_config.ttl_refresh)
+            .set_sync_to_disk_on_cache_change(true)
             .build()
             .expect("error building diskcache");
         log::info!("Disk cache created - dir: {cache_dir} - ttl: {ttl_secs:?}",
@@ -988,7 +1030,6 @@ fn get_redis_completion(
 #[io_cached(
     disk = true,
     ty = "cached::DiskCache<String, AnalysisResults>",
-    cache_prefix_block = r##"{ "desc_analysis_dc_" }"##,
     key = "String",
     convert = r##"{ get_analysis_cache_key(args, file_hash) }"##,
     create = r##"{
@@ -998,6 +1039,7 @@ fn get_redis_completion(
             .set_disk_directory(cache_dir)
             .set_lifespan(diskcache_config.ttl_secs)
             .set_refresh(diskcache_config.ttl_refresh)
+            .set_sync_to_disk_on_cache_change(true)
             .build()
             .expect("error building analysis diskcache");
         log::info!("Analysis disk cache created - dir: {cache_dir} - ttl: {ttl_secs:?}",
@@ -1465,8 +1507,8 @@ fn run_inference_options(
         if has_sql_query {
             print_status(
                 &format!(
-                    "Cannot answer the prompt using just Summary Statistics & Frequency \
-                     Distribution data.\nGenerated a SQL {} query to answer the prompt \
+                    "  Cannot answer the prompt using just Summary Statistics & Frequency \
+                     Distribution data.\n  Generated a {} SQL query to answer the prompt \
                      deterministically.",
                     if should_use_duckdb() {
                         "DuckDB"
@@ -1475,11 +1517,6 @@ fn run_inference_options(
                     }
                 ),
                 None,
-            );
-            // append the reasoning to the sql query as a separate markdown section
-            completion_response.response = format!(
-                "{}\n\n## REASONING\n\n{}\n",
-                completion_response.response, completion_response.reasoning
             );
         }
         process_output(
@@ -1524,7 +1561,7 @@ fn run_inference_options(
         let sql_query_start = Instant::now();
         print_status(
             &format!(
-                "`--sql-results` specified.\nExecuting SQL query and saving results to \
+                "\nSQL results file specified.\n  Executing SQL query and saving results to \
                  {sql_results}..."
             ),
             None,
@@ -1545,21 +1582,24 @@ fn run_inference_options(
 
         // Check if DuckDB should be used
         if should_use_duckdb() {
-            // For DuckDB, replace INPUT_TABLE_NAME with read_csv function call
+            // For DuckDB, replace {INPUT_TABLE_NAME} with read_csv function call
             if READ_CSV_AUTO_REGEX.is_match(&sql_query) {
                 // DuckDB with read_csv_auto so replace with quoted path
                 sql_query = READ_CSV_AUTO_REGEX
                     .replace_all(&sql_query, format!("read_csv_auto('{}')", input_path))
                     .into_owned()
             } else {
-                return fail_clierror!(
-                    "Expected SQL query to contain `read_csv_auto` function call but none found"
+                // if READ_CSV_AUTO_REGEX doesn't match, add fallback to replace {INPUT_TABLE_NAME}
+                // with read_csv_auto function call
+                sql_query = sql_query.replace(
+                    INPUT_TABLE_NAME,
+                    &format!("read_csv_auto('{}')", input_path),
                 );
             };
             log::debug!("DuckDB SQL query:\n{sql_query}");
 
             let (_, stderr) =
-                match run_duckdb_query(&sql_query, sql_results, "DuckDB SQL query issued.") {
+                match run_duckdb_query(&sql_query, sql_results, "  DuckDB SQL query issued.") {
                     Ok((stdout, stderr)) => {
                         // Check stderr for error messages
                         if stderr.to_ascii_lowercase().contains(" error:") {
@@ -1606,7 +1646,7 @@ fn run_inference_options(
                         sql_results,
                     ],
                     input_path,
-                    "Polars SQL query issued.",
+                    "  Polars SQL query issued.",
                 ) {
                     Ok((stdout, stderr)) => {
                         // Check stderr for error messages
@@ -2313,17 +2353,17 @@ fn get_cached_analysis(
             Ok(Some(result.value))
         },
         CacheType::Fresh => {
-            // Force fresh analysis but still update cache
-            let fresh_result = perform_analysis(args, input_path)?;
-
-            // Manually update the appropriate cache with the fresh result
-            let key = get_analysis_cache_key(args, file_hash);
-            if args.flag_redis_cache {
-                GET_REDIS_ANALYSIS.cache_set(key, fresh_result.clone())?;
+            // Always use cached analysis results, even with --fresh
+            // as the file hash guarantees the cached analysis results are valid
+            let result = if args.flag_redis_cache {
+                get_redis_analysis(args, file_hash, input_path)?
             } else {
-                GET_DISKCACHE_ANALYSIS.cache_set(key, fresh_result.clone())?;
+                get_diskcache_analysis(args, file_hash, input_path)?
+            };
+            if result.was_cached {
+                print_status("    Analysis cache hit!", None);
             }
-            Ok(Some(fresh_result))
+            Ok(Some(result.value))
         },
         CacheType::None => Ok(None),
     }

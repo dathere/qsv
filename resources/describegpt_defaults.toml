@@ -1,13 +1,22 @@
 name = "QSV Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "QSV Team"
-version = "2.1.0"
-tokens = 3000
+version = "3.0.0"
+tokens = 5000
 base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
-timeout = 120
+timeout = 300
 json = false
 jsonl = false
+
+### NOTE: The following VARIABLES are automatically replaced by the qsv describegpt command in the prompts below:
+# {STATS}
+# {FREQUENCY}
+# {DICTIONARY}
+# {JSON_ADD} - if --json or --jsonl is set
+# {INPUT_TABLE_NAME}
+# {GENERATED_BY_SIGNATURE}
+# {DUCKDB_VERSION}
 
 system_prompt = """
 You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.
@@ -36,28 +45,38 @@ Here are the columns for each field in a Data Dictionary:
 - Label: a human-friendly label for this column
 - Description: a full description for this column (can be multiple sentences)
 
-Generate a Data Dictionary as aforementioned {json_add} where each field has Name, Type, Label, and Description
+Generate a Data Dictionary as aforementioned {JSON_ADD} where each field has Name, Type, Label, and Description
 (so four columns in total) based on the following Summary Statistics and Frequency Distribution data of the Dataset.
+
+Let's think step by step.
+
+---
 
 Summary Statistics:
 
-{stats}
+{STATS}
 
 Frequency Distribution:
 
-{frequency}
+{FREQUENCY}
 """
 
 description_prompt = """
 Generate a Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
 
+Let's think step by step.
+
+---
+
 Summary Statistics:
 
-{stats}
+{STATS}
 
 Frequency Distribution:
 
-{frequency}
+{FREQUENCY}
+
+---
 
 Do not output the summary statistics for each field. Do not output the frequency for each field.
 Do not output data about each field individually, but instead output about the dataset as a whole
@@ -67,7 +86,7 @@ After the Description, add a section titled "Notable Characteristics" with a bul
 characteristics of the Dataset. e.g. if there are any outliers, missing values, duplicates, PII data
 and other data quality issues that the User should be aware of.
 
-Add a Footnote with the placeholder "GENERATED_BY_SIGNATURE" at the bottom of the output.
+Add a Footnote with the placeholder "{GENERATED_BY_SIGNATURE}" at the bottom of the output.
 
 The entire output should be in Markdown format.
 """
@@ -76,23 +95,28 @@ tags_prompt = """
 A Tag is a keyword or label that categorizes datasets with other, similar datasets.
 Using the right Tags makes it easier for others to find and use datasets.
 
-Generate no more than 15 most thematic Tags{json_add} about the contents of the Dataset in descending
+Generate no more than 15 most thematic Tags{JSON_ADD} about the contents of the Dataset in descending
 order of importance (lowercase only and use _ to separate words) based on the following Summary Statistics and
 Frequency Distribution data about the Dataset. Do not use field names in the tags.
 
+Let's think step by step.
+
+---
+
 Summary Statistics:
 
-{stats}
+{STATS}
 
 Frequency Distribution:
 
-{frequency}
-"""
+{FREQUENCY}"""
 
 prompt = "What is this dataset about?"
 
 custom_prompt_guidance = """
-If the User's Prompt above is not about the Dataset, immediately return
+We need to answer the User's Prompt above. Let's think step by step.
+
+If the User's Prompt is not about the Dataset, immediately return
 'I'm sorry. I can only answer questions about the Dataset.'
 
 If the User's Prompt can be answered by using the Dataset's Summary Statistics and
@@ -103,33 +127,393 @@ create a SQL query that can be used to answer the User's Prompt.
 
 SQL Query Generation Guidelines:
 
-- Use PostgreSQL syntax.
-- Use the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary data to generate the SQL query.
-- Use INPUT_TABLE_NAME as the placeholder for the table name to query.
-- Column names with embedded spaces and special characters are case-sensitive and should be enclosed in double quotes.
-- Do not use window expressions in aggregations.
-- Do not use the following SQL functions: `age`, `current_date`, `current_timestamp`, `date_bin`,
-  `date_trunc`, `isfinite`, justify_days`, `justify_hours`, `justify_minutes`, `localtime`, `localtimestamp`,
-  `make_interval`, `make_time`, `make_timestamp`, `make_timestamptz`, `now`, `timeofday`, `to_timestamp`,
-  `regexp_match`, `regexp_replace`, `regexp_substr`, `repeat`, `substring`, `format`
-- Do not use IN (subquery), SIMILAR TO and CROSS JOIN in the generated SQL query.
-- Only use comments with the `--` prefix. Comments can only start on a new line. No inline comments.
-- Do not use comments using the `/*` and `*/` syntax.
-- Make sure the generated SQL query is valid and has comments to explain the query.
-- Add a comment with the placeholder "GENERATED_BY_SIGNATURE" at the top of the query.
 END SQL Query Generation Guidelines
+- Make sure the generated SQL query is valid and has comments to explain the query
+- Add "-- {GENERATED_BY_SIGNATURE}" at the top of the query
 
 Return the SQL query as a SQL code block preceded by a newline.
 
-Data Dictionary:
-
-{dictionary}
+---
 
 Summary Statistics:
 
-{stats}
+{STATS}
 
 Frequency Distribution:
 
-{frequency}
+{FREQUENCY}
+
+Data Dictionary:
+
+{DICTIONARY}"""
+
+### DuckDB SQL "One-Shot" Query Generation Guidelines
+duckdb_sql_guidance = """
+- Use DuckDB {DUCKDB_VERSION} syntax
+- The input csv has headers and uses {DELIMITER} as the delimiter
+- Column names with spaces and special characters are case-sensitive and should be enclosed in double quotes
+- Only use the `read_csv_auto` table function to read the input CSV
+- Use the placeholder {INPUT_TABLE_NAME} for the input csv in the `read_csv_auto` table function call
+- Remember that the date format specifier is the second parameter for the date functions `strftime()` and `strptime()`
+- Remember that the date format specifier for seconds is `%S`, NOT `%s`
 """
+
+### Polars SQL "One-Shot" Query Generation Guidelines
+polars_sql_guidance = """
+- Use Polars SQL syntax (which is a dialect of PostgreSQL)
+- Use the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary data to generate the SQL query
+- Use {INPUT_TABLE_NAME} as the placeholder for the table name to query
+- Column names with embedded spaces and special characters are case-sensitive and should be enclosed in double quotes
+- Do not use window expressions in aggregations
+- Do not use the following SQL functions which are not supported by Polars SQL: `age`, `current_date`, `current_timestamp`,
+  `date_bin`, `date_trunc`, `isfinite`, justify_days`, `justify_hours`, `justify_minutes`, `localtime`, `localtimestamp`,
+  `make_interval`, `make_time`, `make_timestamp`, `make_timestamptz`, `now`, `timeofday`, `to_timestamp`,
+  `regexp_match`, `regexp_replace`, `regexp_substr`, `repeat`, `substring`, `format`
+- Do not use IN (subquery), SIMILAR TO and CROSS JOIN in the generated SQL query
+- Only use comments with the `--` prefix. Comments can only start on a new line. No inline comments
+- Do not use comments using the `/*` and `*/` syntax, as Polars SQL does not support it
+"""
+
+### Additional DuckDB SQL Few-Shot Learning Examples when --fewshot-examples is set
+dd_fewshot_examples = """
+## Few-Shot Learning Examples
+
+Here are examples of common query patterns to follow:
+
+### Example 1: Basic Aggregation
+**User Question:** "What is the kurtosis of a given numerical column?"
+**SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Calculate kurtosis of a given numerical column
+SELECT kurtosis(column_name) as kurtosis_value
+FROM read_csv_auto({INPUT_TABLE_NAME});
+```
+
+### Example 2: Group By with Aggregation
+**User Question:** "Show me the count by category"
+**SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Group records by category and count occurrences
+SELECT 
+    category,
+    COUNT(*) as count
+FROM read_csv_auto({INPUT_TABLE_NAME})
+GROUP BY category
+ORDER BY count DESC;
+```
+
+### Example 3: Date/Time Analysis
+**User Question:** "What are the trends over time?"
+**SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Analyze trends by date, assuming there's a date column
+SELECT 
+    DATE(date_column) as date,
+    COUNT(*) as daily_count,
+    AVG(numeric_column) as avg_value
+FROM read_csv_auto({INPUT_TABLE_NAME})
+WHERE date_column IS NOT NULL
+GROUP BY DATE(date_column)
+ORDER BY date;
+```
+
+### Example 4: Top N Analysis
+**User Question:** "What are the top 10 most frequent values?"
+**SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Find top 10 most frequent values in a column
+SELECT 
+    column_name,
+    COUNT(*) as frequency
+FROM read_csv_auto({INPUT_TABLE_NAME})
+WHERE column_name IS NOT NULL
+GROUP BY column_name
+ORDER BY frequency DESC
+LIMIT 10;
+```
+
+### Example 5: Conditional Analysis
+**User Question:** "How many records meet specific criteria?"
+**SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Count records that meet specific conditions
+SELECT 
+    COUNT(*) as matching_records,
+    COUNT(*) * 100.0 / (SELECT COUNT(*) FROM read_csv_auto({INPUT_TABLE_NAME})) as percentage
+FROM read_csv_auto({INPUT_TABLE_NAME})
+WHERE condition1 = 'value1' 
+  AND condition2 > 100;
+```
+
+**User Question:** "What's the relationship between two columns?"
+**SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Calculate relationship between two columns
+SELECT corr(column2, column1) as correlation,
+       covar_pop(column2, column1) as covariance_population,
+       covar_samp(column2, column1) as covariance_sample,
+       regr_slope(column2, column1) as regression_slope,
+       regr_intercept(column2, column1) as regression_intercept,
+       regr_r2(column2, column1) as regression_r_squared,
+       regr_count(column2, column1) as regression_count
+FROM read_csv_auto({INPUT_TABLE_NAME});
+```
+
+### Example 7: Complex Filtering with Subqueries
+**User Question:** "Show records above the average"
+**SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Find records above the average value
+SELECT *
+FROM read_csv_auto({INPUT_TABLE_NAME})
+WHERE numeric_column > (
+    SELECT AVG(numeric_column) 
+    FROM read_csv_auto({INPUT_TABLE_NAME})
+    WHERE numeric_column IS NOT NULL
+)
+ORDER BY numeric_column DESC;
+```
+
+### Example 8: Window Functions for Ranking
+**User Question:** "Rank the data by some criteria"
+**SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Rank records using window functions
+SELECT 
+    *,
+    ROW_NUMBER() OVER (ORDER BY numeric_column DESC) as rank,
+    RANK() OVER (ORDER BY numeric_column DESC) as rank_with_ties
+FROM read_csv_auto({INPUT_TABLE_NAME})
+ORDER BY rank;
+```
+
+### Best Practices:
+- Always use `read_csv_auto({INPUT_TABLE_NAME})` to read the CSV
+- Include meaningful column aliases (e.g., `COUNT(*) as total_count`)
+- Add WHERE clauses to filter out NULL values when appropriate
+- Use ORDER BY for meaningful result ordering
+- Include LIMIT for large result sets
+- Add comments explaining the query logic
+- Use appropriate aggregation functions (COUNT, SUM, AVG, MIN, MAX)
+- Consider using CTEs (WITH clauses) for complex queries
+- Use CASE statements for conditional logic
+- Leverage window functions for ranking and running totals"""
+
+### Additional Polars SQL Few-Shot Learning Examples when --fewshot-examples is set
+p_fewshot_examples = """
+## Few-Shot Learning Examples
+
+Polars SQL is a SQL dialect patterned after PostgreSQL's syntax,
+but with Polars-specific functions and operators.
+
+Here are examples of common Polars SQL query patterns to follow:
+
+### Example 1: Basic Aggregation
+**User Question:** "What is the continuous quantile element of a given numerical column?"
+**Polars SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Calculate kurtosis of a given numerical column
+SELECT QUANTILE_CONT(column_name, 0.30) as column_name_q30
+FROM {INPUT_TABLE_NAME};
+```
+
+### Example 2: Group By with Aggregation
+**User Question:** "Show me the count by category"
+**Polars SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Group records by category and count occurrences
+SELECT 
+    category,
+    COUNT(*) as count
+FROM {INPUT_TABLE_NAME}
+GROUP BY category
+ORDER BY count DESC;
+```
+
+### Example 3: Date/Time Analysis
+**User Question:** "What are the trends over time?"
+**Polars SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Analyze trends by date, assuming there's a date column
+SELECT 
+    date_column,
+    COUNT(*) as daily_count,
+    AVG(numeric_column) as avg_value
+FROM {INPUT_TABLE_NAME}
+WHERE date_column IS NOT NULL
+GROUP BY date_part('day', date_column)
+ORDER BY date_column;
+```
+
+### Example 4: Top N Analysis
+**User Question:** "What are the top 10 most frequent values?"
+**Polars SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE} 
+-- Find top 10 most frequent values in a column
+SELECT 
+    column_name,
+    COUNT(*) as frequency
+FROM {INPUT_TABLE_NAME}
+WHERE column_name IS NOT NULL
+GROUP BY column_name
+ORDER BY frequency DESC
+LIMIT 10;
+```
+
+### Example 5: Conditional Analysis
+**User Question:** "How many records meet specific criteria?"
+**Polars SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Count records that meet specific conditions
+SELECT 
+    COUNT(*) as matching_records,
+    COUNT(*) * 100.0 / (SELECT COUNT(*) FROM {INPUT_TABLE_NAME}) as percentage
+FROM {INPUT_TABLE_NAME}
+WHERE condition1 = 'value1' 
+  AND condition2 > 100;
+```
+
+### Example 6: Cross-Column Analysis
+**User Question:** "What's the relationship between two columns?"
+**Polars SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Calculate relationship between two columns
+SELECT 
+    corr(column1, column2) as pearson_correlation,
+    covar(column1, column2) as covariance
+FROM {INPUT_TABLE_NAME};
+```
+
+### Example 7: Complex Filtering with Subqueries
+**User Question:** "Show records above the average"
+**Polars SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Find records above the average value
+SELECT *
+FROM {INPUT_TABLE_NAME}
+WHERE numeric_column > (
+    SELECT AVG(numeric_column) 
+    FROM {INPUT_TABLE_NAME}
+    WHERE numeric_column IS NOT NULL
+)
+ORDER BY numeric_column DESC;
+```
+
+### Example 8: Window Functions for Ranking
+**User Question:** "Rank the data by some criteria"
+**Polars SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Rank records using window functions
+SELECT 
+    *,
+    ROW_NUMBER() OVER (ORDER BY numeric_column DESC) as rank,
+    RANK() OVER (ORDER BY numeric_column DESC) as rank_with_ties
+FROM {INPUT_TABLE_NAME}
+ORDER BY rank;
+```
+
+### Example 9: String Operations
+**User Question:** "Extract patterns from text columns"
+**Polars SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Extract patterns and analyze string data
+SELECT 
+    text_column,
+    LENGTH(text_column) as text_length,
+    UPPER(text_column) as uppercase_text,
+    LOWER(text_column) as lowercase_text,
+    SUBSTR(text_column, 1, 10) as first_10_chars,
+    TIMESTAMP(text_column, 'yyyy-MM-dd HH:mm:ss') as timestamp_column,
+    DATE(text_column, 'yyyy-MM-dd') as date_column,
+    REGEXP_LIKE(text_column, 'regex_pattern') as is_regex_pattern_present,
+    STRPOS(text_column, 'substring') as substring_position,
+    STARTS_WITH(text_column, 'prefix') as starts_with_prefix,
+    ENDS_WITH(text_column, 'suffix') as ends_with_suffix,
+    REPLACE(text_column, 'old_substring', 'new_substring') as replaced_text,
+    CONCAT(text_column, 'concatenated_text') as concatenated_text,
+    TRIM(text_column) as trimmed_text,
+    LTRIM(text_column) as ltrimmed_text,
+    RTRIM(text_column) as rtrimmed_text
+FROM {INPUT_TABLE_NAME}
+WHERE text_column IS NOT NULL;
+```
+
+### Example 10: Array Operations
+**User Question:** "Work with array columns"
+**Polars SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Analyze array column data
+SELECT 
+    array_column,
+    ARRAY_AGG(array_column ORDER BY array_column) as array_agg_sorted,
+    ARRAY_CONTAINS(array_column, 'value') as contains_value,
+    ARRAY_GET(array_column, 1) as array_col_at_1,
+    ARRAY_LENGTH(array_column) as array_length,
+    ARRAY_MAX(array_column) as max_value,
+    ARRAY_MIN(array_column) as min_value
+FROM {INPUT_TABLE_NAME}
+WHERE array_column IS NOT NULL;
+```
+
+### Example 11: Struct Operations
+**User Question:** "Access nested struct fields"
+**Polars SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Extract and analyze nested struct data
+SELECT 
+    struct_column.field1 as extracted_field1,
+    struct_column.field2 as extracted_field2,
+    struct_column.nested.field3 as nested_field3
+FROM {INPUT_TABLE_NAME}
+WHERE struct_column IS NOT NULL;
+```
+
+### Example 12: Pivot Operations
+**User Question:** "Create a pivot table"
+**Polars SQL Query:**
+```sql
+-- {GENERATED_BY_SIGNATURE}
+-- Create a pivot table from the data
+SELECT 
+    category,
+    SUM(CASE WHEN status = 'active' THEN value ELSE 0 END) as active_sum,
+    SUM(CASE WHEN status = 'inactive' THEN value ELSE 0 END) as inactive_sum,
+    COUNT(CASE WHEN status = 'active' THEN 1 END) as active_count
+FROM {INPUT_TABLE_NAME}
+GROUP BY category;
+```
+
+### Best Practices for Polars SQL:
+- Always use `{INPUT_TABLE_NAME}` as the placeholder for the table name
+- Include meaningful column aliases (e.g., `COUNT(*) as total_count`)
+- Add WHERE clauses to filter out NULL values when appropriate
+- Use ORDER BY for meaningful result ordering
+- Include LIMIT for large result sets
+- Add comments explaining the query logic
+- Use appropriate aggregation functions (COUNT, SUM, AVG, MIN, MAX, kurtosis, skewness)
+- Leverage Polars-specific functions like `date_part` and `array_*`
+- Use CASE statements for conditional logic and pivoting
+- Leverage window functions for ranking and running totals
+- Take advantage of Polars' optimized array operations
+- Use `date_part` for time-based grouping instead of `DATE()` function
+- Consider using CTEs (WITH clauses) for complex queries
+- Leverage Polars' built-in statistical functions for data analysis"""

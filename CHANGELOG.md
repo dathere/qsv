@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## What's Changed
+* build(deps): bump pyo3 from 0.25.1 to 0.26.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2946
+* build(deps): bump mlua from 0.11.2 to 0.11.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2948
+* chore: `python` replace deprecated `with_gil` with `attach` by @jqnatividad in https://github.com/dathere/qsv/pull/2949
+* feat: `describegpt` add configurable frequency limit by @jqnatividad in https://github.com/dathere/qsv/pull/2950
+* refactor: `describegpt` enable disk cache by default, etc. by @jqnatividad in https://github.com/dathere/qsv/pull/2951
+* build(deps): bump zip from 4.5.0 to 4.6.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2952
+* feat: `describegpt` migrate prompt file from JSON to more easier to edit TOML format by @jqnatividad in https://github.com/dathere/qsv/pull/2954
+* feat: `describegpt` - refactor default prompt file; add `--fewshot-examples` option by @jqnatividad in https://github.com/dathere/qsv/pull/2955
+
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/7.0.1...7.1.0
+
 ## [7.0.1] - 2025-08-28
 
 A patch release with some minor bug fixes, benchmark tweaks and build system improvements.

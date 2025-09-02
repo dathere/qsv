@@ -120,9 +120,8 @@ describegpt options:
                            "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set.
     --prompt-file <file>   The TOML file containing prompts to use for inferencing.
                            If no prompt file is provided, default prompts will be used.
-    --fewshot-examples     By default, few-shot examples are not included in the LLM prompt when
-                           generating SQL queries.
-                           When this option is set, few-shot examples are included.
+    --fewshot-examples     By default, few-shot examples are NOT included in the LLM prompt when
+                           generating SQL queries. When this option is set, few-shot examples are included.
                            Though this will increase the quality of the generated SQL, it comes at
                            a cost - increased LLM API call cost in terms of tokens and execution time.
                            See https://en.wikipedia.org/wiki/Prompt_engineering for more info.

@@ -650,8 +650,9 @@ fn get_prompt(
         },
     };
 
-    // If this is a custom prompt and DuckDB should be used, modify the SQL query generation
-    // guidelines
+    let mut duckdb_version = String::new();
+
+    // If custom prompt and DuckDB should be used, modify SQL generation guidelines
     if prompt_type == PromptType::Prompt {
         // Look for the SQL query generation guidelines section & replace it with DuckDB guidance
         let sql_guidelines_start = "SQL Query Generation Guidelines:\n";
@@ -683,6 +684,16 @@ fn get_prompt(
                 .skip(1) // Skip header row
                 .collect::<Vec<_>>()
                 .join(", ");
+
+            // get the DuckDB version
+            let duckdb_version_query = "SELECT version()";
+            let duckdb_version_response = run_duckdb_query(duckdb_version_query, "", "")?;
+            duckdb_version = duckdb_version_response
+                .0
+                .lines()
+                .next()
+                .unwrap_or("")
+                .to_string();
 
             // Generate prompt for DuckDB SQL
             prompt = format!(
@@ -723,6 +734,7 @@ fn get_prompt(
         .replace("{FREQUENCY}", &frequency)
         .replace("{HEADERS}", &headers)
         .replace("{DELIMITER}", &delimiter.to_string())
+        .replace("{DUCKDB_VERSION}", &duckdb_version)
         .replace(
             "{DICTIONARY}",
             DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),
@@ -1570,15 +1582,18 @@ fn run_inference_options(
 
         // Check if DuckDB should be used
         if should_use_duckdb() {
-            // For DuckDB, replace INPUT_TABLE_NAME with read_csv function call
+            // For DuckDB, replace {INPUT_TABLE_NAME} with read_csv function call
             if READ_CSV_AUTO_REGEX.is_match(&sql_query) {
                 // DuckDB with read_csv_auto so replace with quoted path
                 sql_query = READ_CSV_AUTO_REGEX
                     .replace_all(&sql_query, format!("read_csv_auto('{}')", input_path))
                     .into_owned()
             } else {
-                return fail_clierror!(
-                    "Expected SQL query to contain `read_csv_auto` function call but none found"
+                // if READ_CSV_AUTO_REGEX doesn't match, add fallback to replace {INPUT_TABLE_NAME}
+                // with read_csv_auto function call
+                sql_query = sql_query.replace(
+                    INPUT_TABLE_NAME,
+                    &format!("read_csv_auto('{}')", input_path),
                 );
             };
             log::debug!("DuckDB SQL query:\n{sql_query}");

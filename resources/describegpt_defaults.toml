@@ -16,6 +16,7 @@ jsonl = false
 # {JSON_ADD} - if --json or --jsonl is set
 # {INPUT_TABLE_NAME}
 # {GENERATED_BY_SIGNATURE}
+# {DUCKDB_VERSION}
 
 system_prompt = """
 You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.
@@ -148,7 +149,7 @@ Data Dictionary:
 
 ### DuckDB SQL "One-Shot" Query Generation Guidelines
 duckdb_sql_guidance = """
-- Use DuckDB syntax
+- Use DuckDB {DUCKDB_VERSION} syntax
 - The input csv has headers and uses {DELIMITER} as the delimiter
 - Column names with spaces and special characters are case-sensitive and should be enclosed in double quotes
 - Only use the `read_csv_auto` table function to read the input CSV

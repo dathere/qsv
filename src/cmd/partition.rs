@@ -135,7 +135,7 @@ impl Args {
         let mut rdr = rconfig.reader()?;
         let headers = rdr.byte_headers()?.clone();
         let key_col = self.key_column(&rconfig, &headers)?;
-        let mut r#gen = WriterGenerator::new(self.flag_filename.clone());
+        let mut writer_gen = WriterGenerator::new(self.flag_filename.clone());
 
         // default to 256 if no limit is set or sysinfo cannot get the limit
         let sys_limit = System::open_files_limit().unwrap_or(256);
@@ -143,7 +143,7 @@ impl Args {
         // If no limit is specified, get the system limit and set the limit to 90% of it
         if let Some(limit) = self.flag_limit {
             if limit == 0 {
-                return self.process_all_data(&mut rdr, &headers, key_col, &mut r#gen);
+                return self.process_all_data(&mut rdr, &headers, key_col, &mut writer_gen);
             }
 
             if limit > sys_limit {
@@ -164,11 +164,11 @@ impl Args {
         if let Some(limit) = self.flag_limit
             && limit != 0
         {
-            return self.process_in_batches(&mut rdr, &headers, key_col, &mut r#gen);
+            return self.process_in_batches(&mut rdr, &headers, key_col, &mut writer_gen);
         }
 
         // Otherwise, process all data at once
-        self.process_all_data(&mut rdr, &headers, key_col, &mut r#gen)
+        self.process_all_data(&mut rdr, &headers, key_col, &mut writer_gen)
     }
 
     /// Process all data at once (original behavior when no limit is specified).

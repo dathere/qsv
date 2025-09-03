@@ -152,7 +152,8 @@ impl Args {
                 );
             }
         } else {
-            let auto_limit = sys_limit * 90 / 100;
+            // 90% of the system limit with 10% safety margin
+            let auto_limit = (sys_limit * 9) / 10;
             log::info!(
                 "Auto-setting limit to {auto_limit} based on system limit with 10% safety margin"
             );
@@ -160,7 +161,9 @@ impl Args {
         }
 
         // Process data in batches to respect the file limit
-        if self.flag_limit.is_some() && self.flag_limit.unwrap() != 0 {
+        if let Some(limit) = self.flag_limit
+            && limit != 0
+        {
             return self.process_in_batches(&mut rdr, &headers, key_col, &mut r#gen);
         }
 
@@ -291,7 +294,7 @@ impl Args {
                             .filter_map(|(i, e)| if i == key_col { None } else { Some(e) }),
                     )?;
                 } else {
-                    wtr.write_record(&*headers)?;
+                    wtr.write_record(headers)?;
                 }
             }
             writers.insert(key_vec.clone(), wtr);

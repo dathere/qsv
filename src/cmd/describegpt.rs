@@ -740,9 +740,9 @@ fn get_prompt(
     #[allow(clippy::to_string_in_format_args)]
     #[allow(clippy::literal_string_with_formatting_args)]
     let prompt = prompt
-        .replace("{STATS}", &stats)
-        .replace("{FREQUENCY}", &frequency)
-        .replace("{HEADERS}", &headers)
+        .replace("{STATS}", stats)
+        .replace("{FREQUENCY}", frequency)
+        .replace("{HEADERS}", headers)
         .replace("{DELIMITER}", &delimiter.to_string())
         .replace("{DUCKDB_VERSION}", &duckdb_version)
         .replace(
@@ -1372,8 +1372,7 @@ fn run_inference_options(
 
     // Generate dictionary output
     if args.flag_dictionary || args.flag_all || args.flag_prompt.is_some() {
-        (prompt, system_prompt) =
-            get_prompt(PromptType::Dictionary, Some(&analysis_results), args)?;
+        (prompt, system_prompt) = get_prompt(PromptType::Dictionary, Some(analysis_results), args)?;
         let start_time = Instant::now();
         print_status("  Inferring Data Dictionary...", None);
         messages = get_messages(&prompt, &system_prompt, "");
@@ -1418,7 +1417,7 @@ fn run_inference_options(
         (prompt, system_prompt) = if args.flag_dictionary {
             get_prompt(PromptType::Description, None, args)?
         } else {
-            get_prompt(PromptType::Description, Some(&analysis_results), args)?
+            get_prompt(PromptType::Description, Some(analysis_results), args)?
         };
         messages = get_messages(&prompt, &system_prompt, &data_dict.response);
         let start_time = Instant::now();
@@ -1453,7 +1452,7 @@ fn run_inference_options(
         (prompt, system_prompt) = if args.flag_dictionary {
             get_prompt(PromptType::Tags, None, args)?
         } else {
-            get_prompt(PromptType::Tags, Some(&analysis_results), args)?
+            get_prompt(PromptType::Tags, Some(analysis_results), args)?
         };
         // Only include dictionary context if dictionary was actually generated
         let dictionary_context = if args.flag_dictionary || args.flag_all {
@@ -1491,7 +1490,7 @@ fn run_inference_options(
     // Generate custom prompt output
     let mut has_sql_query = false;
     if args.flag_prompt.is_some() {
-        (prompt, system_prompt) = get_prompt(PromptType::Prompt, Some(&analysis_results), args)?;
+        (prompt, system_prompt) = get_prompt(PromptType::Prompt, Some(analysis_results), args)?;
         let start_time = Instant::now();
         print_status("  Answering Custom Prompt...", None);
         messages = get_messages(&prompt, &system_prompt, &data_dict.response);

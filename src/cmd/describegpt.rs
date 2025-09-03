@@ -101,7 +101,7 @@ describegpt options:
                            for grouping datasets and filtering.
     -A, --all              Shortcut for --dictionary --description --tags.
     --stats-options <arg>  Options for the stats command used to generate summary statistics.
-                           [default: --infer-dates --everything]
+                           [default: --infer-dates --everything --stats-jsonl]
     --enum-threshold <n>   The threshold for compiling enumerations with the frequency command
                            before bucketing other unique values into the "Other" category.
                            [default: 20]
@@ -288,7 +288,7 @@ Either set the URL to an address with "localhost" in it (indicating a local LLM)
 Note that this command uses LLMs for inferencing and is therefore prone to inaccurate information being produced.
 Verify output results before using them."#;
 
-const INPUT_TABLE_NAME: &str = "<INPUT_TABLE_NAME>";
+const INPUT_TABLE_NAME: &str = "{INPUT_TABLE_NAME}";
 
 // Global variable to store DuckDB binary path
 static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
@@ -673,7 +673,7 @@ fn get_prompt(
                     )
                 })?;
         let before_guidelines = &prompt[..start_pos];
-        let after_guidelines = &prompt[(end_pos + sql_guidelines_end.len())..].trim_end();
+        let after_guidelines = &prompt[(end_pos + sql_guidelines_end.len())..];
 
         if should_use_duckdb() {
             // call DuckDB to get the list of valid extensions
@@ -797,8 +797,8 @@ fn get_completion(
     }
 
     // deserializing request_data is relatively expensive, so only do it if debug is enabled
-    if log::log_enabled!(log::Level::Debug) {
-        log::debug!("Request data: {request_data:?}");
+    if log::log_enabled!(log::Level::Trace) {
+        log::trace!("Request data: {request_data:?}");
     }
 
     // Get response from POST request to chat completions endpoint
@@ -813,8 +813,8 @@ fn get_completion(
 
     // Parse response as JSON
     let response_json: serde_json::Value = response.json()?;
-    if log::log_enabled!(log::Level::Debug) {
-        log::debug!("Response: {response_json:?}");
+    if log::log_enabled!(log::Level::Trace) {
+        log::trace!("Response: {response_json:?}");
     }
 
     // If response is an error, print error message
@@ -1332,7 +1332,7 @@ fn run_inference_options(
             }
             // append the reasoning to the output as a separate markdown section
             formatted_output = format!(
-                "{}\n\n## REASONING\n\n{}\n",
+                "{}\n## REASONING\n\n{}\n",
                 formatted_output, completion_response.reasoning
             );
             // If --output is used, append plaintext to file, do not overwrite
@@ -1340,10 +1340,8 @@ fn run_inference_options(
                 fs::OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(output)
-                    .map_err(|e| format!("Failed to open output file {output}: {e}"))?
-                    .write_all(formatted_output.as_bytes())
-                    .map_err(|e| format!("Failed to write to output file {output}: {e}"))?;
+                    .open(output)?
+                    .write_all(formatted_output.as_bytes())?;
             } else {
                 println!("{formatted_output}");
             }
@@ -1652,6 +1650,8 @@ fn run_inference_options(
                     &[
                         &sql_query_file.path().display().to_string(),
                         "--try-parsedates",
+                        "--infer-len",
+                        "10000",
                         "--output",
                         sql_results,
                     ],
@@ -1661,43 +1661,43 @@ fn run_inference_options(
                     Ok((stdout, stderr)) => {
                         // Check stderr for error messages
                         if stderr.to_ascii_lowercase().contains("error:") {
-                            // Invalidate cache entry so user can try again without
-                            // reinferring dictionary
-                            if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
-                                let _ = invalidate_cache_entry(args, PromptType::Prompt);
-                            }
-                            // SQL execution failed, copy sql_query_file to sql_results_path
-                            if let Err(e) = fs::copy(&sql_query_file, &sql_results_path) {
-                                return fail_clierror!(
-                                    "Failed to copy SQL query to {sql_results_path:?}: {e}"
-                                );
-                            }
-
-                            return fail_clierror!("Polars SQL query execution failed: {stderr}");
+                            return handle_sql_error(
+                                args,
+                                cache_type,
+                                sql_query_file.path(),
+                                sql_results_path,
+                                &format!("Polars SQL query error detected: {stderr}"),
+                            );
                         }
                         (stdout, stderr)
                     },
                     Err(e) => {
-                        // Invalidate cache entry so user can try again
-                        if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
-                            let _ = invalidate_cache_entry(args, PromptType::Prompt);
-                        }
-                        // SQL execution failed, copy sql_query_file to sql_results_path
-                        if let Err(e) = fs::copy(&sql_query_file, &sql_results_path) {
-                            return fail_clierror!(
-                                "Failed to copy SQL query to {sql_results_path:?}: {e}"
-                            );
-                        }
-                        return Err(e);
+                        return handle_sql_error(
+                            args,
+                            cache_type,
+                            sql_query_file.path(),
+                            sql_results_path,
+                            &format!("Polars SQL query execution failed: {e}"),
+                        );
                     },
                 };
 
-                print_status(
-                    &format!(
-                        "Polars SQL query successful. Saved results to {sql_results} {stderr}"
-                    ),
-                    Some(sql_query_start.elapsed()),
-                );
+                if stderr.starts_with("Failed to execute query:") {
+                    return handle_sql_error(
+                        args,
+                        cache_type,
+                        sql_query_file.path(),
+                        sql_results_path,
+                        "Polars SQL query execution failed. Failed SQL query saved to output file",
+                    );
+                } else {
+                    print_status(
+                        &format!(
+                            "Polars SQL query successful. Saved results to {sql_results} {stderr}"
+                        ),
+                        Some(sql_query_start.elapsed()),
+                    );
+                }
             }
             #[cfg(not(feature = "polars"))]
             {
@@ -1944,6 +1944,27 @@ fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
     }
 
     Ok(())
+}
+
+#[allow(dead_code)]
+/// Helper function to handle SQL error cases by invalidating cache and saving the failed query
+fn handle_sql_error(
+    args: &Args,
+    cache_type: &CacheType,
+    sql_query_file: &std::path::Path,
+    sql_results_path: &std::path::Path,
+    error_msg: &str,
+) -> CliResult<()> {
+    // Invalidate cache entry so user can try again without reinferring dictionary
+    if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
+        let _ = invalidate_cache_entry(args, PromptType::Prompt);
+    }
+    // SQL execution failed, copy sql_query_file to sql_results_path
+    let output_path = Path::new(sql_results_path).with_extension("sql");
+    if let Err(e) = fs::copy(sql_query_file, &output_path) {
+        return fail_clierror!("Failed to copy SQL query to {sql_results_path:?}: {e}");
+    }
+    fail_clierror!("{error_msg}")
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {

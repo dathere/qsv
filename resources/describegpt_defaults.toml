@@ -168,7 +168,10 @@ polars_sql_guidance = """
 - Do not use the following SQL functions which are not supported by Polars SQL: `age`, `current_date`, `current_timestamp`,
   `date_bin`, `date_trunc`, `isfinite`, justify_days`, `justify_hours`, `justify_minutes`, `localtime`, `localtimestamp`,
   `make_interval`, `make_time`, `make_timestamp`, `make_timestamptz`, `now`, `timeofday`, `to_timestamp`,
-  `regexp_match`, `regexp_replace`, `regexp_substr`, `repeat`, `substring`, `format`
+  `regexp_match`, `regexp_replace`, `regexp_substr`, `repeat`, `substring`, `format`, `datediff`
+- `datepart`'s syntax is `date_part('part', date_column)` where part is one of: "year", "month", "week", "day", "hour", "minute", "second",
+  "millisecond", "microsecond", "nanosecond", "epoch", "doy", "dow", "week", "timezone", "time"
+- Always cast columns to date/datetime type before doing date operations
 - Do not use IN (subquery), SIMILAR TO and CROSS JOIN in the generated SQL query
 - Only use comments with the `--` prefix. Comments can only start on a new line. No inline comments
 - Do not use comments using the `/*` and `*/` syntax, as Polars SQL does not support it

@@ -1321,7 +1321,7 @@ fn run_inference_options(
                         READ_CSV_AUTO_REGEX
                             .replace_all(
                                 &formatted_output,
-                                format!("read_csv_auto('{}')", input_path),
+                                format!("read_csv_auto('{input_path}')"),
                             )
                             .into_owned()
                     } else {
@@ -1593,16 +1593,14 @@ fn run_inference_options(
             if READ_CSV_AUTO_REGEX.is_match(&sql_query) {
                 // DuckDB with read_csv_auto so replace with quoted path
                 sql_query = READ_CSV_AUTO_REGEX
-                    .replace_all(&sql_query, format!("read_csv_auto('{}')", input_path))
-                    .into_owned()
+                    .replace_all(&sql_query, format!("read_csv_auto('{input_path}')"))
+                    .into_owned();
             } else {
                 // if READ_CSV_AUTO_REGEX doesn't match, add fallback to replace {INPUT_TABLE_NAME}
                 // with read_csv_auto function call
-                sql_query = sql_query.replace(
-                    INPUT_TABLE_NAME,
-                    &format!("read_csv_auto('{}')", input_path),
-                );
-            };
+                sql_query =
+                    sql_query.replace(INPUT_TABLE_NAME, &format!("read_csv_auto('{input_path}')"));
+            }
             log::debug!("DuckDB SQL query:\n{sql_query}");
 
             let (_, stderr) =
@@ -1689,14 +1687,13 @@ fn run_inference_options(
                         sql_results_path,
                         "Polars SQL query execution failed. Failed SQL query saved to output file",
                     );
-                } else {
-                    print_status(
-                        &format!(
-                            "Polars SQL query successful. Saved results to {sql_results} {stderr}"
-                        ),
-                        Some(sql_query_start.elapsed()),
-                    );
                 }
+                print_status(
+                    &format!(
+                        "Polars SQL query successful. Saved results to {sql_results} {stderr}"
+                    ),
+                    Some(sql_query_start.elapsed()),
+                );
             }
             #[cfg(not(feature = "polars"))]
             {
@@ -2023,21 +2020,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let cache_type = match (args.flag_no_cache, args.flag_redis_cache) {
         (false, false) => {
             // DISK CACHE
-            let diskcache_dir = match &args.flag_disk_cache_dir {
-                Some(dir) => {
-                    if dir.starts_with('~') {
-                        // expand the tilde
-                        let expanded_dir = util::expand_tilde(dir).unwrap();
-                        expanded_dir.to_string_lossy().to_string()
-                    } else {
-                        dir.to_string()
-                    }
-                },
-                _ => {
-                    // Default disk cache directory
-                    let default_dir = util::expand_tilde("~/.qsv/cache/describegpt").unwrap();
-                    default_dir.to_string_lossy().to_string()
-                },
+            let diskcache_dir = if let Some(dir) = &args.flag_disk_cache_dir {
+                if dir.starts_with('~') {
+                    // expand the tilde
+                    let expanded_dir = util::expand_tilde(dir).unwrap();
+                    expanded_dir.to_string_lossy().to_string()
+                } else {
+                    dir.to_string()
+                }
+            } else {
+                // Default disk cache directory
+                let default_dir = util::expand_tilde("~/.qsv/cache/describegpt").unwrap();
+                default_dir.to_string_lossy().to_string()
             };
 
             // if --flush-cache is set, flush the cache directory

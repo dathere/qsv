@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * build(deps): bump zip from 4.5.0 to 4.6.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2952
 * feat: `describegpt` migrate prompt file from JSON to more easier to edit TOML format by @jqnatividad in https://github.com/dathere/qsv/pull/2954
 * feat: `describegpt` - refactor default prompt file; add `--fewshot-examples` option by @jqnatividad in https://github.com/dathere/qsv/pull/2955
+* build(deps): bump uuid from 1.18.0 to 1.18.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2956
+* refactor: `describegpt` Polars SQL generation tweaks by @jqnatividad in https://github.com/dathere/qsv/pull/2958
+* feat: `partition` add `--limit` option by @jqnatividad in https://github.com/dathere/qsv/pull/2960
 
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/7.0.1...7.1.0

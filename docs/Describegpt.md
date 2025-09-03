@@ -10,7 +10,7 @@ Note that this command uses LLMs for inferencing and is therefore prone to inacc
 
 When working with a cloud-based LLM, `describegpt` requires an API key. You can set this key using the `QSV_LLM_APIKEY` environment variable. Check [/docs/ENVIRONMENT_VARIABLES.md](/docs/ENVIRONMENT_VARIABLES.md) for more info.
 
-When working with a Local LLM (i.e. if `--base-url` or `QSV_LLM_BASE_URL` contains "locahost"), `describegpt` will NOT require an API key.
+When working with a Local LLM (i.e. if `--base-url` or `QSV_LLM_BASE_URL` contains "localhost"), `describegpt` will NOT require an API key.
 
 ## `--api-key <key>`
 

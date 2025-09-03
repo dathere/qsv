@@ -193,73 +193,42 @@ impl Args {
         Ok(())
     }
 
+    #[allow(clippy::cast_precision_loss)]
     /// Process data in batches to respect the file limit.
+    /// Uses a simple strategy: process rows sequentially and periodically
+    /// close excess writers.
     fn process_in_batches(
         &self,
         rdr: &mut csv::Reader<Box<dyn io::Read + Send>>,
         headers: &csv::ByteRecord,
         key_col: usize,
-        r#gen: &mut WriterGenerator,
+        writer_gen: &mut WriterGenerator,
     ) -> CliResult<()> {
+        // Process rows in chunks to balance memory usage vs. I/O efficiency
+        const BATCH_SIZE: usize = 1000;
+
         let limit = self.flag_limit.unwrap();
-        let mut writers: HashMap<Vec<u8>, BoxedWriter> = HashMap::new();
         let mut row = csv::ByteRecord::new();
-        let mut pending_rows: Vec<(csv::ByteRecord, Vec<u8>)> = Vec::new();
+        let mut batch_count = 0;
 
-        // First pass: collect all rows and group them by key
+        let mut writers: HashMap<Vec<u8>, BoxedWriter> = HashMap::with_capacity(limit);
+
         while rdr.read_byte_record(&mut row)? {
-            let column = &row[key_col];
-            let key = match self.flag_prefix_length {
-                Some(len) if len < column.len() => &column[0..len],
-                _ => column,
-            };
-            let key_vec = key.to_vec();
-            pending_rows.push((row.clone(), key_vec));
-        }
+            batch_count += 1;
 
-        // Process rows in batches
-        let mut processed_keys: HashSet<Vec<u8>> = HashSet::new();
-        let mut current_batch: Vec<(csv::ByteRecord, Vec<u8>)> = Vec::new();
+            // Process the row
+            self.process_row(&mut writers, &row, key_col, headers, writer_gen)?;
 
-        for (row, key_vec) in pending_rows {
-            // If we've reached the limit and this is a new key, process the current batch
-            if writers.len() >= limit
-                && !writers.contains_key(&key_vec)
-                && !current_batch.is_empty()
-            {
-                self.process_batch(&mut writers, &current_batch, key_col, headers, r#gen)?;
-                processed_keys.extend(writers.keys().cloned());
-                self.flush_and_close_writers(&mut writers)?;
-                writers.clear();
-                current_batch.clear();
+            // Periodic cleanup to manage file handles
+            if batch_count % BATCH_SIZE == 0 && writers.len() >= limit {
+                let cleanup_count = writers.len() / 2;
+                close_excess_writers(&mut writers, cleanup_count)?;
             }
-
-            current_batch.push((row, key_vec));
-        }
-
-        // Process the final batch
-        if !current_batch.is_empty() {
-            self.process_batch(&mut writers, &current_batch, key_col, headers, r#gen)?;
         }
 
         // Final flush of remaining writers
         for (_, mut writer) in writers {
             writer.flush()?;
-        }
-        Ok(())
-    }
-
-    /// Process a batch of rows for the same keys.
-    fn process_batch(
-        &self,
-        writers: &mut HashMap<Vec<u8>, BoxedWriter>,
-        batch: &[(csv::ByteRecord, Vec<u8>)],
-        key_col: usize,
-        headers: &csv::ByteRecord,
-        r#gen: &mut WriterGenerator,
-    ) -> CliResult<()> {
-        for (row, _key_vec) in batch {
-            self.process_row(writers, row, key_col, headers, r#gen)?;
         }
         Ok(())
     }
@@ -271,7 +240,7 @@ impl Args {
         row: &csv::ByteRecord,
         key_col: usize,
         headers: &csv::ByteRecord,
-        r#gen: &mut WriterGenerator,
+        writer_gen: &mut WriterGenerator,
     ) -> CliResult<()> {
         let column = &row[key_col];
         let key = match self.flag_prefix_length {
@@ -284,7 +253,7 @@ impl Args {
             writer
         } else {
             // We have a new key, so make a new writer.
-            let mut wtr = r#gen.writer(&*self.arg_outdir, key)?;
+            let mut wtr = writer_gen.writer(&*self.arg_outdir, key)?;
             if !self.flag_no_headers {
                 if self.flag_drop {
                     wtr.write_record(
@@ -315,17 +284,19 @@ impl Args {
         }
         Ok(())
     }
+}
 
-    /// Flush and close all writers in the current batch.
-    fn flush_and_close_writers(
-        &self,
-        writers: &mut HashMap<Vec<u8>, BoxedWriter>,
-    ) -> CliResult<()> {
-        for (_, mut writer) in writers.drain() {
+fn close_excess_writers(
+    writers: &mut HashMap<Vec<u8>, BoxedWriter>,
+    count: usize,
+) -> CliResult<()> {
+    let keys_to_close: Vec<_> = writers.keys().take(count).cloned().collect();
+    for key in keys_to_close {
+        if let Some(mut writer) = writers.remove(&key) {
             writer.flush()?;
         }
-        Ok(())
     }
+    Ok(())
 }
 
 type BoxedWriter = csv::Writer<Box<dyn io::Write + 'static>>;

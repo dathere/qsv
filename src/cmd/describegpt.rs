@@ -1661,54 +1661,34 @@ fn run_inference_options(
                     Ok((stdout, stderr)) => {
                         // Check stderr for error messages
                         if stderr.to_ascii_lowercase().contains("error:") {
-                            // Invalidate cache entry so user can try again without
-                            // reinferring dictionary
-                            if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
-                                let _ = invalidate_cache_entry(args, PromptType::Prompt);
-                            }
-                            // SQL execution failed, copy sql_query_file to sql_results_path
-                            let output_path = Path::new(sql_results_path).with_extension("sql");
-                            if let Err(e) = fs::copy(&sql_query_file, &output_path) {
-                                return fail_clierror!(
-                                    "Failed to copy SQL query to {sql_results_path:?}: {e}"
-                                );
-                            }
-
-                            return fail_clierror!("Polars SQL query error detected: {stderr}");
+                            return handle_sql_error(
+                                args,
+                                cache_type,
+                                sql_query_file.path(),
+                                sql_results_path,
+                                &format!("Polars SQL query error detected: {stderr}"),
+                            );
                         }
                         (stdout, stderr)
                     },
                     Err(e) => {
-                        // Invalidate cache entry so user can try again
-                        if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
-                            let _ = invalidate_cache_entry(args, PromptType::Prompt);
-                        }
-                        // SQL execution failed, copy sql_query_file to sql_results_path
-                        let output_path = Path::new(sql_results_path).with_extension("sql");
-                        if let Err(e) = fs::copy(&sql_query_file, &output_path) {
-                            return fail_clierror!(
-                                "Failed to copy SQL query to {sql_results_path:?}: {e}"
-                            );
-                        }
-                        return fail_clierror!("Polars SQL query execution failed: {e}");
+                        return handle_sql_error(
+                            args,
+                            cache_type,
+                            sql_query_file.path(),
+                            sql_results_path,
+                            &format!("Polars SQL query execution failed: {e}"),
+                        );
                     },
                 };
 
                 if stderr.starts_with("Failed to execute query:") {
-                    // Invalidate cache entry so user can try again without reinferring dictionary
-                    if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
-                        let _ = invalidate_cache_entry(args, PromptType::Prompt);
-                    }
-                    // SQL execution failed, copy sql_query_file to sql_results_path
-                    let output_path = Path::new(sql_results_path).with_extension("sql");
-                    if let Err(e) = fs::copy(&sql_query_file, &output_path) {
-                        return fail_clierror!(
-                            "Failed to copy SQL query to {sql_results_path:?}: {e}"
-                        );
-                    }
-                    return fail_clierror!(
-                        "Polars SQL query execution failed. Failed SQL query saved to \
-                         {output_path:?}"
+                    return handle_sql_error(
+                        args,
+                        cache_type,
+                        sql_query_file.path(),
+                        sql_results_path,
+                        "Polars SQL query execution failed. Failed SQL query saved to output file",
                     );
                 } else {
                     print_status(
@@ -1964,6 +1944,27 @@ fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
     }
 
     Ok(())
+}
+
+#[allow(dead_code)]
+/// Helper function to handle SQL error cases by invalidating cache and saving the failed query
+fn handle_sql_error(
+    args: &Args,
+    cache_type: &CacheType,
+    sql_query_file: &std::path::Path,
+    sql_results_path: &std::path::Path,
+    error_msg: &str,
+) -> CliResult<()> {
+    // Invalidate cache entry so user can try again without reinferring dictionary
+    if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
+        let _ = invalidate_cache_entry(args, PromptType::Prompt);
+    }
+    // SQL execution failed, copy sql_query_file to sql_results_path
+    let output_path = Path::new(sql_results_path).with_extension("sql");
+    if let Err(e) = fs::copy(sql_query_file, &output_path) {
+        return fail_clierror!("Failed to copy SQL query to {sql_results_path:?}: {e}");
+    }
+    fail_clierror!("{error_msg}")
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {

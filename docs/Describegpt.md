@@ -6,19 +6,17 @@
 
 Note that this command uses LLMs for inferencing and is therefore prone to inaccurate information being produced. Verify output results before using them.
 
-## QSV_OPENAI_KEY
+## QSV_LLM_APIKEY
 
-`describegpt` requires an OpenAI API key to use by default. You can set this key using the `QSV_OPENAI_KEY` environment variable. Check [/docs/ENVIRONMENT_VARIABLES.md](/docs/ENVIRONMENT_VARIABLES.md) for more info.
+When working with a cloud-based LLM, `describegpt` requires an API key. You can set this key using the `QSV_LLM_APIKEY` environment variable. Check [/docs/ENVIRONMENT_VARIABLES.md](/docs/ENVIRONMENT_VARIABLES.md) for more info.
 
-If you're not using the OpenAI API, this environment variable is not necessary so long as you pass a value into `--api-key` (for example when using Ollama, use `--api-key ollama`).
+When working with a Local LLM, `describegpt` (if `--base-url` or `QSV_LLM_BASE_URL` contains "locahost") will NOT require an API key.
 
 ## `--api-key <key>`
 
 You can also specify your API key directly in your CLI using the `--api-key` option.
 
-Note that if you already have `QSV_OPENAI_KEY` set as an environment variable and it is not empty, this environment variable will override your given flag.
-
-If you're using Ollama, use `--api-key ollama`.
+Note that if you already have `QSV_LLM_APIKEY` set as an environment variable and it is not empty, this environment variable will override your given flag.
 
 ## `--json`
 

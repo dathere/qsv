@@ -55,6 +55,10 @@ partition options:
                              unique values to avoid "too many open files" errors.
                              Data is processed in batches until all unique values
                              are processed.
+                             If not set, it will be automatically set to the
+                             system limit with a 10% safety margin.
+                             If set to 0, it will process all data at once,
+                             regardless of the system's open files limit.
 
 Common options:
     -h, --help               Display this message
@@ -70,6 +74,7 @@ use std::{collections::HashSet, fs, io, path::Path};
 use foldhash::{HashMap, HashMapExt};
 use regex::Regex;
 use serde::Deserialize;
+use sysinfo::System;
 
 use crate::{
     CliResult,
@@ -94,7 +99,7 @@ struct Args {
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
-    let args: Args = util::get_args(USAGE, argv)?;
+    let mut args: Args = util::get_args(USAGE, argv)?;
     fs::create_dir_all(&args.arg_outdir)?;
 
     // It would be nice to support efficient parallel partitions, but doing
@@ -125,20 +130,42 @@ impl Args {
     }
 
     /// A basic sequential partition with optional batching for file limit.
-    fn sequential_partition(&self) -> CliResult<()> {
+    fn sequential_partition(&mut self) -> CliResult<()> {
         let rconfig = self.rconfig();
         let mut rdr = rconfig.reader()?;
         let headers = rdr.byte_headers()?.clone();
         let key_col = self.key_column(&rconfig, &headers)?;
         let mut r#gen = WriterGenerator::new(self.flag_filename.clone());
 
-        // If no limit is specified, process all data at once (original behavior)
-        if self.flag_limit.is_none() {
-            return self.process_all_data(&mut rdr, &headers, key_col, &mut r#gen);
+        // default to 256 if no limit is set or sysinfo cannot get the limit
+        let sys_limit = System::open_files_limit().unwrap_or(256);
+
+        // If no limit is specified, get the system limit and set the limit to 90% of it
+        if let Some(limit) = self.flag_limit {
+            if limit == 0 {
+                return self.process_all_data(&mut rdr, &headers, key_col, &mut r#gen);
+            }
+
+            if limit > sys_limit {
+                return fail_incorrectusage_clierror!(
+                    "Limit is greater than system limit ({limit} > {sys_limit})"
+                );
+            }
+        } else {
+            let auto_limit = sys_limit * 90 / 100;
+            log::info!(
+                "Auto-setting limit to {auto_limit} based on system limit with 10% safety margin"
+            );
+            self.flag_limit = Some(auto_limit);
         }
 
         // Process data in batches to respect the file limit
-        self.process_in_batches(&mut rdr, &headers, key_col, &mut r#gen)
+        if self.flag_limit.is_some() && self.flag_limit.unwrap() != 0 {
+            return self.process_in_batches(&mut rdr, &headers, key_col, &mut r#gen);
+        }
+
+        // Otherwise, process all data at once
+        self.process_all_data(&mut rdr, &headers, key_col, &mut r#gen)
     }
 
     /// Process all data at once (original behavior when no limit is specified).

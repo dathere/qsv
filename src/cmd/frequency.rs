@@ -507,6 +507,7 @@ impl Args {
         for (count, mut group) in count_groups {
             group.sort_unstable();
 
+            #[allow(clippy::cast_precision_loss)]
             for byte_string in &group {
                 count_sum += count;
                 pct = count as f64 * pct_factor;
@@ -789,6 +790,7 @@ impl Args {
         Ok(all_unique_headers_vec)
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn output_json(
         &self,
         headers: &Headers,

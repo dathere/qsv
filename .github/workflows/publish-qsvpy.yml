@@ -92,7 +92,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libwayland-dev
-    - uses: actions/setup-python@v5.6.0
+    - uses: actions/setup-python@v6.0.0
       with:
         python-version: '3.10'
     - name: Build qsvpy310
@@ -120,7 +120,7 @@ jobs:
         fi
         cd ..
 
-    - uses: actions/setup-python@v5.6.0
+    - uses: actions/setup-python@v6.0.0
       with:
           python-version: '3.11'
     - name: Build qsvpy311
@@ -147,7 +147,7 @@ jobs:
           fi
           cd ..
 
-    - uses: actions/setup-python@v5.6.0
+    - uses: actions/setup-python@v6.0.0
       with:
           python-version: '3.12'
     - name: Build qsvpy312
@@ -175,7 +175,7 @@ jobs:
             rustup show > qsvpy_rust_version_info.txt
             cd ..
 
-    - uses: actions/setup-python@v5.6.0
+    - uses: actions/setup-python@v6.0.0
       with:
           python-version: '3.13'
     - name: Build qsvpy313

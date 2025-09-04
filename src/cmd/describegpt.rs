@@ -55,7 +55,7 @@ Examples:
   # (replace <API_KEY> with your OpenAI API key)
   $ qsv describegpt data.csv --api-key <API_KEY> --all
 
-  # Generate a Data Dictionary of data.csv using the DeepSeek R1:14b model
+  # Generate a Data Dictionary of data.csv using the DeepSeek R1:14b model on a local Ollama instance
   $ qsv describegpt data.csv -u http://localhost:11434/v1 --model deepseek-r1:14b --dictionary
 
   # Ask questions about the sample NYC 311 dataset using LM Studio with the default gpt-oss-20b model.
@@ -66,9 +66,12 @@ Examples:
   $ qsv describegpt NYC_311.csv -p "Can you tell me how many complaints were resolved?"
 
   # Ask detailed questions that require SQL queries and auto-invoke SQL RAG mode
-  # use DuckDB to answer the question
+  # Generate a DuckDB SQL query to answer the question
   $ export QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb
   $ qsv describegpt NYC_311.csv -p "What's the breakdown of complaint types by borough descending order?"
+  @ Prompt requires a SQL query. Execute query and save results to a file with the --sql-results option.
+  # If generated SQL query runs successfully, the file is "results.csv". Otherwise, it is "results.sql".
+  $ qsv describegpt NYC_311.csv -p "Aggregate complaint types by community board" --sql-results results
 
   # Cache Dictionary, Description & Tags inference results using the Redis cache instead of the disk cache
   $ qsv describegpt data.csv --all --redis-cache
@@ -77,9 +80,11 @@ Examples:
   # Get fresh inference results from the LLM and refresh the Redis cache entries for all three
   $ qsv describegpt data.csv --all --redis-cache --fresh
 
-  # Flush the disk cache
+  # Forget a cached response for data.csv's data dictionary if it exists and then exit
+  $ qsv describegpt data.csv --dictionary --forget
+  # Flush/Remove ALL cached entries in the disk cache
   $ qsv describegpt --flush-cache
-  # Flush the Redis cache
+  # Flush/Remove ALL cached entries in the Redis cache
   $ qsv describegpt --redis-cache --flush-cache
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs.
@@ -153,6 +158,7 @@ describegpt options:
                            to 0.5, use '{"reasoning_effort": "high", "temperature": 0.5}'
     -k, --api-key <key>    The API key to use. If the QSV_LLM_APIKEY envvar is set,
                            it will be used instead. Required when the base URL is not localhost.
+                           Set to NONE to suppress sending the API key.
     -t, --max-tokens <n>   Limits the number of generated tokens in the output.
                            Set to 0 to disable token limits.
                            If the --base-url is localhost, indicating a local LLM,
@@ -481,7 +487,9 @@ fn send_request(
     };
 
     // Add API key header if provided
-    if let Some(key) = api_key {
+    if let Some(key) = api_key
+        && !key.is_empty()
+    {
         request = request.header("Authorization", format!("Bearer {key}"));
     }
 
@@ -2002,7 +2010,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             Err(_) => {
                 // Check if the --api-key flag is present
                 if let Some(api_key) = &args.flag_api_key {
-                    api_key.clone()
+                    // Allow "NONE" to suppress the API key
+                    if api_key.eq_ignore_ascii_case("NONE") {
+                        String::new()
+                    } else {
+                        api_key.clone()
+                    }
                 } else {
                     return fail!(LLM_APIKEY_ERROR);
                 }

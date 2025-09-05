@@ -195,41 +195,66 @@ impl Args {
 
     #[allow(clippy::cast_precision_loss)]
     /// Process data in batches to respect the file limit.
-    /// Uses a simple strategy: process rows sequentially and periodically
-    /// close excess writers.
+    /// Uses a two-pass strategy: first pass to collect all unique keys,
+    /// then process in batches that don't exceed the limit.
     fn process_in_batches(
         &self,
-        rdr: &mut csv::Reader<Box<dyn io::Read + Send>>,
+        _rdr: &mut csv::Reader<Box<dyn io::Read + Send>>,
         headers: &csv::ByteRecord,
         key_col: usize,
         writer_gen: &mut WriterGenerator,
     ) -> CliResult<()> {
-        // Process rows in chunks to balance memory usage vs. I/O efficiency
-        const BATCH_SIZE: usize = 1000;
-
         let limit = self.flag_limit.unwrap();
-        let mut row = csv::ByteRecord::new();
-        let mut batch_count = 0;
 
-        let mut writers: HashMap<Vec<u8>, BoxedWriter> = HashMap::with_capacity(limit);
+        // First pass: collect all unique keys
+        let mut unique_keys = HashSet::new();
+        let mut row = csv::ByteRecord::new();
+
+        // Reset reader to beginning
+        let mut rdr = self.rconfig().reader()?;
+        let _ = rdr.byte_headers()?; // Skip headers
 
         while rdr.read_byte_record(&mut row)? {
-            batch_count += 1;
+            let column = &row[key_col];
+            let key = match self.flag_prefix_length {
+                Some(len) if len < column.len() => &column[0..len],
+                _ => column,
+            };
+            unique_keys.insert(key.to_vec());
+        }
 
-            // Process the row
-            self.process_row(&mut writers, &row, key_col, headers, writer_gen)?;
+        // Convert to sorted vector for consistent processing
+        let mut sorted_keys: Vec<_> = unique_keys.into_iter().collect();
+        sorted_keys.sort_unstable();
 
-            // Periodic cleanup to manage file handles
-            if batch_count % BATCH_SIZE == 0 && writers.len() >= limit {
-                let cleanup_count = writers.len() / 2;
-                close_excess_writers(&mut writers, cleanup_count)?;
+        // Process in batches that don't exceed the limit
+        for chunk in sorted_keys.chunks(limit) {
+            let mut writers: HashMap<Vec<u8>, BoxedWriter> = HashMap::with_capacity(chunk.len());
+
+            // Reset reader for this batch
+            let mut rdr = self.rconfig().reader()?;
+            let _ = rdr.byte_headers()?; // Skip headers
+
+            while rdr.read_byte_record(&mut row)? {
+                let column = &row[key_col];
+                let key = match self.flag_prefix_length {
+                    Some(len) if len < column.len() => &column[0..len],
+                    _ => column,
+                };
+                let key_vec = key.to_vec();
+
+                // Only process rows for keys in this batch
+                if chunk.contains(&key_vec) {
+                    self.process_row(&mut writers, &row, key_col, headers, writer_gen)?;
+                }
+            }
+
+            // Flush all writers in this batch
+            for (_, mut writer) in writers {
+                writer.flush()?;
             }
         }
 
-        // Final flush of remaining writers
-        for (_, mut writer) in writers {
-            writer.flush()?;
-        }
         Ok(())
     }
 
@@ -284,19 +309,6 @@ impl Args {
         }
         Ok(())
     }
-}
-
-fn close_excess_writers(
-    writers: &mut HashMap<Vec<u8>, BoxedWriter>,
-    count: usize,
-) -> CliResult<()> {
-    let keys_to_close: Vec<_> = writers.keys().take(count).cloned().collect();
-    for key in keys_to_close {
-        if let Some(mut writer) = writers.remove(&key) {
-            writer.flush()?;
-        }
-    }
-    Ok(())
 }
 
 type BoxedWriter = csv::Writer<Box<dyn io::Write + 'static>>;

@@ -532,9 +532,15 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
     // Get response and parse JSON
     let response = response?;
     let response_json: serde_json::Value = response.json()?;
-    let Some(models) = response_json["data"].as_array() else {
+
+    // Handle both OpenAI format (with "data" field) and Together format (direct array)
+    let models = if let Some(data_array) = response_json["data"].as_array() {
+        data_array //OpenAI
+    } else if let Some(direct_array) = response_json.as_array() {
+        direct_array //Together AI
+    } else {
         return fail_clierror!(
-            "Invalid response: 'data' field is not an array or is missing\n\n{}",
+            "Invalid response: expected either 'data' field with array or direct array\n\n{}",
             simd_json::to_string_pretty(&response_json).unwrap_or_default()
         );
     };

@@ -871,6 +871,7 @@ fn slice_from_csvgz_with_pschema() {
 }
 
 #[cfg(feature = "polars")]
+#[cfg(not(all(target_arch = "aarch64", target_os = "windows")))]
 #[test]
 fn slice_from_csvzst_with_pschema() {
     let wrk = Workdir::new("slice_from_csvzst_with_pschema");

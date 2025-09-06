@@ -1,3 +1,0 @@
-The geocode feature is not enabled on this prebuilt because it does not compile on the platform.
-
-qsvdp is also not built for this platform.

@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * build(deps): bump uuid from 1.18.0 to 1.18.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2956
 * refactor: `describegpt` Polars SQL generation tweaks by @jqnatividad in https://github.com/dathere/qsv/pull/2958
 * feat: `partition` add `--limit` option by @jqnatividad in https://github.com/dathere/qsv/pull/2960
+* build(deps): bump log from 0.4.27 to 0.4.28 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2961
+* build(deps): bump actions/setup-python from 5.6.0 to 6.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2962
+* build(deps): bump actions/stale from 9 to 10 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2963
+* feat: `describegpt` add TogetherAI support for models endpoint by @jqnatividad in https://github.com/dathere/qsv/pull/2965
+* deps: bump embedded Luau from 0.688 to 0.690 by @jqnatividad in https://github.com/dathere/qsv/pull/2967
 
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/7.0.1...7.1.0

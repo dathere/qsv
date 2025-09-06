@@ -8,17 +8,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [7.1.0] - 2025-09-06
 
+# 🇮🇹 csv,conf,v9 edition 🍝 🚀
+
+Just in time for [csv,conf,v9](https://csvconf.com/), we're Bologna-bound and will be talking all things qsv, CSV, AI, [POSE](https://civicdataecosystem.org) and [CKAN](https://ckan.org)!
+
+For this feature release, we polished `describegpt` a bit more for the occassion...
+
+## [_Towards the "People's API!"! Verso l'API del Popolo!_](https://www.linkedin.com/posts/joelnatividad_towards-the-peoples-api-activity-7369788691717865472-VLGk)
+(Answering People/Policymaker Interface)
+
+---
+
+### 🚀 Enhanced `describegpt` Command
+* **Configurable Frequency Limits**: Make frequency distribution limit configurable for better control over data analysis
+* **[Few-shot Learning](https://en.wikipedia.org/wiki/Prompt_engineering#Text-to-text)**: Add `--fewshot-examples` option to improve LLM response quality with contextual examples
+* **Advanced SQL Generation**: Fine-tuned SQL generation guidance for better date handling and query optimization 
+* **Conditional SQL Results**: Implement conditional `--sql-results` format for more efficient "SQL RAG" processing - i.e. if the generated SQL query executes successfully - the results are saved to the specified file with a `.csv` extension. If a "SQL hallucination" fails, the file is saved with a `.sql` extension instead for the user to tweak and edit.
+* **TogetherAI Support**: Add support for TogetherAI models endpoint, expanding LLM provider options
+* **Enhanced Error Handling**: Improved SQL parsing error handling and more informative error messages
+* **Disk Cache by Default**: The disk cache is now enabled by default for better performance
+* **TOML Configuration**: Migrate from JSON to more readable TOML format for more easily modifiable prompt files.
+(see https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml)
+* **Better Local LLM Support**: `--api-key` can now be set to NONE for local LLM configurations that may not necessarily run on `localhost` (e.g. a shared Local LLM service running on the local network)
+
+### `partition` Command Enhancements
+* **New `--limit` Option**: Implement `--limit` option to set the maximum number of open files
+* **Streaming to Enhanced Batching Logic**: Convert from streaming to a simplified, two-pass batched approach designed to partition on columns with high cardinality for very large datasets 
+
+---
+
 ## Added
-* feat: `describegpt` add configurable frequency limit https://github.com/dathere/qsv/pull/2950
-* feat: `describegpt` migrate prompt file from JSON to more easier to edit TOML format https://github.com/dathere/qsv/pull/2954
-* feat: `describegpt` refactor default prompt file; add `--fewshot-examples` option https://github.com/dathere/qsv/pull/2955
-* feat: `describegpt` add TogetherAI support for models endpoint https://github.com/dathere/qsv/pull/2965
-* feat: `partition` add `--limit` option https://github.com/dathere/qsv/pull/2960
+* `describegpt`: add configurable frequency limit https://github.com/dathere/qsv/pull/2950
+* `describegpt`: migrate prompt file from JSON to more easier to edit TOML format https://github.com/dathere/qsv/pull/2954
+* `describegpt`: refactor default prompt file; add `--fewshot-examples` option https://github.com/dathere/qsv/pull/2955
+* `describegpt`: add TogetherAI support for models endpoint https://github.com/dathere/qsv/pull/2965
+* `partition`: add `--limit` option https://github.com/dathere/qsv/pull/2960
+* added Windows ARM64 prebuilt binaries
 
 ## Changed
-* refactor: `describegpt` enable disk cache by default, etc. https://github.com/dathere/qsv/pull/2951
-* refactor: `describegpt` Polars SQL generation tweaks https://github.com/dathere/qsv/pull/2958
-* chore: `python` replace deprecated `with_gil` with `attach` https://github.com/dathere/qsv/pull/2949. This sets the stage for ["free-threaded" Python 3.14](https://docs.python.org/3.14/whatsnew/3.14.html#whatsnew314-pep779) support when its released in October 2025. Buh-bye GIL!
+* `describegpt`: enable disk cache by default https://github.com/dathere/qsv/pull/2951
+* `describegpt`: Polars SQL generation tweaks https://github.com/dathere/qsv/pull/2958
+* `python`: replace deprecated `with_gil` with `attach` https://github.com/dathere/qsv/pull/2949. This sets the stage for ["free-threaded" Python 3.14](https://docs.python.org/3.14/whatsnew/3.14.html#whatsnew314-pep779) support when its released in October 2025. Buh-bye GIL!
 * deps: bump embedded Luau from 0.688 to 0.690 https://github.com/dathere/qsv/pull/2967
 * deps: bump Polars to 0.50.0 at py-1.33.0 tag
 * build(deps): bump actions/setup-python from 5.6.0 to 6.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2962

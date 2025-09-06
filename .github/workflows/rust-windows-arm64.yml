@@ -1,0 +1,48 @@
+name: Windows - ARM64
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-windows-tests-${{ github.ref }}-1
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: windows-11-arm
+
+    steps:
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v6.0.0
+      with:
+        python-version: '3.12'
+    - name: Update Rust
+      run: rustup update
+    # - name: Setup Rust-cache
+    #   uses: Swatinem/rust-cache@v2
+    #   with:
+    #     key: qsv-wincache
+    - uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: make empty DLLs directory to prevent spurious python warning
+      run: |
+        mkdir DLLs   
+    - name: Run tests
+      env:
+        RUSTFLAGS: -C target-cpu=native
+      run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,polars,feature_capable,ui

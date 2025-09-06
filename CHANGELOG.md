@@ -6,24 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## What's Changed
-* build(deps): bump pyo3 from 0.25.1 to 0.26.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2946
-* build(deps): bump mlua from 0.11.2 to 0.11.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2948
-* chore: `python` replace deprecated `with_gil` with `attach` by @jqnatividad in https://github.com/dathere/qsv/pull/2949
-* feat: `describegpt` add configurable frequency limit by @jqnatividad in https://github.com/dathere/qsv/pull/2950
-* refactor: `describegpt` enable disk cache by default, etc. by @jqnatividad in https://github.com/dathere/qsv/pull/2951
-* build(deps): bump zip from 4.5.0 to 4.6.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2952
-* feat: `describegpt` migrate prompt file from JSON to more easier to edit TOML format by @jqnatividad in https://github.com/dathere/qsv/pull/2954
-* feat: `describegpt` - refactor default prompt file; add `--fewshot-examples` option by @jqnatividad in https://github.com/dathere/qsv/pull/2955
-* build(deps): bump uuid from 1.18.0 to 1.18.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2956
-* refactor: `describegpt` Polars SQL generation tweaks by @jqnatividad in https://github.com/dathere/qsv/pull/2958
-* feat: `partition` add `--limit` option by @jqnatividad in https://github.com/dathere/qsv/pull/2960
-* build(deps): bump log from 0.4.27 to 0.4.28 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2961
+## [7.1.0] - 2025-09-06
+
+## Added
+* feat: `describegpt` add configurable frequency limit https://github.com/dathere/qsv/pull/2950
+* feat: `describegpt` migrate prompt file from JSON to more easier to edit TOML format https://github.com/dathere/qsv/pull/2954
+* feat: `describegpt` refactor default prompt file; add `--fewshot-examples` option https://github.com/dathere/qsv/pull/2955
+* feat: `describegpt` add TogetherAI support for models endpoint https://github.com/dathere/qsv/pull/2965
+* feat: `partition` add `--limit` option https://github.com/dathere/qsv/pull/2960
+
+## Changed
+* refactor: `describegpt` enable disk cache by default, etc. https://github.com/dathere/qsv/pull/2951
+* refactor: `describegpt` Polars SQL generation tweaks https://github.com/dathere/qsv/pull/2958
+* chore: `python` replace deprecated `with_gil` with `attach` https://github.com/dathere/qsv/pull/2949. This sets the stage for ["free-threaded" Python 3.14](https://docs.python.org/3.14/whatsnew/3.14.html#whatsnew314-pep779) support when its released in October 2025. Buh-bye GIL!
+* deps: bump embedded Luau from 0.688 to 0.690 https://github.com/dathere/qsv/pull/2967
+* deps: bump Polars to 0.50.0 at py-1.33.0 tag
 * build(deps): bump actions/setup-python from 5.6.0 to 6.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2962
 * build(deps): bump actions/stale from 9 to 10 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2963
-* feat: `describegpt` add TogetherAI support for models endpoint by @jqnatividad in https://github.com/dathere/qsv/pull/2965
-* deps: bump embedded Luau from 0.688 to 0.690 by @jqnatividad in https://github.com/dathere/qsv/pull/2967
-
+* build(deps): bump log from 0.4.27 to 0.4.28 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2961
+* build(deps): bump mlua from 0.11.2 to 0.11.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2948
+* build(deps): bump pyo3 from 0.25.1 to 0.26.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2946
+* build(deps): bump uuid from 1.18.0 to 1.18.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2956
+* build(deps): bump zip from 4.5.0 to 4.6.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2952
+* applied select clippy lints
+* updated indirect dependencies
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/7.0.1...7.1.0
 

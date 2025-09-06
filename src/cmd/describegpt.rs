@@ -289,7 +289,8 @@ struct PromptFile {
 }
 
 const LLM_APIKEY_ERROR: &str = r#"Error: Neither QSV_LLM_BASE_URL nor QSV_LLM_APIKEY environment variables are set.
-Either set the URL to an address with "localhost" in it (indicating a local LLM), or set the API key.
+Either set `--base-url` to an address with "localhost" in it (indicating a local LLM), or set `--api-key`.
+If your Local LLM is not running on localhost, set QSV_LLM_APIKEY or `--api-key` to NONE.
 
 Note that this command uses LLMs for inferencing and is therefore prone to inaccurate information being produced.
 Verify output results before using them."#;

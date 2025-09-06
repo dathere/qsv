@@ -2925,7 +2925,7 @@ dependencies = [
  "js-sys",
  "libc",
  "r-efi",
- "wasi 0.14.3+wasi-0.2.4",
+ "wasi 0.14.4+wasi-0.2.4",
  "wasm-bindgen",
 ]
 
@@ -4016,9 +4016,9 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "luau0-src"
-version = "0.15.6+luau688"
+version = "0.15.7+luau690"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f6c4c23629f4945fb8f22d45df997a95c2555066c54608016c1224820647386"
+checksum = "6fa03011370f4a816c6e49554521122acb3108ffbfe3cda8d09c6513a4c72b51"
 dependencies = [
  "cc",
 ]
@@ -7244,9 +7244,9 @@ dependencies = [
 
 [[package]]
 name = "sorted-vec"
-version = "0.8.9"
+version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71a80d2aa0e2ebfed59648da1de83671f47b5a1f591f4316da9003f64c971977"
+checksum = "19f58d7b0190c7f12df7e8be6b79767a0836059159811b869d5ab55721fe14d0"
 
 [[package]]
 name = "spin"
@@ -8332,9 +8332,9 @@ checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasi"
-version = "0.14.3+wasi-0.2.4"
+version = "0.14.4+wasi-0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a51ae83037bdd272a9e28ce236db8c07016dd0d50c27038b3f407533c030c95"
+checksum = "88a5f4a424faf49c3c2c344f166f0662341d470ea185e939657aaff130f0ec4a"
 dependencies = [
  "wit-bindgen",
 ]
@@ -8877,9 +8877,9 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen"
-version = "0.45.0"
+version = "0.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "052283831dbae3d879dc7f51f3d92703a316ca49f91540417d38591826127814"
+checksum = "5c573471f125075647d03df72e026074b7203790d41351cd6edc96f46bcccd36"
 
 [[package]]
 name = "wkt"

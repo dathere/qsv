@@ -69,7 +69,7 @@ Examples:
   # Generate a DuckDB SQL query to answer the question
   $ export QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb
   $ qsv describegpt NYC_311.csv -p "What's the breakdown of complaint types by borough descending order?"
-  @ Prompt requires a SQL query. Execute query and save results to a file with the --sql-results option.
+  # Prompt requires a SQL query. Execute query and save results to a file with the --sql-results option.
   # If generated SQL query runs successfully, the file is "results.csv". Otherwise, it is "results.sql".
   $ qsv describegpt NYC_311.csv -p "Aggregate complaint types by community board" --sql-results results
 
@@ -1993,44 +1993,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Initialize the global quiet flag
     QUIET_FLAG.store(args.flag_quiet, Ordering::Relaxed);
 
-    // Check if QSV_LLM_BASE_URL is set
-    if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {
-        args.flag_base_url = Some(base_url);
-    }
-
-    // Check for QSV_LLM_APIKEY is set
-    let apikey_env_var = env::var("QSV_LLM_APIKEY");
-    let api_key: String = if args
-        .flag_base_url
-        .as_deref()
-        .unwrap_or_default()
-        .contains("localhost")
-    {
-        // Allow empty API key for localhost
-        args.flag_api_key
-            .clone()
-            .or_else(|| apikey_env_var.ok())
-            .unwrap_or_default()
-    } else {
-        // Require API key for non-localhost
-        match apikey_env_var {
-            Ok(val) => val,
-            Err(_) => {
-                // Check if the --api-key flag is present
-                if let Some(api_key) = &args.flag_api_key {
-                    // Allow "NONE" to suppress the API key
-                    if api_key.eq_ignore_ascii_case("NONE") {
-                        String::new()
-                    } else {
-                        api_key.clone()
-                    }
-                } else {
-                    return fail!(LLM_APIKEY_ERROR);
-                }
-            },
-        }
-    };
-
     // If both --json and --jsonl flags are specified, print error message.
     if is_json_output(&args)? && is_jsonl_output(&args)? {
         return fail_incorrectusage_clierror!(
@@ -2229,6 +2191,44 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         },
     };
     log::info!("Cache Type: {cache_type:?}");
+
+    // Check if QSV_LLM_BASE_URL is set
+    if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {
+        args.flag_base_url = Some(base_url);
+    }
+
+    // Check for QSV_LLM_APIKEY is set
+    let apikey_env_var = env::var("QSV_LLM_APIKEY");
+    let api_key: String = if args
+        .flag_base_url
+        .as_deref()
+        .unwrap_or_default()
+        .contains("localhost")
+    {
+        // Allow empty API key for localhost
+        args.flag_api_key
+            .clone()
+            .or_else(|| apikey_env_var.ok())
+            .unwrap_or_default()
+    } else {
+        // Require API key for non-localhost
+        match apikey_env_var {
+            Ok(val) => val,
+            Err(_) => {
+                // Check if the --api-key flag is present
+                if let Some(api_key) = &args.flag_api_key {
+                    // Allow "NONE" to suppress the API key
+                    if api_key.eq_ignore_ascii_case("NONE") {
+                        String::new()
+                    } else {
+                        api_key.clone()
+                    }
+                } else {
+                    return fail!(LLM_APIKEY_ERROR);
+                }
+            },
+        }
+    };
 
     // Check if user gives arg_input
     if args.arg_input.is_none() {

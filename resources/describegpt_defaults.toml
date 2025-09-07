@@ -15,8 +15,9 @@ jsonl = false
 # {DICTIONARY}
 # {JSON_ADD} - if --json or --jsonl is set
 # {INPUT_TABLE_NAME}
-# {GENERATED_BY_SIGNATURE}
-# {DUCKDB_VERSION}
+# {GENERATED_BY_SIGNATURE} - replaced with model name and current timestamp
+# {DUCKDB_VERSION} - only up to the minor version - e.g "1.3"
+# {TOP_N} - The enum threshold for the frequency command
 
 system_prompt = """
 You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.
@@ -148,6 +149,7 @@ Data Dictionary:
 {DICTIONARY}"""
 
 ### DuckDB SQL "One-Shot" Query Generation Guidelines
+### This list replaces the "END SQL Query Generation Guidelines" marker in custom_prompt_guidance
 duckdb_sql_guidance = """
 - Use DuckDB {DUCKDB_VERSION} syntax
 - The input csv has headers and uses {DELIMITER} as the delimiter
@@ -159,6 +161,7 @@ duckdb_sql_guidance = """
 """
 
 ### Polars SQL "One-Shot" Query Generation Guidelines
+### This list replaces the "END SQL Query Generation Guidelines" marker in custom_prompt_guidance
 polars_sql_guidance = """
 - Use Polars SQL syntax (which is a dialect of PostgreSQL)
 - Use the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary data to generate the SQL query

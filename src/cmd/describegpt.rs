@@ -971,7 +971,6 @@ fn try_remove_prompt_cache_entries(base_key: &str) -> bool {
     }
 
     // Flush the disk cache to ensure changes are persisted
-    // safety: we just checked that the cache is initialized
     if let Err(e) = GET_DISKCACHE_COMPLETION.connection().flush() {
         log::warn!("Failed to flush disk cache: {e:?}");
     }
@@ -2057,6 +2056,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     // Initialize DiskCache Config unconditionally
+    // safety: we're setting these OnceLocks unconditionally with guaranteed valid values
     DISKCACHE_DIR.set(diskcache_dir.clone()).unwrap();
     DISKCACHECONFIG.set(DiskCacheConfig::new()).unwrap();
 

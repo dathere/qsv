@@ -972,7 +972,9 @@ fn try_remove_prompt_cache_entries(base_key: &str) -> bool {
 
     // Flush the disk cache to ensure changes are persisted
     // safety: we just checked that the cache is initialized
-    GET_DISKCACHE_COMPLETION.connection().flush().unwrap();
+    if let Err(e) = GET_DISKCACHE_COMPLETION.connection().flush() {
+        log::warn!("Failed to flush disk cache: {e:?}");
+    }
 
     removed
 }
@@ -2037,23 +2039,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
+    // Initialize cache variables unconditionally
+    // even when --no-cache is set as we need to initialize the cache variables
+    // to prevent panics in the #[io_cached] macros.
+    let diskcache_dir = if let Some(dir) = &args.flag_disk_cache_dir {
+        if dir.starts_with('~') {
+            // expand the tilde
+            let expanded_dir = util::expand_tilde(dir).unwrap();
+            expanded_dir.to_string_lossy().to_string()
+        } else {
+            dir.to_string()
+        }
+    } else {
+        // Default disk cache directory
+        let default_dir = util::expand_tilde("~/.qsv/cache/describegpt").unwrap();
+        default_dir.to_string_lossy().to_string()
+    };
+
+    // Initialize DiskCache Config unconditionally
+    DISKCACHE_DIR.set(diskcache_dir.clone()).unwrap();
+    DISKCACHECONFIG.set(DiskCacheConfig::new()).unwrap();
+
     let cache_type = match (args.flag_no_cache, args.flag_redis_cache) {
         (false, false) => {
             // DISK CACHE
-            let diskcache_dir = if let Some(dir) = &args.flag_disk_cache_dir {
-                if dir.starts_with('~') {
-                    // expand the tilde
-                    let expanded_dir = util::expand_tilde(dir).unwrap();
-                    expanded_dir.to_string_lossy().to_string()
-                } else {
-                    dir.to_string()
-                }
-            } else {
-                // Default disk cache directory
-                let default_dir = util::expand_tilde("~/.qsv/cache/describegpt").unwrap();
-                default_dir.to_string_lossy().to_string()
-            };
-
             // if --flush-cache is set, flush the cache directory
             if args.flag_flush_cache {
                 if fs::metadata(&diskcache_dir).is_ok() {
@@ -2081,11 +2090,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             {
                 return fail_clierror!(r#"Cannot create cache directory "{diskcache_dir}": {e:?}"#);
             }
-
-            // initialize DiskCache Config
-            // safety: the init values were just set above
-            DISKCACHE_DIR.set(diskcache_dir).unwrap();
-            DISKCACHECONFIG.set(DiskCacheConfig::new()).unwrap();
 
             // If --forget is set, remove cache entries and exit
             if args.flag_forget {
@@ -2129,6 +2133,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     } else {
                         // For other kinds, use the normal key format
                         let key = get_cache_key(&args, kind, &prompt_file.model);
+
                         if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key) {
                             print_status(
                                 &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),

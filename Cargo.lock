@@ -899,7 +899,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5281855b39aba9684d2f47bf96983fbfd8f1725f12fabb0513a8ab879647bbd"
 dependencies = [
- "crc",
+ "crc 2.1.0",
  "fallible-streaming-iterator",
  "libflate",
  "serde",
@@ -1302,7 +1302,7 @@ dependencies = [
  "log",
  "quick-xml 0.37.5",
  "serde",
- "zip",
+ "zip 4.6.1",
 ]
 
 [[package]]
@@ -1672,7 +1672,16 @@ version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49fc9a695bca7f35f5f4c15cddc84415f66a74ea78eef08e90c5024f2b540e23"
 dependencies = [
- "crc-catalog",
+ "crc-catalog 1.1.1",
+]
+
+[[package]]
+name = "crc"
+version = "3.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9710d3b3739c2e349eb44fe848ad0b7c8cb1e42bd87ee49371df2f7acaf3e675"
+dependencies = [
+ "crc-catalog 2.4.0",
 ]
 
 [[package]]
@@ -1680,6 +1689,12 @@ name = "crc-catalog"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccaeedb56da03b09f598226e25e80088cb4cd25f316e6e4df7d695f0feeb1403"
+
+[[package]]
+name = "crc-catalog"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19d374276b40fb8bbdee95aef7c7fa6b5316ec764510eb64b8dd0e2ed0d7e7f5"
 
 [[package]]
 name = "crc32fast"
@@ -1899,7 +1914,7 @@ dependencies = [
  "threadpool",
  "typed-builder",
  "walkdir",
- "zip",
+ "zip 4.6.1",
 ]
 
 [[package]]
@@ -2852,7 +2867,7 @@ dependencies = [
  "rkyv 0.8.11",
  "serde",
  "tokio",
- "zip",
+ "zip 4.6.1",
 ]
 
 [[package]]
@@ -4040,6 +4055,16 @@ checksum = "6bd8c0d6c6ed0cd30b3652886bb8711dc4bb01d637a68105a3d5158039b418e6"
 dependencies = [
  "cc",
  "libc",
+]
+
+[[package]]
+name = "lzma-rust2"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c60a23ffb90d527e23192f1246b14746e2f7f071cb84476dd879071696c18a4a"
+dependencies = [
+ "crc 3.3.0",
+ "sha2",
 ]
 
 [[package]]
@@ -5901,7 +5926,7 @@ dependencies = [
  "uuid",
  "whatlang",
  "xxhash-rust",
- "zip",
+ "zip 5.0.0",
 ]
 
 [[package]]
@@ -6657,7 +6682,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a34eb37ee39e82b74f8a56cf0fe425586cee6e721839f14469d2648352651db"
 dependencies = [
  "tempfile",
- "zip",
+ "zip 4.6.1",
 ]
 
 [[package]]
@@ -6885,7 +6910,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "urlencoding",
- "zip",
+ "zip 4.6.1",
  "zipsign-api",
 ]
 
@@ -7295,7 +7320,7 @@ dependencies = [
  "rust_decimal",
  "rust_decimal_macros",
  "string_cache",
- "zip",
+ "zip 4.6.1",
 ]
 
 [[package]]
@@ -9161,6 +9186,33 @@ dependencies = [
  "hmac",
  "indexmap",
  "liblzma",
+ "memchr",
+ "pbkdf2",
+ "ppmd-rust",
+ "sha1",
+ "time",
+ "zeroize",
+ "zopfli",
+ "zstd",
+]
+
+[[package]]
+name = "zip"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9fdfa5f34b5980f2c21b3a2c68c09ade4debddc7be52c51056695effc73a08c"
+dependencies = [
+ "aes",
+ "arbitrary",
+ "bzip2",
+ "constant_time_eq",
+ "crc32fast",
+ "deflate64",
+ "flate2",
+ "getrandom 0.3.3",
+ "hmac",
+ "indexmap",
+ "lzma-rust2",
  "memchr",
  "pbkdf2",
  "ppmd-rust",

@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Just in time for [csv,conf,v9](https://csvconf.com/), we're Bologna-bound and will be talking all things qsv, CSV, AI, [POSE](https://civicdataecosystem.org) and [CKAN](https://ckan.org)!
 
-For this feature release, we polished `describegpt` a bit more for the occassion...
+For this feature release, we polished `describegpt` a bit more for the occasion...
 
 ## [_Towards the "People's API!"! Verso l'API del Popolo!_](https://www.linkedin.com/posts/joelnatividad_towards-the-peoples-api-activity-7369788691717865472-VLGk)
 (Answering People/Policymaker Interface)

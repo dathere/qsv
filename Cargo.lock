@@ -1518,15 +1518,15 @@ dependencies = [
 
 [[package]]
 name = "console"
-version = "0.16.0"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e09ced7ebbccb63b4c65413d821f2e00ce54c5ca4514ddc6b3c892fdbcbc69d"
+checksum = "b430743a6eb14e9764d4260d4c0d8123087d504eeb9c48f2b2a5e810dd369df4"
 dependencies = [
  "encode_unicode",
  "libc",
  "once_cell",
  "unicode-width 0.2.0",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.0",
 ]
 
 [[package]]
@@ -6621,7 +6621,7 @@ dependencies = [
 [[package]]
 name = "rust_decimal"
 version = "1.37.2"
-source = "git+https://github.com/paupino/rust-decimal?branch=v1#2a0065e362f4a46650eb8d1f13f5e2231a050a42"
+source = "git+https://github.com/paupino/rust-decimal?branch=v1#64736ecf8bdbe1ea4e3f9e895e17b14b035b36d5"
 dependencies = [
  "arrayvec",
  "borsh",

@@ -598,8 +598,11 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
         };
 
         // If QSV_LLM_BASE_URL environment variable is set, use it as the base URL
+        // Otherwise, check if --base-url flag is provided
         if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {
             prompt_file.base_url = base_url;
+        } else if let Some(base_url) = &args.flag_base_url {
+            prompt_file.base_url.clone_from(base_url);
         }
 
         let model_to_use = env::var("QSV_LLM_MODEL")

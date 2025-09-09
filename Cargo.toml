@@ -454,3 +454,9 @@ assets   = [["target/release/qsvlite", "/usr/local/bin/", "755"]]
 [package.metadata.deb.variants.datapusher_plus]
 features = ["datapusher_plus", "luau"]
 assets   = [["target/release/qsvdp", "/usr/local/bin/", "755"]]
+
+[target.powerpc64le-unknown-linux-gnu]
+cc = "powerpc64le-linux-gnu-gcc"
+cxx = "powerpc64le-linux-gnu-g++"
+ar = "powerpc64le-linux-gnu-ar"
+linker = "powerpc64le-linux-gnu-gcc"

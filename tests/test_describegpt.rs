@@ -1068,49 +1068,44 @@ fn describegpt_prompt_no_dictionary_output() {
     assert!(!output.is_empty(), "Output should not be empty");
 }
 
-#[cfg(test)]
-mod unit_tests {
-    use super::*;
+#[test]
+fn test_base_url_flag_is_respected_issue_2976() {
+    // This test verifies that the --base-url flag is properly used
+    // when provided, fixing the Together AI authentication issue.
 
-    #[test]
-    fn test_base_url_flag_is_respected_issue_2976() {
-        // This test verifies that the --base-url flag is properly used
-        // when provided, fixing the Together AI authentication issue.
+    // Create a simple CSV file for testing
+    let wrk = Workdir::new("describegpt_base_url_test_issue_2976");
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["name", "age"],
+            svec!["Alice", "25"],
+            svec!["Bob", "30"],
+        ],
+    );
 
-        // Create a simple CSV file for testing
-        let wrk = Workdir::new("describegpt_base_url_test_issue_2976");
-        wrk.create(
-            "test.csv",
-            vec![
-                svec!["name", "age"],
-                svec!["Alice", "25"],
-                svec!["Bob", "30"],
-            ],
-        );
+    // Test with a custom base URL (this will fail due to invalid URL, but we're testing
+    // that the base URL is being used rather than the default OpenAI URL)
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("test.csv")
+        .arg("--base-url")
+        .arg("https://api.together.xyz/v1")
+        .arg("--api-key")
+        .arg("test-key")
+        .arg("--dictionary");
 
-        // Test with a custom base URL (this will fail due to invalid URL, but we're testing
-        // that the base URL is being used rather than the default OpenAI URL)
-        let mut cmd = wrk.command("describegpt");
-        cmd.arg("test.csv")
-            .arg("--base-url")
-            .arg("https://api.together.xyz/v1")
-            .arg("--api-key")
-            .arg("test-key")
-            .arg("--dictionary");
+    let output = cmd.output().expect("Failed to execute command");
+    let stderr = String::from_utf8(output.stderr).unwrap();
 
-        let output = cmd.output().expect("Failed to execute command");
-        let stderr = String::from_utf8(output.stderr).unwrap();
-
-        // The error should mention the Together AI URL, not OpenAI's URL
-        // This confirms that the base URL flag is being respected
-        if stderr.contains("together") || stderr.contains("HTTP") {
-            // The base URL is being used correctly
-            assert!(true, "Base URL flag is being respected");
-        } else if stderr.contains("openai") {
-            panic!("Base URL flag is not being respected - still using OpenAI URL");
-        } else {
-            // Some other error occurred, which is fine for this test
-            assert!(true, "Base URL flag appears to be working");
-        }
+    // The error should mention the Together AI URL, not OpenAI's URL
+    // This confirms that the base URL flag is being respected
+    if stderr.contains("together") || stderr.contains("HTTP") {
+        // The base URL is being used correctly
+        assert!(true, "Base URL flag is being respected");
+    } else if stderr.contains("openai") {
+        panic!("Base URL flag is not being respected - still using OpenAI URL");
+    } else {
+        // Some other error occurred, which is fine for this test
+        assert!(true, "Base URL flag appears to be working");
     }
 }

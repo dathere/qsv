@@ -119,7 +119,7 @@ describegpt options:
                            If the "polars" or the "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set
                            & the `--sql-results` option is used, the SQL query will be automatically
                            executed and its results returned.
-                           Otherwise, only the SQL query will be returned.
+                           Otherwise, the SQL query will be returned along with the reasoning behind it.
     --sql-results <file>   The file to save the SQL query results to.
                            Only valid if the --prompt option is used & the "polars" or the
                            "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set.
@@ -128,18 +128,17 @@ describegpt options:
                            the user can inspect why it failed and modify it.
     --prompt-file <file>   The TOML file containing prompts to use for inferencing.
                            If no prompt file is provided, default prompts will be used.
+                           See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml
     --fewshot-examples     By default, few-shot examples are NOT included in the LLM prompt when
-                           generating SQL queries. When this option is set, few-shot examples are included.
+                           generating SQL queries. When this option is set, few-shot examples in the default
+                           prompt file are included.
                            Though this will increase the quality of the generated SQL, it comes at
                            a cost - increased LLM API call cost in terms of tokens and execution time.
                            See https://en.wikipedia.org/wiki/Prompt_engineering for more info.
 
-                           See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml
-                           for the default prompts and few-shot examples.
-
                            LLM API OPTIONS:
     -u, --base-url <url>   The LLM API URL. Supports APIs & local LLMs compatible with
-                           the OpenAI API specification (Ollama, Jan, LM Studio, etc.).
+                           the OpenAI API specification (Ollama, Jan, LM Studio, TogetherAI, etc.).
                            The default base URL for Ollama is http://localhost:11434/v1.
                            The default for Jan is https://localhost:1337/v1.
                            The default for LM Studio is http://localhost:1234/v1.

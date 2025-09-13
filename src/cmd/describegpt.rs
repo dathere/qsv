@@ -857,6 +857,7 @@ fn get_prompt(
         .replace("{HEADERS}", headers)
         .replace("{DELIMITER}", &delimiter.to_string())
         .replace("{DUCKDB_VERSION}", &duckdb_version)
+        .replace("{TOP_N}", &args.flag_enum_threshold.to_string())
         .replace(
             "{DICTIONARY}",
             DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),

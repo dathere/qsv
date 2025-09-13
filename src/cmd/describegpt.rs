@@ -454,8 +454,28 @@ fn get_duckdb_path() -> CliResult<String> {
     Ok(duckdb_path)
 }
 
-// Send an HTTP request using a client to a URL
-// Optionally include an API key and request data
+/// Sends an HTTP request using the provided client and parameters.
+///
+/// # Arguments
+///
+/// * `client` - The HTTP client used to make the request
+/// * `api_key` - Optional API key for authentication via Bearer token
+/// * `request_data` - Optional JSON data to include in POST requests
+/// * `method` - HTTP method to use ("GET" or "POST")
+/// * `url` - The URL to send the request to
+///
+/// # Returns
+///
+/// Returns a `CliResult` containing the HTTP response on success.
+///
+/// # Errors
+///
+/// Returns a `CliError` if:
+/// * An unsupported HTTP method is specified
+/// * GET request includes request data
+/// * POST request is missing required request data
+/// * The HTTP request fails
+/// * The response has a non-success status code
 fn send_request(
     client: &Client,
     api_key: Option<&str>,
@@ -508,9 +528,33 @@ fn send_request(
     Ok(response)
 }
 
-/// Check if model is valid, including the default model
-/// If the model is not valid, try to find a valid model that matches the end of the given model
-/// If no valid model is found, fail with list of valid models
+/// Validates the provided model against available models from the API endpoint.
+///
+/// # Arguments
+///
+/// * `client` - The HTTP client used to make API requests
+/// * `api_key` - Optional API key for authentication
+/// * `args` - Command line arguments containing model and configuration options
+///
+/// # Returns
+///
+/// Returns a valid model string, either exactly matching the provided model or a suffix match.
+///
+/// # Details
+///
+/// This function:
+/// 1. Gets the base URL and model from prompt file or command line args
+/// 2. Makes a GET request to the /models endpoint
+/// 3. Checks for an exact match of the provided model
+/// 4. If no exact match, tries to find a model ending with the provided string
+/// 5. Returns the first matching model found
+///
+/// # Errors
+///
+/// Returns a CliError if:
+/// * The API request fails
+/// * The response cannot be parsed as JSON
+/// * No matching model is found (includes list of valid models in error)
 fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult<String> {
     // Get prompt file if --prompt-file is used, otherwise get default prompt file
     let prompt_file = get_prompt_file(args)?;
@@ -575,6 +619,35 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
     fail_clierror!("Invalid model: {given_model}\n  Valid models: {models_list}")
 }
 
+/// Retrieves or initializes a prompt file configuration from either a provided file or defaults.
+///
+/// # Arguments
+///
+/// * `args` - Command line arguments containing prompt file path and other configuration options
+///
+/// # Returns
+///
+/// Returns a reference to the global PromptFile configuration
+///
+/// # Details
+///
+/// This function:
+/// 1. Checks if a prompt file is already loaded in the global PROMPT_FILE
+/// 2. If not, loads either a custom prompt file or the default one
+/// 3. Applies any overrides from environment variables or command line flags
+/// 4. Updates the configuration with max tokens, model, and system prompt settings
+/// 5. Stores the result in the global PROMPT_FILE
+///
+/// Environment variables that affect behavior:
+/// * QSV_LLM_BASE_URL - Override the base URL for API calls
+/// * QSV_LLM_MODEL - Override the model to use
+///
+/// # Errors
+///
+/// Returns a CliError if:
+/// * The prompt file cannot be read
+/// * The TOML parsing fails
+/// * The global PROMPT_FILE cannot be set
 fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
     if let Some(prompt_file) = PROMPT_FILE.get() {
         Ok(prompt_file)
@@ -592,7 +665,7 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
         let mut prompt_file: PromptFile = match toml::from_str(prompt_file_content) {
             Ok(val) => val,
             Err(e) => {
-                return fail_clierror!("{e}");
+                return fail_clierror!("Prompt file parsing error: {e}");
             },
         };
 
@@ -617,7 +690,7 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
 
         prompt_file.model = model_to_use;
 
-        // If max_tokens is 0 or the base URL contains "localhost", always disable the limit
+        // If max_tokens is 0 or the base URL contains "localhost", disable max_tokens limit
         let max_tokens = if args.flag_max_tokens == 0 || prompt_file.base_url.contains("localhost")
         {
             0
@@ -637,7 +710,29 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
     }
 }
 
-// Generate prompt for prompt type based on either the prompt file (if given) or default prompts
+/// Generates a prompt for a given prompt type based on either a custom prompt file or default
+/// prompts.
+///
+/// # Arguments
+///
+/// * `prompt_type` - The type of prompt to generate (Dictionary, Description, Tags, or Custom
+///   Prompt)
+/// * `analysis_results` - Optional analysis results containing stats, frequency data, headers and
+///   delimiter
+/// * `args` - Command line arguments
+///
+/// # Returns
+///
+/// Returns a tuple containing:
+/// * The generated prompt string
+/// * The system prompt string
+///
+/// # Errors
+///
+/// Returns a CliError if:
+/// * Analysis results are missing when required
+/// * SQL guidelines markers cannot be found in the prompt template
+/// * DuckDB query execution fails when getting extension info
 fn get_prompt(
     prompt_type: PromptType,
     analysis_results: Option<&AnalysisResults>,
@@ -779,6 +874,40 @@ fn get_prompt(
     Ok((prompt, prompt_file.system_prompt.clone()))
 }
 
+/// Makes a completion request to the LLM API and processes the response.
+///
+/// # Arguments
+///
+/// * `args` - Command line arguments containing configuration options
+/// * `client` - The HTTP client used to make API requests
+/// * `model` - The model to use for completion
+/// * `api_key` - API key for authentication
+/// * `messages` - The messages to send to the API
+///
+/// # Returns
+///
+/// Returns a `CompletionResponse` containing:
+/// * The completion text
+/// * Optional reasoning
+/// * Token usage statistics
+///
+/// # Details
+///
+/// This function:
+/// 1. Gets prompt file configuration
+/// 2. Constructs the API request with model, max tokens, messages
+/// 3. Adds any additional model properties specified
+/// 4. Makes POST request to chat completions endpoint
+/// 5. Processes response to extract completion, reasoning, token usage
+/// 6. Replaces placeholder signature with model name and timestamp
+///
+/// # Errors
+///
+/// Returns a CliError if:
+/// * The API request fails
+/// * The response cannot be parsed
+/// * Required fields are missing from response
+/// * The API returns an error message
 fn get_completion(
     args: &Args,
     client: &Client,

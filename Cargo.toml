@@ -242,7 +242,7 @@ reqwest = { version = "0.12", features = [
     "zstd",
 ], default-features = false }
 rfd = { version = "0.15", optional = true }
-rust_decimal = { version = "1.37", default-features = false }
+rust_decimal = { version = "1.38", default-features = false }
 ryu = "1"
 sanitize-filename = { version = "0.6", optional = true }
 simd-json = "0.15"
@@ -327,9 +327,6 @@ json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-cs
 
 # use our patched fork of localzone to bump dependencies until our PR is merged
 localzone = { git = "https://github.com/jqnatividad/localzone", branch = "bump-deps-may2025" }
-
-# use v1 branch with unreleased fixes and features
-rust_decimal = { git = "https://github.com/paupino/rust-decimal", branch = "v1" }
 
 # use our patched fork of self_update to bump zip 2 to 4, until our PR is merged
 self_update = { git = "https://github.com/jqnatividad/self_update", branch = "bump-deps-july2025" }

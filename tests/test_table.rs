@@ -142,3 +142,22 @@ fn table_center_align() {
         concat!("  h1     h2   h3\n", "abcdefg   a   a\n", "   a     abc  z",)
     );
 }
+
+#[test]
+fn table_in_place_issue_2980() {
+    let wrk = Workdir::new("table_in_place");
+    wrk.create("in.csv", data());
+
+    let mut cmd = wrk.command("table");
+    cmd.arg("--in-place");
+    cmd.arg("in.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    // Check that the original file was backed up
+    assert!(wrk.path("in.csv.bak").exists());
+
+    // Check that the formatted content was written to the original file
+    let got: String = std::fs::read_to_string(wrk.path("in.csv")).unwrap();
+    assert_eq!(&*got, format!("{}\n", EXPECTED_TABLE));
+}

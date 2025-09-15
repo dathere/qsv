@@ -23,6 +23,8 @@ table options:
                            specified. If the field is UTF-8 encoded, then
                            <arg> refers to the number of code points.
                            Otherwise, it refers to the number of bytes.
+    -i, --in-place         Overwrite the input file data with the output.
+                           The input file is renamed to a .bak file in the same directory.
 
 Common options:
     -h, --help             Display this message
@@ -54,6 +56,7 @@ struct Args {
     flag_align:     Align,
     flag_condense:  Option<usize>,
     flag_memcheck:  bool,
+    flag_in_place:  bool,
 }
 
 #[derive(Deserialize, Clone, Copy)]
@@ -85,12 +88,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         util::mem_file_check(&path, false, args.flag_memcheck)?;
     }
 
-    let wconfig = Config::new(args.flag_output.as_ref()).delimiter(Some(Delimiter(b'\t')));
+    let mut tempfile = tempfile::NamedTempFile::new()?;
+    let wconfig = if args.flag_in_place {
+        Config::new(None).delimiter(Some(Delimiter(b'\t')))
+    } else {
+        Config::new(args.flag_output.as_ref()).delimiter(Some(Delimiter(b'\t')))
+    };
 
-    let tw = TabWriter::new(wconfig.io_writer()?)
-        .minwidth(args.flag_width)
-        .padding(args.flag_pad)
-        .alignment(args.flag_align.into());
+    let tw = if args.flag_in_place {
+        TabWriter::new(Box::new(tempfile.as_file_mut()) as Box<dyn std::io::Write>)
+            .minwidth(args.flag_width)
+            .padding(args.flag_pad)
+            .alignment(args.flag_align.into())
+    } else {
+        TabWriter::new(wconfig.io_writer()?)
+            .minwidth(args.flag_width)
+            .padding(args.flag_pad)
+            .alignment(args.flag_align.into())
+    };
     let mut wtr = wconfig.from_writer(tw);
     let mut rdr = rconfig.reader()?;
 
@@ -102,5 +117,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .map(|f| util::condense(Cow::Borrowed(f), args.flag_condense)),
         )?;
     }
-    Ok(wtr.flush()?)
+    wtr.flush()?;
+    drop(wtr);
+
+    if args.flag_in_place
+        && let Some(input_path_string) = args.arg_input
+    {
+        let input_path = std::path::Path::new(&input_path_string);
+        if let Some(input_extension_osstr) = input_path.extension() {
+            let mut backup_extension = input_extension_osstr.to_string_lossy().to_string();
+            backup_extension.push_str(".bak");
+            std::fs::rename(input_path, input_path.with_extension(backup_extension))?;
+            std::fs::copy(tempfile.path(), input_path)?;
+        }
+    }
+
+    Ok(())
 }

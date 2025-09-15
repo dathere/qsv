@@ -7,6 +7,10 @@ Note that formatting a table requires buffering all CSV data into memory.
 Therefore, you should use the 'sample' or 'slice' command to trim down large
 CSV data before formatting it with this command.
 
+Further, this command is expressly designed for DISPLAYING CSV data using
+"elastic tabstops" so its more human-readable, not for converting the input
+data to other machine-readable CSV dialects like TSV.
+
 Usage:
     qsv table [options] [<input>]
     qsv table --help

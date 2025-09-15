@@ -124,13 +124,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && let Some(input_path_string) = args.arg_input
     {
         let input_path = std::path::Path::new(&input_path_string);
-        if let Some(input_extension_osstr) = input_path.extension() {
+        let backup_path = if let Some(input_extension_osstr) = input_path.extension() {
+            // If the file has an extension, append ".bak" to the extension
             let mut backup_extension = input_extension_osstr.to_string_lossy().to_string();
             backup_extension.push_str(".bak");
-            std::fs::rename(input_path, input_path.with_extension(backup_extension))?;
-            std::fs::copy(tempfile.path(), input_path)?;
-        }
-    }
+            input_path.with_extension(backup_extension)
+        } else {
+            // If the file has no extension, append ".bak" to the filename
+            let mut backup_osstring = input_path.file_name().unwrap().to_os_string();
+            backup_osstring.push(".bak");
+            input_path.with_file_name(backup_osstring)
+        };
+        std::fs::rename(input_path, &backup_path)?;
+        std::fs::copy(tempfile.path(), input_path)?;
 
     Ok(())
 }

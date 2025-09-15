@@ -123,6 +123,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 input_path.with_extension(backup_extension)
             } else {
                 // If the file has no extension, append ".bak" to the filename
+                // safety: we know the path has a filename
                 let mut backup_osstring = input_path.file_name().unwrap().to_os_string();
                 backup_osstring.push(".bak");
                 input_path.with_file_name(backup_osstring)

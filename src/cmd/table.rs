@@ -89,6 +89,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     if args.flag_in_place {
+        // in-place is not valid with stdin
+        if rconfig.is_stdin() {
+            return fail_clierror!("--in-place is not valid with stdin.");
+        }
+
         let wconfig = Config::new(None).delimiter(Some(Delimiter(b'\t')));
         let mut tempfile = tempfile::NamedTempFile::new()?;
         let tw = TabWriter::new(Box::new(tempfile.as_file_mut()) as Box<dyn std::io::Write>)

@@ -88,55 +88,61 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         util::mem_file_check(&path, false, args.flag_memcheck)?;
     }
 
-    let mut tempfile = tempfile::NamedTempFile::new()?;
-    let wconfig = if args.flag_in_place {
-        Config::new(None).delimiter(Some(Delimiter(b'\t')))
-    } else {
-        Config::new(args.flag_output.as_ref()).delimiter(Some(Delimiter(b'\t')))
-    };
-
-    let tw = if args.flag_in_place {
-        TabWriter::new(Box::new(tempfile.as_file_mut()) as Box<dyn std::io::Write>)
+    if args.flag_in_place {
+        let wconfig = Config::new(None).delimiter(Some(Delimiter(b'\t')));
+        let mut tempfile = tempfile::NamedTempFile::new()?;
+        let tw = TabWriter::new(Box::new(tempfile.as_file_mut()) as Box<dyn std::io::Write>)
             .minwidth(args.flag_width)
             .padding(args.flag_pad)
-            .alignment(args.flag_align.into())
+            .alignment(args.flag_align.into());
+        let mut wtr = wconfig.from_writer(tw);
+        let mut rdr = rconfig.reader()?;
+
+        let mut record = csv::ByteRecord::new();
+        while rdr.read_byte_record(&mut record)? {
+            wtr.write_record(
+                record
+                    .iter()
+                    .map(|f| util::condense(Cow::Borrowed(f), args.flag_condense)),
+            )?;
+        }
+        wtr.flush()?;
+        drop(wtr);
+
+        if let Some(input_path_string) = args.arg_input {
+            let input_path = std::path::Path::new(&input_path_string);
+            let backup_path = if let Some(input_extension_osstr) = input_path.extension() {
+                // If the file has an extension, append ".bak" to the extension
+                let mut backup_extension = input_extension_osstr.to_string_lossy().to_string();
+                backup_extension.push_str(".bak");
+                input_path.with_extension(backup_extension)
+            } else {
+                // If the file has no extension, append ".bak" to the filename
+                let mut backup_osstring = input_path.file_name().unwrap().to_os_string();
+                backup_osstring.push(".bak");
+                input_path.with_file_name(backup_osstring)
+            };
+            std::fs::rename(input_path, &backup_path)?;
+            std::fs::copy(tempfile.path(), input_path)?;
+        }
     } else {
-        TabWriter::new(wconfig.io_writer()?)
+        let wconfig = Config::new(args.flag_output.as_ref()).delimiter(Some(Delimiter(b'\t')));
+        let tw = TabWriter::new(wconfig.io_writer()?)
             .minwidth(args.flag_width)
             .padding(args.flag_pad)
-            .alignment(args.flag_align.into())
-    };
-    let mut wtr = wconfig.from_writer(tw);
-    let mut rdr = rconfig.reader()?;
+            .alignment(args.flag_align.into());
+        let mut wtr = wconfig.from_writer(tw);
+        let mut rdr = rconfig.reader()?;
 
-    let mut record = csv::ByteRecord::new();
-    while rdr.read_byte_record(&mut record)? {
-        wtr.write_record(
-            record
-                .iter()
-                .map(|f| util::condense(Cow::Borrowed(f), args.flag_condense)),
-        )?;
+        let mut record = csv::ByteRecord::new();
+        while rdr.read_byte_record(&mut record)? {
+            wtr.write_record(
+                record
+                    .iter()
+                    .map(|f| util::condense(Cow::Borrowed(f), args.flag_condense)),
+            )?;
+        }
+        wtr.flush()?;
     }
-    wtr.flush()?;
-    drop(wtr);
-
-    if args.flag_in_place
-        && let Some(input_path_string) = args.arg_input
-    {
-        let input_path = std::path::Path::new(&input_path_string);
-        let backup_path = if let Some(input_extension_osstr) = input_path.extension() {
-            // If the file has an extension, append ".bak" to the extension
-            let mut backup_extension = input_extension_osstr.to_string_lossy().to_string();
-            backup_extension.push_str(".bak");
-            input_path.with_extension(backup_extension)
-        } else {
-            // If the file has no extension, append ".bak" to the filename
-            let mut backup_osstring = input_path.file_name().unwrap().to_os_string();
-            backup_osstring.push(".bak");
-            input_path.with_file_name(backup_osstring)
-        };
-        std::fs::rename(input_path, &backup_path)?;
-        std::fs::copy(tempfile.path(), input_path)?;
-
     Ok(())
 }

@@ -5176,7 +5176,7 @@ dependencies = [
  "ryu",
  "serde",
  "serde_json",
- "simd-json",
+ "simd-json 0.15.1",
  "simdutf8",
  "tokio",
  "tokio-util",
@@ -5201,7 +5201,7 @@ dependencies = [
  "polars-error",
  "polars-utils",
  "ryu",
- "simd-json",
+ "simd-json 0.15.1",
  "streaming-iterator",
 ]
 
@@ -5874,7 +5874,7 @@ dependencies = [
  "serde_urlencoded",
  "serial_test",
  "sha2",
- "simd-json",
+ "simd-json 0.16.0",
  "simdutf8",
  "sled",
  "smallvec",
@@ -7131,6 +7131,20 @@ dependencies = [
  "getrandom 0.3.3",
  "halfbrown",
  "once_cell",
+ "ref-cast",
+ "serde",
+ "serde_json",
+ "simdutf8",
+ "value-trait",
+]
+
+[[package]]
+name = "simd-json"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90daf33666402178ddbb5d595e6d5e6d7d372da948e23ea26762f5a23e02a04e"
+dependencies = [
+ "halfbrown",
  "ref-cast",
  "serde",
  "serde_json",

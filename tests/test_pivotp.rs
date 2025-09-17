@@ -352,7 +352,7 @@ pivotp_test!(
         wrk.assert_success(&mut cmd);
 
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-        let expected = vec![svec!["date;A;B"], svec!["2023-01-01;100;150"]];
+        let expected = vec![svec!["date;A;B"], svec!["2023-01-01;100.0;150.0"]];
         assert_eq!(got, expected);
     }
 );
@@ -540,6 +540,8 @@ pivotp_test!(
             "date",
             "--values",
             "sales",
+            "--agg",
+            "mean",
             "--decimal-comma",
             "--delimiter",
             ";",

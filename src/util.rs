@@ -43,7 +43,7 @@ use crate::{
     config,
     config::{
         Config, DEFAULT_RDR_BUFFER_CAPACITY, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter, SpecialFormat,
-        get_special_format,
+        get_delim_by_extension, get_special_format,
     },
     select::SelectColumns,
 };
@@ -2411,10 +2411,23 @@ pub fn get_stats_records(
         return Ok((ByteRecord::new(), Vec::new(), HashMap::new()));
     }
 
+    // Use qsv's Config system to properly detect delimiter based on file extension
+    let rconfig = Config::new(Some(input_path))
+        .delimiter(args.flag_delimiter)
+        .no_headers(args.flag_no_headers);
+    let mut rdr = rconfig.reader()?;
     // get the headers from the input file
-    let mut rdr = csv::Reader::from_path(input_path)?;
     let csv_fields = rdr.byte_headers()?.clone();
     drop(rdr);
+
+    // Update args with the detected delimiter if it wasn't explicitly set
+    let detected_delimiter = if args.flag_delimiter.is_none() {
+        let path = Path::new(input_path);
+        let (_, detected_delim, _) = get_delim_by_extension(path, b',');
+        Some(Delimiter(detected_delim))
+    } else {
+        args.flag_delimiter
+    };
 
     let mut stats_data_loaded = false;
     let mut csv_stats: Vec<StatsData> = Vec::with_capacity(csv_fields.len());
@@ -2486,7 +2499,7 @@ pub fn get_stats_records(
             flag_cache_threshold:  1, // force the creation of stats cache files
             flag_output:           None,
             flag_no_headers:       args.flag_no_headers,
-            flag_delimiter:        args.flag_delimiter,
+            flag_delimiter:        detected_delimiter,
             flag_memcheck:         args.flag_memcheck,
             flag_vis_whitespace:   false,
             flag_dataset_stats:    true,
@@ -2546,10 +2559,18 @@ pub fn get_stats_records(
         if args.flag_no_headers {
             stats_args_str = format!("{stats_args_str}\t--no-headers");
         }
-        if let Some(delimiter) = args.flag_delimiter {
-            let delim = delimiter.as_byte() as char;
-            stats_args_str = format!("{stats_args_str}\t--delimiter\t{delim}");
-        }
+
+        // Use the detected delimiter
+        stats_args_str = format!("{stats_args_str}\t--delimiter\t{}", {
+            // safety: we know it's Some because we set it above
+            let delim_to_use = detected_delimiter.unwrap().as_byte();
+            if delim_to_use == b'\t' {
+                r#"\t"#.to_string()
+            } else {
+                (delim_to_use as char).to_string()
+            }
+        });
+
         if args.flag_memcheck {
             stats_args_str = format!("{stats_args_str}\t--memcheck");
         }

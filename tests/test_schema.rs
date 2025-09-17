@@ -380,3 +380,91 @@ fn generate_schema_with_const_and_enum_constraints() {
 
     assert_eq!(output_schema_string, expected_schema);
 }
+
+#[test]
+#[file_serial]
+fn generate_schema_tsv_delimiter_detection_issue_2997() {
+    // Test for issue #2997: schema command should correctly detect tab delimiter for TSV files
+    // Previously, TSV files were parsed with comma delimiter, causing all columns to be
+    // concatenated into a single property. This test ensures proper delimiter detection.
+    let wrk = Workdir::new("generate_schema_tsv_delimiter_detection").flexible(true);
+    wrk.clear_contents().unwrap();
+
+    // Create TSV data from the GitHub issue #2997
+    let tsv_data = "date\tcategory\tsub_category\tamount\tfrom\tto\tdescription\turl
+2025-01-01\tSTART\tN/A\t3023.46\t-\t-\tBalance from 2024\tN/A
+2025-01-28\tDEBIT\tTRADE\t-3023\tDeployer 0xb1\tVelodrome\tSell for USDC\thttps://optimistic.etherscan.io/tx/0x79e857395945f03a57454efcccdc5ca00430f5886018d71a9a137808a60fe7fc";
+
+    wrk.create_from_string("test_data.tsv", &tsv_data);
+
+    // run schema command (without explicit delimiter - should auto-detect)
+    let mut cmd = wrk.command("schema");
+    cmd.arg("test_data.tsv");
+
+    wrk.assert_success(&mut cmd);
+
+    // load output schema file
+    let output_schema_string: String = wrk.from_str(&wrk.path("test_data.tsv.schema.json"));
+    let output_schema_json: Value =
+        serde_json::from_str(&output_schema_string).expect("parse schema json");
+
+    // make sure it's a valid JSON Schema by compiling with jsonschema library
+    jsonschema::Validator::options()
+        .build(&output_schema_json)
+        .expect("valid JSON Schema");
+
+    // Verify that the schema has separate properties for each column
+    // (not a single concatenated property as in the bug report)
+    let properties = output_schema_json["properties"].as_object().unwrap();
+
+    // Should have 8 separate properties, one for each column
+    assert_eq!(properties.len(), 8);
+
+    // Verify each expected column exists as a separate property
+    let expected_columns = [
+        "date",
+        "category",
+        "sub_category",
+        "amount",
+        "from",
+        "to",
+        "description",
+        "url",
+    ];
+    for column in expected_columns {
+        assert!(
+            properties.contains_key(column),
+            "Missing column: {}",
+            column
+        );
+
+        // Each property should have a proper description referencing the individual column
+        let column_desc = properties[column]["description"].as_str().unwrap();
+        assert!(
+            column_desc.contains(&format!("{} column", column)),
+            "Column '{}' description should reference the column name",
+            column
+        );
+    }
+
+    // Verify that there is NO concatenated property (the bug from #2997)
+    let concatenated_key = "date\tcategory\tsub_category\tamount\tfrom\tto\tdescription\turl";
+    assert!(
+        !properties.contains_key(concatenated_key),
+        "Should not have concatenated property key: {}",
+        concatenated_key
+    );
+
+    // Verify required fields include all 8 columns
+    let required_fields = output_schema_json["required"].as_array().unwrap();
+    assert_eq!(required_fields.len(), 8);
+    for column in expected_columns {
+        assert!(
+            required_fields
+                .iter()
+                .any(|v| v.as_str().unwrap() == column),
+            "Required fields should include: {}",
+            column
+        );
+    }
+}

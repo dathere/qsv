@@ -43,7 +43,7 @@ use crate::{
     config,
     config::{
         Config, DEFAULT_RDR_BUFFER_CAPACITY, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter, SpecialFormat,
-        get_special_format,
+        get_delim_by_extension, get_special_format,
     },
     select::SelectColumns,
 };
@@ -2422,7 +2422,6 @@ pub fn get_stats_records(
 
     // Update args with the detected delimiter if it wasn't explicitly set
     let detected_delimiter = if args.flag_delimiter.is_none() {
-        use crate::config::{Delimiter, get_delim_by_extension};
         let path = Path::new(input_path);
         let (_, detected_delim, _) = get_delim_by_extension(path, b',');
         Some(Delimiter(detected_delim))
@@ -2563,7 +2562,7 @@ pub fn get_stats_records(
 
         // Use the detected delimiter
         stats_args_str = format!("{stats_args_str}\t--delimiter\t{}", {
-            // safety:we know it's Some because we set it above
+            // safety: we know it's Some because we set it above
             let delim_to_use = detected_delimiter.unwrap().as_byte();
             if delim_to_use == b'\t' {
                 r#"\t"#.to_string()

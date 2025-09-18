@@ -1284,7 +1284,7 @@ checksum = "ade8366b8bd5ba243f0a58f036cc0ca8a2f069cff1a2351ef1cac6b083e16fc0"
 [[package]]
 name = "calamine"
 version = "0.30.1"
-source = "git+https://github.com/jqnatividad/calamine?branch=bump-quick-xml-from-0.37-to-0.38#91e2f6cd55fc9c5376a45dee39bee46111e0d1cd"
+source = "git+https://github.com/jqnatividad/calamine?branch=bump-quick-xml-from-0.37-to-0.38#cfe78105c9730b271d6aebf87dbf61d51cceaeca"
 dependencies = [
  "atoi_simd",
  "byteorder",

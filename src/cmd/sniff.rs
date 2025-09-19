@@ -1015,15 +1015,14 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
         return fail_clierror!("{error_msg}");
     }
 
-    if sniff_error.is_none() {
-        println!("{processed_results}");
-        Ok(())
-    } else {
+    if let Some(error) = sniff_error {
         fail_clierror!(
             "{error}; size: {size}, last_modified: {last_modified}",
-            error = sniff_error.unwrap(),
             size = sfile_info.file_size,
             last_modified = sfile_info.last_modified
         )
+    } else {
+        println!("{processed_results}");
+        Ok(())
     }
 }

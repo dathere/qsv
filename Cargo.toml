@@ -341,6 +341,9 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parki
 # see https://github.com/time-rs/time/issues/750
 time = { git = "https://github.com/time-rs/time", rev = "f203852"}
 
+# use our patched fork of whatlang with updated dependencies until our PR is merged
+whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-15-remove-oncecell" }
+
 # Polars has a much higher release tempo for its Python bindings compared
 # to its underlying Rust library. See https://github.com/pola-rs/polars/releases
 # It's qsv's policy to use the latest upstream of polars/py-polars

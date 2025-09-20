@@ -1734,7 +1734,6 @@ checksum = "829d955a0bb380ef178a640b91779e3987da38c9aea133b20614cfed8cdea9c6"
 dependencies = [
  "bitflags 2.9.4",
  "crossterm_winapi",
- "filedescriptor",
  "mio",
  "parking_lot",
  "rustix 0.38.44",
@@ -1842,13 +1841,12 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.13.0"
-source = "git+https://github.com/jqnatividad/csvlens?branch=natural-sort-with-upstream#d47bf98a594d769e352902dbf15b72da0557528b"
+source = "git+https://github.com/jqnatividad/csvlens?branch=natural-sort-with-upstream#4d85e1722cc67d6029740e023249dbf9cebb9e54"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
  "arboard",
  "arrow",
- "crossterm 0.28.1",
  "csv",
  "csv-sniffer",
  "ratatui",
@@ -2435,17 +2433,6 @@ name = "file-format"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0eab8aa2fba5f39f494000a22f44bf3c755b7d7f8ffad3f36c6d507893074159"
-
-[[package]]
-name = "filedescriptor"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e40758ed24c9b2eeb76c35fb0aebc66c626084edd827e07e1552279814c6682d"
-dependencies = [
- "libc",
- "thiserror 1.0.69",
- "winapi",
-]
 
 [[package]]
 name = "filetime"
@@ -7571,9 +7558,9 @@ dependencies = [
 
 [[package]]
 name = "terminal-colorsaurus"
-version = "0.4.8"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7afe4c174a3cbfb52ebcb11b28965daf74fe9111d4e07e40689d05af06e26e8"
+checksum = "3f7226dad4b1817567c1e2f5d453897ef36abe79def7783af3fa241a694e30b3"
 dependencies = [
  "cfg-if",
  "libc",
@@ -8018,9 +8005,9 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tui-input"
-version = "0.11.1"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5d1733c47f1a217b7deff18730ff7ca4ecafc5771368f715ab072d679a36114"
+checksum = "911e93158bf80bbc94bad533b2b16e3d711e1132d69a6a6980c3920a63422c19"
 dependencies = [
  "ratatui",
  "unicode-width 0.2.0",

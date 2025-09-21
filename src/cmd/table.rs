@@ -1,15 +1,17 @@
 static USAGE: &str = r#"
 Outputs CSV data as a table with columns in alignment.
 
+Though this command is primarily designed for DISPLAYING CSV data using
+"elastic tabstops" so its more human-readable, it can also be used to convert
+CSV data to other special machine-readable formats:
+ -  a more human-readable TSV format with the "leftendtab" alignment option
+ -  Fixed-Width format with the "left" alignment option
+
 This will not work well if the CSV data contains large fields.
 
 Note that formatting a table requires buffering all CSV data into memory.
 Therefore, you should use the 'sample' or 'slice' command to trim down large
 CSV data before formatting it with this command.
-
-Further, this command is expressly designed for DISPLAYING CSV data using
-"elastic tabstops" so its more human-readable, not for converting the input
-data to other machine-readable CSV dialects like TSV.
 
 Usage:
     qsv table [options] [<input>]
@@ -21,7 +23,11 @@ table options:
     -p, --pad <arg>        The minimum number of spaces between each column.
                            [default: 2]
     -a, --align <arg>      How entries should be aligned in a column.
-                           Options: "left", "right", "center".
+                           Options: "left", "right", "center". "leftendtab".
+                           "leftendtab" is a special alignment that similar to "left"
+                           but with whitespace padding ending with a tab character.
+                           The resulting output still validates as a valid TSV file,
+                           while also being more human-readable.
                            [default: left]
     -c, --condense <arg>   Limits the length of each field to the value
                            specified. If the field is UTF-8 encoded, then
@@ -65,6 +71,7 @@ enum Align {
     Left,
     Right,
     Center,
+    LeftEndTab,
 }
 
 impl From<Align> for Alignment {
@@ -73,6 +80,7 @@ impl From<Align> for Alignment {
             Align::Left => Alignment::Left,
             Align::Right => Alignment::Right,
             Align::Center => Alignment::Center,
+            Align::LeftEndTab => Alignment::LeftEndTab,
         }
     }
 }

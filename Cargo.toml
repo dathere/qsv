@@ -337,6 +337,9 @@ self_update = { git = "https://github.com/jqnatividad/self_update", branch = "bu
 # use our patched fork of sled to get rid of unmaintained instant
 sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }
 
+# use our patched fork of tabwriter with LeftEndTab alignment support until our PR is merged
+tabwriter = { git = "https://github.com/jqnatividad/tabwriter", branch = "LeftEndTab-alignment" }
+
 # use upstream of time crate with unreleased fix that reverts perf regression in 0.3.43 release
 # see https://github.com/time-rs/time/issues/750
 time = { git = "https://github.com/time-rs/time", rev = "f203852"}

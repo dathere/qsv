@@ -27,7 +27,7 @@ table options:
                            "leftendtab" is a special alignment that similar to "left"
                            but with whitespace padding ending with a tab character.
                            The resulting output still validates as a valid TSV file,
-                           whie also being more human-readable.
+                           while also being more human-readable.
                            [default: left]
     -c, --condense <arg>   Limits the length of each field to the value
                            specified. If the field is UTF-8 encoded, then

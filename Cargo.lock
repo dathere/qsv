@@ -1281,7 +1281,7 @@ checksum = "ade8366b8bd5ba243f0a58f036cc0ca8a2f069cff1a2351ef1cac6b083e16fc0"
 [[package]]
 name = "calamine"
 version = "0.30.1"
-source = "git+https://github.com/jmcnamara/calamine?branch=quick_xml_0.38#b1268385d2f674c6aefd0029184a596e7ad31094"
+source = "git+https://github.com/jmcnamara/calamine?branch=quick_xml_0.38#c5d6239950fd9dd5a9403163050626688a2ca97f"
 dependencies = [
  "atoi_simd",
  "byteorder",
@@ -6824,9 +6824,9 @@ checksum = "1c107b6f4780854c8b126e228ea8869f4d7b71260f962fefb57b996b8959ba6b"
 
 [[package]]
 name = "security-framework"
-version = "3.4.0"
+version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60b369d18893388b345804dc0007963c99b7d665ae71d275812d828c6f089640"
+checksum = "cc198e42d9b7510827939c9a15f5062a0c913f3371d765977e586d2fe6c16f4a"
 dependencies = [
  "bitflags 2.9.4",
  "core-foundation",
@@ -7514,7 +7514,7 @@ dependencies = [
 [[package]]
 name = "tabwriter"
 version = "1.4.1"
-source = "git+https://github.com/jqnatividad/tabwriter?branch=LeftEndTab-alignment#df297e6d9fa424804bccc86cac09dd3cf3ff2060"
+source = "git+https://github.com/jqnatividad/tabwriter?branch=LeftEndTab-alignment#4e6b2bbc120923f63ad2fc7d6dd8a1ce3cfb3172"
 dependencies = [
  "unicode-width 0.2.0",
 ]

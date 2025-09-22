@@ -7516,7 +7516,7 @@ dependencies = [
 [[package]]
 name = "tabwriter"
 version = "1.4.1"
-source = "git+https://github.com/jqnatividad/tabwriter?branch=LeftEndTab-alignment#7744da2a7c74a74ad14b613916dd98247b0d06d0"
+source = "git+https://github.com/jqnatividad/tabwriter?branch=LeftEndTab-alignment#4a1616d1956cc0b9ba2eb677394975a3bc50f23b"
 dependencies = [
  "unicode-width 0.2.0",
 ]

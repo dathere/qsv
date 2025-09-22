@@ -311,7 +311,7 @@ csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimiz
 csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimized-non-allocating-byterecord-trim" }
 
 # use patched fork of calamine with bumped quick-xml 0.38 dependencies until PR is merged
-calamine = { git = "https://github.com/jmcnamara/calamine", branch = "quick_xml_0.38" }
+# calamine = { git = "https://github.com/jmcnamara/calamine", branch = "quick_xml_0.38" }
 
 # use our patched fork of csvlens to add natural sort until our PR is merged; updated with upstream fixes
 csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "natural-sort-with-upstream" }
@@ -344,8 +344,8 @@ tabwriter = { git = "https://github.com/jqnatividad/tabwriter", branch = "LeftEn
 # see https://github.com/time-rs/time/issues/750
 time = { git = "https://github.com/time-rs/time", rev = "f203852"}
 
-# use our patched fork of whatlang with updated dependencies until our PR is merged
-whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-15-remove-oncecell" }
+# use unreleased upstream of whatlang with updated dependencies now that our PR is merged
+whatlang = { git = "https://github.com/greyblake/whatlang-rs", rev = "b282e07" }
 
 # Polars has a much higher release tempo for its Python bindings compared
 # to its underlying Rust library. See https://github.com/pola-rs/polars/releases

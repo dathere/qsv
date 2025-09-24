@@ -161,3 +161,22 @@ fn table_leftendtab_align() {
         "h1      \th2  \th3\nabcdefg \ta   \ta\na       \tabc \tz"
     );
 }
+
+#[test]
+fn table_leftfwf_align() {
+    let wrk = Workdir::new("table");
+    wrk.create("in.csv", data());
+
+    let mut cmd = wrk.command("table");
+    cmd.arg("--align");
+    cmd.arg("leftfwf");
+    cmd.arg("in.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    // leftfwf alignment should be similar to left but with the first line being a comment
+    // that enumerates the position (1-based, comma-separated) of each column
+    assert_eq!(
+        &*got,
+        "#1,10,15\nh1       h2   h3\nabcdefg  a    a\na        abc  z"
+    );
+}

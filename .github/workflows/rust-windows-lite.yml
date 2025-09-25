@@ -21,8 +21,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v5
-    - name: Update Rust
-      run: rustup update
+    - name: Installing Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
     - name: Setup Rust-cache
       uses: Swatinem/rust-cache@v2
       with:

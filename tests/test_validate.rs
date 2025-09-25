@@ -2138,3 +2138,484 @@ fn validate_with_no_format_validation_and_dynamic_enum() {
     let expected_invalid = vec![svec!["2", "Orange", "valid@email.com"]];
     assert_eq!(invalid_records, expected_invalid);
 }
+
+#[test]
+fn validate_multiple_files_rfc4180() {
+    let wrk = Workdir::new("validate_multiple_files_rfc4180").flexible(true);
+    
+    // Create multiple test CSV files
+    wrk.create(
+        "file1.csv",
+        vec![
+            svec!["id", "name", "age"],
+            svec!["1", "John", "25"],
+            svec!["2", "Jane", "30"],
+        ],
+    );
+    
+    wrk.create(
+        "file2.csv",
+        vec![
+            svec!["product", "price", "stock"],
+            svec!["Laptop", "999.99", "50"],
+            svec!["Phone", "699.99", "100"],
+        ],
+    );
+    
+    wrk.create(
+        "file3.csv",
+        vec![
+            svec!["city", "country", "population"],
+            svec!["New York", "USA", "8000000"],
+            svec!["London", "UK", "9000000"],
+        ],
+    );
+    
+    // Test validating multiple files
+    let mut cmd = wrk.command("validate");
+    cmd.arg("file1.csv").arg("file2.csv").arg("file3.csv");
+    
+    wrk.assert_success(&mut cmd);
+    
+    let got: String = wrk.output_stderr(&mut cmd);
+    
+    // The Extended Input Support should work and show a summary
+    assert!(got.contains("✅ All 3 files are valid."));
+}
+
+#[test]
+fn validate_multiple_files_with_invalid() {
+    let wrk = Workdir::new("validate_multiple_files_with_invalid").flexible(true);
+    
+    // Create one valid file
+    wrk.create(
+        "valid.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "John"],
+            svec!["2", "Jane"],
+        ],
+    );
+    
+    // Create one invalid file (unequal field count)
+    wrk.create(
+        "invalid.csv",
+        vec![
+            svec!["id", "name", "age"],
+            svec!["1", "John", "25"],
+            svec!["2", "Jane"], // Missing age field
+        ],
+    );
+    
+    // Test validating multiple files with one invalid
+    let mut cmd = wrk.command("validate");
+    cmd.arg("valid.csv").arg("invalid.csv");
+    
+    wrk.assert_err(&mut cmd);
+    
+    let got: String = wrk.output_stderr(&mut cmd);
+    
+    // The output should contain error information and summary
+    assert!(got.contains("❌ 1 out of 2 files are invalid."));
+}
+
+#[test]
+fn validate_directory() {
+    let wrk = Workdir::new("validate_directory").flexible(true);
+    
+    // Create a subdirectory with CSV files
+    let _ = wrk.create_subdir("data");
+    
+    // Create files in the subdirectory
+    wrk.create(
+        "data/file1.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "John"],
+            svec!["2", "Jane"],
+        ],
+    );
+    
+    wrk.create(
+        "data/file2.csv",
+        vec![
+            svec!["product", "price"],
+            svec!["Laptop", "999.99"],
+            svec!["Phone", "699.99"],
+        ],
+    );
+    
+    // Test validating a directory
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data");
+    
+    wrk.assert_success(&mut cmd);
+    
+    let got: String = wrk.output_stderr(&mut cmd);
+    // The Extended Input Support should work for directories
+    assert!(got.contains("✅ All 2 files are valid."));
+}
+
+#[test]
+fn validate_infile_list() {
+    let wrk = Workdir::new("validate_infile_list").flexible(true);
+    
+    // Create individual CSV files
+    wrk.create(
+        "file1.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "John"],
+            svec!["2", "Jane"],
+        ],
+    );
+    
+    wrk.create(
+        "file2.csv",
+        vec![
+            svec!["product", "price"],
+            svec!["Laptop", "999.99"],
+            svec!["Phone", "699.99"],
+        ],
+    );
+    
+    // Create an infile-list file
+    wrk.create(
+        "filelist.infile-list",
+        vec![
+            svec!["file1.csv"],
+            svec!["file2.csv"],
+        ],
+    );
+    
+    // Test validating using infile-list
+    let mut cmd = wrk.command("validate");
+    cmd.arg("filelist.infile-list");
+    
+    wrk.assert_success(&mut cmd);
+    
+    let got: String = wrk.output_stderr(&mut cmd);
+    assert!(got.contains("✅ All 2 files are valid."));
+}
+
+#[test]
+fn validate_multiple_files_json_output() {
+    let wrk = Workdir::new("validate_multiple_files_json_output").flexible(true);
+    
+    // Create multiple test CSV files
+    wrk.create(
+        "file1.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "John"],
+            svec!["2", "Jane"],
+        ],
+    );
+    
+    wrk.create(
+        "file2.csv",
+        vec![
+            svec!["product", "price"],
+            svec!["Laptop", "999.99"],
+            svec!["Phone", "699.99"],
+        ],
+    );
+    
+    // Test validating multiple files with JSON output
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--json").arg("file1.csv").arg("file2.csv");
+    
+    wrk.assert_success(&mut cmd);
+    
+    let got: String = wrk.output_stderr(&mut cmd);
+    assert!(got.contains("✅ All 2 files are valid."));
+    
+    // Check that JSON output is produced for each file
+    let output = wrk.output(&mut cmd);
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout_str.contains("\"delimiter_char\":\",\""));
+    assert!(stdout_str.contains("\"num_records\":2"));
+}
+
+#[test]
+fn validate_multiple_files_pretty_json_output() {
+    let wrk = Workdir::new("validate_multiple_files_pretty_json_output").flexible(true);
+    
+    // Create multiple test CSV files
+    wrk.create(
+        "file1.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "John"],
+            svec!["2", "Jane"],
+        ],
+    );
+    
+    wrk.create(
+        "file2.csv",
+        vec![
+            svec!["product", "price"],
+            svec!["Laptop", "999.99"],
+            svec!["Phone", "699.99"],
+        ],
+    );
+    
+    // Test validating multiple files with pretty JSON output
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--pretty-json").arg("file1.csv").arg("file2.csv");
+    
+    wrk.assert_success(&mut cmd);
+    
+    let got: String = wrk.output_stderr(&mut cmd);
+    assert!(got.contains("✅ All 2 files are valid."));
+    
+    // Check that pretty JSON output is produced for each file
+    let output = wrk.output(&mut cmd);
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout_str.contains("{\n  \"delimiter_char\": \",\""));
+    assert!(stdout_str.contains("\"num_records\": 2"));
+}
+
+#[test]
+fn validate_multiple_files_quiet_mode() {
+    let wrk = Workdir::new("validate_multiple_files_quiet_mode").flexible(true);
+    
+    // Create multiple test CSV files
+    wrk.create(
+        "file1.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "John"],
+            svec!["2", "Jane"],
+        ],
+    );
+    
+    wrk.create(
+        "file2.csv",
+        vec![
+            svec!["product", "price"],
+            svec!["Laptop", "999.99"],
+            svec!["Phone", "699.99"],
+        ],
+    );
+    
+    // Test validating multiple files in quiet mode
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--quiet").arg("file1.csv").arg("file2.csv");
+    
+    wrk.assert_success(&mut cmd);
+    
+    // In quiet mode, there should be no output to stderr
+    let got: String = wrk.output_stderr(&mut cmd);
+    // The output might be "No error" if there's no stderr output
+    assert!(got == "" || got == "No error");
+}
+
+#[test]
+fn validate_multiple_files_with_mixed_delimiters() {
+    let wrk = Workdir::new("validate_multiple_files_with_mixed_delimiters").flexible(true);
+    
+    // Create CSV file with comma delimiter
+    wrk.create(
+        "comma.csv",
+        vec![
+            svec!["id", "name", "age"],
+            svec!["1", "John", "25"],
+            svec!["2", "Jane", "30"],
+        ],
+    );
+    
+    // Create TSV file with tab delimiter
+    wrk.create(
+        "tab.tsv",
+        vec![
+            svec!["id\tname\tage"],
+            svec!["1\tJohn\t25"],
+            svec!["2\tJane\t30"],
+        ],
+    );
+    
+    // Test validating multiple files with different delimiters
+    let mut cmd = wrk.command("validate");
+    cmd.arg("comma.csv").arg("tab.tsv");
+    
+    wrk.assert_success(&mut cmd);
+    
+    let got: String = wrk.output_stderr(&mut cmd);
+    assert!(got.contains("✅ All 2 files are valid."));
+}
+
+#[test]
+fn validate_multiple_files_no_headers() {
+    let wrk = Workdir::new("validate_multiple_files_no_headers").flexible(true);
+    
+    // Create files without headers
+    wrk.create(
+        "file1.csv",
+        vec![
+            svec!["1", "John", "25"],
+            svec!["2", "Jane", "30"],
+        ],
+    );
+    
+    wrk.create(
+        "file2.csv",
+        vec![
+            svec!["Laptop", "999.99", "50"],
+            svec!["Phone", "699.99", "100"],
+        ],
+    );
+    
+    // Test validating multiple files without headers
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--no-headers").arg("file1.csv").arg("file2.csv");
+    
+    wrk.assert_success(&mut cmd);
+    
+    let got: String = wrk.output_stderr(&mut cmd);
+    assert!(got.contains("✅ All 2 files are valid."));
+}
+
+#[test]
+fn validate_single_file_backward_compatibility() {
+    let wrk = Workdir::new("validate_single_file_backward_compatibility").flexible(true);
+    
+    // Create a single CSV file
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "age"],
+            svec!["1", "John", "25"],
+            svec!["2", "Jane", "30"],
+        ],
+    );
+    
+    // Test that single file validation still works exactly as before
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv");
+    
+    wrk.assert_success(&mut cmd);
+    
+    let got_stderr: String = wrk.output_stderr(&mut cmd);
+    let output = wrk.output(&mut cmd);
+    let got_stdout = String::from_utf8_lossy(&output.stdout);
+    
+    let expected = "Valid: 3 Columns: (\"id\", \"name\", \"age\"); Records: 2; Delimiter: ,";
+    // The output might be on stdout instead of stderr
+    if got_stderr.contains("No error") {
+        assert_eq!(got_stdout.trim(), expected);
+    } else {
+        assert_eq!(got_stderr, expected);
+    }
+}
+
+#[test]
+fn validate_single_file_error_backward_compatibility() {
+    let wrk = Workdir::new("validate_single_file_error_backward_compatibility").flexible(true);
+    
+    // Create a single CSV file with invalid data
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "age"],
+            svec!["1", "John", "25"],
+            svec!["2", "Jane"], // Missing age field
+        ],
+    );
+    
+    // Test that single file error handling still works exactly as before
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv");
+    
+    wrk.assert_err(&mut cmd);
+    
+    let got: String = wrk.output_stderr(&mut cmd);
+    // The exact byte position may vary, so we check for key components
+    assert!(got.contains("Validation error: CSV error: record 2 (line: 3, byte:"));
+    assert!(got.contains("found record with 2 fields, but the previous record has 3 fields."));
+    assert!(got.contains("Use `qsv fixlengths` to fix record length issues."));
+}
+
+#[test]
+fn validate_json_schema_still_single_file() {
+    let wrk = Workdir::new("validate_json_schema_still_single_file").flexible(true);
+    
+    // Create a JSON schema
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "age": { "type": "integer" }
+            }
+        }"#,
+    );
+    
+    // Create a CSV file
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "age"],
+            svec!["1", "John", "25"],
+            svec!["2", "Jane", "30"],
+        ],
+    );
+    
+    // Test that JSON Schema validation still works with single file
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    
+    wrk.assert_success(&mut cmd);
+    
+    let got: String = wrk.output_stderr(&mut cmd);
+    let expected = "All 2 records valid.\n";
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn validate_json_schema_rejects_multiple_files() {
+    let wrk = Workdir::new("validate_json_schema_rejects_multiple_files").flexible(true);
+    
+    // Create a JSON schema
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" }
+            }
+        }"#,
+    );
+    
+    // Create multiple CSV files
+    wrk.create(
+        "file1.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "John"],
+        ],
+    );
+    
+    wrk.create(
+        "file2.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["2", "Jane"],
+        ],
+    );
+    
+    // Test that JSON Schema validation rejects multiple files
+    let mut cmd = wrk.command("validate");
+    cmd.arg("file1.csv").arg("file2.csv").arg("schema.json");
+    
+    wrk.assert_err(&mut cmd);
+    
+    let got: String = wrk.output_stderr(&mut cmd);
+    let expected = "JSON Schema validation only supports a single input file. Use RFC 4180 validation mode for multiple files.\n";
+    assert_eq!(got, expected);
+}

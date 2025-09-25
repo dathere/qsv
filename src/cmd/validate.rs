@@ -1154,6 +1154,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         (args.arg_input.clone(), None)
     };
 
+    // JSON Schema validation only supports a single input file
+    if input_files.len() > 1 {
+        return fail_clierror!("JSON Schema validation only supports a single input file. Use RFC 4180 validation mode for multiple files.");
+    }
+
     let input_path = input_files.first().ok_or_else(|| {
         CliError::Other("No input file provided for JSON Schema validation".to_string())
     })?;

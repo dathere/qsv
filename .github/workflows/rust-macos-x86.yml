@@ -26,9 +26,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Installing Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
+      uses: dtolnay/rust-toolchain@1.90.0
         profile: minimal
         target: x86_64-apple-darwin
         override: true

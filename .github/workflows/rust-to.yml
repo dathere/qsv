@@ -26,9 +26,7 @@ jobs:
         sudo apt-get install libwayland-dev
     - uses: actions/checkout@v5
     - name: Installing Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
+      uses: dtolnay/rust-toolchain@1.90.0
     - name: Setup Rust-cache
       uses: Swatinem/rust-cache@v2
       with:

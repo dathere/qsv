@@ -395,7 +395,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             writeln!(&mut stdout)?;
 
-            let mut tabwriter = tabwriter::TabWriter::new(stdout);
+            let mut tabwriter = qsv_tabwriter::TabWriter::new(stdout);
 
             if args.flag_pipe {
                 writeln!(

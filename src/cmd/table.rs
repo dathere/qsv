@@ -50,8 +50,8 @@ Common options:
 
 use std::borrow::Cow;
 
+use qsv_tabwriter::{Alignment, TabWriter};
 use serde::Deserialize;
-use tabwriter::{Alignment, TabWriter};
 
 use crate::{
     CliResult,

@@ -39,8 +39,8 @@ use std::{
     io::{self, BufWriter, Write},
 };
 
+use qsv_tabwriter::TabWriter;
 use serde::Deserialize;
-use tabwriter::TabWriter;
 
 use crate::{
     CliResult,

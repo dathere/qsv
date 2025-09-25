@@ -5906,9 +5906,9 @@ dependencies = [
 
 [[package]]
 name = "qsv-sniffer"
-version = "0.12.1"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42d52719863e23a4eeb2a1deeb277565096295f5138c239c065c28db33dbf97d"
+checksum = "a78937b2f303e65f6729979c37b5b544086121fcf482468fd38ba11f617ed0bb"
 dependencies = [
  "bitflags 2.9.4",
  "bytecount",

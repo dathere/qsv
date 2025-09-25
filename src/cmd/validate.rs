@@ -1153,6 +1153,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         (args.arg_input.clone(), None)
     };
 
+    // Update args.arg_json_schema if we extracted it from the input list
+    let json_schema_arg = if let Some(schema_path) = &json_schema_path {
+        Some(schema_path.to_string_lossy().to_string())
+    } else {
+        args.arg_json_schema.clone()
+    };
+
     // JSON Schema validation only supports a single input file
     if input_files.len() > 1 {
         return fail_clierror!(
@@ -1234,8 +1241,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // parse and compile supplied JSON Schema
     let (schema_json, schema_compiled): (Value, Validator) =
-        // safety: we know the schema is_some() because we checked above
-        match load_json(&json_schema_path.unwrap_or_else(|| PathBuf::from(args.arg_json_schema.clone().unwrap())).to_string_lossy()) {
+            // safety: we know the schema is_some() because we checked above
+            match load_json(&json_schema_path.unwrap_or_else(|| PathBuf::from(json_schema_arg.as_ref().unwrap())).to_string_lossy()) {
             Ok(s) => {
                 // Check for custom formats and keywords before parsing
                 let has_currency_format = s.contains(r#""format": "currency""#);
@@ -1280,13 +1287,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             Ok(schema) => (json, schema),
                             Err(e) => {
                                 return fail_clierror!(r#"Cannot compile JSONschema. error: {e}
-Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_json_schema.unwrap());
+Try running `qsv validate schema {}` to check the JSON Schema file."#, json_schema_arg.as_ref().unwrap());
                             },
                         }
                     },
                     Err(e) => {
                         return fail_clierror!(r#"Unable to parse JSONschema. error: {e}
-Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_json_schema.unwrap());
+Try running `qsv validate schema {}` to check the JSON Schema file."#, json_schema_arg.as_ref().unwrap());
                     },
                 }
             },

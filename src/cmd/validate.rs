@@ -1133,8 +1133,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         last_input
             .extension()
             .and_then(std::ffi::OsStr::to_str)
-            .map(|ext| ext.to_lowercase() == "json")
-            .unwrap_or(false)
+            .is_some_and(|ext| ext.to_lowercase() == "json")
     } else {
         false
     };
@@ -1467,11 +1466,10 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_
         // if 100% invalid, valid file isn't needed, but this is rare so OK creating empty file.
         woutinfo!("Writing invalid/valid/error files...");
 
-        let input_path = args
-            .arg_input
-            .first()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| "stdin.csv".to_string());
+        let input_path = args.arg_input.first().map_or_else(
+            || "stdin.csv".to_string(),
+            |p| p.to_string_lossy().to_string(),
+        );
 
         write_error_report(&input_path, validation_error_messages)?;
 
@@ -1583,10 +1581,8 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
             },
             Err(e) => {
                 all_valid = false;
-                if !args.flag_quiet {
-                    if input_count > 1 {
-                        woutinfo!("❌ {}: {}", input_path.display(), e);
-                    }
+                if !args.flag_quiet && input_count > 1 {
+                    woutinfo!("❌ {}: {}", input_path.display(), e);
                 }
                 // For single files, return the error directly to maintain backward compatibility
                 if input_count == 1 {
@@ -1611,17 +1607,15 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
 
     if all_valid {
         Ok(())
+    } else if input_count > 1 {
+        fail_clierror!(
+            "{} out of {} files failed validation",
+            total_files - valid_files,
+            total_files
+        )
     } else {
-        if input_count > 1 {
-            fail_clierror!(
-                "{} out of {} files failed validation",
-                total_files - valid_files,
-                total_files
-            )
-        } else {
-            // For single files, just return the error without the summary message
-            Err(CliError::Other("Validation failed".to_string()))
-        }
+        // For single files, just return the error without the summary message
+        Err(CliError::Other("Validation failed".to_string()))
     }
 }
 

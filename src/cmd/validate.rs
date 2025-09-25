@@ -1240,9 +1240,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .unwrap();
 
     // parse and compile supplied JSON Schema
+    let json_schema_path =
+        json_schema_path.unwrap_or_else(|| PathBuf::from(json_schema_arg.as_ref().unwrap()));
     let (schema_json, schema_compiled): (Value, Validator) =
             // safety: we know the schema is_some() because we checked above
-            match load_json(&json_schema_path.unwrap_or_else(|| PathBuf::from(json_schema_arg.as_ref().unwrap())).to_string_lossy()) {
+            match load_json(&json_schema_path.to_string_lossy()) {
             Ok(s) => {
                 // Check for custom formats and keywords before parsing
                 let has_currency_format = s.contains(r#""format": "currency""#);
@@ -1287,7 +1289,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             Ok(schema) => (json, schema),
                             Err(e) => {
                                 return fail_clierror!(r#"Cannot compile JSONschema. error: {e}
-Try running `qsv validate schema {}` to check the JSON Schema file."#, json_schema_arg.as_ref().unwrap());
+Try running `qsv validate schema {}` to check the JSON Schema file."#, json_schema_path.to_string_lossy());
                             },
                         }
                     },

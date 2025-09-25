@@ -116,9 +116,9 @@ use indicatif::HumanCount;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{HumanBytes, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use qsv_sniffer::{DatePreference, SampleSize, Sniffer};
+use qsv_tabwriter::TabWriter;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tabwriter::TabWriter;
 use tempfile::NamedTempFile;
 use url::Url;
 

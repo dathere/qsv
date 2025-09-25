@@ -39,8 +39,8 @@ Common options:
 
 use std::{io, path::PathBuf};
 
+use qsv_tabwriter::TabWriter;
 use serde::Deserialize;
-use tabwriter::TabWriter;
 
 use crate::{CliResult, config::Delimiter, util};
 

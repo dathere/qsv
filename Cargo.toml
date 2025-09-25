@@ -216,9 +216,10 @@ qsv-dateparser = "0.13"
 qsv_docopt = "1.8"
 qsv-stats = "0.38"
 qsv_currency = "0.7"
-qsv-sniffer = { version = "0.11", default-features = false, features = [
+qsv-sniffer = { version = "0.12", default-features = false, features = [
     "runtime-dispatch-simd",
 ] }
+qsv-tabwriter = "2"
 qsv_vader_sentiment_analysis = { version = "0.2", optional = true }
 rand = "0.9"
 rand_hc = "0.4"
@@ -265,7 +266,6 @@ strsim = { version = "0.11", optional = true }
 strum = { version = "0.27", features = ["phf"] }
 strum_macros = "0.27"
 sysinfo = "0.37"
-tabwriter = "1.4"
 tempfile = "3.23"
 thousands = { version = "0.2", optional = true }
 tikv-jemallocator = { version = "0.6", optional = true }
@@ -336,9 +336,6 @@ self_update = { git = "https://github.com/jqnatividad/self_update", branch = "bu
 
 # use our patched fork of sled to get rid of unmaintained instant
 sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }
-
-# use our patched fork of tabwriter with LeftEndTab and LeftFwf alignment support
-tabwriter = { git = "https://github.com/jqnatividad/tabwriter", rev = "139deee" }
 
 # use upstream of time crate with unreleased fix that reverts perf regression in 0.3.43 release
 # see https://github.com/time-rs/time/issues/750

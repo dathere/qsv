@@ -1156,7 +1156,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // JSON Schema validation only supports a single input file
     if input_files.len() > 1 {
-        return fail_clierror!("JSON Schema validation only supports a single input file. Use RFC 4180 validation mode for multiple files.");
+        return fail_clierror!(
+            "JSON Schema validation only supports a single input file. Use RFC 4180 validation \
+             mode for multiple files."
+        );
     }
 
     let input_path = input_files.first().ok_or_else(|| {

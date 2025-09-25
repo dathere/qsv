@@ -45,9 +45,8 @@ jobs:
         sudo service redis-server start
     - name: Installing Rust toolchain
       uses: dtolnay/rust-toolchain@1.90.0
-        profile: minimal
-        target: x86_64-unknown-linux-musl
-        override: true        
+      with:
+        targets: x86_64-unknown-linux-musl
     - name: Setup Rust-cache
       uses: Swatinem/rust-cache@v2
       with:

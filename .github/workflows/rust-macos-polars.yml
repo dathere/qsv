@@ -22,7 +22,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v5        
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@1.90.0
     - name: Run tests
       env:
         RUSTFLAGS: -C target-cpu=native

@@ -21,7 +21,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v5        
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@1.90.0
     - name: Run tests
       # env:
         # RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma

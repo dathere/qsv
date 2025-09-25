@@ -164,11 +164,17 @@ https://github.com/dathere/qsv/blob/master/tests/test_validate.rs.
 
 Usage:
     qsv validate schema [--no-format-validation] [<json-schema>]
-    qsv validate [options] [<input>] [<json-schema>]
+    qsv validate [options] [<input>...]
+    qsv validate [options] [<input>] <json-schema>
     qsv validate --help
 
 Validate arguments:
-    <input>                    Input CSV file to validate. If not provided, will read from stdin.
+    <input>...                 Input CSV file(s) to validate. If not provided, will read from stdin.
+                               If input is a directory, all files in the directory will be validated.
+                               If the input is a file with a '.infile-list' extension, the file will
+                               be read as a list of input files. If the input are snappy-compressed
+                               files(s), it will be decompressed automatically.
+                               Extended Input Support is only available for RFC 4180 validation mode.
     <json-schema>              JSON Schema file to validate against. If not provided, `validate`
                                will run in RFC 4180 validation mode. The file can be a local file
                                or a URL (http and https schemes supported).
@@ -255,6 +261,7 @@ use std::{
     env,
     fs::File,
     io::{BufReader, BufWriter, Read, Write},
+    path::PathBuf,
     str,
     sync::{
         OnceLock,
@@ -342,7 +349,7 @@ struct Args {
     flag_delimiter:            Option<Delimiter>,
     flag_progressbar:          bool,
     flag_quiet:                bool,
-    arg_input:                 Option<String>,
+    arg_input:                 Vec<std::path::PathBuf>,
     arg_json_schema:           Option<String>,
     flag_fancy_regex:          bool,
     flag_backtrack_limit:      usize,
@@ -1121,7 +1128,37 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Ordering::Relaxed,
     );
 
-    let mut rconfig = Config::new(args.arg_input.as_ref())
+    // Check if the last argument is a JSON schema file
+    let has_json_schema = if let Some(last_input) = args.arg_input.last() {
+        last_input
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .map(|ext| ext.to_lowercase() == "json")
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
+    // if no JSON Schema supplied, only let csv reader RFC4180-validate csv file
+    if !has_json_schema && args.arg_json_schema.is_none() {
+        // For RFC 4180 validation mode, we support Extended Input Support
+        return validate_rfc4180_mode(&args);
+    }
+
+    // Extract JSON schema from input list if it's the last argument
+    let (input_files, json_schema_path) = if has_json_schema {
+        let schema_path = args.arg_input.last().unwrap().clone();
+        let input_files = args.arg_input[..args.arg_input.len() - 1].to_vec();
+        (input_files, Some(schema_path))
+    } else {
+        (args.arg_input.clone(), None)
+    };
+
+    let input_path = input_files.first().ok_or_else(|| {
+        CliError::Other("No input file provided for JSON Schema validation".to_string())
+    })?;
+
+    let mut rconfig = Config::new(Some(&input_path.to_string_lossy().to_string()))
         .no_headers(args.flag_no_headers)
         .set_read_buffer(if std::env::var("QSV_RDR_BUFFER_CAPACITY").is_err() {
             DEFAULT_RDR_BUFFER_CAPACITY * 10
@@ -1135,215 +1172,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     DELIMITER.set(args.flag_delimiter).unwrap();
 
     let mut rdr = rconfig.reader()?;
-
-    // if no JSON Schema supplied, only let csv reader RFC4180-validate csv file
-    if args.arg_json_schema.is_none() {
-        // just read csv file and let csv reader report problems
-        // since we're using csv::StringRecord, this will also detect non-utf8 sequences
-
-        let flag_json = args.flag_json || args.flag_pretty_json;
-        let flag_pretty_json = args.flag_pretty_json;
-
-        // first, let's validate the header row
-        let mut header_msg = String::new();
-        let mut header_len = 0_usize;
-        let mut field_vec: Vec<String> = Vec::new();
-        if !args.flag_no_headers {
-            let fields_result = rdr.headers();
-            match fields_result {
-                Ok(fields) => {
-                    header_len = fields.len();
-                    field_vec.reserve(header_len);
-                    for field in fields {
-                        field_vec.push(field.to_string());
-                    }
-                    let field_list = field_vec.join(r#"", ""#);
-                    header_msg = format!(
-                        "{} Columns: (\"{field_list}\");",
-                        HumanCount(header_len as u64)
-                    );
-                },
-                Err(e) => {
-                    // we're returning a JSON error for the header,
-                    // so we have more machine-friendly details
-                    if flag_json {
-                        // there's a UTF-8 error, so we report utf8 error metadata
-                        if let csv::ErrorKind::Utf8 { pos, err } = e.kind() {
-                            let header_error = json!({
-                                "errors": [{
-                                    "title" : "Header UTF-8 validation error",
-                                    "detail" : format!("{e}"),
-                                    "meta": {
-                                        "record_position": format!("{pos:?}"),
-                                        "record_error": format!("{err}"),
-                                    }
-                                }]
-                            });
-                            let json_error = if flag_pretty_json {
-                                simd_json::to_string_pretty(&header_error).unwrap()
-                            } else {
-                                header_error.to_string()
-                            };
-
-                            return fail_encoding_clierror!("{json_error}");
-                        }
-                        // it's not a UTF-8 error, so we report a generic
-                        // header validation error
-                        let header_error = json!({
-                            "errors": [{
-                                "title" : "Header Validation error",
-                                "detail" : format!("{e}"),
-                            }]
-                        });
-                        let json_error = if flag_pretty_json {
-                            simd_json::to_string_pretty(&header_error).unwrap()
-                        } else {
-                            header_error.to_string()
-                        };
-                        return fail_encoding_clierror!("{json_error}");
-                    }
-                    // we're not returning a JSON error, so we can use
-                    // a user-friendly error message with suggestions
-                    if let csv::ErrorKind::Utf8 { pos, err } = e.kind() {
-                        return fail_encoding_clierror!(
-                            "non-utf8 sequence detected in header, position {pos:?}.\n{err}\nUse \
-                             `qsv input` to fix formatting and to handle non-utf8 sequences.\n
-                             Alternatively, transcode your data to UTF-8 first using `iconv` or \
-                             `recode`."
-                        );
-                    }
-                    // its not a UTF-8 error, report a generic header validation error
-                    return fail_clierror!("Header Validation error: {e}.");
-                },
-            }
-        }
-
-        // Now, let's validate the rest of the records the fastest way possible.
-        // We do this by using csv::ByteRecord, which does not validate utf8
-        // making for higher throughput and lower memory usage compared to csv::StringRecord
-        // which validates each field SEPARATELY as a utf8 string.
-        // Combined with simdutf8::basic::from_utf8(), we utf8-validate the entire record in one go
-        // as a slice of bytes, this approach is much faster than csv::StringRecord's
-        // per-field validation.
-        let mut record = csv::ByteRecord::with_capacity(500, header_len);
-        let mut result;
-        let mut record_idx: u64 = 0;
-
-        'rfc4180_check: loop {
-            result = rdr.read_byte_record(&mut record);
-            if let Err(e) = result {
-                // read_byte_record() does not validate utf8, so we know this is not a utf8 error
-                if flag_json {
-                    // we're returning a JSON error, so we have more machine-friendly details
-                    // using the JSON API error format
-
-                    let validation_error = json!({
-                        "errors": [{
-                            "title" : "Validation error",
-                            "detail" : format!("{e}"),
-                            "meta": {
-                                "last_valid_record": format!("{record_idx}"),
-                            }
-                        }]
-                    });
-
-                    let json_error = if flag_pretty_json {
-                        simd_json::to_string_pretty(&validation_error).unwrap()
-                    } else {
-                        validation_error.to_string()
-                    };
-
-                    return fail!(json_error);
-                }
-
-                // we're not returning a JSON error, so we can use a
-                // user-friendly error message with a fixlengths suggestion
-                if let csv::ErrorKind::UnequalLengths {
-                    expected_len: _,
-                    len: _,
-                    pos: _,
-                } = e.kind()
-                {
-                    return fail_clierror!(
-                        "Validation error: {e}.\nUse `qsv fixlengths` to fix record length issues."
-                    );
-                }
-                return fail_clierror!("Validation error: {e}.\nLast valid record: {record_idx}");
-            }
-
-            // use SIMD accelerated UTF-8 validation, validate the entire record in one go
-            if simdutf8::basic::from_utf8(record.as_slice()).is_err() {
-                // there's a UTF-8 error, so we report utf8 error metadata
-                if flag_json {
-                    let validation_error = json!({
-                        "errors": [{
-                            "title" : "UTF-8 validation error",
-                            "detail" : "Cannot parse CSV record as UTF-8",
-                            "meta": {
-                                "last_valid_record": format!("{record_idx}"),
-                                "invalid_record": format!("{record:?}"),
-                            }
-                        }]
-                    });
-
-                    let json_error = if flag_pretty_json {
-                        simd_json::to_string_pretty(&validation_error).unwrap()
-                    } else {
-                        validation_error.to_string()
-                    };
-                    return fail_encoding_clierror!("{json_error}");
-                }
-                // we're not returning a JSON error, so we can use a
-                // user-friendly error message with utf8 transcoding suggestions
-                return fail_encoding_clierror!(
-                    r#"non-utf8 sequence at record {record_idx}.
-Invalid record: {record:?}
-Use `qsv input` to fix formatting and to handle non-utf8 sequences.
-Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."#
-                );
-            }
-
-            if result.is_ok_and(|more_data| !more_data) {
-                // we've read the CSV to the end, so break out of loop
-                break 'rfc4180_check;
-            }
-            record_idx += 1;
-        } // end rfc4180_check loop
-
-        // if we're here, we know the CSV is valid
-        let msg = if flag_json {
-            let rfc4180 = RFC4180Struct {
-                delimiter_char: rconfig.get_delimiter() as char,
-                header_row:     !rconfig.no_headers,
-                quote_char:     rconfig.quote as char,
-                num_records:    record_idx,
-                num_fields:     header_len as u64,
-                fields:         field_vec,
-            };
-
-            if flag_pretty_json {
-                simd_json::to_string_pretty(&rfc4180).unwrap()
-            } else {
-                simd_json::to_string(&rfc4180).unwrap()
-            }
-        } else {
-            let delim_display = if rconfig.get_delimiter() == b'\t' {
-                "TAB".to_string()
-            } else {
-                (rconfig.get_delimiter() as char).to_string()
-            };
-            format!(
-                "Valid: {header_msg} Records: {}; Delimiter: {delim_display}",
-                HumanCount(record_idx)
-            )
-        };
-        if !args.flag_quiet {
-            woutinfo!("{msg}");
-        }
-
-        // we're done when validating without a schema
-        return Ok(());
-    }
 
     // if we're here, we're validating with a JSON Schema
     // JSONSchema validation requires headers
@@ -1400,7 +1228,7 @@ Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."#
     // parse and compile supplied JSON Schema
     let (schema_json, schema_compiled): (Value, Validator) =
         // safety: we know the schema is_some() because we checked above
-        match load_json(&args.arg_json_schema.clone().unwrap()) {
+        match load_json(&json_schema_path.unwrap_or_else(|| PathBuf::from(args.arg_json_schema.clone().unwrap())).to_string_lossy()) {
             Ok(s) => {
                 // Check for custom formats and keywords before parsing
                 let has_currency_format = s.contains(r#""format": "currency""#);
@@ -1633,7 +1461,8 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_
 
         let input_path = args
             .arg_input
-            .clone()
+            .first()
+            .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| "stdin.csv".to_string());
 
         write_error_report(&input_path, validation_error_messages)?;
@@ -1670,6 +1499,329 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_
     if !args.flag_quiet {
         winfo!("All {} records valid.", HumanCount(row_number));
     }
+    Ok(())
+}
+
+/// Validate multiple files in RFC 4180 mode with Extended Input Support
+fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
+    use tempfile::tempdir;
+
+    let tmpdir = tempdir()?;
+    let processed_inputs = util::process_input(args.arg_input.clone(), &tmpdir, "")?;
+    let input_count = processed_inputs.len();
+
+    let flag_json = args.flag_json || args.flag_pretty_json;
+    let flag_pretty_json = args.flag_pretty_json;
+
+    let mut all_valid = true;
+    let mut total_files = 0;
+    let mut valid_files = 0;
+
+    for input_path in processed_inputs {
+        total_files += 1;
+
+        if !args.flag_quiet && input_count > 1 {
+            woutinfo!("Validating: {}", input_path.display());
+        }
+
+        let mut rconfig = Config::new(Some(&input_path.to_string_lossy().to_string()))
+            .no_headers(args.flag_no_headers)
+            .set_read_buffer(if std::env::var("QSV_RDR_BUFFER_CAPACITY").is_err() {
+                DEFAULT_RDR_BUFFER_CAPACITY * 10
+            } else {
+                DEFAULT_RDR_BUFFER_CAPACITY
+            });
+
+        if args.flag_delimiter.is_some() {
+            rconfig = rconfig.delimiter(args.flag_delimiter);
+        }
+
+        let mut rdr = match rconfig.reader() {
+            Ok(reader) => reader,
+            Err(e) => {
+                if flag_json {
+                    let file_error = json!({
+                        "errors": [{
+                            "title": "File validation error",
+                            "detail": format!("Cannot read file {}: {}", input_path.display(), e),
+                            "meta": {
+                                "file": input_path.to_string_lossy()
+                            }
+                        }]
+                    });
+                    let json_error = if flag_pretty_json {
+                        simd_json::to_string_pretty(&file_error).unwrap()
+                    } else {
+                        file_error.to_string()
+                    };
+                    return fail_clierror!("{json_error}");
+                }
+                return fail_clierror!("Cannot read file {}: {}", input_path.display(), e);
+            },
+        };
+
+        // Validate the file
+        let validation_result = validate_single_file_rfc4180(
+            &mut rdr,
+            &rconfig,
+            flag_json,
+            flag_pretty_json,
+            args.flag_quiet,
+        );
+
+        match validation_result {
+            Ok(()) => {
+                valid_files += 1;
+            },
+            Err(e) => {
+                all_valid = false;
+                if !args.flag_quiet {
+                    if input_count > 1 {
+                        woutinfo!("❌ {}: {}", input_path.display(), e);
+                    }
+                }
+                // For single files, return the error directly to maintain backward compatibility
+                if input_count == 1 {
+                    return Err(e);
+                }
+            },
+        }
+    }
+
+    // Summary
+    if !args.flag_quiet && input_count > 1 {
+        if all_valid {
+            winfo!("✅ All {} files are valid.", total_files);
+        } else {
+            winfo!(
+                "❌ {} out of {} files are invalid.",
+                total_files - valid_files,
+                total_files
+            );
+        }
+    }
+
+    if all_valid {
+        Ok(())
+    } else {
+        if input_count > 1 {
+            fail_clierror!(
+                "{} out of {} files failed validation",
+                total_files - valid_files,
+                total_files
+            )
+        } else {
+            // For single files, just return the error without the summary message
+            Err(CliError::Other("Validation failed".to_string()))
+        }
+    }
+}
+
+/// Validate a single file in RFC 4180 mode
+fn validate_single_file_rfc4180(
+    rdr: &mut csv::Reader<Box<dyn std::io::Read + Send + 'static>>,
+    rconfig: &Config,
+    flag_json: bool,
+    flag_pretty_json: bool,
+    quiet: bool,
+) -> CliResult<()> {
+    // first, let's validate the header row
+    let mut header_msg = String::new();
+    let mut header_len = 0_usize;
+    let mut field_vec: Vec<String> = Vec::new();
+    if !rconfig.no_headers {
+        let fields_result = rdr.headers();
+        match fields_result {
+            Ok(fields) => {
+                header_len = fields.len();
+                field_vec.reserve(header_len);
+                for field in fields {
+                    field_vec.push(field.to_string());
+                }
+                let field_list = field_vec.join(r#"", ""#);
+                header_msg = format!(
+                    "{} Columns: (\"{field_list}\");",
+                    HumanCount(header_len as u64)
+                );
+            },
+            Err(e) => {
+                // we're returning a JSON error for the header,
+                // so we have more machine-friendly details
+                if flag_json {
+                    // there's a UTF-8 error, so we report utf8 error metadata
+                    if let csv::ErrorKind::Utf8 { pos, err } = e.kind() {
+                        let header_error = json!({
+                            "errors": [{
+                                "title" : "Header UTF-8 validation error",
+                                "detail" : format!("{e}"),
+                                "meta": {
+                                    "record_position": format!("{pos:?}"),
+                                    "record_error": format!("{err}"),
+                                }
+                            }]
+                        });
+                        let json_error = if flag_pretty_json {
+                            simd_json::to_string_pretty(&header_error).unwrap()
+                        } else {
+                            header_error.to_string()
+                        };
+
+                        return fail_encoding_clierror!("{json_error}");
+                    }
+                    // it's not a UTF-8 error, so we report a generic
+                    // header validation error
+                    let header_error = json!({
+                        "errors": [{
+                            "title" : "Header Validation error",
+                            "detail" : format!("{e}"),
+                        }]
+                    });
+                    let json_error = if flag_pretty_json {
+                        simd_json::to_string_pretty(&header_error).unwrap()
+                    } else {
+                        header_error.to_string()
+                    };
+                    return fail_encoding_clierror!("{json_error}");
+                }
+                // we're not returning a JSON error, so we can use
+                // a user-friendly error message with suggestions
+                if let csv::ErrorKind::Utf8 { pos, err } = e.kind() {
+                    return fail_encoding_clierror!(
+                        "non-utf8 sequence detected in header, position {pos:?}.\n{err}\nUse `qsv \
+                         input` to fix formatting and to handle non-utf8 sequences.\n
+                         Alternatively, transcode your data to UTF-8 first using `iconv` or \
+                         `recode`."
+                    );
+                }
+                // its not a UTF-8 error, report a generic header validation error
+                return fail_clierror!("Header Validation error: {e}.");
+            },
+        }
+    }
+
+    // Now, let's validate the rest of the records the fastest way possible.
+    // We do this by using csv::ByteRecord, which does not validate utf8
+    // making for higher throughput and lower memory usage compared to csv::StringRecord
+    // which validates each field SEPARATELY as a utf8 string.
+    // Combined with simdutf8::basic::from_utf8(), we utf8-validate the entire record in one go
+    // as a slice of bytes, this approach is much faster than csv::StringRecord's
+    // per-field validation.
+    let mut record = csv::ByteRecord::with_capacity(500, header_len);
+    let mut result;
+    let mut record_idx: u64 = 0;
+
+    'rfc4180_check: loop {
+        result = rdr.read_byte_record(&mut record);
+        if let Err(e) = result {
+            // read_byte_record() does not validate utf8, so we know this is not a utf8 error
+            if flag_json {
+                // we're returning a JSON error, so we have more machine-friendly details
+                // using the JSON API error format
+
+                let validation_error = json!({
+                    "errors": [{
+                        "title" : "Validation error",
+                        "detail" : format!("{e}"),
+                        "meta": {
+                            "last_valid_record": format!("{record_idx}"),
+                        }
+                    }]
+                });
+
+                let json_error = if flag_pretty_json {
+                    simd_json::to_string_pretty(&validation_error).unwrap()
+                } else {
+                    validation_error.to_string()
+                };
+
+                return fail!(json_error);
+            }
+
+            // we're not returning a JSON error, so we can use a
+            // user-friendly error message with a fixlengths suggestion
+            if let csv::ErrorKind::UnequalLengths {
+                expected_len: _,
+                len: _,
+                pos: _,
+            } = e.kind()
+            {
+                return fail_clierror!(
+                    "Validation error: {e}.\nUse `qsv fixlengths` to fix record length issues."
+                );
+            }
+            return fail_clierror!("Validation error: {e}.\nLast valid record: {record_idx}");
+        }
+
+        // use SIMD accelerated UTF-8 validation, validate the entire record in one go
+        if simdutf8::basic::from_utf8(record.as_slice()).is_err() {
+            // there's a UTF-8 error, so we report utf8 error metadata
+            if flag_json {
+                let validation_error = json!({
+                    "errors": [{
+                        "title" : "UTF-8 validation error",
+                        "detail" : "Cannot parse CSV record as UTF-8",
+                        "meta": {
+                            "last_valid_record": format!("{record_idx}"),
+                            "invalid_record": format!("{record:?}"),
+                        }
+                    }]
+                });
+
+                let json_error = if flag_pretty_json {
+                    simd_json::to_string_pretty(&validation_error).unwrap()
+                } else {
+                    validation_error.to_string()
+                };
+                return fail_encoding_clierror!("{json_error}");
+            }
+            // we're not returning a JSON error, so we can use a
+            // user-friendly error message with utf8 transcoding suggestions
+            return fail_encoding_clierror!(
+                r#"non-utf8 sequence at record {record_idx}.
+Invalid record: {record:?}
+Use `qsv input` to fix formatting and to handle non-utf8 sequences.
+Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."#
+            );
+        }
+
+        if result.is_ok_and(|more_data| !more_data) {
+            // we've read the CSV to the end, so break out of loop
+            break 'rfc4180_check;
+        }
+        record_idx += 1;
+    } // end rfc4180_check loop
+
+    // if we're here, we know the CSV is valid
+    let msg = if flag_json {
+        let rfc4180 = RFC4180Struct {
+            delimiter_char: rconfig.get_delimiter() as char,
+            header_row:     !rconfig.no_headers,
+            quote_char:     rconfig.quote as char,
+            num_records:    record_idx,
+            num_fields:     header_len as u64,
+            fields:         field_vec,
+        };
+
+        if flag_pretty_json {
+            simd_json::to_string_pretty(&rfc4180).unwrap()
+        } else {
+            simd_json::to_string(&rfc4180).unwrap()
+        }
+    } else {
+        let delim_display = if rconfig.get_delimiter() == b'\t' {
+            "TAB".to_string()
+        } else {
+            (rconfig.get_delimiter() as char).to_string()
+        };
+        format!(
+            "Valid: {header_msg} Records: {}; Delimiter: {delim_display}",
+            HumanCount(record_idx)
+        )
+    };
+    if !quiet {
+        woutinfo!("{msg}");
+    }
+
     Ok(())
 }
 

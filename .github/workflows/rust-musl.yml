@@ -44,8 +44,9 @@ jobs:
         sudo apt-get install redis-server
         sudo service redis-server start
     - name: Installing Rust toolchain
-      uses: dtolnay/rust-toolchain@1.90.0
+      uses: dtolnay/rust-toolchain@master
       with:
+        toolchain: stable
         targets: x86_64-unknown-linux-musl
     - name: Setup Rust-cache
       uses: Swatinem/rust-cache@v2

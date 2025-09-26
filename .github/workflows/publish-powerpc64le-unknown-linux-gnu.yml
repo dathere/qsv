@@ -11,7 +11,7 @@ env:
 
 jobs:
   analyze-tags:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     outputs:
       previous-tag: ${{ steps.previoustag.outputs.tag }}
     steps:
@@ -34,7 +34,7 @@ jobs:
       matrix:
         rust: [stable]
         job:
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             os-name: linux
             target: powerpc64le-unknown-linux-gnu
             architecture: powerpc64le
@@ -47,12 +47,10 @@ jobs:
 
     steps:
     - name: Installing Rust toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ matrix.rust }}
-        profile: minimal
-        target: ${{ matrix.job.target }}
-        override: true
+        targets: ${{ matrix.job.target }}
     - name: Checkout repository
       uses: actions/checkout@v5
       with:

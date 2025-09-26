@@ -26,7 +26,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Installing Rust toolchain
-      uses: dtolnay/rust-toolchain@1.90.0
+      uses: dtolnay/rust-toolchain@1.100.0
       with:
         targets: x86_64-apple-darwin
     - name: Setup Rust-cache

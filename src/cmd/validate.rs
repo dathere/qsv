@@ -1146,6 +1146,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Extract JSON schema from input list if it's the last argument
     let (input_files, json_schema_path) = if has_json_schema {
+        // safety: we know the schema is_some() because we checked above
         let schema_path = args.arg_input.last().unwrap().clone();
         let input_files = args.arg_input[..args.arg_input.len() - 1].to_vec();
         (input_files, Some(schema_path))
@@ -1169,7 +1170,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     let input_path = input_files.first().ok_or_else(|| {
-        CliError::Other("No input file provided for JSON Schema validation".to_string())
+        if has_json_schema && args.arg_input.len() == 1 {
+            CliError::Other(
+                "Only a JSON Schema file was provided, but no data file to validate. Please \
+                 provide a data file to validate against the schema."
+                    .to_string(),
+            )
+        } else {
+            CliError::Other("No input file provided for JSON Schema validation".to_string())
+        }
     })?;
 
     let mut rconfig = Config::new(Some(&input_path.to_string_lossy().to_string()))
@@ -1565,6 +1574,7 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
                         }]
                     });
                     let json_error = if flag_pretty_json {
+                        // safety: we know file_error is valid JSON
                         simd_json::to_string_pretty(&file_error).unwrap()
                     } else {
                         file_error.to_string()
@@ -1672,6 +1682,7 @@ fn validate_single_file_rfc4180(
                             }]
                         });
                         let json_error = if flag_pretty_json {
+                            // safety: we know header_error is valid JSON
                             simd_json::to_string_pretty(&header_error).unwrap()
                         } else {
                             header_error.to_string()
@@ -1688,6 +1699,7 @@ fn validate_single_file_rfc4180(
                         }]
                     });
                     let json_error = if flag_pretty_json {
+                        // safety: we know header_error is valid JSON
                         simd_json::to_string_pretty(&header_error).unwrap()
                     } else {
                         header_error.to_string()
@@ -1740,6 +1752,7 @@ fn validate_single_file_rfc4180(
                 });
 
                 let json_error = if flag_pretty_json {
+                    // safety: we know validation_error is valid JSON
                     simd_json::to_string_pretty(&validation_error).unwrap()
                 } else {
                     validation_error.to_string()
@@ -1779,6 +1792,7 @@ fn validate_single_file_rfc4180(
                 });
 
                 let json_error = if flag_pretty_json {
+                    // safety: we know validation_error is valid JSON
                     simd_json::to_string_pretty(&validation_error).unwrap()
                 } else {
                     validation_error.to_string()
@@ -1814,8 +1828,10 @@ Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."#
         };
 
         if flag_pretty_json {
+            // safety: we know rfc4180 is populated and serializable as JSON
             simd_json::to_string_pretty(&rfc4180).unwrap()
         } else {
+            // safety: we know rfc4180 is populated and serializable as JSON
             simd_json::to_string(&rfc4180).unwrap()
         }
     } else {

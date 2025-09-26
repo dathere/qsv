@@ -86,7 +86,7 @@ cached = { version = "0.56", features = [
     "disk_store",
     "redis_ahash",
 ] }
-calamine = { version = "0.30", features = ["dates"] }
+calamine = { version = "0.30", features = ["chrono"] }
 censor = { version = "0.3", optional = true }
 chrono = { version = "0.4", default-features = false }
 chrono-tz = "0.10"
@@ -310,8 +310,8 @@ csv       = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimiz
 csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimized-non-allocating-byterecord-trim" }
 csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimized-non-allocating-byterecord-trim" }
 
-# use patched fork of calamine with bumped quick-xml 0.38 dependencies until PR is merged
-# calamine = { git = "https://github.com/jmcnamara/calamine", branch = "quick_xml_0.38" }
+# use pre-release of calamine with bumped quick-xml 0.38 dependencies to test out GH Actions workflows
+calamine = { git = "https://github.com/tafia/calamine", rev = "5456faf" }
 
 # use our patched fork of csvlens to add natural sort until our PR is merged; updated with upstream fixes
 csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "natural-sort-with-upstream" }

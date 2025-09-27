@@ -3983,9 +3983,9 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "luau0-src"
-version = "0.15.7+luau690"
+version = "0.15.8+luau693"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fa03011370f4a816c6e49554521122acb3108ffbfe3cda8d09c6513a4c72b51"
+checksum = "8ad0347711b93dedd732239f6525e80e9b591616cfc1140b94b7196e7b833600"
 dependencies = [
  "cc",
 ]

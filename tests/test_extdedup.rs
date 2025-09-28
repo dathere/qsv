@@ -159,8 +159,14 @@ fn extdedup_large_memory_test() {
     // Generate a large CSV file with many duplicates
     // This test creates a file that should exceed typical memory limits
     // when processed with a very low memory limit
-    let large_csv = generate_large_csv_with_duplicates(10_000_000);
-    wrk.create_from_string("large_test.csv", &large_csv);
+    let large_csv_path = generate_large_csv_with_duplicates(10_000_000);
+
+    // Copy the generated file to the workdir
+    use std::fs;
+    fs::copy(&large_csv_path, wrk.path("large_test.csv")).expect("Failed to copy large CSV");
+
+    // Clean up the temp file
+    fs::remove_file(&large_csv_path).expect("Failed to remove temp file");
 
     // Test with very low memory limit to force disk usage
     // Use 1% of system memory - this should force disk usage
@@ -193,34 +199,46 @@ fn extdedup_large_memory_test() {
 }
 
 fn generate_large_csv_with_duplicates(total_rows: usize) -> String {
-    let mut csv_content = String::new();
-    csv_content.push_str("id,name,value,category\n");
+    use std::{
+        fs::File,
+        io::{BufWriter, Write},
+    };
+
+    let temp_path = format!("/tmp/qsv_test_large_{}.csv", std::process::id());
+    let file = File::create(&temp_path).expect("Failed to create temp file");
+    let mut writer = BufWriter::with_capacity(64 * 1024, file); // 64KB buffer
+
+    // Write header
+    writer
+        .write_all(b"id,name,value,category\n")
+        .expect("Failed to write header");
 
     let unique_rows = total_rows / 2; // 50% unique, 50% duplicates
     let duplicate_rows = total_rows - unique_rows;
 
     // Generate unique rows
     for i in 0..unique_rows {
-        csv_content.push_str(&format!(
-            "{},\"row_{}\",{},category_{}\n",
-            i,
-            i,
-            i * 10,
-            i % 10
-        ));
+        let line = format!("{},\"row_{}\",{},category_{}\n", i, i, i * 10, i % 10);
+        writer
+            .write_all(line.as_bytes())
+            .expect("Failed to write unique row");
     }
 
     // Generate duplicate rows (repeat some of the unique rows)
     for i in 0..duplicate_rows {
         let original_index = i % unique_rows;
-        csv_content.push_str(&format!(
+        let line = format!(
             "{},\"row_{}\",{},category_{}\n",
             original_index,
             original_index,
             original_index * 10,
             original_index % 10
-        ));
+        );
+        writer
+            .write_all(line.as_bytes())
+            .expect("Failed to write duplicate row");
     }
 
-    csv_content
+    writer.flush().expect("Failed to flush writer");
+    temp_path
 }

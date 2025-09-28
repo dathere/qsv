@@ -3,7 +3,7 @@ use std::{collections::HashSet, path::PathBuf};
 
 use log::debug;
 use memmap2::MmapMut;
-use odht::{Config, FxHashFn, HashTableOwned, bytes_needed};
+use odht::{Config, FxHashFn, HashTable, bytes_needed};
 use tempfile::NamedTempFile;
 
 struct ExtDedupConfig;
@@ -40,29 +40,29 @@ impl Config for ExtDedupConfig {
 }
 
 pub struct ExtDedupCache {
-    memo:       HashSet<String>,
-    disk:       Option<HashTableOwned<ExtDedupConfig>>,
-    memo_limit: u64,
-    memo_size:  u64,
-    temp_file:  Option<NamedTempFile>,
-    mmap:       Option<MmapMut>,
-    temp_dir:   PathBuf,
+    memo:             HashSet<String>,
+    memo_limit:       u64,
+    memo_size:        u64,
+    temp_file:        Option<NamedTempFile>,
+    mmap:             Option<MmapMut>,
+    temp_dir:         PathBuf,
+    disk_initialized: bool,
 }
 
 impl ExtDedupCache {
     pub fn new(memo_limit: u64, temp_dir: Option<PathBuf>) -> Self {
         Self {
-            memo:       HashSet::new(),
-            disk:       None,
-            memo_limit: if memo_limit == 0 {
+            memo:             HashSet::new(),
+            memo_limit:       if memo_limit == 0 {
                 u64::MAX
             } else {
                 memo_limit
             },
-            memo_size:  0,
-            temp_file:  None,
-            mmap:       None,
-            temp_dir:   temp_dir.unwrap_or_else(std::env::temp_dir),
+            memo_size:        0,
+            temp_file:        None,
+            mmap:             None,
+            temp_dir:         temp_dir.unwrap_or_else(std::env::temp_dir),
+            disk_initialized: false,
         }
     }
 
@@ -81,20 +81,17 @@ impl ExtDedupCache {
 
         let mut mmap = unsafe { MmapMut::map_mut(temp_file.as_file())? };
 
-        // Create a properly initialized table
-        let table = HashTableOwned::<ExtDedupConfig>::with_capacity(ODHT_CAPACITY, load_factor);
-
-        // Copy the initialized bytes to mmap
-        let raw_bytes = table.raw_bytes();
-        if mmap.len() >= raw_bytes.len() {
-            mmap[..raw_bytes.len()].copy_from_slice(raw_bytes);
-            mmap.flush()?;
-        } else {
-            return Err(std::io::Error::other("Mmap size too small for ODHT table"));
-        }
+        // Initialize the hash table in the memory-mapped file
+        HashTable::<ExtDedupConfig, &mut [u8]>::init_in_place(
+            &mut mmap,
+            ODHT_CAPACITY,
+            load_factor,
+        )
+        .map_err(|e| std::io::Error::other(format!("Failed to initialize hash table: {e}")))?;
 
         self.mmap = Some(mmap);
         self.temp_file = Some(temp_file);
+        self.disk_initialized = true;
         Ok(())
     }
 
@@ -107,7 +104,7 @@ impl ExtDedupCache {
         let mut res = self.memo.insert(item.to_owned());
         if res {
             self.memo_size += item.len() as u64;
-            if self.disk.is_some() {
+            if self.disk_initialized {
                 res = self.insert_on_disk(item);
                 // debug!("Insert on disk: {res}");
             }
@@ -122,42 +119,50 @@ impl ExtDedupCache {
             return true;
         }
 
-        return if let Some(ref disk) = self.disk {
-            ExtDedupCache::item_to_keys(item).all(|key| disk.contains_key(&key))
+        // Work directly with the memory-mapped hash table
+        if self.disk_initialized && self.mmap.is_some() {
+            if let Some(mmap) = &self.mmap {
+                // Create a temporary table reference to work with the mmap
+                let table =
+                    unsafe { HashTable::<ExtDedupConfig, &[u8]>::from_raw_bytes_unchecked(mmap) };
+
+                ExtDedupCache::item_to_keys(item).all(|key| table.contains_key(&key))
+            } else {
+                false
+            }
         } else {
             false
-        };
+        }
     }
 
     fn insert_on_disk(&mut self, item: &str) -> bool {
-        if self.disk.is_none() {
+        if !self.disk_initialized {
             debug!("Create new disk cache");
             match self.create_mmap() {
                 Ok(()) => {
-                    if let Some(mmap) = &mut self.mmap {
-                        // Create the table from the properly initialized mmap
-                        self.disk = Some(unsafe {
-                            HashTableOwned::<ExtDedupConfig>::from_raw_bytes_unchecked(mmap)
-                        });
-                    }
+                    // The table is already initialized in the mmap
                 },
                 Err(e) => {
                     debug!("Failed to create memory map: {e}");
-                    // Fallback to regular HashTableOwned if mmap fails
-                    self.disk = Some(HashTableOwned::<ExtDedupConfig>::with_capacity(
-                        1_000_000, 95,
-                    ));
+                    return false;
                 },
             }
         }
 
-        let mut res = false;
-        if let Some(disk) = &mut self.disk {
+        // Work directly with the memory-mapped hash table
+        if let Some(mmap) = &mut self.mmap {
+            // Create a temporary table reference to work with the mmap
+            let mut table =
+                unsafe { HashTable::<ExtDedupConfig, &mut [u8]>::from_raw_bytes_unchecked(mmap) };
+
+            let mut res = false;
             for key in ExtDedupCache::item_to_keys(item) {
-                res = disk.insert(&key, &true).is_none() || res;
+                res = table.insert(&key, &true).is_none() || res;
             }
+            res
+        } else {
+            false
         }
-        res
     }
 
     fn item_to_keys(item: &str) -> impl Iterator<Item = [u8; CHUNK_SIZE + 1]> + '_ {
@@ -214,8 +219,7 @@ mod tests {
             cache.insert(&rand_string(32));
         }
         assert!(cache.memo.len() < 100);
-        assert!(cache.disk.is_some());
-        assert!(cache.disk.as_ref().unwrap().len() > 0);
+        assert!(cache.disk_initialized);
     }
 
     fn rand_string(len: usize) -> String {

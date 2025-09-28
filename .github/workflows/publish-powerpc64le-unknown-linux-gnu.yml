@@ -38,7 +38,6 @@ jobs:
             os-name: linux
             target: powerpc64le-unknown-linux-gnu
             architecture: powerpc64le
-            use-cross: true
             addl-build-args: --features=apply,fetch,foreach,self_update,lens
             default-features:
             addl-qsvlite-features:
@@ -65,28 +64,28 @@ jobs:
       #   RUSTFLAGS: --emit=asm
       env:
         RUSTFLAGS: ${{ matrix.job.addl-rustflags }}
-      uses: actions-rs/cargo@v1
+      uses: houseabsolute/actions-rust-cross@v1
       with:
         command: build
-        use-cross: ${{ matrix.job.use-cross }}
+        target: ${{ matrix.job.target }}
         toolchain: ${{ matrix.rust }}
         args: --release --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
     - name: Build qsvlite
       env:
         RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
-      uses: actions-rs/cargo@v1
+      uses: houseabsolute/actions-rust-cross@v1
       with:
         command: build
-        use-cross: ${{ matrix.job.use-cross }}
+        target: ${{ matrix.job.target }}
         toolchain: ${{ matrix.rust }}
         args: --release --locked --bin qsvlite --features=lite,self_update,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Build qsvdp
       env:
         RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
-      uses: actions-rs/cargo@v1
+      uses: houseabsolute/actions-rust-cross@v1
       with:
         command: build
-        use-cross: ${{ matrix.job.use-cross }}
+        target: ${{ matrix.job.target }}
         toolchain: ${{ matrix.rust }}
         args: --release --locked --bin qsvdp --features=datapusher_plus,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir

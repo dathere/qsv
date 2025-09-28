@@ -1,3 +1,5 @@
+use std::env::temp_dir;
+
 use newline_converter::dos2unix;
 
 use crate::workdir::Workdir;
@@ -204,7 +206,10 @@ fn generate_large_csv_with_duplicates(total_rows: usize) -> String {
         io::{BufWriter, Write},
     };
 
-    let temp_path = format!("/tmp/qsv_test_large_{}.csv", std::process::id());
+    let temp_path = temp_dir()
+        .join(format!("qsv_test_large_{}.csv", std::process::id()))
+        .to_string_lossy()
+        .into_owned();
     let file = File::create(&temp_path).expect("Failed to create temp file");
     let mut writer = BufWriter::with_capacity(64 * 1024, file); // 64KB buffer
 

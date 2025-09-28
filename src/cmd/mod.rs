@@ -86,7 +86,6 @@ pub mod search;
 pub mod searchset;
 pub mod select;
 pub mod slice;
-#[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
 pub mod snappy;
 pub mod sniff;
 pub mod sort;

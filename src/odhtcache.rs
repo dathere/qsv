@@ -123,6 +123,8 @@ impl ExtDedupCache {
         if self.disk_initialized && self.mmap.is_some() {
             if let Some(mmap) = &self.mmap {
                 // Create a temporary table reference to work with the mmap
+                // safety: The mmap is created and initialized to hold a valid HashTable,
+                // and is only accessed while it is valid and not mutably borrowed elsewhere.
                 let table =
                     unsafe { HashTable::<ExtDedupConfig, &[u8]>::from_raw_bytes_unchecked(mmap) };
 

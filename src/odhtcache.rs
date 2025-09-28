@@ -164,7 +164,7 @@ impl ExtDedupCache {
                 Err(e) => {
                     debug!("Failed to validate memory-mapped hash table: {e}");
                     return false;
-                }
+                },
             };
 
             let mut res = false;

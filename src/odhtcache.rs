@@ -154,6 +154,10 @@ impl ExtDedupCache {
         // Work directly with the memory-mapped hash table
         if let Some(mmap) = &mut self.mmap {
             // Create a temporary table reference to work with the mmap
+            // safety: The mmap was created with the correct size and alignment for the hash table,
+            // and is only accessed through this code path. We ensure exclusive mutable access to the
+            // memory region, and the table is initialized before use. Therefore, it is safe to construct
+            // a HashTable from these raw bytes.
             let mut table =
                 unsafe { HashTable::<ExtDedupConfig, &mut [u8]>::from_raw_bytes_unchecked(mmap) };
 

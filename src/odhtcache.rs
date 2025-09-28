@@ -158,8 +158,14 @@ impl ExtDedupCache {
             // and is only accessed through this code path. We ensure exclusive mutable access to
             // the memory region, and the table is initialized before use. Therefore, it
             // is safe to construct a HashTable from these raw bytes.
-            let mut table =
-                unsafe { HashTable::<ExtDedupConfig, &mut [u8]>::from_raw_bytes_unchecked(mmap) };
+            let table_result = HashTable::<ExtDedupConfig, &mut [u8]>::from_raw_bytes(mmap);
+            let mut table = match table_result {
+                Ok(table) => table,
+                Err(e) => {
+                    debug!("Failed to validate memory-mapped hash table: {e}");
+                    return false;
+                }
+            };
 
             let mut res = false;
             for key in ExtDedupCache::item_to_keys(item) {

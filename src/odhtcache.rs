@@ -125,11 +125,12 @@ impl ExtDedupCache {
                 // Create a temporary table reference to work with the mmap
                 // safety: The mmap is created and initialized to hold a valid HashTable,
                 // and is only accessed while it is valid and not mutably borrowed elsewhere.
-                let table_result =
-                    HashTable::<ExtDedupConfig, &[u8]>::from_raw_bytes(mmap);
+                let table_result = HashTable::<ExtDedupConfig, &[u8]>::from_raw_bytes(mmap);
 
                 match table_result {
-                    Ok(table) => ExtDedupCache::item_to_keys(item).all(|key| table.contains_key(&key)),
+                    Ok(table) => {
+                        ExtDedupCache::item_to_keys(item).all(|key| table.contains_key(&key))
+                    },
                     Err(_) => false,
                 }
             } else {

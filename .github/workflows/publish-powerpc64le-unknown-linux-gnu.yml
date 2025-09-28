@@ -73,6 +73,7 @@ jobs:
     - name: Build qsvlite
       env:
         RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
+        HAVE_ALTIVEC: 0
       uses: houseabsolute/actions-rust-cross@v1
       with:
         command: build

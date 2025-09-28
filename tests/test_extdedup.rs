@@ -159,7 +159,7 @@ fn extdedup_large_memory_test() {
     // Generate a large CSV file with many duplicates
     // This test creates a file that should exceed typical memory limits
     // when processed with a very low memory limit
-    let large_csv = generate_large_csv_with_duplicates(10_000_000, 50);
+    let large_csv = generate_large_csv_with_duplicates(10_000_000);
     wrk.create_from_string("large_test.csv", &large_csv);
 
     // Test with very low memory limit to force disk usage
@@ -192,7 +192,7 @@ fn extdedup_large_memory_test() {
     assert!(!deduped_output.contains("duplicate"));
 }
 
-fn generate_large_csv_with_duplicates(total_rows: usize, _duplicate_percentage: usize) -> String {
+fn generate_large_csv_with_duplicates(total_rows: usize) -> String {
     let mut csv_content = String::new();
     csv_content.push_str("id,name,value,category\n");
 

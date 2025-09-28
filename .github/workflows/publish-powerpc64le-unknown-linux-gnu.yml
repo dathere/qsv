@@ -79,7 +79,7 @@ jobs:
         target: ${{ matrix.job.target }}
         toolchain: ${{ matrix.rust }}
         use-rust-cache: false
-        args: --release --locked --bin qsvlite --features=lite,self_update,${{ matrix.job.addl-qsvlite-features }}
+        args: --release --bin qsvlite --features=lite,self_update,${{ matrix.job.addl-qsvlite-features }}
         # --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     # - name: Build qsvdp
     #   env:

@@ -460,7 +460,7 @@ impl OutputMode {
                     let ipc_compression: Option<IpcCompression> = match compression {
                         ArrowCompression::Uncompressed => None,
                         ArrowCompression::Lz4 => Some(IpcCompression::LZ4),
-                        ArrowCompression::Zstd => Some(IpcCompression::ZSTD),
+                        ArrowCompression::Zstd => Some(IpcCompression::ZSTD(Default::default())),
                     };
 
                     IpcWriter::new(&mut w)
@@ -643,8 +643,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             | OptFlags::COMM_SUBPLAN_ELIM
             | OptFlags::COMM_SUBEXPR_ELIM
             | OptFlags::ROW_ESTIMATE
-            | OptFlags::FAST_PROJECTION
-            | OptFlags::COLLAPSE_JOINS;
+            | OptFlags::FAST_PROJECTION;
     }
 
     optflags.set(OptFlags::NEW_STREAMING, args.flag_streaming);

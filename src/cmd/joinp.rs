@@ -727,8 +727,7 @@ impl JoinStruct {
                 | OptFlags::COMM_SUBPLAN_ELIM
                 | OptFlags::COMM_SUBEXPR_ELIM
                 | OptFlags::ROW_ESTIMATE
-                | OptFlags::FAST_PROJECTION
-                | OptFlags::COLLAPSE_JOINS;
+                | OptFlags::FAST_PROJECTION;
         }
 
         optflags.set(OptFlags::NEW_STREAMING, self.streaming);

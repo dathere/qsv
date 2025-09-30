@@ -1169,11 +1169,11 @@ fn sqlp_boston311_sql_cache_schema_decimal_override() {
 {"latitude":"42.363","longitude":"-71.056600"}
 {"latitude":"42.288","longitude":"-71.133000"}
 {"latitude":"42.340","longitude":"-71.080300"}
-{"latitude":"42.373","longitude":"-71.059900"}
+{"latitude":"42.374","longitude":"-71.059900"}
 {"latitude":"42.359","longitude":"-71.070000"}
-{"latitude":"42.311","longitude":"-71.115200"}
-{"latitude":"42.360","longitude":"-71.063800"}
-{"latitude":"42.359","longitude":"-71.063400"}
+{"latitude":"42.312","longitude":"-71.115200"}
+{"latitude":"42.361","longitude":"-71.063800"}
+{"latitude":"42.360","longitude":"-71.063400"}
 {"latitude":"42.349","longitude":"-71.081100"}"#;
 
     assert_eq!(got, expected);

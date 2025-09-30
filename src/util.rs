@@ -232,7 +232,9 @@ pub fn qsv_custom_panic() {
 fn default_user_agent() -> String {
     let unknown_command = "Unknown".to_string();
     let current_command = CURRENT_COMMAND.get().unwrap_or(&unknown_command);
-    format!("{CARGO_BIN_NAME}/{CARGO_PKG_VERSION} ({TARGET}; {current_command}; {QSV_KIND}; https://github.com/dathere/qsv)")
+    format!(
+        "{CARGO_BIN_NAME}/{CARGO_PKG_VERSION} ({TARGET}; {current_command}; {QSV_KIND}; https://github.com/dathere/qsv)"
+    )
 }
 
 pub fn max_jobs() -> usize {
@@ -3173,9 +3175,8 @@ pub fn infer_polars_schema(
                         if precision > 16 {
                             // For very high precision, use Decimal type
                             polars::datatypes::DataType::Decimal(
-                                Some(precision as usize),
-                                // polars will infer scale from the data if None
-                                None,
+                                precision as usize,
+                                5, // scale
                             )
                         } else if precision > 7
                             || min.parse::<f32>().is_err()

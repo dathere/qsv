@@ -232,7 +232,9 @@ pub fn qsv_custom_panic() {
 fn default_user_agent() -> String {
     let unknown_command = "Unknown".to_string();
     let current_command = CURRENT_COMMAND.get().unwrap_or(&unknown_command);
-    format!("{CARGO_BIN_NAME}/{CARGO_PKG_VERSION} ({TARGET}; {current_command}; {QSV_KIND}; https://github.com/dathere/qsv)")
+    format!(
+        "{CARGO_BIN_NAME}/{CARGO_PKG_VERSION} ({TARGET}; {current_command}; {QSV_KIND}; https://github.com/dathere/qsv)"
+    )
 }
 
 pub fn max_jobs() -> usize {
@@ -3116,6 +3118,12 @@ pub fn infer_polars_schema(
     };
     let (csv_fields, csv_stats, _) = get_stats_records(&schema_args, StatsMode::PolarsSchema)?;
     let mut schema = polars::prelude::Schema::with_capacity(csv_stats.len());
+
+    // fetch the decimal scale from the QSV_POLARS_DECIMAL_SCALE env var
+    let scale = std::env::var("QSV_POLARS_DECIMAL_SCALE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5); // default scale is 5
     for (idx, stat) in csv_stats.iter().enumerate() {
         // safety: we know that the get(idx) will not be None as we are using an iterator
         schema.insert(
@@ -3172,11 +3180,7 @@ pub fn infer_polars_schema(
                         // document it as the polars engine does support it
                         if precision > 16 {
                             // For very high precision, use Decimal type
-                            polars::datatypes::DataType::Decimal(
-                                Some(precision as usize),
-                                // polars will infer scale from the data if None
-                                None,
-                            )
+                            polars::datatypes::DataType::Decimal(precision as usize, scale)
                         } else if precision > 7
                             || min.parse::<f32>().is_err()
                             || max.parse::<f32>().is_err()

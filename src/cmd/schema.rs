@@ -45,7 +45,7 @@ the `sqlp`, `joinp`, and `pivotp` commands will use the Polars schema to read th
 instead of inferring the schema from the CSV data. Not only does this allow these commands to
 skip schema inferencing which may fail when the inferencing sample is too low, it also allows
 Polars to optimize the query and gives the user the option to tailor the schema to their specific
-query needs (e.g. using a Decimal type instead of a Float type).
+query needs (e.g. using a Decimal type with explicit precision and scale instead of a Float type).
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_schema.rs.
 

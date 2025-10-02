@@ -51,7 +51,7 @@ mod test_comments;
 mod test_count;
 mod test_datefmt;
 mod test_dedup;
-#[cfg(not(target_arch = "powerpc64le"))]
+#[cfg(not(target_arch = "powerpc64"))]
 mod test_describegpt;
 mod test_diff;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
@@ -79,7 +79,7 @@ mod test_fmt;
 mod test_foreach;
 mod test_frequency;
 #[cfg(feature = "geocode")]
-#[cfg(not(target_arch = "powerpc64le"))]
+#[cfg(not(target_arch = "powerpc64"))]
 mod test_geocode;
 #[cfg(feature = "geocode")]
 mod test_geoconvert;

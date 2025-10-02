@@ -95,7 +95,7 @@ If you do not specify a prompt file, default prompts will be used.
 | `tags_prompt`            | The prompt for the `--tags` option.                                                         |
 | `json`                   | Whether or not the output should be in JSON format (refer to [`--json`](#json) section).    |
 | `jsonl`                  | Whether or not the output should be in JSONL format (refer to [`--jsonl`](#jsonl) section). |
-| `base_url`               | The URL of the LLM API. When it contains "localhost", aumatically sets `tokens` to 0.       |
+| `base_url`               | The URL of the LLM API. When it contains "localhost", automatically sets `tokens` to 0.     |
 | `model`                  | The LLM model to use.                                                                       |
 | `timeout`                | The timeout in seconds to use when waiting for LLM prompt completions.                      |
 | `custom_prompt_guidance` | The guidance used to generate SQL queries in SQL RAG mode.                                  | 

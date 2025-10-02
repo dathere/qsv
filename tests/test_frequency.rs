@@ -655,7 +655,7 @@ fn frequency_bom() {
 #[test]
 fn prop_frequency_indexed() {
     fn p(rows: CsvData) -> bool {
-        param_prop_frequency("prop_frequency_indxed", rows, true)
+        param_prop_frequency("prop_frequency_indexed", rows, true)
     }
     // Run on really small values because we are incredibly careless
     // with allocation.

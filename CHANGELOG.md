@@ -179,7 +179,7 @@ When [pairwise renaming was introduced in v6.0.0](https://github.com/dathere/qsv
 
 🗂️ **`partition` Improvements**:
 - **Case-Insensitive Safety**:  Improved case-aware partitioning algorithm. Previously, case insensitive file systems like macOS APFS and Windows NTFS was causing incorrect partitioning of case-sensitive values
-- **Faster still**: With better use of I/O bufferring - with deferred, batched, async writes instead of after every record
+- **Faster still**: With better use of I/O buffering - with deferred, batched, async writes instead of after every record
 
 [^1]: LLMs can still hallucinate a syntactically wrong SQL query. But once a valid SQL query is generated, its fully reproducible.
 [^2]: Depending on your LLM setup, SQL query generation may take some time. Once generated however, the SQL query itself will be **_blazing-fast_**.
@@ -3869,7 +3869,7 @@ So "0.100.0" is less than "0.99.0", and self-update won't work.
 
 ### Fixed
 * only create qsv_cache directory when needed https://github.com/jqnatividad/qsv/pull/930
-* fixed werr macro to also formmat! messages https://github.com/jqnatividad/qsv/commit/c3ceaf713683ddb70e40a293f494f15144cc78fb
+* fixed werr macro to also format! messages https://github.com/jqnatividad/qsv/commit/c3ceaf713683ddb70e40a293f494f15144cc78fb
 
 **Full Changelog**: https://github.com/jqnatividad/qsv/compare/0.99.0...0.100.0
 
@@ -4990,7 +4990,7 @@ self-update will only notify you of new releases, instead of proceeding with sel
 * Bump jql from 4.0.7 to 5.0.0 by @dependabot in https://github.com/jqnatividad/qsv/pull/436
 * progressbars are now off by default, and are disabled with stdin input https://github.com/jqnatividad/qsv/pull/438
 * `lua` & `py`: improved error-handling when loading script files
-* `stats`: changed to using AtomicBool instead of OnceCell, use with_capacity in hot compute loop to minize allocs - hyperfine shows 18% perf increase with these changes
+* `stats`: changed to using AtomicBool instead of OnceCell, use with_capacity in hot compute loop to minimize allocs - hyperfine shows 18% perf increase with these changes
 * self-update now gives a proper error message when GitHub is rate-limiting updates
 * cargo update bump several dependencies
 * document MSRV policy

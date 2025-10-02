@@ -11,7 +11,7 @@ env:
 
 jobs:
   analyze-tags:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-ppc64le
     outputs:
       previous-tag: ${{ steps.previoustag.outputs.tag }}
     steps:

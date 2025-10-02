@@ -79,7 +79,7 @@ mod test_fmt;
 mod test_foreach;
 mod test_frequency;
 #[cfg(feature = "geocode")]
-#[cfg(not(target_arch = "powerpc64"))]
+// #[cfg(not(target_arch = "powerpc64"))]
 mod test_geocode;
 #[cfg(feature = "geocode")]
 mod test_geoconvert;

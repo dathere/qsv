@@ -125,7 +125,7 @@ Common options:
 use std::{fs, io, path::Path, process::Command};
 
 use dunce;
-use log::{debug, error};
+use log::debug;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::Deserialize;
 

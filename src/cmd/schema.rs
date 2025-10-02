@@ -109,7 +109,7 @@ use csv::ByteRecord;
 use foldhash::{HashMap, HashMapExt, HashSet};
 use grex::RegExpBuilder;
 use itertools::Itertools;
-use log::{debug, error, info, warn};
+use log::{debug, info};
 use rayon::slice::ParallelSliceMut;
 use serde_json::{Map, Value, json, value::Number};
 use stats::Frequencies;

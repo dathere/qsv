@@ -280,7 +280,7 @@ use jsonschema::{
     output::BasicOutput,
     paths::{LazyLocation, Location},
 };
-use log::{debug, info};
+use log::debug;
 use qsv_currency::Currency;
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},

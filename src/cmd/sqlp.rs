@@ -457,6 +457,7 @@ impl OutputMode {
                         .parse()
                         .unwrap_or(ArrowCompression::Uncompressed);
 
+                    #[allow(clippy::default_trait_access)]
                     let ipc_compression: Option<IpcCompression> = match compression {
                         ArrowCompression::Uncompressed => None,
                         ArrowCompression::Lz4 => Some(IpcCompression::LZ4),

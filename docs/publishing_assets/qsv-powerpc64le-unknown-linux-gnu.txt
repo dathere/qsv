@@ -1,1 +1,7 @@
-Compiled natively with target-cpu=native on a self-hosted Action Runner.
+Compiled natively with target-cpu=native on a native PowerPC runner generously provided by IBM.
+
+See https://github.com/IBM/actionspz/issues/47
+
+The polars feature, unfortunately, does not compile on PowerPC and is disabled.
+
+Further, qsvdp is not built as DataPusher+, currently, is not deployed on PowerPC platforms.

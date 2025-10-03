@@ -1,4 +1,4 @@
-name: Publish powerpc64le-unknown-linux-gnu
+name: Publish powerpc64
 
 on:
 #   push:
@@ -63,20 +63,17 @@ jobs:
       with:
         toolchain: stable
         targets: powerpc64le-unknown-linux-gnu
-    # - name: Build qsv
-    #   # env:
-    #   #   RUSTFLAGS: --emit=asm
-    #   env:
-    #     RUSTFLAGS: ${{ matrix.job.addl-rustflags }}
-    #   uses: houseabsolute/actions-rust-cross@v1
-    #   with:
-    #     command: build
-    #     target: ${{ matrix.job.target }}
-    #     toolchain: ${{ matrix.rust }}
-    #     args: --release --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
+    - name: Build qsv
+      env:
+        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }} -C target-cpu=native
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        toolchain: ${{ matrix.rust }}
+        args: --release --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
     - name: Build qsvlite
       env:
-        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
+        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }} -C target-cpu=native
       uses: actions-rs/cargo@v1
       with:
         command: build
@@ -84,11 +81,10 @@ jobs:
         args: --release --locked --bin qsvlite --features=lite,self_update,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     # - name: Build qsvdp
     #   env:
-    #     RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
-    #   uses: houseabsolute/actions-rust-cross@v1
+    #     RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }} -C target-cpu=native
+    #   uses: actions-rs/cargo@v1
     #   with:
     #     command: build
-    #     target: ${{ matrix.job.target }}
     #     toolchain: ${{ matrix.rust }}
     #     args: --release --locked --bin qsvdp --features=datapusher_plus,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir

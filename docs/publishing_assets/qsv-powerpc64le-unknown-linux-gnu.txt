@@ -1,0 +1,1 @@
+Compiled natively with target-cpu=native on a self-hosted Action Runner.

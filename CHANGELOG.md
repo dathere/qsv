@@ -17,11 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Changed
 * `describegpt`: fine-tuned default LLM Prompt template (v3.1.0) https://github.com/dathere/qsv/commit/00e52a35f696f2b7765486cc8e8dabcfec091e81 https://github.com/dathere/qsv/commit/6b09b7e9fcb6885ebfbd6c9fa77cfbca6a991d6e https://github.com/dathere/qsv/commit/5be7f2e3c9d25f82bab1f7a12279340ecd828db0
 * `luau`: bump embedded luau from 0.690 to 0.693 https://github.com/dathere/qsv/pull/3017
+* `schema`: make Decimal Type Scale configurable with `QSV_POLARS_DECIMAL_SCALE` env var - https://github.com/dathere/qsv/commit/f20edd5eabf6ad624af72069c7125198d9b347c5
+* updated optimized csv crate, adding non-allocating `StringRecord::trim()` and more `inline()`s https://github.com/dathere/qsv/commit/4a1c82a7eaa49e702c754cab4767e0211477e2b4
 * deps: bump calamine to 0.31.0 https://github.com/dathere/qsv/commit/bd7a04cd9d030903f28286a2d7b04d11bcb22487
 * deps: Bump polars to 0.51.0 from 0.50.0 at py-1.33.1 tag https://github.com/dathere/qsv/pull/2995
 * deps: bump polars to 0.51.0 at py-1.34.0-beta.4 tag at revision b973cac (latest upstream) https://github.com/dathere/qsv/pull/3022
 * deps: bump polars to 0.51.0 at py-1.35.0 tag revision b973cac https://github.com/dathere/qsv/commit/41648750f2156e66d2cb12729da6d02bd0c6411c
 * deps: replace tabwriter with renamed fork qsv-tabwriter https://github.com/dathere/qsv/pull/3010
+* deps: use patched fork of whatlang-rs. Though our PR was merged, there is still no new release https://github.com/dathere/qsv/commit/6afff4fda25a5330d4293d62579b3f20557d2251
 * build(deps): bump base62 from 2.2.2 to 2.2.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3003
 * build(deps): bump chrono from 0.4.41 to 0.4.42 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2974
 * build(deps): bump fancy-regex from 0.16.1 to 0.16.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3000
@@ -48,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * build(deps): bump tempfile from 3.22.0 to 3.23.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3007
 * build(deps): bump tempfile from 3.21.0 to 3.22.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2975
 * build(deps): bump toml from 0.9.6 to 0.9.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3001
+* pin zip to 4.6, as zip 5 has features that are not widely adopted https://github.com/dathere/qsv/commit/b231a23343d1701a2a683d41473093def9e1b91a
 * applied select clippy lint suggestions
 * updated indirect dependencies
 * bumped MSRV to Rust 1.90
@@ -57,6 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `describegpt` `--base-url` option being ignored https://github.com/dathere/qsv/pull/2977
 * `schema` delimiter detection https://github.com/dathere/qsv/pull/2998
 * `extdedup` really use memmapped ondisk hash table https://github.com/dathere/qsv/pull/3020
+
+## Removed:
+* removed powerpc64-le cross-compilation directive now that we have access to IBM-provided native PowerPC GH Action runner https://github.com/dathere/qsv/commit/9659bfc8a7bcd4ac2b1ff982fb2f7debd2fd923e
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/7.1.0...8.0.0
 

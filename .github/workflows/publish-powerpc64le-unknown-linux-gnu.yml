@@ -38,7 +38,7 @@ jobs:
             os-name: linux
             target: powerpc64le-unknown-linux-gnu
             architecture: powerpc64le
-            addl-build-args: --features=apply,fetch,foreach,self_update,lens
+            addl-build-args: --features=apply,fetch,foreach,geocode,luau,python,self_update,ui
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
@@ -54,11 +54,15 @@ jobs:
       uses: actions/checkout@v5
       with:
         ref: ${{ needs.analyze-tags.outputs.previous-tag }}
-    - name: apt-get update Ubuntu, libwayland-dev and other cross-compilation dependencies
-      if: ${{ matrix.job.os-name == 'linux' }}
+    - name: apt-get update Ubuntu, libwayland-dev
       run: |
         sudo apt-get update
-        sudo apt-get install libwayland-dev gcc-powerpc64le-linux-gnu g++-powerpc64le-linux-gnu libc6-dev-ppc64el-cross
+        sudo apt-get install libwayland-dev
+    - name: Installing Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        targets: powerpc64le-unknown-linux-gnu
     # - name: Build qsv
     #   # env:
     #   #   RUSTFLAGS: --emit=asm

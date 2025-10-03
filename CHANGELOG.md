@@ -6,46 +6,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## What's Changed
-* fix: `describegpt` init cache vars even when --no-cache is used by @jqnatividad in https://github.com/dathere/qsv/pull/2970
+## [8.0.0]
+
+## Added
+* `table`: add `leftendtab` alignment option https://github.com/dathere/qsv/pull/3004
+* `table`: add `leftfwf` (Fixed Width Format) alignment option https://github.com/dathere/qsv/commit/590c8612206859021d035c4b925dd6be9577afd2
+* `validate`: add Extended Input Support to RFC 4180 validation mode https://github.com/dathere/qsv/pull/3012
+* added PowerPC64 LE Linux prebuilt
+
+## Changed
+* `describegpt`: fine-tuned default LLM Prompt template (v3.1.0) https://github.com/dathere/qsv/commit/00e52a35f696f2b7765486cc8e8dabcfec091e81 https://github.com/dathere/qsv/commit/6b09b7e9fcb6885ebfbd6c9fa77cfbca6a991d6e https://github.com/dathere/qsv/commit/5be7f2e3c9d25f82bab1f7a12279340ecd828db0
+* `luau`: bump embedded luau from 0.690 to 0.693 https://github.com/dathere/qsv/pull/3017
+* deps: bump calamine to 0.31.0 https://github.com/dathere/qsv/commit/bd7a04cd9d030903f28286a2d7b04d11bcb22487
+* deps: Bump polars to 0.51.0 from 0.50.0 at py-1.33.1 tag https://github.com/dathere/qsv/pull/2995
+* deps: bump polars to 0.51.0 at py-1.34.0-beta.4 tag at revision b973cac (latest upstream) https://github.com/dathere/qsv/pull/3022
+* deps: bump polars to 0.51.0 at py-1.35.0 tag revision b973cac https://github.com/dathere/qsv/commit/41648750f2156e66d2cb12729da6d02bd0c6411c
+* deps: replace tabwriter with renamed fork qsv-tabwriter https://github.com/dathere/qsv/pull/3010
+* build(deps): bump base62 from 2.2.2 to 2.2.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3003
 * build(deps): bump chrono from 0.4.41 to 0.4.42 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2974
+* build(deps): bump fancy-regex from 0.16.1 to 0.16.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3000
+* build(deps): bump flexi_logger from 0.31.2 to 0.31.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3005
+* build(deps): bump flexi_logger from 0.31.3 to 0.31.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3008
 * build(deps): bump indexmap from 2.11.0 to 2.11.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2973
-* build(deps): bump tempfile from 3.21.0 to 3.22.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2975
-* fix: `describegpt` `--base-url` option being ignored by @jqnatividad in https://github.com/dathere/qsv/pull/2977
+* build(deps): bump indexmap from 2.11.1 to 2.11.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2993
+* build(deps): bump indexmap from 2.11.3 to 2.11.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2999
+* build(deps): bump libc from 0.2.175 to 0.2.176 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3009
+* build(deps): bump mlua from 0.11.3 to 0.11.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3021
+* build(deps): bump regex from 1.11.2 to 1.11.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3011
+* build(deps): bump redis from 0.32.5 to 0.32.6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3016
+* build(deps): bump redis from 0.32.6 to 0.32.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3025
+* build(deps): bump serde from 1.0.219 to 1.0.223 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2983
+* build(deps): bump serde from 1.0.223 to 1.0.224 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2988
+* build(deps): bump serde from 1.0.224 to 1.0.225 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2994
+* build(deps): bump serde from 1.0.225 to 1.0.226 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3002
+* build(deps): bump serde from 1.0.226 to 1.0.227 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3014
+* build(deps): bump serde from 1.0.227 to 1.0.228 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3019
 * build(deps): bump serde_json from 1.0.143 to 1.0.145 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2981
 * build(deps): bump semver from 1.0.26 to 1.0.27 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2982
-* build(deps): bump serde from 1.0.219 to 1.0.223 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2983
-* feat: `table` add `--in-place` option by @jqnatividad in https://github.com/dathere/qsv/pull/2984
-* build(deps): bump serde from 1.0.223 to 1.0.224 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2988
-* Revert "feat: `table` add `--in-place` option" by @jqnatividad in https://github.com/dathere/qsv/pull/2991
-* build(deps): bump serde from 1.0.224 to 1.0.225 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2994
-* build(deps): bump indexmap from 2.11.1 to 2.11.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2993
-* deps: Bump polars to  0.51.0 from 0.50.0 at py-1.33.1 tag by @jqnatividad in https://github.com/dathere/qsv/pull/2995
-* fix:`schema` delimiter detection by @jqnatividad in https://github.com/dathere/qsv/pull/2998
-* build(deps): bump indexmap from 2.11.3 to 2.11.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2999
-* build(deps): bump fancy-regex from 0.16.1 to 0.16.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3000
-* build(deps): bump toml from 0.9.6 to 0.9.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3001
-* build(deps): bump serde from 1.0.225 to 1.0.226 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3002
-* build(deps): bump base62 from 2.2.2 to 2.2.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3003
-* `feat`: `table` add `leftendtab` alignment option by @jqnatividad in https://github.com/dathere/qsv/pull/3004
-* build(deps): bump flexi_logger from 0.31.2 to 0.31.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3005
-* build(deps): bump tempfile from 3.22.0 to 3.23.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3007
-* build(deps): bump flexi_logger from 0.31.3 to 0.31.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3008
-* build(deps): bump libc from 0.2.175 to 0.2.176 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3009
-* deps: replace tabwriter with renamed fork qsv-tabwriter by @jqnatividad in https://github.com/dathere/qsv/pull/3010
-* build(deps): bump regex from 1.11.2 to 1.11.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3011
-* feat: `validate` add Extended Input Support to RFC 4180 validation mode by @jqnatividad in https://github.com/dathere/qsv/pull/3012
-* build(deps): bump serde from 1.0.226 to 1.0.227 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3014
 * build(deps): bump sysinfo from 0.37.0 to 0.37.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3015
-* build(deps): bump redis from 0.32.5 to 0.32.6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3016
-* deps: bump embedded luau from 0.690 to 0.693 by @jqnatividad in https://github.com/dathere/qsv/pull/3017
-* build(deps): bump serde from 1.0.227 to 1.0.228 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3019
-* fix: `extdedup` really use memmapped ondisk hash table by @jqnatividad in https://github.com/dathere/qsv/pull/3020
-* build(deps): bump mlua from 0.11.3 to 0.11.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3021
-* deps: bump polars to 0.51.0 at py-1.34.0-beta.4 tag at revision b973cac (latest upstream) by @jqnatividad in https://github.com/dathere/qsv/pull/3022
 * build(deps): bump sysinfo from 0.37.1 to 0.37.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3024
-* build(deps): bump redis from 0.32.6 to 0.32.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3025
+* build(deps): bump tempfile from 3.22.0 to 3.23.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3007
+* build(deps): bump tempfile from 3.21.0 to 3.22.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2975
+* build(deps): bump toml from 0.9.6 to 0.9.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3001
+* applied select clippy lint suggestions
+* updated indirect dependencies
+* bumped MSRV to Rust 1.90
 
+## Fixed
+* `describegpt` init cache vars even when --no-cache is used https://github.com/dathere/qsv/pull/2970
+* `describegpt` `--base-url` option being ignored https://github.com/dathere/qsv/pull/2977
+* `schema` delimiter detection https://github.com/dathere/qsv/pull/2998
+* `extdedup` really use memmapped ondisk hash table https://github.com/dathere/qsv/pull/3020
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/7.1.0...8.0.0
 

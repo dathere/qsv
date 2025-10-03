@@ -43,9 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * fix: `extdedup` really use memmapped ondisk hash table by @jqnatividad in https://github.com/dathere/qsv/pull/3020
 * build(deps): bump mlua from 0.11.3 to 0.11.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3021
 * deps: bump polars to 0.51.0 at py-1.34.0-beta.4 tag at revision b973cac (latest upstream) by @jqnatividad in https://github.com/dathere/qsv/pull/3022
+* build(deps): bump sysinfo from 0.37.1 to 0.37.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3024
+* build(deps): bump redis from 0.32.6 to 0.32.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3025
 
 
-**Full Changelog**: https://github.com/dathere/qsv/compare/7.1.0...7.2.0
+**Full Changelog**: https://github.com/dathere/qsv/compare/7.1.0...8.0.0
 
 ## [7.1.0] - 2025-09-06
 

@@ -11,13 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Added
 * `table`: add `leftendtab` alignment option https://github.com/dathere/qsv/pull/3004
 * `table`: add `leftfwf` (Fixed Width Format) alignment option https://github.com/dathere/qsv/commit/590c8612206859021d035c4b925dd6be9577afd2
-* `validate`: add Extended Input Support to RFC 4180 validation mode https://github.com/dathere/qsv/pull/3012
+* `validate`: add [Extended Input Support](https://github.com/dathere/qsv?tab=readme-ov-file#extended-input-support) to RFC 4180 validation mode https://github.com/dathere/qsv/pull/3012
 * added PowerPC64 LE Linux prebuilt
 
 ## Changed
 * `describegpt`: fine-tuned default LLM Prompt template (v3.1.0) https://github.com/dathere/qsv/commit/00e52a35f696f2b7765486cc8e8dabcfec091e81 https://github.com/dathere/qsv/commit/6b09b7e9fcb6885ebfbd6c9fa77cfbca6a991d6e https://github.com/dathere/qsv/commit/5be7f2e3c9d25f82bab1f7a12279340ecd828db0
-* `luau`: bump embedded luau from 0.690 to 0.693 https://github.com/dathere/qsv/pull/3017
-* `schema`: make Decimal Type Scale configurable with `QSV_POLARS_DECIMAL_SCALE` env var - https://github.com/dathere/qsv/commit/f20edd5eabf6ad624af72069c7125198d9b347c5
+* `luau`: bump embedded Luau from 0.690 to 0.693 https://github.com/dathere/qsv/pull/3017
+* `schema`: make Decimal Type Scale configurable for polars schema with `QSV_POLARS_DECIMAL_SCALE` env var - https://github.com/dathere/qsv/commit/f20edd5eabf6ad624af72069c7125198d9b347c5
 * updated optimized csv crate, adding non-allocating `StringRecord::trim()` and more `inline()`s https://github.com/dathere/qsv/commit/4a1c82a7eaa49e702c754cab4767e0211477e2b4
 * deps: bump calamine to 0.31.0 https://github.com/dathere/qsv/commit/bd7a04cd9d030903f28286a2d7b04d11bcb22487
 * deps: Bump polars to 0.51.0 from 0.50.0 at py-1.33.1 tag https://github.com/dathere/qsv/pull/2995
@@ -48,8 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * build(deps): bump semver from 1.0.26 to 1.0.27 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2982
 * build(deps): bump sysinfo from 0.37.0 to 0.37.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3015
 * build(deps): bump sysinfo from 0.37.1 to 0.37.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3024
-* build(deps): bump tempfile from 3.22.0 to 3.23.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3007
 * build(deps): bump tempfile from 3.21.0 to 3.22.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2975
+* build(deps): bump tempfile from 3.22.0 to 3.23.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3007
 * build(deps): bump toml from 0.9.6 to 0.9.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3001
 * pin zip to 4.6, as zip 5 has features that are not widely adopted https://github.com/dathere/qsv/commit/b231a23343d1701a2a683d41473093def9e1b91a
 * applied select clippy lint suggestions
@@ -57,13 +57,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * bumped MSRV to Rust 1.90
 
 ## Fixed
-* `describegpt` init cache vars even when --no-cache is used https://github.com/dathere/qsv/pull/2970
-* `describegpt` `--base-url` option being ignored https://github.com/dathere/qsv/pull/2977
-* `schema` delimiter detection https://github.com/dathere/qsv/pull/2998
-* `extdedup` really use memmapped ondisk hash table https://github.com/dathere/qsv/pull/3020
+* `describegpt`: init cache vars even when --no-cache is used https://github.com/dathere/qsv/pull/2970
+* `describegpt`: `--base-url` option being ignored https://github.com/dathere/qsv/pull/2977
+* `schema`: delimiter detection https://github.com/dathere/qsv/pull/2998
+* `extdedup`: really use memmapped ondisk hash table https://github.com/dathere/qsv/pull/3020
 
 ## Removed:
 * removed powerpc64-le cross-compilation directive now that we have access to IBM-provided native PowerPC GH Action runner https://github.com/dathere/qsv/commit/9659bfc8a7bcd4ac2b1ff982fb2f7debd2fd923e
+
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/7.1.0...8.0.0
 

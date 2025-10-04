@@ -3158,16 +3158,16 @@ impl TypedMinMax {
         }
 
         match typ {
-            TString => {
-                self.str_len.add(sample_len);
-                self.strings.add(sample.to_vec());
-            },
             TInteger => {
                 self.integers.add(int_val);
                 self.floats.add(float_val);
             },
             TFloat => {
                 self.floats.add(float_val);
+            },
+            TString => {
+                self.str_len.add(sample_len);
+                self.strings.add(sample.to_vec());
             },
             TNull => {},
             // it must be a TDate or TDateTime

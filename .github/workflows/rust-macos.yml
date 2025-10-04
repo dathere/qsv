@@ -33,5 +33,7 @@ jobs:
       uses: Swatinem/rust-cache@v2
       with:
         key: qsv-macoslatestcache
+    - name: Remove cargo config from GH runner image which has target-cpu=native set
+      run: rm -f .cargo/config.toml
     - name: Run tests
       run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,polars,to,feature_capable,lens

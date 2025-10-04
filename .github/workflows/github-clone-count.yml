@@ -28,13 +28,13 @@ jobs:
           if gh secret list | grep -q "GIST_ID"
           then
               echo "GIST_ID found"
-              echo ::set-output name=GIST::${{ secrets.GIST_ID }}
+              run: echo "GIST=${{ secrets.GIST_ID }}" >> $GITHUB_OUTPUT
               curl https://gist.githubusercontent.com/${{ github.actor }}/${{ secrets.GIST_ID }}/raw/clone.json > clone_before.json
               if cat clone_before.json | grep '404: Not Found'; then
                 echo "GIST_ID not valid anymore. Creating another gist..."
                 gist_id=$(gh gist create clone.json | awk -F / '{print $NF}')
                 echo $gist_id | gh secret set GIST_ID
-                echo ::set-output name=GIST::$gist_id
+                run: echo "GIST=${gist_id}" >> $GITHUB_OUTPUT
                 cp clone.json clone_before.json
                 git rm --ignore-unmatch  CLONE.md
               fi
@@ -42,7 +42,7 @@ jobs:
               echo "GIST_ID not found. Creating a gist..."
               gist_id=$(gh gist create clone.json | awk -F / '{print $NF}')
               echo $gist_id | gh secret set GIST_ID
-              echo ::set-output name=GIST::$gist_id
+              run: echo "GIST=${gist_id}" >> $GITHUB_OUTPUT
               cp clone.json clone_before.json
           fi
 

@@ -76,7 +76,7 @@ atoi_simd = "0.16"
 base62 = { version = "2.2", optional = true }
 base64-simd = { version = "0.8", optional = true }
 bitvec = "1"
-bytemuck = { version = "1.23", features = [
+bytemuck = { version = "1.24", features = [
     "latest_stable_rust",
 ], optional = true }
 byteorder = "1.5"

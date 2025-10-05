@@ -26,8 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * deps: replace tabwriter with renamed fork qsv-tabwriter https://github.com/dathere/qsv/pull/3010
 * deps: use patched fork of whatlang-rs. Though our PR was merged, there is still no new release https://github.com/dathere/qsv/commit/6afff4fda25a5330d4293d62579b3f20557d2251
 * build(deps): bump base62 from 2.2.2 to 2.2.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3003
+* build(deps): bump bytemuck from 1.23.2 to 1.24.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3026
 * build(deps): bump chrono from 0.4.41 to 0.4.42 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2974
 * build(deps): bump fancy-regex from 0.16.1 to 0.16.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3000
+* build(deps): bump flate2 from 1.1.2 to 1.1.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3027
 * build(deps): bump flexi_logger from 0.31.2 to 0.31.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3005
 * build(deps): bump flexi_logger from 0.31.3 to 0.31.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3008
 * build(deps): bump indexmap from 2.11.0 to 2.11.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2973
@@ -37,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * build(deps): bump mlua from 0.11.3 to 0.11.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3021
 * build(deps): bump regex from 1.11.2 to 1.11.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3011
 * build(deps): bump redis from 0.32.5 to 0.32.6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3016
+* build(deps): bump qsv-stats from 0.38.0 to 0.39.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3028
+* build(deps): bump qsv-stats from 0.39.0 to 0.39.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3029
 * build(deps): bump redis from 0.32.6 to 0.32.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3025
 * build(deps): bump serde from 1.0.219 to 1.0.223 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2983
 * build(deps): bump serde from 1.0.223 to 1.0.224 by @dependabot[bot] in https://github.com/dathere/qsv/pull/2988

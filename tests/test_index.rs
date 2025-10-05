@@ -44,6 +44,7 @@ fn index_outdated_stats() {
             svec!["a", "3"],
             svec!["b", "2"],
             svec!["c", "1"],
+            svec!["d", "0"],
         ],
     );
 
@@ -55,7 +56,7 @@ fn index_outdated_stats() {
     )
     .unwrap();
 
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    std::thread::sleep(std::time::Duration::from_secs(2));
 
     // even if the index is stale, stats should succeed
     // as the index is automatically updated
@@ -64,7 +65,7 @@ fn index_outdated_stats() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
-        svec![
+        [
             "field",
             "type",
             "is_ascii",
@@ -91,21 +92,21 @@ fn index_outdated_stats() {
             "nullcount",
             "max_precision",
             "sparsity",
-            "qsv__value"
+            "qsv__value",
         ],
-        svec![
+        [
             "letter",
             "String",
             "true",
             "",
             "a",
-            "c",
+            "d",
             "",
             "Ascending",
             "1",
             "1",
             "1",
-            "3",
+            "4",
             "1",
             "0",
             "0",
@@ -120,16 +121,16 @@ fn index_outdated_stats() {
             "0",
             "",
             "0",
-            ""
+            "",
         ],
-        svec![
+        [
             "number",
             "Integer",
             "",
             "6",
-            "1",
+            "0",
             "3",
-            "2",
+            "3",
             "Descending",
             "-1",
             "",
@@ -139,19 +140,19 @@ fn index_outdated_stats() {
             "",
             "",
             "",
-            "2",
-            "0.4714",
-            "1.8171",
-            "1.6364",
-            "0.8165",
-            "0.6667",
-            "40.8248",
+            "1.5",
+            "0.559",
+            "0",
+            "",
+            "1.118",
+            "1.25",
+            "74.5356",
             "0",
             "",
             "0",
-            ""
+            "",
         ],
-        svec![
+        [
             "qsv__rowcount",
             "",
             "",
@@ -178,9 +179,9 @@ fn index_outdated_stats() {
             "",
             "",
             "",
-            "3"
+            "4",
         ],
-        svec![
+        [
             "qsv__columncount",
             "",
             "",
@@ -207,9 +208,9 @@ fn index_outdated_stats() {
             "",
             "",
             "",
-            "2"
+            "2",
         ],
-        svec![
+        [
             "qsv__filesize_bytes",
             "",
             "",
@@ -236,9 +237,9 @@ fn index_outdated_stats() {
             "",
             "",
             "",
-            "26"
+            "30",
         ],
-        svec![
+        [
             "qsv__fingerprint_hash",
             "",
             "",
@@ -265,7 +266,7 @@ fn index_outdated_stats() {
             "",
             "",
             "",
-            "544903bb86bbdfdbbd119d5db5316048887046c24d7b6a4e757a2cf88543006f"
+            "bb72a7f19b12c07ee5b2dfbd8705206e2bfcd4103433ee62e9c7d9127d45d715",
         ],
     ];
 

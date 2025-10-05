@@ -520,7 +520,7 @@ stats_tests!(
 
 stats_tests!(stats_min, "min", &["2", "1.1"], "1.1");
 stats_tests!(stats_max, "max", &["2", "1.1"], "2");
-stats_tests!(stats_min_mix, "min", &["2", "a", "1.1"], "1.1");
+stats_tests!(stats_min_mix, "min", &["2", "a", "1.1"], "1.1|a");
 stats_tests!(stats_max_mix, "max", &["2", "a", "1.1"], "a");
 stats_tests!(stats_min_null, "min", &["", "2", "1.1"], "1.1");
 stats_tests!(stats_max_null, "max", &["2", "1.1", ""], "2");

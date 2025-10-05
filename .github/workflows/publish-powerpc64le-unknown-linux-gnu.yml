@@ -38,7 +38,7 @@ jobs:
             os-name: linux
             target: powerpc64le-unknown-linux-gnu
             architecture: powerpc64le
-            addl-build-args: --features=apply,fetch,foreach,geocode,luau,python,self_update,ui
+            addl-build-args: --features=apply,fetch,foreach,luau,python,self_update,ui
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:

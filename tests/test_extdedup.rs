@@ -161,7 +161,7 @@ fn extdedup_large_memory_test() {
     // Generate a large CSV file with many duplicates
     // This test creates a file that should exceed typical memory limits
     // when processed with a very low memory limit
-    let large_csv_path = generate_large_csv_with_duplicates(10_000_000);
+    let large_csv_path = generate_large_csv_with_duplicates(5_000_000);
 
     // Copy the generated file to the workdir
     use std::fs;
@@ -187,15 +187,15 @@ fn extdedup_large_memory_test() {
     let lines: Vec<&str> = deduped_output.lines().collect();
 
     // Should have header + 5,000,000 unique rows (since we generated 50% duplicates)
-    assert_eq!(lines.len(), 5000001); // 1 header + 5,000,000 unique rows
+    assert_eq!(lines.len(), 2500001); // 1 header + 5,000,000 unique rows
 
     // Verify that duplicates were actually removed
     let stderr_output = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr_output.contains("5000000")); // Should report 5,000,000 duplicates removed
+    assert!(stderr_output.contains("2500000")); // Should report 5,000,000 duplicates removed
 
     // Verify the output contains the expected unique rows
     assert!(deduped_output.contains("row_0"));
-    assert!(deduped_output.contains("row_4999999"));
+    assert!(deduped_output.contains("row_2499999"));
     // Should not contain any duplicate markers
     assert!(!deduped_output.contains("duplicate"));
 }

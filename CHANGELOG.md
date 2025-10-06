@@ -6,22 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [8.0.0]
+## [8.0.0] - 2025-10-06
 
-# FAIR, AI-Ready Edition
+[![FAIRdataAIREADYdataBanner](https://github.com/user-attachments/assets/7ace7659-c081-464b-88dd-6a4be3c0c87a)](https://dathere.com/2025/09/fair-data-is-federated-ai-ready-data/)[^1]
 [Findable, Accessible, Interoperable & Reusable (FAIR) Data](https://en.wikipedia.org/wiki/FAIR_data) is [AI-Ready Data](https://dathere.com/2025/09/fair-data-is-federated-ai-ready-data/).
+
+
 
 A week and a half after launching our ["People's API"](https://dathere.com/2025/09/towards-the-peoples-api/) [AI Chatbot and "AI-Ready" service](https://dathere.com/2025/09/democratizing-data-access-introducing-datheres-ai-chatbot-and-ai-ready-data-solutions/), we fine-tune qsv further, as it powers the [FAIRification](https://www.go-fair.org/fair-principles/fairification-process/) engine that allows us to infer and calculate AI-Ready, FAIR metadata at _*blazing speed*_ even for large datasets.
 
 This release features:
 * `describegpt` fixes and improvements
 * `table` can now produce "aligned" TSV and Fixed Width format files
-* `validate` now has Extended Input Support in its RFC 4180 validation mode
+* `validate` now has [Extended Input Support](https://github.com/dathere/qsv#extended-input-support) in its [RFC 4180](https://datatracker.ietf.org/doc/html/rfc4180) validation mode
 * `extdedup` fixed to dedupe arbitrarily large csv or text files
-* `luau` upgraded from 0.690 to 0.693
-* PowerPC64 pre-built binaries
+* `luau` upgraded from [0.690 to 0.693](https://github.com/luau-lang/luau/compare/0.690...0.693)
+* PowerPC64 pre-built binaries - making it more convenient to use qsv on this "power"ful 😉  platform that's [widely used in research](https://github.com/dathere/qsv/issues/2854) (thanks to [IBM-provided access to its native GitHub Action ppc64le runners](https://github.com/IBM/actionspz)! Next - qsv on IBM Z Mainframes?)
 
-These changes set the stage for even more advanced, powerful, configurable FAIRification capabilities to *__make ALL your Data AI-Ready, Useful, Usable & Used__*.
+These changes set the stage for even more advanced, powerful, configurable FAIRification capabilities to<br/>*__make ALL your Data AI-Ready, Useful, Usable & Used__*.
 
 ---
 
@@ -85,9 +87,13 @@ These changes set the stage for even more advanced, powerful, configurable FAIRi
 
 ## Removed:
 * removed powerpc64-le cross-compilation directive now that we have access to IBM-provided native PowerPC GH Action runner https://github.com/dathere/qsv/commit/9659bfc8a7bcd4ac2b1ff982fb2f7debd2fd923e
-
+* removed macOS on Intel (x86_64-apple-darwin) prebuilt binaries
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/7.1.0...8.0.0
+
+---
+
+[^1]: SangyaPundir, CC BY-SA 4.0 <https://creativecommons.org/licenses/by-sa/4.0>, via Wikimedia Commons https://commons.wikimedia.org/wiki/File:FAIR_data_principles.jpg
 
 ## [7.1.0] - 2025-09-06
 

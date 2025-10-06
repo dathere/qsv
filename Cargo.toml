@@ -320,6 +320,9 @@ csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "natural-so
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88" }
 
+# use upstream geozero with unreleased fixes
+geozero = { git = "https://github.com/georust/geozero", rev = "572cfc2" }
+
 # use our patched fork of grex to bump dependencies and Unicode tables from 15 to 16 until our PR is merged
 grex = { git = "https://github.com/jqnatividad/grex", rev = "7b9b6cc" }
 

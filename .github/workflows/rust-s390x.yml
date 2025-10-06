@@ -46,6 +46,6 @@ jobs:
       with:
         key: qsv-s390xcache
     - name: Run tests
-      env:
-        RUSTFLAGS: -C target-cpu=native
+    #   env:
+    #     RUSTFLAGS: -C target-cpu=native
       run: cargo test --verbose --locked --features=apply,fetch,foreach,luau,python,feature_capable,ui

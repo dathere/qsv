@@ -1,0 +1,51 @@
+name: s390x
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-s390x-tests-${{ github.ref }}-1
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-24.04-s390x
+
+    steps:
+    # - name: Maximize build space
+    #   uses: easimon/maximize-build-space@master
+    #   with:
+    #     swap-size-mb: 1024
+    #     remove-dotnet: 'true'
+    #     remove-android: 'true'
+    #     remove-haskell: 'true'
+    #     remove-docker-images: 'true'
+    - name: apt-get update Ubuntu, libwayland-dev
+      run: |
+        sudo apt-get update
+        sudo apt-get install libwayland-dev
+    - uses: actions/checkout@v5
+    # - uses: actions/setup-python@v6.0.0
+    #   with:
+    #     python-version: '3.13'
+    - name: Install and Run Redis
+      run: |
+        sudo apt-get install redis-server
+        sudo service redis-server start
+    - name: Installing Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        targets: s390x-unknown-linux-gnu
+    - name: Setup Rust-cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: qsv-s390xcache
+    - name: Run tests
+      env:
+        RUSTFLAGS: -C target-cpu=native
+      run: cargo test --verbose --locked --features=apply,fetch,foreach,luau,python,feature_capable,ui

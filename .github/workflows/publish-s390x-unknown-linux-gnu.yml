@@ -1,0 +1,123 @@
+name: Publish s390x
+
+on:
+#   push:
+#     tags:
+#       - '*'
+  workflow_dispatch:
+
+env:
+  QSV_KIND: prebuilt
+
+jobs:
+  analyze-tags:
+    runs-on: ubuntu-24.04-s390x
+    outputs:
+      previous-tag: ${{ steps.previoustag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      #▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#
+      - name: Get previous tag
+        id: previoustag
+        uses: "WyriHaximus/github-action-get-previous-tag@v1"
+      #▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲#
+      # - name: delete git repo
+      #   run: rm -rf qsv
+
+  publish:
+    name: Publish for ${{ matrix.job.target }}
+    needs: analyze-tags
+    runs-on: ${{ matrix.job.os }}
+    strategy:
+      matrix:
+        rust: [stable]
+        job:
+          - os: ubuntu-24.04-s390x
+            os-name: linux
+            target: s390x-unknown-linux-gnu
+            architecture: s390x
+            addl-build-args: --features=apply,fetch,foreach,luau,python,self_update,ui
+            default-features:
+            addl-qsvlite-features:
+            addl-qsvdp-features:
+            addl-rustflags:
+
+    steps:
+    # - name: Installing Rust toolchain
+    #   uses: dtolnay/rust-toolchain@master
+    #   with:
+    #     toolchain: ${{ matrix.rust }}
+    #     targets: ${{ matrix.job.target }}
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      with:
+        ref: ${{ needs.analyze-tags.outputs.previous-tag }}
+    - name: apt-get update Ubuntu, libwayland-dev
+      run: |
+        sudo apt-get update
+        sudo apt-get install libwayland-dev
+    - name: Installing Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        targets: s390x-unknown-linux-gnu
+    - name: Build qsv
+      env:
+        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }} -C target-cpu=native
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        toolchain: ${{ matrix.rust }}
+        args: --release --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
+    - name: Build qsvlite
+      env:
+        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }} -C target-cpu=native
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        toolchain: ${{ matrix.rust }}
+        args: --release --locked --bin qsvlite --features=lite,self_update,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+    # - name: Build qsvdp
+    #   env:
+    #     RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }} -C target-cpu=native
+    #   uses: actions-rs/cargo@v1
+    #   with:
+    #     command: build
+    #     toolchain: ${{ matrix.rust }}
+    #     args: --release --locked --bin qsvdp --features=datapusher_plus,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+    - name: Copy binaries to working dir
+      shell: bash
+      run: |
+        mkdir qsv-${{ needs.analyze-tags.outputs.previous-tag }}
+        rm target/${{ matrix.job.target }}/release/*.d 
+        cp -v target/${{ matrix.job.target }}/release/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }}
+    - name: Create README
+      shell: bash
+      run: |
+        cat docs/publishing_assets/README.txt docs/publishing_assets/qsv-${{ matrix.job.target }}.txt > qsv-${{ needs.analyze-tags.outputs.previous-tag }}/README
+    - name: zip up binaries
+      run: 7z a -tzip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/* -mx=9 -mmt=on
+    - name: install zipsign
+      run: |
+        cargo install zipsign
+    - name: Fetch zipsign private key
+      uses: mobiledevops/secret-to-file-action@v1
+      with:
+        base64-encoded-secret: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}
+        filename: "qsvpriv.key"
+        is-executable: false
+        working-directory: "."        
+    - name: zipsign binary
+      run: |
+        zipsign sign zip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip qsvpriv.key
+    - name: Upload zipped binaries to release
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip
+        asset_name: qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip
+        overwrite: true
+        tag: ${{ needs.analyze-tags.outputs.previous-tag }}    
+ 

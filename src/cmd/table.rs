@@ -29,7 +29,7 @@ table options:
                            "leftendtab" is a special alignment that similar to "left"
                            but with whitespace padding ending with a tab character.
                            The resulting output still validates as a valid TSV file,
-                           while also being more human-readable.
+                           while also being more human-readable (aka "aligned" TSV).
                            "leftfwf" is similar to "left" with Fixed Width Format allgnment.
                            The first line is a comment (prefixed with "#") that enumerates
                            the position (1-based, comma-separated) of each column.

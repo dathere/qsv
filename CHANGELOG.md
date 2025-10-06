@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [8.0.0]
 
+# FAIR, AI-Ready Edition
+[Findable, Accessible, Interoperable & Reusable (FAIR) Data](https://en.wikipedia.org/wiki/FAIR_data) is [AI-Ready Data](https://dathere.com/2025/09/fair-data-is-federated-ai-ready-data/).
+
+A week and a half after launching our ["People's API"](https://dathere.com/2025/09/towards-the-peoples-api/) [AI Chatbot and "AI-Ready" service](https://dathere.com/2025/09/democratizing-data-access-introducing-datheres-ai-chatbot-and-ai-ready-data-solutions/), we fine-tune qsv further, as it powers the [FAIRification](https://www.go-fair.org/fair-principles/fairification-process/) engine that allows us to infer and calculate AI-Ready, FAIR metadata at _*blazing speed*_ even for large datasets.
+
+This release features:
+* `describegpt` fixes and improvements
+* `table` can now produce "aligned" TSV and Fixed Width format files
+* `validate` now has Extended Input Support in its RFC 4180 validation mode
+* `extdedup` fixed to dedupe arbitrarily large csv or text files
+* `luau` upgraded from 0.690 to 0.693
+* PowerPC64 pre-built binaries
+
+These changes set the stage for even more advanced, powerful, configurable FAIRification capabilities to *__make ALL your Data AI-Ready, Useful, Usable & Used__*.
+
+---
+
 ## Added
 * `table`: add `leftendtab` alignment option https://github.com/dathere/qsv/pull/3004
 * `table`: add `leftfwf` (Fixed Width Format) alignment option https://github.com/dathere/qsv/commit/590c8612206859021d035c4b925dd6be9577afd2

@@ -28,6 +28,8 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libwayland-dev
+        sudo apt-get install binutils-s390x-linux-gnu
+        sudo apt-get -y upgrade
     - uses: actions/checkout@v5
     # - uses: actions/setup-python@v6.0.0
     #   with:
@@ -46,6 +48,6 @@ jobs:
       with:
         key: qsv-s390xcache
     - name: Run tests
-    #   env:
-    #     RUSTFLAGS: -C target-cpu=native
+      env:
+        RUSTFLAGS: -C target-cpu=native
       run: cargo test --verbose --locked --features=apply,fetch,foreach,luau,python,feature_capable,ui

@@ -150,7 +150,7 @@ jobs:
 
     steps:
     - name: Installing Rust toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ matrix.rust }}
         profile: minimal

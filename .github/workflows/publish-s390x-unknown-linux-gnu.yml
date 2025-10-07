@@ -45,11 +45,6 @@ jobs:
             addl-rustflags:
 
     steps:
-    # - name: Installing Rust toolchain
-    #   uses: dtolnay/rust-toolchain@master
-    #   with:
-    #     toolchain: ${{ matrix.rust }}
-    #     targets: ${{ matrix.job.target }}
     - name: Checkout repository
       uses: actions/checkout@v5
       with:

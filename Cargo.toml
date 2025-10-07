@@ -326,7 +326,9 @@ geozero = { git = "https://github.com/georust/geozero", rev = "572cfc2" }
 # use our patched fork of grex to bump dependencies and Unicode tables from 15 to 16 until our PR is merged
 grex = { git = "https://github.com/jqnatividad/grex", rev = "7b9b6cc" }
 
-# use upstream hashbrown with unreleased fixes and performance improvements
+# use upstream hashbrown with fixes and performance improvements for post-0.15.5 release
+# as 16.0.0 is not widely used yet and we want to take advantage of these fixes and improvements
+# without the breaking changes that 16.0.0 will bring. Remove this once 16.0.0 is widely used.
 hashbrown = { git = "https://github.com/rust-lang/hashbrown", rev = "e2a634b" }
 
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged

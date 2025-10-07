@@ -1,5 +1,5 @@
 [default]
-extend-ignore-identifiers-re = ["wrk", "flate", "ND", "typ"]
+extend-ignore-identifiers-re = ["wrk", "flate", "ND", "typ", "ful"]
 
 [default.extend-identifiers]
 # typos in third-party code/libraries

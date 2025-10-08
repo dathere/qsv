@@ -2991,9 +2991,9 @@ dependencies = [
 
 [[package]]
 name = "gzp"
-version = "1.0.1"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eca180e9a0d8a6fa66daa3f0447775b42211528228a28831f693d40dfc84384d"
+checksum = "c35009b254f25c2960a5655c79a97baa4b44c6a7e3bdfcf7aeaffe707ce345ff"
 dependencies = [
  "byteorder",
  "bytes",
@@ -3451,7 +3451,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
 dependencies = [
  "equivalent",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "serde",
  "serde_core",
 ]

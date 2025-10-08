@@ -134,7 +134,7 @@ geozero = { version = "0.14.0", features = [
 ], optional = true }
 governor = { version = "0.10", optional = true }
 grex = { version = "=1.4.5", default-features = false }
-gzp = { version = "1", default-features = false, features = ["snappy_default"] }
+gzp = { version = "2", default-features = false, features = ["snappy_default"] }
 human-panic = "2"
 indexmap = "2.11"
 indicatif = "0.18"

@@ -33,11 +33,8 @@ jobs:
       with:
         # set to the pinned nightly version known to work with polars
         toolchain: nightly-2025-08-29
-        profile: minimal
         components: rust-src
         target: x86_64-unknown-linux-gnu
-        override: true
-        default: true
     - name: Run tests
       env:
         RUSTFLAGS: -C target-cpu=native

@@ -1816,13 +1816,8 @@ pub async fn download_file(
 
     let res = client.get(url).send().await?;
 
-    let total_size = match res.content_length() {
-        Some(l) => l,
-        None => {
-            // if we can't get the content length, set it to sentinel value
-            u64::MAX
-        },
-    };
+    // if we can't get the content length, set it to sentinel value
+    let total_size = res.content_length().unwrap_or(u64::MAX);
 
     // progressbar setup
     #[cfg(any(feature = "feature_capable", feature = "lite"))]

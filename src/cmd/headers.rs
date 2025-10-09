@@ -57,6 +57,12 @@ struct Args {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
     let tmpdir = tempfile::tempdir()?;
+
+    // If no input is provided, default to stdin
+    if args.arg_input.is_empty() {
+        args.arg_input.push(PathBuf::from("-"));
+    }
+
     args.arg_input = util::process_input(args.arg_input, &tmpdir, "")?;
     let configs = util::many_configs(&args.arg_input, args.flag_delimiter, true, false)?;
 

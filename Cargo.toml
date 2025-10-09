@@ -368,13 +368,13 @@ whatlang = { git = "https://github.com/greyblake/whatlang-rs", rev = "b282e07" }
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=py-1.34.0:bfa1cf8
+# QSV_POLARS_REV=py-1.34.0:823db81
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.34.0" }
-polars = { git = "https://github.com/pola-rs/polars", rev = "bfa1cf8" }
+polars = { git = "https://github.com/pola-rs/polars", rev = "823db81" }
 # polars-ops = { git = "https://github.com/pola-rs/polars", tag = "py-1.34.0" }
-polars-ops = { git = "https://github.com/pola-rs/polars", rev = "bfa1cf8" }
+polars-ops = { git = "https://github.com/pola-rs/polars", rev = "823db81" }
 # polars-utils = { git = "https://github.com/pola-rs/polars", tag = "py-1.34.0" }
-polars-utils = { git = "https://github.com/pola-rs/polars", rev = "bfa1cf8" }
+polars-utils = { git = "https://github.com/pola-rs/polars", rev = "823db81" }
 
 [features]
 default = ["mimalloc"]

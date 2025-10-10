@@ -133,9 +133,10 @@ Full-featured prebuilt [binary variants](#variants) of the latest qsv version fo
 <a target="_blank" href="https://qsv.dathere.com/download/linux-x86_64-gnu"><img src="https://github.com/user-attachments/assets/f71812ec-30bc-4bfe-a8a3-a639d6a6c5aa" width="200" /></a>
 <a target="_blank" href="https://qsv.dathere.com/download/linux-aarch64-gnu"><img src="https://github.com/user-attachments/assets/80dccb2a-c0e5-4f85-a4e2-282d7e84d03f" width="200" /></a>
 <a target="_blank" href="https://qsv.dathere.com/download/linux-x86_64-musl"><img src="https://github.com/user-attachments/assets/aa2ee7ec-c183-4426-87e6-c2e9c136b69f" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/linux-powerpc64le-gnu"><img src="https://github.com/user-attachments/assets/e5c81cd3-7a2d-4107-a124-a6f3be3cdd40" width="200" /></a>
 <a target="_blank" href="https://qsv.dathere.com/download/macos-silicon"><img src="https://github.com/user-attachments/assets/6b9534ae-ea09-44f9-b34a-259a3d9bcfa1" width="200" /></a>
-<a target="_blank" href="https://qsv.dathere.com/download/macos-intel"><img src="https://github.com/user-attachments/assets/79a25198-09b0-4c41-9ed7-2098da163d8b" width="200" /></a>
 <a target="_blank" href="https://qsv.dathere.com/download/windows-msvc"><img src="https://github.com/user-attachments/assets/d4418a34-541a-4a9a-8f29-da25d9ff3d7f" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/windows-aarch64-msvc"><img src="https://github.com/user-attachments/assets/2754df2b-9125-4c6d-aaf4-951cefe69a7f" width="200" /></a>
 <a target="_blank" href="https://qsv.dathere.com/download/windows-gnu"><img src="https://github.com/user-attachments/assets/771660f3-e898-4ee2-acb5-e5f268434752" width="200" /></a>
 </div>
 

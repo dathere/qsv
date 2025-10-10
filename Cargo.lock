@@ -3452,7 +3452,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
 dependencies = [
  "equivalent",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "serde",
  "serde_core",
 ]
@@ -5965,9 +5965,9 @@ dependencies = [
 
 [[package]]
 name = "qsv_docopt"
-version = "1.8.0"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "660820731b47130f6a87c490afbd79a2886b6d6f22cb1aa5000a0842af42ded1"
+checksum = "1016abf6a80828727b29243436e1a825c9cadd0f833ef3d8774d7b280acea7c5"
 dependencies = [
  "ahash 0.8.12",
  "regex",

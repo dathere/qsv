@@ -213,7 +213,7 @@ polars-utils = { version = "0.51", optional = true }
 publicsuffix = { version = "2.2", optional = true }
 pyo3 = { version = "0.26", features = ["auto-initialize"], optional = true }
 qsv-dateparser = "0.13"
-qsv_docopt = "1.8"
+qsv_docopt = "1.9"
 qsv-stats = "0.39"
 qsv_currency = "0.7"
 qsv-sniffer = { version = "0.12", default-features = false, features = [

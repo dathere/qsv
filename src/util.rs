@@ -504,7 +504,10 @@ pub fn version() -> String {
     let max_file_size = mem_file_check(Path::new(""), true, false).unwrap_or(0) as u64;
 
     #[cfg(feature = "mimalloc")]
-    let malloc_kind = "mimalloc";
+    let malloc_kind = {
+        let mimalloc_version = mimalloc::MiMalloc.version();
+        format!("mimalloc {mimalloc_version}")
+    };
     #[cfg(feature = "tikv-jemallocator")]
     let malloc_kind = "jemalloc";
     #[cfg(not(any(feature = "mimalloc", feature = "tikv-jemallocator")))]

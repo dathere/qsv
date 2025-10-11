@@ -17,10 +17,12 @@ jobs:
     - name: Maximize build space
       uses: easimon/maximize-build-space@master
       with:
-        swap-size-mb: 1024
+        # swap-size-mb: 1024
+        overprovision-lvm: 'true'
         remove-dotnet: 'true'
         remove-android: 'true'
         remove-haskell: 'true'
+        remove-codeql: 'true'
         remove-docker-images: 'true'
     - uses: actions/checkout@v5
     - uses: actions/setup-python@v6.0.0

@@ -152,7 +152,7 @@ libc = "0.2"
 localzone = { version = "0.3", features = ["auto_validation"] }
 log = "0.4"
 memmap2 = "0.9"
-mimalloc = { version = "0.1", default-features = false, features = ["v3"], optional = true }
+mimalloc = { version = "0.1", default-features = false, features = ["extended", "v3"], optional = true }
 minijinja = { version = "2", features = [
     "json",
     "loop_controls",
@@ -336,6 +336,9 @@ json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-cs
 
 # use our patched fork of localzone to bump dependencies until our PR is merged
 localzone = { git = "https://github.com/jqnatividad/localzone", branch = "bump-deps-may2025" }
+
+# use upstream of mimalloc with unreleased fixes
+mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "0a32a38" }
 
 # use our patched fork of self_update to bump zip 2 to 4, until our PR is merged
 self_update = { git = "https://github.com/jqnatividad/self_update", branch = "bump-deps-july2025" }

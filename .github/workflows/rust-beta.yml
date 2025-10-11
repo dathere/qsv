@@ -32,11 +32,17 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libwayland-dev
-    - name: Update Rust Beta
-      run: |
-        rustup update beta
-        rustup default beta
+    - name: Installing Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: beta
+        targets: x86_64-unknown-linux-gnu
+    - name: Setup Rust-cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: qsv-betacache
     - name: Run tests
       env:
-        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+        # RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+        RUSTFLAGS: -C target-cpu=native
       run: cargo test --verbose --features feature_capable,apply,fetch,geocode,foreach,python,luau,polars,lens

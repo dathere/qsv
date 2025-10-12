@@ -389,6 +389,7 @@ struct StatsArgs {
     qsv_version:          String,
 }
 
+#[cfg(target_endian = "little")]
 impl StatsArgs {
     // this is for deserializing the stats.csv.jsonl file
     fn from_owned_value(value: &OwnedValue) -> Result<Self, Box<dyn std::error::Error>> {

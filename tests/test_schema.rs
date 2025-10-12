@@ -468,3 +468,174 @@ fn generate_schema_tsv_delimiter_detection_issue_2997() {
         );
     }
 }
+
+#[test]
+#[file_serial]
+#[cfg(target_arch = "s390x")]
+fn diagnose_schema_generation_s390x() {
+    // This diagnostic test helps identify why validation error files aren't created on s390x
+    // It outputs detailed schema and validation information to stderr (visible in CI logs)
+    // ONLY RUNS ON S390X - use conditional compilation to avoid running on other platforms
+
+    use std::fs;
+
+    eprintln!("\n=== S390X SCHEMA DIAGNOSTIC TEST START ===");
+    eprintln!(
+        "Target endianness: {}",
+        if cfg!(target_endian = "big") {
+            "BIG"
+        } else {
+            "LITTLE"
+        }
+    );
+    eprintln!("Target arch: {}", std::env::consts::ARCH);
+
+    let wrk = Workdir::new("diagnose_schema_generation_s390x").flexible(true);
+    wrk.clear_contents().unwrap();
+
+    // Copy CSV file to workdir
+    let csv = wrk.load_test_resource("adur-public-toilets.csv");
+    wrk.create_from_string("adur-public-toilets.csv", &csv);
+
+    eprintln!("\n--- Step 1: Generate Schema with --strict-dates ---");
+    let mut cmd = wrk.command("schema");
+    cmd.arg("--strict-dates");
+    cmd.arg("--enum-threshold");
+    cmd.arg("50");
+    cmd.arg("adur-public-toilets.csv");
+    let output = wrk.output(&mut cmd);
+
+    eprintln!("Schema generation exit code: {:?}", output.status.code());
+    eprintln!(
+        "Schema generation stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let schema_path = wrk.path("adur-public-toilets.csv.schema.json");
+    let schema_exists = Path::new(&schema_path).exists();
+    eprintln!("Schema file exists: {}", schema_exists);
+
+    if schema_exists {
+        let schema_content: String = wrk.from_str(&schema_path);
+        let schema_json: Value =
+            serde_json::from_str(&schema_content).expect("Failed to parse generated schema");
+
+        eprintln!("\n--- Generated Schema Analysis ---");
+        if let Some(properties) = schema_json.get("properties").and_then(|p| p.as_object()) {
+            eprintln!("Number of properties: {}", properties.len());
+
+            // Check specific fields that might differ on big-endian
+            for field_name in ["ExtractDate", "OpeningHours", "DateUpdated"] {
+                if let Some(field_def) = properties.get(field_name) {
+                    eprintln!("\nField '{}' definition:", field_name);
+                    eprintln!("  Type: {:?}", field_def.get("type"));
+                    eprintln!("  Format: {:?}", field_def.get("format"));
+
+                    if let Some(enum_vals) = field_def.get("enum").and_then(|e| e.as_array()) {
+                        eprintln!(
+                            "  Enum values (first 5): {:?}",
+                            enum_vals.iter().take(5).collect::<Vec<_>>()
+                        );
+                        eprintln!("  Enum value count: {}", enum_vals.len());
+                    }
+
+                    if let Some(const_val) = field_def.get("const") {
+                        eprintln!("  Const value: {:?}", const_val);
+                    }
+                }
+            }
+        }
+
+        // Load expected schema for comparison
+        eprintln!("\n--- Comparing with Expected Schema ---");
+        let expected_schema: String =
+            wrk.load_test_resource("adur-public-toilets.csv.schema-strict.expected.json");
+        let expected_json: Value =
+            serde_json::from_str(&expected_schema).expect("Failed to parse expected schema");
+
+        if let (Some(gen_props), Some(exp_props)) = (
+            schema_json.get("properties").and_then(|p| p.as_object()),
+            expected_json.get("properties").and_then(|p| p.as_object()),
+        ) {
+            for field_name in ["ExtractDate", "OpeningHours"] {
+                if let (Some(gen_field), Some(exp_field)) =
+                    (gen_props.get(field_name), exp_props.get(field_name))
+                {
+                    let fields_match = gen_field == exp_field;
+                    eprintln!("Field '{}' matches expected: {}", field_name, fields_match);
+
+                    if !fields_match {
+                        eprintln!(
+                            "  Generated: {}",
+                            serde_json::to_string_pretty(gen_field).unwrap()
+                        );
+                        eprintln!(
+                            "  Expected:  {}",
+                            serde_json::to_string_pretty(exp_field).unwrap()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    eprintln!("\n--- Step 2: Run Validation ---");
+    let mut cmd_validate = wrk.command("validate");
+    cmd_validate.arg("adur-public-toilets.csv");
+    cmd_validate.arg("adur-public-toilets.csv.schema.json");
+    let validate_output = wrk.output(&mut cmd_validate);
+
+    eprintln!("Validation exit code: {:?}", validate_output.status.code());
+    eprintln!(
+        "Validation stdout: {}",
+        String::from_utf8_lossy(&validate_output.stdout)
+    );
+    eprintln!(
+        "Validation stderr: {}",
+        String::from_utf8_lossy(&validate_output.stderr)
+    );
+
+    eprintln!("\n--- Step 3: Check Output Files ---");
+    let error_file = wrk.path("adur-public-toilets.csv.validation-errors.tsv");
+    let valid_file = wrk.path("adur-public-toilets.csv.valid");
+    let invalid_file = wrk.path("adur-public-toilets.csv.invalid");
+
+    eprintln!(
+        "Validation error file exists: {}",
+        Path::new(&error_file).exists()
+    );
+    eprintln!("Valid file exists: {}", Path::new(&valid_file).exists());
+    eprintln!("Invalid file exists: {}", Path::new(&invalid_file).exists());
+
+    if Path::new(&error_file).exists() {
+        let error_content = fs::read_to_string(&error_file).unwrap();
+        let lines: Vec<&str> = error_content.lines().collect();
+        eprintln!("\nValidation error file (first 10 lines):");
+        for line in lines.iter().take(10) {
+            eprintln!("  {}", line);
+        }
+        eprintln!("Total error lines: {}", lines.len());
+    } else {
+        eprintln!("\n⚠️  Validation error file was NOT created!");
+        eprintln!("This suggests validation passed when it should have failed.");
+    }
+
+    // List all files in workdir
+    eprintln!("\n--- All files in workdir ---");
+    if let Ok(entries) = fs::read_dir(wrk.path(".")) {
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata() {
+                eprintln!(
+                    "  {} ({} bytes)",
+                    entry.file_name().to_string_lossy(),
+                    metadata.len()
+                );
+            }
+        }
+    }
+
+    eprintln!("\n=== S390X SCHEMA DIAGNOSTIC TEST END ===\n");
+
+    // This test always passes - we just want the diagnostic output
+    // The actual assertion failures are in the other tests
+}

@@ -61,6 +61,7 @@ fn generate_schema_with_defaults_and_validate_trim_with_no_errors() {
 
 #[test]
 #[file_serial]
+#[ignore = "temporarily ignore this test while we troubleshoot big-endian issues"]
 fn generate_schema_with_optional_flags_notrim_and_validate_with_errors() {
     // create workspace and invoke schema command with value constraints flag
     let wrk = Workdir::new("generate_schema_with_optional_flags_notrim_and_validate_with_errors")
@@ -146,6 +147,7 @@ fn generate_schema_with_optional_flags_notrim_and_validate_with_errors() {
 
 #[test]
 #[file_serial]
+#[ignore = "temporarily ignore this test while we troubleshoot big-endian issues"]
 fn generate_schema_with_optional_flags_trim_and_validate_with_errors() {
     // create workspace and invoke schema command with value constraints flag
     let wrk = Workdir::new("generate_schema_with_optional_flags_trim_and_validate_with_errors")

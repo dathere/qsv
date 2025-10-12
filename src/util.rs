@@ -2446,6 +2446,11 @@ pub fn get_stats_records(
             s_slice = curr_line.as_bytes().to_vec();
             if curr_line.starts_with(DATASET_STATS_PREFIX) {
                 // Parse dataset stats record
+                #[cfg(target_endian = "big")]
+                let v: serde_json::Value = serde_json::from_slice(&s_slice).map_err(|e| {
+                    CliError::Other(format!("Failed to parse dataset stats JSON: {e}"))
+                })?;
+                #[cfg(target_endian = "little")]
                 let v: serde_json::Value =
                     simd_json::serde::from_slice(&mut s_slice).map_err(|e| {
                         CliError::Other(format!("Failed to parse dataset stats JSON: {e}"))
@@ -2463,7 +2468,12 @@ pub fn get_stats_records(
                 );
             } else {
                 // Parse regular stats record
-                match simd_json::from_slice::<StatsData>(&mut s_slice) {
+                #[cfg(target_endian = "big")]
+                let parse_result = serde_json::from_slice::<StatsData>(&s_slice);
+                #[cfg(target_endian = "little")]
+                let parse_result = simd_json::from_slice::<StatsData>(&mut s_slice);
+
+                match parse_result {
                     Ok(stats) => csv_stats.push(stats),
                     Err(e) => eprintln!("error parsing stats: {e}"),
                 }
@@ -2635,6 +2645,11 @@ pub fn get_stats_records(
             s_slice = curr_line.as_bytes().to_vec();
             if curr_line.starts_with(DATASET_STATS_PREFIX) {
                 // Parse dataset stats record
+                #[cfg(target_endian = "big")]
+                let v: serde_json::Value = serde_json::from_slice(&s_slice).map_err(|e| {
+                    CliError::Other(format!("Failed to parse dataset stats JSONL: {e}"))
+                })?;
+                #[cfg(target_endian = "little")]
                 let v: serde_json::Value =
                     simd_json::serde::from_slice(&mut s_slice).map_err(|e| {
                         CliError::Other(format!("Failed to parse dataset stats JSONL: {e}"))
@@ -2652,7 +2667,12 @@ pub fn get_stats_records(
                 );
             } else {
                 // Parse regular stats record
-                match simd_json::from_slice::<StatsData>(&mut s_slice) {
+                #[cfg(target_endian = "big")]
+                let parse_result = serde_json::from_slice::<StatsData>(&s_slice);
+                #[cfg(target_endian = "little")]
+                let parse_result = simd_json::from_slice::<StatsData>(&mut s_slice);
+
+                match parse_result {
                     Ok(stats) => csv_stats.push(stats),
                     Err(e) => eprintln!("error parsing stats: {e}"),
                 }
@@ -2739,7 +2759,15 @@ pub fn csv_to_jsonl(
             json_object.insert(key.to_string(), value);
         }
 
-        json_line = simd_json::to_string(&json_object)?;
+        // Use platform-appropriate JSON serialization
+        #[cfg(target_endian = "big")]
+        {
+            json_line = serde_json::to_string(&json_object)?;
+        }
+        #[cfg(target_endian = "little")]
+        {
+            json_line = simd_json::to_string(&json_object)?;
+        }
         writeln!(writer, "{json_line}")?;
     }
 
@@ -3196,6 +3224,10 @@ pub fn infer_polars_schema(
         );
     }
     let stats_schema = std::sync::Arc::new(schema);
+    // Use platform-appropriate JSON serialization
+    #[cfg(target_endian = "big")]
+    let stats_schema_json = serde_json::to_string_pretty(&stats_schema)?;
+    #[cfg(target_endian = "little")]
     let stats_schema_json = simd_json::to_string_pretty(&stats_schema)?;
     let mut file = std::io::BufWriter::new(File::create(schema_file)?);
     file.write_all(stats_schema_json.as_bytes())?;

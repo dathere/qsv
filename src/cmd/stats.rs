@@ -307,6 +307,8 @@ use phf::phf_map;
 use qsv_dateparser::parse_with_preference;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+// Use serde_json on big-endian platforms (e.g. s390x) due to simd_json endianness issues
+#[cfg(target_endian = "little")]
 use simd_json::{OwnedValue, prelude::ValueAsScalar};
 use smallvec::SmallVec;
 use stats::{Commute, MinMax, OnlineStats, Unsorted, merge_all};
@@ -954,28 +956,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 };
 
             if !existing_stats_args_json_str.is_empty() {
-                let time_saved: u64;
+                let mut time_saved: u64 = 0;
                 // deserialize the existing stats args json
                 let existing_stats_args_json: StatsArgs = {
-                    let mut json_buffer = existing_stats_args_json_str.into_bytes();
-                    match simd_json::to_owned_value(&mut json_buffer) {
-                        Ok(value) => {
-                            // Convert OwnedValue to StatsArgs
-                            match StatsArgs::from_owned_value(&value) {
-                                Ok(mut stat_args) => {
-                                    // we init these fields to empty values because we don't want to
-                                    // compare them when checking if the
-                                    // args are the same
-                                    stat_args.canonical_input_path = String::new();
-                                    stat_args.canonical_stats_path = String::new();
-                                    stat_args.record_count = 0;
-                                    stat_args.date_generated = String::new();
-                                    time_saved = stat_args.compute_duration_ms;
-                                    stat_args.compute_duration_ms = 0;
-                                    stat_args
-                                },
+                    #[cfg(target_endian = "big")]
+                    let mut stat_args =
+                        match serde_json::from_str::<StatsArgs>(&existing_stats_args_json_str) {
+                            Ok(args) => args,
+                            Err(e) => {
+                                log::warn!(
+                                    "Could not deserialize {path_file_stem}.stats.csv.json: \
+                                     {e:?}, recomputing..."
+                                );
+                                let _ = fs::remove_file(&stats_file);
+                                let _ = fs::remove_file(&stats_args_json_file);
+                                StatsArgs::default()
+                            },
+                        };
+                    #[cfg(target_endian = "little")]
+                    let mut stat_args = {
+                        let mut json_buffer = existing_stats_args_json_str.into_bytes();
+                        match simd_json::to_owned_value(&mut json_buffer) {
+                            Ok(value) => match StatsArgs::from_owned_value(&value) {
+                                Ok(args) => args,
                                 Err(e) => {
-                                    time_saved = 0;
                                     log::warn!(
                                         "Could not deserialize {path_file_stem}.stats.csv.json: \
                                          {e:?}, recomputing..."
@@ -984,19 +988,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                     let _ = fs::remove_file(&stats_args_json_file);
                                     StatsArgs::default()
                                 },
-                            }
-                        },
-                        Err(e) => {
-                            time_saved = 0;
-                            log::warn!(
-                                "Could not parse {path_file_stem}.stats.csv.json: {e:?}, \
-                                 recomputing..."
-                            );
-                            let _ = fs::remove_file(&stats_file);
-                            let _ = fs::remove_file(&stats_args_json_file);
-                            StatsArgs::default()
-                        },
-                    }
+                            },
+                            Err(e) => {
+                                log::warn!(
+                                    "Could not parse {path_file_stem}.stats.csv.json: {e:?}, \
+                                     recomputing..."
+                                );
+                                let _ = fs::remove_file(&stats_file);
+                                let _ = fs::remove_file(&stats_args_json_file);
+                                StatsArgs::default()
+                            },
+                        }
+                    };
+
+                    // we init these fields to empty values because we don't want to
+                    // compare them when checking if the args are the same
+                    stat_args.canonical_input_path = String::new();
+                    stat_args.canonical_stats_path = String::new();
+                    stat_args.record_count = 0;
+                    stat_args.date_generated = String::new();
+                    time_saved = stat_args.compute_duration_ms;
+                    stat_args.compute_duration_ms = 0;
+                    stat_args
                 };
 
                 // check if the cached stats are current (ie the stats file is newer than the input
@@ -1232,10 +1245,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // save the stats args to "stdin.stats.csv.json"
         stats_pathbuf.set_extension("csv.json");
-        std::fs::write(
-            stats_pathbuf,
-            simd_json::to_string_pretty(&current_stats_args)?,
-        )?;
+        // Use platform-appropriate JSON serialization
+        #[cfg(target_endian = "big")]
+        let json_string = serde_json::to_string_pretty(&current_stats_args)?;
+        #[cfg(target_endian = "little")]
+        let json_string = simd_json::to_string_pretty(&current_stats_args)?;
+        std::fs::write(stats_pathbuf, json_string)?;
     } else if let Some(path) = rconfig.path {
         // if we read from a file, copy the temp stats file to "<FILESTEM>.stats.csv"
         let mut stats_pathbuf = path.clone();
@@ -1284,10 +1299,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .to_str()
                 .unwrap()
                 .to_string();
-            std::fs::write(
-                stats_pathbuf.clone(),
-                simd_json::to_string_pretty(&current_stats_args)?,
-            )?;
+            // Use platform-appropriate JSON serialization
+            #[cfg(target_endian = "big")]
+            let json_string = serde_json::to_string_pretty(&current_stats_args)?;
+            #[cfg(target_endian = "little")]
+            let json_string = simd_json::to_string_pretty(&current_stats_args)?;
+            std::fs::write(stats_pathbuf.clone(), json_string)?;
 
             // save the stats data to "<FILESTEM>.stats.csv.data.jsonl"
             if write_stats_jsonl {

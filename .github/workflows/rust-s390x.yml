@@ -42,4 +42,4 @@ jobs:
     - name: Run tests
       env:
         RUSTFLAGS: -C target-cpu=native
-      run: cargo test s390x --verbose --locked --features=apply,fetch,foreach,luau,python,feature_capable,ui -- --nocapture
+      run: cargo test --verbose --locked --features=apply,fetch,foreach,luau,python,feature_capable,ui

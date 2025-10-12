@@ -957,7 +957,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 };
 
             if !existing_stats_args_json_str.is_empty() {
-                let mut time_saved: u64 = 0;
+                let time_saved: u64;
                 // deserialize the existing stats args json
                 let existing_stats_args_json: StatsArgs = {
                     #[cfg(target_endian = "big")]

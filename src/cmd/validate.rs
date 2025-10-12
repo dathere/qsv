@@ -1260,9 +1260,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 let has_dynamic_enum = s.contains("dynamicEnum");
                 let has_unique_combined = s.contains("uniqueCombinedWith");
 
-                // parse JSON string
-                let mut s_slice = s.as_bytes().to_vec();
-                match simd_json::serde::from_slice::<Value>(&mut s_slice) {
+                // parse JSON string - use platform-appropriate JSON deserialization
+                #[cfg(target_endian = "big")]
+                let json_result = serde_json::from_str::<Value>(&s);
+                #[cfg(target_endian = "little")]
+                let json_result = {
+                    let mut s_slice = s.as_bytes().to_vec();
+                    simd_json::serde::from_slice::<Value>(&mut s_slice)
+                };
+
+                match json_result {
                     Ok(json) => {
                         // compile JSON Schema
                         let mut validator_options = Validator::options()

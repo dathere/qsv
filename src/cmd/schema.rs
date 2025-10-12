@@ -227,6 +227,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         "required": Value::Array(required_fields)
     });
 
+    // Use platform-appropriate JSON serialization
+    #[cfg(target_endian = "big")]
+    let schema_pretty = match serde_json::to_string_pretty(&schema) {
+        Ok(s) => s,
+        Err(e) => return fail_clierror!("Cannot prettify schema json: {e}"),
+    };
+    #[cfg(target_endian = "little")]
     let schema_pretty = match simd_json::to_string_pretty(&schema) {
         Ok(s) => s,
         Err(e) => return fail_clierror!("Cannot prettify schema json: {e}"),

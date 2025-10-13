@@ -343,9 +343,8 @@ self_update = { git = "https://github.com/jqnatividad/self_update", branch = "bu
 # use our patched fork of sled to get rid of unmaintained instant
 sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }
 
-# use upstream of time crate with unreleased fix that reverts perf regression in 0.3.43 release
-# see https://github.com/time-rs/time/issues/750
-time = { git = "https://github.com/time-rs/time", rev = "f203852"}
+# # use latest upstream of time crate
+# time = { git = "https://github.com/time-rs/time", rev = "53b0941"}
 
 # use unreleased upstream of whatlang with updated dependencies now that our PR is merged
 whatlang = { git = "https://github.com/greyblake/whatlang-rs", rev = "b282e07" }

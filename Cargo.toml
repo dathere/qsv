@@ -136,6 +136,7 @@ governor = { version = "0.10", optional = true }
 grex = { version = "=1.4.5", default-features = false }
 gzp = { version = "2", default-features = false, features = ["snappy_default"] }
 human-panic = "2"
+iana-time-zone = "0.1"
 indexmap = "2.11"
 indicatif = "0.18"
 itertools = "0.14"
@@ -149,7 +150,6 @@ jsonschema = { version = "0.33", features = [
     "resolve-http",
 ], default-features = false }
 libc = "0.2"
-localzone = { version = "0.3", features = ["auto_validation"] }
 log = "0.4"
 memmap2 = "0.9"
 mimalloc = { version = "0.1", default-features = false, features = ["extended", "v3"], optional = true }
@@ -333,9 +333,6 @@ hashbrown = { git = "https://github.com/rust-lang/hashbrown", rev = "e2a634b" }
 
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }
-
-# use our patched fork of localzone to bump dependencies until our PR is merged
-localzone = { git = "https://github.com/jqnatividad/localzone", branch = "bump-deps-may2025" }
 
 # use upstream of mimalloc with unreleased fixes
 mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "0a32a38" }

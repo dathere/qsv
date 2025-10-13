@@ -285,7 +285,7 @@ sha2 = { version = "0.10", features = ["compress"] }
 sha2 = { version = "0.10", features = ["asm", "compress"] }
 
 [dev-dependencies]
-actix-governor = "0.8"
+actix-governor = "0.10"
 actix-web = { version = "4.11", default-features = false, features = [
     "compress-brotli",
     "compress-gzip",

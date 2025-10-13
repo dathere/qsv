@@ -3955,16 +3955,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d873d7c67ce09b42110d801813efbc9364414e356be9935700d368351657487"
 
 [[package]]
-name = "localzone"
-version = "0.3.1"
-source = "git+https://github.com/jqnatividad/localzone?branch=bump-deps-may2025#a10f6f04d67f9c1ce8695281ce986586da6c2cbd"
-dependencies = [
- "chrono-tz",
- "js-sys",
- "windows",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5801,6 +5791,7 @@ dependencies = [
  "grex",
  "gzp",
  "human-panic",
+ "iana-time-zone",
  "indexmap",
  "indicatif",
  "itertools 0.14.0",
@@ -5811,7 +5802,6 @@ dependencies = [
  "json-objects-to-csv",
  "jsonschema",
  "libc",
- "localzone",
  "log",
  "memmap2",
  "mimalloc",

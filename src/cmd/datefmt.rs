@@ -266,7 +266,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let default_tz = match args.flag_default_tz.as_deref() {
         Some(tz) => {
             if tz.eq_ignore_ascii_case("local") {
-                if let Some(tz) = localzone::get_local_zone() {
+                if let Ok(tz) = iana_time_zone::get_timezone() {
                     log::info!("default-tz local timezone: {tz}");
                     tz.parse::<Tz>()?
                 } else {
@@ -284,7 +284,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Ok(tz) => tz,
         _ => {
             if args.flag_input_tz.eq_ignore_ascii_case("local") {
-                if let Some(tz) = localzone::get_local_zone() {
+                if let Ok(tz) = iana_time_zone::get_timezone() {
                     log::info!("input-tz local timezone: {tz}");
                     tz.parse::<Tz>()?
                 } else {
@@ -300,7 +300,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Ok(tz) => tz,
         _ => {
             if args.flag_output_tz.eq_ignore_ascii_case("local") {
-                if let Some(tz) = localzone::get_local_zone() {
+                if let Ok(tz) = iana_time_zone::get_timezone() {
                     log::info!("output-tz local timezone: {tz}");
                     tz.parse::<Tz>()?
                 } else {

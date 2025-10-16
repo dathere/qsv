@@ -274,7 +274,7 @@ titlecase = { version = "3", optional = true }
 tokio = { version = "1", features = ["parking_lot", "rt-multi-thread"] }
 uuid = { version = "1", features = ["v4", "v7"] }
 url = "2.5"
-whatlang = { version = "0.16", optional = true }
+whatlang = { version = "0.18", optional = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zip = "=4.6"
 
@@ -342,9 +342,6 @@ self_update = { git = "https://github.com/jqnatividad/self_update", branch = "bu
 
 # use our patched fork of sled to get rid of unmaintained instant
 sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }
-
-# use unreleased upstream of whatlang with updated dependencies now that our PR is merged
-whatlang = { git = "https://github.com/greyblake/whatlang-rs", rev = "b282e07" }
 
 # Polars has a much higher release tempo for its Python bindings compared
 # to its underlying Rust library. See https://github.com/pola-rs/polars/releases

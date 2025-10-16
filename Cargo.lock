@@ -3435,7 +3435,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
 dependencies = [
  "equivalent",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "serde",
  "serde_core",
 ]
@@ -8510,8 +8510,9 @@ dependencies = [
 
 [[package]]
 name = "whatlang"
-version = "0.16.4"
-source = "git+https://github.com/greyblake/whatlang-rs?rev=b282e07#b282e07f25a030672e6ec73de9c24e2c12707d3f"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5e8f38b596e2a359b755342473520a99421e43658548c79489ee221b728c107"
 dependencies = [
  "hashbrown 0.15.5",
 ]

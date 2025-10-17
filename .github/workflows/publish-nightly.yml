@@ -63,15 +63,15 @@ jobs:
           #   addl-qsvlite-features:
           #   addl-qsvdp-features:
           #   addl-rustflags: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
-          - os: macos-latest
-            os-name: macos
-            target: x86_64-apple-darwin
-            architecture: x86_64
-            addl-build-args: --features=apply,luau,fetch,foreach,nightly,to,self_update,polars,geocode,lens,prompt
-            default-features:
-            addl-qsvlite-features:
-            addl-qsvdp-features:
-            addl-rustflags: -C target-cpu=native
+          # - os: macos-latest
+          #   os-name: macos
+          #   target: x86_64-apple-darwin
+          #   architecture: x86_64
+          #   addl-build-args: --features=apply,luau,fetch,foreach,nightly,to,self_update,polars,geocode,lens,prompt
+          #   default-features:
+          #   addl-qsvlite-features:
+          #   addl-qsvdp-features:
+          #   addl-rustflags: -C target-cpu=native
 
     steps:
     - name: Installing Rust toolchain

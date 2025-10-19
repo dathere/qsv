@@ -304,11 +304,14 @@ serial_test = { version = "3.2", features = ["file_locks"] }
 [patch.crates-io]
 # use our tweaked fork of csv crate
 # the csv crate underpins a lot of qsv's functionality, so every perf tweak helps
-# the main feature of this csv fork is accelerated UTF-8 validation using the simdutf8 crate
+# the main features of this csv fork is SIMD-accelerated UTF-8 validation;
+# non-allocating ByteRecord trim and StringRecord trim;
+# optimized StringRecord::from_byte_record_lossy();
+# larger default reader buffer capacity (from 8 to 64kb);
 # and various clippy lint suggestions applied
-csv       = { git = "https://github.com/dathere/rust-csv", branch = "simdutf8" }
-csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "simdutf8" }
-csv-index = { git = "https://github.com/dathere/rust-csv", branch = "simdutf8" }
+csv       = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
+csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
+csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
 # csv = { path = "../rust-csv" }
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }

@@ -31,7 +31,6 @@ jobs:
     - name: apt-get update Ubuntu
       run: |
         sudo apt-get update
-        sudo apt-get upgrade
     - name: build prep for x86_64-unknown-linux-musl
       run: |
         sudo apt-get install musl-tools musl-dev

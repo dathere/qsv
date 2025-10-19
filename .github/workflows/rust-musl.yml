@@ -51,4 +51,4 @@ jobs:
     - name: Run tests
       env:
         RUSTFLAGS: -C target-cpu=native
-      run: cargo test --default-features false --target x86_64-unknown-linux-musl --verbose --locked --features=apply,fetch,foreach,geocode,to,feature_capable,lens
+      run: cargo test --no-default-features --target x86_64-unknown-linux-musl --verbose --locked --features=apply,fetch,foreach,geocode,to,feature_capable,lens

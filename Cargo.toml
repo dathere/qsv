@@ -305,11 +305,10 @@ serial_test = { version = "3.2", features = ["file_locks"] }
 # use our tweaked fork of csv crate
 # the csv crate underpins a lot of qsv's functionality, so every perf tweak helps
 # the main feature of this csv fork is accelerated UTF-8 validation using the simdutf8 crate
-# non-allocating ByteRecord trim and non-allocating StringRecord trim (both trim and trim_ascii)
-# more inline(always) and removal of the deprecated macro serde::serde_if_integer128
-# csv       = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimized-non-allocating-byterecord-trim" }
-# csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimized-non-allocating-byterecord-trim" }
-# csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-optimized-non-allocating-byterecord-trim" }
+# and various clippy lint suggestions applied
+csv       = { git = "https://github.com/dathere/rust-csv", branch = "simdutf8" }
+csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "simdutf8" }
+csv-index = { git = "https://github.com/dathere/rust-csv", branch = "simdutf8" }
 # csv = { path = "../rust-csv" }
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }

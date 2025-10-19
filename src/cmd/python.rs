@@ -71,7 +71,7 @@ Some usage examples:
   using the `py` command if Python's shared libraries are not found.
   
   Also, the following Python modules are automatically loaded and available to the user -
-  builtsin, math, random & datetime. The user can import additional modules with the --helper option,
+  builtins, math, random & datetime. The user can import additional modules with the --helper option,
   with the ability to use any Python module that's installed in the current Python virtualenv. 
 
   The Python expression is evaluated on a per record basis.
@@ -349,7 +349,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .getattr("QSVRow")?
                 .call1((headers.iter().collect::<Vec<&str>>(),))?;
 
-            batch_locals.set_item("col", py_row.clone())?;
+            batch_locals.set_item("col", &py_row)?;
 
             let error_result = intern!(py, "<ERROR>");
 
@@ -389,7 +389,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 log::error!("Expression error:{row_number}-{e:?}");
                             }
                             e.print_and_set_sys_last_vars(py);
-                            error_result.clone().into_any()
+                            error_result.as_any().clone()
                         },
                     };
 

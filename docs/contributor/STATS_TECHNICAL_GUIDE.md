@@ -571,6 +571,41 @@ where
 }
 ```
 
+#### How stats decides if a file is “indexed”
+
+Parallel processing only kicks in when the input is considered indexed. That decision is made by `Config::indexed()` and is used in stats like this:
+
+```rust
+match rconfig.indexed()? {
+    Some(idx) => {
+        // use idx.count() and go parallel
+        args.parallel_stats(&args.flag_dates_whitelist, idx.count())
+    }
+    None => {
+        // fall back to single-threaded
+        args.sequential_stats(&args.flag_dates_whitelist)
+    }
+}
+```
+
+`Config::indexed()` returns Some when:
+- A companion index file exists and is usable (typically the CSV path with a `.csv.idx` file computed via `util::idx_path(p)`, or an explicit `idx_path` set on the `Config`).
+- If the index is stale (CSV is newer than the index), qsv transparently rebuilds it via `autoindex_file()` and then uses it.
+- If no index exists, qsv may auto-create one when auto-indexing is enabled and the file size meets the threshold:
+  - Global threshold: `QSV_AUTOINDEX_SIZE` env var (bytes).
+  - Stats override: passing a negative `--cache-threshold` sets a per-run auto-index threshold to its absolute value (in bytes). If that negative value ends with `5` (e.g., `-5000005`), the created index (and stats cache) is deleted after the run.
+
+`Config::indexed()` returns None (not indexed) when:
+- Input is stdin (`-`): indexes aren’t supported for `<stdin>`.
+- The input is Snappy-compressed (`.sz`): snappy files are not indexed.
+- No index exists and auto-indexing isn’t triggered or the file is below the threshold.
+- Auto-indexing is not configured and the file is large (≥ 100MB; `NO_INDEX_WARNING_FILESIZE`): qsv logs a warning but proceeds unindexed.
+
+Useful flags and env vars:
+- `--jobs <N>`: number of threads; `--jobs 1` forces sequential even if indexed.
+- `QSV_AUTOINDEX_SIZE=<bytes>`: auto-create index for files ≥ this size.
+- `--cache-threshold -<bytes>` (stats only): auto-index threshold for this run; append `5` to auto-delete index after.
+
 **Safety**: The unsafe code is actually safe because:
 - We initialize `INFER_DATE_FLAGS` with length == stats.len()
 - We only access indices 0..stats.len()

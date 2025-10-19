@@ -6,30 +6,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## What's Changed
+## Added
+* add big-endian handling for big-endian platforms https://github.com/dathere/qsv/pull/3045
+* add s390x prebuilt binary (qsv now runs on IBM Z Mainframes!) https://github.com/dathere/qsv/commit/a3f455cfa7b0562a8b2a0a5bc25dc54d797ddeab
+
+## Changed
+* `datefmt`: Replace `localzone` crate with `iana-time-zone` crate https://github.com/dathere/qsv/pull/3048
+* docs: update badges with PowerPC Linux GNU, Windows ARM64 MSVC, remove macOS Intel by @rzmk in https://github.com/dathere/qsv/pull/3036
+* deps: bumped csv crate to 1.4 and reapplied qsv optimizations. For more info, see https://github.com/dathere/qsv/commit/4e2f2a08dfdf96f4c508d6406de1782144c5ed44
+* deps: bump whatlang to 0.18 https://github.com/dathere/qsv/commit/e80e9c0b28d0cabe0e07ad4fb79f4c347f62d6a7
+* deps: bump csvs_convert patch fork https://github.com/dathere/qsv/commit/8aa398fef9c3098582f8727094434d160f898666
+* deps: bump polars to 0.51.0 at py-1.35.0-beta-1 tag
+* deps: bump socket2 from 0.6.0 to 0.6.1
 * build(deps): bump actions/setup-python from 5.0.0 to 6.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3030
-* build(deps): bump simd-json from 0.16.0 to 0.17.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3031
-* build(deps): bump flexi_logger from 0.31.4 to 0.31.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3032
+* build(deps): bump actix-governor from 0.8.0 to 0.10.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3046
 * build(deps): bump gzp from 1.0.1 to 2.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3033
 * build(deps): bump github/codeql-action from 3 to 4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3034
+* build(deps): bump flexi_logger from 0.31.4 to 0.31.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3032
 * build(deps): bump flexi_logger from 0.31.5 to 0.31.6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3035
 * build(deps): bump flexi_logger from 0.31.6 to 0.31.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3038
-* fix: `headers` stdin handling without explicit `-` for stdin input by @jqnatividad in https://github.com/dathere/qsv/pull/3039
 * build(deps): bump libc from 0.2.176 to 0.2.177 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3040
-* docs: update badges with PowerPC Linux GNU, Windows ARM64 MSVC, remove macOS Intel by @rzmk in https://github.com/dathere/qsv/pull/3036
+* build(deps): bump pyo3 from 0.26.0 to 0.27.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3055
 * build(deps): bump qsv_docopt from 1.8.0 to 1.9.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3041
 * build(deps): bump regex from 1.11.3 to 1.12.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3043
-* refactor: add big-endian handling by @jqnatividad in https://github.com/dathere/qsv/pull/3045
-* build(deps): bump actix-governor from 0.8.0 to 0.10.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3046
 * build(deps): bump rust_decimal from 1.38.0 to 1.39.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3047
-* refactor: Replace localzone with iana time zone by @jqnatividad in https://github.com/dathere/qsv/pull/3048
 * build(deps): bump regex from 1.12.1 to 1.12.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3050
 * build(deps): bump reqwest from 0.12.23 to 0.12.24 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3049
-* build(deps): bump tokio from 1.47.1 to 1.48.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3052
+* build(deps): bump simd-json from 0.16.0 to 0.17.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3031
 * build(deps): bump tikv-jemallocator from 0.6.0 to 0.6.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3053
-* deps: use default lld linker on musl now that we're on Rust 1.90 by @jqnatividad in https://github.com/dathere/qsv/pull/3054
-* build(deps): bump pyo3 from 0.26.0 to 0.27.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3055
+* build(deps): bump tokio from 1.47.1 to 1.48.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3052
+* applied select clippy lint suggestions
+* updated indirect dependencies
 
+## Fixed
+* `headers`: fix stdin handling without explicit `-` for stdin input https://github.com/dathere/qsv/pull/3039
+
+## Removed
+* removed Python 3.10 prebuilts as py03 0.27 no longer supports it and Python 3.10 is no longer maintained
+* deps: removed patched fork of time-rs now that 0.3.43 has been released https://github.com/dathere/qsv/commit/fde03b351449e0794612d7baeac788c2b69b8fa9
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/8.0.0...8.1.0
 

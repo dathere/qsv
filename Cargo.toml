@@ -95,7 +95,6 @@ cpc = { version = "3", optional = true }
 crc32fast = { version = "1.4", optional = true }
 crossbeam-channel = "0.5"
 csv = "1.4"
-# csv-core = "0.1"
 csv-diff = "0.1"
 csv-index = "0.1"
 csvlens = { version = "0.13", optional = true, default-features = false, features = [
@@ -306,8 +305,6 @@ serial_test = { version = "3.2", features = ["file_locks"] }
 # the csv crate underpins a lot of qsv's functionality, so every perf tweak helps
 # the main features of this csv fork is SIMD-accelerated UTF-8 validation;
 # non-allocating ByteRecord trim and StringRecord trim;
-# optimized StringRecord::from_byte_record_lossy();
-# larger default reader buffer capacity (from 8 to 64kb);
 # and various clippy lint suggestions applied
 csv       = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
 csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }

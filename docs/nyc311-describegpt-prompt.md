@@ -1,7 +1,7 @@
 Generated using the command:
 ```bash
 $ QSV_LLM_BASE_URL=https://api.together.xyz/v1 QSV_LLM_APIKEY=THEKEY QSV_DESCRIBEGPT_DB_ENGINE=/opt/homebrew/bin/duckdb \
-  qsv describegpt NYC_311_SR_2010-2020-sample-1M.csv \
+  qsv describegpt /tmp/NYC_311_SR_2010-2020-sample-1M.csv \
   --output nyc311-describegpt-prompt.md \
   --sql-results nyc311-describegpt-prompt-results \
   --prompt "What are the top 10 complaint types by community board and borough?" \
@@ -112,7 +112,7 @@ Thus produce the SQL code block preceded by a newline.
 
 We should not output any other text besides the SQL code block. The instruction says: "Return the SQL query as a SQL code block preceded by a newline." So we must output a newline then the code block. The code block likely starts with ```sql. So we need to output:
 
-\n```sql
+```sql
 -- {GENERATED_BY_SIGNATURE}
 -- Explanation: ...
 ...

@@ -66,7 +66,8 @@ jobs:
     - name: Copy binaries to working dir
       shell: bash
       run: |
-            rm target/${{ matrix.job.target }}/release/*.d 
+            mkdir qsv-${{ needs.analyze-tags.outputs.previous-tag }}
+            rm target/${{ matrix.job.target }}/release/*.d
             cp target/${{ matrix.job.target }}/release/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }}
             cd qsv-${{ needs.analyze-tags.outputs.previous-tag }}
             mv qsv qsvpy311

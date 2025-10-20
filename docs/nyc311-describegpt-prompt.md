@@ -1,6 +1,7 @@
 Generated using the command:
 ```bash
-$ QSV_LLM_BASE_URL=https://api.together.xyz/v1 QSV_LLM_APIKEY=THEKEY QSV_DESCRIBEGPT_DB_ENGINE=/opt/homebrew/bin/duckdb \
+$ QSV_LLM_BASE_URL=https://api.together.xyz/v1 QSV_LLM_APIKEY=THEKEY \
+  QSV_DESCRIBEGPT_DB_ENGINE=/opt/homebrew/bin/duckdb \
   qsv describegpt /tmp/NYC_311_SR_2010-2020-sample-1M.csv \
   --output nyc311-describegpt-prompt.md \
   --sql-results nyc311-describegpt-prompt-results \

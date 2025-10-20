@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ## Added
+* `describegpt`: add Kind and Token Usage to output https://github.com/dathere/qsv/commit/a21e1177d471b4115b76c083458100552eace63c
 * add big-endian handling for big-endian platforms (e.g. `s390x-unknown-linux-gnu`) https://github.com/dathere/qsv/pull/3045
 * add s390x prebuilt binary (qsv now runs on IBM Z Mainframes!) https://github.com/dathere/qsv/commit/a3f455cfa7b0562a8b2a0a5bc25dc54d797ddeab
 

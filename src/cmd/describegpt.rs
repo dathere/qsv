@@ -865,9 +865,10 @@ fn get_prompt(
         .replace(
             "{JSON_ADD}",
             if prompt_file.json || prompt_file.jsonl || args.flag_json || args.flag_jsonl {
-                " (in valid JSON format. Surround it with ```json and ```)"
+                " (in valid JSON format, ensuring string values are properly escaped. Surround it \
+                 with ```json and ```)"
             } else {
-                ""
+                " (in Markdown format)"
             },
         );
 
@@ -1426,10 +1427,12 @@ fn run_inference_options(
             total_json_output[kind.to_string()] = if kind == PromptType::Description
                 || kind == PromptType::Prompt
             {
-                // For description and prompt, create an object with both response and reasoning
+                // For description and prompt, create an object
+                // with both response, reasoning, and token usage
                 json!({
                     "response": completion_response.response,
-                    "reasoning": completion_response.reasoning
+                    "reasoning": completion_response.reasoning,
+                    "token_usage": completion_response.token_usage,
                 })
             } else {
                 // For dictionary and tags, try to extract JSON from response, but include reasoning
@@ -1438,14 +1441,16 @@ fn run_inference_options(
                         // Create a structured object with data and reasoning
                         json!({
                             "response": json_value,
-                            "reasoning": completion_response.reasoning
+                            "reasoning": completion_response.reasoning,
+                            "token_usage": completion_response.token_usage,
                         })
                     },
                     Err(_) => {
                         // Fall back to string format with reasoning
                         json!({
                             "response": completion_response.response,
-                            "reasoning": completion_response.reasoning
+                            "reasoning": completion_response.reasoning,
+                            "token_usage": completion_response.token_usage,
                         })
                     },
                 }
@@ -1480,8 +1485,11 @@ fn run_inference_options(
             }
             // append the reasoning to the output as a separate markdown section
             formatted_output = format!(
-                "{}\n## REASONING\n\n{}\n",
-                formatted_output, completion_response.reasoning
+                "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
+                kind.to_string(),
+                formatted_output,
+                completion_response.reasoning,
+                completion_response.token_usage
             );
             // If --output is used, append plaintext to file, do not overwrite
             if let Some(output) = &args.flag_output {

@@ -34,15 +34,11 @@ jobs:
     - name: build prep for x86_64-unknown-linux-musl
       run: |
         sudo apt-get install musl-tools musl-dev
-        sudo ln -s /usr/bin/g++ /usr/bin/musl-g++          
+        sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
+        sudo apt-get autoremove --purge
+        sudo apt-get autoclean
+        sudo apt-get clean
     - uses: actions/checkout@v5
-    - uses: actions/setup-python@v6.0.0
-      with:
-        python-version: '3.13'
-    - name: Install and Run Redis
-      run: |
-        sudo apt-get install redis-server
-        sudo service redis-server start
     - name: Installing Rust toolchain
       uses: dtolnay/rust-toolchain@master
       with:
@@ -55,4 +51,4 @@ jobs:
     - name: Run tests
       env:
         RUSTFLAGS: -C target-cpu=native
-      run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,polars,to,feature_capable,lens
+      run: cargo test --no-default-features --target x86_64-unknown-linux-musl --verbose --locked --features=apply,fetch,foreach,geocode,to,feature_capable,lens

@@ -3392,6 +3392,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_env = "musl"))]
     fn benchmark_hash_sha256_file_very_large() {
         // Create a larger test file (>1.2GB) to test parallel processing
         let mut temp_file = NamedTempFile::new().unwrap();

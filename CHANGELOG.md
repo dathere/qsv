@@ -9,10 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [8.1.0] - 2025-10-20
 
 This minor release features:
-* *qsv on IBM Z mainframes (s390x)!* - now that we have auto-endianness detection, even adding a prebuilt binary for it.
+* *qsv on [IBM Z mainframes](https://www.ibm.com/products/z) (s390x)!* - now that we have endianness detection, even adding a prebuilt binary for it.
 * `describegpt`: Output Kind and Token Usage have been added to the output making it easier to parse responses and track LLM costs.
-* `python`: with the latest [pyO3.rs 0.27](https://pyo3.rs/v0.27.0/) crate, we're setting the stage to drop support for Python 3.12 and below, targetting [free-threaded Python](https://docs.python.org/3/howto/free-threading-python.html) exclusively starting with the 9.0 release. This should allow us to massively boost performance by parallelizing `py` workloads. It will also power the upcoming [FAIRification](https://www.go-fair.org/fair-principles/fairification-process/) commands.
-* a tuned csv fork based on the just released csv 1.4 crate, increasing performance suite-wide.
+* `python`: with the latest [pyO3.rs 0.27](https://pyo3.rs/v0.27.0/) crate, we're setting the stage to drop support for Python 3.12 and below, targeting [free-threaded Python](https://docs.python.org/3/howto/free-threading-python.html) exclusively starting with the 9.0 release. This should allow us to massively boost performance by parallelizing `py` workloads.<br>It will also power the upcoming [FAIRification](https://www.go-fair.org/fair-principles/fairification-process/) commands.
+* a tuned csv fork based on the just released [csv 1.4](https://crates.io/crates/csv) crate, increasing performance suite-wide.
 
 ---
 
@@ -23,11 +23,13 @@ This minor release features:
 
 ## Changed
 * `datefmt`: Replace `localzone` crate with `iana-time-zone` crate https://github.com/dathere/qsv/pull/3048
+* `geoconvert`: Improved with the latest geozero fixes needed for [Datapusher+](https://github.com/dathere/datapusher-plus?tab=readme-ov-file#datapusher) processing of GeoJSON and SHP files.
 * `python`: micro-optimize to remove unnecessary clone; use more idiomatic error_result handling - https://github.com/dathere/qsv/commit/777aa14e3930e126a70faf936a8dc836703d2eaf
 * docs: update badges with PowerPC Linux GNU, Windows ARM64 MSVC, remove macOS Intel by @rzmk in https://github.com/dathere/qsv/pull/3036
 * deps: bump bitflags from 2.9.4 to 2.10.0 https://github.com/dathere/qsv/commit/8d65c1be6ff03939edb2c7700b4b28b0a57819fe
 * deps: bumped csv crate to 1.4 and reapplied qsv optimizations. For more info, see https://github.com/dathere/qsv/commit/4e2f2a08dfdf96f4c508d6406de1782144c5ed44
 * deps: bump csvs_convert patch fork https://github.com/dathere/qsv/commit/8aa398fef9c3098582f8727094434d160f898666
+* deps: bump geozero to latest upstream with unreleased fixes - https://github.com/dathere/qsv/commit/0a9d1b39649a3a88342ddaa0f211fb1c628180dc
 * deps: bump polars to 0.51.0 at py-1.35.0-beta-1 tag
 * deps: bump socket2 from 0.6.0 to 0.6.1
 * deps: bump whatlang to 0.18 https://github.com/dathere/qsv/commit/e80e9c0b28d0cabe0e07ad4fb79f4c347f62d6a7
@@ -42,9 +44,9 @@ This minor release features:
 * build(deps): bump pyo3 from 0.26.0 to 0.27.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3055
 * build(deps): bump qsv_docopt from 1.8.0 to 1.9.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3041
 * build(deps): bump regex from 1.11.3 to 1.12.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3043
-* build(deps): bump rust_decimal from 1.38.0 to 1.39.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3047
 * build(deps): bump regex from 1.12.1 to 1.12.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3050
 * build(deps): bump reqwest from 0.12.23 to 0.12.24 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3049
+* build(deps): bump rust_decimal from 1.38.0 to 1.39.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3047
 * build(deps): bump simd-json from 0.16.0 to 0.17.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3031
 * build(deps): bump tikv-jemallocator from 0.6.0 to 0.6.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3053
 * build(deps): bump tokio from 1.47.1 to 1.48.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3052

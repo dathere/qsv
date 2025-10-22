@@ -1486,7 +1486,7 @@ fn run_inference_options(
             // append the reasoning to the output as a separate markdown section
             formatted_output = format!(
                 "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
-                kind.to_string(),
+                kind,
                 formatted_output,
                 completion_response.reasoning,
                 completion_response.token_usage

@@ -6,6 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.1.1] - 2025-10-22
+
+## Changed
+* deps: use latest version of qsv-tuned csv crate https://github.com/dathere/qsv/commit/7523e086350b672b61ad40a0b0487233dbd26871
+* deps: unpin zip from 4.6 and bump to 6 now that geosuggest uses it https://github.com/dathere/qsv/commit/957ad6d0ec9de502e4283ea02badb67f170c6111
+* build(deps): bump dns-lookup from 3.0.0 to 3.0.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3057
+* build(deps): bump geosuggest-utils from 0.8.0 to 0.8.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3058
+* build(deps): bump geosuggest-core from 0.8.0 to 0.8.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3059
+* build(deps): bump memmap2 from 0.9.8 to 0.9.9 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3060
+* build(deps): bump pyo3 from 0.27.0 to 0.27.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3061
+* docs: Seeded developer documentation for index/stats/frequency modules by @kulnor in https://github.com/dathere/qsv/pull/3056
+* tweaked several publishing and test GH Actions workflows
+* applied `clippy::to_string_in_format_args` lint suggestion
+* bumped several indirect dependencies
+
+## Fixed
+* use latest csvlens patched fork that fixes panic when using stdin input https://github.com/dathere/qsv/commit/34154e6c9a521f1a05c63d175a217d3ecbc125c6
+
+## New Contributors
+* @kulnor made their first contribution in https://github.com/dathere/qsv/pull/3056
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/8.1.0...8.1.1
+
 ## [8.1.0] - 2025-10-20
 
 This minor release features:

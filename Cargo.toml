@@ -305,6 +305,7 @@ serial_test = { version = "3.2", features = ["file_locks"] }
 # the csv crate underpins a lot of qsv's functionality, so every perf tweak helps
 # the main features of this csv fork is SIMD-accelerated UTF-8 validation;
 # non-allocating ByteRecord trim and StringRecord trim;
+# a faster `is_non_numeric()` helper;
 # and various clippy lint suggestions applied
 csv       = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
 csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }

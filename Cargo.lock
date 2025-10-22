@@ -1746,6 +1746,7 @@ checksum = "829d955a0bb380ef178a640b91779e3987da38c9aea133b20614cfed8cdea9c6"
 dependencies = [
  "bitflags 2.10.0",
  "crossterm_winapi",
+ "filedescriptor",
  "mio",
  "parking_lot",
  "rustix 0.38.44",
@@ -1854,12 +1855,13 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.13.0"
-source = "git+https://github.com/jqnatividad/csvlens?branch=natural-sort-with-upstream#a5abc1c24232c55dc7a53d965f65be408f5d5d81"
+source = "git+https://github.com/jqnatividad/csvlens?branch=natural-sort-with-upstream#41b9b3ba5bed6c6547451c71d238f021457848f3"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
  "arboard",
  "arrow",
+ "crossterm 0.28.1",
  "csv",
  "csv-sniffer",
  "ratatui",
@@ -2452,6 +2454,17 @@ name = "file-format"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0eab8aa2fba5f39f494000a22f44bf3c755b7d7f8ffad3f36c6d507893074159"
+
+[[package]]
+name = "filedescriptor"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e40758ed24c9b2eeb76c35fb0aebc66c626084edd827e07e1552279814c6682d"
+dependencies = [
+ "libc",
+ "thiserror 1.0.69",
+ "winapi",
+]
 
 [[package]]
 name = "filetime"

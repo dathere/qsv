@@ -18,6 +18,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use blake3::Hasher;
 use csv::ByteRecord;
 use docopt::Docopt;
 use filetime::FileTime;
@@ -3272,6 +3273,18 @@ pub fn hash_sha256_file(path: &Path) -> CliResult<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+/// BLAKE3 hash of a file optimized for maximum performance
+/// Uses memory mapping and multithreading for fast hashing of files of any size
+pub fn hash_blake3_file(path: &Path) -> CliResult<String> {
+    let mut hasher = Hasher::new();
+
+    // Use BLAKE3's optimized memory-mapped + rayon parallel hashing
+    // This automatically handles chunking and parallel processing internally
+    hasher.update_mmap_rayon(path)?;
+
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
 #[cfg(unix)]
 pub fn is_executable(path: &str) -> std::io::Result<bool> {
     use std::{fs, os::unix::fs::PermissionsExt};
@@ -3425,6 +3438,97 @@ mod tests {
         assert_eq!(
             hash,
             "94b6b51db44e0ecad8a035dd5db44ae661d3b60413601df849f807d390e8023d"
+        );
+    }
+
+    #[test]
+    fn test_hash_blake3_file() {
+        // Create a temporary file with known content
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content = b"Hello, World! This is a test file for BLAKE3 hashing.";
+        temp_file.write_all(test_content).unwrap();
+        temp_file.flush().unwrap();
+
+        // Calculate expected hash using blake3 directly
+        let mut expected_hasher = Hasher::new();
+        expected_hasher.update(test_content);
+        let expected_hash = expected_hasher.finalize().to_hex().to_string();
+
+        // Test our function
+        let actual_hash = hash_blake3_file(temp_file.path()).unwrap();
+
+        assert_eq!(actual_hash, expected_hash);
+    }
+
+    #[test]
+    fn test_hash_blake3_file_large() {
+        // Create a larger test file (1MB)
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content = b"Large file test content. ".repeat(40000); // ~1MB
+        temp_file.write_all(&test_content).unwrap();
+        temp_file.flush().unwrap();
+
+        // Calculate expected hash
+        let mut expected_hasher = Hasher::new();
+        expected_hasher.update(&test_content);
+        let expected_hash = expected_hasher.finalize().to_hex().to_string();
+
+        // Test our function
+        let actual_hash = hash_blake3_file(temp_file.path()).unwrap();
+
+        assert_eq!(actual_hash, expected_hash);
+    }
+
+    #[test]
+    fn benchmark_hash_blake3_file() {
+        // Create a test file for benchmarking
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content = b"Benchmark test content. ".repeat(100000); // ~2.4MB
+        temp_file.write_all(&test_content).unwrap();
+        temp_file.flush().unwrap();
+
+        // Benchmark the function
+        let start = std::time::Instant::now();
+        let hash = hash_blake3_file(temp_file.path()).unwrap();
+        let duration = start.elapsed();
+
+        println!("BLAKE3 Hash: {}", hash);
+        println!("BLAKE3 Time: {:?}", duration);
+        println!("File size: {} bytes", test_content.len());
+        println!(
+            "BLAKE3 Speed: {:.2} MB/s",
+            (test_content.len() as f64 / 1024.0 / 1024.0) / duration.as_secs_f64()
+        );
+        assert_eq!(
+            hash,
+            "87b87c9d36ee75bf8cb30940f6bbbeec3e67328190181f8c59c3cbcd6f35228a"
+        );
+    }
+
+    #[test]
+    fn benchmark_hash_blake3_file_large() {
+        // Create a larger test file (100MB) to test parallel processing
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content =
+            b"Large benchmark test content for parallel processing. ".repeat(2000000); // ~100MB
+        temp_file.write_all(&test_content).unwrap();
+        temp_file.flush().unwrap();
+
+        // Benchmark the function
+        let start = std::time::Instant::now();
+        let hash = hash_blake3_file(temp_file.path()).unwrap();
+        let duration = start.elapsed();
+
+        println!("BLAKE3 Large file hash: {}", hash);
+        println!("BLAKE3 Large file time: {:?}", duration);
+        println!("Large file size: {} bytes", test_content.len());
+        println!(
+            "BLAKE3 Large file speed: {:.2} MB/s",
+            (test_content.len() as f64 / 1024.0 / 1024.0) / duration.as_secs_f64()
+        );
+        assert_eq!(
+            hash,
+            "6cd27b8098295afc42527bcee267ce39e757345f9f82c20b66efc75ffe4c1631"
         );
     }
 }

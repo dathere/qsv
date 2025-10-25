@@ -35,7 +35,7 @@ NOTE: LLMs are prone to inaccurate information being produced. Verify output res
 
 CACHING:
 As LLM inferencing takes time and can be expensive, describegpt caches the LLM inferencing results
-in a either a disk cache (default) or a Redis cache. It does so by calculating the SHA256 hash of the
+in a either a disk cache (default) or a Redis cache. It does so by calculating the BLAKE3 hash of the
 input file and using it as the primary cache key along with the prompt type, model and other parameters
 as required.
 
@@ -2418,10 +2418,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Initialize the global qsv path
     QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
 
-    // Calculate SHA256 hash of the input file early for cache key generation
-    print_status(&format!("Calculating SHA256 hash of {input_path}..."), None);
+    // Calculate BLAKE3 hash of the input file early for cache key generation
+    print_status(&format!("Calculating BLAKE3 hash of {input_path}..."), None);
     let start_hash_time = Instant::now();
-    let file_hash = util::hash_sha256_file(Path::new(&input_path))?;
+    let file_hash = util::hash_blake3_file(Path::new(&input_path))?;
     FILE_HASH.set(file_hash.clone()).unwrap();
     print_status(
         &format!("(elapsed: {:.2?})", start_hash_time.elapsed()),

@@ -1023,6 +1023,8 @@ dependencies = [
  "cc",
  "cfg-if",
  "constant_time_eq",
+ "memmap2",
+ "rayon-core",
 ]
 
 [[package]]
@@ -1313,9 +1315,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.41"
+version = "1.2.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac9fe6cdbb24b6ade63616c0a0688e45bb56732262c158df3c0c4bea4ca47cb7"
+checksum = "739eb0f94557554b3ca9a86d2d37bebd49c5e6d0c1d2bda35ba5bdac830befc2"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1797,7 +1799,7 @@ dependencies = [
 [[package]]
 name = "csv"
 version = "1.4.0"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#7ff8329e75527aa37923760d54de2aebe33be72a"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#6df253d59cbd5e9aa39f0c8b2acc95961f797fd2"
 dependencies = [
  "csv-core",
  "itoa",
@@ -1809,7 +1811,7 @@ dependencies = [
 [[package]]
 name = "csv-core"
 version = "0.1.13"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#7ff8329e75527aa37923760d54de2aebe33be72a"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#6df253d59cbd5e9aa39f0c8b2acc95961f797fd2"
 dependencies = [
  "memchr",
  "simdutf8",
@@ -1833,7 +1835,7 @@ dependencies = [
 [[package]]
 name = "csv-index"
 version = "0.1.6"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#7ff8329e75527aa37923760d54de2aebe33be72a"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#6df253d59cbd5e9aa39f0c8b2acc95961f797fd2"
 dependencies = [
  "byteorder",
  "csv",
@@ -5765,6 +5767,7 @@ dependencies = [
  "base62",
  "base64-simd",
  "bitvec",
+ "blake3",
  "bytemuck",
  "byteorder",
  "bytes",

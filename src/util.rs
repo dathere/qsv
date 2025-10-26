@@ -18,7 +18,6 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use blake3::Hasher;
 use csv::ByteRecord;
 use docopt::Docopt;
 use filetime::FileTime;
@@ -3239,8 +3238,9 @@ pub fn infer_polars_schema(
     Ok(true)
 }
 
-/// CPU-accelerated sha256 hash of a file
+/// CPU-accelerated SHA256 hash of a file
 /// designed for performance, and memory-mapped chunked to process larger than memory files
+/// SHA256 is single-threaded by design; use BLAKE3 for performance-critical hashing
 pub fn hash_sha256_file(path: &Path) -> CliResult<String> {
     const CHUNK_SIZE: usize = 64 * 1024 * 1024; // 64MB chunks
 
@@ -3276,7 +3276,7 @@ pub fn hash_sha256_file(path: &Path) -> CliResult<String> {
 /// BLAKE3 hash of a file optimized for maximum performance
 /// Uses memory mapping and multithreading for fast hashing of files of any size
 pub fn hash_blake3_file(path: &Path) -> CliResult<String> {
-    let mut hasher = Hasher::new();
+    let mut hasher = blake3::Hasher::new();
 
     // Use BLAKE3's optimized memory-mapped + rayon parallel hashing
     // This automatically handles chunking and parallel processing internally
@@ -3450,7 +3450,7 @@ mod tests {
         temp_file.flush().unwrap();
 
         // Calculate expected hash using blake3 directly
-        let mut expected_hasher = Hasher::new();
+        let mut expected_hasher = blake3::Hasher::new();
         expected_hasher.update(test_content);
         let expected_hash = expected_hasher.finalize().to_hex().to_string();
 
@@ -3469,7 +3469,7 @@ mod tests {
         temp_file.flush().unwrap();
 
         // Calculate expected hash
-        let mut expected_hasher = Hasher::new();
+        let mut expected_hasher = blake3::Hasher::new();
         expected_hasher.update(&test_content);
         let expected_hash = expected_hasher.finalize().to_hex().to_string();
 

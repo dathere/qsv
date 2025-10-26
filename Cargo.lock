@@ -3054,16 +3054,6 @@ dependencies = [
 
 [[package]]
 name = "halfbrown"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa2c385c6df70fd180bbb673d93039dbd2cd34e41d782600bdf6e1ca7bce39aa"
-dependencies = [
- "hashbrown 0.15.5",
- "serde",
-]
-
-[[package]]
-name = "halfbrown"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c7ed2f2edad8a14c8186b847909a41fbb9c3eafa44f88bd891114ed5019da09"
@@ -3095,8 +3085,6 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.1.5",
- "rayon",
- "serde",
 ]
 
 [[package]]
@@ -3108,6 +3096,8 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.2.0",
+ "rayon",
+ "serde",
 ]
 
 [[package]]
@@ -4951,7 +4941,7 @@ dependencies = [
 [[package]]
 name = "polars"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "getrandom 0.2.16",
  "getrandom 0.3.4",
@@ -4974,7 +4964,7 @@ dependencies = [
 [[package]]
 name = "polars-arrow"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "atoi_simd",
  "avro-schema",
@@ -4987,7 +4977,7 @@ dependencies = [
  "ethnum",
  "getrandom 0.2.16",
  "getrandom 0.3.4",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "itoa",
  "lz4",
  "num-traits",
@@ -5016,14 +5006,14 @@ dependencies = [
 [[package]]
 name = "polars-compute"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "atoi_simd",
  "bytemuck",
  "chrono",
  "either",
  "fast-float2",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "itoa",
  "num-traits",
  "polars-arrow",
@@ -5040,7 +5030,7 @@ dependencies = [
 [[package]]
 name = "polars-core"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "bitflags 2.10.0",
  "boxcar",
@@ -5049,7 +5039,7 @@ dependencies = [
  "chrono-tz",
  "comfy-table",
  "either",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "indexmap",
  "itoa",
  "num-traits",
@@ -5075,10 +5065,10 @@ dependencies = [
 [[package]]
 name = "polars-dtype"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "boxcar",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "polars-arrow",
  "polars-error",
  "polars-utils",
@@ -5089,7 +5079,7 @@ dependencies = [
 [[package]]
 name = "polars-error"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "avro-schema",
  "object_store",
@@ -5103,10 +5093,10 @@ dependencies = [
 [[package]]
 name = "polars-expr"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "bitflags 2.10.0",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "num-traits",
  "polars-arrow",
  "polars-compute",
@@ -5128,7 +5118,7 @@ dependencies = [
 [[package]]
 name = "polars-io"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "async-trait",
  "atoi_simd",
@@ -5141,7 +5131,7 @@ dependencies = [
  "fs4",
  "futures",
  "glob",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "home",
  "itoa",
  "memchr",
@@ -5164,7 +5154,7 @@ dependencies = [
  "ryu",
  "serde",
  "serde_json",
- "simd-json 0.15.1",
+ "simd-json",
  "simdutf8",
  "tokio",
  "zstd",
@@ -5173,12 +5163,12 @@ dependencies = [
 [[package]]
 name = "polars-json"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "chrono",
  "chrono-tz",
  "fallible-streaming-iterator",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "indexmap",
  "itoa",
  "num-traits",
@@ -5187,14 +5177,14 @@ dependencies = [
  "polars-error",
  "polars-utils",
  "ryu",
- "simd-json 0.15.1",
+ "simd-json",
  "streaming-iterator",
 ]
 
 [[package]]
 name = "polars-lazy"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "bitflags 2.10.0",
  "chrono",
@@ -5221,7 +5211,7 @@ dependencies = [
 [[package]]
 name = "polars-mem-engine"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "futures",
  "memmap2",
@@ -5243,7 +5233,7 @@ dependencies = [
 [[package]]
 name = "polars-ops"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "argminmax",
  "base64",
@@ -5251,7 +5241,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "either",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "hex",
  "indexmap",
  "jsonpath_lib_polars_vendor",
@@ -5279,7 +5269,7 @@ dependencies = [
 [[package]]
 name = "polars-parquet"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "async-stream",
  "base64",
@@ -5288,7 +5278,7 @@ dependencies = [
  "ethnum",
  "flate2",
  "futures",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "lz4",
  "num-traits",
  "polars-arrow",
@@ -5316,7 +5306,7 @@ dependencies = [
 [[package]]
 name = "polars-plan"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "bitflags 2.10.0",
  "bytemuck",
@@ -5325,7 +5315,7 @@ dependencies = [
  "chrono-tz",
  "either",
  "futures",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "memmap2",
  "num-traits",
  "percent-encoding",
@@ -5352,7 +5342,7 @@ dependencies = [
 [[package]]
 name = "polars-row"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "bitflags 2.10.0",
  "bytemuck",
@@ -5366,7 +5356,7 @@ dependencies = [
 [[package]]
 name = "polars-schema"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "indexmap",
  "polars-error",
@@ -5378,7 +5368,7 @@ dependencies = [
 [[package]]
 name = "polars-sql"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "bitflags 2.10.0",
  "hex",
@@ -5398,7 +5388,7 @@ dependencies = [
 [[package]]
 name = "polars-stream"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -5434,7 +5424,7 @@ dependencies = [
 [[package]]
 name = "polars-time"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "atoi_simd",
  "bytemuck",
@@ -5457,7 +5447,7 @@ dependencies = [
 [[package]]
 name = "polars-utils"
 version = "0.51.0"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0-beta.1#a6fa669f4464aa18bd73fa8b6440c9816af64de2"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.35.0#e9fce558b4ffdee18e19bf75b53e036e37ec89d3"
 dependencies = [
  "bincode",
  "bytemuck",
@@ -5465,8 +5455,8 @@ dependencies = [
  "compact_str 0.9.0",
  "either",
  "flate2",
- "foldhash 0.1.5",
- "hashbrown 0.15.5",
+ "foldhash 0.2.0",
+ "hashbrown 0.16.0",
  "indexmap",
  "libc",
  "memmap2",
@@ -5861,7 +5851,7 @@ dependencies = [
  "serde_urlencoded",
  "serial_test",
  "sha2",
- "simd-json 0.17.0",
+ "simd-json",
  "simdutf8",
  "sled",
  "smallvec",
@@ -7117,33 +7107,18 @@ checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
 
 [[package]]
 name = "simd-json"
-version = "0.15.1"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c962f626b54771990066e5435ec8331d1462576cd2d1e62f24076ae014f92112"
+checksum = "4255126f310d2ba20048db6321c81ab376f6a6735608bf11f0785c41f01f64e3"
 dependencies = [
  "ahash 0.8.12",
- "getrandom 0.3.4",
- "halfbrown 0.3.0",
+ "halfbrown",
  "once_cell",
  "ref-cast",
  "serde",
  "serde_json",
  "simdutf8",
- "value-trait 0.11.0",
-]
-
-[[package]]
-name = "simd-json"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4255126f310d2ba20048db6321c81ab376f6a6735608bf11f0785c41f01f64e3"
-dependencies = [
- "halfbrown 0.4.0",
- "ref-cast",
- "serde",
- "serde_json",
- "simdutf8",
- "value-trait 0.12.1",
+ "value-trait",
 ]
 
 [[package]]
@@ -8257,24 +8232,12 @@ checksum = "4e8257fbc510f0a46eb602c10215901938b5c2a7d5e70fc11483b1d3c9b5b18c"
 
 [[package]]
 name = "value-trait"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0508fce11ad19e0aab49ce20b6bec7f8f82902ded31df1c9fc61b90f0eb396b8"
-dependencies = [
- "float-cmp",
- "halfbrown 0.3.0",
- "itoa",
- "ryu",
-]
-
-[[package]]
-name = "value-trait"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e80f0c733af0720a501b3905d22e2f97662d8eacfe082a75ed7ffb5ab08cb59"
 dependencies = [
  "float-cmp",
- "halfbrown 0.4.0",
+ "halfbrown",
  "itoa",
  "ryu",
 ]

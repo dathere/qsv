@@ -1857,7 +1857,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.13.0"
-source = "git+https://github.com/jqnatividad/csvlens?branch=natural-sort-with-upstream#41b9b3ba5bed6c6547451c71d238f021457848f3"
+source = "git+https://github.com/jqnatividad/csvlens?branch=natural-sort-upstream-with-qsv-tweaks#36f6fd38432f12938d33b27067bd14aaa61a96b8"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
@@ -7977,10 +7977,11 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tui-input"
-version = "0.14.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "911e93158bf80bbc94bad533b2b16e3d711e1132d69a6a6980c3920a63422c19"
+checksum = "74f679521b7fd35e17fbca58ec5aac64c5d331e54a9034510ec26b193ffd7597"
 dependencies = [
+ "crossterm 0.28.1",
  "ratatui",
  "unicode-width 0.2.0",
 ]

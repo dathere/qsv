@@ -1,9 +1,12 @@
 static USAGE: &str = r#"
-Explore a CSV file interactively using the csvlens (https://github.com/YS-L/csvlens) engine.
+Explore tabular data files interactively using the csvlens (https://github.com/YS-L/csvlens) engine.
 
-If the polars feature is enabled, lens can also browse Arrow, Avro/IPC, Parquet, JSON (JSON Array)
+If the polars feature is enabled, lens can browse tabular data in Arrow, Avro/IPC, Parquet, JSON (JSON Array)
 and JSONL files. It also automatically decompresses csv/tsv/tab/ssv files using the gz,zlib & zst
 compression formats (e.g. data.csv.gz, data.tsv.zlib, data.tab.gz & data.ssv.zst).
+
+If the polars feature is not enabled, lens can only browse CSV dialects (CSV, TSV, Tab, SSV) and
+its snappy-compressed variants (CSV.sz, TSV.sz, Tab.sz & SSV.sz).
 
 Press 'q' to exit. Press '?' for help.
 
@@ -22,12 +25,15 @@ Automatically choose delimiter based on the file extension
 
 Auto-decompresses several compression formats:
   $ qsv lens data.csv.sz // Snappy-compressed CSV
+  $ qsv lens data.tsv.sz // Snappy-compressed Tab-separated
+
+  # additional compression formats below require polars feature
   $ qsv lens data.csv.gz // Gzipped CSV
   $ qsv lens data.tsv.zlib // Zlib-compressed Tab-separated
   $ qsv lens data.tab.zst // Zstd-compressed Tab-separated
   $ qsv lens data.ssv.zst // Zstd-compressed Semicolon-separated
   
-Explore tabular data in other formats
+Explore tabular data in other formats (if polars feature is enabled)
   $ qsv lens data.jsonl // JSON Lines
   $ qsv lens data.json // JSON - will only work with a JSON Array
   $ qsv lens data.parquet // Parquet

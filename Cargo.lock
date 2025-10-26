@@ -1799,7 +1799,7 @@ dependencies = [
 [[package]]
 name = "csv"
 version = "1.4.0"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#9467f71fca5ae3b3dc1d1927b547d3e8dd28cd7b"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#fd9ed18ab47e89921da3c339eab5dc1600bbfd38"
 dependencies = [
  "csv-core",
  "itoa",
@@ -1811,7 +1811,7 @@ dependencies = [
 [[package]]
 name = "csv-core"
 version = "0.1.13"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#9467f71fca5ae3b3dc1d1927b547d3e8dd28cd7b"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#fd9ed18ab47e89921da3c339eab5dc1600bbfd38"
 dependencies = [
  "memchr",
  "simdutf8",
@@ -1835,7 +1835,7 @@ dependencies = [
 [[package]]
 name = "csv-index"
 version = "0.1.6"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#9467f71fca5ae3b3dc1d1927b547d3e8dd28cd7b"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#fd9ed18ab47e89921da3c339eab5dc1600bbfd38"
 dependencies = [
  "byteorder",
  "csv",
@@ -4157,14 +4157,14 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "1.0.4"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78bed444cc8a2160f01cbcf811ef18cac863ad68ae8ca62092e8db51d51c761c"
+checksum = "69d83b0086dc8ecf3ce9ae2874b2d1290252e2a30720bea58a5c6639b0092873"
 dependencies = [
  "libc",
  "log",
  "wasi",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7081,9 +7081,9 @@ dependencies = [
 
 [[package]]
 name = "signal-hook-mio"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34db1a06d485c9142248b7a054f034b349b212551f3dfd19c94d45a754a217cd"
+checksum = "b75a19a7a740b25bc7944bdee6172368f988763b744e3d4dfe753f6b4ece40cc"
 dependencies = [
  "libc",
  "mio",
@@ -7531,16 +7531,16 @@ dependencies = [
 
 [[package]]
 name = "terminal-colorsaurus"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f7226dad4b1817567c1e2f5d453897ef36abe79def7783af3fa241a694e30b3"
+checksum = "8909f33134da34b43f69145e748790de650a6abd84faf1f82e773444dd293ec8"
 dependencies = [
  "cfg-if",
  "libc",
  "memchr",
  "mio",
  "terminal-trx",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
  "xterm-color",
 ]
 

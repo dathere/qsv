@@ -1122,9 +1122,9 @@ dependencies = [
 
 [[package]]
 name = "bstr"
-version = "1.12.0"
+version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "234113d19d0d7d613b40e86fb654acf958910802bcceab913a4f9e7cda03b1a4"
+checksum = "63044e1ae8e69f3b5a92c736ca6269b8d12fa7efe39bf34ddb06d102cf0e2cab"
 dependencies = [
  "memchr",
  "serde",
@@ -3989,9 +3989,9 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "luau0-src"
-version = "0.15.9+luau694"
+version = "0.15.11+luau697"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71a02a835f81c2bbf5edd17b595a7927fa0c91002b11f5bc1d2402d0ac392ed7"
+checksum = "bdbf698d77af7b846fab212ca666c5d597b9ff445ef1a647e181d3392e13dfdf"
 dependencies = [
  "cc",
 ]

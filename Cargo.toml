@@ -76,7 +76,6 @@ atoi_simd = "0.16"
 base62 = { version = "2.2", optional = true }
 base64-simd = { version = "0.8", optional = true }
 bitvec = "1"
-blake3 = { version = "1.6", features = ["rayon", "mmap"] }
 bytemuck = { version = "1.24", features = [
     "latest_stable_rust",
 ], optional = true }
@@ -283,6 +282,13 @@ zip = "6"
 sha2 = { version = "0.10", features = ["compress"] }
 [target.'cfg(not(windows))'.dependencies]
 sha2 = { version = "0.10", features = ["asm", "compress"] }
+
+# on macOS Apple Silicon, enable NEON CPU features
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+blake3 = { version = "1.6", features = ["rayon", "mmap", "neon"] }
+# blake3 has CPU auto-detection on x86 platforms
+[target.'cfg(not(all(target_os = "macos", target_arch = "aarch64")))'.dependencies]
+blake3 = { version = "1.6", features = ["rayon", "mmap"] }
 
 [dev-dependencies]
 actix-governor = "0.10"

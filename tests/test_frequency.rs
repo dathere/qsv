@@ -1155,6 +1155,27 @@ fn setup_rank_test(name: &str) -> (Workdir, process::Command) {
     (wrk, cmd)
 }
 
+fn setup_rank_test_simple(name: &str) -> (Workdir, process::Command) {
+    let rows = vec![
+        svec!["value"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec!["b"],
+        svec!["c"],
+        svec!["c"],
+        svec!["d"],
+    ];
+    let wrk = Workdir::new(name);
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--limit", "0"]);
+
+    (wrk, cmd)
+}
+
 #[test]
 fn frequency_rank_ties_min() {
     let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_min");
@@ -1170,6 +1191,24 @@ fn frequency_rank_ties_min() {
         svec!["value", "d", "2", "12.5", "4"],
         svec!["value", "e", "2", "12.5", "4"],
         svec!["value", "f", "1", "6.25", "6"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_rank_ties_min_simple() {
+    let (wrk, mut cmd) = setup_rank_test_simple("frequency_rank_ties_min_simple");
+    cmd.args(["--rank-strategy", "min"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    // min rank should be 1,2,2,4
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "3", "37.5", "1"],
+        svec!["value", "b", "2", "25", "2"],
+        svec!["value", "c", "2", "25", "2"],
+        svec!["value", "d", "1", "12.5", "4"],
     ];
     assert_eq!(got, expected);
 }
@@ -1194,6 +1233,24 @@ fn frequency_rank_ties_max() {
 }
 
 #[test]
+fn frequency_rank_ties_max_simple() {
+    let (wrk, mut cmd) = setup_rank_test_simple("frequency_rank_ties_max_simple");
+    cmd.args(["-r", "max"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    // max rank should be 1,3,3,4
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "3", "37.5", "1"],
+        svec!["value", "b", "2", "25", "3"],
+        svec!["value", "c", "2", "25", "3"],
+        svec!["value", "d", "1", "12.5", "4"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn frequency_rank_ties_dense() {
     let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_dense");
     cmd.args(["--rank-strategy", "dense"]);
@@ -1208,6 +1265,24 @@ fn frequency_rank_ties_dense() {
         svec!["value", "d", "2", "12.5", "3"],
         svec!["value", "e", "2", "12.5", "3"],
         svec!["value", "f", "1", "6.25", "4"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_rank_ties_dense_simple() {
+    let (wrk, mut cmd) = setup_rank_test_simple("frequency_rank_ties_dense_simple");
+    cmd.args(["--rank-strategy", "dense"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    // dense rank should be 1,2,2,3
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "3", "37.5", "1"],
+        svec!["value", "b", "2", "25", "2"],
+        svec!["value", "c", "2", "25", "2"],
+        svec!["value", "d", "1", "12.5", "3"],
     ];
     assert_eq!(got, expected);
 }
@@ -1232,6 +1307,23 @@ fn frequency_rank_ties_ordinal() {
 }
 
 #[test]
+fn frequency_rank_ties_ordinal_simple() {
+    let (wrk, mut cmd) = setup_rank_test_simple("frequency_rank_ties_ordinal_simple");
+    cmd.args(["--rank-strategy", "ordinal"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "3", "37.5", "1"],
+        svec!["value", "b", "2", "25", "2"],
+        svec!["value", "c", "2", "25", "3"],
+        svec!["value", "d", "1", "12.5", "4"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn frequency_rank_ties_average() {
     let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_average");
     cmd.args(["--rank-strategy", "average"]);
@@ -1246,6 +1338,24 @@ fn frequency_rank_ties_average() {
         svec!["value", "d", "2", "12.5", "4.5"],
         svec!["value", "e", "2", "12.5", "4.5"],
         svec!["value", "f", "1", "6.25", "6"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_rank_ties_average_simple() {
+    let (wrk, mut cmd) = setup_rank_test_simple("frequency_rank_ties_average_simple");
+    cmd.args(["--rank-strategy", "average"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    // average rank should be 1,2.5,2.5,4
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "3", "37.5", "1"],
+        svec!["value", "b", "2", "25", "2.5"],
+        svec!["value", "c", "2", "25", "2.5"],
+        svec!["value", "d", "1", "12.5", "4"],
     ];
     assert_eq!(got, expected);
 }
@@ -1279,6 +1389,7 @@ fn frequency_rank_ties_json() {
     assert!(v["input"].as_str().unwrap().ends_with("in.csv"));
     assert_eq!(v["rowcount"], 16);
     assert_eq!(v["fieldcount"], 1);
+    assert_eq!(v["rank_strategy"], "average");
     let fields = v["fields"].as_array().unwrap();
     assert_eq!(fields.len(), 1);
     let field = &fields[0];

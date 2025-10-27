@@ -558,7 +558,7 @@ fn get_unique_values(
         flag_limit:              args.flag_enum_threshold as isize,
         flag_unq_limit:          args.flag_enum_threshold as usize,
         flag_lmt_threshold:      0,
-        flag_rank_ties_strategy: "min".to_string(),
+        flag_rank_ties_strategy: Default::default(),
         flag_pct_dec_places:     -5,
         flag_other_sorted:       false,
         flag_other_text:         "Other".to_string(),

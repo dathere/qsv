@@ -152,7 +152,7 @@ Common options:
                            CSV into memory using CONSERVATIVE heuristics.
 "#;
 
-use std::{fs, io, sync::OnceLock};
+use std::{fs, io, str::FromStr, sync::OnceLock};
 
 use crossbeam_channel;
 use foldhash::{HashMap, HashMapExt};
@@ -172,6 +172,41 @@ use crate::{
     util::{self, ByteString, StatsMode, get_stats_records},
 };
 
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RankTiesStrategy {
+    Min,
+    Max,
+    Dense,
+    Ordinal,
+    Average,
+}
+
+impl FromStr for RankTiesStrategy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "min" => Ok(RankTiesStrategy::Min),
+            "max" => Ok(RankTiesStrategy::Max),
+            "dense" => Ok(RankTiesStrategy::Dense),
+            "ordinal" => Ok(RankTiesStrategy::Ordinal),
+            "average" => Ok(RankTiesStrategy::Average),
+            _ => Err(format!(
+                "Invalid rank-ties-strategy: '{}'. Valid values are: min, max, dense, ordinal, \
+                 average",
+                s
+            )),
+        }
+    }
+}
+
+impl Default for RankTiesStrategy {
+    fn default() -> Self {
+        RankTiesStrategy::Min
+    }
+}
+
 #[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Deserialize)]
 pub struct Args {
@@ -180,7 +215,7 @@ pub struct Args {
     pub flag_limit:              isize,
     pub flag_unq_limit:          usize,
     pub flag_lmt_threshold:      usize,
-    pub flag_rank_ties_strategy: String,
+    pub flag_rank_ties_strategy: RankTiesStrategy,
     pub flag_pct_dec_places:     isize,
     pub flag_other_sorted:       bool,
     pub flag_other_text:         String,
@@ -258,16 +293,6 @@ static FREQ_ROW_COUNT: OnceLock<u64> = OnceLock::new();
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
-
-    // Validate rank-ties-strategy
-    let valid_strategies = ["min", "max", "dense", "ordinal", "average"];
-    if !valid_strategies.contains(&args.flag_rank_ties_strategy.as_str()) {
-        return fail_clierror!(
-            "Invalid rank-ties-strategy: '{}'. Valid values are: min, max, dense, ordinal, average",
-            args.flag_rank_ties_strategy
-        );
-    }
-
     let mut rconfig = args.rconfig();
 
     let is_stdin = rconfig.is_stdin();
@@ -531,15 +556,14 @@ impl Args {
         let null_val = NULL_VAL.to_vec();
         // Sort each group alphabetically and assign ranks based on strategy
         let mut current_rank = 1.0_f64;
-        let strategy = self.flag_rank_ties_strategy.as_str();
-
+        
         for (count, mut group) in count_groups {
             group.sort_unstable();
             let group_len = group.len();
 
             #[allow(clippy::cast_precision_loss)]
-            match strategy {
-                "min" => {
+            match self.flag_rank_ties_strategy {
+                RankTiesStrategy::Min => {
                     // Standard competition ranking (1224)
                     // All tied items get the minimum rank
                     for byte_string in &group {
@@ -555,7 +579,7 @@ impl Args {
                     }
                     current_rank += group_len as f64;
                 },
-                "max" => {
+                RankTiesStrategy::Max => {
                     // Modified competition ranking (1334)
                     // All tied items get the maximum rank
                     let max_rank = current_rank + group_len as f64 - 1.0;
@@ -572,7 +596,7 @@ impl Args {
                     }
                     current_rank += group_len as f64;
                 },
-                "dense" => {
+                RankTiesStrategy::Dense => {
                     // Dense ranking (1223)
                     // Rank increments by 1 for each distinct count value
                     for byte_string in &group {
@@ -588,7 +612,7 @@ impl Args {
                     }
                     current_rank += 1.0;
                 },
-                "ordinal" => {
+                RankTiesStrategy::Ordinal => {
                     // Ordinal ranking (1234)
                     // Each item gets a unique rank, ordered alphabetically within ties
                     for byte_string in &group {
@@ -604,7 +628,7 @@ impl Args {
                         current_rank += 1.0;
                     }
                 },
-                "average" => {
+                RankTiesStrategy::Average => {
                     // Fractional ranking (1 2.5 2.5 4)
                     // All tied items get the average of their ordinal ranks
                     let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
@@ -621,7 +645,6 @@ impl Args {
                     }
                     current_rank += group_len as f64;
                 },
-                _ => unreachable!(), // Already validated in run()
             }
         }
 

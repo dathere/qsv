@@ -94,6 +94,15 @@ frequency options:
                             in a column >= threshold, the limits will be applied.
                             Set to '0' to disable the threshold and always apply limits.
                             [default: 0]
+-r, --rank-strategy <arg>   The strategy to use when there are ties in the frequency table.
+                            See https://en.wikipedia.org/wiki/Ranking for more info.
+                            Valid values are:
+                            - "dense": Assigns consecutive integers regardless of ties (pattern 1,2,2,3), incrementing by 1 for each new count value.
+                            - "ordinal": The next rank is the current rank plus 1.
+                            - "min": Tied items receive the minimum rank position (e.g., 1224 pattern).
+                            - "max": Tied items receive the maximum rank position (e.g., 1334 pattern).
+                            - "average": Tied items receive the average of their ordinal positions (e.g., 1 2.5 2.5 4 pattern).
+                            [default: min]
     --pct-dec-places <arg>  The number of decimal places to round the percentage to.
                             If negative, the number of decimal places will be set
                             automatically to the minimum number of decimal places needed
@@ -144,7 +153,7 @@ Common options:
                            CSV into memory using CONSERVATIVE heuristics.
 "#;
 
-use std::{fs, io, sync::OnceLock};
+use std::{fs, io, str::FromStr, sync::OnceLock};
 
 use crossbeam_channel;
 use foldhash::{HashMap, HashMapExt};
@@ -164,6 +173,33 @@ use crate::{
     util::{self, ByteString, StatsMode, get_stats_records},
 };
 
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RankStrategy {
+    Min,
+    Max,
+    Dense,
+    Ordinal,
+    Average,
+}
+
+impl FromStr for RankStrategy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "min" => Ok(RankStrategy::Min),
+            "max" => Ok(RankStrategy::Max),
+            "dense" => Ok(RankStrategy::Dense),
+            "ordinal" => Ok(RankStrategy::Ordinal),
+            "average" => Ok(RankStrategy::Average),
+            _ => Err(format!(
+                "Invalid rank-strategy: '{s}'. Valid values are: min, max, dense, ordinal, average"
+            )),
+        }
+    }
+}
+
 #[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Deserialize)]
 pub struct Args {
@@ -172,6 +208,7 @@ pub struct Args {
     pub flag_limit:           isize,
     pub flag_unq_limit:       usize,
     pub flag_lmt_threshold:   usize,
+    pub flag_rank_strategy:   RankStrategy,
     pub flag_pct_dec_places:  isize,
     pub flag_other_sorted:    bool,
     pub flag_other_text:      String,
@@ -202,7 +239,7 @@ struct FrequencyEntry {
     value:      String,
     count:      u64,
     percentage: f64,
-    rank:       u32,
+    rank:       f64,
 }
 
 #[derive(Serialize)]
@@ -240,7 +277,7 @@ struct ProcessedFrequency {
     percentage:           f64,
     formatted_percentage: String,
     value:                Vec<u8>,
-    rank:                 u32,
+    rank:                 f64,
 }
 
 static UNIQUE_COLUMNS_VEC: OnceLock<Vec<usize>> = OnceLock::new();
@@ -284,7 +321,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     #[allow(unused_assignments)]
     let mut header_vec: Vec<u8> = Vec::with_capacity(tables.len());
     let mut itoa_buffer = itoa::Buffer::new();
-    let mut itoa_buffer_rank = itoa::Buffer::new();
+    let mut ryu_buffer = ryu::Buffer::new();
+    let mut rank_buffer = String::with_capacity(20);
     let mut row: Vec<&[u8]>;
 
     let head_ftables = headers.iter().zip(tables);
@@ -320,6 +358,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
 
         for processed_freq in &processed_frequencies {
+            // Format rank: show as integer if whole number, otherwise with decimals
+            rank_buffer.clear();
+            if processed_freq.rank.fract() == 0.0 {
+                rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
+            } else {
+                rank_buffer.push_str(ryu_buffer.format(processed_freq.rank));
+            }
+
             row = vec![
                 &*header_vec,
                 if args.flag_vis_whitespace {
@@ -331,7 +377,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 },
                 itoa_buffer.format(processed_freq.count).as_bytes(),
                 processed_freq.formatted_percentage.as_bytes(),
-                itoa_buffer_rank.format(processed_freq.rank).as_bytes(),
+                rank_buffer.as_bytes(),
             ];
             wtr.write_record(row)?;
         }
@@ -370,7 +416,7 @@ impl Args {
                 count:                row_count,
                 percentage:           100.0,
                 formatted_percentage: formatted_pct,
-                rank:                 1, // Rank 1 for all-unique headers
+                rank:                 1.0, // Rank 1 for all-unique headers
             });
         } else {
             // Process regular frequencies
@@ -423,7 +469,7 @@ impl Args {
     }
 
     #[inline]
-    fn counts(&self, ftab: &FTable) -> Vec<(ByteString, u64, f64, u32)> {
+    fn counts(&self, ftab: &FTable) -> Vec<(ByteString, u64, f64, f64)> {
         let (mut counts, total_count) = if self.flag_asc {
             // parallel sort in ascending order - least frequent values first
             ftab.par_frequent(true)
@@ -478,7 +524,7 @@ impl Args {
 
         // Pre-allocate the result vector with known capacity
         // We might add an "Other" entry, so add 1 to capacity
-        let mut counts_final: Vec<(Vec<u8>, u64, f64, u32)> = Vec::with_capacity(counts.len() + 1);
+        let mut counts_final: Vec<(Vec<u8>, u64, f64, f64)> = Vec::with_capacity(counts.len() + 1);
 
         // Group by count to handle ties
         let mut count_groups: Vec<(u64, Vec<Vec<u8>>)> = Vec::new();
@@ -502,24 +548,116 @@ impl Args {
 
         // Create NULL value once to avoid repeated to_vec allocations
         let null_val = NULL_VAL.to_vec();
-        // Sort each group alphabetically and assign ranks
-        let mut current_rank = 1u32;
-        for (count, mut group) in count_groups {
-            group.sort_unstable();
+        // Sort each group alphabetically and assign ranks based on strategy
+        let mut current_rank = 1.0_f64;
 
-            #[allow(clippy::cast_precision_loss)]
-            for byte_string in &group {
-                count_sum += count;
-                pct = count as f64 * pct_factor;
-                pct_sum += pct;
+        #[allow(clippy::cast_precision_loss)]
+        match self.flag_rank_strategy {
+            RankStrategy::Min => {
+                // Standard competition ranking (1224)
+                // All tied items get the minimum rank
+                for (count, mut group) in count_groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
 
-                if byte_string.is_empty() {
-                    counts_final.push((null_val.clone(), count, pct, current_rank));
-                } else {
-                    counts_final.push((byte_string.clone(), count, pct, current_rank));
+                    for byte_string in &group {
+                        count_sum += count;
+                        pct = count as f64 * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), count, pct, current_rank));
+                        } else {
+                            counts_final.push((byte_string.clone(), count, pct, current_rank));
+                        }
+                    }
+                    current_rank += group_len as f64;
                 }
-            }
-            current_rank += group.len() as u32;
+            },
+            RankStrategy::Max => {
+                // Modified competition ranking (1334)
+                // All tied items get the maximum rank
+                for (count, mut group) in count_groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
+                    let max_rank = current_rank + group_len as f64 - 1.0;
+
+                    for byte_string in &group {
+                        count_sum += count;
+                        pct = count as f64 * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), count, pct, max_rank));
+                        } else {
+                            counts_final.push((byte_string.clone(), count, pct, max_rank));
+                        }
+                    }
+                    current_rank += group_len as f64;
+                }
+            },
+            RankStrategy::Dense => {
+                // Dense ranking (1223)
+                // Rank increments by 1 for each distinct count value
+                for (count, mut group) in count_groups {
+                    group.sort_unstable();
+
+                    for byte_string in &group {
+                        count_sum += count;
+                        pct = count as f64 * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), count, pct, current_rank));
+                        } else {
+                            counts_final.push((byte_string.clone(), count, pct, current_rank));
+                        }
+                    }
+                    current_rank += 1.0;
+                }
+            },
+            RankStrategy::Ordinal => {
+                // Ordinal ranking (1234)
+                // Each item gets a unique rank, ordered alphabetically within ties
+                for (count, mut group) in count_groups {
+                    group.sort_unstable();
+
+                    for byte_string in &group {
+                        count_sum += count;
+                        pct = count as f64 * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), count, pct, current_rank));
+                        } else {
+                            counts_final.push((byte_string.clone(), count, pct, current_rank));
+                        }
+                        current_rank += 1.0;
+                    }
+                }
+            },
+            RankStrategy::Average => {
+                // Fractional ranking (1 2.5 2.5 4)
+                // All tied items get the average of their ordinal ranks
+                for (count, mut group) in count_groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
+                    let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
+
+                    for byte_string in &group {
+                        count_sum += count;
+                        pct = count as f64 * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), count, pct, avg_rank));
+                        } else {
+                            counts_final.push((byte_string.clone(), count, pct, avg_rank));
+                        }
+                    }
+                    current_rank += group_len as f64;
+                }
+            },
         }
 
         let other_count = total_count - count_sum;
@@ -535,7 +673,7 @@ impl Args {
                 .to_vec(),
                 other_count,
                 100.0_f64 - pct_sum,
-                0, // Special rank for "Other" category
+                0.0, // Special rank for "Other" category
             ));
         }
         counts_final

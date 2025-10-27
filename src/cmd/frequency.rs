@@ -258,7 +258,7 @@ static FREQ_ROW_COUNT: OnceLock<u64> = OnceLock::new();
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
-    
+
     // Validate rank-ties-strategy
     let valid_strategies = ["min", "max", "dense", "ordinal", "average"];
     if !valid_strategies.contains(&args.flag_rank_ties_strategy.as_str()) {
@@ -267,7 +267,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             args.flag_rank_ties_strategy
         );
     }
-    
+
     let mut rconfig = args.rconfig();
 
     let is_stdin = rconfig.is_stdin();
@@ -346,7 +346,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             } else {
                 rank_buffer.push_str(&processed_freq.rank.to_string());
             }
-            
+
             row = vec![
                 &*header_vec,
                 if args.flag_vis_whitespace {
@@ -532,7 +532,7 @@ impl Args {
         // Sort each group alphabetically and assign ranks based on strategy
         let mut current_rank = 1.0_f64;
         let strategy = self.flag_rank_ties_strategy.as_str();
-        
+
         for (count, mut group) in count_groups {
             group.sort_unstable();
             let group_len = group.len();

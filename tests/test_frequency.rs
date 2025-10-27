@@ -1284,7 +1284,7 @@ fn frequency_rank_ties_json() {
     let field = &fields[0];
     assert_eq!(field["field"], "value");
     let freqs = field["frequencies"].as_array().unwrap();
-    
+
     // Check fractional ranks in JSON
     assert_eq!(freqs[0]["value"], "a");
     assert_eq!(freqs[0]["rank"], 1.0);

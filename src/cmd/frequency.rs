@@ -94,7 +94,8 @@ frequency options:
                             in a column >= threshold, the limits will be applied.
                             Set to '0' to disable the threshold and always apply limits.
                             [default: 0]
-    --rank-ties-strategy <arg>  The strategy to use when there are ties in the frequency table.
+-r, --rank-strategy <arg>   The strategy to use when there are ties in the frequency table.
+                            See https://en.wikipedia.org/wiki/Ranking for more info.
                             Valid values are:
                             - "dense": The next rank is the current rank plus the number of values with the same count.
                             - "ordinal": The next rank is the current rank plus 1.
@@ -174,7 +175,7 @@ use crate::{
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum RankTiesStrategy {
+pub enum RankStrategy {
     Min,
     Max,
     Dense,
@@ -182,56 +183,48 @@ pub enum RankTiesStrategy {
     Average,
 }
 
-impl FromStr for RankTiesStrategy {
+impl FromStr for RankStrategy {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "min" => Ok(RankTiesStrategy::Min),
-            "max" => Ok(RankTiesStrategy::Max),
-            "dense" => Ok(RankTiesStrategy::Dense),
-            "ordinal" => Ok(RankTiesStrategy::Ordinal),
-            "average" => Ok(RankTiesStrategy::Average),
+            "min" => Ok(RankStrategy::Min),
+            "max" => Ok(RankStrategy::Max),
+            "dense" => Ok(RankStrategy::Dense),
+            "ordinal" => Ok(RankStrategy::Ordinal),
+            "average" => Ok(RankStrategy::Average),
             _ => Err(format!(
-                "Invalid rank-ties-strategy: '{}'. Valid values are: min, max, dense, ordinal, \
-                 average",
-                s
+                "Invalid rank-strategy: '{s}'. Valid values are: min, max, dense, ordinal, average"
             )),
         }
-    }
-}
-
-impl Default for RankTiesStrategy {
-    fn default() -> Self {
-        RankTiesStrategy::Min
     }
 }
 
 #[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Deserialize)]
 pub struct Args {
-    pub arg_input:               Option<String>,
-    pub flag_select:             SelectColumns,
-    pub flag_limit:              isize,
-    pub flag_unq_limit:          usize,
-    pub flag_lmt_threshold:      usize,
-    pub flag_rank_ties_strategy: RankTiesStrategy,
-    pub flag_pct_dec_places:     isize,
-    pub flag_other_sorted:       bool,
-    pub flag_other_text:         String,
-    pub flag_asc:                bool,
-    pub flag_no_trim:            bool,
-    pub flag_no_nulls:           bool,
-    pub flag_ignore_case:        bool,
-    pub flag_all_unique_text:    String,
-    pub flag_jobs:               Option<usize>,
-    pub flag_output:             Option<String>,
-    pub flag_no_headers:         bool,
-    pub flag_delimiter:          Option<Delimiter>,
-    pub flag_memcheck:           bool,
-    pub flag_vis_whitespace:     bool,
-    pub flag_json:               bool,
-    pub flag_no_stats:           bool,
+    pub arg_input:            Option<String>,
+    pub flag_select:          SelectColumns,
+    pub flag_limit:           isize,
+    pub flag_unq_limit:       usize,
+    pub flag_lmt_threshold:   usize,
+    pub flag_rank_strategy:   RankStrategy,
+    pub flag_pct_dec_places:  isize,
+    pub flag_other_sorted:    bool,
+    pub flag_other_text:      String,
+    pub flag_asc:             bool,
+    pub flag_no_trim:         bool,
+    pub flag_no_nulls:        bool,
+    pub flag_ignore_case:     bool,
+    pub flag_all_unique_text: String,
+    pub flag_jobs:            Option<usize>,
+    pub flag_output:          Option<String>,
+    pub flag_no_headers:      bool,
+    pub flag_delimiter:       Option<Delimiter>,
+    pub flag_memcheck:        bool,
+    pub flag_vis_whitespace:  bool,
+    pub flag_json:            bool,
+    pub flag_no_stats:        bool,
 }
 
 const NULL_VAL: &[u8] = b"(NULL)";
@@ -556,16 +549,16 @@ impl Args {
         let null_val = NULL_VAL.to_vec();
         // Sort each group alphabetically and assign ranks based on strategy
         let mut current_rank = 1.0_f64;
-        
-        for (count, mut group) in count_groups {
-            group.sort_unstable();
-            let group_len = group.len();
 
-            #[allow(clippy::cast_precision_loss)]
-            match self.flag_rank_ties_strategy {
-                RankTiesStrategy::Min => {
-                    // Standard competition ranking (1224)
-                    // All tied items get the minimum rank
+        #[allow(clippy::cast_precision_loss)]
+        match self.flag_rank_strategy {
+            RankStrategy::Min => {
+                // Standard competition ranking (1224)
+                // All tied items get the minimum rank
+                for (count, mut group) in count_groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
+
                     for byte_string in &group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;
@@ -578,11 +571,16 @@ impl Args {
                         }
                     }
                     current_rank += group_len as f64;
-                },
-                RankTiesStrategy::Max => {
-                    // Modified competition ranking (1334)
-                    // All tied items get the maximum rank
+                }
+            },
+            RankStrategy::Max => {
+                // Modified competition ranking (1334)
+                // All tied items get the maximum rank
+                for (count, mut group) in count_groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
                     let max_rank = current_rank + group_len as f64 - 1.0;
+
                     for byte_string in &group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;
@@ -595,10 +593,14 @@ impl Args {
                         }
                     }
                     current_rank += group_len as f64;
-                },
-                RankTiesStrategy::Dense => {
-                    // Dense ranking (1223)
-                    // Rank increments by 1 for each distinct count value
+                }
+            },
+            RankStrategy::Dense => {
+                // Dense ranking (1223)
+                // Rank increments by 1 for each distinct count value
+                for (count, mut group) in count_groups {
+                    group.sort_unstable();
+
                     for byte_string in &group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;
@@ -611,10 +613,14 @@ impl Args {
                         }
                     }
                     current_rank += 1.0;
-                },
-                RankTiesStrategy::Ordinal => {
-                    // Ordinal ranking (1234)
-                    // Each item gets a unique rank, ordered alphabetically within ties
+                }
+            },
+            RankStrategy::Ordinal => {
+                // Ordinal ranking (1234)
+                // Each item gets a unique rank, ordered alphabetically within ties
+                for (count, mut group) in count_groups {
+                    group.sort_unstable();
+
                     for byte_string in &group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;
@@ -627,11 +633,16 @@ impl Args {
                         }
                         current_rank += 1.0;
                     }
-                },
-                RankTiesStrategy::Average => {
-                    // Fractional ranking (1 2.5 2.5 4)
-                    // All tied items get the average of their ordinal ranks
+                }
+            },
+            RankStrategy::Average => {
+                // Fractional ranking (1 2.5 2.5 4)
+                // All tied items get the average of their ordinal ranks
+                for (count, mut group) in count_groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
                     let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
+
                     for byte_string in &group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;
@@ -644,8 +655,8 @@ impl Args {
                         }
                     }
                     current_rank += group_len as f64;
-                },
-            }
+                }
+            },
         }
 
         let other_count = total_count - count_sum;

@@ -97,7 +97,7 @@ frequency options:
 -r, --rank-strategy <arg>   The strategy to use when there are ties in the frequency table.
                             See https://en.wikipedia.org/wiki/Ranking for more info.
                             Valid values are:
-                            - "dense": The next rank is the current rank plus the number of values with the same count.
+                            - "dense": Assigns consecutive integers regardless of ties (pattern 1,2,2,3), incrementing by 1 for each new count value.
                             - "ordinal": The next rank is the current rank plus 1.
                             - "min": Tied items receive the minimum rank position (e.g., 1224 pattern).
                             - "max": Tied items receive the maximum rank position (e.g., 1334 pattern).

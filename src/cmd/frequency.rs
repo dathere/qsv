@@ -94,6 +94,14 @@ frequency options:
                             in a column >= threshold, the limits will be applied.
                             Set to '0' to disable the threshold and always apply limits.
                             [default: 0]
+    --rank-ties-strategy <arg>  The strategy to use when there are ties in the frequency table.
+                            Valid values are:
+                            - "dense": The next rank is the current rank plus the number of values with the same count.
+                            - "ordinal": The next rank is the current rank plus 1.
+                            - "min": The next rank is the minimum of the current rank and the number of values with the same count.
+                            - "max": The next rank is the maximum of the current rank and the number of values with the same count.
+                            - "average": The next rank is the average of the current rank and the number of values with the same count.
+                            [default: min]
     --pct-dec-places <arg>  The number of decimal places to round the percentage to.
                             If negative, the number of decimal places will be set
                             automatically to the minimum number of decimal places needed
@@ -167,27 +175,28 @@ use crate::{
 #[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Deserialize)]
 pub struct Args {
-    pub arg_input:            Option<String>,
-    pub flag_select:          SelectColumns,
-    pub flag_limit:           isize,
-    pub flag_unq_limit:       usize,
-    pub flag_lmt_threshold:   usize,
-    pub flag_pct_dec_places:  isize,
-    pub flag_other_sorted:    bool,
-    pub flag_other_text:      String,
-    pub flag_asc:             bool,
-    pub flag_no_trim:         bool,
-    pub flag_no_nulls:        bool,
-    pub flag_ignore_case:     bool,
-    pub flag_all_unique_text: String,
-    pub flag_jobs:            Option<usize>,
-    pub flag_output:          Option<String>,
-    pub flag_no_headers:      bool,
-    pub flag_delimiter:       Option<Delimiter>,
-    pub flag_memcheck:        bool,
-    pub flag_vis_whitespace:  bool,
-    pub flag_json:            bool,
-    pub flag_no_stats:        bool,
+    pub arg_input:               Option<String>,
+    pub flag_select:             SelectColumns,
+    pub flag_limit:              isize,
+    pub flag_unq_limit:          usize,
+    pub flag_lmt_threshold:      usize,
+    pub flag_rank_ties_strategy: String,
+    pub flag_pct_dec_places:     isize,
+    pub flag_other_sorted:       bool,
+    pub flag_other_text:         String,
+    pub flag_asc:                bool,
+    pub flag_no_trim:            bool,
+    pub flag_no_nulls:           bool,
+    pub flag_ignore_case:        bool,
+    pub flag_all_unique_text:    String,
+    pub flag_jobs:               Option<usize>,
+    pub flag_output:             Option<String>,
+    pub flag_no_headers:         bool,
+    pub flag_delimiter:          Option<Delimiter>,
+    pub flag_memcheck:           bool,
+    pub flag_vis_whitespace:     bool,
+    pub flag_json:               bool,
+    pub flag_no_stats:           bool,
 }
 
 const NULL_VAL: &[u8] = b"(NULL)";
@@ -202,7 +211,7 @@ struct FrequencyEntry {
     value:      String,
     count:      u64,
     percentage: f64,
-    rank:       u32,
+    rank:       f64,
 }
 
 #[derive(Serialize)]
@@ -240,7 +249,7 @@ struct ProcessedFrequency {
     percentage:           f64,
     formatted_percentage: String,
     value:                Vec<u8>,
-    rank:                 u32,
+    rank:                 f64,
 }
 
 static UNIQUE_COLUMNS_VEC: OnceLock<Vec<usize>> = OnceLock::new();
@@ -249,6 +258,16 @@ static FREQ_ROW_COUNT: OnceLock<u64> = OnceLock::new();
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
+    
+    // Validate rank-ties-strategy
+    let valid_strategies = ["min", "max", "dense", "ordinal", "average"];
+    if !valid_strategies.contains(&args.flag_rank_ties_strategy.as_str()) {
+        return fail_clierror!(
+            "Invalid rank-ties-strategy: '{}'. Valid values are: min, max, dense, ordinal, average",
+            args.flag_rank_ties_strategy
+        );
+    }
+    
     let mut rconfig = args.rconfig();
 
     let is_stdin = rconfig.is_stdin();
@@ -284,7 +303,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     #[allow(unused_assignments)]
     let mut header_vec: Vec<u8> = Vec::with_capacity(tables.len());
     let mut itoa_buffer = itoa::Buffer::new();
-    let mut itoa_buffer_rank = itoa::Buffer::new();
+    let mut rank_buffer = String::with_capacity(20);
     let mut row: Vec<&[u8]>;
 
     let head_ftables = headers.iter().zip(tables);
@@ -320,6 +339,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
 
         for processed_freq in &processed_frequencies {
+            // Format rank: show as integer if whole number, otherwise with decimals
+            rank_buffer.clear();
+            if processed_freq.rank.fract() == 0.0 {
+                rank_buffer.push_str(itoa::Buffer::new().format(processed_freq.rank as u64));
+            } else {
+                rank_buffer.push_str(&processed_freq.rank.to_string());
+            }
+            
             row = vec![
                 &*header_vec,
                 if args.flag_vis_whitespace {
@@ -331,7 +358,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 },
                 itoa_buffer.format(processed_freq.count).as_bytes(),
                 processed_freq.formatted_percentage.as_bytes(),
-                itoa_buffer_rank.format(processed_freq.rank).as_bytes(),
+                rank_buffer.as_bytes(),
             ];
             wtr.write_record(row)?;
         }
@@ -370,7 +397,7 @@ impl Args {
                 count:                row_count,
                 percentage:           100.0,
                 formatted_percentage: formatted_pct,
-                rank:                 1, // Rank 1 for all-unique headers
+                rank:                 1.0, // Rank 1 for all-unique headers
             });
         } else {
             // Process regular frequencies
@@ -423,7 +450,7 @@ impl Args {
     }
 
     #[inline]
-    fn counts(&self, ftab: &FTable) -> Vec<(ByteString, u64, f64, u32)> {
+    fn counts(&self, ftab: &FTable) -> Vec<(ByteString, u64, f64, f64)> {
         let (mut counts, total_count) = if self.flag_asc {
             // parallel sort in ascending order - least frequent values first
             ftab.par_frequent(true)
@@ -478,7 +505,7 @@ impl Args {
 
         // Pre-allocate the result vector with known capacity
         // We might add an "Other" entry, so add 1 to capacity
-        let mut counts_final: Vec<(Vec<u8>, u64, f64, u32)> = Vec::with_capacity(counts.len() + 1);
+        let mut counts_final: Vec<(Vec<u8>, u64, f64, f64)> = Vec::with_capacity(counts.len() + 1);
 
         // Group by count to handle ties
         let mut count_groups: Vec<(u64, Vec<Vec<u8>>)> = Vec::new();
@@ -502,24 +529,100 @@ impl Args {
 
         // Create NULL value once to avoid repeated to_vec allocations
         let null_val = NULL_VAL.to_vec();
-        // Sort each group alphabetically and assign ranks
-        let mut current_rank = 1u32;
+        // Sort each group alphabetically and assign ranks based on strategy
+        let mut current_rank = 1.0_f64;
+        let strategy = self.flag_rank_ties_strategy.as_str();
+        
         for (count, mut group) in count_groups {
             group.sort_unstable();
+            let group_len = group.len();
 
             #[allow(clippy::cast_precision_loss)]
-            for byte_string in &group {
-                count_sum += count;
-                pct = count as f64 * pct_factor;
-                pct_sum += pct;
+            match strategy {
+                "min" => {
+                    // Standard competition ranking (1224)
+                    // All tied items get the minimum rank
+                    for byte_string in &group {
+                        count_sum += count;
+                        pct = count as f64 * pct_factor;
+                        pct_sum += pct;
 
-                if byte_string.is_empty() {
-                    counts_final.push((null_val.clone(), count, pct, current_rank));
-                } else {
-                    counts_final.push((byte_string.clone(), count, pct, current_rank));
-                }
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), count, pct, current_rank));
+                        } else {
+                            counts_final.push((byte_string.clone(), count, pct, current_rank));
+                        }
+                    }
+                    current_rank += group_len as f64;
+                },
+                "max" => {
+                    // Modified competition ranking (1334)
+                    // All tied items get the maximum rank
+                    let max_rank = current_rank + group_len as f64 - 1.0;
+                    for byte_string in &group {
+                        count_sum += count;
+                        pct = count as f64 * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), count, pct, max_rank));
+                        } else {
+                            counts_final.push((byte_string.clone(), count, pct, max_rank));
+                        }
+                    }
+                    current_rank += group_len as f64;
+                },
+                "dense" => {
+                    // Dense ranking (1223)
+                    // Rank increments by 1 for each distinct count value
+                    for byte_string in &group {
+                        count_sum += count;
+                        pct = count as f64 * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), count, pct, current_rank));
+                        } else {
+                            counts_final.push((byte_string.clone(), count, pct, current_rank));
+                        }
+                    }
+                    current_rank += 1.0;
+                },
+                "ordinal" => {
+                    // Ordinal ranking (1234)
+                    // Each item gets a unique rank, ordered alphabetically within ties
+                    for byte_string in &group {
+                        count_sum += count;
+                        pct = count as f64 * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), count, pct, current_rank));
+                        } else {
+                            counts_final.push((byte_string.clone(), count, pct, current_rank));
+                        }
+                        current_rank += 1.0;
+                    }
+                },
+                "average" => {
+                    // Fractional ranking (1 2.5 2.5 4)
+                    // All tied items get the average of their ordinal ranks
+                    let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
+                    for byte_string in &group {
+                        count_sum += count;
+                        pct = count as f64 * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), count, pct, avg_rank));
+                        } else {
+                            counts_final.push((byte_string.clone(), count, pct, avg_rank));
+                        }
+                    }
+                    current_rank += group_len as f64;
+                },
+                _ => unreachable!(), // Already validated in run()
             }
-            current_rank += group.len() as u32;
         }
 
         let other_count = total_count - count_sum;
@@ -535,7 +638,7 @@ impl Args {
                 .to_vec(),
                 other_count,
                 100.0_f64 - pct_sum,
-                0, // Special rank for "Other" category
+                0.0, // Special rank for "Other" category
             ));
         }
         counts_final

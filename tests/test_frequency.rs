@@ -1118,3 +1118,194 @@ fn frequency_json_vis_whitespace() {
         assert!((freqs[i]["percentage"].as_f64().unwrap() - *pct).abs() < 1e-5);
     }
 }
+
+// Test ranking strategies
+fn setup_rank_test(name: &str) -> (Workdir, process::Command) {
+    // Create data with specific counts to test ranking:
+    // Value "a" appears 5 times (rank 1)
+    // Values "b" and "c" appear 3 times each (tied for rank 2/3)
+    // Values "d" and "e" appear 2 times each (tied for rank 4/5)
+    // Value "f" appears 1 time (rank 6)
+    let rows = vec![
+        svec!["value"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec!["b"],
+        svec!["b"],
+        svec!["c"],
+        svec!["c"],
+        svec!["c"],
+        svec!["d"],
+        svec!["d"],
+        svec!["e"],
+        svec!["e"],
+        svec!["f"],
+    ];
+
+    let wrk = Workdir::new(name);
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--limit", "0"]);
+
+    (wrk, cmd)
+}
+
+#[test]
+fn frequency_rank_ties_min() {
+    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_min");
+    cmd.args(["--rank-ties-strategy", "min"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "5", "31.25", "1"],
+        svec!["value", "b", "3", "18.75", "2"],
+        svec!["value", "c", "3", "18.75", "2"],
+        svec!["value", "d", "2", "12.5", "4"],
+        svec!["value", "e", "2", "12.5", "4"],
+        svec!["value", "f", "1", "6.25", "6"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_rank_ties_max() {
+    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_max");
+    cmd.args(["--rank-ties-strategy", "max"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "5", "31.25", "1"],
+        svec!["value", "b", "3", "18.75", "3"],
+        svec!["value", "c", "3", "18.75", "3"],
+        svec!["value", "d", "2", "12.5", "5"],
+        svec!["value", "e", "2", "12.5", "5"],
+        svec!["value", "f", "1", "6.25", "6"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_rank_ties_dense() {
+    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_dense");
+    cmd.args(["--rank-ties-strategy", "dense"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "5", "31.25", "1"],
+        svec!["value", "b", "3", "18.75", "2"],
+        svec!["value", "c", "3", "18.75", "2"],
+        svec!["value", "d", "2", "12.5", "3"],
+        svec!["value", "e", "2", "12.5", "3"],
+        svec!["value", "f", "1", "6.25", "4"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_rank_ties_ordinal() {
+    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_ordinal");
+    cmd.args(["--rank-ties-strategy", "ordinal"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "5", "31.25", "1"],
+        svec!["value", "b", "3", "18.75", "2"],
+        svec!["value", "c", "3", "18.75", "3"],
+        svec!["value", "d", "2", "12.5", "4"],
+        svec!["value", "e", "2", "12.5", "5"],
+        svec!["value", "f", "1", "6.25", "6"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_rank_ties_average() {
+    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_average");
+    cmd.args(["--rank-ties-strategy", "average"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "5", "31.25", "1"],
+        svec!["value", "b", "3", "18.75", "2.5"],
+        svec!["value", "c", "3", "18.75", "2.5"],
+        svec!["value", "d", "2", "12.5", "4.5"],
+        svec!["value", "e", "2", "12.5", "4.5"],
+        svec!["value", "f", "1", "6.25", "6"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_rank_ties_with_asc() {
+    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_with_asc");
+    cmd.args(["--rank-ties-strategy", "average"]).arg("--asc");
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "5", "31.25", "6"],
+        svec!["value", "b", "3", "18.75", "3.5"],
+        svec!["value", "c", "3", "18.75", "3.5"],
+        svec!["value", "d", "2", "12.5", "1.5"],
+        svec!["value", "e", "2", "12.5", "1.5"],
+        svec!["value", "f", "1", "6.25", "1"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_rank_ties_json() {
+    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_json");
+    cmd.args(["--rank-ties-strategy", "average"]).arg("--json");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let v: Value = serde_json::from_str(&got).unwrap();
+    assert!(v["input"].as_str().unwrap().ends_with("in.csv"));
+    assert_eq!(v["rowcount"], 16);
+    assert_eq!(v["fieldcount"], 1);
+    let fields = v["fields"].as_array().unwrap();
+    assert_eq!(fields.len(), 1);
+    let field = &fields[0];
+    assert_eq!(field["field"], "value");
+    let freqs = field["frequencies"].as_array().unwrap();
+    
+    // Check fractional ranks in JSON
+    assert_eq!(freqs[0]["value"], "a");
+    assert_eq!(freqs[0]["rank"], 1.0);
+    assert_eq!(freqs[1]["value"], "b");
+    assert_eq!(freqs[1]["rank"], 2.5);
+    assert_eq!(freqs[2]["value"], "c");
+    assert_eq!(freqs[2]["rank"], 2.5);
+    assert_eq!(freqs[3]["value"], "d");
+    assert_eq!(freqs[3]["rank"], 4.5);
+    assert_eq!(freqs[4]["value"], "e");
+    assert_eq!(freqs[4]["rank"], 4.5);
+    assert_eq!(freqs[5]["value"], "f");
+    assert_eq!(freqs[5]["rank"], 6.0);
+}
+
+#[test]
+fn frequency_rank_ties_invalid_strategy() {
+    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_invalid_strategy");
+    cmd.args(["--rank-ties-strategy", "invalid"]);
+
+    let output = wrk.output_stderr(&mut cmd);
+    assert!(output.contains("Invalid rank-ties-strategy"));
+    assert!(output.contains("min, max, dense, ordinal, average"));
+}

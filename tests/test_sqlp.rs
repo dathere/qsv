@@ -941,7 +941,8 @@ fn sqlp_boston311_explain() {
     assert!(got.starts_with(expected_begin));
 
     let expected_end = r#"PROJECT 4/29 COLUMNS
-"    SELECTION: [(col(""case_status"")) == (""Closed"")]""#;
+"    SELECTION: [(col(""case_status"")) == (""Closed"")]"
+    ESTIMATED ROWS: 100"#;
     assert!(got.ends_with(expected_end));
 }
 

@@ -940,10 +940,10 @@ fn frequency_json() {
     assert_eq!(field["cardinality"], 4);
     let freqs = field["frequencies"].as_array().unwrap();
     let expected = vec![
-        ("z", 3, 42.85714, 1),
-        ("y", 2, 28.57143, 2),
-        ("Y", 1, 14.28571, 3),
-        ("x", 1, 14.28571, 3),
+        ("z", 3, 42.85714, 1.0),
+        ("y", 2, 28.57143, 2.0),
+        ("Y", 1, 14.28571, 3.0),
+        ("x", 1, 14.28571, 3.0),
     ];
     for (i, (val, count, pct, rank)) in expected.iter().enumerate() {
         assert_eq!(freqs[i]["value"], *val);
@@ -972,11 +972,11 @@ fn frequency_json_no_headers() {
     assert_eq!(field["cardinality"], 5);
     let freqs = field["frequencies"].as_array().unwrap();
     let expected = vec![
-        ("a", 4, 50.0, 1),
-        ("(NULL)", 1, 12.5, 2),
-        ("(NULL)", 1, 12.5, 2),
-        ("b", 1, 12.5, 2),
-        ("h1", 1, 12.5, 2),
+        ("a", 4, 50.0, 1.0),
+        ("(NULL)", 1, 12.5, 2.0),
+        ("(NULL)", 1, 12.5, 2.0),
+        ("b", 1, 12.5, 2.0),
+        ("h1", 1, 12.5, 2.0),
     ];
     for (i, (val, count, pct, rank)) in expected.iter().enumerate() {
         assert_eq!(freqs[i]["value"], *val);
@@ -1260,10 +1260,10 @@ fn frequency_rank_ties_with_asc() {
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
         svec!["value", "a", "5", "31.25", "6"],
-        svec!["value", "b", "3", "18.75", "3.5"],
-        svec!["value", "c", "3", "18.75", "3.5"],
-        svec!["value", "d", "2", "12.5", "1.5"],
-        svec!["value", "e", "2", "12.5", "1.5"],
+        svec!["value", "b", "3", "18.75", "4.5"],
+        svec!["value", "c", "3", "18.75", "4.5"],
+        svec!["value", "d", "2", "12.5", "2.5"],
+        svec!["value", "e", "2", "12.5", "2.5"],
         svec!["value", "f", "1", "6.25", "1"],
     ];
     assert_eq!(got, expected);
@@ -1306,6 +1306,6 @@ fn frequency_rank_ties_invalid_strategy() {
     cmd.args(["--rank-ties-strategy", "invalid"]);
 
     let output = wrk.output_stderr(&mut cmd);
-    assert!(output.contains("Invalid rank-ties-strategy"));
-    assert!(output.contains("min, max, dense, ordinal, average"));
+    assert!(output.contains("Could not match"));
+    assert!(output.contains("allowed variants"));
 }

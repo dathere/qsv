@@ -99,9 +99,9 @@ frequency options:
                             Valid values are:
                             - "dense": The next rank is the current rank plus the number of values with the same count.
                             - "ordinal": The next rank is the current rank plus 1.
-                            - "min": The next rank is the minimum of the current rank and the number of values with the same count.
-                            - "max": The next rank is the maximum of the current rank and the number of values with the same count.
-                            - "average": The next rank is the average of the current rank and the number of values with the same count.
+                            - "min": Tied items receive the minimum rank position (e.g., 1224 pattern).
+                            - "max": Tied items receive the maximum rank position (e.g., 1334 pattern).
+                            - "average": Tied items receive the average of their ordinal positions (e.g., 1 2.5 2.5 4 pattern).
                             [default: min]
     --pct-dec-places <arg>  The number of decimal places to round the percentage to.
                             If negative, the number of decimal places will be set

@@ -321,6 +321,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     #[allow(unused_assignments)]
     let mut header_vec: Vec<u8> = Vec::with_capacity(tables.len());
     let mut itoa_buffer = itoa::Buffer::new();
+    let mut ryu_buffer = ryu::Buffer::new();
     let mut rank_buffer = String::with_capacity(20);
     let mut row: Vec<&[u8]>;
 
@@ -360,9 +361,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // Format rank: show as integer if whole number, otherwise with decimals
             rank_buffer.clear();
             if processed_freq.rank.fract() == 0.0 {
-                rank_buffer.push_str(itoa::Buffer::new().format(processed_freq.rank as u64));
+                rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
             } else {
-                rank_buffer.push_str(&processed_freq.rank.to_string());
+                rank_buffer.push_str(ryu_buffer.format(processed_freq.rank));
             }
 
             row = vec![

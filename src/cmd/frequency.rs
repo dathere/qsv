@@ -1,22 +1,21 @@
 static USAGE: &str = r#"
-Compute a frequency table on input data. It has CSV and JSON output modes.
+Compute a frequency distribution table on input data. It has CSV and JSON output modes.
 https://en.wikipedia.org/wiki/Frequency_(statistics)#Frequency_distribution_table
 
 In CSV output mode (default), the table is formatted as CSV data with the following
 columns - field,value,count,percentage,rank.
 
 The rank column is 1-based and is calculated based on the count of the values,
-with the most frequent having a rank of 1. When there are multiple values with
-the same count, they all have the same rank, and the next rank skips the
-number of values with the same count.
+with the most frequent having a rank of 1. In case of ties, the rank is calculated
+based on the rank-strategy option - "min" (default), "max", "dense", "ordinal", or "average".
 
-For example, if a column has 2 values with a count of 10, 4 values with a count of 6,
-and 3 values with a count of 3, and 1 value with a count of 2, the rank column will
-be 1, 1, 3, 3, 3, 3, 7, 7, 7, 10.
+Only the top N values (set by the --limit option) are computed, with the rest of the values
+grouped into an "Other" category with a special rank of 0. The "Other" category includes
+the count of remaining unique values that are not in the top N values.
 
 In JSON output mode, the table is formatted as nested JSON data. In addition to
-the columns above, the JSON output also includes the row count, field count, each
-field's data type, cardinality, nullcount, sparsity, uniqueness_ratio and its stats.
+the columns above, the JSON output also includes the row count, field count, rank-strategy,
+each field's data type, cardinality, nullcount, sparsity, uniqueness_ratio and its stats.
 
 Since this command computes an exact frequency distribution table, memory proportional
 to the cardinality of each column would be normally required.
@@ -32,8 +31,8 @@ maintain an in-memory hashmap for ID columns. This allows `frequency` to handle
 larger-than-memory datasets with the added benefit of also making it faster when
 working with datasets with ID columns.
 
-This is also why it is highly recommended to index the CSV and run the stats command
-first before running the frequency command.
+This is also why it is HIGHLY RECOMMENDED to INDEX the CSV and run the STATS command
+first BEFORE running the frequency command.
 
 When using the JSON output mode, note that boolean and date type inference are
 disabled by default. If you want to infer dates and boolean types, you can
@@ -97,11 +96,13 @@ frequency options:
 -r, --rank-strategy <arg>   The strategy to use when there are ties in the frequency table.
                             See https://en.wikipedia.org/wiki/Ranking for more info.
                             Valid values are:
-                            - "dense": Assigns consecutive integers regardless of ties (pattern 1,2,2,3), incrementing by 1 for each new count value.
-                            - "ordinal": The next rank is the current rank plus 1.
-                            - "min": Tied items receive the minimum rank position (e.g., 1224 pattern).
-                            - "max": Tied items receive the maximum rank position (e.g., 1334 pattern).
-                            - "average": Tied items receive the average of their ordinal positions (e.g., 1 2.5 2.5 4 pattern).
+                            - "min": Tied items receive the minimum rank position (AKA "1224" ranking).
+                            - "max": Tied items receive the maximum rank position (AKA "1334" ranking).
+                            - "dense": Assigns consecutive integers regardless of ties,
+                              incrementing by 1 for each new count value (AKA "1223" ranking).
+                            - "ordinal": The next rank is the current rank plus 1 (AKA "1234" ranking).
+                            - "average": Tied items receive the average of their ordinal positions
+                              (AKA "1 2.5 2.5 4" ranking).
                             [default: min]
     --pct-dec-places <arg>  The number of decimal places to round the percentage to.
                             If negative, the number of decimal places will be set
@@ -173,7 +174,7 @@ use crate::{
     util::{self, ByteString, StatsMode, get_stats_records},
 };
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RankStrategy {
     Min,
@@ -262,11 +263,12 @@ struct FieldStats {
 
 #[derive(Serialize)]
 struct FrequencyOutput {
-    input:       String,
-    description: String,
-    rowcount:    u64,
-    fieldcount:  usize,
-    fields:      Vec<FrequencyField>,
+    input:         String,
+    description:   String,
+    rowcount:      u64,
+    fieldcount:    usize,
+    fields:        Vec<FrequencyField>,
+    rank_strategy: RankStrategy,
 }
 
 // Shared frequency processing result
@@ -1073,6 +1075,7 @@ impl Args {
             },
             fieldcount,
             fields,
+            rank_strategy: self.flag_rank_strategy,
         };
         let mut json_output = simd_json::to_string_pretty(&output)?;
 

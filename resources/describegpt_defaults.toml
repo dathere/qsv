@@ -1,7 +1,7 @@
 name = "QSV Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "QSV Team"
-version = "3.1.0"
+version = "3.2.0"
 tokens = 5000
 base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
@@ -34,6 +34,10 @@ The provided Frequency Distribution is a CSV file with the following columns - f
 For each Dataset field, it lists the top {TOP_N} (or less if there are less than {TOP_N} unique values) most frequent unique values
 sorted in descending order, with the special value "Other (N)" indicating "other" unique values beyond the top {TOP_N}.
 The "(N)" in "Other (N)" indicates the count of "other" unique values.
+
+The rank column is 1-based and is calculated based on the count of the values, with the most frequent having a rank of 1.
+In case of ties, the rank is calculated based on the "min" rank-strategy (AKA "1224" ranking).
+The "Other" category has a special rank of 0.
 
 For Dataset fields with all unique values (i.e. cardinality is equal to the number of records), the value column is the
 special value "<ALL_UNIQUE>", the count column is the number of records, the percentage column is 100, and the rank column is 1.
@@ -119,7 +123,7 @@ custom_prompt_guidance = """
 We need to answer the User's Prompt above. Let's think step by step.
 
 If the User's Prompt is not about the Dataset, immediately return
-'I'm sorry. I can only answer questions about the Dataset.'
+'I'm sorry. I'm afraid I can only answer questions about the Dataset.'
 
 If the User's Prompt can be answered by using the Dataset's Summary Statistics and
 Frequency Distribution data below, immediately return the answer.

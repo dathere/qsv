@@ -2512,7 +2512,12 @@ fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults>
     );
     let (frequency, _) = run_qsv_cmd(
         "frequency",
-        &["--limit", &args.flag_enum_threshold.to_string()],
+        &[
+            "--limit",
+            &args.flag_enum_threshold.to_string(),
+            "--rank-strategy",
+            "dense",
+        ],
         input_path,
         " ",
     )?;

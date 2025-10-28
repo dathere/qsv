@@ -1,7 +1,7 @@
 name = "QSV Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "QSV Team"
-version = "3.2.0"
+version = "3.3.0"
 tokens = 5000
 base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
@@ -36,7 +36,7 @@ sorted in descending order, with the special value "Other (N)" indicating "other
 The "(N)" in "Other (N)" indicates the count of "other" unique values.
 
 The rank column is 1-based and is calculated based on the count of the values, with the most frequent having a rank of 1.
-In case of ties, the rank is calculated based on the "min" rank-strategy (AKA "1224" ranking).
+In case of ties, the rank is calculated based on the "dense" rank-strategy (AKA "1223" ranking).
 The "Other" category has a special rank of 0.
 
 For Dataset fields with all unique values (i.e. cardinality is equal to the number of records), the value column is the

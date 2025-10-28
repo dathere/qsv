@@ -1,1750 +1,3003 @@
 {
-  "input": "resources/test/boston311-100.csv","description": "Generated with `qsv frequency resources/test/boston311-100.csv --json -o scripts/boston311-100.freqs.json`","rowcount": 100,"fieldcount": 29,"fields": [
+  "input": "resources/test/boston311-100.csv",
+  "description": "Generated with `qsv frequency resources/test/boston311-100.csv --pretty-json -o scripts/boston311-100.freqs.json`",
+  "rowcount": 100,
+  "fieldcount": 29,
+  "fields": [
     {
-      "field": "case_enquiry_id","type": "Integer","cardinality": 100,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 1.0,"stats": [
+      "field": "case_enquiry_id",
+      "type": "Integer",
+      "cardinality": 100,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 1.0,
+      "stats": [
         {
-          "name": "sum","value": 10100411645180
+          "name": "sum",
+          "value": 10100411645180
         },
         {
-          "name": "min","value": 101004113298
+          "name": "min",
+          "value": 101004113298
         },
         {
-          "name": "max","value": 101004155594
+          "name": "max",
+          "value": 101004155594
         },
         {
-          "name": "range","value": 42296
+          "name": "range",
+          "value": 42296
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "mean","value": 101004116451.8
+          "name": "mean",
+          "value": 101004116451.8
         },
         {
-          "name": "sem","value": 790.552
+          "name": "sem",
+          "value": 790.552
         },
         {
-          "name": "stddev","value": 7905.5201
+          "name": "stddev",
+          "value": 7905.5201
         },
         {
-          "name": "variance","value": 62497248.7548
+          "name": "variance",
+          "value": 62497248.7548
         },
         {
-          "name": "cv","value": 0
+          "name": "cv",
+          "value": 0
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "<ALL_UNIQUE>","count": 100,"percentage": 100.0,"rank": 1.0
+          "value": "<ALL_UNIQUE>",
+          "count": 100,
+          "percentage": 100.0,
+          "rank": 1.0
         }
       ]
     },
     {
-      "field": "open_dt","type": "DateTime","cardinality": 100,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 1.0,"stats": [
+      "field": "open_dt",
+      "type": "DateTime",
+      "cardinality": 100,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 1.0,
+      "stats": [
         {
-          "name": "min","value": "2022-01-01T00:16:00+00:00"
+          "name": "min",
+          "value": "2022-01-01T00:16:00+00:00"
         },
         {
-          "name": "max","value": "2022-01-31T11:46:00+00:00"
+          "name": "max",
+          "value": "2022-01-31T11:46:00+00:00"
         },
         {
-          "name": "range","value": 30.47917
+          "name": "range",
+          "value": 30.47917
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "mean","value": 0
+          "name": "mean",
+          "value": 0
         },
         {
-          "name": "sem","value": 0.5568
+          "name": "sem",
+          "value": 0.5568
         },
         {
-          "name": "stddev","value": 5.568
+          "name": "stddev",
+          "value": 5.568
         },
         {
-          "name": "variance","value": 31.00259
+          "name": "variance",
+          "value": 31.00259
         },
         {
-          "name": "cv","value": 0.0293
+          "name": "cv",
+          "value": 0.0293
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "<ALL_UNIQUE>","count": 100,"percentage": 100.0,"rank": 1.0
-        }
-      ]
-    },
-    {
-      "field": "target_dt","type": "String","cardinality": 42,"nullcount": 11,"sparsity": 0.11,"uniqueness_ratio": 0.42,"stats": [
-        {
-          "name": "min","value": "2022-01-03 10:32:34"
-        },
-        {
-          "name": "max","value": "2022-05-20 13:03:21"
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "min_length","value": 0
-        },
-        {
-          "name": "max_length","value": 19
-        },
-        {
-          "name": "sum_length","value": 1691
-        },
-        {
-          "name": "avg_length","value": 16.91
-        },
-        {
-          "name": "stddev_length","value": 5.4871
-        },
-        {
-          "name": "variance_length","value": 30.1084
-        },
-        {
-          "name": "cv_length","value": 0.3245
-        }
-      ],"frequencies": [
-        {
-          "value": "2022-01-04 08:30:00","count": 25,"percentage": 25.0,"rank": 1.0
-        },
-        {
-          "value": "2022-01-05 08:30:00","count": 14,"percentage": 14.0,"rank": 2.0
-        },
-        {
-          "value": "(NULL)","count": 11,"percentage": 11.0,"rank": 3.0
-        },
-        {
-          "value": "2022-01-10 08:30:00","count": 7,"percentage": 7.0,"rank": 4.0
-        },
-        {
-          "value": "2022-01-17 08:30:00","count": 3,"percentage": 3.0,"rank": 5.0
-        },
-        {
-          "value": "2022-01-06 08:30:00","count": 2,"percentage": 2.0,"rank": 6.0
-        },
-        {
-          "value": "2022-01-20 08:30:00","count": 2,"percentage": 2.0,"rank": 6.0
-        },
-        {
-          "value": "2022-01-21 08:30:00","count": 2,"percentage": 2.0,"rank": 6.0
-        },
-        {
-          "value": "2022-01-03 10:32:34","count": 1,"percentage": 1.0,"rank": 9.0
-        },
-        {
-          "value": "2022-01-03 11:58:12","count": 1,"percentage": 1.0,"rank": 9.0
-        },
-        {
-          "value": "Other (32)","count": 32,"percentage": 32.0,"rank": 0.0
+          "value": "<ALL_UNIQUE>",
+          "count": 100,
+          "percentage": 100.0,
+          "rank": 1.0
         }
       ]
     },
     {
-      "field": "closed_dt","type": "DateTime","cardinality": 86,"nullcount": 15,"sparsity": 0.15,"uniqueness_ratio": 0.86,"stats": [
+      "field": "target_dt",
+      "type": "String",
+      "cardinality": 42,
+      "nullcount": 11,
+      "sparsity": 0.11,
+      "uniqueness_ratio": 0.42,
+      "stats": [
         {
-          "name": "min","value": "2022-01-01T12:56:14+00:00"
+          "name": "min",
+          "value": "2022-01-03 10:32:34"
         },
         {
-          "name": "max","value": "2022-04-25T14:30:31+00:00"
+          "name": "max",
+          "value": "2022-05-20 13:03:21"
         },
         {
-          "name": "range","value": 114.06547
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "min_length",
+          "value": 0
         },
         {
-          "name": "mean","value": 0
+          "name": "max_length",
+          "value": 19
         },
         {
-          "name": "sem","value": 1.71655
+          "name": "sum_length",
+          "value": 1691
         },
         {
-          "name": "stddev","value": 15.82577
+          "name": "avg_length",
+          "value": 16.91
         },
         {
-          "name": "variance","value": 250.4549
+          "name": "stddev_length",
+          "value": 5.4871
         },
         {
-          "name": "cv","value": 0.0833
+          "name": "variance_length",
+          "value": 30.1084
+        },
+        {
+          "name": "cv_length",
+          "value": 0.3245
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "(NULL)","count": 15,"percentage": 15.0,"rank": 1.0
+          "value": "2022-01-04 08:30:00",
+          "count": 25,
+          "percentage": 25.0,
+          "rank": 1.0
         },
         {
-          "value": "2022-01-01 12:56:14","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-05 08:30:00",
+          "count": 14,
+          "percentage": 14.0,
+          "rank": 2.0
         },
         {
-          "value": "2022-01-01 14:17:15","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "(NULL)",
+          "count": 11,
+          "percentage": 11.0,
+          "rank": 3.0
         },
         {
-          "value": "2022-01-01 14:59:41","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-10 08:30:00",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 4.0
         },
         {
-          "value": "2022-01-01 15:10:16","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-17 08:30:00",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 5.0
         },
         {
-          "value": "2022-01-01 19:07:41","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-06 08:30:00",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 6.0
         },
         {
-          "value": "2022-01-02 06:43:42","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-20 08:30:00",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 6.0
         },
         {
-          "value": "2022-01-02 06:49:07","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-21 08:30:00",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 6.0
         },
         {
-          "value": "2022-01-02 08:54:11","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-03 10:32:34",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 9.0
         },
         {
-          "value": "2022-01-02 11:03:10","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-03 11:58:12",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 9.0
         },
         {
-          "value": "Other (76)","count": 76,"percentage": 76.0,"rank": 0.0
-        }
-      ]
-    },
-    {
-      "field": "ontime","type": "String","cardinality": 2,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.02,"stats": [
-        {
-          "name": "min","value": "ONTIME"
-        },
-        {
-          "name": "max","value": "OVERDUE"
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "min_length","value": 6
-        },
-        {
-          "name": "max_length","value": 7
-        },
-        {
-          "name": "sum_length","value": 617
-        },
-        {
-          "name": "avg_length","value": 6.17
-        },
-        {
-          "name": "stddev_length","value": 0.3756
-        },
-        {
-          "name": "variance_length","value": 0.1411
-        },
-        {
-          "name": "cv_length","value": 0.0609
-        }
-      ],"frequencies": [
-        {
-          "value": "ONTIME","count": 83,"percentage": 83.0,"rank": 1.0
-        },
-        {
-          "value": "OVERDUE","count": 17,"percentage": 17.0,"rank": 2.0
-        }
-      ]
-    },
-    {
-      "field": "case_status","type": "String","cardinality": 2,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.02,"stats": [
-        {
-          "name": "min","value": "Closed"
-        },
-        {
-          "name": "max","value": "Open"
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "min_length","value": 4
-        },
-        {
-          "name": "max_length","value": 6
-        },
-        {
-          "name": "sum_length","value": 570
-        },
-        {
-          "name": "avg_length","value": 5.7
-        },
-        {
-          "name": "stddev_length","value": 0.7141
-        },
-        {
-          "name": "variance_length","value": 0.51
-        },
-        {
-          "name": "cv_length","value": 0.1253
-        }
-      ],"frequencies": [
-        {
-          "value": "Closed","count": 85,"percentage": 85.0,"rank": 1.0
-        },
-        {
-          "value": "Open","count": 15,"percentage": 15.0,"rank": 2.0
+          "value": "Other (32)",
+          "count": 32,
+          "percentage": 32.0,
+          "rank": 0.0
         }
       ]
     },
     {
-      "field": "closure_reason","type": "String","cardinality": 86,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.86,"stats": [
+      "field": "closed_dt",
+      "type": "DateTime",
+      "cardinality": 86,
+      "nullcount": 15,
+      "sparsity": 0.15,
+      "uniqueness_ratio": 0.86,
+      "stats": [
         {
-          "name": "min","value": " "
+          "name": "min",
+          "value": "2022-01-01T12:56:14+00:00"
         },
         {
-          "name": "max","value": "Case Closed. Closed date : Wed Jan 19 11:42:16 EST 2022 Resolved Removed df  "
+          "name": "max",
+          "value": "2022-04-25T14:30:31+00:00"
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "range",
+          "value": 114.06547
         },
         {
-          "name": "min_length","value": 1
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "max_length","value": 284
+          "name": "mean",
+          "value": 0
         },
         {
-          "name": "sum_length","value": 8314
+          "name": "sem",
+          "value": 1.71655
         },
         {
-          "name": "avg_length","value": 83.14
+          "name": "stddev",
+          "value": 15.82577
         },
         {
-          "name": "stddev_length","value": 55.0262
+          "name": "variance",
+          "value": 250.4549
         },
         {
-          "name": "variance_length","value": 3027.8804
-        },
-        {
-          "name": "cv_length","value": 0.6618
+          "name": "cv",
+          "value": 0.0833
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "(NULL)","count": 15,"percentage": 15.0,"rank": 1.0
+          "value": "(NULL)",
+          "count": 15,
+          "percentage": 15.0,
+          "rank": 1.0
         },
         {
-          "value": "Case Closed Case Resolved  NEW CART#21026466 DELV ON 1/11/22","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-01 12:56:14",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "Case Closed Case Resolved  NO OVERFLOW NO ADDITIONAL CART DELV 1/11/22","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-01 14:17:15",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "Case Closed. Closed date : 2022-01-02 23:40:14.32 Case Resolved CLEAR","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-01 14:59:41",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "Case Closed. Closed date : 2022-01-02 23:54:13.31 Case Resolved BOSTON POLICE WERE THERE TO TICKET","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-01 15:10:16",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "Case Closed. Closed date : 2022-01-02 23:55:44.4 Case Resolved CLEAR","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-01 19:07:41",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "Case Closed. Closed date : 2022-01-02 23:59:18.367 Case Resolved CLEAR","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-02 06:43:42",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "Case Closed. Closed date : 2022-01-03 00:03:27.62 Case Resolved CLEAR","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-02 06:49:07",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "Case Closed. Closed date : 2022-01-03 00:11:13.85 Case Resolved CLEAR","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-02 08:54:11",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "Case Closed. Closed date : 2022-01-03 00:11:28.877 Case Resolved CLEAR","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "2022-01-02 11:03:10",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "Other (76)","count": 76,"percentage": 76.0,"rank": 0.0
-        }
-      ]
-    },
-    {
-      "field": "case_title","type": "String","cardinality": 42,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.42,"stats": [
-        {
-          "name": "min","value": "Abandoned Vehicles"
-        },
-        {
-          "name": "max","value": "Traffic Signal Inspection"
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "min_length","value": 10
-        },
-        {
-          "name": "max_length","value": 57
-        },
-        {
-          "name": "sum_length","value": 2386
-        },
-        {
-          "name": "avg_length","value": 23.86
-        },
-        {
-          "name": "stddev_length","value": 9.452
-        },
-        {
-          "name": "variance_length","value": 89.3404
-        },
-        {
-          "name": "cv_length","value": 0.3961
-        }
-      ],"frequencies": [
-        {
-          "value": "Parking Enforcement","count": 20,"percentage": 20.0,"rank": 1.0
-        },
-        {
-          "value": "CE Collection","count": 8,"percentage": 8.0,"rank": 2.0
-        },
-        {
-          "value": "Improper Storage of Trash (Barrels)","count": 7,"percentage": 7.0,"rank": 3.0
-        },
-        {
-          "value": "Requests for Street Cleaning","count": 5,"percentage": 5.0,"rank": 4.0
-        },
-        {
-          "value": "Pick up Dead Animal","count": 4,"percentage": 4.0,"rank": 5.0
-        },
-        {
-          "value": "Abandoned Vehicles","count": 3,"percentage": 3.0,"rank": 6.0
-        },
-        {
-          "value": "PWD Graffiti","count": 3,"percentage": 3.0,"rank": 6.0
-        },
-        {
-          "value": "Poor Conditions of Property","count": 3,"percentage": 3.0,"rank": 6.0
-        },
-        {
-          "value": "Schedule a Bulk Item Pickup","count": 3,"percentage": 3.0,"rank": 6.0
-        },
-        {
-          "value": "Sidewalk Repair (Make Safe)","count": 3,"percentage": 3.0,"rank": 6.0
-        },
-        {
-          "value": "Other (32)","count": 41,"percentage": 41.0,"rank": 0.0
+          "value": "Other (76)",
+          "count": 76,
+          "percentage": 76.0,
+          "rank": 0.0
         }
       ]
     },
     {
-      "field": "subject","type": "String","cardinality": 9,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.09,"stats": [
+      "field": "ontime",
+      "type": "String",
+      "cardinality": 2,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.02,
+      "stats": [
         {
-          "name": "min","value": "Animal Control"
+          "name": "min",
+          "value": "ONTIME"
         },
         {
-          "name": "max","value": "Transportation - Traffic Division"
+          "name": "max",
+          "value": "OVERDUE"
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "min_length","value": 14
+          "name": "min_length",
+          "value": 6
         },
         {
-          "name": "max_length","value": 33
+          "name": "max_length",
+          "value": 7
         },
         {
-          "name": "sum_length","value": 2570
+          "name": "sum_length",
+          "value": 617
         },
         {
-          "name": "avg_length","value": 25.7
+          "name": "avg_length",
+          "value": 6.17
         },
         {
-          "name": "stddev_length","value": 4.9041
+          "name": "stddev_length",
+          "value": 0.3756
         },
         {
-          "name": "variance_length","value": 24.05
+          "name": "variance_length",
+          "value": 0.1411
         },
         {
-          "name": "cv_length","value": 0.1908
+          "name": "cv_length",
+          "value": 0.0609
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "Public Works Department","count": 51,"percentage": 51.0,"rank": 1.0
+          "value": "ONTIME",
+          "count": 83,
+          "percentage": 83.0,
+          "rank": 1.0
         },
         {
-          "value": "Transportation - Traffic Division","count": 28,"percentage": 28.0,"rank": 2.0
-        },
-        {
-          "value": "Inspectional Services","count": 8,"percentage": 8.0,"rank": 3.0
-        },
-        {
-          "value": "Mayor's 24 Hour Hotline","count": 4,"percentage": 4.0,"rank": 4.0
-        },
-        {
-          "value": "Parks & Recreation Department","count": 3,"percentage": 3.0,"rank": 5.0
-        },
-        {
-          "value": "Property Management","count": 3,"percentage": 3.0,"rank": 5.0
-        },
-        {
-          "value": "Animal Control","count": 1,"percentage": 1.0,"rank": 7.0
-        },
-        {
-          "value": "Boston Police Department","count": 1,"percentage": 1.0,"rank": 7.0
-        },
-        {
-          "value": "Boston Water & Sewer Commission","count": 1,"percentage": 1.0,"rank": 7.0
-        }
-      ]
-    },
-    {
-      "field": "reason","type": "String","cardinality": 20,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.2,"stats": [
-        {
-          "name": "min","value": "Administrative & General Requests"
-        },
-        {
-          "name": "max","value": "Street Lights"
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "min_length","value": 7
-        },
-        {
-          "name": "max_length","value": 33
-        },
-        {
-          "name": "sum_length","value": 1892
-        },
-        {
-          "name": "avg_length","value": 18.92
-        },
-        {
-          "name": "stddev_length","value": 8.4056
-        },
-        {
-          "name": "variance_length","value": 70.6536
-        },
-        {
-          "name": "cv_length","value": 0.4443
-        }
-      ],"frequencies": [
-        {
-          "value": "Enforcement & Abandoned Vehicles","count": 23,"percentage": 23.0,"rank": 1.0
-        },
-        {
-          "value": "Street Cleaning","count": 17,"percentage": 17.0,"rank": 2.0
-        },
-        {
-          "value": "Code Enforcement","count": 10,"percentage": 10.0,"rank": 3.0
-        },
-        {
-          "value": "Highway Maintenance","count": 10,"percentage": 10.0,"rank": 3.0
-        },
-        {
-          "value": "Sanitation","count": 7,"percentage": 7.0,"rank": 5.0
-        },
-        {
-          "value": "Housing","count": 5,"percentage": 5.0,"rank": 6.0
-        },
-        {
-          "value": "Signs & Signals","count": 5,"percentage": 5.0,"rank": 6.0
-        },
-        {
-          "value": "Street Lights","count": 4,"percentage": 4.0,"rank": 8.0
-        },
-        {
-          "value": "Graffiti","count": 3,"percentage": 3.0,"rank": 9.0
-        },
-        {
-          "value": "Park Maintenance & Safety","count": 3,"percentage": 3.0,"rank": 9.0
-        },
-        {
-          "value": "Other (10)","count": 13,"percentage": 13.0,"rank": 0.0
+          "value": "OVERDUE",
+          "count": 17,
+          "percentage": 17.0,
+          "rank": 2.0
         }
       ]
     },
     {
-      "field": "type","type": "String","cardinality": 36,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.36,"stats": [
+      "field": "case_status",
+      "type": "String",
+      "cardinality": 2,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.02,
+      "stats": [
         {
-          "name": "min","value": "Abandoned Vehicles"
+          "name": "min",
+          "value": "Closed"
         },
         {
-          "name": "max","value": "Unsatisfactory Utilities - Electrical  Plumbing"
+          "name": "max",
+          "value": "Open"
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "min_length","value": 10
+          "name": "min_length",
+          "value": 4
         },
         {
-          "name": "max_length","value": 47
+          "name": "max_length",
+          "value": 6
         },
         {
-          "name": "sum_length","value": 2266
+          "name": "sum_length",
+          "value": 570
         },
         {
-          "name": "avg_length","value": 22.66
+          "name": "avg_length",
+          "value": 5.7
         },
         {
-          "name": "stddev_length","value": 8.034
+          "name": "stddev_length",
+          "value": 0.7141
         },
         {
-          "name": "variance_length","value": 64.5444
+          "name": "variance_length",
+          "value": 0.51
         },
         {
-          "name": "cv_length","value": 0.3545
+          "name": "cv_length",
+          "value": 0.1253
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "Parking Enforcement","count": 20,"percentage": 20.0,"rank": 1.0
+          "value": "Closed",
+          "count": 85,
+          "percentage": 85.0,
+          "rank": 1.0
         },
         {
-          "value": "CE Collection","count": 8,"percentage": 8.0,"rank": 2.0
-        },
-        {
-          "value": "Improper Storage of Trash (Barrels)","count": 7,"percentage": 7.0,"rank": 3.0
-        },
-        {
-          "value": "Requests for Street Cleaning","count": 5,"percentage": 5.0,"rank": 4.0
-        },
-        {
-          "value": "Pick up Dead Animal","count": 4,"percentage": 4.0,"rank": 5.0
-        },
-        {
-          "value": "Abandoned Vehicles","count": 3,"percentage": 3.0,"rank": 6.0
-        },
-        {
-          "value": "Graffiti Removal","count": 3,"percentage": 3.0,"rank": 6.0
-        },
-        {
-          "value": "Ground Maintenance","count": 3,"percentage": 3.0,"rank": 6.0
-        },
-        {
-          "value": "Missed Trash/Recycling/Yard Waste/Bulk Item","count": 3,"percentage": 3.0,"rank": 6.0
-        },
-        {
-          "value": "PWD Graffiti","count": 3,"percentage": 3.0,"rank": 6.0
-        },
-        {
-          "value": "Other (26)","count": 41,"percentage": 41.0,"rank": 0.0
+          "value": "Open",
+          "count": 15,
+          "percentage": 15.0,
+          "rank": 2.0
         }
       ]
     },
     {
-      "field": "queue","type": "String","cardinality": 35,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.35,"stats": [
+      "field": "closure_reason",
+      "type": "String",
+      "cardinality": 86,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.86,
+      "stats": [
         {
-          "name": "min","value": "BTDT_AVRS Interface Queue"
+          "name": "min",
+          "value": " "
         },
         {
-          "name": "max","value": "PWDx_Street Light_General Lighting Request"
+          "name": "max",
+          "value": "Case Closed. Closed date : Wed Jan 19 11:42:16 EST 2022 Resolved Removed df  "
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "min_length","value": 13
+          "name": "min_length",
+          "value": 1
         },
         {
-          "name": "max_length","value": 55
+          "name": "max_length",
+          "value": 284
         },
         {
-          "name": "sum_length","value": 2802
+          "name": "sum_length",
+          "value": 8314
         },
         {
-          "name": "avg_length","value": 28.02
+          "name": "avg_length",
+          "value": 83.14
         },
         {
-          "name": "stddev_length","value": 8.0224
+          "name": "stddev_length",
+          "value": 55.0262
         },
         {
-          "name": "variance_length","value": 64.3596
+          "name": "variance_length",
+          "value": 3027.8804
         },
         {
-          "name": "cv_length","value": 0.2863
+          "name": "cv_length",
+          "value": 0.6618
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "BTDT_Parking Enforcement","count": 21,"percentage": 21.0,"rank": 1.0
+          "value": "(NULL)",
+          "count": 15,
+          "percentage": 15.0,
+          "rank": 1.0
         },
         {
-          "value": "PWDx_Code Enforcement","count": 10,"percentage": 10.0,"rank": 2.0
+          "value": "Case Closed Case Resolved  NEW CART#21026466 DELV ON 1/11/22",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "PWDx_District 03: North Dorchester","count": 6,"percentage": 6.0,"rank": 3.0
+          "value": "Case Closed Case Resolved  NO OVERFLOW NO ADDITIONAL CART DELV 1/11/22",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "ISD_Housing (INTERNAL)","count": 5,"percentage": 5.0,"rank": 4.0
+          "value": "Case Closed. Closed date : 2022-01-02 23:40:14.32 Case Resolved CLEAR",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "INFO01_GenericeFormforOtherServiceRequestTypes","count": 4,"percentage": 4.0,"rank": 5.0
+          "value": "Case Closed. Closed date : 2022-01-02 23:54:13.31 Case Resolved BOSTON POLICE WERE THERE TO TICKET",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "PWDx_District 1B: North End","count": 4,"percentage": 4.0,"rank": 5.0
+          "value": "Case Closed. Closed date : 2022-01-02 23:55:44.4 Case Resolved CLEAR",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "PWDx_Schedule a Bulk Item Pickup","count": 4,"percentage": 4.0,"rank": 5.0
+          "value": "Case Closed. Closed date : 2022-01-02 23:59:18.367 Case Resolved CLEAR",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "BTDT_AVRS Interface Queue","count": 3,"percentage": 3.0,"rank": 8.0
+          "value": "Case Closed. Closed date : 2022-01-03 00:03:27.62 Case Resolved CLEAR",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "BTDT_Traffic Signal_Repair","count": 3,"percentage": 3.0,"rank": 8.0
+          "value": "Case Closed. Closed date : 2022-01-03 00:11:13.85 Case Resolved CLEAR",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "PROP_GRAF_GraffitiRemoval","count": 3,"percentage": 3.0,"rank": 8.0
+          "value": "Case Closed. Closed date : 2022-01-03 00:11:28.877 Case Resolved CLEAR",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "Other (25)","count": 37,"percentage": 37.0,"rank": 0.0
-        }
-      ]
-    },
-    {
-      "field": "department","type": "String","cardinality": 7,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.07,"stats": [
-        {
-          "name": "min","value": "BTDT"
-        },
-        {
-          "name": "max","value": "PWDx"
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "min_length","value": 3
-        },
-        {
-          "name": "max_length","value": 4
-        },
-        {
-          "name": "sum_length","value": 392
-        },
-        {
-          "name": "avg_length","value": 3.92
-        },
-        {
-          "name": "stddev_length","value": 0.2713
-        },
-        {
-          "name": "variance_length","value": 0.0736
-        },
-        {
-          "name": "cv_length","value": 0.0692
-        }
-      ],"frequencies": [
-        {
-          "value": "PWDx","count": 49,"percentage": 49.0,"rank": 1.0
-        },
-        {
-          "value": "BTDT","count": 31,"percentage": 31.0,"rank": 2.0
-        },
-        {
-          "value": "ISD","count": 8,"percentage": 8.0,"rank": 3.0
-        },
-        {
-          "value": "INFO","count": 4,"percentage": 4.0,"rank": 4.0
-        },
-        {
-          "value": "PARK","count": 3,"percentage": 3.0,"rank": 5.0
-        },
-        {
-          "value": "PROP","count": 3,"percentage": 3.0,"rank": 5.0
-        },
-        {
-          "value": "GEN_","count": 2,"percentage": 2.0,"rank": 7.0
+          "value": "Other (76)",
+          "count": 76,
+          "percentage": 76.0,
+          "rank": 0.0
         }
       ]
     },
     {
-      "field": "submittedphoto","type": "String","cardinality": 43,"nullcount": 58,"sparsity": 0.58,"uniqueness_ratio": 0.43,"stats": [
+      "field": "case_title",
+      "type": "String",
+      "cardinality": 42,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.42,
+      "stats": [
         {
-          "name": "min","value": "https://311.boston.gov/media/boston/report/photos/61d03f0d05bbcf180c2965fd/report.jpg"
+          "name": "min",
+          "value": "Abandoned Vehicles"
         },
         {
-          "name": "max","value": "https://311.boston.gov/media/boston/report/photos/61d75bba05bbcf180c2d41de/report.jpg"
+          "name": "max",
+          "value": "Traffic Signal Inspection"
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "min_length","value": 0
+          "name": "min_length",
+          "value": 10
         },
         {
-          "name": "max_length","value": 100
+          "name": "max_length",
+          "value": 57
         },
         {
-          "name": "sum_length","value": 3633
+          "name": "sum_length",
+          "value": 2386
         },
         {
-          "name": "avg_length","value": 36.33
+          "name": "avg_length",
+          "value": 23.86
         },
         {
-          "name": "stddev_length","value": 42.178
+          "name": "stddev_length",
+          "value": 9.452
         },
         {
-          "name": "variance_length","value": 1778.9799
+          "name": "variance_length",
+          "value": 89.3404
         },
         {
-          "name": "cv_length","value": 1.161
+          "name": "cv_length",
+          "value": 0.3961
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "(NULL)","count": 58,"percentage": 58.0,"rank": 1.0
+          "value": "Parking Enforcement",
+          "count": 20,
+          "percentage": 20.0,
+          "rank": 1.0
         },
         {
-          "value": "https://311.boston.gov/media/boston/report/photos/61d03f0d05bbcf180c2965fd/report.jpg","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "CE Collection",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 2.0
         },
         {
-          "value": "https://311.boston.gov/media/boston/report/photos/61d0627a05bbcf180c297a39/photo_20220101_091656.jpg","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "Improper Storage of Trash (Barrels)",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 3.0
         },
         {
-          "value": "https://311.boston.gov/media/boston/report/photos/61d063e505bbcf180c297b6a/photo_20220101_092319.jpg","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "Requests for Street Cleaning",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 4.0
         },
         {
-          "value": "https://311.boston.gov/media/boston/report/photos/61d0688a05bbcf180c297be9/report.jpg","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "Pick up Dead Animal",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 5.0
         },
         {
-          "value": "https://311.boston.gov/media/boston/report/photos/61d074c005bbcf180c298048/report.jpg","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "Abandoned Vehicles",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 6.0
         },
         {
-          "value": "https://311.boston.gov/media/boston/report/photos/61d0799d05bbcf180c298225/report.jpg","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "PWD Graffiti",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 6.0
         },
         {
-          "value": "https://311.boston.gov/media/boston/report/photos/61d0815a05bbcf180c298788/photo_20220101_112818.jpg","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "Poor Conditions of Property",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 6.0
         },
         {
-          "value": "https://311.boston.gov/media/boston/report/photos/61d0debd05bbcf180c29b2c6/report.jpg","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "Schedule a Bulk Item Pickup",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 6.0
         },
         {
-          "value": "https://311.boston.gov/media/boston/report/photos/61d0e00705bbcf180c29b41e/report.jpg","count": 1,"percentage": 1.0,"rank": 2.0
+          "value": "Sidewalk Repair (Make Safe)",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 6.0
         },
         {
-          "value": "Other (33)","count": 33,"percentage": 33.0,"rank": 0.0
-        }
-      ]
-    },
-    {
-      "field": "closedphoto","type": "NULL","cardinality": 1,"nullcount": 100,"sparsity": 1.0,"uniqueness_ratio": 0.01,"stats": [],"frequencies": [
-        {
-          "value": "(NULL)","count": 100,"percentage": 100.0,"rank": 1.0
-        }
-      ]
-    },
-    {
-      "field": "location","type": "String","cardinality": 98,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.98,"stats": [
-        {
-          "name": "min","value": " "
-        },
-        {
-          "name": "max","value": "INTERSECTION of Verdun St & Gallivan Blvd  Dorchester  MA  "
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "min_length","value": 1
-        },
-        {
-          "name": "max_length","value": 63
-        },
-        {
-          "name": "sum_length","value": 3938
-        },
-        {
-          "name": "avg_length","value": 39.38
-        },
-        {
-          "name": "stddev_length","value": 9.6247
-        },
-        {
-          "name": "variance_length","value": 92.6356
-        },
-        {
-          "name": "cv_length","value": 0.2444
-        }
-      ],"frequencies": [
-        {
-          "value": "563 Columbus Ave  Roxbury  MA  02118","count": 2,"percentage": 2.0,"rank": 1.0
-        },
-        {
-          "value": "INTERSECTION of Gallivan Blvd & Washington St  Dorchester  MA","count": 2,"percentage": 2.0,"rank": 1.0
-        },
-        {
-          "value": "(NULL)","count": 1,"percentage": 1.0,"rank": 3.0
-        },
-        {
-          "value": "103 N Beacon St  Brighton  MA  02135","count": 1,"percentage": 1.0,"rank": 3.0
-        },
-        {
-          "value": "11 Aberdeen St  Boston  MA  02215","count": 1,"percentage": 1.0,"rank": 3.0
-        },
-        {
-          "value": "1148 Hyde Park Ave  Hyde Park  MA  02136","count": 1,"percentage": 1.0,"rank": 3.0
-        },
-        {
-          "value": "119 L St  South Boston  MA  02127","count": 1,"percentage": 1.0,"rank": 3.0
-        },
-        {
-          "value": "12 Derne St  Boston  MA  02114","count": 1,"percentage": 1.0,"rank": 3.0
-        },
-        {
-          "value": "126 Elm St  Charlestown  MA  02129","count": 1,"percentage": 1.0,"rank": 3.0
-        },
-        {
-          "value": "1270 Commonwealth Ave  Allston  MA  02134","count": 1,"percentage": 1.0,"rank": 3.0
-        },
-        {
-          "value": "Other (88)","count": 88,"percentage": 88.0,"rank": 0.0
+          "value": "Other (32)",
+          "count": 41,
+          "percentage": 41.0,
+          "rank": 0.0
         }
       ]
     },
     {
-      "field": "fire_district","type": "String","cardinality": 10,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.1,"stats": [
+      "field": "subject",
+      "type": "String",
+      "cardinality": 9,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.09,
+      "stats": [
         {
-          "name": "min","value": " "
+          "name": "min",
+          "value": "Animal Control"
         },
         {
-          "name": "max","value": 9
+          "name": "max",
+          "value": "Transportation - Traffic Division"
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "min_length","value": 1
+          "name": "min_length",
+          "value": 14
         },
         {
-          "name": "max_length","value": 1
+          "name": "max_length",
+          "value": 33
         },
         {
-          "name": "sum_length","value": 6
+          "name": "sum_length",
+          "value": 2570
         },
         {
-          "name": "avg_length","value": 0.06
+          "name": "avg_length",
+          "value": 25.7
         },
         {
-          "name": "stddev_length","value": 0
+          "name": "stddev_length",
+          "value": 4.9041
         },
         {
-          "name": "variance_length","value": 0
+          "name": "variance_length",
+          "value": 24.05
         },
         {
-          "name": "cv_length","value": 0
+          "name": "cv_length",
+          "value": 0.1908
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "3","count": 19,"percentage": 19.0,"rank": 1.0
+          "value": "Public Works Department",
+          "count": 51,
+          "percentage": 51.0,
+          "rank": 1.0
         },
         {
-          "value": "4","count": 16,"percentage": 16.0,"rank": 2.0
+          "value": "Transportation - Traffic Division",
+          "count": 28,
+          "percentage": 28.0,
+          "rank": 2.0
         },
         {
-          "value": "7","count": 14,"percentage": 14.0,"rank": 3.0
+          "value": "Inspectional Services",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 3.0
         },
         {
-          "value": "6","count": 13,"percentage": 13.0,"rank": 4.0
+          "value": "Mayor's 24 Hour Hotline",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 4.0
         },
         {
-          "value": "8","count": 9,"percentage": 9.0,"rank": 5.0
+          "value": "Parks & Recreation Department",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 5.0
         },
         {
-          "value": "1","count": 8,"percentage": 8.0,"rank": 6.0
+          "value": "Property Management",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 5.0
         },
         {
-          "value": "12","count": 8,"percentage": 8.0,"rank": 6.0
+          "value": "Animal Control",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 7.0
         },
         {
-          "value": "9","count": 7,"percentage": 7.0,"rank": 8.0
+          "value": "Boston Police Department",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 7.0
         },
         {
-          "value": "11","count": 5,"percentage": 5.0,"rank": 9.0
-        },
-        {
-          "value": "(NULL)","count": 1,"percentage": 1.0,"rank": 10.0
-        }
-      ]
-    },
-    {
-      "field": "pwd_district","type": "String","cardinality": 14,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.14,"stats": [
-        {
-          "name": "min","value": " "
-        },
-        {
-          "name": "max","value": "1C"
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "min_length","value": 1
-        },
-        {
-          "name": "max_length","value": 3
-        },
-        {
-          "name": "sum_length","value": 209
-        },
-        {
-          "name": "avg_length","value": 2.09
-        },
-        {
-          "name": "stddev_length","value": 0.3192
-        },
-        {
-          "name": "variance_length","value": 0.1019
-        },
-        {
-          "name": "cv_length","value": 0.1527
-        }
-      ],"frequencies": [
-        {
-          "value": "1B","count": 16,"percentage": 16.0,"rank": 1.0
-        },
-        {
-          "value": "1C","count": 14,"percentage": 14.0,"rank": 2.0
-        },
-        {
-          "value": "03","count": 11,"percentage": 11.0,"rank": 3.0
-        },
-        {
-          "value": "05","count": 10,"percentage": 10.0,"rank": 4.0
-        },
-        {
-          "value": "07","count": 9,"percentage": 9.0,"rank": 5.0
-        },
-        {
-          "value": "09","count": 8,"percentage": 8.0,"rank": 6.0
-        },
-        {
-          "value": "02","count": 5,"percentage": 5.0,"rank": 7.0
-        },
-        {
-          "value": "04","count": 5,"percentage": 5.0,"rank": 7.0
-        },
-        {
-          "value": "06","count": 5,"percentage": 5.0,"rank": 7.0
-        },
-        {
-          "value": "10A","count": 5,"percentage": 5.0,"rank": 7.0
-        },
-        {
-          "value": "Other (4)","count": 12,"percentage": 12.0,"rank": 0.0
+          "value": "Boston Water & Sewer Commission",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 7.0
         }
       ]
     },
     {
-      "field": "city_council_district","type": "String","cardinality": 10,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.1,"stats": [
+      "field": "reason",
+      "type": "String",
+      "cardinality": 20,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.2,
+      "stats": [
         {
-          "name": "min","value": " "
+          "name": "min",
+          "value": "Administrative & General Requests"
         },
         {
-          "name": "max","value": 8
+          "name": "max",
+          "value": "Street Lights"
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "min_length","value": 1
+          "name": "min_length",
+          "value": 7
         },
         {
-          "name": "max_length","value": 1
+          "name": "max_length",
+          "value": 33
         },
         {
-          "name": "sum_length","value": 6
+          "name": "sum_length",
+          "value": 1892
         },
         {
-          "name": "avg_length","value": 0.06
+          "name": "avg_length",
+          "value": 18.92
         },
         {
-          "name": "stddev_length","value": 0
+          "name": "stddev_length",
+          "value": 8.4056
         },
         {
-          "name": "variance_length","value": 0
+          "name": "variance_length",
+          "value": 70.6536
         },
         {
-          "name": "cv_length","value": 0
+          "name": "cv_length",
+          "value": 0.4443
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "1","count": 22,"percentage": 22.0,"rank": 1.0
+          "value": "Enforcement & Abandoned Vehicles",
+          "count": 23,
+          "percentage": 23.0,
+          "rank": 1.0
         },
         {
-          "value": "2","count": 19,"percentage": 19.0,"rank": 2.0
+          "value": "Street Cleaning",
+          "count": 17,
+          "percentage": 17.0,
+          "rank": 2.0
         },
         {
-          "value": "7","count": 15,"percentage": 15.0,"rank": 3.0
+          "value": "Code Enforcement",
+          "count": 10,
+          "percentage": 10.0,
+          "rank": 3.0
         },
         {
-          "value": "3","count": 10,"percentage": 10.0,"rank": 4.0
+          "value": "Highway Maintenance",
+          "count": 10,
+          "percentage": 10.0,
+          "rank": 3.0
         },
         {
-          "value": "5","count": 7,"percentage": 7.0,"rank": 5.0
+          "value": "Sanitation",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 5.0
         },
         {
-          "value": "6","count": 7,"percentage": 7.0,"rank": 5.0
+          "value": "Housing",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 6.0
         },
         {
-          "value": "8","count": 7,"percentage": 7.0,"rank": 5.0
+          "value": "Signs & Signals",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 6.0
         },
         {
-          "value": "4","count": 6,"percentage": 6.0,"rank": 8.0
+          "value": "Street Lights",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 8.0
         },
         {
-          "value": "9","count": 6,"percentage": 6.0,"rank": 8.0
+          "value": "Graffiti",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 9.0
         },
         {
-          "value": "(NULL)","count": 1,"percentage": 1.0,"rank": 10.0
-        }
-      ]
-    },
-    {
-      "field": "police_district","type": "String","cardinality": 13,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.13,"stats": [
-        {
-          "name": "min","value": " "
+          "value": "Park Maintenance & Safety",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 9.0
         },
         {
-          "name": "max","value": "E5"
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "min_length","value": 1
-        },
-        {
-          "name": "max_length","value": 3
-        },
-        {
-          "name": "sum_length","value": 223
-        },
-        {
-          "name": "avg_length","value": 2.23
-        },
-        {
-          "name": "stddev_length","value": 0.444
-        },
-        {
-          "name": "variance_length","value": 0.1971
-        },
-        {
-          "name": "cv_length","value": 0.1991
-        }
-      ],"frequencies": [
-        {
-          "value": "A1","count": 20,"percentage": 20.0,"rank": 1.0
-        },
-        {
-          "value": "D4","count": 14,"percentage": 14.0,"rank": 2.0
-        },
-        {
-          "value": "C6","count": 12,"percentage": 12.0,"rank": 3.0
-        },
-        {
-          "value": "B2","count": 9,"percentage": 9.0,"rank": 4.0
-        },
-        {
-          "value": "A7","count": 8,"percentage": 8.0,"rank": 5.0
-        },
-        {
-          "value": "C11","count": 8,"percentage": 8.0,"rank": 5.0
-        },
-        {
-          "value": "B3","count": 7,"percentage": 7.0,"rank": 7.0
-        },
-        {
-          "value": "D14","count": 5,"percentage": 5.0,"rank": 8.0
-        },
-        {
-          "value": "E13","count": 5,"percentage": 5.0,"rank": 8.0
-        },
-        {
-          "value": "E5","count": 5,"percentage": 5.0,"rank": 8.0
-        },
-        {
-          "value": "Other (3)","count": 7,"percentage": 7.0,"rank": 0.0
+          "value": "Other (10)",
+          "count": 13,
+          "percentage": 13.0,
+          "rank": 0.0
         }
       ]
     },
     {
-      "field": "neighborhood","type": "String","cardinality": 19,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.19,"stats": [
+      "field": "type",
+      "type": "String",
+      "cardinality": 36,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.36,
+      "stats": [
         {
-          "name": "min","value": " "
+          "name": "min",
+          "value": "Abandoned Vehicles"
         },
         {
-          "name": "max","value": "West Roxbury"
+          "name": "max",
+          "value": "Unsatisfactory Utilities - Electrical  Plumbing"
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "min_length","value": 1
+          "name": "min_length",
+          "value": 10
         },
         {
-          "name": "max_length","value": 38
+          "name": "max_length",
+          "value": 47
         },
         {
-          "name": "sum_length","value": 1486
+          "name": "sum_length",
+          "value": 2266
         },
         {
-          "name": "avg_length","value": 14.86
+          "name": "avg_length",
+          "value": 22.66
         },
         {
-          "name": "stddev_length","value": 9.8671
+          "name": "stddev_length",
+          "value": 8.034
         },
         {
-          "name": "variance_length","value": 97.3604
+          "name": "variance_length",
+          "value": 64.5444
         },
         {
-          "name": "cv_length","value": 0.664
+          "name": "cv_length",
+          "value": 0.3545
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "Dorchester","count": 15,"percentage": 15.0,"rank": 1.0
+          "value": "Parking Enforcement",
+          "count": 20,
+          "percentage": 20.0,
+          "rank": 1.0
         },
         {
-          "value": "Downtown / Financial District","count": 10,"percentage": 10.0,"rank": 2.0
+          "value": "CE Collection",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 2.0
         },
         {
-          "value": "South Boston / South Boston Waterfront","count": 10,"percentage": 10.0,"rank": 2.0
+          "value": "Improper Storage of Trash (Barrels)",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 3.0
         },
         {
-          "value": "East Boston","count": 8,"percentage": 8.0,"rank": 4.0
+          "value": "Requests for Street Cleaning",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 4.0
         },
         {
-          "value": "Roxbury","count": 8,"percentage": 8.0,"rank": 4.0
+          "value": "Pick up Dead Animal",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 5.0
         },
         {
-          "value": "South End","count": 8,"percentage": 8.0,"rank": 4.0
+          "value": "Abandoned Vehicles",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 6.0
         },
         {
-          "value": "Beacon Hill","count": 7,"percentage": 7.0,"rank": 7.0
+          "value": "Graffiti Removal",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 6.0
         },
         {
-          "value": "Jamaica Plain","count": 6,"percentage": 6.0,"rank": 8.0
+          "value": "Ground Maintenance",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 6.0
         },
         {
-          "value": "Back Bay","count": 5,"percentage": 5.0,"rank": 9.0
+          "value": "Missed Trash/Recycling/Yard Waste/Bulk Item",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 6.0
         },
         {
-          "value": "Allston / Brighton","count": 4,"percentage": 4.0,"rank": 10.0
+          "value": "PWD Graffiti",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 6.0
         },
         {
-          "value": "Other (9)","count": 19,"percentage": 19.0,"rank": 0.0
-        }
-      ]
-    },
-    {
-      "field": "neighborhood_services_district","type": "String","cardinality": 16,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.16,"stats": [
-        {
-          "name": "min","value": " "
-        },
-        {
-          "name": "max","value": 6
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "min_length","value": 1
-        },
-        {
-          "name": "max_length","value": 2
-        },
-        {
-          "name": "sum_length","value": 8
-        },
-        {
-          "name": "avg_length","value": 0.08
-        },
-        {
-          "name": "stddev_length","value": 0.4714
-        },
-        {
-          "name": "variance_length","value": 0.2222
-        },
-        {
-          "name": "cv_length","value": 5.8926
-        }
-      ],"frequencies": [
-        {
-          "value": "3","count": 15,"percentage": 15.0,"rank": 1.0
-        },
-        {
-          "value": "5","count": 12,"percentage": 12.0,"rank": 2.0
-        },
-        {
-          "value": "13","count": 11,"percentage": 11.0,"rank": 3.0
-        },
-        {
-          "value": "7","count": 10,"percentage": 10.0,"rank": 4.0
-        },
-        {
-          "value": "14","count": 9,"percentage": 9.0,"rank": 5.0
-        },
-        {
-          "value": "1","count": 8,"percentage": 8.0,"rank": 6.0
-        },
-        {
-          "value": "10","count": 8,"percentage": 8.0,"rank": 6.0
-        },
-        {
-          "value": "6","count": 7,"percentage": 7.0,"rank": 8.0
-        },
-        {
-          "value": "11","count": 5,"percentage": 5.0,"rank": 9.0
-        },
-        {
-          "value": "15","count": 5,"percentage": 5.0,"rank": 9.0
-        },
-        {
-          "value": "Other (6)","count": 10,"percentage": 10.0,"rank": 0.0
+          "value": "Other (26)",
+          "count": 41,
+          "percentage": 41.0,
+          "rank": 0.0
         }
       ]
     },
     {
-      "field": "ward","type": "String","cardinality": 42,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.42,"stats": [
+      "field": "queue",
+      "type": "String",
+      "cardinality": 35,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.35,
+      "stats": [
         {
-          "name": "min","value": " "
+          "name": "min",
+          "value": "BTDT_AVRS Interface Queue"
         },
         {
-          "name": "max","value": "Ward 9"
+          "name": "max",
+          "value": "PWDx_Street Light_General Lighting Request"
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "min_length","value": 1
+          "name": "min_length",
+          "value": 13
         },
         {
-          "name": "max_length","value": 7
+          "name": "max_length",
+          "value": 55
         },
         {
-          "name": "sum_length","value": 492
+          "name": "sum_length",
+          "value": 2802
         },
         {
-          "name": "avg_length","value": 4.92
+          "name": "avg_length",
+          "value": 28.02
         },
         {
-          "name": "stddev_length","value": 2.1711
+          "name": "stddev_length",
+          "value": 8.0224
         },
         {
-          "name": "variance_length","value": 4.7135
+          "name": "variance_length",
+          "value": 64.3596
         },
         {
-          "name": "cv_length","value": 0.4413
+          "name": "cv_length",
+          "value": 0.2863
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "Ward 3","count": 10,"percentage": 10.0,"rank": 1.0
+          "value": "BTDT_Parking Enforcement",
+          "count": 21,
+          "percentage": 21.0,
+          "rank": 1.0
         },
         {
-          "value": "Ward 6","count": 7,"percentage": 7.0,"rank": 2.0
+          "value": "PWDx_Code Enforcement",
+          "count": 10,
+          "percentage": 10.0,
+          "rank": 2.0
         },
         {
-          "value": "Ward 1","count": 6,"percentage": 6.0,"rank": 3.0
+          "value": "PWDx_District 03: North Dorchester",
+          "count": 6,
+          "percentage": 6.0,
+          "rank": 3.0
         },
         {
-          "value": "3","count": 5,"percentage": 5.0,"rank": 4.0
+          "value": "ISD_Housing (INTERNAL)",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 4.0
         },
         {
-          "value": "Ward 20","count": 5,"percentage": 5.0,"rank": 4.0
+          "value": "INFO01_GenericeFormforOtherServiceRequestTypes",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 5.0
         },
         {
-          "value": "Ward 4","count": 5,"percentage": 5.0,"rank": 4.0
+          "value": "PWDx_District 1B: North End",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 5.0
         },
         {
-          "value": "Ward 5","count": 5,"percentage": 5.0,"rank": 4.0
+          "value": "PWDx_Schedule a Bulk Item Pickup",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 5.0
         },
         {
-          "value": "14","count": 4,"percentage": 4.0,"rank": 8.0
+          "value": "BTDT_AVRS Interface Queue",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 8.0
         },
         {
-          "value": "Ward 13","count": 4,"percentage": 4.0,"rank": 8.0
+          "value": "BTDT_Traffic Signal_Repair",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 8.0
         },
         {
-          "value": "Ward 16","count": 4,"percentage": 4.0,"rank": 8.0
+          "value": "PROP_GRAF_GraffitiRemoval",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 8.0
         },
         {
-          "value": "Other (32)","count": 45,"percentage": 45.0,"rank": 0.0
-        }
-      ]
-    },
-    {
-      "field": "precinct","type": "String","cardinality": 75,"nullcount": 1,"sparsity": 0.01,"uniqueness_ratio": 0.75,"stats": [
-        {
-          "name": "min","value": " "
-        },
-        {
-          "name": "max","value": 2210
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "min_length","value": 0
-        },
-        {
-          "name": "max_length","value": 4
-        },
-        {
-          "name": "sum_length","value": 321
-        },
-        {
-          "name": "avg_length","value": 3.21
-        },
-        {
-          "name": "stddev_length","value": 0.5455
-        },
-        {
-          "name": "variance_length","value": 0.2976
-        },
-        {
-          "name": "cv_length","value": 0.1699
-        }
-      ],"frequencies": [
-        {
-          "value": "0306","count": 5,"percentage": 5.0,"rank": 1.0
-        },
-        {
-          "value": "0302","count": 4,"percentage": 4.0,"rank": 2.0
-        },
-        {
-          "value": "0606","count": 4,"percentage": 4.0,"rank": 2.0
-        },
-        {
-          "value": "0404","count": 3,"percentage": 3.0,"rank": 4.0
-        },
-        {
-          "value": "1704","count": 3,"percentage": 3.0,"rank": 4.0
-        },
-        {
-          "value": "(NULL)","count": 2,"percentage": 2.0,"rank": 6.0
-        },
-        {
-          "value": "0101","count": 2,"percentage": 2.0,"rank": 6.0
-        },
-        {
-          "value": "0106","count": 2,"percentage": 2.0,"rank": 6.0
-        },
-        {
-          "value": "0301","count": 2,"percentage": 2.0,"rank": 6.0
-        },
-        {
-          "value": "0303","count": 2,"percentage": 2.0,"rank": 6.0
-        },
-        {
-          "value": "Other (65)","count": 71,"percentage": 71.0,"rank": 0.0
+          "value": "Other (25)",
+          "count": 37,
+          "percentage": 37.0,
+          "rank": 0.0
         }
       ]
     },
     {
-      "field": "location_street_name","type": "String","cardinality": 97,"nullcount": 1,"sparsity": 0.01,"uniqueness_ratio": 0.97,"stats": [
+      "field": "department",
+      "type": "String",
+      "cardinality": 7,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.07,
+      "stats": [
         {
-          "name": "min","value": "103 N Beacon St"
+          "name": "min",
+          "value": "BTDT"
         },
         {
-          "name": "max","value": "INTERSECTION Verdun St & Gallivan Blvd"
+          "name": "max",
+          "value": "PWDx"
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "min_length","value": 0
+          "name": "min_length",
+          "value": 3
         },
         {
-          "name": "max_length","value": 45
+          "name": "max_length",
+          "value": 4
         },
         {
-          "name": "sum_length","value": 1800
+          "name": "sum_length",
+          "value": 392
         },
         {
-          "name": "avg_length","value": 18
+          "name": "avg_length",
+          "value": 3.92
         },
         {
-          "name": "stddev_length","value": 9.3995
+          "name": "stddev_length",
+          "value": 0.2713
         },
         {
-          "name": "variance_length","value": 88.3508
+          "name": "variance_length",
+          "value": 0.0736
         },
         {
-          "name": "cv_length","value": 0.5222
+          "name": "cv_length",
+          "value": 0.0692
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "20 Washington St","count": 2,"percentage": 2.0,"rank": 1.0
+          "value": "PWDx",
+          "count": 49,
+          "percentage": 49.0,
+          "rank": 1.0
         },
         {
-          "value": "563 Columbus Ave","count": 2,"percentage": 2.0,"rank": 1.0
+          "value": "BTDT",
+          "count": 31,
+          "percentage": 31.0,
+          "rank": 2.0
         },
         {
-          "value": "INTERSECTION Gallivan Blvd & Washington St","count": 2,"percentage": 2.0,"rank": 1.0
+          "value": "ISD",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 3.0
         },
         {
-          "value": "(NULL)","count": 1,"percentage": 1.0,"rank": 4.0
+          "value": "INFO",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 4.0
         },
         {
-          "value": "103 N Beacon St","count": 1,"percentage": 1.0,"rank": 4.0
+          "value": "PARK",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 5.0
         },
         {
-          "value": "11 Aberdeen St","count": 1,"percentage": 1.0,"rank": 4.0
+          "value": "PROP",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 5.0
         },
         {
-          "value": "1148 Hyde Park Ave","count": 1,"percentage": 1.0,"rank": 4.0
-        },
-        {
-          "value": "119 L St","count": 1,"percentage": 1.0,"rank": 4.0
-        },
-        {
-          "value": "12 Derne St","count": 1,"percentage": 1.0,"rank": 4.0
-        },
-        {
-          "value": "126 Elm St","count": 1,"percentage": 1.0,"rank": 4.0
-        },
-        {
-          "value": "Other (87)","count": 87,"percentage": 87.0,"rank": 0.0
-        }
-      ]
-    },
-    {
-      "field": "location_zipcode","type": "String","cardinality": 24,"nullcount": 17,"sparsity": 0.17,"uniqueness_ratio": 0.24,"stats": [
-        {
-          "name": "min","value": 2109
-        },
-        {
-          "name": "max","value": 2215
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "min_length","value": 0
-        },
-        {
-          "name": "max_length","value": 5
-        },
-        {
-          "name": "sum_length","value": 415
-        },
-        {
-          "name": "avg_length","value": 4.15
-        },
-        {
-          "name": "stddev_length","value": 1.7571
-        },
-        {
-          "name": "variance_length","value": 3.0875
-        },
-        {
-          "name": "cv_length","value": 0.4234
-        }
-      ],"frequencies": [
-        {
-          "value": "(NULL)","count": 17,"percentage": 17.0,"rank": 1.0
-        },
-        {
-          "value": "02127","count": 10,"percentage": 10.0,"rank": 2.0
-        },
-        {
-          "value": "02118","count": 7,"percentage": 7.0,"rank": 3.0
-        },
-        {
-          "value": "02128","count": 7,"percentage": 7.0,"rank": 3.0
-        },
-        {
-          "value": "02114","count": 6,"percentage": 6.0,"rank": 5.0
-        },
-        {
-          "value": "02125","count": 6,"percentage": 6.0,"rank": 5.0
-        },
-        {
-          "value": "02113","count": 5,"percentage": 5.0,"rank": 7.0
-        },
-        {
-          "value": "02115","count": 4,"percentage": 4.0,"rank": 8.0
-        },
-        {
-          "value": "02119","count": 4,"percentage": 4.0,"rank": 8.0
-        },
-        {
-          "value": "02130","count": 4,"percentage": 4.0,"rank": 8.0
-        },
-        {
-          "value": "Other (14)","count": 30,"percentage": 30.0,"rank": 0.0
+          "value": "GEN_",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 7.0
         }
       ]
     },
     {
-      "field": "latitude","type": "Float","cardinality": 78,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.78,"stats": [
+      "field": "submittedphoto",
+      "type": "String",
+      "cardinality": 43,
+      "nullcount": 58,
+      "sparsity": 0.58,
+      "uniqueness_ratio": 0.43,
+      "stats": [
         {
-          "name": "sum","value": 4233.6674
+          "name": "min",
+          "value": "https://311.boston.gov/media/boston/report/photos/61d03f0d05bbcf180c2965fd/report.jpg"
         },
         {
-          "name": "min","value": 42.2553
+          "name": "max",
+          "value": "https://311.boston.gov/media/boston/report/photos/61d75bba05bbcf180c2d41de/report.jpg"
         },
         {
-          "name": "max","value": 42.3806
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "name": "range","value": 0.1253
+          "name": "min_length",
+          "value": 0
         },
         {
-          "name": "sort_order","value": "Unsorted"
+          "name": "max_length",
+          "value": 100
         },
         {
-          "name": "mean","value": 42.3367
+          "name": "sum_length",
+          "value": 3633
         },
         {
-          "name": "sem","value": 0.0031
+          "name": "avg_length",
+          "value": 36.33
         },
         {
-          "name": "stddev","value": 0.0305
+          "name": "stddev_length",
+          "value": 42.178
         },
         {
-          "name": "variance","value": 0.0009
+          "name": "variance_length",
+          "value": 1778.9799
         },
         {
-          "name": "cv","value": 0.072
+          "name": "cv_length",
+          "value": 1.161
         }
-      ],"frequencies": [
+      ],
+      "frequencies": [
         {
-          "value": "42.3594","count": 20,"percentage": 20.0,"rank": 1.0
+          "value": "(NULL)",
+          "count": 58,
+          "percentage": 58.0,
+          "rank": 1.0
         },
         {
-          "value": "42.3336","count": 2,"percentage": 2.0,"rank": 2.0
+          "value": "https://311.boston.gov/media/boston/report/photos/61d03f0d05bbcf180c2965fd/report.jpg",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "42.3412","count": 2,"percentage": 2.0,"rank": 2.0
+          "value": "https://311.boston.gov/media/boston/report/photos/61d0627a05bbcf180c297a39/photo_20220101_091656.jpg",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "42.3735","count": 2,"percentage": 2.0,"rank": 2.0
+          "value": "https://311.boston.gov/media/boston/report/photos/61d063e505bbcf180c297b6a/photo_20220101_092319.jpg",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "42.2553","count": 1,"percentage": 1.0,"rank": 5.0
+          "value": "https://311.boston.gov/media/boston/report/photos/61d0688a05bbcf180c297be9/report.jpg",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "42.2601","count": 1,"percentage": 1.0,"rank": 5.0
+          "value": "https://311.boston.gov/media/boston/report/photos/61d074c005bbcf180c298048/report.jpg",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "42.2609","count": 1,"percentage": 1.0,"rank": 5.0
+          "value": "https://311.boston.gov/media/boston/report/photos/61d0799d05bbcf180c298225/report.jpg",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "42.2645","count": 1,"percentage": 1.0,"rank": 5.0
+          "value": "https://311.boston.gov/media/boston/report/photos/61d0815a05bbcf180c298788/photo_20220101_112818.jpg",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "42.2674","count": 1,"percentage": 1.0,"rank": 5.0
+          "value": "https://311.boston.gov/media/boston/report/photos/61d0debd05bbcf180c29b2c6/report.jpg",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "42.2789","count": 1,"percentage": 1.0,"rank": 5.0
+          "value": "https://311.boston.gov/media/boston/report/photos/61d0e00705bbcf180c29b41e/report.jpg",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 2.0
         },
         {
-          "value": "Other (68)","count": 68,"percentage": 68.0,"rank": 0.0
-        }
-      ]
-    },
-    {
-      "field": "longitude","type": "Float","cardinality": 77,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.77,"stats": [
-        {
-          "name": "sum","value": -7107.2688
-        },
-        {
-          "name": "min","value": -71.1626
-        },
-        {
-          "name": "max","value": -71.0298
-        },
-        {
-          "name": "range","value": 0.1328
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "mean","value": -71.0727
-        },
-        {
-          "name": "sem","value": 0.0031
-        },
-        {
-          "name": "stddev","value": 0.0311
-        },
-        {
-          "name": "variance","value": 0.001
-        },
-        {
-          "name": "cv","value": -0.0437
-        }
-      ],"frequencies": [
-        {
-          "value": "-71.0587","count": 19,"percentage": 19.0,"rank": 1.0
-        },
-        {
-          "value": "-71.0537","count": 3,"percentage": 3.0,"rank": 2.0
-        },
-        {
-          "value": "-71.0676","count": 2,"percentage": 2.0,"rank": 3.0
-        },
-        {
-          "value": "-71.0815","count": 2,"percentage": 2.0,"rank": 3.0
-        },
-        {
-          "value": "-71.0948","count": 2,"percentage": 2.0,"rank": 3.0
-        },
-        {
-          "value": "-71.0298","count": 1,"percentage": 1.0,"rank": 6.0
-        },
-        {
-          "value": "-71.0301","count": 1,"percentage": 1.0,"rank": 6.0
-        },
-        {
-          "value": "-71.0309","count": 1,"percentage": 1.0,"rank": 6.0
-        },
-        {
-          "value": "-71.0323","count": 1,"percentage": 1.0,"rank": 6.0
-        },
-        {
-          "value": "-71.0325","count": 1,"percentage": 1.0,"rank": 6.0
-        },
-        {
-          "value": "Other (67)","count": 67,"percentage": 67.0,"rank": 0.0
+          "value": "Other (33)",
+          "count": 33,
+          "percentage": 33.0,
+          "rank": 0.0
         }
       ]
     },
     {
-      "field": "source","type": "String","cardinality": 4,"nullcount": 0,"sparsity": 0.0,"uniqueness_ratio": 0.04,"stats": [
+      "field": "closedphoto",
+      "type": "NULL",
+      "cardinality": 1,
+      "nullcount": 100,
+      "sparsity": 1.0,
+      "uniqueness_ratio": 0.01,
+      "frequencies": [
         {
-          "name": "min","value": "Citizens Connect App"
-        },
-        {
-          "name": "max","value": "Self Service"
-        },
-        {
-          "name": "sort_order","value": "Unsorted"
-        },
-        {
-          "name": "min_length","value": 12
-        },
-        {
-          "name": "max_length","value": 20
-        },
-        {
-          "name": "sum_length","value": 1801
-        },
-        {
-          "name": "avg_length","value": 18.01
-        },
-        {
-          "name": "stddev_length","value": 2.3473
-        },
-        {
-          "name": "variance_length","value": 5.5099
-        },
-        {
-          "name": "cv_length","value": 0.1303
+          "value": "(NULL)",
+          "count": 100,
+          "percentage": 100.0,
+          "rank": 1.0
         }
-      ],"frequencies": [
+      ]
+    },
+    {
+      "field": "location",
+      "type": "String",
+      "cardinality": 98,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.98,
+      "stats": [
         {
-          "value": "Citizens Connect App","count": 56,"percentage": 56.0,"rank": 1.0
+          "name": "min",
+          "value": " "
         },
         {
-          "value": "Constituent Call","count": 30,"percentage": 30.0,"rank": 2.0
+          "name": "max",
+          "value": "INTERSECTION of Verdun St & Gallivan Blvd  Dorchester  MA  "
         },
         {
-          "value": "City Worker App","count": 11,"percentage": 11.0,"rank": 3.0
+          "name": "sort_order",
+          "value": "Unsorted"
         },
         {
-          "value": "Self Service","count": 3,"percentage": 3.0,"rank": 4.0
+          "name": "min_length",
+          "value": 1
+        },
+        {
+          "name": "max_length",
+          "value": 63
+        },
+        {
+          "name": "sum_length",
+          "value": 3938
+        },
+        {
+          "name": "avg_length",
+          "value": 39.38
+        },
+        {
+          "name": "stddev_length",
+          "value": 9.6247
+        },
+        {
+          "name": "variance_length",
+          "value": 92.6356
+        },
+        {
+          "name": "cv_length",
+          "value": 0.2444
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "563 Columbus Ave  Roxbury  MA  02118",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 1.0
+        },
+        {
+          "value": "INTERSECTION of Gallivan Blvd & Washington St  Dorchester  MA",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 1.0
+        },
+        {
+          "value": "(NULL)",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 3.0
+        },
+        {
+          "value": "103 N Beacon St  Brighton  MA  02135",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 3.0
+        },
+        {
+          "value": "11 Aberdeen St  Boston  MA  02215",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 3.0
+        },
+        {
+          "value": "1148 Hyde Park Ave  Hyde Park  MA  02136",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 3.0
+        },
+        {
+          "value": "119 L St  South Boston  MA  02127",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 3.0
+        },
+        {
+          "value": "12 Derne St  Boston  MA  02114",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 3.0
+        },
+        {
+          "value": "126 Elm St  Charlestown  MA  02129",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 3.0
+        },
+        {
+          "value": "1270 Commonwealth Ave  Allston  MA  02134",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 3.0
+        },
+        {
+          "value": "Other (88)",
+          "count": 88,
+          "percentage": 88.0,
+          "rank": 0.0
+        }
+      ]
+    },
+    {
+      "field": "fire_district",
+      "type": "String",
+      "cardinality": 10,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.1,
+      "stats": [
+        {
+          "name": "min",
+          "value": " "
+        },
+        {
+          "name": "max",
+          "value": 9
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 1
+        },
+        {
+          "name": "max_length",
+          "value": 1
+        },
+        {
+          "name": "sum_length",
+          "value": 6
+        },
+        {
+          "name": "avg_length",
+          "value": 0.06
+        },
+        {
+          "name": "stddev_length",
+          "value": 0
+        },
+        {
+          "name": "variance_length",
+          "value": 0
+        },
+        {
+          "name": "cv_length",
+          "value": 0
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "3",
+          "count": 19,
+          "percentage": 19.0,
+          "rank": 1.0
+        },
+        {
+          "value": "4",
+          "count": 16,
+          "percentage": 16.0,
+          "rank": 2.0
+        },
+        {
+          "value": "7",
+          "count": 14,
+          "percentage": 14.0,
+          "rank": 3.0
+        },
+        {
+          "value": "6",
+          "count": 13,
+          "percentage": 13.0,
+          "rank": 4.0
+        },
+        {
+          "value": "8",
+          "count": 9,
+          "percentage": 9.0,
+          "rank": 5.0
+        },
+        {
+          "value": "1",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 6.0
+        },
+        {
+          "value": "12",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 6.0
+        },
+        {
+          "value": "9",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 8.0
+        },
+        {
+          "value": "11",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 9.0
+        },
+        {
+          "value": "(NULL)",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 10.0
+        }
+      ]
+    },
+    {
+      "field": "pwd_district",
+      "type": "String",
+      "cardinality": 14,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.14,
+      "stats": [
+        {
+          "name": "min",
+          "value": " "
+        },
+        {
+          "name": "max",
+          "value": "1C"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 1
+        },
+        {
+          "name": "max_length",
+          "value": 3
+        },
+        {
+          "name": "sum_length",
+          "value": 209
+        },
+        {
+          "name": "avg_length",
+          "value": 2.09
+        },
+        {
+          "name": "stddev_length",
+          "value": 0.3192
+        },
+        {
+          "name": "variance_length",
+          "value": 0.1019
+        },
+        {
+          "name": "cv_length",
+          "value": 0.1527
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "1B",
+          "count": 16,
+          "percentage": 16.0,
+          "rank": 1.0
+        },
+        {
+          "value": "1C",
+          "count": 14,
+          "percentage": 14.0,
+          "rank": 2.0
+        },
+        {
+          "value": "03",
+          "count": 11,
+          "percentage": 11.0,
+          "rank": 3.0
+        },
+        {
+          "value": "05",
+          "count": 10,
+          "percentage": 10.0,
+          "rank": 4.0
+        },
+        {
+          "value": "07",
+          "count": 9,
+          "percentage": 9.0,
+          "rank": 5.0
+        },
+        {
+          "value": "09",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 6.0
+        },
+        {
+          "value": "02",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 7.0
+        },
+        {
+          "value": "04",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 7.0
+        },
+        {
+          "value": "06",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 7.0
+        },
+        {
+          "value": "10A",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 7.0
+        },
+        {
+          "value": "Other (4)",
+          "count": 12,
+          "percentage": 12.0,
+          "rank": 0.0
+        }
+      ]
+    },
+    {
+      "field": "city_council_district",
+      "type": "String",
+      "cardinality": 10,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.1,
+      "stats": [
+        {
+          "name": "min",
+          "value": " "
+        },
+        {
+          "name": "max",
+          "value": 8
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 1
+        },
+        {
+          "name": "max_length",
+          "value": 1
+        },
+        {
+          "name": "sum_length",
+          "value": 6
+        },
+        {
+          "name": "avg_length",
+          "value": 0.06
+        },
+        {
+          "name": "stddev_length",
+          "value": 0
+        },
+        {
+          "name": "variance_length",
+          "value": 0
+        },
+        {
+          "name": "cv_length",
+          "value": 0
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "1",
+          "count": 22,
+          "percentage": 22.0,
+          "rank": 1.0
+        },
+        {
+          "value": "2",
+          "count": 19,
+          "percentage": 19.0,
+          "rank": 2.0
+        },
+        {
+          "value": "7",
+          "count": 15,
+          "percentage": 15.0,
+          "rank": 3.0
+        },
+        {
+          "value": "3",
+          "count": 10,
+          "percentage": 10.0,
+          "rank": 4.0
+        },
+        {
+          "value": "5",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 5.0
+        },
+        {
+          "value": "6",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 5.0
+        },
+        {
+          "value": "8",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 5.0
+        },
+        {
+          "value": "4",
+          "count": 6,
+          "percentage": 6.0,
+          "rank": 8.0
+        },
+        {
+          "value": "9",
+          "count": 6,
+          "percentage": 6.0,
+          "rank": 8.0
+        },
+        {
+          "value": "(NULL)",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 10.0
+        }
+      ]
+    },
+    {
+      "field": "police_district",
+      "type": "String",
+      "cardinality": 13,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.13,
+      "stats": [
+        {
+          "name": "min",
+          "value": " "
+        },
+        {
+          "name": "max",
+          "value": "E5"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 1
+        },
+        {
+          "name": "max_length",
+          "value": 3
+        },
+        {
+          "name": "sum_length",
+          "value": 223
+        },
+        {
+          "name": "avg_length",
+          "value": 2.23
+        },
+        {
+          "name": "stddev_length",
+          "value": 0.444
+        },
+        {
+          "name": "variance_length",
+          "value": 0.1971
+        },
+        {
+          "name": "cv_length",
+          "value": 0.1991
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "A1",
+          "count": 20,
+          "percentage": 20.0,
+          "rank": 1.0
+        },
+        {
+          "value": "D4",
+          "count": 14,
+          "percentage": 14.0,
+          "rank": 2.0
+        },
+        {
+          "value": "C6",
+          "count": 12,
+          "percentage": 12.0,
+          "rank": 3.0
+        },
+        {
+          "value": "B2",
+          "count": 9,
+          "percentage": 9.0,
+          "rank": 4.0
+        },
+        {
+          "value": "A7",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 5.0
+        },
+        {
+          "value": "C11",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 5.0
+        },
+        {
+          "value": "B3",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 7.0
+        },
+        {
+          "value": "D14",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 8.0
+        },
+        {
+          "value": "E13",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 8.0
+        },
+        {
+          "value": "E5",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 8.0
+        },
+        {
+          "value": "Other (3)",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 0.0
+        }
+      ]
+    },
+    {
+      "field": "neighborhood",
+      "type": "String",
+      "cardinality": 19,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.19,
+      "stats": [
+        {
+          "name": "min",
+          "value": " "
+        },
+        {
+          "name": "max",
+          "value": "West Roxbury"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 1
+        },
+        {
+          "name": "max_length",
+          "value": 38
+        },
+        {
+          "name": "sum_length",
+          "value": 1486
+        },
+        {
+          "name": "avg_length",
+          "value": 14.86
+        },
+        {
+          "name": "stddev_length",
+          "value": 9.8671
+        },
+        {
+          "name": "variance_length",
+          "value": 97.3604
+        },
+        {
+          "name": "cv_length",
+          "value": 0.664
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "Dorchester",
+          "count": 15,
+          "percentage": 15.0,
+          "rank": 1.0
+        },
+        {
+          "value": "Downtown / Financial District",
+          "count": 10,
+          "percentage": 10.0,
+          "rank": 2.0
+        },
+        {
+          "value": "South Boston / South Boston Waterfront",
+          "count": 10,
+          "percentage": 10.0,
+          "rank": 2.0
+        },
+        {
+          "value": "East Boston",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 4.0
+        },
+        {
+          "value": "Roxbury",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 4.0
+        },
+        {
+          "value": "South End",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 4.0
+        },
+        {
+          "value": "Beacon Hill",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 7.0
+        },
+        {
+          "value": "Jamaica Plain",
+          "count": 6,
+          "percentage": 6.0,
+          "rank": 8.0
+        },
+        {
+          "value": "Back Bay",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 9.0
+        },
+        {
+          "value": "Allston / Brighton",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 10.0
+        },
+        {
+          "value": "Other (9)",
+          "count": 19,
+          "percentage": 19.0,
+          "rank": 0.0
+        }
+      ]
+    },
+    {
+      "field": "neighborhood_services_district",
+      "type": "String",
+      "cardinality": 16,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.16,
+      "stats": [
+        {
+          "name": "min",
+          "value": " "
+        },
+        {
+          "name": "max",
+          "value": 6
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 1
+        },
+        {
+          "name": "max_length",
+          "value": 2
+        },
+        {
+          "name": "sum_length",
+          "value": 8
+        },
+        {
+          "name": "avg_length",
+          "value": 0.08
+        },
+        {
+          "name": "stddev_length",
+          "value": 0.4714
+        },
+        {
+          "name": "variance_length",
+          "value": 0.2222
+        },
+        {
+          "name": "cv_length",
+          "value": 5.8926
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "3",
+          "count": 15,
+          "percentage": 15.0,
+          "rank": 1.0
+        },
+        {
+          "value": "5",
+          "count": 12,
+          "percentage": 12.0,
+          "rank": 2.0
+        },
+        {
+          "value": "13",
+          "count": 11,
+          "percentage": 11.0,
+          "rank": 3.0
+        },
+        {
+          "value": "7",
+          "count": 10,
+          "percentage": 10.0,
+          "rank": 4.0
+        },
+        {
+          "value": "14",
+          "count": 9,
+          "percentage": 9.0,
+          "rank": 5.0
+        },
+        {
+          "value": "1",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 6.0
+        },
+        {
+          "value": "10",
+          "count": 8,
+          "percentage": 8.0,
+          "rank": 6.0
+        },
+        {
+          "value": "6",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 8.0
+        },
+        {
+          "value": "11",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 9.0
+        },
+        {
+          "value": "15",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 9.0
+        },
+        {
+          "value": "Other (6)",
+          "count": 10,
+          "percentage": 10.0,
+          "rank": 0.0
+        }
+      ]
+    },
+    {
+      "field": "ward",
+      "type": "String",
+      "cardinality": 42,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.42,
+      "stats": [
+        {
+          "name": "min",
+          "value": " "
+        },
+        {
+          "name": "max",
+          "value": "Ward 9"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 1
+        },
+        {
+          "name": "max_length",
+          "value": 7
+        },
+        {
+          "name": "sum_length",
+          "value": 492
+        },
+        {
+          "name": "avg_length",
+          "value": 4.92
+        },
+        {
+          "name": "stddev_length",
+          "value": 2.1711
+        },
+        {
+          "name": "variance_length",
+          "value": 4.7135
+        },
+        {
+          "name": "cv_length",
+          "value": 0.4413
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "Ward 3",
+          "count": 10,
+          "percentage": 10.0,
+          "rank": 1.0
+        },
+        {
+          "value": "Ward 6",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 2.0
+        },
+        {
+          "value": "Ward 1",
+          "count": 6,
+          "percentage": 6.0,
+          "rank": 3.0
+        },
+        {
+          "value": "3",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 4.0
+        },
+        {
+          "value": "Ward 20",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 4.0
+        },
+        {
+          "value": "Ward 4",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 4.0
+        },
+        {
+          "value": "Ward 5",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 4.0
+        },
+        {
+          "value": "14",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 8.0
+        },
+        {
+          "value": "Ward 13",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 8.0
+        },
+        {
+          "value": "Ward 16",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 8.0
+        },
+        {
+          "value": "Other (32)",
+          "count": 45,
+          "percentage": 45.0,
+          "rank": 0.0
+        }
+      ]
+    },
+    {
+      "field": "precinct",
+      "type": "String",
+      "cardinality": 75,
+      "nullcount": 1,
+      "sparsity": 0.01,
+      "uniqueness_ratio": 0.75,
+      "stats": [
+        {
+          "name": "min",
+          "value": " "
+        },
+        {
+          "name": "max",
+          "value": 2210
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 4
+        },
+        {
+          "name": "sum_length",
+          "value": 321
+        },
+        {
+          "name": "avg_length",
+          "value": 3.21
+        },
+        {
+          "name": "stddev_length",
+          "value": 0.5455
+        },
+        {
+          "name": "variance_length",
+          "value": 0.2976
+        },
+        {
+          "name": "cv_length",
+          "value": 0.1699
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "0306",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 1.0
+        },
+        {
+          "value": "0302",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 2.0
+        },
+        {
+          "value": "0606",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 2.0
+        },
+        {
+          "value": "0404",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 4.0
+        },
+        {
+          "value": "1704",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 4.0
+        },
+        {
+          "value": "(NULL)",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 6.0
+        },
+        {
+          "value": "0101",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 6.0
+        },
+        {
+          "value": "0106",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 6.0
+        },
+        {
+          "value": "0301",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 6.0
+        },
+        {
+          "value": "0303",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 6.0
+        },
+        {
+          "value": "Other (65)",
+          "count": 71,
+          "percentage": 71.0,
+          "rank": 0.0
+        }
+      ]
+    },
+    {
+      "field": "location_street_name",
+      "type": "String",
+      "cardinality": 97,
+      "nullcount": 1,
+      "sparsity": 0.01,
+      "uniqueness_ratio": 0.97,
+      "stats": [
+        {
+          "name": "min",
+          "value": "103 N Beacon St"
+        },
+        {
+          "name": "max",
+          "value": "INTERSECTION Verdun St & Gallivan Blvd"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 45
+        },
+        {
+          "name": "sum_length",
+          "value": 1800
+        },
+        {
+          "name": "avg_length",
+          "value": 18
+        },
+        {
+          "name": "stddev_length",
+          "value": 9.3995
+        },
+        {
+          "name": "variance_length",
+          "value": 88.3508
+        },
+        {
+          "name": "cv_length",
+          "value": 0.5222
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "20 Washington St",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 1.0
+        },
+        {
+          "value": "563 Columbus Ave",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 1.0
+        },
+        {
+          "value": "INTERSECTION Gallivan Blvd & Washington St",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 1.0
+        },
+        {
+          "value": "(NULL)",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 4.0
+        },
+        {
+          "value": "103 N Beacon St",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 4.0
+        },
+        {
+          "value": "11 Aberdeen St",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 4.0
+        },
+        {
+          "value": "1148 Hyde Park Ave",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 4.0
+        },
+        {
+          "value": "119 L St",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 4.0
+        },
+        {
+          "value": "12 Derne St",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 4.0
+        },
+        {
+          "value": "126 Elm St",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 4.0
+        },
+        {
+          "value": "Other (87)",
+          "count": 87,
+          "percentage": 87.0,
+          "rank": 0.0
+        }
+      ]
+    },
+    {
+      "field": "location_zipcode",
+      "type": "String",
+      "cardinality": 24,
+      "nullcount": 17,
+      "sparsity": 0.17,
+      "uniqueness_ratio": 0.24,
+      "stats": [
+        {
+          "name": "min",
+          "value": 2109
+        },
+        {
+          "name": "max",
+          "value": 2215
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 0
+        },
+        {
+          "name": "max_length",
+          "value": 5
+        },
+        {
+          "name": "sum_length",
+          "value": 415
+        },
+        {
+          "name": "avg_length",
+          "value": 4.15
+        },
+        {
+          "name": "stddev_length",
+          "value": 1.7571
+        },
+        {
+          "name": "variance_length",
+          "value": 3.0875
+        },
+        {
+          "name": "cv_length",
+          "value": 0.4234
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "(NULL)",
+          "count": 17,
+          "percentage": 17.0,
+          "rank": 1.0
+        },
+        {
+          "value": "02127",
+          "count": 10,
+          "percentage": 10.0,
+          "rank": 2.0
+        },
+        {
+          "value": "02118",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 3.0
+        },
+        {
+          "value": "02128",
+          "count": 7,
+          "percentage": 7.0,
+          "rank": 3.0
+        },
+        {
+          "value": "02114",
+          "count": 6,
+          "percentage": 6.0,
+          "rank": 5.0
+        },
+        {
+          "value": "02125",
+          "count": 6,
+          "percentage": 6.0,
+          "rank": 5.0
+        },
+        {
+          "value": "02113",
+          "count": 5,
+          "percentage": 5.0,
+          "rank": 7.0
+        },
+        {
+          "value": "02115",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 8.0
+        },
+        {
+          "value": "02119",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 8.0
+        },
+        {
+          "value": "02130",
+          "count": 4,
+          "percentage": 4.0,
+          "rank": 8.0
+        },
+        {
+          "value": "Other (14)",
+          "count": 30,
+          "percentage": 30.0,
+          "rank": 0.0
+        }
+      ]
+    },
+    {
+      "field": "latitude",
+      "type": "Float",
+      "cardinality": 78,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.78,
+      "stats": [
+        {
+          "name": "sum",
+          "value": 4233.6674
+        },
+        {
+          "name": "min",
+          "value": 42.2553
+        },
+        {
+          "name": "max",
+          "value": 42.3806
+        },
+        {
+          "name": "range",
+          "value": 0.1253
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "mean",
+          "value": 42.3367
+        },
+        {
+          "name": "sem",
+          "value": 0.0031
+        },
+        {
+          "name": "stddev",
+          "value": 0.0305
+        },
+        {
+          "name": "variance",
+          "value": 0.0009
+        },
+        {
+          "name": "cv",
+          "value": 0.072
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "42.3594",
+          "count": 20,
+          "percentage": 20.0,
+          "rank": 1.0
+        },
+        {
+          "value": "42.3336",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 2.0
+        },
+        {
+          "value": "42.3412",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 2.0
+        },
+        {
+          "value": "42.3735",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 2.0
+        },
+        {
+          "value": "42.2553",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 5.0
+        },
+        {
+          "value": "42.2601",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 5.0
+        },
+        {
+          "value": "42.2609",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 5.0
+        },
+        {
+          "value": "42.2645",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 5.0
+        },
+        {
+          "value": "42.2674",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 5.0
+        },
+        {
+          "value": "42.2789",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 5.0
+        },
+        {
+          "value": "Other (68)",
+          "count": 68,
+          "percentage": 68.0,
+          "rank": 0.0
+        }
+      ]
+    },
+    {
+      "field": "longitude",
+      "type": "Float",
+      "cardinality": 77,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.77,
+      "stats": [
+        {
+          "name": "sum",
+          "value": -7107.2688
+        },
+        {
+          "name": "min",
+          "value": -71.1626
+        },
+        {
+          "name": "max",
+          "value": -71.0298
+        },
+        {
+          "name": "range",
+          "value": 0.1328
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "mean",
+          "value": -71.0727
+        },
+        {
+          "name": "sem",
+          "value": 0.0031
+        },
+        {
+          "name": "stddev",
+          "value": 0.0311
+        },
+        {
+          "name": "variance",
+          "value": 0.001
+        },
+        {
+          "name": "cv",
+          "value": -0.0437
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "-71.0587",
+          "count": 19,
+          "percentage": 19.0,
+          "rank": 1.0
+        },
+        {
+          "value": "-71.0537",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 2.0
+        },
+        {
+          "value": "-71.0676",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 3.0
+        },
+        {
+          "value": "-71.0815",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 3.0
+        },
+        {
+          "value": "-71.0948",
+          "count": 2,
+          "percentage": 2.0,
+          "rank": 3.0
+        },
+        {
+          "value": "-71.0298",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 6.0
+        },
+        {
+          "value": "-71.0301",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 6.0
+        },
+        {
+          "value": "-71.0309",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 6.0
+        },
+        {
+          "value": "-71.0323",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 6.0
+        },
+        {
+          "value": "-71.0325",
+          "count": 1,
+          "percentage": 1.0,
+          "rank": 6.0
+        },
+        {
+          "value": "Other (67)",
+          "count": 67,
+          "percentage": 67.0,
+          "rank": 0.0
+        }
+      ]
+    },
+    {
+      "field": "source",
+      "type": "String",
+      "cardinality": 4,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.04,
+      "stats": [
+        {
+          "name": "min",
+          "value": "Citizens Connect App"
+        },
+        {
+          "name": "max",
+          "value": "Self Service"
+        },
+        {
+          "name": "sort_order",
+          "value": "Unsorted"
+        },
+        {
+          "name": "min_length",
+          "value": 12
+        },
+        {
+          "name": "max_length",
+          "value": 20
+        },
+        {
+          "name": "sum_length",
+          "value": 1801
+        },
+        {
+          "name": "avg_length",
+          "value": 18.01
+        },
+        {
+          "name": "stddev_length",
+          "value": 2.3473
+        },
+        {
+          "name": "variance_length",
+          "value": 5.5099
+        },
+        {
+          "name": "cv_length",
+          "value": 0.1303
+        }
+      ],
+      "frequencies": [
+        {
+          "value": "Citizens Connect App",
+          "count": 56,
+          "percentage": 56.0,
+          "rank": 1.0
+        },
+        {
+          "value": "Constituent Call",
+          "count": 30,
+          "percentage": 30.0,
+          "rank": 2.0
+        },
+        {
+          "value": "City Worker App",
+          "count": 11,
+          "percentage": 11.0,
+          "rank": 3.0
+        },
+        {
+          "value": "Self Service",
+          "count": 3,
+          "percentage": 3.0,
+          "rank": 4.0
         }
       ]
     }
-  ],"rank_strategy": "min"
+  ],
+  "rank_strategy": "min"
 }

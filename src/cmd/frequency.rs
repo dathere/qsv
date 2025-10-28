@@ -96,14 +96,14 @@ frequency options:
 -r, --rank-strategy <arg>   The strategy to use when there are ties in the frequency table.
                             See https://en.wikipedia.org/wiki/Ranking for more info.
                             Valid values are:
-                            - "min": Tied items receive the minimum rank position (AKA "1224" ranking).
-                            - "max": Tied items receive the maximum rank position (AKA "1334" ranking).
                             - "dense": Assigns consecutive integers regardless of ties,
                               incrementing by 1 for each new count value (AKA "1223" ranking).
+                            - "min": Tied items receive the minimum rank position (AKA "1224" ranking).
+                            - "max": Tied items receive the maximum rank position (AKA "1334" ranking).
                             - "ordinal": The next rank is the current rank plus 1 (AKA "1234" ranking).
                             - "average": Tied items receive the average of their ordinal positions
                               (AKA "1 2.5 2.5 4" ranking).
-                            [default: min]
+                            [default: dense]
     --pct-dec-places <arg>  The number of decimal places to round the percentage to.
                             If negative, the number of decimal places will be set
                             automatically to the minimum number of decimal places needed
@@ -196,7 +196,7 @@ impl FromStr for RankStrategy {
             "ordinal" => Ok(RankStrategy::Ordinal),
             "average" => Ok(RankStrategy::Average),
             _ => Err(format!(
-                "Invalid rank-strategy: '{s}'. Valid values are: min, max, dense, ordinal, average"
+                "Invalid rank-strategy: '{s}'. Valid values are: dense, min, max, ordinal, average"
             )),
         }
     }

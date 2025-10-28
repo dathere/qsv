@@ -558,6 +558,26 @@ impl Args {
 
         #[allow(clippy::cast_precision_loss)]
         match self.flag_rank_strategy {
+            RankStrategy::Dense => {
+                // Dense ranking (1223)
+                // Rank increments by 1 for each distinct count value
+                for (count, mut group) in count_groups {
+                    group.sort_unstable();
+
+                    for byte_string in &group {
+                        count_sum += count;
+                        pct = count as f64 * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), count, pct, current_rank));
+                        } else {
+                            counts_final.push((byte_string.clone(), count, pct, current_rank));
+                        }
+                    }
+                    current_rank += 1.0;
+                }
+            },
             RankStrategy::Min => {
                 // Standard competition ranking (1224)
                 // All tied items get the minimum rank
@@ -599,26 +619,6 @@ impl Args {
                         }
                     }
                     current_rank += group_len as f64;
-                }
-            },
-            RankStrategy::Dense => {
-                // Dense ranking (1223)
-                // Rank increments by 1 for each distinct count value
-                for (count, mut group) in count_groups {
-                    group.sort_unstable();
-
-                    for byte_string in &group {
-                        count_sum += count;
-                        pct = count as f64 * pct_factor;
-                        pct_sum += pct;
-
-                        if byte_string.is_empty() {
-                            counts_final.push((null_val.clone(), count, pct, current_rank));
-                        } else {
-                            counts_final.push((byte_string.clone(), count, pct, current_rank));
-                        }
-                    }
-                    current_rank += 1.0;
                 }
             },
             RankStrategy::Ordinal => {

@@ -574,6 +574,7 @@ fn get_unique_values(
         flag_memcheck:        args.flag_memcheck,
         flag_vis_whitespace:  false,
         flag_json:            false,
+        flag_pretty_json:     false,
         flag_no_stats:        false,
     };
 

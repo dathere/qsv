@@ -139,6 +139,7 @@ frequency options:
                             The JSON output includes row count, field count & each field's
                             data type, cardinality, null count, sparsity, uniqueness_ratio
                             and its stats.
+    --pretty-json           Same as --json but pretty prints the JSON output.
     --no-stats              When using the JSON output mode, do not include stats.
 
 Common options:
@@ -225,6 +226,7 @@ pub struct Args {
     pub flag_memcheck:        bool,
     pub flag_vis_whitespace:  bool,
     pub flag_json:            bool,
+    pub flag_pretty_json:     bool,
     pub flag_no_stats:        bool,
 }
 
@@ -295,7 +297,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // if stdin and args.flag_json is true, save stdin to tempfile
     // so we can derive stats
     let mut stdin_temp_file;
-    if is_stdin && args.flag_json {
+    let is_json = args.flag_json || args.flag_pretty_json;
+    if is_stdin && is_json {
         let temp_dir = std::env::temp_dir();
         stdin_temp_file = tempfile::Builder::new()
             .suffix(".csv")
@@ -315,7 +318,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         _ => args.sequential_ftables(),
     }?;
 
-    if args.flag_json {
+    if is_json {
         return args.output_json(&headers, tables, &rconfig, argv, is_stdin);
     }
 
@@ -864,8 +867,9 @@ impl Args {
             arg_input:            self.arg_input.clone(),
             flag_memcheck:        false,
         };
+        let is_json = self.flag_json || self.flag_pretty_json;
         // initialize the stats records hashmap
-        let mut stats_records_hashmap = if self.flag_json {
+        let mut stats_records_hashmap = if is_json {
             HashMap::with_capacity(headers.len())
         } else {
             HashMap::new()
@@ -892,7 +896,7 @@ impl Args {
                 let col_name_str = simdutf8::basic::from_utf8(col_name)
                     .unwrap_or(NON_UTF8_ERR)
                     .to_string();
-                if self.flag_json {
+                if is_json {
                     // Store the stats records hashmap for later use when producing JSON output
                     stats_records_hashmap.insert(col_name_str.clone(), stats_record.clone());
                 }
@@ -922,7 +926,7 @@ impl Args {
 
         COL_CARDINALITY_VEC.get_or_init(|| col_cardinality_vec);
 
-        if self.flag_json {
+        if is_json {
             // Store the stats records hashmap for later use when producing JSON output
             STATS_RECORDS.set(stats_records_hashmap).unwrap();
         }
@@ -1077,7 +1081,13 @@ impl Args {
             fields,
             rank_strategy: self.flag_rank_strategy,
         };
-        let mut json_output = simd_json::to_string_pretty(&output)?;
+        let mut json_output = if self.flag_pretty_json {
+            // pretty, with more whitespace
+            serde_json::to_string_pretty(&output)?
+        } else {
+            // still pretty, but more compact and faster
+            simd_json::to_string_pretty(&output)?
+        };
 
         // remove all empty stats properties from the JSON output using regex
         let re = regex::Regex::new(r#""stats": \[\],\n\s*"#).unwrap();

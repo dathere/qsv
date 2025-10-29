@@ -330,8 +330,10 @@ csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "
 # use upstream geozero with unreleased fixes
 geozero = { git = "https://github.com/georust/geozero", rev = "572cfc2" }
 
-# use our patched fork of grex to bump dependencies and Unicode tables from 15 to 16 until our PR is merged
-grex = { git = "https://github.com/jqnatividad/grex", rev = "7b9b6cc" }
+# use our patched fork of grex to bump deps and Unicode tables from 15 to 16 until our latest PR is merged
+# though our earlier PR was not merged, it was used as reference to implement the Unicode upgrade.
+# This fork also replaces the unmaintained `unic-*` crates in the RUSTSEC-2025-0094 advisory
+grex = { git = "https://github.com/jqnatividad/grex", branch = "replace-unmaintained-rust-unic-grex-145" }
 
 # use upstream hashbrown with fixes and performance improvements for post-0.15.5 release
 # as 16.0.0 is not widely used yet and we want to take advantage of these fixes and improvements

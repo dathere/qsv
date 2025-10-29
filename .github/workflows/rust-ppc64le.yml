@@ -16,14 +16,6 @@ jobs:
     runs-on: ubuntu-24.04-ppc64le
 
     steps:
-    # - name: Maximize build space
-    #   uses: easimon/maximize-build-space@master
-    #   with:
-    #     swap-size-mb: 1024
-    #     remove-dotnet: 'true'
-    #     remove-android: 'true'
-    #     remove-haskell: 'true'
-    #     remove-docker-images: 'true'
     - name: apt-get update Ubuntu, libwayland-dev
       run: |
         sudo apt-get update

@@ -21,7 +21,7 @@ Automatically choose delimiter based on the file extension
   $ qsv lens data.tab // Tab-separated
   $ qsv lens data.ssv // Semicolon-separated
   # custom delimiter
-  $ qsv lens --delimiter ';' data.csv
+  $ qsv lens --delimiter '|' data.csv
 
 Auto-decompresses several compression formats:
   $ qsv lens data.csv.sz // Snappy-compressed CSV
@@ -45,15 +45,15 @@ exit with the value of the City column for the selected row sent to stdout
 
 Only show rows that contain "NYPD"
   $ qsv lens --filter NYPD data.csv
-  # Show rows that contain "nois" case insensitive
+  # Show rows that contain "nois" case insensitive (for noise, noisy, noisier, etc.)
   $ qsv lens --filter nois --ignore-case data.csv
  
 Find and highlight matches in the data
   $ qsv lens --find 'New York' data.csv
 
 Find and highlight cells that have all numeric values in a column.
-Use -m to disable color output so the matches are easier to see.
-  $ qsv lens --find '^\d+$' -m data.csv
+Use --monochrome option to disable color output so the matches are easier to see.
+  $ qsv lens --find '^\d+$' --monochrome data.csv
 
 lens options:
   -d, --delimiter <char>           Delimiter character (comma by default)

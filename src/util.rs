@@ -3405,7 +3405,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_env = "musl"))]
+    #[ignore = "This test causes some GitHub Actions runners to run out of disk space"]
     fn benchmark_hash_sha256_file_very_large() {
         // Create a larger test file (>1.2GB) to test parallel processing
         let mut temp_file = NamedTempFile::new().unwrap();

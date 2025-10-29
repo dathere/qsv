@@ -184,14 +184,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let input = config.path.clone().map(|p| p.to_string_lossy().to_string());
 
+    let delimiter = if let Some(delimiter) = args.flag_delimiter {
+        Some(delimiter)
+    } else {
+        Some((config.get_delimiter() as char).to_string())
+    };
+
+    let comma_separated = delimiter == Some(",".to_string());
+
     let options = CsvlensOptions {
         filename: input,
-        delimiter: if let Some(delimiter) = args.flag_delimiter {
-            Some(delimiter)
-        } else {
-            Some((config.get_delimiter() as char).to_string())
-        },
+        delimiter,
         tab_separated: args.flag_tab_separated,
+        comma_separated,
         no_headers: args.flag_no_headers,
         columns: args.flag_columns,
         filter: args.flag_filter,

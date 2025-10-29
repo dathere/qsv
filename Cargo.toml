@@ -321,7 +321,7 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }
 
-# use our patched fork of csvlens to add natural sort until our PR is merged; updated with upstream fixes
+# until the next release, use upstream now that our PRs have been merged
 csvlens = { git = "https://github.com/YS-L/csvlens", rev = "c167513" }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged

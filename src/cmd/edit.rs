@@ -123,7 +123,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     if in_place && let Some(input_path_string) = input {
         let input_path = std::path::Path::new(&input_path_string);
-        if let Some(_) = input_path.extension() {
+        if input_path.extension().is_some() {
             std::fs::rename(input_path, input_path.with_added_extension("bak"))?;
             std::fs::copy(tempfile.path(), input_path)?;
         }

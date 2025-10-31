@@ -370,8 +370,7 @@ impl WriterGenerator {
                 let candidate_lower = candidate.to_lowercase();
 
                 // We'll run out of other things long before we ever
-                // get a panic with strict_add, but we'll check just for 
-                // correctness and completeness.
+                // get a panic with strict_add
                 self.counter = self.counter.strict_add(1);
 
                 // Check for both exact and case-insensitive collisions

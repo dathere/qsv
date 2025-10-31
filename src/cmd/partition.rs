@@ -368,12 +368,11 @@ impl WriterGenerator {
             loop {
                 let candidate = format!("{}_{}", &base, self.counter);
                 let candidate_lower = candidate.to_lowercase();
-                self.counter = self.counter.checked_add(1).unwrap_or_else(|| {
-                    // We'll run out of other things long before we ever
-                    // reach this, but we'll check just for correctness and
-                    // completeness.
-                    panic!("Cannot generate unique value")
-                });
+
+                // We'll run out of other things long before we ever
+                // get a panic with strict_add, but we'll check just for 
+                // correctness and completeness.
+                self.counter = self.counter.strict_add(1);
 
                 // Check for both exact and case-insensitive collisions
                 let candidate_has_collision = self.used.contains(&candidate)

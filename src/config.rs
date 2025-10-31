@@ -709,8 +709,7 @@ impl Config {
         Ok(match self.path {
             None => Box::new(io::stdout()),
             Some(ref p) => {
-                let p_str = p.as_os_str();
-                if p_str == "sink" {
+                if p == "sink" {
                     // sink is /dev/null
                     Box::new(io::sink())
                 } else if self.snappy {

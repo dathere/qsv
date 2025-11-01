@@ -1866,7 +1866,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.13.0"
-source = "git+https://github.com/YS-L/csvlens?rev=c167513#c167513bdc5328647f1ea5e14d80e0f44322e2de"
+source = "git+https://github.com/YS-L/csvlens?rev=aef2a99#aef2a9920cc3d3c6cf6ce410f001c0c1c75beebd"
 dependencies = [
  "ansi-to-tui",
  "anyhow",

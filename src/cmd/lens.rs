@@ -34,9 +34,9 @@ Auto-decompresses several compression formats:
   $ qsv lens data.ssv.zst // Zstd-compressed Semicolon-separated
   
 Explore tabular data in other formats (if polars feature is enabled)
+  $ qsv lens data.parquet // Parquet
   $ qsv lens data.jsonl // JSON Lines
   $ qsv lens data.json // JSON - will only work with a JSON Array
-  $ qsv lens data.parquet // Parquet
   $ qsv lens data.avro // Avro
 
 Prompt the user to select a column to display. Once selected,
@@ -52,8 +52,7 @@ Find and highlight matches in the data
   $ qsv lens --find 'New York' data.csv
 
 Find and highlight cells that have all numeric values in a column.
-Use --monochrome option to disable color output so the matches are easier to see.
-  $ qsv lens --find '^\d+$' --monochrome data.csv
+  $ qsv lens --find '^\d+$' data.csv
 
 lens options:
   -d, --delimiter <char>           Delimiter character (comma by default)
@@ -69,6 +68,7 @@ lens options:
                                    Example: "val1|val2" filters rows with any cells containing "val1", "val2"
                                    or text like "my_val1" or "val234".
       --find <regex>               Use this regex to find and highlight matches by default.
+                                   Automatically sets --monochrome to true so the matches are easier to see.
                                    The regex is matched against each cell in every column.
                                    Example: "val1|val2" highlights text containing "val1", "val2" or
                                    longer text like "val1_ok" or "val2_error".
@@ -192,6 +192,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let comma_separated = delimiter == Some(",".to_string());
 
+    // monochrome is true if the monochrome flag is set or the find flag is set
+    // we set monochrome to true if the find flag is set because the find flag
+    // uses color output to highlight the matches.
+    let monochrome = args.flag_monochrome || args.flag_find.is_some();
+
     let options = CsvlensOptions {
         filename: input,
         delimiter,
@@ -205,7 +210,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         echo_column: args.flag_echo_column,
         debug: args.flag_debug,
         freeze_cols_offset: args.flag_freeze_columns,
-        color_columns: !args.flag_monochrome,
+        color_columns: !monochrome,
         prompt,
         wrap_mode,
     };

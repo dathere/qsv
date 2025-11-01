@@ -7,6 +7,10 @@ Compute summary statistics & infers data types for each column in a CSV.
 > All these optimizations are GUARANTEED to work with well-formed CSVs.
 > If you encounter problems generating stats, use `qsv validate` FIRST to confirm the CSV is valid.
 
+> For MAXIMUM PERFORMANCE, create an index for the CSV first with 'qsv index' to enable multithreading,
+> or set --cache-threshold option or set the QSV_AUTOINDEX_SIZE environment variable to automatically
+> create an index when the file size is greater than the specified size (in bytes).
+
 Summary stats include sum, min/max/range, sort order/sortiness, min/max/sum/avg/stddev/variance/cv length,
 mean, standard error of the mean (SEM), geometric mean, harmonic mean, stddev, variance, coefficient of
 variation (CV), nullcount, max_precision, sparsity, Median Absolute Deviation (MAD), quartiles,
@@ -16,7 +20,7 @@ mode/s & "antimode/s" & percentiles.
 Note that some stats require loading the entire file into memory, so they must be enabled explicitly.
 
 By default, the following "streaming" statistics are reported for *every* column:
-  sum, min/max/range values, sort order/sortiness, min/max/sum/avg/stddev/variance/cv length, mean, sem,
+  sum, min/max/range values, sort order/"sortiness", min/max/sum/avg/stddev/variance/cv length, mean, sem,
   geometric_mean, harmonic_mean,stddev, variance, cv, nullcount, max_precision & sparsity.
 
 The default set of statistics corresponds to ones that can be computed efficiently on a stream of data
@@ -82,16 +86,22 @@ Compute "streaming" statistics for the "nyc311.csv" file:
 Compute all statistics for the "nyc311.csv" file:
   $ qsv stats --everything nyc311.csv
   $ qsv stats -E nyc311.csv
+  $ qsv stats -E nyc311.tsv // Tab-separated
+  $ qsv stats -E nyc311.tab // Tab-separated
+  $ qsv stats -E nyc311.ssv // Semicolon-separated
+  $ qsv stats -E nyc311.csv.sz // Snappy-compressed CSV
+  $ qsv stats -E nyc311.tsv.sz // Snappy-compressed Tab-separated
+  $ qsv stats -E nyc311.ssv.sz // Snappy-compressed Semicolon-separated
 
-Compute all statistics for "nyc311.csv", inferring dates using default date column name patterns:
-  $ qsv stats -E --infer-dates nyc311.csv
+Compute all statistics for "nyc311.tsv", inferring dates using default date column name patterns:
+  $ qsv stats -E --infer-dates nyc311.tsv
 
-Compute all statistics for "nyc311.csv", inferring dates only for columns with "_date" & "_dte"
+Compute all statistics for "nyc311.tab", inferring dates only for columns with "_date" & "_dte"
 in the column names:
-  $ qsv stats -E --infer-dates --dates-whitelist _date,_dte nyc311.csv
+  $ qsv stats -E --infer-dates --dates-whitelist _date,_dte nyc311.tab
 
-In addition, also infer boolean data types for "nyc311.csv" file:
-  $ qsv stats -E --infer-dates --dates-whitelist _date --infer-boolean nyc311.csv
+In addition, also infer boolean data types for "nyc311.ssv" file:
+  $ qsv stats -E --infer-dates --dates-whitelist _date --infer-boolean nyc311.ssv
 
 In addition to basic "streaming" stats, also compute cardinality for the "nyc311.csv" file:
   $ qsv stats --cardinality nyc311.csv
@@ -104,6 +114,16 @@ Infer data types only for the "nyc311.csv" file:
 
 Infer data types only, including boolean and date types for the "nyc311.csv" file:
   $ qsv stats --typesonly --infer-boolean --infer-dates nyc311.csv
+
+If the polars feature is enabled, support additional tabular file formats and
+compression formats:
+  $ qsv stats data.parquet // Parquet
+  $ qsv stats data.avro // Avro
+  $ qsv stats data.jsonl // JSON Lines
+  $ qsv stats data.json (will only work with a JSON Array)
+  $ qsv stats data.csv.gz // Gzipped CSV
+  $ qsv stats data.tab.zlib // Zlib-compressed Tab-separated
+  $ qsv stats data.ssv.zst // Zstd-compressed Semicolon-separated
 
 Automatically create an index for the "nyc311.csv" file to enable multithreading
 if it's larger than 5MB and there is no existing index file:

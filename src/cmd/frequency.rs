@@ -103,6 +103,7 @@ frequency options:
                             - "ordinal": The next rank is the current rank plus 1 (AKA "1234" ranking).
                             - "average": Tied items receive the average of their ordinal positions
                               (AKA "1 2.5 2.5 4" ranking).
+                            Note that tied values with the same rank are sorted alphabetically.
                             [default: dense]
     --pct-dec-places <arg>  The number of decimal places to round the percentage to.
                             If negative, the number of decimal places will be set

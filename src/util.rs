@@ -1448,17 +1448,15 @@ pub fn log_end(mut qsv_args: String, now: std::time::Instant) {
 /// * `input` - A mutable reference to the String to truncate
 /// * `maxsize` - The maximum desired length in bytes
 ///
-/// taken from https://gist.github.com/dginev/f6da5e94335d545e0a7b
+/// Uses Rust 1.91.0's str::floor_char_boundary for efficient UTF-8 boundary detection.
 pub fn utf8_truncate(input: &mut String, maxsize: usize) {
-    let mut utf8_maxsize = input.len();
-    if utf8_maxsize >= maxsize {
-        {
-            let mut char_iter = input.char_indices();
-            while utf8_maxsize >= maxsize {
-                (utf8_maxsize, _) = char_iter.next_back().unwrap_or_default();
-            }
-        } // Extra {} wrap to limit the immutable borrow of char_indices()
-        input.truncate(utf8_maxsize);
+    if input.len() > maxsize {
+        // Find the largest char boundary strictly less than maxsize
+        input.truncate(if maxsize > 0 {
+            input.floor_char_boundary(maxsize - 1)
+        } else {
+            0
+        });
     }
 }
 

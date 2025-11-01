@@ -2927,12 +2927,9 @@ fn load_schema_from_file(path: &Path) -> Result<Option<Arc<Schema>>, Box<dyn std
     // Use only the input file prefix to create the schema file path
     // e.g. data.tsv.gz, data.parquet, data.ssv should look for a schema file
     // named data.pschema.json
-    // TODO: replace this with std::path::file_prefix once its stabilized
-    // https://github.com/rust-lang/rust/pull/129114
     let fileprefix = path
-        .file_name()
-        .and_then(|fname| fname.to_str())
-        .map(|s| s.split('.').next().unwrap_or(""))
+        .file_prefix()
+        .and_then(|p| p.to_str())
         .unwrap_or_default();
     let schema_file = path.with_file_name(format!("{fileprefix}.pschema.json"));
 

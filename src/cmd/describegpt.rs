@@ -946,6 +946,7 @@ fn get_completion(
     if let Some(addl_props) = args.flag_addl_props.as_ref() {
         let addl_props_json: serde_json::Value = serde_json::from_str(addl_props)
             .map_err(|e| CliError::Other(format!("Invalid JSON in --addl-props: {e:?}")))?;
+        // safety: addl_props_json is valid JSON and as_object() returns a valid object
         for (key, value) in addl_props_json.as_object().unwrap() {
             request_data[key] = value.clone();
         }
@@ -1036,15 +1037,11 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
     };
 
     format!(
-        "{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}",
-        file_hash,
-        args.flag_prompt_file,
-        prompt_content,
-        args.flag_max_tokens,
-        args.flag_addl_props,
-        actual_model,
-        kind,
-        validity_flag
+        "{file_hash};{prompt_file:?};{prompt_content:?};{max_tokens};{addl_props:?};\
+         {actual_model};{kind};{validity_flag}",
+        prompt_file = args.flag_prompt_file,
+        max_tokens = args.flag_max_tokens,
+        addl_props = args.flag_addl_props,
     )
 }
 
@@ -2410,6 +2407,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .canonicalize()?
         .into_os_string()
         .into_string()
+        // safety: canonicalize() ensures the path is valid
         .unwrap();
 
     // If no inference flags specified, print error message.

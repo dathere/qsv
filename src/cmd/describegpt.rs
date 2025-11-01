@@ -343,6 +343,13 @@ static QSV_DESCRIBEGPT_DB_ENGINE_ENV: &str = "QSV_DESCRIBEGPT_DB_ENGINE";
 static READ_CSV_AUTO_REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("read_csv_auto\\([^)]*\\)").expect("Invalid regex pattern")
 });
+
+/// Escapes single quotes in a string for safe use in SQL string literals.
+/// SQL standard: single quotes are escaped by doubling them: ' becomes ''
+fn escape_sql_string(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
 static DEFAULT_REDIS_CONN_STRING: OnceLock<String> = OnceLock::new();
 static DEFAULT_REDIS_TTL_SECS: u64 = 60 * 60 * 24 * 28; // 28 days in seconds
 static DEFAULT_REDIS_POOL_SIZE: u32 = 20;
@@ -1471,10 +1478,12 @@ fn run_inference_options(
                     let input_path = args.arg_input.as_deref().unwrap_or("input.csv");
                     if READ_CSV_AUTO_REGEX.is_match(&formatted_output) {
                         // DuckDB with read_csv_auto so replace with quoted path
+                        // Escape single quotes in path to prevent SQL injection
+                        let escaped_path = escape_sql_string(input_path);
                         READ_CSV_AUTO_REGEX
                             .replace_all(
                                 &formatted_output,
-                                format!("read_csv_auto('{input_path}')"),
+                                format!("read_csv_auto('{escaped_path}')"),
                             )
                             .into_owned()
                     } else {
@@ -1746,16 +1755,20 @@ fn run_inference_options(
         // Check if DuckDB should be used
         if should_use_duckdb() {
             // For DuckDB, replace {INPUT_TABLE_NAME} with read_csv function call
+            // Escape single quotes in path to prevent SQL injection
+            let escaped_path = escape_sql_string(input_path);
             if READ_CSV_AUTO_REGEX.is_match(&sql_query) {
                 // DuckDB with read_csv_auto so replace with quoted path
                 sql_query = READ_CSV_AUTO_REGEX
-                    .replace_all(&sql_query, format!("read_csv_auto('{input_path}')"))
+                    .replace_all(&sql_query, format!("read_csv_auto('{escaped_path}')"))
                     .into_owned();
             } else {
                 // if READ_CSV_AUTO_REGEX doesn't match, add fallback to replace {INPUT_TABLE_NAME}
                 // with read_csv_auto function call
-                sql_query =
-                    sql_query.replace(INPUT_TABLE_NAME, &format!("read_csv_auto('{input_path}')"));
+                sql_query = sql_query.replace(
+                    INPUT_TABLE_NAME,
+                    &format!("read_csv_auto('{escaped_path}')"),
+                );
             }
             log::debug!("DuckDB SQL query:\n{sql_query}");
 
@@ -1822,6 +1835,10 @@ fn run_inference_options(
                                 &format!("Polars SQL query error detected: {stderr}"),
                             );
                         }
+                        // the polars sql query is successful
+                        // set the sql_results file to have a .csv extension
+                        let _ =
+                            fs::rename(sql_results_path, &sql_results_path.with_extension("csv"));
                         (stdout, stderr)
                     },
                     Err(e) => {

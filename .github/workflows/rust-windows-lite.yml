@@ -30,6 +30,6 @@ jobs:
       with:
         key: qsv-winlitecache
     - name: Run tests
-      env:
-        RUSTFLAGS: -C target-cpu=native
+      # env:
+      #   RUSTFLAGS: -C target-cpu=native
       run: cargo test --verbose --locked --features=lite

@@ -2013,11 +2013,12 @@ pub fn process_input(
 
     let mut stdin_path = PathBuf::new();
     let mut stdin_file_created = false;
+    let sz_osstr_extension = std::ffi::OsStr::new("sz");
 
     // check the input files
     for path in work_input {
         // check if the path is "-" (stdin)
-        if path.to_string_lossy() == "-" {
+        if &path == "-" {
             if !stdin_file_created {
                 // if stdin was not copied to a file, copy stdin to a file named "stdin"
                 let tmp_filename = tmpdir.path().join("stdin.csv");
@@ -2034,7 +2035,7 @@ pub fn process_input(
         }
 
         // is the input file snappy compressed?
-        if path.extension().and_then(std::ffi::OsStr::to_str) == Some("sz") {
+        if path.extension() == Some(&sz_osstr_extension) {
             // if so, decompress the file
             let decompressed_filepath = decompress_snappy_file(&path, tmpdir)?;
 

@@ -41,6 +41,6 @@ jobs:
       with:
         key: qsv-x86_64-unknown-linux-musl-cache
     - name: Run tests
-      env:
-        RUSTFLAGS: -C target-cpu=native
+      # env:
+      #   RUSTFLAGS: -C target-cpu=native
       run: cargo test --no-default-features --target x86_64-unknown-linux-musl --verbose --locked --features=lite

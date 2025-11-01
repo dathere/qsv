@@ -33,6 +33,6 @@ jobs:
         components: rust-src
         target: x86_64-unknown-linux-gnu
     - name: Run tests
-      env:
-        RUSTFLAGS: -C target-cpu=native
+      # env:
+      #   RUSTFLAGS: -C target-cpu=native
       run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,feature_capable,nightly,polars,lens

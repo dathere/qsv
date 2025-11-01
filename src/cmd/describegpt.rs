@@ -120,6 +120,8 @@ describegpt options:
                            & the `--sql-results` option is used, the SQL query will be automatically
                            executed and its results returned.
                            Otherwise, the SQL query will be returned along with the reasoning behind it.
+                           If it starts with "file:" prefix, the prompt is read from the file specified.
+                           e.g. "file:my_long_prompt.txt"
     --sql-results <file>   The file to save the SQL query results to.
                            Only valid if the --prompt option is used & the "polars" or the
                            "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set.
@@ -300,6 +302,8 @@ const INPUT_TABLE_NAME: &str = "{INPUT_TABLE_NAME}";
 static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
 
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
+
+static PROMPT_TEXTFILE_PREFIX: &str = "file:";
 #[allow(dead_code)]
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 struct TokenUsage {
@@ -2152,6 +2156,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!(
             "--json and --jsonl options cannot be specified together."
         );
+    }
+
+    // If --prompt option is used and it starts with "file:" prefix,
+    // read the prompt from the file specified.
+    if let Some(prompt) = &args.flag_prompt {
+        if prompt.starts_with(PROMPT_TEXTFILE_PREFIX) {
+            let prompt_file = prompt.strip_prefix(PROMPT_TEXTFILE_PREFIX).unwrap();
+            let prompt_content = fs::read_to_string(prompt_file)?;
+            args.flag_prompt = Some(prompt_content);
+        }
     }
 
     // Initialize cache variables unconditionally

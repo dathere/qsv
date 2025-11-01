@@ -1120,7 +1120,7 @@ fn frequency_json_vis_whitespace() {
 }
 
 // Test ranking strategies
-fn setup_rank_test(name: &str) -> (Workdir, process::Command) {
+fn setup_rank_test_sorted(name: &str) -> (Workdir, process::Command) {
     // Create data with specific counts to test ranking:
     // Value "a" appears 5 times (rank 1)
     // Values "b" and "c" appear 3 times each (tied for rank 2/3)
@@ -1155,6 +1155,37 @@ fn setup_rank_test(name: &str) -> (Workdir, process::Command) {
     (wrk, cmd)
 }
 
+fn setup_rank_test_unsorted(name: &str) -> (Workdir, process::Command) {
+    // same as setup_rank_test_sorted but the values are unsorted
+    // this is to test that the tied values are sorted alphabetically
+    let rows = vec![
+        svec!["value"],
+        svec!["c"],
+        svec!["d"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec!["a"],
+        svec!["e"],
+        svec!["a"],
+        svec!["b"],
+        svec!["c"],
+        svec!["c"],
+        svec!["b"],
+        svec!["e"],
+        svec!["d"],
+        svec!["f"],
+        svec!["a"],
+    ];
+    let wrk = Workdir::new(name);
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--limit", "0"]);
+
+    (wrk, cmd)
+}
+
 fn setup_rank_test_simple(name: &str) -> (Workdir, process::Command) {
     let rows = vec![
         svec!["value"],
@@ -1178,7 +1209,7 @@ fn setup_rank_test_simple(name: &str) -> (Workdir, process::Command) {
 
 #[test]
 fn frequency_rank_ties_min() {
-    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_min");
+    let (wrk, mut cmd) = setup_rank_test_sorted("frequency_rank_ties_min");
     cmd.args(["--rank-strategy", "min"]);
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1215,7 +1246,7 @@ fn frequency_rank_ties_min_simple() {
 
 #[test]
 fn frequency_rank_ties_max() {
-    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_max");
+    let (wrk, mut cmd) = setup_rank_test_sorted("frequency_rank_ties_max");
     cmd.args(["-r", "max"]);
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1252,7 +1283,26 @@ fn frequency_rank_ties_max_simple() {
 
 #[test]
 fn frequency_rank_ties_dense() {
-    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_dense");
+    let (wrk, mut cmd) = setup_rank_test_sorted("frequency_rank_ties_dense");
+    cmd.args(["--rank-strategy", "dense"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "5", "31.25", "1"],
+        svec!["value", "b", "3", "18.75", "2"],
+        svec!["value", "c", "3", "18.75", "2"],
+        svec!["value", "d", "2", "12.5", "3"],
+        svec!["value", "e", "2", "12.5", "3"],
+        svec!["value", "f", "1", "6.25", "4"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_rank_ties_dense_complex() {
+    let (wrk, mut cmd) = setup_rank_test_unsorted("frequency_rank_ties_dense_complex");
     cmd.args(["--rank-strategy", "dense"]);
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1289,7 +1339,26 @@ fn frequency_rank_ties_dense_simple() {
 
 #[test]
 fn frequency_rank_ties_ordinal() {
-    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_ordinal");
+    let (wrk, mut cmd) = setup_rank_test_sorted("frequency_rank_ties_ordinal");
+    cmd.args(["--rank-strategy", "ordinal"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "5", "31.25", "1"],
+        svec!["value", "b", "3", "18.75", "2"],
+        svec!["value", "c", "3", "18.75", "3"],
+        svec!["value", "d", "2", "12.5", "4"],
+        svec!["value", "e", "2", "12.5", "5"],
+        svec!["value", "f", "1", "6.25", "6"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_rank_ties_ordinal_complex() {
+    let (wrk, mut cmd) = setup_rank_test_unsorted("frequency_rank_ties_ordinal_complex");
     cmd.args(["--rank-strategy", "ordinal"]);
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1325,7 +1394,26 @@ fn frequency_rank_ties_ordinal_simple() {
 
 #[test]
 fn frequency_rank_ties_average() {
-    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_average");
+    let (wrk, mut cmd) = setup_rank_test_sorted("frequency_rank_ties_average");
+    cmd.args(["--rank-strategy", "average"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "5", "31.25", "1"],
+        svec!["value", "b", "3", "18.75", "2.5"],
+        svec!["value", "c", "3", "18.75", "2.5"],
+        svec!["value", "d", "2", "12.5", "4.5"],
+        svec!["value", "e", "2", "12.5", "4.5"],
+        svec!["value", "f", "1", "6.25", "6"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_rank_ties_average_complex() {
+    let (wrk, mut cmd) = setup_rank_test_unsorted("frequency_rank_ties_average_complex");
     cmd.args(["--rank-strategy", "average"]);
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1362,7 +1450,7 @@ fn frequency_rank_ties_average_simple() {
 
 #[test]
 fn frequency_rank_ties_with_asc() {
-    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_with_asc");
+    let (wrk, mut cmd) = setup_rank_test_sorted("frequency_rank_ties_with_asc");
     cmd.args(["--rank-strategy", "average"]).arg("--asc");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1381,7 +1469,7 @@ fn frequency_rank_ties_with_asc() {
 
 #[test]
 fn frequency_rank_ties_json() {
-    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_json");
+    let (wrk, mut cmd) = setup_rank_test_sorted("frequency_rank_ties_json");
     cmd.args(["--rank-strategy", "average"]).arg("--json");
 
     let got: String = wrk.stdout(&mut cmd);
@@ -1413,7 +1501,7 @@ fn frequency_rank_ties_json() {
 
 #[test]
 fn frequency_rank_ties_invalid_strategy() {
-    let (wrk, mut cmd) = setup_rank_test("frequency_rank_ties_invalid_strategy");
+    let (wrk, mut cmd) = setup_rank_test_sorted("frequency_rank_ties_invalid_strategy");
     cmd.args(["--rank-strategy", "invalid"]);
 
     let output = wrk.output_stderr(&mut cmd);

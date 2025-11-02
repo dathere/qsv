@@ -3234,41 +3234,6 @@ pub fn infer_polars_schema(
     Ok(true)
 }
 
-/// CPU-accelerated SHA256 hash of a file
-/// designed for performance, and memory-mapped chunked to process larger than memory files
-/// SHA256 is single-threaded by design; use BLAKE3 for performance-critical hashing
-pub fn hash_sha256_file(path: &Path) -> CliResult<String> {
-    const CHUNK_SIZE: usize = 64 * 1024 * 1024; // 64MB chunks
-
-    let file = File::open(path)?;
-    let file_size = file.metadata()?.len() as usize;
-
-    // Use a more efficient hasher with hardware acceleration if available
-    let mut hasher = Sha256::new();
-
-    // For smaller files, use direct memory mapping for better performance
-    if file_size <= CHUNK_SIZE {
-        // SAFETY: Single memory map for small files
-        let mmap = unsafe { MmapOptions::new().map(&file)? };
-        hasher.update(&mmap);
-    } else {
-        let mut offset = 0;
-        while offset < file_size {
-            let chunk_size = std::cmp::min(CHUNK_SIZE, file_size - offset);
-            let mmap = unsafe {
-                MmapOptions::new()
-                    .offset(offset as u64)
-                    .len(chunk_size)
-                    .map(&file)?
-            };
-            hasher.update(&mmap);
-            offset += chunk_size;
-        }
-    }
-
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
 /// BLAKE3 hash of a file optimized for maximum performance
 /// Uses memory mapping and multithreading for fast hashing of files of any size
 pub fn hash_blake3_file(path: &Path) -> CliResult<String> {

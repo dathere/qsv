@@ -277,12 +277,6 @@ whatlang = { version = "0.18", optional = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zip = "6"
 
-[target.'cfg(windows)'.dependencies]
-# asm (assembly) feature is not supported on Windows
-sha2 = { version = "0.10", features = ["compress"] }
-[target.'cfg(not(windows))'.dependencies]
-sha2 = { version = "0.10", features = ["asm", "compress"] }
-
 # on macOS Apple Silicon, enable NEON CPU features
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
 blake3 = { version = "1.6", features = ["rayon", "mmap", "neon"] }

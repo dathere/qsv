@@ -97,7 +97,7 @@ crossbeam-channel = "0.5"
 csv = "1.4"
 csv-diff = "0.1"
 csv-index = "0.1"
-csvlens = { version = "0.13", optional = true, default-features = false, features = [
+csvlens = { version = "0.14", optional = true, default-features = false, features = [
     "clipboard",
 ] }
 csvs_convert = { version = "0.12", default-features = false, features = [
@@ -315,8 +315,9 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }
 
-# until the next release, use upstream now that our PRs have been merged
-csvlens = { git = "https://github.com/YS-L/csvlens", rev = "aef2a99" }
+# 0.14 has been released but has an old qsv-sniffer dependency
+# until the next release, until the qsv-sniffer dependency is updated
+csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "qsv-sniffer-0.12" }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88" }

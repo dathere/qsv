@@ -321,12 +321,12 @@ use std::{
     sync::OnceLock,
 };
 
+use blake3;
 use crossbeam_channel;
 use itertools::Itertools;
 use phf::phf_map;
 use qsv_dateparser::parse_with_preference;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 // Use serde_json on big-endian platforms (e.g. s390x) due to simd_json endianness issues
 #[cfg(target_endian = "little")]
 use simd_json::{OwnedValue, prelude::ValueAsScalar};
@@ -1207,7 +1207,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         format!("{record_count}\x1F{ds_column_count}\x1F{ds_filesize_bytes}\n")
                             .as_bytes(),
                     );
-                    Sha256::digest(hash_input.as_slice())
+                    blake3::hash(hash_input.as_slice()).to_hex().to_string()
                 };
 
                 dataset_stats_br.clear();
@@ -1217,7 +1217,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     dataset_stats_br.push_field(b"");
                 }
                 // write qsv__value as last column
-                dataset_stats_br.push_field(format!("{stats_hash:x}").as_bytes());
+                dataset_stats_br.push_field(stats_hash.as_bytes());
                 wtr.write_byte_record(&dataset_stats_br)?;
             }
 

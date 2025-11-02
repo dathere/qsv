@@ -1346,7 +1346,7 @@ fn stats_leading_zero_handling() {
         svec![
             "qsv__fingerprint_hash",
             //DevSkim::ignore DS173237
-            "ae045ecc55c3c99d40dd2b7369e55db9d15d1a19988850c496aa3afd456e164e"
+            "e76ebf94f99791f11c35c429d54958b7317ac89b5511bf47dea80b7244a413da"
         ],
     ];
     assert_eq!(got, expected);
@@ -1608,7 +1608,7 @@ fn stats_zero_cv() {
             "",
             "",
             "",
-            "9e162b617fe233c126f65b81136a6da6ea6367a63e520ed99f823f3fc1915ded"
+            "32a9388a98537b1ace6c7a5f24931d87440a0615829df5d2eb540cc6a8e5e737"
         ],
     ];
     assert_eq!(got, expected);
@@ -1647,7 +1647,7 @@ col3	String	true		01	10		Ascending	1	2	2	10	2	0	0	0								0		0
 qsv__rowcount																										5
 qsv__columncount																										3
 qsv__filesize_bytes																										62
-qsv__fingerprint_hash																										cf6ba47ee7251a17b8d7789636b2c5d2302ea6e0fb69572f1eaf25aead083cef
+qsv__fingerprint_hash																										f28f94eebfa8309f84f646e80a3dc1ab50c6bcde2fe377f99ee52ac255811a78
 "#;
     assert_eq!(got, expected);
 }
@@ -1685,7 +1685,7 @@ col3;String;true;;01;10;;Ascending;1;2;2;10;2;0;0;0;;;;;;;;0;;0;
 qsv__rowcount;;;;;;;;;;;;;;;;;;;;;;;;;;5
 qsv__columncount;;;;;;;;;;;;;;;;;;;;;;;;;;3
 qsv__filesize_bytes;;;;;;;;;;;;;;;;;;;;;;;;;;62
-qsv__fingerprint_hash;;;;;;;;;;;;;;;;;;;;;;;;;;cf6ba47ee7251a17b8d7789636b2c5d2302ea6e0fb69572f1eaf25aead083cef
+qsv__fingerprint_hash;;;;;;;;;;;;;;;;;;;;;;;;;;f28f94eebfa8309f84f646e80a3dc1ab50c6bcde2fe377f99ee52ac255811a78
 "#;
     assert_eq!(got, expected);
 }
@@ -1726,7 +1726,7 @@ col3,String,true,,01,10,,Ascending,1,2,2,10,2,0,0,0,,,,,,,,0,,0,
 qsv__rowcount,,,,,,,,,,,,,,,,,,,,,,,,,,5
 qsv__columncount,,,,,,,,,,,,,,,,,,,,,,,,,,3
 qsv__filesize_bytes,,,,,,,,,,,,,,,,,,,,,,,,,,62
-qsv__fingerprint_hash,,,,,,,,,,,,,,,,,,,,,,,,,,cf6ba47ee7251a17b8d7789636b2c5d2302ea6e0fb69572f1eaf25aead083cef"#;
+qsv__fingerprint_hash,,,,,,,,,,,,,,,,,,,,,,,,,,f28f94eebfa8309f84f646e80a3dc1ab50c6bcde2fe377f99ee52ac255811a78"#;
     assert_eq!(got, expected);
 }
 
@@ -1861,7 +1861,7 @@ fn stats_vis_whitespace() {
         svec!["qsv__rowcount", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "7"], 
         svec!["qsv__columncount", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "3"], 
         svec!["qsv__filesize_bytes", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "323"], 
-        svec!["qsv__fingerprint_hash", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "39f84fb60ced1488a91fc3a7a6e22692dafb414e0d43f09ab768c5f9981db630"]
+        svec!["qsv__fingerprint_hash", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "9a24941e109da95271af72c0681d0e479c732b6b35810696ccda4718310da696"]
     ];
     //
     assert_eq!(got, expected);

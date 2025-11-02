@@ -24,14 +24,12 @@ use filetime::FileTime;
 use human_panic::setup_panic;
 use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use log::{info, log_enabled};
-use memmap2::MmapOptions;
 #[cfg(feature = "polars")]
 use polars::prelude::Schema;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use serde::de::{Deserialize, Deserializer, Error};
-use sha2::{Digest, Sha256};
 use sysinfo::System;
 use zip::read::root_dir_common_filter;
 
@@ -3273,134 +3271,6 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use super::*;
-
-    #[test]
-    fn test_hash_sha256_file() {
-        // Create a temporary file with known content
-        let mut temp_file = NamedTempFile::new().unwrap();
-        let test_content = b"Hello, World! This is a test file for SHA256 hashing.";
-        temp_file.write_all(test_content).unwrap();
-        temp_file.flush().unwrap();
-
-        // Calculate expected hash using sha2 directly
-        let mut expected_hasher = Sha256::new();
-        expected_hasher.update(test_content);
-        let expected_hash = format!("{:x}", expected_hasher.finalize());
-
-        // Test our function
-        let actual_hash = hash_sha256_file(temp_file.path()).unwrap();
-
-        assert_eq!(actual_hash, expected_hash);
-    }
-
-    #[test]
-    fn test_hash_sha256_file_large() {
-        // Create a larger test file (1MB)
-        let mut temp_file = NamedTempFile::new().unwrap();
-        let test_content = b"Large file test content. ".repeat(40000); // ~1MB
-        temp_file.write_all(&test_content).unwrap();
-        temp_file.flush().unwrap();
-
-        // Calculate expected hash
-        let mut expected_hasher = Sha256::new();
-        expected_hasher.update(&test_content);
-        let expected_hash = format!("{:x}", expected_hasher.finalize());
-
-        // Test our function
-        let actual_hash = hash_sha256_file(temp_file.path()).unwrap();
-
-        assert_eq!(actual_hash, expected_hash);
-    }
-
-    #[test]
-    fn benchmark_hash_sha256_file() {
-        // Create a test file for benchmarking
-        let mut temp_file = NamedTempFile::new().unwrap();
-        let test_content = b"Benchmark test content. ".repeat(100000); // ~2.4MB
-        temp_file.write_all(&test_content).unwrap();
-        temp_file.flush().unwrap();
-
-        // Benchmark the function
-        let start = std::time::Instant::now();
-        let hash = hash_sha256_file(temp_file.path()).unwrap();
-        let duration = start.elapsed();
-
-        println!("Hash: {}", hash);
-        println!("Time: {:?}", duration);
-        println!("File size: {} bytes", test_content.len());
-        println!(
-            "Speed: {:.2} MB/s",
-            (test_content.len() as f64 / 1024.0 / 1024.0) / duration.as_secs_f64()
-        );
-        assert_eq!(
-            hash,
-            "86bfdffb3eaf9cb23ff62ab8ccb7e85fe059621d73f4762273f73c8dc24fd76d"
-        );
-    }
-
-    #[test]
-    fn benchmark_hash_sha256_file_large() {
-        // Create a larger test file (100MB) to test parallel processing
-        let mut temp_file = NamedTempFile::new().unwrap();
-        let test_content =
-            b"Large benchmark test content for parallel processing. ".repeat(2000000); // ~100MB
-        temp_file.write_all(&test_content).unwrap();
-        temp_file.flush().unwrap();
-
-        // Benchmark the function
-        let start = std::time::Instant::now();
-        let hash = hash_sha256_file(temp_file.path()).unwrap();
-        let duration = start.elapsed();
-
-        println!("Large file hash: {}", hash);
-        println!("Large file time: {:?}", duration);
-        println!("Large file size: {} bytes", test_content.len());
-        println!(
-            "Large file speed: {:.2} MB/s",
-            (test_content.len() as f64 / 1024.0 / 1024.0) / duration.as_secs_f64()
-        );
-        assert_eq!(
-            hash,
-            "edb134ce61bffa77bf5c9a0eacb880a20a02d41dd8c7543e6c58b35383424c7e"
-        );
-    }
-
-    #[test]
-    #[ignore = "This test causes some GitHub Actions runners to run out of disk space"]
-    fn benchmark_hash_sha256_file_very_large() {
-        // Create a larger test file (>1.2GB) to test parallel processing
-        let mut temp_file = NamedTempFile::new().unwrap();
-        let test_content =
-            b"Large benchmark test content for parallel processing. ".repeat(25000000); // ~1.3GB
-        temp_file.write_all(&test_content).unwrap();
-        temp_file.flush().unwrap();
-
-        // Benchmark the function
-        let start = std::time::Instant::now();
-        let hash = hash_sha256_file(temp_file.path()).unwrap();
-        let duration = start.elapsed();
-
-        println!("Very large file hash: {}", hash);
-        println!("Very large file time: {:?}", duration);
-        println!("Very large file size: {} bytes", test_content.len());
-        println!(
-            "Very large file speed: {:.2} MB/s",
-            (test_content.len() as f64 / 1024.0 / 1024.0) / duration.as_secs_f64()
-        );
-
-        // Verify the file is actually larger than 1.2GB
-        let file_size_gb = test_content.len() as f64 / 1024.0 / 1024.0 / 1024.0;
-        assert!(
-            file_size_gb > 1.2,
-            "File size is {:.2} GB, should be > 1.2 GB",
-            file_size_gb
-        );
-
-        assert_eq!(
-            hash,
-            "94b6b51db44e0ecad8a035dd5db44ae661d3b60413601df849f807d390e8023d"
-        );
-    }
 
     #[test]
     fn test_hash_blake3_file() {

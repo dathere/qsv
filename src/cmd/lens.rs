@@ -156,8 +156,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // from which to load the prompt, e.g.
     // qsv lens --prompt "file:prompt.txt"
     let prompt = if let Some(prompt) = args.flag_prompt {
-        if prompt.starts_with("file:") {
-            let prompt_file = PathBuf::from(prompt.trim_start_matches("file:"));
+        if prompt.starts_with(util::FILE_PATH_PREFIX) {
+            let prompt_file = PathBuf::from(prompt.trim_start_matches(util::FILE_PATH_PREFIX));
             let prompt = std::fs::read_to_string(prompt_file)?;
             Some(prompt)
         } else {

@@ -205,7 +205,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         });
     }
 
-    let expression = if let Some(expression_filepath) = args.arg_expression.strip_prefix("file:") {
+    let expression = if let Some(expression_filepath) =
+        args.arg_expression.strip_prefix(util::FILE_PATH_PREFIX)
+    {
         match fs::read_to_string(expression_filepath) {
             Ok(file_contents) => file_contents,
             Err(e) => return fail_clierror!("Cannot load Python expression from file: {e}"),

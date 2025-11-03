@@ -303,7 +303,6 @@ static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
 
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
 
-static PROMPT_TEXTFILE_PREFIX: &str = "file:";
 #[allow(dead_code)]
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 struct TokenUsage {
@@ -2161,9 +2160,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // If --prompt option is used and it starts with "file:" prefix,
     // read the prompt from the file specified.
     if let Some(prompt) = &args.flag_prompt
-        && prompt.starts_with(PROMPT_TEXTFILE_PREFIX)
+        && prompt.starts_with(util::FILE_PATH_PREFIX)
     {
-        let prompt_file = prompt.strip_prefix(PROMPT_TEXTFILE_PREFIX).unwrap();
+        let prompt_file = prompt.strip_prefix(util::FILE_PATH_PREFIX).unwrap();
         let prompt_content = fs::read_to_string(prompt_file)?;
         args.flag_prompt = Some(prompt_content);
     }

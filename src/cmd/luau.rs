@@ -303,7 +303,6 @@ static QSV_V_ROWCOUNT: &str = "_ROWCOUNT";
 static QSV_V_LASTROW: &str = "_LASTROW";
 static QSV_V_INDEX: &str = "_INDEX";
 
-static SCRIPT_FILE_PREFIX: &str = "file:";
 static LUA_EXTENSION: &str = "lua";
 static LUAU_EXTENSION: &str = "luau";
 
@@ -366,7 +365,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .no_headers(args.flag_no_headers);
 
     let mut luau_script =
-        if let Some(script_filepath) = args.arg_main_script.strip_prefix(SCRIPT_FILE_PREFIX) {
+        if let Some(script_filepath) = args.arg_main_script.strip_prefix(util::FILE_PATH_PREFIX) {
             match fs::read_to_string(script_filepath) {
                 Ok(file_contents) => file_contents,
                 Err(e) => return fail_clierror!("Cannot load Luau file: {e}"),
@@ -436,7 +435,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // check if a BEGIN script was specified
     let begin_script = if let Some(ref begin) = args.flag_begin {
-        let discrete_begin = if let Some(begin_filepath) = begin.strip_prefix(SCRIPT_FILE_PREFIX) {
+        let discrete_begin = if let Some(begin_filepath) = begin.strip_prefix(util::FILE_PATH_PREFIX) {
             match fs::read_to_string(begin_filepath) {
                 Ok(begin) => begin,
                 Err(e) => return fail_clierror!("Cannot load Luau BEGIN script file: {e}"),
@@ -472,7 +471,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // check if an END script was specified
     let end_script = if let Some(ref end) = args.flag_end {
-        let discrete_end = if let Some(end_filepath) = end.strip_prefix(SCRIPT_FILE_PREFIX) {
+        let discrete_end = if let Some(end_filepath) = end.strip_prefix(util::FILE_PATH_PREFIX) {
             match fs::read_to_string(end_filepath) {
                 Ok(end) => end,
                 Err(e) => return fail_clierror!("Cannot load Luau END script file: {e}"),

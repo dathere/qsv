@@ -66,6 +66,8 @@ static ROW_COUNT: OnceLock<Option<u64>> = OnceLock::new();
 
 static JOBS_TO_USE: OnceLock<usize> = OnceLock::new();
 
+pub static FILE_PATH_PREFIX: &str = "file:";
+
 pub type ByteString = Vec<u8>;
 
 #[allow(dead_code)]

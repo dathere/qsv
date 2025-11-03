@@ -101,7 +101,7 @@
 🧠: expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.  
 🗄️: [Extended input support](#extended-input-support).  
 🗃️: Limited [Extended input support].  
-🐻‍❄️: command powered/accelerated by [![polars 0.51.0 at the py-1.35.1 tag](https://img.shields.io/badge/polars-0.51.0-blue) at the py-1.35.1 tag](https://github.com/pola-rs/polars/releases/tag/py-1.35.0) vectorized query engine.  
+🐻‍❄️: command powered/accelerated by [![polars 0.52.0](https://img.shields.io/badge/polars-0.52.0-blue)](https://github.com/pola-rs/polars/releases/tag/rs-0.52.0) vectorized query engine.  
 🤖: command uses Natural Language Processing & General AI techniques.  
 🏎️: multithreaded and/or faster when an index (📇) is available.  
 🚀: multithreaded even without an index.  

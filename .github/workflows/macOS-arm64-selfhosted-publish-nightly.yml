@@ -8,7 +8,7 @@ env:
 
 jobs:
   analyze-tags:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     outputs:
       previous-tag: ${{ steps.previoustag.outputs.tag }}
     steps:
@@ -39,6 +39,7 @@ jobs:
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:
+            addl-rustflags: -C target-cpu=native -Z unstable-options -C panic=immediate-abort
 
     steps:
     - name: Installing Rust toolchain
@@ -54,22 +55,22 @@ jobs:
         ref: ${{ needs.analyze-tags.outputs.previous-tag }}
     - name: Build qsv
       env:
-        RUSTFLAGS: --emit=asm -C target-cpu=native
+        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
       uses: actions-rs/cargo@v1
       with:
         command: build
         use-cross: ${{ matrix.job.use-cross }}
         toolchain: ${{ matrix.rust }}
-        args: --profile release-nightly --locked --bin qsv -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable,nightly ${{ matrix.job.default-features }}
+        args: --profile release-nightly --locked --bin qsv -Z build-std=std --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable,nightly ${{ matrix.job.default-features }}
     - name: Build qsvlite
       env:
-        RUSTFLAGS: --emit=asm -C target-cpu=native
+        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
       uses: actions-rs/cargo@v1
       with:
         command: build
         use-cross: ${{ matrix.job.use-cross }}
         toolchain: ${{ matrix.rust }}
-        args: --profile release-nightly --locked --bin qsvlite -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --features=lite,self_update,nightly,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+        args: --profile release-nightly --locked --bin qsvlite -Z build-std=std --features=lite,self_update,nightly,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir
       # TODO: Add qsvdp-nightly build back in after v5.0.3, be sure to copy qsvdp binaries below
       shell: bash

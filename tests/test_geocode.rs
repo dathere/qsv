@@ -997,7 +997,7 @@ fn geocode_reverse_fmtstring_intl_dynfmt() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["Location"],
-        svec!["pop: 1620343 tz: Europe/Madrid"],
+        svec!["pop: 1686208 tz: Europe/Madrid"],
         svec!["pop: 741636 tz: Europe/Amsterdam"],
         svec!["pop: 3426354 tz: Europe/Berlin"],
         svec!["pop: 510383 tz: Asia/Manila"],

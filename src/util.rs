@@ -1959,9 +1959,7 @@ pub fn process_input(
             // read the file. Each line is a file path
             if input_path
                 .extension()
-                .and_then(std::ffi::OsStr::to_str)
-                .map(str::to_lowercase)
-                == Some("infile-list".to_string())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("infile-list"))
             {
                 let mut input_file = std::fs::File::open(input_path)?;
                 let mut input_file_contents = String::new();
@@ -2033,7 +2031,10 @@ pub fn process_input(
         }
 
         // is the input file snappy compressed?
-        if path.extension() == Some(sz_osstr_extension) {
+        if path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case(sz_osstr_extension))
+        {
             // if so, decompress the file
             let decompressed_filepath = decompress_snappy_file(&path, tmpdir)?;
 
@@ -2052,9 +2053,7 @@ pub fn process_input(
         // is the input file a zip archive?
         else if path
             .extension()
-            .and_then(std::ffi::OsStr::to_str)
-            .map(str::to_lowercase)
-            == Some("zip".to_string())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
         {
             // if so, extract all files from the zip archive to the temp directory
             log::info!("Extracting files from zip archive: {}", path.display());

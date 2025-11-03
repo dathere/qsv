@@ -855,15 +855,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "atoi_simd"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ad17c7c205c2c28b527b9845eeb91cf1b4d008b438f98ce0e628227a822758e"
-dependencies = [
- "debug_unsafe",
-]
-
-[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1298,7 +1289,7 @@ version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da56b262e8a827c6b12c3dde4ea4622e0ff542bd2e9ea5855e4cb523481d77b7"
 dependencies = [
- "atoi_simd 0.16.1",
+ "atoi_simd",
  "byteorder",
  "chrono",
  "codepage",
@@ -4961,7 +4952,7 @@ name = "polars-arrow"
 version = "0.51.0"
 source = "git+https://github.com/pola-rs/polars?rev=d0be4c0#d0be4c06447f2e530c6f68d3cd73b43f2e33e2f3"
 dependencies = [
- "atoi_simd 0.16.1",
+ "atoi_simd",
  "avro-schema",
  "bitflags",
  "bytemuck",
@@ -5003,7 +4994,7 @@ name = "polars-compute"
 version = "0.51.0"
 source = "git+https://github.com/pola-rs/polars?rev=d0be4c0#d0be4c06447f2e530c6f68d3cd73b43f2e33e2f3"
 dependencies = [
- "atoi_simd 0.16.1",
+ "atoi_simd",
  "bytemuck",
  "chrono",
  "either",
@@ -5116,7 +5107,7 @@ version = "0.51.0"
 source = "git+https://github.com/pola-rs/polars?rev=d0be4c0#d0be4c06447f2e530c6f68d3cd73b43f2e33e2f3"
 dependencies = [
  "async-trait",
- "atoi_simd 0.16.1",
+ "atoi_simd",
  "blake3",
  "bytes",
  "chrono",
@@ -5424,7 +5415,7 @@ name = "polars-time"
 version = "0.51.0"
 source = "git+https://github.com/pola-rs/polars?rev=d0be4c0#d0be4c06447f2e530c6f68d3cd73b43f2e33e2f3"
 dependencies = [
- "atoi_simd 0.16.1",
+ "atoi_simd",
  "bytemuck",
  "chrono",
  "chrono-tz",
@@ -5752,7 +5743,7 @@ dependencies = [
  "actix-web",
  "arboard",
  "assert-json-diff",
- "atoi_simd 0.17.0",
+ "atoi_simd",
  "base62",
  "base64-simd",
  "bitvec",

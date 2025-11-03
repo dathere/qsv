@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## What's Changed
+* build(deps): bump flate2 from 1.1.4 to 1.1.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3071
+* feat: add blake3 file hashing helper by @jqnatividad in https://github.com/dathere/qsv/pull/3072
+* deps: bump Polars from 0.51.0 at py-1.35.0-beta.1 to py-1.35.0 by @jqnatividad in https://github.com/dathere/qsv/pull/3073
+* build(deps): bump actions/upload-artifact from 4 to 5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3074
+* feat: `frequency` add `--rank-strategy` by @jqnatividad in https://github.com/dathere/qsv/pull/3075
+* build(deps): bump human-panic from 2.0.3 to 2.0.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3077
+* build(deps): bump qsv-stats from 0.39.1 to 0.40.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3078
+* refactor: Replace sha256 with blake3 by @jqnatividad in https://github.com/dathere/qsv/pull/3080
+* build(deps): bump atoi_simd from 0.16.1 to 0.17.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3081
+* feat: `frequency` add  `-null-text` option and  fix `--select` bug by @jqnatividad in https://github.com/dathere/qsv/pull/3082
+
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/8.1.1...9.0.0
+
 ## [8.1.1] - 2025-10-22
 
 ## Changed

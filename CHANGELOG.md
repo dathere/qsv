@@ -15,7 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Changed
 * `describegpt`: explicitly use `frequency`'s dense rank strategy https://github.com/dathere/qsv/commit/dc3f270000fde3321ae0ad239010471db5ca3cad
+* `describegpt`: allow `--prompt` to be loaded from a text file https://github.com/dathere/qsv/commit/b11a10c306f0065f1852b23b935c5b04b0e69238
+* `describegpt`: use much faster BLAKE3 hash for cache key
+* `frequency`: change default rank-strategy from min (AKA "1224" ranking) to dense (AKA "1223" ranking)
 * `lens`: bumped csvlens from 0.13.0 to [0.14.0](https://github.com/YS-L/csvlens/releases/tag/v0.14.0)
+* `lens`: automatically set to monochrome mode when using `--find` option https://github.com/dathere/qsv/commit/85398690b0ebbc9dea227d13f528c7703451de8b
 * `luau`: bumped embedded Luau from 0.694 to 0.697 https://github.com/dathere/qsv/commit/3e68e2991757aba2b0597d722b1108fdc8009628
 * `stats`: fingerprint hash now uses much-faster, parallelizable BLAKE3 instead of SHA256
 * `table`: document that it also creates "aligned TSVs" and Fixed Width Format files https://github.com/dathere/qsv/commit/aaa84b0b22c8cf60361554ddee5213b1d6f8ca49
@@ -31,10 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * build(deps): bump actions/upload-artifact from 4 to 5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3074
 * applied several clippy lint suggestions
 * bumped several indirect dependencies
-* align nightly to 2025-10-04, the same nightly as Polars
+* align nightly to 2025-10-24, the same nightly as Polars
 * bumped MSRV to Rust 1.91
 
 ## Fixed
+* `describegpt`: add SQL escaping to prevent SQL injection; create `.csv` when Polars SQL query runs successfully https://github.com/dathere/qsv/commit/ad52a35f3c900d4591d30091d10b0a0874c3c254
 * `frequency`: fix `--select` option always returning `<ALL_UNIQUE>` https://github.com/dathere/qsv/pull/3082
 
 ## Removed

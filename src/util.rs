@@ -2033,7 +2033,7 @@ pub fn process_input(
         }
 
         // is the input file snappy compressed?
-        if path.extension() == Some(&sz_osstr_extension) {
+        if path.extension() == Some(sz_osstr_extension) {
             // if so, decompress the file
             let decompressed_filepath = decompress_snappy_file(&path, tmpdir)?;
 

@@ -1839,7 +1839,7 @@ fn run_inference_options(
                         // the polars sql query is successful
                         // set the sql_results file to have a .csv extension
                         let _ =
-                            fs::rename(sql_results_path, &sql_results_path.with_extension("csv"));
+                            fs::rename(sql_results_path, sql_results_path.with_extension("csv"));
                         (stdout, stderr)
                     },
                     Err(e) => {
@@ -2160,12 +2160,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // If --prompt option is used and it starts with "file:" prefix,
     // read the prompt from the file specified.
-    if let Some(prompt) = &args.flag_prompt {
-        if prompt.starts_with(PROMPT_TEXTFILE_PREFIX) {
-            let prompt_file = prompt.strip_prefix(PROMPT_TEXTFILE_PREFIX).unwrap();
-            let prompt_content = fs::read_to_string(prompt_file)?;
-            args.flag_prompt = Some(prompt_content);
-        }
+    if let Some(prompt) = &args.flag_prompt
+        && prompt.starts_with(PROMPT_TEXTFILE_PREFIX)
+    {
+        let prompt_file = prompt.strip_prefix(PROMPT_TEXTFILE_PREFIX).unwrap();
+        let prompt_content = fs::read_to_string(prompt_file)?;
+        args.flag_prompt = Some(prompt_content);
     }
 
     // Initialize cache variables unconditionally

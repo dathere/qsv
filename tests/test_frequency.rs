@@ -491,6 +491,33 @@ fn frequency_all_unique_with_stats_cache() {
 }
 
 #[test]
+fn frequency_custom_null_text() {
+    let wrk = Workdir::new("frequency_custom_null_text");
+    let testdata = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("frequency");
+    cmd.args(["--select", "fire_district"])
+        .args(["--null-text", "<NADA Y MUCHO MAS>"])
+        .arg(testdata);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["fire_district", "3", "19", "19", "1"],
+        svec!["fire_district", "4", "16", "16", "2"],
+        svec!["fire_district", "7", "14", "14", "3"],
+        svec!["fire_district", "6", "13", "13", "4"],
+        svec!["fire_district", "8", "9", "9", "5"],
+        svec!["fire_district", "1", "8", "8", "6"],
+        svec!["fire_district", "12", "8", "8", "6"],
+        svec!["fire_district", "9", "7", "7", "7"],
+        svec!["fire_district", "11", "5", "5", "8"],
+        svec!["fire_district", "<NADA Y MUCHO MAS>", "1", "1", "9"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn frequency_all_unique_with_stats_cache_alt_all_unique_text() {
     let wrk = Workdir::new("frequency_all_unique_with_stats_cache_alt_all_unique_text");
     let testdata = wrk.load_test_file("boston311-100.csv");

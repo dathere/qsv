@@ -124,6 +124,8 @@ frequency options:
                             have a rank of 1.
     --no-trim               Don't trim whitespace from values when computing frequencies.
                             The default is to trim leading and trailing whitespaces.
+    --null-text <arg>       The text to use for NULL values.
+                            [default: (NULL)]
     --no-nulls              Don't include NULLs in the frequency table.
     -i, --ignore-case       Ignore case when computing frequencies.
    --all-unique-text <arg>  The text to use for the "<ALL_UNIQUE>" category.
@@ -217,6 +219,7 @@ pub struct Args {
     pub flag_other_text:      String,
     pub flag_asc:             bool,
     pub flag_no_trim:         bool,
+    pub flag_null_text:       String,
     pub flag_no_nulls:        bool,
     pub flag_ignore_case:     bool,
     pub flag_all_unique_text: String,
@@ -231,11 +234,10 @@ pub struct Args {
     pub flag_no_stats:        bool,
 }
 
-const NULL_VAL: &[u8] = b"(NULL)";
 const NON_UTF8_ERR: &str = "<Non-UTF8 ERROR>";
 const EMPTY_BYTE_VEC: Vec<u8> = Vec::new();
 static STATS_RECORDS: OnceLock<HashMap<String, StatsData>> = OnceLock::new();
-
+static NULL_VAL: OnceLock<Vec<u8>> = OnceLock::new();
 // FrequencyEntry, FrequencyField and FrequencyOutput are
 // structs for JSON output
 #[derive(Serialize)]
@@ -313,6 +315,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if let Some(path) = rconfig.path.clone() {
         util::mem_file_check(&path, false, args.flag_memcheck)?;
     }
+
+    // Create NULL value once to avoid repeated to_vec allocations
+    NULL_VAL
+        .set(args.flag_null_text.as_bytes().to_vec())
+        .map_err(|_| "Cannot set NULL_VAL")?;
 
     let (headers, tables) = match args.rconfig().indexed()? {
         Some(ref mut idx) if util::njobs(args.flag_jobs) > 1 => args.parallel_ftables(idx),
@@ -552,8 +559,9 @@ impl Args {
             count_groups.push((current_count.unwrap(), current_group));
         }
 
-        // Create NULL value once to avoid repeated to_vec allocations
-        let null_val = NULL_VAL.to_vec();
+        // safety: NULL_VAL is set in the main function
+        let null_val = NULL_VAL.get().unwrap();
+
         // Sort each group alphabetically and assign ranks based on strategy
         let mut current_rank = 1.0_f64;
 
@@ -1110,11 +1118,21 @@ impl Args {
         let headers = rdr.byte_headers()?;
         let all_unique_headers_vec = self.get_unique_headers(headers)?;
 
+        let sel = self.rconfig().selection(headers)?;
+
+        // Map original column indices to selected column indices
+        let mapped_unique_headers: Vec<usize> = all_unique_headers_vec
+            .iter()
+            .filter_map(|&original_idx| {
+                // Find the position of this original index in the selection
+                sel.iter().position(|&sel_idx| sel_idx == original_idx)
+            })
+            .collect();
+
         UNIQUE_COLUMNS_VEC
-            .set(all_unique_headers_vec)
+            .set(mapped_unique_headers)
             .map_err(|_| "Cannot set UNIQUE_COLUMNS")?;
 
-        let sel = self.rconfig().selection(headers)?;
         Ok((sel.select(headers).map(<[u8]>::to_vec).collect(), sel))
     }
 }

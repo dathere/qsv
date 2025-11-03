@@ -435,25 +435,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // check if a BEGIN script was specified
     let begin_script = if let Some(ref begin) = args.flag_begin {
-        let discrete_begin = if let Some(begin_filepath) = begin.strip_prefix(util::FILE_PATH_PREFIX) {
-            match fs::read_to_string(begin_filepath) {
-                Ok(begin) => begin,
-                Err(e) => return fail_clierror!("Cannot load Luau BEGIN script file: {e}"),
-            }
-        } else if std::path::Path::new(begin)
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case(LUAU_EXTENSION))
-            || std::path::Path::new(begin)
+        let discrete_begin =
+            if let Some(begin_filepath) = begin.strip_prefix(util::FILE_PATH_PREFIX) {
+                match fs::read_to_string(begin_filepath) {
+                    Ok(begin) => begin,
+                    Err(e) => return fail_clierror!("Cannot load Luau BEGIN script file: {e}"),
+                }
+            } else if std::path::Path::new(begin)
                 .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case(LUA_EXTENSION))
-        {
-            match fs::read_to_string(begin.clone()) {
-                Ok(file_contents) => file_contents,
-                Err(e) => return fail_clierror!("Cannot load BEGIN .lua/luau file: {e}"),
-            }
-        } else {
-            begin.to_string()
-        };
+                .is_some_and(|ext| ext.eq_ignore_ascii_case(LUAU_EXTENSION))
+                || std::path::Path::new(begin)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case(LUA_EXTENSION))
+            {
+                match fs::read_to_string(begin.clone()) {
+                    Ok(file_contents) => file_contents,
+                    Err(e) => return fail_clierror!("Cannot load BEGIN .lua/luau file: {e}"),
+                }
+            } else {
+                begin.to_string()
+            };
         comment_remover_re
             .replace_all(&discrete_begin, "")
             .to_string()

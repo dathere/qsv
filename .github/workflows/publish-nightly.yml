@@ -107,7 +107,7 @@ jobs:
         command: build
         use-cross: false
         toolchain: ${{ matrix.rust }}
-        args: --profile release-nightly --bin qsv -Z build-std=std,panic_abort -Z unstable-options -Cpanic=immediate-abort --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable,nightly ${{ matrix.job.default-features }}
+        args: --profile release-nightly --bin qsv -Z build-std=std,panic_immediate_abort -Z unstable-options --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable,nightly ${{ matrix.job.default-features }}
     - name: Build qsvlite-nightly
       env:
         RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
@@ -116,7 +116,7 @@ jobs:
         command: build
         use-cross: false
         toolchain: ${{ matrix.rust }}
-        args: --profile release-nightly --bin qsvlite -Z build-std=std,panic_abort -Z unstable-options -Cpanic=immediate-abort --features=lite,self_update,nightly,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+        args: --profile release-nightly --bin qsvlite -Z build-std=std,panic_immediate_abort -Z unstable-options --features=lite,self_update,nightly,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     # TODO: Add qsvdp-nightly build back in after v5.0.3, be sure to copy qsvdp binaries below
     # - name: Build qsvdp-nightly
     #   env:
@@ -126,7 +126,7 @@ jobs:
     #     command: build
     #     use-cross: false
     #     toolchain: ${{ matrix.rust }}
-    #     args: --profile release-nightly --bin qsvdp -Z build-std=std,panic_abort -Z unstable-options -Cpanic=immediate-abort --features=datapusher_plus,nightly,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+    #     args: --profile release-nightly --bin qsvdp -Z build-std=std,panic_immediate_abort -Z unstable-options --features=datapusher_plus,nightly,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |

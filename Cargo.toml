@@ -431,13 +431,16 @@ ui = ["clipboard", "prompt", "lens"]
 feature_capable = []
 nightly = [
     "crc32fast/nightly",
-    "polars/nightly",
-    "polars/simd",
     "pyo3/nightly",
     "rand/nightly",
     "rand/simd_support",
     "simd-json/hints",
     "foldhash/nightly",
+]
+
+nightly-polars =[
+    "polars/nightly",
+    "polars/simd",
 ]
 
 [package.metadata.deb]

@@ -563,6 +563,7 @@ fn get_unique_values(
         flag_other_sorted:    false,
         flag_other_text:      "Other".to_string(),
         flag_asc:             false,
+        flag_null_text:       "(NULL)".to_string(),
         flag_no_nulls:        true,
         flag_no_trim:         false,
         flag_ignore_case:     args.flag_ignore_case,

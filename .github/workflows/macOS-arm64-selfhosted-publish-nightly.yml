@@ -39,7 +39,7 @@ jobs:
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags: -C target-cpu=native
+            addl-rustflags:
 
     steps:
     - name: Installing Rust toolchain

@@ -6,7 +6,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [9.0.0] - 2025-11-03
+## [9.1.0] - 2025-11-03
+
+---
+
+## Added
+* `frequency`: add `--pretty-json` option https://github.com/dathere/qsv/commit/c67fd061a0cd101b0e04aaab79087c04324b0e46
+* `frequency`: add `--rank-strategy` option https://github.com/dathere/qsv/pull/3075
+* `frequency`: add `-null-text` option https://github.com/dathere/qsv/pull/3082
+
+## Changed
+* `describegpt`: explicitly use `frequency`'s dense rank strategy https://github.com/dathere/qsv/commit/dc3f270000fde3321ae0ad239010471db5ca3cad
+* `describegpt`: allow `--prompt` to be loaded from a text file https://github.com/dathere/qsv/commit/b11a10c306f0065f1852b23b935c5b04b0e69238
+* `describegpt`: use much faster BLAKE3 hash for cache key
+* `frequency`: change default rank-strategy from min (AKA "1224" ranking) to dense (AKA "1223" ranking)
+* `lens`: bumped csvlens from 0.13.0 to [0.14.0](https://github.com/YS-L/csvlens/releases/tag/v0.14.0)
+* `lens`: automatically set to monochrome mode when using `--find` option https://github.com/dathere/qsv/commit/85398690b0ebbc9dea227d13f528c7703451de8b
+* `luau`: bumped embedded Luau from 0.694 to 0.697 https://github.com/dathere/qsv/commit/3e68e2991757aba2b0597d722b1108fdc8009628
+* `stats`: fingerprint hash now uses much-faster, parallelizable BLAKE3 instead of SHA256
+* `table`: document that it also creates "aligned TSVs" and Fixed Width Format files https://github.com/dathere/qsv/commit/aaa84b0b22c8cf60361554ddee5213b1d6f8ca49
+* tests: change default Python to 3.13
+* docs: documented that Extended Input Support (🗄️) does `.zip` auto-decompression
+* docs: documented Limited Extended Input Support (🗃️)
+* use latest [qsv-tuned csv crate with performance optimizations](https://github.com/dathere/qsv/blob/aaa84b0b22c8cf60361554ddee5213b1d6f8ca49/Cargo.toml#L304C1-L313C82)
+* build(deps): bump flate2 from 1.1.4 to 1.1.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3071
+* build(deps): bump human-panic from 2.0.3 to 2.0.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3077
+* deps: bump Polars from 0.51.0 at py-1.35.0-beta.1 to 0.52.0 https://github.com/dathere/qsv/commit/618edf0214a5ceb6df38cb61aafbc9e16ab35613
+* deps: use latest Polars at time of 9.0.0 release https://github.com/dathere/qsv/commit/c9e934c64af06f71c3a75ec891f895746f2123f9
+* build(deps): bump qsv-stats from 0.39.1 to 0.40.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3078
+* build(deps): bump actions/upload-artifact from 4 to 5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3074
+* applied several clippy lint suggestions
+* bumped several indirect dependencies
+* align nightly to 2025-10-24, the same nightly as Polars
+* bumped MSRV to Rust 1.91
+
+## Fixed
+* `describegpt`: add SQL escaping to eliminate SQL injection attack vector; add `.csv` extension to `--sql-output` when Polars SQL query runs successfully https://github.com/dathere/qsv/commit/ad52a35f3c900d4591d30091d10b0a0874c3c254
+* `frequency`: fix `--select` option always returning `<ALL_UNIQUE>` https://github.com/dathere/qsv/pull/3082
+
+## Removed
+* Removed SHA256 and replaced with mush faster, parallelizable BLAKE3 hash https://github.com/dathere/qsv/pull/3072 and https://github.com/dathere/qsv/pull/3080
+* publish: removed `maximize-build-space` step in workflows as it was not working as advertised
+* tests: removed `target-cpu=native` RUSTFLAG in CI tests to avoid intermittent SIGILL (Illegal Instruction) faults
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/8.1.1...9.0.0
+
+## [9.0.0] - Unreleased
 
 ## Added
 * `frequency`: add `--pretty-json` option https://github.com/dathere/qsv/commit/c67fd061a0cd101b0e04aaab79087c04324b0e46

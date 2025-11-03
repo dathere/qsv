@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Fixed
 * `describegpt`: add SQL escaping to eliminate SQL injection attack vector; add `.csv` extension to `--sql-output` when Polars SQL query runs successfully https://github.com/dathere/qsv/commit/ad52a35f3c900d4591d30091d10b0a0874c3c254
 * `frequency`: fix `--select` option always returning `<ALL_UNIQUE>` https://github.com/dathere/qsv/pull/3082
+* publish: fixed some publishing workflows
 
 ## Removed
 * Removed SHA256 and replaced with mush faster, parallelizable BLAKE3 hash https://github.com/dathere/qsv/pull/3072 and https://github.com/dathere/qsv/pull/3080

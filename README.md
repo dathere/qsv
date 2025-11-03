@@ -34,7 +34,7 @@
 | [count](/src/cmd/count.rs#L3)<br>📇🏎️🐻‍❄️ | Count the rows and optionally compile record width statistics of a CSV file. (11.87 seconds for a 15gb, 27m row NYC 311 dataset without an index. Instantaneous with an index.) If the `polars` feature is enabled, uses Polars' multithreaded, mem-mapped CSV reader for fast counts even without an index |
 | [datefmt](/src/cmd/datefmt.rs#L2)<br>📇🚀👆 | Formats recognized date fields ([19 formats recognized](https://docs.rs/qsv-dateparser/latest/qsv_dateparser/#accepted-date-formats)) to a specified date format using [strftime date format specifiers](https://docs.rs/chrono/latest/chrono/format/strftime/). |
 | [dedup](/src/cmd/dedup.rs#L2)<br>🤯🚀👆 | Remove duplicate rows (See also `extdedup`, `extsort`, `sort` & `sortcheck` commands). |
-| [describegpt](/src/cmd/describegpt.rs#L2)<br>🌐🤖🪄 | <a name="describegpt_deeplink"></a>Infer a Data Dictionary, Description & Tags or ask questions about a CSV using any [OpenAI API](https://platform.openai.com/docs/introduction)-compatible LLM, including local LLMs like [Ollama](https://ollama.com), [Jan](https://jan.ai) & [LM Studio](https://lmstudio.ai/).<br>(Examples: --all [Markdown](docs/nyc311-describegpt.md), [JSON](https://raw.githubusercontent.com/dathere/qsv/refs/heads/master/docs/nyc311-describegpt.json); [--prompt "What are the top 10 complaint types by community board & borough?"](docs/nyc311-describegpt-prompt.md), [SQL RAG result - deterministic, hallucination-free answer](docs/nyc311-describegpt-prompt.csv)) |
+| [describegpt](/src/cmd/describegpt.rs#L2)<br>🌐🤖🪄🗃️ | <a name="describegpt_deeplink"></a>Infer a Data Dictionary, Description & Tags or ask questions about a CSV using any [OpenAI API](https://platform.openai.com/docs/introduction)-compatible LLM, including local LLMs like [Ollama](https://ollama.com), [Jan](https://jan.ai) & [LM Studio](https://lmstudio.ai/).<br>(Examples: --all [Markdown](docs/nyc311-describegpt.md), [JSON](https://raw.githubusercontent.com/dathere/qsv/refs/heads/master/docs/nyc311-describegpt.json); [--prompt "What are the top 10 complaint types by community board & borough?"](docs/nyc311-describegpt-prompt.md), [SQL RAG result - deterministic, hallucination-free answer](docs/nyc311-describegpt-prompt.csv)) |
 | [diff](/src/cmd/diff.rs#L2)<br>🚀🪄 | Find the difference between two CSVs with ludicrous speed!<br/>e.g. _compare two CSVs with 1M rows x 9 columns in under 600ms!_ |
 | [edit](/src/cmd/edit.rs#L2) | Replace the value of a cell specified by its row and column. |
 | [enum](/src/cmd/enumerate.rs#L2)<br>👆 | Add a new column enumerating rows by adding a column of incremental or uuid identifiers. Can also be used to copy a column or fill a new column with a constant value.  |
@@ -60,7 +60,7 @@
 | [joinp](/src/cmd/joinp.rs#L2)✨<br>🚀🐻‍❄️🪄 | Inner, outer, right, cross, anti, semi, non-equi & asof joins using the [Pola.rs](https://www.pola.rs) engine. Unlike the `join` command, `joinp` can process files larger than RAM, is multithreaded, has join key validation, a maintain row order option, pre and post-join filtering, join keys unicode normalization, supports "special" [non-equi joins](https://docs.pola.rs/user-guide/transformations/joins/#non-equi-joins) and [asof joins](https://docs.pola.rs/user-guide/transformations/joins/#asof-join) (which is [particularly useful for time series data](https://github.com/dathere/qsv/blob/30cc920d0812a854fcbfedc5db81788a0600c92b/tests/test_joinp.rs#L509-L983)) & its output columns can be coalesced. |
 | [json](/src/cmd/json.rs#L2)<br>👆 | Convert JSON to CSV.
 | [jsonl](/src/cmd/jsonl.rs#L2)<br>🚀🔣 | Convert newline-delimited JSON ([JSONL](https://jsonlines.org/)/[NDJSON](http://ndjson.org/)) to CSV. See `tojsonl` command to convert CSV to JSONL.
-| [lens](/src/cmd/lens.rs#L2)✨<br>🐻‍❄️ | Interactively view, search & filter tabular data files (CSV, Arrow, Avro/IPC, Parquet, JSON Array and JSONL formats supported) using the [csvlens](https://github.com/YS-L/csvlens#csvlens) engine.
+| [lens](/src/cmd/lens.rs#L2)✨🗃️<br>🐻‍❄️ | Interactively view, search & filter tabular data files (CSV, Arrow, Avro/IPC, Parquet, JSON Array and JSONL formats supported) using the [csvlens](https://github.com/YS-L/csvlens#csvlens) engine.
 | [luau](/src/cmd/luau.rs#L2) 👑✨<br>📇🌐🔣📚 ![CKAN](docs/images/ckan.png) | <a name="luau_deeplink"></a>Create multiple new computed columns, filter rows, compute aggregations and build complex data pipelines by executing a [Luau](https://luau-lang.org) [0.697](https://github.com/Roblox/luau/releases/tag/0.697) expression/script for every row of a CSV file ([sequential mode](https://github.com/dathere/qsv/blob/bb72c4ef369d192d85d8b7cc6e972c1b7df77635/tests/test_luau.rs#L254-L298)), or using [random access](https://www.webopedia.com/definitions/random-access/) with an index ([random access mode](https://github.com/dathere/qsv/blob/bb72c4ef369d192d85d8b7cc6e972c1b7df77635/tests/test_luau.rs#L367-L415)).<br>Can process a single Luau expression or [full-fledged data-wrangling scripts using lookup tables](https://github.com/dathere/qsv-lookup-tables#example) with discrete BEGIN, MAIN and END sections.<br> It is not just another qsv command, it is qsv's [Domain-specific Language](https://en.wikipedia.org/wiki/Domain-specific_language) (DSL) with [numerous qsv-specific helper functions](https://github.com/dathere/qsv/blob/113eee17b97882dc368b2e65fec52b86df09f78b/src/cmd/luau.rs#L1356-L2290) to build production data pipelines. |
 | [partition](/src/cmd/partition.rs#L2)<br>👆 | Partition a CSV based on a column value. |
 | [pivotp](/src/cmd/pivotp.rs#L2)✨<br>🚀🐻‍❄️🪄 | Pivot CSV data. Features "smart" aggregation auto-selection based on data type & stats. |
@@ -77,7 +77,7 @@
 | [search](/src/cmd/search.rs#L2)<br>📇👆 | Run a regex over a CSV. Applies the regex to selected fields & shows only matching rows.  |
 | [searchset](/src/cmd/searchset.rs#L2)<br>📇👆 | _Run multiple regexes over a CSV in a single pass._ Applies the regexes to each field individually & shows only matching rows.  |
 | [select](/src/cmd/select.rs#L2)<br>👆 | Select, re-order, reverse, duplicate or drop columns.  |
-| [slice](/src/cmd/slice.rs#L2)<br>📇🏎️ | Slice rows from any part of a CSV. When an index is present, this only has to parse the rows in the slice (instead of all rows leading up to the start of the slice).  |
+| [slice](/src/cmd/slice.rs#L2)<br>📇🏎️🗃️ | Slice rows from any part of a CSV. When an index is present, this only has to parse the rows in the slice (instead of all rows leading up to the start of the slice).  |
 | [snappy](/src/cmd/snappy.rs#L2)<br>🚀🌐 | <a name="snappy_deeplink"></a>Does streaming compression/decompression of the input using Google's [Snappy](https://github.com/google/snappy/blob/main/docs/README.md) framing format ([more info](#automatic-compressiondecompression)). |
 | [sniff](/src/cmd/sniff.rs#L2)<br>📇🌐 ![CKAN](docs/images/ckan.png) | Quickly sniff & infer CSV metadata (delimiter, header row, preamble rows, quote character, flexible, is_utf8, average record length, number of records, content length & estimated number of records if sniffing a CSV on a URL, number of fields, field names & data types). It is also a general mime type detector. |
 | [sort](/src/cmd/sort.rs#L2)<br>🚀🤯👆 | Sorts CSV data in [lexicographical](https://en.wikipedia.org/wiki/Lexicographic_order), [natural](https://en.wikipedia.org/wiki/Natural_sort_order), numerical, reverse, unique or random (with optional seed) order (Also see `extsort` & `sortcheck` commands).  |
@@ -88,7 +88,7 @@
 | [table](/src/cmd/table.rs#L2)<br>🤯 | Show aligned output of a CSV using [elastic tabstops](https://github.com/BurntSushi/tabwriter). To interactively view a CSV, use the `lens` command. |
 | [template](/src/cmd/template.rs#L2)<br>📇🚀🔣📚![CKAN](docs/images/ckan.png) | Renders a template using CSV data with the [MiniJinja](https://docs.rs/minijinja/latest/minijinja/) template engine ([Example](https://github.com/dathere/qsv/blob/4645ec07b5befe3b0c0e49bf0f547315d0d7514b/src/cmd/template.rs#L18-L44)). |
 | [to](/src/cmd/to.rs#L2)✨<br>🚀🗄️ | Convert CSV files to [Parquet](https://parquet.apache.org), [PostgreSQL](https://www.postgresql.org), [SQLite](https://www.sqlite.org/index.html), Excel (XLSX), [LibreOffice Calc](https://www.libreoffice.org/discover/calc/) (ODS) and [Data Package](https://datahub.io/docs/data-packages/tabular). |
-| [tojsonl](/src/cmd/tojsonl.rs#L3)<br>📇😣🚀🔣🪄 | Smartly converts CSV to a newline-delimited JSON ([JSONL](https://jsonlines.org/)/[NDJSON](http://ndjson.org/)). By scanning the CSV first, it "smartly" infers the appropriate JSON data type for each column. See `jsonl` command to convert JSONL to CSV. |
+| [tojsonl](/src/cmd/tojsonl.rs#L3)<br>📇😣🚀🔣🪄🗃️ | Smartly converts CSV to a newline-delimited JSON ([JSONL](https://jsonlines.org/)/[NDJSON](http://ndjson.org/)). By scanning the CSV first, it "smartly" infers the appropriate JSON data type for each column. See `jsonl` command to convert JSONL to CSV. |
 | [transpose](/src/cmd/transpose.rs#L2)<br>🤯 | Transpose rows/columns of a CSV.  |
 | [validate](/src/cmd/validate.rs#L2)<br>📇🚀🌐📚🗄️![CKAN](docs/images/ckan.png) | <a name="validate_deeplink"></a>Validate CSV data [_blazingly-fast_](https://github.com/Stranger6667/jsonschema-rs?tab=readme-ov-file#performance "using jsonschema-rs - the fastest JSON Schema validator for Rust") using [JSON Schema Validation (Draft 2020-12)](https://json-schema.org/draft/2020-12/json-schema-validation.html) (e.g. _up to 780,031 rows/second_[^1] using [NYC's 311 schema](https://github.com/dathere/qsv/blob/master/resources/test/311_Service_Requests_from_2010_to_Present-2022-03-04.csv.schema.json) generated by the [`schema`](#schema_deeplink) command) & put invalid records into a separate file along with a detailed validation error report.<br><br>Supports several custom JSON Schema formats & keywords:<br> * `currency` custom format with [ISO-4217](https://en.wikipedia.org/wiki/ISO_4217) validation<br> * `dynamicEnum` custom keyword that supports enum validation against a CSV on the filesystem or a URL (http/https/ckan & dathere URL schemes supported)<br>* `uniqueCombinedWith` custom keyword to validate uniqueness across multiple columns for composite key validation.<br><br>If no JSON schema file is provided, validates if a CSV conforms to the [RFC 4180 standard](#rfc-4180-csv-standard) and is UTF-8 encoded. |
 
@@ -100,6 +100,7 @@
 😣: uses additional memory proportional to the cardinality of the columns in the CSV.  
 🧠: expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.  
 🗄️: [Extended input support](#extended-input-support).  
+🗃️: Limited [Extended input support].  
 🐻‍❄️: command powered/accelerated by [![polars 0.51.0 at the py-1.35.1 tag](https://img.shields.io/badge/polars-0.51.0-blue) at the py-1.35.1 tag](https://github.com/pola-rs/polars/releases/tag/py-1.35.0) vectorized query engine.  
 🤖: command uses Natural Language Processing & General AI techniques.  
 🏎️: multithreaded and/or faster when an index (📇) is available.  
@@ -369,9 +370,12 @@ The `cat`, `headers`, `sqlp`, `to` & `validate` commands have extended input sup
 
 If its a file, it will first check if it has an `.infile-list` extension. If it does, it will load the text file and parse each line as an input file path. This is a much faster and convenient way to process a large number of input files, without having to pass them all as separate command-line arguments. Further, the file paths can be anywhere in the file system, even on separate volumes. If an input file path is not fully qualified, it will be treated as relative to the current working directory. Empty lines and lines starting with `#` are ignored. Invalid file paths will be logged as warnings and skipped.
 
-For both directory and `.infile-list` input, snappy compressed files with a `.sz` extension will be automatically decompressed.
+For both directory and `.infile-list` input, snappy compressed files with a `.sz` or `.zip` extension will be automatically decompressed.
 
 Finally, if its just a regular file, it will be treated as a regular input file.
+
+#### Limited Extended Input Support
+The `describegpt`, `lens`, `slice` & `tojsonl` commands have limited extended input support (🗃️). They are different in that they only process one file. If provided an `.infile-list` or a compressed `.sz` or `.zip` file, they will only process the first file.
 
 ### Automatic Compression/Decompression
 
@@ -402,6 +406,8 @@ Compare that to [zip 3.0](https://infozip.sourceforge.net/Zip.html), which compr
 > - CSV: `.csv.gz`, `.csv.zst`, `.csv.zlib`
 > - TSV/TAB: `.tsv.gz`, `.tsv.zst`, `.tsv.zlib`; `.tab.gz`, `.tab.zst`, `.tab.zlib`  
 > - SSV: `.ssv.gz`, `.ssv.zst`, `.ssv.zlib`
+>
+> Commands with both Extended and Limited Extended Input support also support the `.zip` compressed format.
 
 ## RFC 4180 CSV Standard
 

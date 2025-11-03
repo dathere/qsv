@@ -37,14 +37,7 @@ jobs:
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags: -C target-cpu=native -C panic=immediate-abort
-          # - os: ubuntu-22.04
-          #   os-name: linux
-          #   target: x86_64-unknown-linux-musl
-          #   architecture: x86_64
-          #   musl-prep: true
-          #   addl-build-args: --features=apply,fetch,foreach,nightly,self_update
-          #   default-features:
+            addl-rustflags: -C target-cpu=native -Z unstable-options -C panic=immediate-abort
           - os: windows-latest
             os-name: windows
             target: x86_64-pc-windows-msvc
@@ -53,25 +46,7 @@ jobs:
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags: -C target-cpu=native -C panic=immediate-abort
-          # - os: windows-latest
-          #   os-name: windows
-          #   target: x86_64-pc-windows-gnu
-          #   architecture: x86_64
-          #   addl-build-args: --features=apply,luau,fetch,nightly,self_update,polars
-          #   default-features: --no-default-features 
-          #   addl-qsvlite-features:
-          #   addl-qsvdp-features:
-          #   addl-rustflags: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
-          # - os: macos-latest
-          #   os-name: macos
-          #   target: x86_64-apple-darwin
-          #   architecture: x86_64
-          #   addl-build-args: --features=apply,luau,fetch,foreach,nightly,to,self_update,polars,geocode,lens,prompt
-          #   default-features:
-          #   addl-qsvlite-features:
-          #   addl-qsvdp-features:
-          #   addl-rustflags: -C target-cpu=native
+            addl-rustflags: -C target-cpu=native -Z unstable-options -C panic=immediate-abort
 
     steps:
     - name: Installing Rust toolchain
@@ -107,7 +82,7 @@ jobs:
         command: build
         use-cross: false
         toolchain: ${{ matrix.rust }}
-        args: --profile release-nightly --bin qsv -Z build-std=std -Z unstable-options --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable,nightly ${{ matrix.job.default-features }}
+        args: --profile release-nightly --bin qsv -Z build-std=std --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable,nightly ${{ matrix.job.default-features }}
     - name: Build qsvlite-nightly
       env:
         RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
@@ -116,7 +91,7 @@ jobs:
         command: build
         use-cross: false
         toolchain: ${{ matrix.rust }}
-        args: --profile release-nightly --bin qsvlite -Z build-std=std -Z unstable-options --features=lite,self_update,nightly,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+        args: --profile release-nightly --bin qsvlite -Z build-std=std --features=lite,self_update,nightly,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     # TODO: Add qsvdp-nightly build back in after v5.0.3, be sure to copy qsvdp binaries below
     # - name: Build qsvdp-nightly
     #   env:

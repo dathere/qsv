@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [9.1.0] - 2025-11-03
 
+[FAIRification](https://www.go-fair.org/fair-principles/fairification-process/) continues to be a focus, as we continue to tweak key commands:
+
+- `frequency` received significant updates in this release, including several new options that make configuring frequency distribution tables easier.
+- `describegpt` now uses the much faster [BLAKE3 hash](https://github.com/BLAKE3-team/BLAKE3?tab=readme-ov-file#blake3) as a cache key (10-20x faster than SHA256)and supports passing complex prompts more easily through the file system.
+- [qsv-stats](https://docs.rs/qsv-stats/latest/stats/index.html) - the engine that powers both `stats` and `frequency` commands - has been further optimized with the [0.40.0 release](https://github.com/dathere/qsv-stats/releases/tag/0.40.0), to compile summary statistics in as fast as possible - even for very large files - often one to two orders magnitude faster (10 to 100x faster) than typical Python-based tools.
+- [Polars](https://pola.rs) has been upgraded to [0.52.0](https://github.com/pola-rs/polars/releases/tag/rs-0.52.0). This analytical query engine allows us to support more tabular formats & analyze and query millions of rows in seconds [_**in situ**_](https://en.wikipedia.org/wiki/In-situ_processing) - all without loading the data into a database.
+- the csv crate has been further tuned to squeeze out even higher throughput - already in the hundreds of thousands of rows per second.
+
+These improvements prepare the ground for the upcoming [MCP](https://modelcontextprotocol.io/docs/getting-started/intro) server on [qsv pro](https://qsvpro.dathere.com), which will enable at-scale, configurable, interactive "[_**Data Steward-in-the-loop**_](https://en.wikipedia.org/wiki/Human-in-the-loop)" FAIRification of privacy-sensitive files.
+
+The MCP server will handle not just CSVs but also other formats, including unstructured data - **_all processed locally on the desktop, without sending raw data to the cloud._**
+
+It will produce AI-ready, standards-compliant metadata (starting with [DCAT-US v3](https://doi-do.github.io/dcat-us/), [Croissant](https://docs.mlcommons.org/croissant/docs/croissant-spec.html) and [schema.org](https://schema.org/docs/data-and-datasets.html)) - ideal context for AI applications and data governance efforts alike.
+
 ---
 
 ## Added
@@ -19,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `describegpt`: explicitly use `frequency`'s dense rank strategy https://github.com/dathere/qsv/commit/dc3f270000fde3321ae0ad239010471db5ca3cad
 * `describegpt`: allow `--prompt` to be loaded from a text file https://github.com/dathere/qsv/commit/b11a10c306f0065f1852b23b935c5b04b0e69238
 * `describegpt`: use much faster BLAKE3 hash for cache key
-* `frequency`: change default rank-strategy from min (AKA "1224" ranking) to dense (AKA "1223" ranking)
+* `frequency`: change default rank-strategy from [min (AKA "1224" ranking) to dense (AKA "1223" ranking)](https://en.wikipedia.org/wiki/Ranking#Strategies_for_handling_ties)
 * `lens`: bumped csvlens from 0.13.0 to [0.14.0](https://github.com/YS-L/csvlens/releases/tag/v0.14.0)
 * `lens`: automatically set to monochrome mode when using `--find` option https://github.com/dathere/qsv/commit/85398690b0ebbc9dea227d13f528c7703451de8b
 * `luau`: bumped embedded Luau from 0.694 to 0.697 https://github.com/dathere/qsv/commit/3e68e2991757aba2b0597d722b1108fdc8009628
@@ -32,7 +46,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * build(deps): bump flate2 from 1.1.4 to 1.1.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3071
 * build(deps): bump human-panic from 2.0.3 to 2.0.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3077
 * deps: bump Polars from 0.51.0 at py-1.35.0-beta.1 to 0.52.0 https://github.com/dathere/qsv/commit/618edf0214a5ceb6df38cb61aafbc9e16ab35613
-* deps: use latest Polars at time of 9.0.0 release https://github.com/dathere/qsv/commit/c9e934c64af06f71c3a75ec891f895746f2123f9
 * build(deps): bump qsv-stats from 0.39.1 to 0.40.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3078
 * build(deps): bump actions/upload-artifact from 4 to 5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3074
 * applied several clippy lint suggestions
@@ -43,14 +56,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Fixed
 * `describegpt`: add SQL escaping to eliminate SQL injection attack vector; add `.csv` extension to `--sql-output` when Polars SQL query runs successfully https://github.com/dathere/qsv/commit/ad52a35f3c900d4591d30091d10b0a0874c3c254
 * `frequency`: fix `--select` option always returning `<ALL_UNIQUE>` https://github.com/dathere/qsv/pull/3082
-* publish: fixed some publishing workflows
+* fixed some publishing workflows
 
 ## Removed
 * Removed SHA256 and replaced with mush faster, parallelizable BLAKE3 hash https://github.com/dathere/qsv/pull/3072 and https://github.com/dathere/qsv/pull/3080
 * publish: removed `maximize-build-space` step in workflows as it was not working as advertised
 * tests: removed `target-cpu=native` RUSTFLAG in CI tests to avoid intermittent SIGILL (Illegal Instruction) faults
 
-**Full Changelog**: https://github.com/dathere/qsv/compare/8.1.1...9.0.0
+**Full Changelog**: https://github.com/dathere/qsv/compare/8.1.1...9.1.0
 
 ## [9.0.0] - Unreleased
 

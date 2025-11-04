@@ -12,9 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `frequency` received significant updates in this release, including several new options that make configuring frequency distribution tables easier.
 - `describegpt` now uses the much faster [BLAKE3 hash](https://github.com/BLAKE3-team/BLAKE3?tab=readme-ov-file#blake3) as a cache key (10-20x faster than SHA256)and supports passing complex prompts more easily through the file system.
-- [qsv-stats](https://docs.rs/qsv-stats/latest/stats/index.html) - the engine that powers both `stats` and `frequency` commands - has been further optimized with the [0.40.0 release](https://github.com/dathere/qsv-stats/releases/tag/0.40.0), to compile summary statistics in as fast as possible - even for very large files - often one to two orders magnitude faster (10 to 100x faster) than typical Python-based tools.
+- [qsv-stats](https://docs.rs/qsv-stats/latest/stats/index.html) - the engine that powers both `stats` and `frequency` commands - has been further optimized with the [0.40.0 release](https://github.com/dathere/qsv-stats/releases/tag/0.40.0), to compile summary statistics as fast as possible - even for very large files - often one to two orders magnitude faster (10 to 100x faster) than typical Python-based tools.
 - [Polars](https://pola.rs) has been upgraded to [0.52.0](https://github.com/pola-rs/polars/releases/tag/rs-0.52.0). This analytical query engine allows us to support more tabular formats & analyze and query millions of rows in seconds [_**in situ**_](https://en.wikipedia.org/wiki/In-situ_processing) - all without loading the data into a database.
-- the csv crate has been further tuned to squeeze out even higher throughput - already in the hundreds of thousands of rows per second.
+- the [csv 1.4.0 crate](https://github.com/BurntSushi/rust-csv?tab=readme-ov-file#csv) has been [further tuned to squeeze out even higher throughput](https://github.com/dathere/qsv/blob/aaa84b0b22c8cf60361554ddee5213b1d6f8ca49/Cargo.toml#L304C1-L313C82) - already ~2 million rows per second![^1]
 
 These improvements prepare the ground for the upcoming [MCP](https://modelcontextprotocol.io/docs/getting-started/intro) server on [qsv pro](https://qsvpro.dathere.com), which will enable at-scale, configurable, interactive "[_**Data Steward-in-the-loop**_](https://en.wikipedia.org/wiki/Human-in-the-loop)" FAIRification of privacy-sensitive files.
 
@@ -22,6 +22,7 @@ The MCP server will handle not just CSVs but also other formats, including unstr
 
 It will produce AI-ready, standards-compliant metadata (starting with [DCAT-US v3](https://doi-do.github.io/dcat-us/), [Croissant](https://docs.mlcommons.org/croissant/docs/croissant-spec.html) and [schema.org](https://schema.org/docs/data-and-datasets.html)) - ideal context for AI applications and data governance efforts alike.
 
+[^1]: see [`validate_no_schema` benchmark](https://qsv.dathere.com/benchmarks)
 ---
 
 ## Added
@@ -42,7 +43,7 @@ It will produce AI-ready, standards-compliant metadata (starting with [DCAT-US v
 * tests: change default Python to 3.13
 * docs: documented that Extended Input Support (🗄️) does `.zip` auto-decompression
 * docs: documented Limited Extended Input Support (🗃️)
-* use latest [qsv-tuned csv crate with performance optimizations](https://github.com/dathere/qsv/blob/aaa84b0b22c8cf60361554ddee5213b1d6f8ca49/Cargo.toml#L304C1-L313C82)
+* use latest qsv-tuned csv crate with performance optimizations
 * build(deps): bump flate2 from 1.1.4 to 1.1.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3071
 * build(deps): bump human-panic from 2.0.3 to 2.0.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3077
 * deps: bump Polars from 0.51.0 at py-1.35.0-beta.1 to 0.52.0 https://github.com/dathere/qsv/commit/618edf0214a5ceb6df38cb61aafbc9e16ab35613

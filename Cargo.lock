@@ -1246,14 +1246,13 @@ dependencies = [
 [[package]]
 name = "cached"
 version = "0.56.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "801927ee168e17809ab8901d9f01f700cd7d8d6a6527997fee44e4b0327a253c"
+source = "git+https://github.com/jqnatividad/cached?branch=nov2025-tweaks#17779283f313e7e0640f8fa16997386aa1c3ad97"
 dependencies = [
  "ahash 0.8.12",
  "cached_proc_macro",
  "cached_proc_macro_types",
  "directories",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "once_cell",
  "r2d2",
  "redis",
@@ -1268,8 +1267,7 @@ dependencies = [
 [[package]]
 name = "cached_proc_macro"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9225bdcf4e4a9a4c08bf16607908eb2fbf746828d5e0b5e019726dbf6571f201"
+source = "git+https://github.com/jqnatividad/cached?branch=nov2025-tweaks#17779283f313e7e0640f8fa16997386aa1c3ad97"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -1280,8 +1278,7 @@ dependencies = [
 [[package]]
 name = "cached_proc_macro_types"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ade8366b8bd5ba243f0a58f036cc0ca8a2f069cff1a2351ef1cac6b083e16fc0"
+source = "git+https://github.com/jqnatividad/cached?branch=nov2025-tweaks#17779283f313e7e0640f8fa16997386aa1c3ad97"
 
 [[package]]
 name = "calamine"

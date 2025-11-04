@@ -315,6 +315,9 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }
 
+# use our patched fork to bump hashbrown from 0.15 to 0.16 until our PR is merged
+cached = { git = "https://github.com/jqnatividad/cached", branch = "nov2025-tweaks" }
+
 # 0.14 has been released but has an old qsv-sniffer dependency
 # until the next release, until the qsv-sniffer dependency is updated
 csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "qsv-sniffer-0.12" }

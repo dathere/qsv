@@ -330,11 +330,6 @@ geozero = { git = "https://github.com/georust/geozero", rev = "572cfc2" }
 # This fork also replaces the unmaintained `unic-*` crates in the RUSTSEC-2025-0094 advisory
 grex = { git = "https://github.com/jqnatividad/grex", branch = "replace-unmaintained-rust-unic-grex-145" }
 
-# use upstream hashbrown with fixes and performance improvements for post-0.15.5 release
-# as 16.0.0 is not widely used yet and we want to take advantage of these fixes and improvements
-# without the breaking changes that 16.0.0 will bring. Remove this once 16.0.0 is widely used.
-hashbrown = { git = "https://github.com/rust-lang/hashbrown", rev = "e2a634b" }
-
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }
 

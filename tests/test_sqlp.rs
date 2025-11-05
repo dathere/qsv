@@ -1560,6 +1560,89 @@ fn sqlp_sql_join_on_subquery() {
 }
 
 #[test]
+fn sqlp_sql_join_on_literal_string_comparison() {
+    let wrk = Workdir::new("sqlp_sql_join_on_literal_string_comparison");
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["name", "role"],
+            svec!["alice", "admin"],
+            svec!["bob", "user"],
+            svec!["adam", "admin"],
+            svec!["charlie", "user"],
+        ],
+    );
+
+    wrk.create(
+        "test2.csv",
+        vec![
+            svec!["name", "dept"],
+            svec!["alice", "IT"],
+            svec!["bob", "HR"],
+            svec!["charlie", "IT"],
+            svec!["adam", "SEC"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("test.csv").arg("test2.csv").arg(
+        "SELECT t1.name, t1.role, t2.dept FROM test t1 INNER JOIN test2 t2 ON t1.name = t2.name \
+         AND t1.role = 'admin' ORDER BY t1.name",
+    );
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["name", "role", "dept"],
+        svec!["adam", "admin", "SEC"],
+        svec!["alice", "admin", "IT"],
+    ];
+
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_sql_join_on_expression_comparison() {
+    let wrk = Workdir::new("sqlp_sql_join_on_expression_comparison");
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["code", "value"],
+            svec!["HELLO", "100"],
+            svec!["WORLD", "200"],
+            svec!["FOO", "300"],
+        ],
+    );
+
+    wrk.create(
+        "test2.csv",
+        vec![
+            svec!["code", "value"],
+            svec!["hello", "-1.2345"],
+            svec!["world", "4.5678"],
+            svec!["bar", "2.2222"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("test.csv")
+        .arg("test2.csv")
+        .arg(
+            "SELECT t1.code AS code1, t2.code AS code2, (t1.value * t2.value) AS VAL FROM test t1 \
+             INNER JOIN test2 t2 ON LOWER(t1.code) = t2.code",
+        )
+        .args(["--float-precision", "2"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["code1", "code2", "VAL"],
+        svec!["HELLO", "hello", "-123.45"],
+        svec!["WORLD", "world", "913.56"],
+    ];
+
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn sqlp_sql_from_subquery() {
     let wrk = Workdir::new("sqlp_sql_from_subquery");
     wrk.create(

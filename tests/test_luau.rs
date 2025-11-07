@@ -3302,3 +3302,148 @@ return "ok"
     let stderr = wrk.output_stderr(&mut cmd);
     assert!(stderr.contains("Invalid shell command"));
 }
+
+#[test]
+fn luau_string_find_with_parentheses_escaped() {
+    let wrk = Workdir::new("luau_string_find_parentheses_escaped");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["No", "Name", "Points"],
+            svec!["1", "DNE (2)", "1"],
+            svec!["2", "Eberhard Lisse", "1"],
+            svec!["3", "Jane (Smith)", "2"],
+        ],
+    );
+
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("newpoints")
+        .arg(r#"if string.find(Name, 'DNE %(2%)') then return 0 elseif string.find(Name, 'Jane %(Smith%)') then return 10 else return Points end"#)
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["No", "Name", "Points", "newpoints"],
+        svec!["1", "DNE (2)", "1", "0"],
+        svec!["2", "Eberhard Lisse", "1", "1"],
+        svec!["3", "Jane (Smith)", "2", "10"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn luau_string_find_with_parentheses_plain_mode() {
+    let wrk = Workdir::new("luau_string_find_parentheses_plain");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["No", "Name", "Points"],
+            svec!["1", "DNE (2)", "1"],
+            svec!["2", "Eberhard Lisse", "1"],
+            svec!["3", "Jane (Smith)", "2"],
+        ],
+    );
+
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("newpoints")
+        .arg(r#"if string.find(Name, 'DNE (2)', 1, true) then return 0 elseif string.find(Name, 'Jane (Smith)', 1, true) then return 10 else return Points end"#)
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["No", "Name", "Points", "newpoints"],
+        svec!["1", "DNE (2)", "1", "0"],
+        svec!["2", "Eberhard Lisse", "1", "1"],
+        svec!["3", "Jane (Smith)", "2", "10"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn luau_string_find_special_characters_dots() {
+    let wrk = Workdir::new("luau_string_find_dots");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["email", "valid"],
+            svec!["user@example.com", "yes"],
+            svec!["test@testdotcom", "no"],
+            svec!["admin@site.org", "yes"],
+        ],
+    );
+
+    // Using plain text mode to find literal dots in email addresses
+    let mut cmd = wrk.command("luau");
+    cmd.arg("filter")
+        .arg(r#"string.find(email, '.com', 1, true)"#)
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["email", "valid"], svec!["user@example.com", "yes"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn luau_string_find_special_characters_escaped_dots() {
+    let wrk = Workdir::new("luau_string_find_escaped_dots");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["text"],
+            svec!["Version 1.0"],
+            svec!["Version 2.5"],
+            svec!["No version"],
+        ],
+    );
+
+    // Using escaped dot to match literal dot in version numbers
+    let mut cmd = wrk.command("luau");
+    cmd.arg("filter")
+        .arg(r#"string.find(text, '%d%.%d')"#)
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["text"], svec!["Version 1.0"], svec!["Version 2.5"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn luau_string_find_issue_3089() {
+    // Reproducing the exact issue from GitHub issue #3089
+    let wrk = Workdir::new("luau_issue_3089");
+    wrk.create(
+        "a.csv",
+        vec![
+            svec!["No", "Name", "Minutes", "Points"],
+            svec!["1", "DNE (2)", "16", "1"],
+            svec!["2", "Eberhard Lisse", "33", "1"],
+        ],
+    );
+
+    // Test with escaped parentheses
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("newpoints")
+        .arg(r#"if string.find(Name,'DNE %(2%)') then return 0 else return Points end"#)
+        .arg("a.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["No", "Name", "Minutes", "Points", "newpoints"],
+        svec!["1", "DNE (2)", "16", "1", "0"],
+        svec!["2", "Eberhard Lisse", "33", "1", "1"],
+    ];
+    assert_eq!(got, expected);
+
+    // Test with plain text mode
+    let mut cmd2 = wrk.command("luau");
+    cmd2.arg("map")
+        .arg("newpoints")
+        .arg(r#"if string.find(Name,'DNE (2)', 1, true) then return 0 else return Points end"#)
+        .arg("a.csv");
+
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    assert_eq!(got2, expected);
+}

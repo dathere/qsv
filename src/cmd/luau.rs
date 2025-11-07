@@ -60,6 +60,28 @@ Some examples:
   $ qsv luau filter "tonumber(a) > 45"
   $ qsv luau filter "tonumber(a) >= tonumber(b)"
 
+PATTERN MATCHING WITH string.find AND OTHER STRING FUNCTIONS:
+  Lua/Luau string functions like string.find, string.match, string.gsub use 
+  PATTERN MATCHING by default, where certain characters have special meanings:
+    ( ) . % + - * ? [ ] ^ $
+
+  If you need to search for these characters literally, you have two options:
+
+  1. Escape special characters with % (percent sign):
+     $ qsv luau filter "string.find(Name, 'John %(Jr%)')"
+     $ qsv luau map dots "string.gsub(col.text, '%%.', '')"
+
+  2. Use plain text mode (4th parameter = true):
+     $ qsv luau filter "string.find(Name, 'John (Jr)', 1, true)"
+     $ qsv luau map match "string.find(col.text, 'Mr.', 1, true)"
+
+  Common gotchas:
+  - Parentheses in names like "Jane (Smith)" need escaping or plain mode
+  - Dots in email addresses, URLs, or decimal numbers
+  - Hyphens in phone numbers or dates
+
+  For more on Lua patterns: https://www.lua.org/manual/5.4/manual.html#6.4.1
+
   Typing long scripts on the command line gets tiresome rather quickly. Use the
   "file:" prefix or the ".lua/.luau" file extension to read non-trivial scripts
   from the filesystem.

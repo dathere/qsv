@@ -2852,9 +2852,9 @@ dependencies = [
 
 [[package]]
 name = "geosuggest-utils"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f67b2af0e4c615cd367f40339d6b245843d243c93eb78eb0734660822e020e6"
+checksum = "2fdcb38ade1c01dcac1d98df06a6bf54127c6e7a18dd0b318b5eb0194abd0a7f"
 dependencies = [
  "anyhow",
  "futures",

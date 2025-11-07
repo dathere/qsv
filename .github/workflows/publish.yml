@@ -43,7 +43,7 @@ jobs:
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags: -C target-cpu=native
+            addl-rustflags:
           - os: ubuntu-24.04
             os-name: linux
             target: x86_64-unknown-linux-musl
@@ -54,7 +54,7 @@ jobs:
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags: -C target-cpu=native
+            addl-rustflags:
           # - os: ubuntu-24.04
           #   os-name: linux
           #   target: i686-unknown-linux-gnu
@@ -74,7 +74,7 @@ jobs:
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags: -C target-cpu=native
+            addl-rustflags:
           # - os: windows-latest
           #   os-name: windows
           #   target: i686-pc-windows-msvc
@@ -94,7 +94,7 @@ jobs:
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags: -C target-cpu=native
+            addl-rustflags:
           # - os: macos-12
           #   os-name: macos
           #   target: x86_64-apple-darwin

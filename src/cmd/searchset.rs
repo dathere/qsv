@@ -35,9 +35,11 @@ searchset arguments:
 searchset options:
     -i, --ignore-case          Case insensitive search. This is equivalent to
                                prefixing the regex with '(?i)'.
-    --literal                  Treat the regex as a literal string. This allows
-                               you to search for exact matches that even contain
-                               regex special characters.
+    --literal                  Treat the regex as a literal string. This allows you to
+                               search for matches that contain regex special characters.
+    --exact                    Match the ENTIRE field exactly. Treats the pattern
+                               as a literal string (like --literal) and automatically
+                               anchors it to match the complete field value (^pattern$).
     -s, --select <arg>         Select the columns to search. See 'qsv select -h'
                                for the full syntax.
     -v, --invert-match         Select only rows that did not match
@@ -111,6 +113,7 @@ struct Args {
     arg_input:              Option<String>,
     arg_regexset_file:      String,
     flag_literal:           bool,
+    flag_exact:             bool,
     flag_select:            SelectColumns,
     flag_output:            Option<String>,
     flag_no_headers:        bool,
@@ -131,13 +134,17 @@ struct Args {
     flag_quiet:             bool,
 }
 
-fn read_regexset(filename: &str, literal: bool) -> io::Result<Vec<String>> {
+fn read_regexset(filename: &str, literal: bool, exact: bool) -> io::Result<Vec<String>> {
     let file = File::open(filename)?;
     let reader = BufReader::new(file);
     let lines = reader.lines();
 
     if literal {
         lines.map(|line| line.map(|s| regex::escape(&s))).collect()
+    } else if exact {
+        lines
+            .map(|line| line.map(|s| format!("^{}$", regex::escape(&s))))
+            .collect()
     } else {
         lines.collect()
     }
@@ -156,7 +163,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    let regexset = read_regexset(&args.arg_regexset_file, args.flag_literal)?;
+    let regexset = read_regexset(&args.arg_regexset_file, args.flag_literal, args.flag_exact)?;
 
     let mut regex_labels: Vec<String> = Vec::with_capacity(regexset.len());
     let labels_re = Regex::new(r".?#(?P<label>.*)$").unwrap();

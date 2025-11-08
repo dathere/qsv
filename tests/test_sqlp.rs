@@ -3753,3 +3753,50 @@ fn sqlp_decimal_comma_validation_with_skip_input() {
     let expected = "id,value\n1,\"100,50\"\n2,\"200,75\"\n";
     assert_eq!(got, expected);
 }
+
+#[test]
+fn sqlp_union_positional() {
+    let wrk = Workdir::new("sqlp_union_positional");
+
+    // Create first table with columns "Value" and "Tag"
+    wrk.create(
+        "df1.csv",
+        vec![
+            svec!["Value", "Tag"],
+            svec!["100", "hello"],
+            svec!["200", "foo"],
+        ],
+    );
+
+    // Create second table with different column names "Number" and "String"
+    wrk.create(
+        "df2.csv",
+        vec![
+            svec!["Number", "String"],
+            svec!["300", "world"],
+            svec!["400", "bar"],
+        ],
+    );
+
+    // Test: UNION should combine tables positionally, using column names from first table
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["df1.csv", "df2.csv"]).arg(
+        r#"SELECT u.* FROM (
+            SELECT * FROM df1
+            UNION
+            SELECT * FROM df2
+        ) u ORDER BY Value"#,
+    );
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["Value", "Tag"],
+        svec!["100", "hello"],
+        svec!["200", "foo"],
+        svec!["300", "world"],
+        svec!["400", "bar"],
+    ];
+    assert_eq!(got, expected);
+}

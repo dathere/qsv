@@ -28,9 +28,11 @@ search arguments:
 search options:
     -i, --ignore-case      Case insensitive search. This is equivalent to
                            prefixing the regex with '(?i)'.
-    --literal              Treat the regex as a literal string. This allows
-                           you to search for exact matches that even contain
-                           regex special characters.
+    --literal              Treat the regex as a literal string. This allows you to
+                           search for matches that contain regex special characters.
+    --exact                Match the ENTIRE field exactly. Treats the pattern
+                           as a literal string (like --literal) and automatically
+                           anchors it to match the complete field value (^pattern$).
     -s, --select <arg>     Select the columns to search. See 'qsv select -h'
                            for the full syntax.
     -v, --invert-match     Select only rows that did not match
@@ -98,6 +100,7 @@ use crate::{
 struct Args {
     arg_input:           Option<String>,
     arg_regex:           String,
+    flag_exact:          bool,
     flag_literal:        bool,
     flag_select:         SelectColumns,
     flag_output:         Option<String>,
@@ -128,6 +131,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let arg_regex = if args.flag_literal {
         regex::escape(&args.arg_regex)
+    } else if args.flag_exact {
+        format!("^{}$", regex::escape(&args.arg_regex))
     } else {
         args.arg_regex.clone()
     };

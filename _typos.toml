@@ -16,6 +16,7 @@ hel           = "hel"
 inout         = "inout"
 UE            = "UE"
 seeked        = "seeked"
+DNE           = "DNE"
 
 [files]
 extend-exclude = [

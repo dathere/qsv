@@ -42,6 +42,28 @@ fn regexset_literal_file() -> Vec<Vec<String>> {
     rows
 }
 
+fn regexset_exact_file() -> Vec<Vec<String>> {
+    let rows = vec![svec!["foo$bar^"], svec!["is wal[do] here"]];
+    rows
+}
+
+fn data_with_dots(headers: bool) -> Vec<Vec<String>> {
+    let mut rows = vec![
+        svec!["1", "JM Bloggs"],
+        svec!["2", "F. J. Bloggs"],
+        svec!["3", "J. Bloggs"],
+    ];
+    if headers {
+        rows.insert(0, svec!["id", "name"]);
+    }
+    rows
+}
+
+fn regexset_exact_dots_file() -> Vec<Vec<String>> {
+    let rows = vec![svec!["J. Bloggs"]];
+    rows
+}
+
 fn regexset_no_match_file() -> Vec<Vec<String>> {
     let rows = vec![svec!["^blah"], svec!["bloop$"], svec!["joel"]];
     rows
@@ -466,6 +488,71 @@ fn searchset_literal() {
         svec!["is wal[do] here", "spot"],
         svec!["bleh", "no, Wal[do] is there"],
     ];
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn searchset_exact() {
+    let wrk = Workdir::new("searchset_exact");
+    wrk.create("data.csv", data_with_regex_chars(true));
+    wrk.create("regexset.txt", regexset_exact_file());
+    let mut cmd = wrk.command("searchset");
+    cmd.arg("regexset.txt").arg("data.csv").arg("--exact");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["h1", "h2"],
+        svec!["foo$bar^", "barfoo"],
+        svec!["is wal[do] here", "spot"],
+    ];
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn searchset_exact_with_dots() {
+    let wrk = Workdir::new("searchset_exact_with_dots");
+    wrk.create("data.csv", data_with_dots(true));
+    wrk.create("regexset.txt", regexset_exact_dots_file());
+    let mut cmd = wrk.command("searchset");
+    cmd.arg("regexset.txt").arg("data.csv").arg("--exact");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should only match "J. Bloggs" exactly, not "F. J. Bloggs" or "JM Bloggs"
+    let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn searchset_exact_case_insensitive() {
+    let wrk = Workdir::new("searchset_exact_case_insensitive");
+    wrk.create("data.csv", data_with_dots(true));
+    wrk.create("regexset.txt", vec![svec!["j. bloggs"]]);
+    let mut cmd = wrk.command("searchset");
+    cmd.arg("regexset.txt")
+        .arg("data.csv")
+        .arg("--exact")
+        .arg("--ignore-case");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn searchset_exact_no_match_substring() {
+    let wrk = Workdir::new("searchset_exact_no_match_substring");
+    wrk.create("data.csv", data_with_dots(true));
+    wrk.create("regexset.txt", regexset_exact_dots_file());
+    let mut cmd = wrk.command("searchset");
+    cmd.arg("regexset.txt").arg("data.csv").arg("--exact");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should NOT match "F. J. Bloggs" even though it contains "J. Bloggs" as substring
+    let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
     assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }

@@ -26,6 +26,18 @@ fn data_with_regex_chars(headers: bool) -> Vec<Vec<String>> {
     rows
 }
 
+fn data_with_dots(headers: bool) -> Vec<Vec<String>> {
+    let mut rows = vec![
+        svec!["1", "JM Bloggs"],
+        svec!["2", "F. J. Bloggs"],
+        svec!["3", "J. Bloggs"],
+    ];
+    if headers {
+        rows.insert(0, svec!["id", "name"]);
+    }
+    rows
+}
+
 #[test]
 fn search() {
     let wrk = Workdir::new("search");
@@ -686,6 +698,66 @@ fn search_literal() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![svec!["foo^bar", "barfoo"], svec!["^barfoo", "foobar"]];
+    assert_eq!(got, expected);
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn search_exact() {
+    let wrk = Workdir::new("search_exact");
+    wrk.create("data.csv", data_with_dots(true));
+    let mut cmd = wrk.command("search");
+    cmd.arg("--exact").arg("J. Bloggs").arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
+    assert_eq!(got, expected);
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn search_exact_with_special_chars() {
+    let wrk = Workdir::new("search_exact_with_special_chars");
+    wrk.create("data.csv", data_with_regex_chars(true));
+    let mut cmd = wrk.command("search");
+    cmd.arg("--exact").arg("foo^bar").arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["h1", "h2"], svec!["foo^bar", "barfoo"]];
+    assert_eq!(got, expected);
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn search_exact_no_match_substring() {
+    let wrk = Workdir::new("search_exact_no_match_substring");
+    wrk.create("data.csv", data_with_dots(true));
+    let mut cmd = wrk.command("search");
+    cmd.arg("--exact").arg("J. Bloggs").arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should only match "J. Bloggs", not "F. J. Bloggs" (substring)
+    let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
+    assert_eq!(got, expected);
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn search_exact_case_insensitive() {
+    let wrk = Workdir::new("search_exact_case_insensitive");
+    wrk.create("data.csv", data_with_dots(true));
+    let mut cmd = wrk.command("search");
+    cmd.arg("--exact")
+        .arg("--ignore-case")
+        .arg("j. bloggs")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
     assert_eq!(got, expected);
 
     wrk.assert_success(&mut cmd);

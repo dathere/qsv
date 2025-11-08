@@ -311,3 +311,185 @@ fn replace_groups() {
     ];
     assert_eq!(got, expected);
 }
+
+#[test]
+fn replace_exact() {
+    let wrk = Workdir::new("replace_exact");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "JM Bloggs"],
+            svec!["2", "F. J. Bloggs"],
+            svec!["3", "J. Bloggs"],
+        ],
+    );
+    let mut cmd = wrk.command("replace");
+    cmd.arg("--exact")
+        .arg("J. Bloggs")
+        .arg("John Bloggs")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should only replace exact match "J. Bloggs", not "F. J. Bloggs"
+    let expected = vec![
+        svec!["id", "name"],
+        svec!["1", "JM Bloggs"],
+        svec!["2", "F. J. Bloggs"],
+        svec!["3", "John Bloggs"],
+    ];
+    assert_eq!(got, expected);
+
+    let got_err = wrk.output_stderr(&mut cmd);
+    let expected_err = "1\n";
+    assert_eq!(got_err, expected_err);
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn replace_exact_with_special_chars() {
+    let wrk = Workdir::new("replace_exact_with_special_chars");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["identifier", "color"],
+            svec!["164.0", "yel$low^"],
+            svec!["165.0", "yellow"],
+            svec!["166.0", "$low^"],
+            svec!["167.0", "yel$low^.0"],
+        ],
+    );
+    let mut cmd = wrk.command("replace");
+    cmd.arg("--exact")
+        .arg("yel$low^")
+        .arg("yellow")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should only replace exact field match, not substring
+    let expected = vec![
+        svec!["identifier", "color"],
+        svec!["164.0", "yellow"],
+        svec!["165.0", "yellow"],
+        svec!["166.0", "$low^"],
+        svec!["167.0", "yel$low^.0"],
+    ];
+    assert_eq!(got, expected);
+
+    let got_err = wrk.output_stderr(&mut cmd);
+    let expected_err = "1\n";
+    assert_eq!(got_err, expected_err);
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn replace_exact_no_substring_match() {
+    let wrk = Workdir::new("replace_exact_no_substring_match");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "JM Bloggs"],
+            svec!["2", "F. J. Bloggs"],
+            svec!["3", "J. Bloggs"],
+        ],
+    );
+    let mut cmd = wrk.command("replace");
+    cmd.arg("--exact")
+        .arg("J. Bloggs")
+        .arg("REPLACED")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should NOT replace "F. J. Bloggs" even though it contains "J. Bloggs"
+    let expected = vec![
+        svec!["id", "name"],
+        svec!["1", "JM Bloggs"],
+        svec!["2", "F. J. Bloggs"],
+        svec!["3", "REPLACED"],
+    ];
+    assert_eq!(got, expected);
+
+    let got_err = wrk.output_stderr(&mut cmd);
+    let expected_err = "1\n";
+    assert_eq!(got_err, expected_err);
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn replace_exact_case_insensitive() {
+    let wrk = Workdir::new("replace_exact_case_insensitive");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "JM Bloggs"],
+            svec!["2", "F. J. Bloggs"],
+            svec!["3", "J. Bloggs"],
+            svec!["4", "j. bloggs"],
+        ],
+    );
+    let mut cmd = wrk.command("replace");
+    cmd.arg("--exact")
+        .arg("--ignore-case")
+        .arg("j. bloggs")
+        .arg("John Bloggs")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should replace both "J. Bloggs" and "j. bloggs" with case-insensitive exact match
+    let expected = vec![
+        svec!["id", "name"],
+        svec!["1", "JM Bloggs"],
+        svec!["2", "F. J. Bloggs"],
+        svec!["3", "John Bloggs"],
+        svec!["4", "John Bloggs"],
+    ];
+    assert_eq!(got, expected);
+
+    let got_err = wrk.output_stderr(&mut cmd);
+    let expected_err = "2\n";
+    assert_eq!(got_err, expected_err);
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn replace_exact_with_select() {
+    let wrk = Workdir::new("replace_exact_with_select");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "email"],
+            svec!["1", "test", "test@example.com"],
+            svec!["2", "test", "other@example.com"],
+            svec!["3", "testing", "test@example.com"],
+        ],
+    );
+    let mut cmd = wrk.command("replace");
+    cmd.arg("--exact")
+        .arg("--select")
+        .arg("name")
+        .arg("test")
+        .arg("REPLACED")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should only replace exact "test" in name column, not "testing"
+    let expected = vec![
+        svec!["id", "name", "email"],
+        svec!["1", "REPLACED", "test@example.com"],
+        svec!["2", "REPLACED", "other@example.com"],
+        svec!["3", "testing", "test@example.com"],
+    ];
+    assert_eq!(got, expected);
+
+    let got_err = wrk.output_stderr(&mut cmd);
+    let expected_err = "2\n";
+    assert_eq!(got_err, expected_err);
+
+    wrk.assert_success(&mut cmd);
+}

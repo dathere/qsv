@@ -27,9 +27,11 @@ replace arguments:
 replace options:
     -i, --ignore-case      Case insensitive search. This is equivalent to
                            prefixing the regex with '(?i)'.
-    --literal              Treat the regex pattern as a literal string. This allows
-                           you to search for exact matches that even contain
-                           regex special characters.
+    --literal              Treat the regex pattern as a literal string. This allows you
+                           to search for matches that contain regex special characters.
+    --exact                Match the ENTIRE field exactly. Treats the pattern
+                           as a literal string (like --literal) and automatically
+                           anchors it to match the complete field value (^pattern$).
     -s, --select <arg>     Select the columns to search. See 'qsv select -h'
                            for the full syntax.
     -u, --unicode          Enable unicode support. When enabled, character classes
@@ -84,6 +86,7 @@ struct Args {
     flag_delimiter:      Option<Delimiter>,
     flag_ignore_case:    bool,
     flag_literal:        bool,
+    flag_exact:          bool,
     flag_size_limit:     usize,
     flag_dfa_size_limit: usize,
     flag_not_one:        bool,
@@ -104,6 +107,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let arg_pattern = if args.flag_literal {
         regex::escape(&args.arg_pattern)
+    } else if args.flag_exact {
+        format!("^{}$", regex::escape(&args.arg_pattern))
     } else {
         args.arg_pattern.clone()
     };

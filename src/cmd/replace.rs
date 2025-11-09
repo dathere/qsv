@@ -11,6 +11,32 @@ backslash or by wrapping the replacement string into single quotes:
 Returns exitcode 0 when replacements are done, returning number of replacements to stderr.
 Returns exitcode 1 when no replacements are done, unless the '--not-one' flag is used.
 
+When the CSV is indexed, a faster parallel replace is used.
+If there were any replacements, the index will be refreshed.
+
+Examples:
+
+Replace all occurrences of 'hello' with 'world' in the file.csv file.
+
+  $ qsv replace 'hello' 'world' file.csv
+
+Replace all occurrences of 'hello' with 'world' in the file.csv file
+and save the output to the file.out file.
+
+  $ qsv replace 'hello' 'world' file.csv -o file.out
+
+Replace all occurrences of 'hello' case insensitive with 'world'
+in the file.csv file.
+
+  $ qsv replace 'hello' 'world' file.csv -i
+
+Replace all valid email addresses (using a regex)
+with '<EMAIL>' in the file.csv file.
+
+  $ qsv replace '([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})' /
+   '<EMAIL>' file.csv
+
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_replace.rs.
 
 Usage:
@@ -45,6 +71,9 @@ replace options:
                            expression engine's Discrete Finite Automata.
                            [default: 10]
     --not-one              Use exit code 0 instead of 1 for no replacement found.
+    -j, --jobs <arg>       The number of jobs to run in parallel when the given CSV data has
+                           an index. Note that a file handle is opened for each job.
+                           When not set, defaults to the number of CPUs detected.
 
 Common options:
     -h, --help             Display this message
@@ -59,22 +88,26 @@ Common options:
 
 "#;
 
-use std::{borrow::Cow, collections::HashSet};
+use std::{borrow::Cow, collections::HashSet, fs, io::BufWriter, path::Path, sync::Arc};
 
+use crossbeam_channel;
+use csv_index::RandomAccessSimple;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget};
 use regex::bytes::RegexBuilder;
 use serde::Deserialize;
+use threadpool::ThreadPool;
 
 use crate::{
     CliError, CliResult,
-    config::{Config, Delimiter},
+    config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
+    index::Indexed,
     select::SelectColumns,
     util,
 };
 
 #[allow(dead_code)]
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Args {
     arg_input:           Option<String>,
     arg_pattern:         String,
@@ -92,9 +125,68 @@ struct Args {
     flag_not_one:        bool,
     flag_progressbar:    bool,
     flag_quiet:          bool,
+    flag_jobs:           Option<usize>,
 }
 
 const NULL_VALUE: &str = "<null>";
+
+// ReplaceResult holds information about a replacement result for parallel processing
+struct ReplaceResult {
+    row_number:  u64,
+    record:      csv::ByteRecord,
+    match_count: u64,  // matches in this record
+    had_match:   bool, // did this record have any matches
+}
+
+/// Process a single record, applying the regex pattern and replacement to selected fields.
+/// Returns (processed_record, match_count, had_any_match)
+#[inline]
+fn process_record(
+    record: &csv::ByteRecord,
+    sel_indices: &HashSet<usize>,
+    pattern: &regex::bytes::Regex,
+    replacement: &[u8],
+) -> (csv::ByteRecord, u64, bool) {
+    let mut match_count = 0;
+    let mut had_match = false;
+
+    let processed_record = record
+        .into_iter()
+        .enumerate()
+        .map(|(i, v)| {
+            if sel_indices.contains(&i) {
+                if pattern.is_match(v) {
+                    match_count += 1;
+                    had_match = true;
+                    pattern.replace_all(v, replacement)
+                } else {
+                    Cow::Borrowed(v)
+                }
+            } else {
+                Cow::Borrowed(v)
+            }
+        })
+        .collect();
+
+    (processed_record, match_count, had_match)
+}
+
+/// Handle the final results of a replace operation.
+/// Prints match count to stderr (unless quiet) and returns error if no matches found
+/// (unless not_one flag is set).
+fn handle_replace_results(
+    total_match_ctr: u64,
+    flag_quiet: bool,
+    flag_not_one: bool,
+) -> CliResult<u64> {
+    if !flag_quiet {
+        eprintln!("{total_match_ctr}");
+    }
+    if total_match_ctr == 0 && !flag_not_one {
+        return Err(CliError::NoMatch());
+    }
+    Ok(total_match_ctr)
+}
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
@@ -127,101 +219,210 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers(args.flag_no_headers)
-        .select(args.flag_select);
+        .select(args.flag_select.clone());
 
-    let mut rdr = rconfig.reader()?;
-    let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
-
-    let headers = rdr.byte_headers()?.clone();
-    let sel = rconfig.selection(&headers)?;
-
-    // use a hash set for O(1) time complexity
-    // instead of O(n) with the previous vector lookup
-    let sel_indices: HashSet<&usize> = sel.iter().collect();
-
-    if !rconfig.no_headers {
-        wtr.write_record(&headers)?;
-    }
-
-    // prep progress bar
-    #[cfg(any(feature = "feature_capable", feature = "lite"))]
-    let show_progress =
-        (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR")) && !rconfig.is_stdin();
-    #[cfg(any(feature = "feature_capable", feature = "lite"))]
-    let progress = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(5));
-    #[cfg(any(feature = "feature_capable", feature = "lite"))]
-    if show_progress {
-        util::prep_progress(&progress, util::count_rows(&rconfig)?);
+    // Route to parallel or sequential replace
+    // based on index availability and number of jobs
+    if let Some(idx) = rconfig.indexed()?
+        && util::njobs(args.flag_jobs) > 1
+    {
+        let total_match_ctr = args.parallel_replace(&idx, pattern, &rconfig, replacement)?;
+        // refresh the index if there were any replacements
+        if total_match_ctr > 0 {
+            let mut rdr = rconfig.reader_file()?;
+            let mut wtr = BufWriter::with_capacity(
+                DEFAULT_WTR_BUFFER_CAPACITY,
+                fs::File::create(util::idx_path(Path::new(&args.arg_input.unwrap())))?,
+            );
+            RandomAccessSimple::create(&mut rdr, &mut wtr)?;
+            std::io::Write::flush(&mut wtr)?;
+        }
     } else {
-        progress.set_draw_target(ProgressDrawTarget::hidden());
+        let _ = args.sequential_replace(&pattern, &rconfig, replacement)?;
     }
+    Ok(())
+}
 
-    let mut record = csv::ByteRecord::new();
-    let mut total_match_ctr: u64 = 0;
-    #[cfg(any(feature = "feature_capable", feature = "lite"))]
-    let mut rows_with_matches_ctr: u64 = 0;
-    #[cfg(any(feature = "feature_capable", feature = "lite"))]
-    let mut match_found;
+impl Args {
+    fn sequential_replace(
+        &self,
+        pattern: &regex::bytes::Regex,
+        rconfig: &Config,
+        replacement: &[u8],
+    ) -> CliResult<u64> {
+        let mut rdr = rconfig.reader()?;
+        let mut wtr = Config::new(self.flag_output.as_ref()).writer()?;
 
-    while rdr.read_byte_record(&mut record)? {
+        let headers = rdr.byte_headers()?.clone();
+        let sel = rconfig.selection(&headers)?;
+
+        // use a hash set for O(1) time complexity
+        // instead of O(n) with the previous vector lookup
+        let sel_indices: HashSet<usize> = sel.iter().copied().collect();
+
+        if !rconfig.no_headers {
+            wtr.write_record(&headers)?;
+        }
+
+        // prep progress bar
+        #[cfg(any(feature = "feature_capable", feature = "lite"))]
+        let show_progress = (self.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR"))
+            && !rconfig.is_stdin();
+        #[cfg(any(feature = "feature_capable", feature = "lite"))]
+        let progress = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(5));
         #[cfg(any(feature = "feature_capable", feature = "lite"))]
         if show_progress {
-            progress.inc(1);
+            util::prep_progress(&progress, util::count_rows(rconfig)?);
+        } else {
+            progress.set_draw_target(ProgressDrawTarget::hidden());
         }
 
+        let mut record = csv::ByteRecord::new();
+        let mut total_match_ctr: u64 = 0;
         #[cfg(any(feature = "feature_capable", feature = "lite"))]
-        {
-            match_found = false;
+        let mut rows_with_matches_ctr: u64 = 0;
+
+        while rdr.read_byte_record(&mut record)? {
+            #[cfg(any(feature = "feature_capable", feature = "lite"))]
+            if show_progress {
+                progress.inc(1);
+            }
+
+            let (processed_record, match_count, had_match) =
+                process_record(&record, &sel_indices, pattern, replacement);
+
+            total_match_ctr += match_count;
+            #[cfg(any(feature = "feature_capable", feature = "lite"))]
+            if had_match {
+                rows_with_matches_ctr += 1;
+            }
+
+            wtr.write_byte_record(&processed_record)?;
+            record = processed_record;
         }
-        record = record
-            .into_iter()
-            .enumerate()
-            .map(|(i, v)| {
-                if sel_indices.contains(&i) {
-                    if pattern.is_match(v) {
-                        total_match_ctr += 1;
-                        #[cfg(any(feature = "feature_capable", feature = "lite"))]
-                        {
-                            match_found = true;
-                        }
-                        pattern.replace_all(v, replacement)
-                    } else {
-                        Cow::Borrowed(v)
-                    }
-                } else {
-                    Cow::Borrowed(v)
+
+        wtr.flush()?;
+
+        #[cfg(any(feature = "feature_capable", feature = "lite"))]
+        if show_progress {
+            progress.set_message(format!(
+                r#" - {} total matches replaced with "{}" in {} out of {} records."#,
+                HumanCount(total_match_ctr),
+                self.arg_replacement,
+                HumanCount(rows_with_matches_ctr),
+                HumanCount(progress.length().unwrap()),
+            ));
+            util::finish_progress(&progress);
+        }
+
+        handle_replace_results(total_match_ctr, self.flag_quiet, self.flag_not_one)
+    }
+
+    fn parallel_replace(
+        &self,
+        idx: &Indexed<fs::File, fs::File>,
+        pattern: regex::bytes::Regex,
+        rconfig: &Config,
+        replacement: &[u8],
+    ) -> CliResult<u64> {
+        use rayon::slice::ParallelSliceMut;
+
+        let mut rdr = rconfig.reader()?;
+        let headers = rdr.byte_headers()?.clone();
+        let sel = rconfig.selection(&headers)?;
+
+        let idx_count = idx.count() as usize;
+        if idx_count == 0 {
+            return Ok(0);
+        }
+
+        let njobs = util::njobs(self.flag_jobs);
+        let chunk_size = util::chunk_size(idx_count, njobs);
+        let nchunks = util::num_of_chunks(idx_count, chunk_size);
+
+        // Convert sel_indices to owned HashSet and wrap in Arc
+        let sel_indices: Arc<HashSet<usize>> = Arc::new(sel.iter().copied().collect());
+
+        // Wrap pattern in Arc for sharing across threads
+        let pattern = Arc::new(pattern);
+        let replacement = Arc::new(replacement.to_vec());
+
+        // Create thread pool and channel
+        let pool = ThreadPool::new(njobs);
+        let (send, recv) = crossbeam_channel::bounded(nchunks);
+
+        // Before the loop, prepare what each thread needs
+        let rconfig_template = rconfig.clone();
+
+        // Spawn replacement jobs
+        for i in 0..nchunks {
+            let (send, sel_indices, pattern, replacement) = (
+                send.clone(),
+                // self.clone(),
+                Arc::clone(&sel_indices),
+                Arc::clone(&pattern),
+                Arc::clone(&replacement),
+            );
+            let rconfig = rconfig_template.clone();
+            pool.execute(move || {
+                // safety: we know the file is indexed and seekable
+                let mut idx = rconfig.indexed().unwrap().unwrap();
+                idx.seek((i * chunk_size) as u64).unwrap();
+                let it = idx.byte_records().take(chunk_size);
+
+                let mut results = Vec::with_capacity(chunk_size);
+                let mut row_number = (i * chunk_size) as u64 + 1; // 1-based row numbering
+
+                for record in it.flatten() {
+                    let (processed_record, match_count_local, had_match_local) =
+                        process_record(&record, &sel_indices, &pattern, replacement.as_slice());
+
+                    results.push(ReplaceResult {
+                        row_number,
+                        record: processed_record,
+                        match_count: match_count_local,
+                        had_match: had_match_local,
+                    });
+                    row_number += 1;
                 }
-            })
-            .collect();
+                send.send(results).unwrap();
+            });
+        }
+        drop(send);
 
-        #[cfg(any(feature = "feature_capable", feature = "lite"))]
-        if match_found {
-            rows_with_matches_ctr += 1;
+        // Collect all results from all chunks
+        let mut all_results: Vec<ReplaceResult> = Vec::with_capacity(idx_count);
+        for chunk_results in &recv {
+            all_results.extend(chunk_results);
         }
 
-        wtr.write_byte_record(&record)?;
-    }
+        // Sort by row_number to maintain original order
+        all_results.par_sort_unstable_by_key(|r| r.row_number);
 
-    wtr.flush()?;
+        // Setup writer
+        let mut wtr = Config::new(self.flag_output.as_ref()).writer()?;
 
-    #[cfg(any(feature = "feature_capable", feature = "lite"))]
-    if show_progress {
-        progress.set_message(format!(
-            r#" - {} total matches replaced with "{}" in {} out of {} records."#,
-            HumanCount(total_match_ctr),
-            args.arg_replacement,
-            HumanCount(rows_with_matches_ctr),
-            HumanCount(progress.length().unwrap()),
-        ));
-        util::finish_progress(&progress);
-    }
+        // Write headers
+        if !rconfig.no_headers {
+            wtr.write_record(&headers)?;
+        }
 
-    if !args.flag_quiet {
-        eprintln!("{total_match_ctr}");
-    }
-    if total_match_ctr == 0 && !args.flag_not_one {
-        return Err(CliError::NoMatch());
-    }
+        // Write results and aggregate match counters
+        let mut total_match_ctr: u64 = 0;
+        #[cfg(any(feature = "feature_capable", feature = "lite"))]
+        let mut _rows_with_matches_ctr: u64 = 0;
 
-    Ok(())
+        for result in all_results {
+            total_match_ctr += result.match_count;
+            #[cfg(any(feature = "feature_capable", feature = "lite"))]
+            if result.had_match {
+                _rows_with_matches_ctr += 1;
+            }
+            wtr.write_byte_record(&result.record)?;
+        }
+
+        wtr.flush()?;
+
+        handle_replace_results(total_match_ctr, self.flag_quiet, self.flag_not_one)
+    }
 }

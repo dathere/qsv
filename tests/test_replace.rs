@@ -493,3 +493,354 @@ fn replace_exact_with_select() {
 
     wrk.assert_success(&mut cmd);
 }
+
+#[test]
+fn replace_all_emails_with_placeholder() {
+    let wrk = Workdir::new("replace_all_emails_with_placeholder");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["email"],
+            svec!["test@example.com"],
+            svec!["other@example.com"],
+            svec!["test@example.com"],
+            svec!["NOT an email"],
+            svec!["johm.doe@gmail.org"],
+            svec!["jane.doe+amazon@gmail.com"],
+            svec!["hello world"],
+        ],
+    );
+    let mut cmd = wrk.command("replace");
+    cmd.arg(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})")
+        .arg("<EMAIL>")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["email"],
+        svec!["<EMAIL>"],
+        svec!["<EMAIL>"],
+        svec!["<EMAIL>"],
+        svec!["NOT an email"],
+        svec!["<EMAIL>"],
+        svec!["<EMAIL>"],
+        svec!["hello world"],
+    ];
+    assert_eq!(got, expected);
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn replace_indexed_parallel() {
+    let wrk = Workdir::new("replace_indexed_parallel");
+    let data = wrk.load_test_resource("NYC311-5.csv");
+    wrk.create_from_string("data.csv", &data);
+
+    // replace "Police" with "Pulisya" (tagalog for "Police")
+    let mut cmd = wrk.command("replace");
+    cmd.arg("Police").arg("Pulisya").arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec![
+            "Unique Key",
+            "Created Date",
+            "Closed Date",
+            "Agency",
+            "Agency Name",
+            "Complaint Type",
+            "Descriptor",
+            "Location Type",
+            "Incident Zip",
+            "Incident Address",
+            "Street Name",
+            "Cross Street 1",
+            "Cross Street 2",
+            "Intersection Street 1",
+            "Intersection Street 2",
+            "Address Type",
+            "City",
+            "Landmark",
+            "Facility Type",
+            "Status",
+            "Due Date",
+            "Resolution Description",
+            "Resolution Action Updated Date",
+            "Community Board",
+            "BBL",
+            "Borough",
+            "X Coordinate (State Plane)",
+            "Y Coordinate (State Plane)",
+            "Open Data Channel Type",
+            "Park Facility Name",
+            "Park Borough",
+            "Vehicle Type",
+            "Taxi Company Borough",
+            "Taxi Pick Up Location",
+            "Bridge Highway Name",
+            "Bridge Highway Direction",
+            "Road Ramp",
+            "Bridge Highway Segment",
+            "Latitude",
+            "Longitude",
+            "Location"
+        ],
+        svec![
+            "34675190",
+            "10/31/2016 11:07:15 PM",
+            "10/31/2016 11:25:37 PM",
+            "NYPD",
+            "New York City Pulisya Department",
+            "Noise - Residential",
+            "Banging/Pounding",
+            "Residential Building/House",
+            "10035",
+            "117 EAST 118 STREET",
+            "EAST 118 STREET",
+            "PARK AVENUE",
+            "LEXINGTON AVENUE",
+            "",
+            "",
+            "ADDRESS",
+            "NEW YORK",
+            "",
+            "Precinct",
+            "Closed",
+            "11/01/2016 07:07:15 AM",
+            "The Pulisya Department responded to the complaint and determined that police action \
+             was not necessary.",
+            "10/31/2016 11:25:37 PM",
+            "11 MANHATTAN",
+            "1017670005",
+            "MANHATTAN",
+            "1000445",
+            "230851",
+            "MOBILE",
+            "Unspecified",
+            "MANHATTAN",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "40.8002938",
+            "-73.9415055",
+            "(40.8002938, -73.9415055)"
+        ],
+        svec![
+            "42096612",
+            "03/30/2019 04:06:23 AM",
+            "03/30/2019 04:15:23 AM",
+            "NYPD",
+            "New York City Pulisya Department",
+            "Noise - Residential",
+            "Banging/Pounding",
+            "Residential Building/House",
+            "10025",
+            "4 WEST 105 STREET",
+            "WEST 105 STREET",
+            "CENTRAL PARK WEST",
+            "MANHATTAN AVENUE",
+            "",
+            "",
+            "ADDRESS",
+            "NEW YORK",
+            "",
+            "Precinct",
+            "Closed",
+            "03/30/2019 12:06:23 PM",
+            "The Pulisya Department responded to the complaint and with the information available \
+             observed no evidence of the violation at that time.",
+            "03/30/2019 04:15:23 AM",
+            "07 MANHATTAN",
+            "1018400037",
+            "MANHATTAN",
+            "995106",
+            "229820",
+            "ONLINE",
+            "Unspecified",
+            "MANHATTAN",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "40.7974721",
+            "-73.960791",
+            "(40.7974721, -73.960791)"
+        ],
+        svec![
+            "20520945",
+            "05/27/2011 12:00:00 AM",
+            "",
+            "HPD",
+            "Department of Housing Preservation and Development",
+            "PAINT - PLASTER",
+            "WALLS",
+            "RESIDENTIAL BUILDING",
+            "11225",
+            "1700 BEDFORD AVENUE",
+            "BEDFORD AVENUE",
+            "MONTGOMERY STREET",
+            "SULLIVAN PLACE",
+            "",
+            "",
+            "ADDRESS",
+            "BROOKLYN",
+            "",
+            "N/A",
+            "Open",
+            "",
+            "The following complaint conditions are still open.HPD may attempt to contact you to \
+             verify the correction of the condition or may conduct an inspection.",
+            "06/15/2011 12:00:00 AM",
+            "09 BROOKLYN",
+            "3013020001",
+            "BROOKLYN",
+            "996197",
+            "181752",
+            "UNKNOWN",
+            "Unspecified",
+            "BROOKLYN",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+        ],
+        svec![
+            "39773697",
+            "07/18/2018 11:10:04 AM",
+            "07/18/2018 11:53:46 PM",
+            "NYPD",
+            "New York City Pulisya Department",
+            "Noise - Street/Sidewalk",
+            "Loud Talking",
+            "Street/Sidewalk",
+            "11373",
+            "48-10 91 PLACE",
+            "91 PLACE",
+            "48 AVENUE",
+            "50 AVENUE",
+            "",
+            "",
+            "ADDRESS",
+            "ELMHURST",
+            "",
+            "Precinct",
+            "Closed",
+            "07/18/2018 07:10:04 PM",
+            "The Pulisya Department reviewed your complaint and provided additional information \
+             below.",
+            "07/18/2018 11:53:46 PM",
+            "04 QUEENS",
+            "4018500012",
+            "QUEENS",
+            "1019446",
+            "209453",
+            "MOBILE",
+            "Unspecified",
+            "QUEENS",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "40.7415066",
+            "-73.8729882",
+            "(40.7415066, -73.8729882)"
+        ],
+        svec![
+            "47976463",
+            "10/25/2020 01:19:00 PM",
+            "10/26/2020 02:30:00 AM",
+            "DEP",
+            "Department of Environmental Protection",
+            "Water System",
+            "Hydrant Leaking (WC1)",
+            "",
+            "10033",
+            "52 PINEHURST AVENUE",
+            "PINEHURST AVENUE",
+            "W 179 ST",
+            "W 180 ST",
+            "",
+            "",
+            "ADDRESS",
+            "NEW YORK",
+            "",
+            "",
+            "Closed",
+            "",
+            "The Department of Environmental Protection investigated this complaint and shut the \
+             running hydrant.",
+            "10/26/2020 02:30:00 AM",
+            "12 MANHATTAN",
+            "1021770161",
+            "MANHATTAN",
+            "1000926",
+            "248966",
+            "ONLINE",
+            "Unspecified",
+            "MANHATTAN",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "40.85001341890072",
+            "-73.93972316718485",
+            "(40.85001341890072, -73.93972316718485)"
+        ],
+    ];
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+
+    // now index the file
+    wrk.create_from_string("data.csv", &data);
+    let mut cmd = wrk.command("index");
+    cmd.arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    // get the timestamp of the index file
+    let index_file = wrk.path("data.csv.idx");
+    let index_file_metadata = std::fs::metadata(index_file).unwrap();
+    let index_file_timestamp = index_file_metadata.modified().unwrap();
+
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    // should still have the same output
+    let mut cmd = wrk.command("replace");
+    cmd.arg("Police")
+        .arg("Pulisya")
+        .arg("data.csv")
+        .arg("--jobs")
+        .arg("2");
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+
+    // get the timestamp of the index file
+    // it should be higher than the original timestamp
+    // as we auto-reindex the file after a replace operation
+    let index_file = wrk.path("data.csv.idx");
+    let index_file_metadata = std::fs::metadata(index_file).unwrap();
+    let index_file_timestamp_new = index_file_metadata.modified().unwrap();
+    assert!(index_file_timestamp_new > index_file_timestamp);
+}

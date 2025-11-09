@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=6.8.0
+bm_version=7.0.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -653,9 +653,11 @@ run search_file_case_sensitive "$qsv_bin" search "'us'" "$data"
 run search_file_case_sensitive_unicode "$qsv_bin" search --unicode "'us'" "$data"
 run search_file_flag "$qsv_bin" search "'(?i)us'" "$data" --flag flagged
 run search_file_flag_matchonly "$qsv_bin" search "'(?i)us'" "$data" --flag M
+run --index search_index "$qsv_bin" search -s \'Agency Name\' "'(?i)us'" "$data"
 run searchset "$qsv_bin" searchset searchset_patterns.txt "$data"
 run searchset_ignorecase "$qsv_bin" searchset --ignore-case searchset_patterns.txt "$data"
 run searchset_unicode "$qsv_bin" searchset searchset_patterns_unicode.txt --unicode "$data"
+run --index searchset_index "$qsv_bin" searchset searchset_patterns.txt "$data"
 run select "$qsv_bin" select \'Agency,Community Board\' "$data"
 run select_regex "$qsv_bin" select /^L/ "$data"
 run slice_one_middle "$qsv_bin" slice -i 500000 "$data"

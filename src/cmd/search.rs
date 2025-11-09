@@ -590,7 +590,7 @@ impl Args {
         }
 
         // Sort by row_number to maintain original order
-        all_results.par_sort_by_key(|r| r.row_number);
+        all_results.par_sort_unstable_by_key(|r| r.row_number);
 
         // Handle --quick mode: find earliest match
         if self.flag_quick {

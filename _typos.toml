@@ -17,6 +17,7 @@ inout         = "inout"
 UE            = "UE"
 seeked        = "seeked"
 DNE           = "DNE"
+Generice      = "Generice"
 
 [files]
 extend-exclude = [

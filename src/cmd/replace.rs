@@ -25,7 +25,7 @@ and save the output to the file.out file.
 
   $ qsv replace 'hello' 'world' file.csv -o file.out
 
-Replace all occurences of 'hello' case insensitive with 'world'
+Replace all occurrences of 'hello' case insensitive with 'world'
 in the file.csv file.
 
   $ qsv replace 'hello' 'world' file.csv -i

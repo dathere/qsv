@@ -174,7 +174,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // based on index availability, number of jobs, and --preview-match option
     if let Some(idx) = rconfig.indexed()?
         && util::njobs(args.flag_jobs) > 1
-        && !args.flag_preview_match.is_some()
+        && args.flag_preview_match.is_none()
     {
         args.parallel_search(&idx, pattern, &rconfig)
     } else {

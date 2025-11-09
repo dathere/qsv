@@ -13,6 +13,8 @@ Returns exitcode 1 when no match is found, unless the '--not-one' flag is used.
 When --quick is enabled, no output is produced and exitcode 0 is returned on 
 the first match.
 
+When the CSV is indexed, a faster parallel search is used.
+
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_search.rs.
 
 Usage:
@@ -53,7 +55,7 @@ search options:
                            N milliseconds, whichever occurs first. Returns the preview to
                            stderr. Output is still written to stdout or --output as usual.
                            Only applicable when CSV is NOT indexed, as it's read sequentially.
-                           If the CSV is indexed, the --preview-match option is not supported.
+                           Forces a sequential search, even if the CSV is indexed.
     -c, --count            Return number of matches to stderr.
     --size-limit <mb>      Set the approximate size limit (MB) of the compiled
                            regular expression. If the compiled expression exceeds this 
@@ -168,9 +170,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .no_headers(args.flag_no_headers)
         .select(args.flag_select.clone());
 
-    // Route to parallel or sequential search based on index availability
+    // Route to parallel or sequential search
+    // based on index availability, number of jobs, and --preview-match option
     if let Some(idx) = rconfig.indexed()?
         && util::njobs(args.flag_jobs) > 1
+        && !args.flag_preview_match.is_some()
     {
         args.parallel_search(&idx, pattern, &rconfig)
     } else {

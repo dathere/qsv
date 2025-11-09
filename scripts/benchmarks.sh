@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=7.0.0
+bm_version=7.1.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -620,6 +620,7 @@ run pseudo "$qsv_bin" pseudo \'Unique Key\' "$data"
 run pseudo_formatstr "$qsv_bin" pseudo \'Unique Key\' --formatstr 'ID-{}' --increment 5 "$data"
 run rename "$qsv_bin" rename \'unique_key,created_date,closed_date,agency,agency_name,complaint_type,descriptor,loctype,zip,addr1,street,xstreet1,xstreet2,inter1,inter2,addrtype,city,landmark,facility_type,status,due_date,res_desc,res_act_date,comm_board,bbl,boro,xcoord,ycoord,opendata_type,parkname,parkboro,vehtype,taxi_boro,taxi_loc,bridge_hwy_name,bridge_hwy_dir,ramp,bridge_hwy_seg,lat,long,loc\' "$data"
 run replace "$qsv_bin" replace \'zip\' \'postal\' "$data"
+run --index replace_indexed "$qsv_bin" replace \'zip\' \'postal\' "$data"
 run reverse "$qsv_bin" reverse "$data"
 run --index reverse_index "$qsv_bin" reverse "$data"
 run safenames "$qsv_bin" safenames "$data"

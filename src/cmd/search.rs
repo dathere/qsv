@@ -90,7 +90,13 @@ Common options:
     -q, --quiet            Do not return number of matches to stderr.
 "#;
 
-use std::{fs, sync::Arc};
+use std::{
+    fs,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use crossbeam_channel;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
@@ -543,6 +549,10 @@ impl Args {
         // Wrap pattern in Arc for sharing across threads
         let pattern = Arc::new(pattern);
         let invert_match = self.flag_invert_match;
+        let flag_quick = self.flag_quick;
+
+        // Atomic flag for early termination in quick mode
+        let match_found = Arc::new(AtomicBool::new(false));
 
         // Create thread pool and channel
         let pool = ThreadPool::new(njobs);
@@ -550,11 +560,12 @@ impl Args {
 
         // Spawn search jobs
         for i in 0..nchunks {
-            let (send, args, sel, pattern) = (
+            let (send, args, sel, pattern, match_found_flag) = (
                 send.clone(),
                 self.clone(),
                 sel.clone(),
                 Arc::clone(&pattern),
+                Arc::clone(&match_found),
             );
             pool.execute(move || {
                 // safety: we know the file is indexed and seekable
@@ -566,17 +577,33 @@ impl Args {
                 let mut row_number = (i * chunk_size) as u64 + 1; // 1-based row numbering
 
                 for record in it.flatten() {
+                    // Early exit for quick mode if match already found by another thread
+                    if flag_quick && match_found_flag.load(Ordering::Relaxed) {
+                        break;
+                    }
+
                     let matched = if invert_match {
                         !sel.select(&record).any(|f| pattern.is_match(f))
                     } else {
                         sel.select(&record).any(|f| pattern.is_match(f))
                     };
+
+                    // Set flag if we found a match in quick mode
+                    if flag_quick && matched {
+                        match_found_flag.store(true, Ordering::Relaxed);
+                    }
+
                     results.push(SearchResult {
                         row_number,
                         record,
                         matched,
                     });
                     row_number += 1;
+
+                    // Early exit after finding first match in quick mode
+                    if flag_quick && matched {
+                        break;
+                    }
                 }
                 send.send(results).unwrap();
             });

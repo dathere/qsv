@@ -96,7 +96,10 @@ Common options:
 use std::{
     fs::{self, File},
     io::{self, BufRead, BufReader},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use crossbeam_channel;
@@ -428,9 +431,14 @@ impl Args {
             true
         });
 
-        // Wrap pattern in Arc for sharing across threads
+        // Wrap pattern and regex_labels in Arc for sharing across threads
         let pattern = Arc::new(pattern);
+        let regex_labels = Arc::new(regex_labels.to_vec());
         let invert_match = self.flag_invert_match;
+        let flag_quick = self.flag_quick;
+
+        // Atomic flag for early termination in quick mode
+        let match_found = Arc::new(AtomicBool::new(false));
 
         // Create thread pool and channel
         let pool = ThreadPool::new(njobs);
@@ -438,11 +446,12 @@ impl Args {
 
         // Spawn search jobs
         for i in 0..nchunks {
-            let (send, args, sel, pattern) = (
+            let (send, args, sel, pattern, match_found_flag) = (
                 send.clone(),
                 self.clone(),
                 sel.clone(),
                 Arc::clone(&pattern),
+                Arc::clone(&match_found),
             );
             pool.execute(move || {
                 // safety: we know the file is indexed and seekable
@@ -454,22 +463,21 @@ impl Args {
                 let mut row_number = (i * chunk_size) as u64 + 1; // 1-based row numbering
 
                 for record in it.flatten() {
-                    let mut matched = false;
-                    let mut match_list = Vec::new();
+                    // Early exit for quick mode if match already found by another thread
+                    if flag_quick && match_found_flag.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    let mut match_list = Vec::with_capacity(pattern.len());
 
                     // Check if any field matches
                     let row_matched = sel.select(&record).any(|f| {
                         let is_match = pattern.is_match(f);
                         if is_match && do_match_list {
-                            let matches: Vec<usize> = pattern.matches(f).into_iter().collect();
-                            for m in matches {
-                                let adjusted = m + 1; // 1-based for human readability
-                                if !match_list.contains(&adjusted) {
-                                    match_list.push(adjusted);
-                                }
+                            for m in pattern.matches(f) {
+                                match_list.push(m + 1); // 1-based for human readability
                             }
                         }
-                        matched = matched || is_match;
                         is_match
                     });
 
@@ -479,6 +487,11 @@ impl Args {
                         row_matched
                     };
 
+                    // Set flag if we found a match in quick mode
+                    if flag_quick && final_matched {
+                        match_found_flag.store(true, Ordering::Relaxed);
+                    }
+
                     results.push(SearchSetResult {
                         row_number,
                         record,
@@ -486,6 +499,11 @@ impl Args {
                         match_list,
                     });
                     row_number += 1;
+
+                    // Early exit after finding first match in quick mode
+                    if flag_quick && final_matched {
+                        break;
+                    }
                 }
                 send.send(results).unwrap();
             });
@@ -499,7 +517,7 @@ impl Args {
         }
 
         // Sort by row_number to maintain original order
-        all_results.par_sort_by_key(|r| r.row_number);
+        all_results.par_sort_unstable_by_key(|r| r.row_number);
 
         // Handle --quick mode: find earliest match
         if self.flag_quick {
@@ -551,12 +569,17 @@ impl Args {
                         matched_rows.as_bytes().to_vec()
                     } else {
                         total_matches += match_list.len() as u64;
-                        let match_list_str = match_list
-                            .iter()
-                            .map(|i| regex_labels[*i - 1].clone())
-                            .collect::<Vec<String>>()
-                            .join(",");
-                        match_list_with_row = format!("{matched_rows};{match_list_str}");
+                        // builds format!("{matched_rows};{match_list}")
+                        // without intermediate Vec allocation
+                        match_list_with_row.clear();
+                        match_list_with_row.push_str(&matched_rows);
+                        match_list_with_row.push(';');
+                        for (idx, i) in match_list.iter().enumerate() {
+                            if idx > 0 {
+                                match_list_with_row.push(',');
+                            }
+                            match_list_with_row.push_str(&regex_labels[*i - 1]);
+                        }
                         match_list_with_row.as_bytes().to_vec()
                     }
                 } else {

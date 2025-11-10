@@ -499,11 +499,6 @@ impl Args {
                         match_list,
                     });
                     row_number += 1;
-
-                    // Early exit after finding first match in quick mode
-                    if flag_quick && final_matched {
-                        break;
-                    }
                 }
                 send.send(results).unwrap();
             });

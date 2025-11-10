@@ -600,11 +600,6 @@ impl Args {
                         matched,
                     });
                     row_number += 1;
-
-                    // Early exit after finding first match in quick mode
-                    if flag_quick && matched {
-                        break;
-                    }
                 }
                 send.send(results).unwrap();
             });

@@ -66,7 +66,7 @@ Common options:
 "#;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::File,
     io,
     io::{BufReader, Read, Write},
@@ -569,12 +569,56 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Read the CSV into a LazyFrame
-    let lf = csv_reader.finish()?;
+    let mut lf = csv_reader.finish()?;
+
+    // Add a row index to track discovery order
+    let row_order_col = "__qsv_row_order__";
+    lf = lf.with_row_index(PlSmallStr::from_str(row_order_col), None);
+
+    // Get all column names from the schema to compute index/values if not specified
+    let schema = lf.collect_schema()?;
+    let all_cols: Vec<String> = schema
+        .iter_names()
+        .filter(|name| *name != row_order_col)
+        .map(|s| s.to_string())
+        .collect();
+
+    // Compute actual index and value columns if not specified
+    let actual_index_cols: Vec<String> = if index_cols.is_none() {
+        // If no index specified, use all columns except on and values
+        let on_set: HashSet<&str> = on_cols.iter().map(|s| s.as_str()).collect();
+        let value_set: HashSet<&str> = value_cols
+            .as_ref()
+            .map(|cols| cols.iter().map(|s| s.as_str()).collect())
+            .unwrap_or_default();
+        
+        all_cols
+            .iter()
+            .filter(|c| !on_set.contains(c.as_str()) && !value_set.contains(c.as_str()))
+            .cloned()
+            .collect()
+    } else {
+        index_cols.clone().unwrap()
+    };
+
+    let actual_value_cols: Vec<String> = if value_cols.is_none() {
+        // If no values specified, use all columns except on and index
+        let on_set: HashSet<&str> = on_cols.iter().map(|s| s.as_str()).collect();
+        let index_set: HashSet<&str> = actual_index_cols.iter().map(|s| s.as_str()).collect();
+        
+        all_cols
+            .iter()
+            .filter(|c| !on_set.contains(c.as_str()) && !index_set.contains(c.as_str()))
+            .cloned()
+            .collect()
+    } else {
+        value_cols.clone().unwrap()
+    };
 
     if args.flag_validate {
         // Validate the operation - need to collect to get metadata
         let df_for_validation = lf.clone().collect()?;
-        if let Some(metadata) = calculate_pivot_metadata(&args, &on_cols, value_cols.as_ref())? {
+        if let Some(metadata) = calculate_pivot_metadata(&args, &on_cols, Some(&actual_value_cols))? {
             validate_pivot_operation(&metadata)?;
         }
         drop(df_for_validation);
@@ -582,13 +626,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Compute unique values for the pivot columns to create on_columns DataFrame
     // This is required by the new pivot API
+    // We need to maintain discovery order, so we add row numbers and sort by them
     let on_columns = {
-        let on_exprs = cols_to_exprs(&on_cols);
+        let on_exprs_with_order: Vec<Expr> = cols_to_exprs(&on_cols)
+            .into_iter()
+            .chain(std::iter::once(col(row_order_col)))
+            .collect();
+        
         let unique_df = lf
             .clone()
-            .select(on_exprs)
-            .unique(None, UniqueKeepStrategy::First)
+            .select(on_exprs_with_order)
+            .unique(Some(cols(on_cols.iter().map(|s| s.as_str()))), UniqueKeepStrategy::First)
+            .sort([row_order_col], SortMultipleOptions::default())
+            .drop(cols([row_order_col]))
             .collect()?;
+        
         Arc::new(unique_df)
     };
 
@@ -599,22 +651,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Convert separator to PlSmallStr
     let separator = PlSmallStr::from_str(&args.flag_col_separator);
 
+    // Compute the minimum row order for each unique index combination
+    // This will be used to restore discovery order after pivoting
+    let index_order = if !actual_index_cols.is_empty() {
+        let order_df = lf
+            .clone()
+            .select(actual_index_cols.iter().map(|c| col(c)).chain(std::iter::once(col(row_order_col))).collect::<Vec<_>>())
+            .group_by(&actual_index_cols.iter().map(|s| col(s)).collect::<Vec<_>>())
+            .agg([col(row_order_col).min().alias(row_order_col)])
+            .collect()?;
+        Some(order_df)
+    } else {
+        None
+    };
+
     // Perform pivot operation using the new LazyFrame.pivot API
     // The API expects: on (Selector), on_columns (Arc<DataFrame>), index (Selector), 
     // values (Selector), agg (Expr), maintain_order (bool), separator (PlSmallStr)
     let on_selector = cols(on_cols.iter().map(|s| s.as_str()));
-    let index_selector = if let Some(ref idx_cols) = index_cols {
-        cols(idx_cols.iter().map(|s| s.as_str()))
-    } else {
-        // If no index specified, will be handled by pivot to use all except on and values
-        cols(vec![] as Vec<&str>)
-    };
-    let values_selector = if let Some(ref val_cols) = value_cols {
-        cols(val_cols.iter().map(|s| s.as_str()))
-    } else {
-        // If no values specified, will be handled by pivot to use all except on and index
-        cols(vec![] as Vec<&str>)
-    };
+    let index_selector = cols(actual_index_cols.iter().map(|s| s.as_str()));
+    let values_selector = cols(actual_value_cols.iter().map(|s| s.as_str()));
 
     let mut pivot_result = lf
         .pivot(
@@ -627,6 +683,46 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             separator,
         )
         .collect()?;
+
+    // Restore discovery order by joining with index_order and sorting
+    if let Some(index_order_df) = index_order {
+        pivot_result = pivot_result
+            .lazy()
+            .join(
+                index_order_df.lazy(),
+                &actual_index_cols.iter().map(|s| col(s)).collect::<Vec<_>>(),
+                &actual_index_cols.iter().map(|s| col(s)).collect::<Vec<_>>(),
+                JoinArgs::new(JoinType::Left),
+            )
+            .sort([row_order_col], SortMultipleOptions::default())
+            .drop(cols([row_order_col]))
+            .collect()?;
+    }
+
+    // Sort columns if requested - the maintain_order parameter controls discovery order,
+    // but we need to explicitly sort column names alphabetically when flag is set
+    if args.flag_sort_columns {
+        let columns: Vec<String> = pivot_result
+            .get_column_names()
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect();
+        let index_cols_set: HashSet<_> = actual_index_cols.iter().map(|s| s.as_str()).collect();
+
+        // Separate index and pivoted columns
+        let (index_names, mut pivot_names): (Vec<_>, Vec<_>) = columns
+            .into_iter()
+            .partition(|name| index_cols_set.contains(name.as_str()));
+
+        // Sort only the pivoted columns alphabetically
+        pivot_names.sort();
+
+        // Reconstruct column order: index columns first, then sorted pivot columns
+        let mut sorted_columns = index_names;
+        sorted_columns.extend(pivot_names);
+
+        pivot_result = pivot_result.select(sorted_columns.as_slice())?;
+    }
 
     // Write output
     let mut writer = match args.flag_output {

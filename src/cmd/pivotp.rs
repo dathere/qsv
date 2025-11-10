@@ -231,7 +231,7 @@ fn suggest_agg_function(
 ) -> CliResult<Option<Expr>> {
     // If multiple value columns, default to First
     if value_cols.len() > 1 {
-        return Ok(Some(col(&value_cols[0]).first()));
+        return Ok(Some(Expr::Element.first()));
     }
 
     let quiet = args.flag_quiet;
@@ -333,14 +333,14 @@ fn suggest_agg_function(
                 if !quiet {
                     eprintln!("Info: \"{value_col}\" contains only NULL values");
                 }
-                col(value_col).count()
+                len()
             },
             "Integer" | "Float" => {
                 if stats.nullcount as f64 / row_count as f64 > 0.5 {
                     if !quiet {
                         eprintln!("Info: \"{value_col}\" contains >50% NULL values, using Count");
                     }
-                    col(value_col).count()
+                    len()
                 } else if stats.cv > Some(1.0) {
                     // High coefficient of variation suggests using median for better central
                     // tendency
@@ -350,7 +350,7 @@ fn suggest_agg_function(
                              robust central tendency"
                         );
                     }
-                    col(value_col).median()
+                    Expr::Element.median()
                 } else if high_cardinality_pivot && high_cardinality_index {
                     if ordered_pivot && ordered_index {
                         // With ordered high cardinality columns, mean might be more meaningful
@@ -359,7 +359,7 @@ fn suggest_agg_function(
                                 "Info: Ordered high cardinality columns detected, using Mean"
                             );
                         }
-                        col(value_col).mean()
+                        Expr::Element.mean()
                     } else {
                         // With unordered high cardinality, sum might be more appropriate
                         if !quiet {
@@ -367,7 +367,7 @@ fn suggest_agg_function(
                                 "Info: High cardinality in pivot and index columns, using Sum"
                             );
                         }
-                        col(value_col).sum()
+                        Expr::Element.sum()
                     }
                 } else if let Some(skewness) = stats.skewness {
                     if skewness.abs() > 2.0 {
@@ -375,12 +375,12 @@ fn suggest_agg_function(
                         if !quiet {
                             eprintln!("Info: Highly skewed numeric data detected, using Median");
                         }
-                        col(value_col).median()
+                        Expr::Element.median()
                     } else {
-                        col(value_col).sum()
+                        Expr::Element.sum()
                     }
                 } else {
-                    col(value_col).sum()
+                    Expr::Element.sum()
                 }
             },
             "Date" | "DateTime" => {
@@ -391,7 +391,7 @@ fn suggest_agg_function(
                                 "Info: Ordered temporal data with high cardinality, using Last"
                             );
                         }
-                        col(value_col).last()
+                        Expr::Element.last()
                     } else {
                         if !quiet {
                             eprintln!(
@@ -399,13 +399,13 @@ fn suggest_agg_function(
                                 stats.r#type
                             );
                         }
-                        col(value_col).first()
+                        Expr::Element.first()
                     }
                 } else {
                     if !quiet {
                         eprintln!("Info: Using Count for {} column", stats.r#type);
                     }
-                    col(value_col).count()
+                    len()
                 }
             },
             _ => {
@@ -413,22 +413,22 @@ fn suggest_agg_function(
                     if !quiet {
                         eprintln!("Info: \"{value_col}\" contains all unique values, using First");
                     }
-                    col(value_col).first()
+                    Expr::Element.first()
                 } else if stats.sparsity > Some(0.5) {
                     if !quiet {
                         eprintln!("Info: Sparse data detected, using Count");
                     }
-                    col(value_col).count()
+                    len()
                 } else if high_cardinality_pivot || high_cardinality_index {
                     if !quiet {
                         eprintln!("Info: High cardinality detected, using Count");
                     }
-                    col(value_col).count()
+                    len()
                 } else {
                     if !quiet {
                         eprintln!("Info: Using Count for String column");
                     }
-                    col(value_col).count()
+                    len()
                 }
             },
         };
@@ -480,21 +480,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    // Get aggregation function - placeholder for now, actual column name will be set during pivot
+    // Get aggregation function - using generic expressions that pivot will apply to value columns
     let agg_expr = if let Some(ref agg) = args.flag_agg {
         let lower_agg = agg.to_lowercase();
         if lower_agg == "none" {
             None
         } else {
             Some(match lower_agg.as_str() {
-                "first" => col("").first(),
-                "sum" => col("").sum(),
-                "min" => col("").min(),
-                "max" => col("").max(),
-                "mean" => col("").mean(),
-                "median" => col("").median(),
-                "count" => col("").count(),
-                "last" => col("").last(),
+                "first" => Expr::Element.first(),
+                "sum" => Expr::Element.sum(),
+                "min" => Expr::Element.min(),
+                "max" => Expr::Element.max(),
+                "mean" => Expr::Element.mean(),
+                "median" => Expr::Element.median(),
+                "count" => len(),
+                "last" => Expr::Element.last(),
                 "smart" => {
                     if let Some(value_cols) = &value_cols {
                         // Try to suggest an appropriate aggregation function
@@ -507,12 +507,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             Some(suggested_agg) => suggested_agg,
                             _ => {
                                 // fallback to first, which always works
-                                col("").first()
+                                Expr::Element.first()
                             },
                         }
                     } else {
                         // Default to Count if no value columns specified
-                        col("").count()
+                        len()
                     }
                 },
                 _ => {
@@ -594,7 +594,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Create the aggregation expression
     // If agg_expr is None, we need a default
-    let agg = agg_expr.unwrap_or_else(|| col("").first());
+    let agg = agg_expr.unwrap_or_else(|| Expr::Element.first());
 
     // Convert separator to PlSmallStr
     let separator = PlSmallStr::from_str(&args.flag_col_separator);

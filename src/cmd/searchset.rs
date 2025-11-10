@@ -410,8 +410,6 @@ impl Args {
         rconfig: &Config,
         regex_labels: &[String],
     ) -> CliResult<()> {
-        use rayon::slice::ParallelSliceMut;
-
         let mut rdr = rconfig.reader()?;
         let mut headers = rdr.byte_headers()?.clone();
         let sel = rconfig.selection(&headers)?;
@@ -506,17 +504,17 @@ impl Args {
         drop(send);
 
         // Collect all results from all chunks
-        let mut all_results: Vec<SearchSetResult> = Vec::with_capacity(idx_count);
+        let mut all_chunks: Vec<Vec<SearchSetResult>> = Vec::with_capacity(nchunks);
         for chunk_results in &recv {
-            all_results.extend(chunk_results);
+            all_chunks.push(chunk_results);
         }
 
-        // Sort by row_number to maintain original order
-        all_results.par_sort_unstable_by_key(|r| r.row_number);
+        // Sort chunks by first row_number to maintain original order
+        all_chunks.sort_unstable_by_key(|chunk| chunk.first().map_or(0, |r| r.row_number));
 
         // Handle --quick mode: find earliest match
         if self.flag_quick {
-            if let Some(first_match) = all_results.iter().find(|r| r.matched) {
+            if let Some(first_match) = all_chunks.iter().flatten().find(|r| r.matched) {
                 if !self.flag_quiet {
                     eprintln!("{}", first_match.row_number);
                 }
@@ -546,51 +544,53 @@ impl Args {
         #[allow(unused_assignments)]
         let mut match_list_with_row = String::with_capacity(20);
 
-        for result in all_results {
-            let mut record = result.record;
-            let matched = result.matched;
-            let match_list = result.match_list;
+        for chunk in all_chunks {
+            for result in chunk {
+                let mut record = result.record;
+                let matched = result.matched;
+                let match_list = result.match_list;
 
-            if matched {
-                match_row_ctr += 1;
-            }
-
-            if do_match_list {
-                let flag_column = if matched {
-                    itoa::Buffer::new()
-                        .format(result.row_number)
-                        .clone_into(&mut matched_rows);
-                    if self.flag_invert_match {
-                        matched_rows.as_bytes().to_vec()
-                    } else {
-                        total_matches += match_list.len() as u64;
-                        // builds format!("{matched_rows};{match_list}")
-                        // without intermediate Vec allocation
-                        match_list_with_row.clear();
-                        match_list_with_row.push_str(&matched_rows);
-                        match_list_with_row.push(';');
-                        for (idx, i) in match_list.iter().enumerate() {
-                            if idx > 0 {
-                                match_list_with_row.push(',');
-                            }
-                            match_list_with_row.push_str(&regex_labels[*i - 1]);
-                        }
-                        match_list_with_row.as_bytes().to_vec()
-                    }
-                } else {
-                    b"0".to_vec()
-                };
-
-                if self.flag_flag_matches_only && !matched {
-                    if self.flag_unmatched_output.is_some() {
-                        unmatched_wtr.write_byte_record(&record)?;
-                    }
-                    continue;
+                if matched {
+                    match_row_ctr += 1;
                 }
-                record.push_field(&flag_column);
-                wtr.write_byte_record(&record)?;
-            } else if matched {
-                wtr.write_byte_record(&record)?;
+
+                if do_match_list {
+                    let flag_column = if matched {
+                        itoa::Buffer::new()
+                            .format(result.row_number)
+                            .clone_into(&mut matched_rows);
+                        if self.flag_invert_match {
+                            matched_rows.as_bytes().to_vec()
+                        } else {
+                            total_matches += match_list.len() as u64;
+                            // builds format!("{matched_rows};{match_list}")
+                            // without intermediate Vec allocation
+                            match_list_with_row.clear();
+                            match_list_with_row.push_str(&matched_rows);
+                            match_list_with_row.push(';');
+                            for (idx, i) in match_list.iter().enumerate() {
+                                if idx > 0 {
+                                    match_list_with_row.push(',');
+                                }
+                                match_list_with_row.push_str(&regex_labels[*i - 1]);
+                            }
+                            match_list_with_row.as_bytes().to_vec()
+                        }
+                    } else {
+                        b"0".to_vec()
+                    };
+
+                    if self.flag_flag_matches_only && !matched {
+                        if self.flag_unmatched_output.is_some() {
+                            unmatched_wtr.write_byte_record(&record)?;
+                        }
+                        continue;
+                    }
+                    record.push_field(&flag_column);
+                    wtr.write_byte_record(&record)?;
+                } else if matched {
+                    wtr.write_byte_record(&record)?;
+                }
             }
         }
 

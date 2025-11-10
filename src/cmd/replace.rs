@@ -313,8 +313,6 @@ impl Args {
         rconfig: &Config,
         replacement: &[u8],
     ) -> CliResult<()> {
-        use rayon::slice::ParallelSliceMut;
-
         let mut rdr = rconfig.reader()?;
         let headers = rdr.byte_headers()?.clone();
         let sel = rconfig.selection(&headers)?;
@@ -379,13 +377,13 @@ impl Args {
         drop(send);
 
         // Collect all results from all chunks
-        let mut all_results: Vec<ReplaceResult> = Vec::with_capacity(idx_count);
+        let mut all_chunks: Vec<Vec<ReplaceResult>> = Vec::with_capacity(nchunks);
         for chunk_results in &recv {
-            all_results.extend(chunk_results);
+            all_chunks.push(chunk_results);
         }
 
-        // Sort by row_number to maintain original order
-        all_results.par_sort_unstable_by_key(|r| r.row_number);
+        // Sort chunks by first row_number to maintain original order
+        all_chunks.sort_unstable_by_key(|chunk| chunk.first().map_or(0, |r| r.row_number));
 
         // Setup writer
         let mut wtr = Config::new(self.flag_output.as_ref()).writer()?;
@@ -400,13 +398,15 @@ impl Args {
         #[cfg(any(feature = "feature_capable", feature = "lite"))]
         let mut _rows_with_matches_ctr: u64 = 0;
 
-        for result in all_results {
-            total_match_ctr += result.match_count;
-            #[cfg(any(feature = "feature_capable", feature = "lite"))]
-            if result.had_match {
-                _rows_with_matches_ctr += 1;
+        for chunk in all_chunks {
+            for result in chunk {
+                total_match_ctr += result.match_count;
+                #[cfg(any(feature = "feature_capable", feature = "lite"))]
+                if result.had_match {
+                    _rows_with_matches_ctr += 1;
+                }
+                wtr.write_byte_record(&result.record)?;
             }
-            wtr.write_byte_record(&result.record)?;
         }
 
         wtr.flush()?;

@@ -205,6 +205,8 @@ fn should_collect_preview(
 /// Write a single result record to output
 /// Returns true if the record was written (for match counting)
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::fn_params_excessive_bools)]
+#[allow(clippy::inline_always)]
 #[inline(always)]
 fn write_result_record(
     record: &mut csv::ByteRecord,
@@ -528,8 +530,6 @@ impl Args {
         pattern: regex::bytes::Regex,
         rconfig: &Config,
     ) -> CliResult<()> {
-        use rayon::slice::ParallelSliceMut;
-
         let mut rdr = rconfig.reader()?;
         let mut headers = rdr.byte_headers()?.clone();
         let sel = rconfig.selection(&headers)?;
@@ -607,17 +607,17 @@ impl Args {
         drop(send);
 
         // Collect all results from all chunks
-        let mut all_results: Vec<SearchResult> = Vec::with_capacity(idx_count);
+        let mut all_chunks: Vec<Vec<SearchResult>> = Vec::with_capacity(nchunks);
         for chunk_results in &recv {
-            all_results.extend(chunk_results);
+            all_chunks.push(chunk_results);
         }
 
-        // Sort by row_number to maintain original order
-        all_results.par_sort_unstable_by_key(|r| r.row_number);
+        // Sort chunks by first row_number to maintain original order
+        all_chunks.sort_unstable_by_key(|chunk| chunk.first().map_or(0, |r| r.row_number));
 
         // Handle --quick mode: find earliest match
         if self.flag_quick {
-            if let Some(first_match) = all_results.iter().find(|r| r.matched) {
+            if let Some(first_match) = all_chunks.iter().flatten().find(|r| r.matched) {
                 if !self.flag_quiet {
                     eprintln!("{}", first_match.row_number);
                 }
@@ -649,29 +649,31 @@ impl Args {
             json_wtr.write_all(b"[")?;
         }
 
-        for result in all_results {
-            let mut record = result.record;
-            let matched = result.matched;
+        for chunk in all_chunks {
+            for result in chunk {
+                let mut record = result.record;
+                let matched = result.matched;
 
-            if matched {
-                match_ctr += 1;
+                if matched {
+                    match_ctr += 1;
+                }
+
+                // Use helper to write record if needed
+                write_result_record(
+                    &mut record,
+                    result.row_number,
+                    matched,
+                    flag_flag,
+                    flag_json,
+                    flag_no_headers,
+                    matches_only,
+                    &headers,
+                    &mut wtr,
+                    &mut json_wtr,
+                    &mut is_first,
+                    &mut matched_rows,
+                )?;
             }
-
-            // Use helper to write record if needed
-            write_result_record(
-                &mut record,
-                result.row_number,
-                matched,
-                flag_flag,
-                flag_json,
-                flag_no_headers,
-                matches_only,
-                &headers,
-                &mut wtr,
-                &mut json_wtr,
-                &mut is_first,
-                &mut matched_rows,
-            )?;
         }
 
         // Use helper to finalize output

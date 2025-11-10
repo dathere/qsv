@@ -591,7 +591,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .as_ref()
             .map(|cols| cols.iter().map(|s| s.as_str()).collect())
             .unwrap_or_default();
-        
+
         all_cols
             .iter()
             .filter(|c| !on_set.contains(c.as_str()) && !value_set.contains(c.as_str()))
@@ -605,7 +605,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // If no values specified, use all columns except on and index
         let on_set: HashSet<&str> = on_cols.iter().map(|s| s.as_str()).collect();
         let index_set: HashSet<&str> = actual_index_cols.iter().map(|s| s.as_str()).collect();
-        
+
         all_cols
             .iter()
             .filter(|c| !on_set.contains(c.as_str()) && !index_set.contains(c.as_str()))
@@ -618,7 +618,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_validate {
         // Validate the operation - need to collect to get metadata
         let df_for_validation = lf.clone().collect()?;
-        if let Some(metadata) = calculate_pivot_metadata(&args, &on_cols, Some(&actual_value_cols))? {
+        if let Some(metadata) = calculate_pivot_metadata(&args, &on_cols, Some(&actual_value_cols))?
+        {
             validate_pivot_operation(&metadata)?;
         }
         drop(df_for_validation);
@@ -632,15 +633,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .into_iter()
             .chain(std::iter::once(col(row_order_col)))
             .collect();
-        
+
         let unique_df = lf
             .clone()
             .select(on_exprs_with_order)
-            .unique(Some(cols(on_cols.iter().map(|s| s.as_str()))), UniqueKeepStrategy::First)
+            .unique(
+                Some(cols(on_cols.iter().map(|s| s.as_str()))),
+                UniqueKeepStrategy::First,
+            )
             .sort([row_order_col], SortMultipleOptions::default())
             .drop(cols([row_order_col]))
             .collect()?;
-        
+
         Arc::new(unique_df)
     };
 
@@ -656,7 +660,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let index_order = if !actual_index_cols.is_empty() {
         let order_df = lf
             .clone()
-            .select(actual_index_cols.iter().map(|c| col(c)).chain(std::iter::once(col(row_order_col))).collect::<Vec<_>>())
+            .select(
+                actual_index_cols
+                    .iter()
+                    .map(|c| col(c))
+                    .chain(std::iter::once(col(row_order_col)))
+                    .collect::<Vec<_>>(),
+            )
             .group_by(&actual_index_cols.iter().map(|s| col(s)).collect::<Vec<_>>())
             .agg([col(row_order_col).min().alias(row_order_col)])
             .collect()?;
@@ -666,7 +676,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     // Perform pivot operation using the new LazyFrame.pivot API
-    // The API expects: on (Selector), on_columns (Arc<DataFrame>), index (Selector), 
+    // The API expects: on (Selector), on_columns (Arc<DataFrame>), index (Selector),
     // values (Selector), agg (Expr), maintain_order (bool), separator (PlSmallStr)
     let on_selector = cols(on_cols.iter().map(|s| s.as_str()));
     let index_selector = cols(actual_index_cols.iter().map(|s| s.as_str()));

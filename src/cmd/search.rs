@@ -202,6 +202,61 @@ fn should_collect_preview(
     preview_count < preview_limit && start_time.elapsed().as_millis() < preview_limit as u128
 }
 
+/// Write a single result record to output
+/// Returns true if the record was written (for match counting)
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn write_result_record(
+    record: &mut csv::ByteRecord,
+    row_number: u64,
+    matched: bool,
+    flag_flag: bool,
+    flag_json: bool,
+    flag_no_headers: bool,
+    matches_only: bool,
+    headers: &csv::ByteRecord,
+    wtr: &mut csv::Writer<Box<dyn std::io::Write>>,
+    json_wtr: &mut Box<dyn std::io::Write>,
+    is_first: &mut bool,
+    matched_rows: &mut String,
+) -> CliResult<bool> {
+    if flag_flag {
+        let match_row = if matched {
+            itoa::Buffer::new()
+                .format(row_number)
+                .clone_into(matched_rows);
+            matched_rows.as_bytes()
+        } else {
+            b"0"
+        };
+
+        if matches_only && match_row == b"0" {
+            return Ok(false);
+        }
+
+        if matches_only {
+            record.clear();
+        }
+        record.push_field(match_row);
+
+        if flag_json {
+            util::write_json_record(json_wtr, flag_no_headers, headers, record, is_first)?;
+        } else {
+            wtr.write_byte_record(record)?;
+        }
+        Ok(true)
+    } else if matched {
+        if flag_json {
+            util::write_json_record(json_wtr, flag_no_headers, headers, record, is_first)?;
+        } else {
+            wtr.write_byte_record(record)?;
+        }
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 impl Args {
     fn rconfig(&self) -> Config {
         Config::new(self.arg_input.as_ref())
@@ -239,62 +294,6 @@ impl Args {
             Box::new(std::io::sink())
         };
         Ok((wtr, json_wtr))
-    }
-
-    /// Write a single result record to output
-    /// Returns true if the record was written (for match counting)
-    #[allow(clippy::too_many_arguments)]
-    fn write_result_record(
-        &self,
-        record: &mut csv::ByteRecord,
-        row_number: u64,
-        matched: bool,
-        flag_flag: bool,
-        matches_only: bool,
-        headers: &csv::ByteRecord,
-        wtr: &mut csv::Writer<Box<dyn std::io::Write>>,
-        json_wtr: &mut Box<dyn std::io::Write>,
-        is_first: &mut bool,
-        matched_rows: &mut String,
-    ) -> CliResult<bool> {
-        let flag_json = self.flag_json;
-        let flag_no_headers = self.flag_no_headers;
-
-        if flag_flag {
-            let match_row = if matched {
-                itoa::Buffer::new()
-                    .format(row_number)
-                    .clone_into(matched_rows);
-                matched_rows.as_bytes()
-            } else {
-                b"0"
-            };
-
-            if matches_only && match_row == b"0" {
-                return Ok(false);
-            }
-
-            if matches_only {
-                record.clear();
-            }
-            record.push_field(match_row);
-
-            if flag_json {
-                util::write_json_record(json_wtr, flag_no_headers, headers, record, is_first)?;
-            } else {
-                wtr.write_byte_record(record)?;
-            }
-            Ok(true)
-        } else if matched {
-            if flag_json {
-                util::write_json_record(json_wtr, flag_no_headers, headers, record, is_first)?;
-            } else {
-                wtr.write_byte_record(record)?;
-            }
-            Ok(true)
-        } else {
-            Ok(false)
-        }
     }
 
     /// Finalize output, write match count, and check for errors
@@ -396,6 +395,7 @@ impl Args {
         // to help the compiler optimize the code & hopefully use registers
         let flag_quick = self.flag_quick;
         let flag_json = self.flag_json;
+        let flag_no_headers = self.flag_no_headers;
 
         let mut rdr = rconfig.reader()?;
         let (mut wtr, mut json_wtr) = self.create_writers()?;
@@ -474,20 +474,20 @@ impl Args {
             }
 
             // Use helper to write record if needed
-            if self.write_result_record(
+            write_result_record(
                 &mut record,
                 row_ctr,
                 m,
                 flag_flag,
+                flag_json,
+                flag_no_headers,
                 matches_only,
                 &headers,
                 &mut wtr,
                 &mut json_wtr,
                 &mut is_first,
                 &mut matched_rows,
-            )? {
-                // Record was written (no-op, just for future extensibility)
-            }
+            )?;
         }
 
         #[cfg(any(feature = "feature_capable", feature = "lite"))]
@@ -550,6 +550,7 @@ impl Args {
         let pattern = Arc::new(pattern);
         let invert_match = self.flag_invert_match;
         let flag_quick = self.flag_quick;
+        let flag_no_headers = self.flag_no_headers;
 
         // Atomic flag for early termination in quick mode
         let match_found = Arc::new(AtomicBool::new(false));
@@ -662,11 +663,13 @@ impl Args {
             }
 
             // Use helper to write record if needed
-            self.write_result_record(
+            write_result_record(
                 &mut record,
                 result.row_number,
                 matched,
                 flag_flag,
+                flag_json,
+                flag_no_headers,
                 matches_only,
                 &headers,
                 &mut wtr,

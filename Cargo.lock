@@ -1283,8 +1283,7 @@ source = "git+https://github.com/jqnatividad/cached?branch=nov2025-tweaks#177792
 [[package]]
 name = "calamine"
 version = "0.31.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da56b262e8a827c6b12c3dde4ea4622e0ff542bd2e9ea5855e4cb523481d77b7"
+source = "git+https://github.com/tafia/calamine?rev=f514bcb#f514bcb312bc49b0e5d215caf44805ec13a21e67"
 dependencies = [
  "atoi_simd",
  "byteorder",

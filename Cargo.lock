@@ -2540,9 +2540,9 @@ dependencies = [
 
 [[package]]
 name = "fluent-uri"
-version = "0.3.2"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1918b65d96df47d3591bed19c5cca17e3fa5d0707318e4b5ef2eae01764df7e5"
+checksum = "bc74ac4d8359ae70623506d512209619e5cf8f347124910440dbc221714b328e"
 dependencies = [
  "borrow-or-share",
  "ref-cast",
@@ -3639,8 +3639,7 @@ dependencies = [
 [[package]]
 name = "jsonschema"
 version = "0.33.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d46662859bc5f60a145b75f4632fbadc84e829e45df6c5de74cfc8e05acb96b5"
+source = "git+https://github.com/Stranger6667/jsonschema?rev=5f3afb9#5f3afb947ec122b34c6eb364f14e27816df813b1"
 dependencies = [
  "ahash 0.8.12",
  "base64",
@@ -3660,6 +3659,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "unicode-general-category",
  "uuid-simd",
 ]
 
@@ -6321,8 +6321,7 @@ dependencies = [
 [[package]]
 name = "referencing"
 version = "0.33.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e9c261f7ce75418b3beadfb3f0eb1299fe8eb9640deba45ffa2cb783098697d"
+source = "git+https://github.com/Stranger6667/jsonschema?rev=5f3afb9#5f3afb947ec122b34c6eb364f14e27816df813b1"
 dependencies = [
  "ahash 0.8.12",
  "fluent-uri",

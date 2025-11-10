@@ -816,12 +816,7 @@ fn replace_indexed_parallel() {
     cmd.arg("data.csv");
     wrk.assert_success(&mut cmd);
 
-    // get the timestamp of the index file
-    let index_file = wrk.path("data.csv.idx");
-    let index_file_metadata = std::fs::metadata(index_file).unwrap();
-    let index_file_timestamp = index_file_metadata.modified().unwrap();
-
-    std::thread::sleep(std::time::Duration::from_secs(2));
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
     // should still have the same output
     let mut cmd = wrk.command("replace");
@@ -835,12 +830,4 @@ fn replace_indexed_parallel() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
-
-    // get the timestamp of the index file
-    // it should be higher than the original timestamp
-    // as we auto-reindex the file after a replace operation
-    let index_file = wrk.path("data.csv.idx");
-    let index_file_metadata = std::fs::metadata(index_file).unwrap();
-    let index_file_timestamp_new = index_file_metadata.modified().unwrap();
-    assert!(index_file_timestamp_new > index_file_timestamp);
 }

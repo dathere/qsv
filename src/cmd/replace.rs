@@ -88,10 +88,9 @@ Common options:
 
 "#;
 
-use std::{borrow::Cow, collections::HashSet, fs, io::BufWriter, path::Path, sync::Arc};
+use std::{borrow::Cow, collections::HashSet, fs, sync::Arc};
 
 use crossbeam_channel;
-use csv_index::RandomAccessSimple;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget};
 use regex::bytes::RegexBuilder;
@@ -100,7 +99,7 @@ use threadpool::ThreadPool;
 
 use crate::{
     CliError, CliResult,
-    config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
+    config::{Config, Delimiter},
     index::Indexed,
     select::SelectColumns,
     util,
@@ -178,14 +177,14 @@ fn handle_replace_results(
     total_match_ctr: u64,
     flag_quiet: bool,
     flag_not_one: bool,
-) -> CliResult<u64> {
+) -> CliResult<()> {
     if !flag_quiet {
         eprintln!("{total_match_ctr}");
     }
     if total_match_ctr == 0 && !flag_not_one {
         return Err(CliError::NoMatch());
     }
-    Ok(total_match_ctr)
+    Ok(())
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -226,21 +225,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if let Some(idx) = rconfig.indexed()?
         && util::njobs(args.flag_jobs) > 1
     {
-        let total_match_ctr = args.parallel_replace(&idx, pattern, &rconfig, replacement)?;
-        // refresh the index if there were any replacements
-        if total_match_ctr > 0 {
-            let mut rdr = rconfig.reader_file()?;
-            let mut wtr = BufWriter::with_capacity(
-                DEFAULT_WTR_BUFFER_CAPACITY,
-                fs::File::create(util::idx_path(Path::new(&args.arg_input.unwrap())))?,
-            );
-            RandomAccessSimple::create(&mut rdr, &mut wtr)?;
-            std::io::Write::flush(&mut wtr)?;
-        }
+        args.parallel_replace(&idx, pattern, &rconfig, replacement)
     } else {
-        let _ = args.sequential_replace(&pattern, &rconfig, replacement)?;
+        args.sequential_replace(&pattern, &rconfig, replacement)
     }
-    Ok(())
 }
 
 impl Args {
@@ -249,7 +237,7 @@ impl Args {
         pattern: &regex::bytes::Regex,
         rconfig: &Config,
         replacement: &[u8],
-    ) -> CliResult<u64> {
+    ) -> CliResult<()> {
         let mut rdr = rconfig.reader()?;
         let mut wtr = Config::new(self.flag_output.as_ref()).writer()?;
 
@@ -324,7 +312,7 @@ impl Args {
         pattern: regex::bytes::Regex,
         rconfig: &Config,
         replacement: &[u8],
-    ) -> CliResult<u64> {
+    ) -> CliResult<()> {
         use rayon::slice::ParallelSliceMut;
 
         let mut rdr = rconfig.reader()?;
@@ -333,7 +321,7 @@ impl Args {
 
         let idx_count = idx.count() as usize;
         if idx_count == 0 {
-            return Ok(0);
+            return Ok(());
         }
 
         let njobs = util::njobs(self.flag_jobs);

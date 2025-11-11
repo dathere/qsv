@@ -45,7 +45,8 @@ pivotp options:
                                       Will only work if there is one value column, otherwise
                                       it falls back to `first`
                             [default: smart]
-    --sort-columns          Sort the transposed columns by name. Default is by order of discovery.
+    --sort-columns          Sort the transposed columns by name.
+    --maintain-order        Maintain the order of the input columns.
     --col-separator <arg>   The separator in generated column names in case of multiple --values columns.
                             [default: _]
     --validate              Validate a pivot by checking the pivot column(s)' cardinality.
@@ -102,6 +103,7 @@ struct Args {
     flag_values:         Option<String>,
     flag_agg:            Option<String>,
     flag_sort_columns:   bool,
+    flag_maintain_order: bool,
     flag_col_separator:  String,
     flag_validate:       bool,
     flag_try_parsedates: bool,
@@ -707,7 +709,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             index_selector,
             values_selector,
             agg,
-            args.flag_sort_columns,
+            args.flag_maintain_order,
             separator,
         )
         .collect()?;
@@ -727,8 +729,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .collect()?;
     }
 
-    // Sort columns if requested - the maintain_order parameter controls discovery order,
-    // but we need to explicitly sort column names alphabetically when flag is set
+    // Sort columns if requested
     if args.flag_sort_columns {
         let columns = pivot_result
             .get_column_names()

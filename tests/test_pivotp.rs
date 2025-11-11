@@ -19,6 +19,25 @@ macro_rules! pivotp_test {
     };
 }
 
+macro_rules! pivotp_maintain_order_test {
+    ($name:ident, $fun:expr_2021) => {
+        mod $name {
+            use std::process;
+
+            #[allow(unused_imports)]
+            use super::setup_maintain_order;
+            use crate::workdir::Workdir;
+
+            #[test]
+            fn main() {
+                let wrk = setup_maintain_order(stringify!($name));
+                let cmd = wrk.command("pivotp");
+                $fun(wrk, cmd);
+            }
+        }
+    };
+}
+
 fn setup(name: &str) -> Workdir {
     // Sample data for testing pivot operations
     let sales = vec![
@@ -33,6 +52,27 @@ fn setup(name: &str) -> Workdir {
 
     let wrk = Workdir::new(name);
     wrk.create("sales.csv", sales);
+    wrk
+}
+
+fn setup_maintain_order(name: &str) -> Workdir {
+    // Sample data for testing pivot operations
+    let sales = vec![
+        svec!["date", "product", "region", "sales"],
+        svec!["2023-01-01", "C", "North", "100"],
+        svec!["2023-01-01", "D", "South", "200"],
+        svec!["2023-01-02", "B", "South", "250"],
+        svec!["2023-01-02", "A", "North", "300"],
+        svec!["2023-01-01", "A", "North", "100"],
+        svec!["2023-01-01", "B", "North", "150"],
+        svec!["2023-01-01", "A", "South", "200"],
+        svec!["2023-01-02", "B", "North", "350"],
+        svec!["2023-01-02", "C", "South", "400"],
+        svec!["2023-01-02", "D", "North", "450"],
+    ];
+
+    let wrk = Workdir::new(name);
+    wrk.create("sales_maintain_order.csv", sales);
     wrk
 }
 
@@ -313,6 +353,63 @@ pivotp_test!(
             svec!["date", "A", "B"], // Columns will be sorted alphabetically
             svec!["2023-01-01", "100", "150"],
             svec!["2023-01-02", "300", "250"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// Test pivot with maintain-order flag
+pivotp_maintain_order_test!(
+    pivotp_maintain_order,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "product",
+            "--index",
+            "date",
+            "--values",
+            "sales",
+            "--maintain-order",
+            "--agg",
+            "first",
+            "sales_maintain_order.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["date", "C", "D", "B", "A"],
+            svec!["2023-01-01", "100", "200", "150", "100"],
+            svec!["2023-01-02", "400", "450", "250", "300"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// Test pivot with maintain-order flag
+pivotp_maintain_order_test!(
+    pivotp_maintain_order_and_sort_columns,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "product",
+            "--index",
+            "date",
+            "--values",
+            "sales",
+            "--maintain-order",
+            "--sort-columns",
+            "--agg",
+            "first",
+            "sales_maintain_order.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["date", "A", "B", "C", "D"],
+            svec!["2023-01-01", "100", "150", "100", "200"],
+            svec!["2023-01-02", "300", "250", "400", "450"],
         ];
         assert_eq!(got, expected);
     }

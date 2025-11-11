@@ -207,8 +207,6 @@ polars = { version = "0.52", features = [
     "sql",
     "timezones",
 ], optional = true }
-polars-ops = { version = "0.52", optional = true }
-polars-utils = { version = "0.52", optional = true }
 publicsuffix = { version = "2.2", optional = true }
 pyo3 = { version = "0.27", features = ["auto-initialize"], optional = true }
 qsv-dateparser = "0.13"
@@ -372,10 +370,6 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parki
 # QSV_POLARS_REV=b44da8f
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.35.1" }
 polars = { git = "https://github.com/pola-rs/polars", rev = "b44da8f" }
-# polars-ops = { git = "https://github.com/pola-rs/polars", tag = "py-1.35.1" }
-polars-ops = { git = "https://github.com/pola-rs/polars", rev = "b44da8f" }
-# polars-utils = { git = "https://github.com/pola-rs/polars", tag = "py-1.35.1" }
-polars-utils = { git = "https://github.com/pola-rs/polars", rev = "b44da8f" }
 
 [features]
 default = ["mimalloc"]
@@ -424,7 +418,7 @@ geocode = [
     "sled",
 ]
 luau = ["mlua", "sanitize-filename"]
-polars = ["dep:polars", "bytemuck", "dep:polars-ops", "dep:polars-utils"]
+polars = ["dep:polars", "bytemuck"]
 prompt = ["rfd"]
 python = ["pyo3"]
 to = ["csvs_convert"]

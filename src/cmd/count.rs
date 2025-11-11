@@ -435,7 +435,6 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
         prelude::*,
         sql::SQLContext,
     };
-    use polars_utils::plpath::PlPath;
 
     // info!("using polars");
 

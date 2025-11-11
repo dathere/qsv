@@ -21,7 +21,6 @@ pivotp arguments:
                   set to a value other than the default of 10,000 rows.
                   Stdin is not supported.
 
-
 pivotp options:
     -i, --index <cols>      The column(s) to use as the index (row labels).
                             Specify multiple columns by separating them with a comma.
@@ -40,8 +39,8 @@ pivotp options:
                               max - Maximum value
                               mean - Average value
                               median - Median value
-                              count - Count of values
-                              none - No aggregation is done. Raises error if multiple values are in group.
+                              len - Count of values
+                              item - Get single value from group. Raises error if there are multiple values.
                               smart - use value column data type & statistics to pick an aggregation.
                                       Will only work if there is one value column, otherwise
                                       it falls back to `first`
@@ -66,7 +65,7 @@ Common options:
 "#;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::File,
     io,
     io::{BufReader, Read, Write},
@@ -76,9 +75,7 @@ use std::{
 
 use csv::ByteRecord;
 use indicatif::HumanCount;
-use polars::prelude::{pivot::PivotExpr, *};
-use polars_ops::pivot::{PivotAgg, pivot_stable};
-use polars_utils::plpath::PlPath;
+use polars::prelude::*;
 use serde::Deserialize;
 
 use crate::{
@@ -91,6 +88,11 @@ use crate::{
 
 static STATS_RECORDS: OnceLock<(ByteRecord, Vec<StatsData>, HashMap<String, String>)> =
     OnceLock::new();
+
+/// Helper function to convert a Vec<String> to a vector of Expr for column selection
+fn cols_to_exprs(cols: &[String]) -> Vec<Expr> {
+    cols.iter().map(col).collect()
+}
 
 #[derive(Deserialize)]
 struct Args {
@@ -224,12 +226,10 @@ fn suggest_agg_function(
     on_cols: &[String],
     index_cols: Option<&[String]>,
     value_cols: &[String],
-) -> CliResult<Option<PivotAgg>> {
+) -> CliResult<Option<Expr>> {
     // If multiple value columns, default to First
     if value_cols.len() > 1 {
-        return Ok(Some(PivotAgg(Arc::new(PivotExpr::from_expr(
-            col(&value_cols[0]).first(),
-        )))));
+        return Ok(Some(Expr::Element.first()));
     }
 
     let quiet = args.flag_quiet;
@@ -331,27 +331,29 @@ fn suggest_agg_function(
                 if !quiet {
                     eprintln!("Info: \"{value_col}\" contains only NULL values");
                 }
-                // PivotAgg::Count
-                PivotAgg(Arc::new(PivotExpr::from_expr(col(value_col).count())))
+                Expr::Element.len()
             },
             "Integer" | "Float" => {
-                if stats.nullcount as f64 / row_count as f64 > 0.5 {
+                if stats.cardinality == 1 {
                     if !quiet {
-                        eprintln!("Info: \"{value_col}\" contains >50% NULL values, using Count");
+                        eprintln!("Info: \"{value_col}\" contains only one value, using Item");
                     }
-                    // PivotAgg::Count
-                    PivotAgg(Arc::new(PivotExpr::from_expr(col(value_col).count())))
+                    Expr::Element.item(true)
+                } else if stats.nullcount as f64 / row_count as f64 > 0.5 {
+                    if !quiet {
+                        eprintln!("Info: \"{value_col}\" contains >50% NULL values, using Len");
+                    }
+                    Expr::Element.len()
                 } else if stats.cv > Some(1.0) {
-                    // High coefficient of variation suggests using median for better central
-                    // tendency
+                    // High coefficient of variation suggests using median
+                    // for better central tendency
                     if !quiet {
                         eprintln!(
                             "Info: High variability in values (CV > 1), using Median for more \
                              robust central tendency"
                         );
                     }
-                    // PivotAgg::Median
-                    PivotAgg(Arc::new(PivotExpr::from_expr(col("").median())))
+                    Expr::Element.median()
                 } else if high_cardinality_pivot && high_cardinality_index {
                     if ordered_pivot && ordered_index {
                         // With ordered high cardinality columns, mean might be more meaningful
@@ -360,8 +362,7 @@ fn suggest_agg_function(
                                 "Info: Ordered high cardinality columns detected, using Mean"
                             );
                         }
-                        // PivotAgg::Mean
-                        PivotAgg(Arc::new(PivotExpr::from_expr(col(value_col).mean())))
+                        Expr::Element.mean()
                     } else {
                         // With unordered high cardinality, sum might be more appropriate
                         if !quiet {
@@ -369,8 +370,7 @@ fn suggest_agg_function(
                                 "Info: High cardinality in pivot and index columns, using Sum"
                             );
                         }
-                        // PivotAgg::Sum
-                        PivotAgg(Arc::new(PivotExpr::from_expr(col(value_col).sum())))
+                        Expr::Element.sum()
                     }
                 } else if let Some(skewness) = stats.skewness {
                     if skewness.abs() > 2.0 {
@@ -378,27 +378,28 @@ fn suggest_agg_function(
                         if !quiet {
                             eprintln!("Info: Highly skewed numeric data detected, using Median");
                         }
-                        // PivotAgg::Median
-                        PivotAgg(Arc::new(PivotExpr::from_expr(col("").median())))
+                        Expr::Element.median()
                     } else {
-                        // PivotAgg::Sum
-                        PivotAgg(Arc::new(PivotExpr::from_expr(col("").sum())))
+                        Expr::Element.sum()
                     }
                 } else {
-                    // PivotAgg::Sum
-                    PivotAgg(Arc::new(PivotExpr::from_expr(col("").sum())))
+                    Expr::Element.sum()
                 }
             },
             "Date" | "DateTime" => {
-                if high_cardinality_pivot || high_cardinality_index {
+                if stats.cardinality == 1 {
+                    if !quiet {
+                        eprintln!("Info: \"{value_col}\" contains only one value, using Item");
+                    }
+                    Expr::Element.item(true)
+                } else if high_cardinality_pivot || high_cardinality_index {
                     if ordered_pivot && ordered_index {
                         if !quiet {
                             eprintln!(
                                 "Info: Ordered temporal data with high cardinality, using Last"
                             );
                         }
-                        // PivotAgg::Last
-                        PivotAgg(Arc::new(PivotExpr::from_expr(col("").last())))
+                        Expr::Element.last()
                     } else {
                         if !quiet {
                             eprintln!(
@@ -406,42 +407,41 @@ fn suggest_agg_function(
                                 stats.r#type
                             );
                         }
-                        // PivotAgg::First
-                        PivotAgg(Arc::new(PivotExpr::from_expr(col("").first())))
+                        Expr::Element.first()
                     }
                 } else {
                     if !quiet {
-                        eprintln!("Info: Using Count for {} column", stats.r#type);
+                        eprintln!("Info: Using Len for {} column", stats.r#type);
                     }
-                    // PivotAgg::Count
-                    PivotAgg(Arc::new(PivotExpr::from_expr(col("").count())))
+                    Expr::Element.len()
                 }
             },
             _ => {
-                if stats.cardinality == row_count {
+                if stats.cardinality == 1 {
+                    if !quiet {
+                        eprintln!("Info: \"{value_col}\" contains only one value, using Item");
+                    }
+                    Expr::Element.item(true)
+                } else if stats.cardinality == row_count {
                     if !quiet {
                         eprintln!("Info: \"{value_col}\" contains all unique values, using First");
                     }
-                    // PivotAgg::First
-                    PivotAgg(Arc::new(PivotExpr::from_expr(col("").first())))
+                    Expr::Element.first()
                 } else if stats.sparsity > Some(0.5) {
                     if !quiet {
-                        eprintln!("Info: Sparse data detected, using Count");
+                        eprintln!("Info: Sparse data detected, using Len");
                     }
-                    // PivotAgg::Count
-                    PivotAgg(Arc::new(PivotExpr::from_expr(col("").count())))
+                    Expr::Element.len()
                 } else if high_cardinality_pivot || high_cardinality_index {
                     if !quiet {
-                        eprintln!("Info: High cardinality detected, using Count");
+                        eprintln!("Info: High cardinality detected, using Len");
                     }
-                    // PivotAgg::Count
-                    PivotAgg(Arc::new(PivotExpr::from_expr(col("").count())))
+                    Expr::Element.len()
                 } else {
                     if !quiet {
-                        eprintln!("Info: Using Count for String column");
+                        eprintln!("Info: Using Len for String column");
                     }
-                    // PivotAgg::Count
-                    PivotAgg(Arc::new(PivotExpr::from_expr(col("").count())))
+                    Expr::Element.len()
                 }
             },
         };
@@ -493,21 +493,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    // Get aggregation function
-    let agg_fn = if let Some(ref agg) = args.flag_agg {
+    // Get aggregation function - using generic expressions that pivot will apply to value columns
+    let agg_expr = if let Some(ref agg) = args.flag_agg {
         let lower_agg = agg.to_lowercase();
         if lower_agg == "none" {
             None
         } else {
             Some(match lower_agg.as_str() {
-                "first" => PivotAgg(Arc::new(PivotExpr::from_expr(col("").first()))),
-                "sum" => PivotAgg(Arc::new(PivotExpr::from_expr(col("").sum()))),
-                "min" => PivotAgg(Arc::new(PivotExpr::from_expr(col("").min()))),
-                "max" => PivotAgg(Arc::new(PivotExpr::from_expr(col("").max()))),
-                "mean" => PivotAgg(Arc::new(PivotExpr::from_expr(col("").mean()))),
-                "median" => PivotAgg(Arc::new(PivotExpr::from_expr(col("").median()))),
-                "count" => PivotAgg(Arc::new(PivotExpr::from_expr(col("").count()))),
-                "last" => PivotAgg(Arc::new(PivotExpr::from_expr(col("").last()))),
+                "first" => Expr::Element.first(),
+                "last" => Expr::Element.last(),
+                "sum" => Expr::Element.sum(),
+                "min" => Expr::Element.min(),
+                "max" => Expr::Element.max(),
+                "mean" => Expr::Element.mean(),
+                "median" => Expr::Element.median(),
+                "len" => Expr::Element.len(),
+                "item" => Expr::Element.item(true),
                 "smart" => {
                     if let Some(value_cols) = &value_cols {
                         // Try to suggest an appropriate aggregation function
@@ -520,14 +521,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             Some(suggested_agg) => suggested_agg,
                             _ => {
                                 // fallback to first, which always works
-                                // PivotAgg::First
-                                PivotAgg(Arc::new(PivotExpr::from_expr(col("").first())))
+                                Expr::Element.first()
                             },
                         }
                     } else {
-                        // Default to Count if no value columns specified
-                        // PivotAgg::Count
-                        PivotAgg(Arc::new(PivotExpr::from_expr(col("").count())))
+                        // Default to Len if no value columns specified
+                        Expr::Element.len()
                     }
                 },
                 _ => {
@@ -583,26 +582,177 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         csv_reader = csv_reader.with_infer_schema_length(Some(args.flag_infer_len));
     }
 
-    // Read the CSV into a DataFrame
-    let df = csv_reader.finish()?.collect()?;
+    // Read the CSV into a LazyFrame
+    let mut lf = csv_reader.finish()?;
+
+    // Add a row index to track discovery order
+    let row_order_col = "__qsv_row_order__";
+    lf = lf.with_row_index(PlSmallStr::from_str(row_order_col), None);
+
+    // Get all column names from the schema to compute index/values if not specified
+    let schema = lf.collect_schema()?;
+    let all_cols: Vec<String> = schema
+        .iter_names()
+        .filter(|name| *name != row_order_col)
+        .map(polars::prelude::PlSmallStr::to_string)
+        .collect();
+
+    // Compute actual index and value columns if not specified
+    let actual_index_cols: Vec<String> = if let Some(idx_cols) = index_cols {
+        idx_cols
+    } else {
+        // If no index specified, use all columns except on and values
+        let on_set: HashSet<&str> = on_cols.iter().map(std::string::String::as_str).collect();
+        let value_set: HashSet<&str> = value_cols
+            .as_ref()
+            .map(|cols| cols.iter().map(std::string::String::as_str).collect())
+            .unwrap_or_default();
+
+        all_cols
+            .iter()
+            .filter(|c| !on_set.contains(c.as_str()) && !value_set.contains(c.as_str()))
+            .cloned()
+            .collect()
+    };
+
+    let actual_value_cols: Vec<String> = if let Some(cols) = value_cols {
+        cols
+    } else {
+        // If no values specified, use all columns except on and index
+        let on_set: HashSet<&str> = on_cols.iter().map(std::string::String::as_str).collect();
+        let index_set: HashSet<&str> = actual_index_cols
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
+
+        all_cols
+            .iter()
+            .filter(|c| !on_set.contains(c.as_str()) && !index_set.contains(c.as_str()))
+            .cloned()
+            .collect()
+    };
 
     if args.flag_validate {
-        // Validate the operation
-        if let Some(metadata) = calculate_pivot_metadata(&args, &on_cols, value_cols.as_ref())? {
+        // Validate the operation - need to collect to get metadata
+        let df_for_validation = lf.clone().collect()?;
+        if let Some(metadata) = calculate_pivot_metadata(&args, &on_cols, Some(&actual_value_cols))?
+        {
             validate_pivot_operation(&metadata)?;
         }
+        drop(df_for_validation);
     }
 
-    // Perform pivot operation
-    let mut pivot_result = pivot_stable(
-        &df,
-        on_cols,
-        index_cols,
-        value_cols,
-        args.flag_sort_columns,
-        agg_fn,
-        Some(&args.flag_col_separator),
-    )?;
+    // Compute unique values for the pivot columns to create on_columns DataFrame
+    // This is required by the new LazyFrame pivot API
+    // We need to maintain discovery order, so we add row numbers and sort by them
+    let on_columns = {
+        let on_exprs_with_order: Vec<Expr> = cols_to_exprs(&on_cols)
+            .into_iter()
+            .chain(std::iter::once(col(row_order_col)))
+            .collect();
+
+        let unique_df = lf
+            .clone()
+            .select(on_exprs_with_order)
+            .unique(
+                Some(cols(on_cols.iter().map(std::string::String::as_str))),
+                UniqueKeepStrategy::First,
+            )
+            .sort([row_order_col], SortMultipleOptions::default())
+            .drop(cols([row_order_col]))
+            .collect()?;
+
+        Arc::new(unique_df)
+    };
+
+    // Create the aggregation expression
+    // If agg_expr is None, we need a default
+    let agg = agg_expr.unwrap_or_else(|| Expr::Element.first());
+
+    // Convert separator to PlSmallStr
+    let separator = PlSmallStr::from_str(&args.flag_col_separator);
+
+    // Compute the minimum row order for each unique index combination
+    // This will be used to restore discovery order after pivoting
+    // for deterministic output
+    let index_order = if actual_index_cols.is_empty() {
+        None
+    } else {
+        let order_df = lf
+            .clone()
+            .select(
+                actual_index_cols
+                    .iter()
+                    .map(col)
+                    .chain(std::iter::once(col(row_order_col)))
+                    .collect::<Vec<_>>(),
+            )
+            .group_by(actual_index_cols.iter().map(col).collect::<Vec<_>>())
+            .agg([col(row_order_col).min().alias(row_order_col)])
+            .collect()?;
+        Some(order_df)
+    };
+
+    // Perform pivot operation using the new LazyFrame.pivot API
+    // The API expects: on (Selector), on_columns (Arc<DataFrame>), index (Selector),
+    // values (Selector), agg (Expr), maintain_order (bool), separator (PlSmallStr)
+    let on_selector = cols(on_cols.iter().map(std::string::String::as_str));
+    let index_selector = cols(actual_index_cols.iter().map(std::string::String::as_str));
+    let values_selector = cols(actual_value_cols.iter().map(std::string::String::as_str));
+
+    let mut pivot_result = lf
+        .pivot(
+            on_selector,
+            on_columns,
+            index_selector,
+            values_selector,
+            agg,
+            args.flag_sort_columns,
+            separator,
+        )
+        .collect()?;
+
+    // Restore discovery order by joining with index_order and sorting
+    if let Some(index_order_df) = index_order {
+        pivot_result = pivot_result
+            .lazy()
+            .join(
+                index_order_df.lazy(),
+                &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
+                &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
+                JoinArgs::new(JoinType::Left),
+            )
+            .sort([row_order_col], SortMultipleOptions::default())
+            .drop(cols([row_order_col]))
+            .collect()?;
+    }
+
+    // Sort columns if requested - the maintain_order parameter controls discovery order,
+    // but we need to explicitly sort column names alphabetically when flag is set
+    if args.flag_sort_columns {
+        let columns = pivot_result
+            .get_column_names()
+            .into_iter()
+            .map(polars::prelude::PlSmallStr::to_string);
+        let index_cols_set: HashSet<_> = actual_index_cols
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
+
+        // Separate index and pivoted columns
+        let (index_names, mut pivot_names): (Vec<_>, Vec<_>) = columns
+            .into_iter()
+            .partition(|name| index_cols_set.contains(name.as_str()));
+
+        // Sort only the pivoted columns alphabetically
+        pivot_names.sort_unstable();
+
+        // Reconstruct column order: index columns first, then sorted pivot columns
+        let mut sorted_columns = index_names;
+        sorted_columns.extend(pivot_names);
+
+        pivot_result = pivot_result.select(sorted_columns.as_slice())?;
+    }
 
     // Write output
     let mut writer = match args.flag_output {

@@ -269,7 +269,6 @@ use std::{
 };
 
 use polars::prelude::*;
-use polars_utils::plpath::PlPath;
 use serde::Deserialize;
 use tempfile::tempdir;
 

@@ -215,32 +215,29 @@ pivotp_test!(
     }
 );
 
-// Test pivot with count aggregation
-pivotp_test!(
-    pivotp_count_agg,
-    |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
-            "product",
-            "--index",
-            "region",
-            "--values",
-            "sales",
-            "--agg",
-            "count",
-            "sales.csv",
-        ]);
+// Test pivot with len aggregation
+pivotp_test!(pivotp_len_agg, |wrk: Workdir, mut cmd: process::Command| {
+    cmd.args(&[
+        "product",
+        "--index",
+        "region",
+        "--values",
+        "sales",
+        "--agg",
+        "len",
+        "sales.csv",
+    ]);
 
-        wrk.assert_success(&mut cmd);
+    wrk.assert_success(&mut cmd);
 
-        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-        let expected = vec![
-            svec!["region", "A", "B"],
-            svec!["North", "2", "2"],
-            svec!["South", "1", "1"],
-        ];
-        assert_eq!(got, expected);
-    }
-);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["region", "A", "B"],
+        svec!["North", "2", "2"],
+        svec!["South", "1", "1"],
+    ];
+    assert_eq!(got, expected);
+});
 
 // Test pivot with last aggregation
 pivotp_test!(
@@ -266,6 +263,30 @@ pivotp_test!(
             svec!["South", "200", "250"],
         ];
         assert_eq!(got, expected);
+    }
+);
+
+// Test pivot with item aggregation
+pivotp_test!(
+    pivotp_item_agg,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "product",
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            "item",
+            "sales.csv",
+        ]);
+
+        wrk.assert_err(&mut cmd);
+
+        let msg = wrk.output_stderr(&mut cmd);
+        let expected_msg = "Polars error: ComputeError(ErrString(\"aggregation 'item' expected no \
+                            or a single value, got 2 values\"))\n";
+        assert_eq!(msg, expected_msg);
     }
 );
 

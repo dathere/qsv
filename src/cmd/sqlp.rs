@@ -287,13 +287,8 @@ use std::{
 };
 
 use polars::{
-    datatypes::PlSmallStr,
     io::avro::{AvroWriter, Compression as AvroCompression},
-    prelude::{
-        Arc, CsvWriter, DataFrame, GzipLevel, IpcCompression, IpcWriter, JsonFormat, JsonWriter,
-        LazyCsvReader, LazyFileListReader, NullValues, OptFlags, ParquetCompression, ParquetWriter,
-        PlPath, Schema, SerWriter, StatisticsOptions, ZstdLevel,
-    },
+    prelude::*,
     sql::SQLContext,
 };
 use regex::Regex;

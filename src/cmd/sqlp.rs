@@ -292,11 +292,10 @@ use polars::{
     prelude::{
         Arc, CsvWriter, DataFrame, GzipLevel, IpcCompression, IpcWriter, JsonFormat, JsonWriter,
         LazyCsvReader, LazyFileListReader, NullValues, OptFlags, ParquetCompression, ParquetWriter,
-        Schema, SerWriter, StatisticsOptions, ZstdLevel,
+        PlPath, Schema, SerWriter, StatisticsOptions, ZstdLevel,
     },
     sql::SQLContext,
 };
-use polars_utils::plpath::PlPath;
 use regex::Regex;
 use serde::Deserialize;
 

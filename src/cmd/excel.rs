@@ -1015,15 +1015,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let mut formatted_date = String::new();
 
             let mut processed_chunk: Vec<csv::StringRecord> = Vec::with_capacity(chunk_size);
-            let mut col_idx: u32;
 
             let mut cell_formula;
             let mut itoa_buf = itoa::Buffer::new();
             let mut ryu_buf = ryu::Buffer::new();
 
             for (row_idx, row) in chunk {
-                col_idx = 0;
-                for cell in *row {
+                for (col_idx, cell) in row.iter().enumerate() {
                     match *cell {
                         Data::Empty => record.push_field(""),
                         Data::String(ref s) => record.push_field(s),
@@ -1101,7 +1099,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 write!(error_buffer, "{e}").unwrap();
                             } else {
                                 cell_formula = sheet_formulas
-                                    .get_value((*row_idx, col_idx))
+                                    .get_value((*row_idx, col_idx as u32))
                                     .unwrap_or(&formula_get_value_error);
                                 if error_format == ErrorFormat::Formula {
                                     write!(error_buffer, "#={cell_formula}").unwrap();
@@ -1113,7 +1111,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             record.push_field(error_buffer.as_str());
                         },
                     }
-                    col_idx += 1;
                 }
 
                 if trim {

@@ -1004,6 +1004,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .map(|chunk| {
             // amortize allocations
             let mut record = csv::StringRecord::with_capacity(512, col_count);
+            let mut trimmed_record = if trim {
+                csv::StringRecord::with_capacity(512, col_count)
+            } else {
+                csv::StringRecord::new()
+            };
+
             let mut work_date;
             let mut error_buffer = String::new();
             let mut formatted_date = String::new();
@@ -1111,7 +1117,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
 
                 if trim {
-                    let mut trimmed_record = csv::StringRecord::with_capacity(512, col_count);
                     // record.trim() is faster than trimming each field piecemeal
                     record.trim();
                     record.iter().for_each(|field| {

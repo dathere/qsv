@@ -578,6 +578,8 @@ pub static STATSDATA_TYPES_MAP: phf::Map<&'static str, JsonTypes> = phf_map! {
 static INFER_DATE_FLAGS: OnceLock<SmallVec<[bool; 50]>> = OnceLock::new();
 static RECORD_COUNT: OnceLock<u64> = OnceLock::new();
 static ANTIMODES_LEN: OnceLock<usize> = OnceLock::new();
+static STATS_SEPARATOR: OnceLock<String> = OnceLock::new();
+static STATS_STRING_MAX_LENGTH: OnceLock<Option<usize>> = OnceLock::new();
 
 // standard overflow and underflow strings
 // for sum, sum_length and avg_length
@@ -2400,12 +2402,14 @@ impl Stats {
         let record_count = *RECORD_COUNT.get().unwrap_or(&1);
 
         // get the stats separator
-        let stats_separator = if self.which.mode || self.which.percentiles {
-            std::env::var("QSV_STATS_SEPARATOR")
-                .unwrap_or_else(|_| DEFAULT_STATS_SEPARATOR.to_string())
-        } else {
-            DEFAULT_STATS_SEPARATOR.to_string()
-        };
+        let stats_separator = STATS_SEPARATOR.get_or_init(|| {
+            if self.which.mode || self.which.percentiles {
+                std::env::var("QSV_STATS_SEPARATOR")
+                    .unwrap_or_else(|_| DEFAULT_STATS_SEPARATOR.to_string())
+            } else {
+                DEFAULT_STATS_SEPARATOR.to_string()
+            }
+        });
 
         // modes/antimodes & cardinality/uniqueness_ratio
         // we do this second because we can use the sort order with cardinality, to skip sorting
@@ -2466,12 +2470,12 @@ impl Stats {
                             modes_result
                                 .iter()
                                 .map(|c| util::visualize_whitespace(&String::from_utf8_lossy(c)))
-                                .join(&stats_separator)
+                                .join(stats_separator)
                         } else {
                             modes_result
                                 .iter()
                                 .map(|c| String::from_utf8_lossy(c))
-                                .join(&stats_separator)
+                                .join(stats_separator)
                         };
 
                         // antimode/s ============
@@ -2497,11 +2501,11 @@ impl Stats {
                         let antimodes_vals = &antimodes_result
                             .iter()
                             .map(|c| String::from_utf8_lossy(c))
-                            .join(&stats_separator);
+                            .join(stats_separator);
 
                         // if the antimodes result starts with the separator,
                         // it indicates that NULL is the first antimode. Add NULL to the list.
-                        if antimodes_vals.starts_with(&stats_separator) {
+                        if antimodes_vals.starts_with(stats_separator) {
                             antimodes_list.push_str("NULL");
                         }
                         antimodes_list.push_str(antimodes_vals);
@@ -2914,7 +2918,7 @@ impl Stats {
                                 .map(|p| util::round_num(*p, round_places))
                                 .collect::<Vec<_>>()
                         };
-                        pieces.push(formatted_values.join(&stats_separator));
+                        pieces.push(formatted_values.join(stats_separator));
                     } else {
                         pieces.push(empty());
                     }
@@ -3249,11 +3253,13 @@ impl TypedMinMax {
                     let min_str = String::from_utf8_lossy(min).to_string();
                     let max_str = String::from_utf8_lossy(max).to_string();
 
-                    let max_length = std::env::var("QSV_STATS_STRING_MAX_LENGTH")
-                        .ok()
-                        .and_then(|s| atoi_simd::parse::<usize>(s.as_bytes()).ok());
+                    let max_length = STATS_STRING_MAX_LENGTH.get_or_init(|| {
+                        std::env::var("QSV_STATS_STRING_MAX_LENGTH")
+                            .ok()
+                            .and_then(|s| atoi_simd::parse::<usize>(s.as_bytes()).ok())
+                    });
 
-                    let (min_str, max_str) = if let Some(max_len) = max_length {
+                    let (min_str, max_str) = if let Some(max_len) = *max_length {
                         (
                             if min_str.len() > max_len {
                                 format!("{}...", &min_str[..max_len])

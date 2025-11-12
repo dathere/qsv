@@ -942,8 +942,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     // amortize allocations
-    let mut record = csv::StringRecord::with_capacity(500, col_count);
-    let mut trimmed_record = csv::StringRecord::with_capacity(500, col_count);
+    let mut record = csv::StringRecord::with_capacity(512, col_count);
 
     // get headers
     info!("exporting sheet ({sheet})...");
@@ -961,6 +960,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     if trim {
         record.trim();
+        let mut trimmed_record = csv::StringRecord::with_capacity(512, col_count);
         record.iter().for_each(|field| {
             if field.contains('\n') {
                 trimmed_record.push_field(&field.replace('\n', " "));
@@ -1003,13 +1003,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     rows.par_chunks(chunk_size)
         .map(|chunk| {
             // amortize allocations
-            let mut record = csv::StringRecord::with_capacity(500, col_count);
-            let mut trimmed_record = if trim {
-                csv::StringRecord::with_capacity(500, col_count)
-            } else {
-                csv::StringRecord::new()
-            };
-            let mut float_val;
+            let mut record = csv::StringRecord::with_capacity(512, col_count);
             let mut work_date;
             let mut error_buffer = String::new();
             let mut formatted_date = String::new();
@@ -1028,21 +1022,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         Data::Empty => record.push_field(""),
                         Data::String(ref s) => record.push_field(s),
                         Data::Int(ref i) => record.push_field(itoa_buf.format(*i)),
-                        Data::Float(ref f) => {
-                            float_val = *f;
+                        Data::Float(ref float_val) => {
                             // push the ryu-formatted float value if its
                             // not an integer or the candidate
                             // integer is too big or too small to be an i64
                             #[allow(clippy::cast_precision_loss)]
                             if float_val.fract().abs() > f64::EPSILON
-                                || float_val > i64::MAX as f64
-                                || float_val < i64::MIN as f64
+                                || *float_val > i64::MAX as f64
+                                || *float_val < i64::MIN as f64
                             {
-                                record.push_field(ryu_buf.format_finite(float_val));
+                                record.push_field(ryu_buf.format_finite(*float_val));
                             } else {
                                 // its an i64 integer. We can't use ryu to format it, because it
                                 // will be formatted as a float (have a ".0"). So we use itoa.
-                                record.push_field(itoa_buf.format(float_val as i64));
+                                record.push_field(itoa_buf.format(*float_val as i64));
                             }
                         },
                         Data::DateTime(ref edt) => {
@@ -1118,6 +1111,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
 
                 if trim {
+                    let mut trimmed_record = csv::StringRecord::with_capacity(512, col_count);
                     // record.trim() is faster than trimming each field piecemeal
                     record.trim();
                     record.iter().for_each(|field| {

@@ -1015,13 +1015,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let mut formatted_date = String::new();
 
             let mut processed_chunk: Vec<csv::StringRecord> = Vec::with_capacity(chunk_size);
-            let mut col_idx = 0_u32;
+            let mut col_idx: u32;
 
             let mut cell_formula;
             let mut itoa_buf = itoa::Buffer::new();
             let mut ryu_buf = ryu::Buffer::new();
 
             for (row_idx, row) in chunk {
+                col_idx = 0;
                 for cell in *row {
                     match *cell {
                         Data::Empty => record.push_field(""),

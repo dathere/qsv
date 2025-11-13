@@ -472,10 +472,13 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
     {
         // First, try to read the first row to check if the file is empty
         // do it in a block so schema_df is dropped early
+        // Use ignore_errors to handle schema inference issues (e.g., columns that start
+        // with boolean values but contain integers later)
         let schema_df = match LazyCsvReader::new(PlPath::new(&filepath.to_string_lossy()))
             .with_separator(delimiter)
             .with_comment_prefix(comment_prefix.clone())
             .with_n_rows(Some(1))
+            .with_ignore_errors(true)
             .finish()
         {
             Ok(df) => df.collect(),
@@ -502,10 +505,13 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
     } else {
         // otherwise, read the file into a Polars LazyFrame
         // using the LazyCsvReader builder to set CSV read options
+        // Use ignore_errors to handle schema inference issues (e.g., columns that start
+        // with boolean values but contain integers later)
         lazy_df = match LazyCsvReader::new(PlPath::new(&filepath.to_string_lossy()))
             .with_separator(delimiter)
             .with_comment_prefix(comment_prefix)
             .with_low_memory(low_memory)
+            .with_ignore_errors(true)
             .finish()
         {
             Ok(lazy_df) => lazy_df,

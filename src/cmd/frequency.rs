@@ -290,6 +290,7 @@ struct ProcessedFrequency {
 static UNIQUE_COLUMNS_VEC: OnceLock<Vec<usize>> = OnceLock::new();
 static COL_CARDINALITY_VEC: OnceLock<Vec<(String, u64)>> = OnceLock::new();
 static FREQ_ROW_COUNT: OnceLock<u64> = OnceLock::new();
+static EMPTY_VEC: OnceLock<Vec<(String, u64)>> = OnceLock::new();
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
@@ -316,14 +317,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         util::mem_file_check(&path, false, args.flag_memcheck)?;
     }
 
-    // Create NULL value once to avoid repeated to_vec allocations
+    // Create NULL_VAL and EMPTY_VEC once to avoid repeated to_vec allocations
+    // safety: we're initializing the start of the program
     NULL_VAL
         .set(args.flag_null_text.as_bytes().to_vec())
-        .map_err(|_| "Cannot set NULL_VAL")?;
+        .unwrap();
+    EMPTY_VEC.set(Vec::new()).unwrap();
 
-    let (headers, tables) = match args.rconfig().indexed()? {
-        Some(ref mut idx) if util::njobs(args.flag_jobs) > 1 => args.parallel_ftables(idx),
-        _ => args.sequential_ftables(),
+    let (headers, tables) = if let Some(idx) = args.rconfig().indexed()?
+        && util::njobs(args.flag_jobs) > 1
+    {
+        args.parallel_ftables(&idx)
+    } else {
+        args.sequential_ftables()
     }?;
 
     if is_json {
@@ -361,9 +367,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             header.to_vec()
         };
 
-        let all_unique_header = unique_headers_vec.contains(&i);
         args.process_frequencies(
-            all_unique_header,
+            unique_headers_vec.contains(&i),
             abs_dec_places,
             row_count,
             &ftab,
@@ -422,13 +427,11 @@ impl Args {
     ) {
         if all_unique_header {
             // For all-unique headers, create a single entry
-            let all_unique_text = self.flag_all_unique_text.as_bytes().to_vec();
-            let formatted_pct = self.format_percentage(100.0, abs_dec_places);
             processed_frequencies.push(ProcessedFrequency {
-                value:                all_unique_text,
+                value:                self.flag_all_unique_text.as_bytes().to_vec(),
                 count:                row_count,
                 percentage:           100.0,
-                formatted_percentage: formatted_pct,
+                formatted_percentage: self.format_percentage(100.0, abs_dec_places),
                 rank:                 1.0, // Rank 1 for all-unique headers
             });
         } else {
@@ -444,12 +447,11 @@ impl Args {
 
             // Convert to processed frequencies
             for (value, count, percentage, rank) in counts_to_process {
-                let formatted_pct = self.format_percentage(percentage, abs_dec_places);
                 processed_frequencies.push(ProcessedFrequency {
                     value,
                     count,
                     percentage,
-                    formatted_percentage: formatted_pct,
+                    formatted_percentage: self.format_percentage(percentage, abs_dec_places),
                     rank,
                 });
             }
@@ -761,8 +763,9 @@ impl Args {
         // optimize the capacity of the freq_tables based on the cardinality of the columns
         // if sequential, use the cardinality from the stats cache
         // if parallel, use a default capacity of 1000 for non-unique columns
-        let empty_vec = Vec::new();
-        let col_cardinality_vec = COL_CARDINALITY_VEC.get().unwrap_or(&empty_vec);
+        let col_cardinality_vec = COL_CARDINALITY_VEC
+            .get()
+            .unwrap_or(EMPTY_VEC.get().unwrap());
         let mut freq_tables: Vec<_> = if col_cardinality_vec.is_empty() {
             (0..nsel_len)
                 .map(|_| Frequencies::with_capacity(1000))

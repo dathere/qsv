@@ -433,3 +433,88 @@ fn show_version() {
     let expected = format!(" {}", env!("CARGO_PKG_VERSION"));
     assert!(got.contains(&expected));
 }
+
+#[test]
+fn count_stdin_schema_inference_issue_3103() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("count_stdin_schema_inference_issue");
+
+    // Create a CSV file that mimics the issue: a column that starts with boolean
+    // values but then contains integers. This can cause Polars to mis-infer the schema.
+    let mut csv_data = String::from("value\n");
+    // Add many "FALSE" or "TRUE" values first (to trigger boolean inference)
+    for _ in 0..3_000 {
+        csv_data.push_str(if rand::random::<bool>() {
+            "true\n"
+        } else {
+            "false\n"
+        });
+    }
+    // Then add integer values (which should cause schema mismatch)
+    for i in 0..50 {
+        csv_data.push_str(&format!("{}\n", i));
+    }
+
+    wrk.create_from_string("test_data.csv", &csv_data);
+
+    // Test with stdin input (the problematic case from the issue)
+    let mut cmd = wrk.command("count");
+    cmd.arg("-"); // Use stdin
+
+    let stdin_data = wrk.read_to_string("test_data.csv").unwrap();
+    cmd.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    std::thread::spawn(move || {
+        stdin.write_all(stdin_data.as_bytes()).unwrap();
+    });
+
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+
+    let got: String = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    // Should count 3050 rows (3000 boolean values + 50 integers), excluding header
+    let expected = "3050";
+    assert_eq!(
+        got, expected,
+        "Count should be 3050, not 0, even with schema inference issues"
+    );
+}
+
+#[test]
+fn count_file_schema_inference_issue_3103() {
+    let wrk = Workdir::new("count_file_schema_inference_issue");
+
+    // Create a CSV file that mimics the issue: a column that starts with boolean
+    // values but then contains integers. This can cause Polars to mis-infer the schema.
+    let mut csv_data = String::from("value\n");
+    // Add many "FALSE" or "TRUE" values first (to trigger boolean inference)
+    for _ in 0..3_000 {
+        csv_data.push_str(if rand::random::<bool>() {
+            "true\n"
+        } else {
+            "false\n"
+        });
+    }
+    // Then add integer values (which should cause schema mismatch)
+    for i in 0..50 {
+        csv_data.push_str(&format!("{}\n", i));
+    }
+
+    wrk.create_from_string("test_data.csv", &csv_data);
+
+    // Test with file input (should also work)
+    let mut cmd = wrk.command("count");
+    cmd.arg("test_data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    // Should count 3050 rows (3000 boolean values + 50 integers), excluding header
+    let expected = "3050";
+    assert_eq!(
+        got, expected,
+        "Count should be 3050, not 0, even with schema inference issues"
+    );
+}

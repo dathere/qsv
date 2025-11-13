@@ -238,6 +238,11 @@ const NON_UTF8_ERR: &str = "<Non-UTF8 ERROR>";
 const EMPTY_BYTE_VEC: Vec<u8> = Vec::new();
 static STATS_RECORDS: OnceLock<HashMap<String, StatsData>> = OnceLock::new();
 static NULL_VAL: OnceLock<Vec<u8>> = OnceLock::new();
+static UNIQUE_COLUMNS_VEC: OnceLock<Vec<usize>> = OnceLock::new();
+static COL_CARDINALITY_VEC: OnceLock<Vec<(String, u64)>> = OnceLock::new();
+static FREQ_ROW_COUNT: OnceLock<u64> = OnceLock::new();
+static EMPTY_VEC: Vec<(String, u64)> = Vec::new();
+static ALL_UNIQUE_TEXT: OnceLock<Vec<u8>> = OnceLock::new();
 // FrequencyEntry, FrequencyField and FrequencyOutput are
 // structs for JSON output
 #[derive(Serialize)]
@@ -287,11 +292,6 @@ struct ProcessedFrequency {
     rank:                 f64,
 }
 
-static UNIQUE_COLUMNS_VEC: OnceLock<Vec<usize>> = OnceLock::new();
-static COL_CARDINALITY_VEC: OnceLock<Vec<(String, u64)>> = OnceLock::new();
-static FREQ_ROW_COUNT: OnceLock<u64> = OnceLock::new();
-static EMPTY_VEC: OnceLock<Vec<(String, u64)>> = OnceLock::new();
-
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
     let mut rconfig = args.rconfig();
@@ -317,12 +317,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         util::mem_file_check(&path, false, args.flag_memcheck)?;
     }
 
-    // Create NULL_VAL and EMPTY_VEC once to avoid repeated to_vec allocations
-    // safety: we're initializing the start of the program
+    // Create NULL_VAL & ALL_UNIQUE_TEXT once at the start to avoid
+    // repeated string & vec allocations in hot loops.
+    // safety: we're initializing the OnceLocks at the start of the program
     NULL_VAL
         .set(args.flag_null_text.as_bytes().to_vec())
         .unwrap();
-    EMPTY_VEC.set(Vec::new()).unwrap();
+
+    ALL_UNIQUE_TEXT
+        .set(args.flag_all_unique_text.as_bytes().to_vec())
+        .unwrap();
 
     let (headers, tables) = if let Some(idx) = args.rconfig().indexed()?
         && util::njobs(args.flag_jobs) > 1
@@ -352,12 +356,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut processed_frequencies: Vec<ProcessedFrequency> = Vec::with_capacity(head_ftables.len());
     #[allow(unused_assignments)]
     let mut value_str = String::with_capacity(100);
+    let vis_whitespace = args.flag_vis_whitespace;
 
     // safety: we know that UNIQUE_COLUMNS has been previously set
-    // when compiling frequencies by sel_headers fn
+    // when compiling frequencies by sel_headers fn in either sequential or parallel mode
     let unique_headers_vec = UNIQUE_COLUMNS_VEC.get().unwrap();
 
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
+    // write headers
     wtr.write_record(vec!["field", "value", "count", "percentage", "rank"])?;
 
     for (i, (header, ftab)) in head_ftables.enumerate() {
@@ -386,7 +392,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             row = vec![
                 &*header_vec,
-                if args.flag_vis_whitespace {
+                if vis_whitespace {
                     value_str =
                         util::visualize_whitespace(&String::from_utf8_lossy(&processed_freq.value));
                     value_str.as_bytes()
@@ -428,7 +434,7 @@ impl Args {
         if all_unique_header {
             // For all-unique headers, create a single entry
             processed_frequencies.push(ProcessedFrequency {
-                value:                self.flag_all_unique_text.as_bytes().to_vec(),
+                value:                ALL_UNIQUE_TEXT.get().unwrap().clone(),
                 count:                row_count,
                 percentage:           100.0,
                 formatted_percentage: self.format_percentage(100.0, abs_dec_places),
@@ -763,9 +769,7 @@ impl Args {
         // optimize the capacity of the freq_tables based on the cardinality of the columns
         // if sequential, use the cardinality from the stats cache
         // if parallel, use a default capacity of 1000 for non-unique columns
-        let col_cardinality_vec = COL_CARDINALITY_VEC
-            .get()
-            .unwrap_or(EMPTY_VEC.get().unwrap());
+        let col_cardinality_vec = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
         let mut freq_tables: Vec<_> = if col_cardinality_vec.is_empty() {
             (0..nsel_len)
                 .map(|_| Frequencies::with_capacity(1000))
@@ -964,7 +968,7 @@ impl Args {
         let unique_headers_vec = UNIQUE_COLUMNS_VEC.get().unwrap();
         let mut processed_frequencies = Vec::with_capacity(head_ftables.len());
         let abs_dec_places = self.flag_pct_dec_places.unsigned_abs() as u32;
-        let stats_records = STATS_RECORDS.get();
+        // pre-allocate space for 17 field stats, see list below for details
         let mut field_stats: Vec<FieldStats> = Vec::with_capacity(17);
 
         for (i, (header, ftab)) in head_ftables.enumerate() {
@@ -1002,7 +1006,9 @@ impl Args {
             };
 
             // Get stats record for this field
-            let stats_record = stats_records.and_then(|records| records.get(&field_name));
+            let stats_record = STATS_RECORDS
+                .get()
+                .and_then(|records| records.get(&field_name));
 
             // Get data type and nullcount from stats record
             let dtype = stats_record.map_or(String::new(), |sr| sr.r#type.clone());

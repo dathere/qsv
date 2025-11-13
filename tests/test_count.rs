@@ -441,7 +441,7 @@ fn count_stdin_schema_inference_issue_3103() {
     let wrk = Workdir::new("count_stdin_schema_inference_issue");
 
     // Create a CSV file that mimics the issue: a column that starts with boolean
-    // values but then contains integers. This can cause Polars to mis-infer the schema.
+    // values but then contains integers. This can cause Polars to misinfer the schema.
     let mut csv_data = String::from("value\n");
     // Add many "FALSE" or "TRUE" values first (to trigger boolean inference)
     for _ in 0..3_000 {
@@ -489,7 +489,7 @@ fn count_file_schema_inference_issue_3103() {
     let wrk = Workdir::new("count_file_schema_inference_issue");
 
     // Create a CSV file that mimics the issue: a column that starts with boolean
-    // values but then contains integers. This can cause Polars to mis-infer the schema.
+    // values but then contains integers. This can cause Polars to misinfer the schema.
     let mut csv_data = String::from("value\n");
     // Add many "FALSE" or "TRUE" values first (to trigger boolean inference)
     for _ in 0..3_000 {

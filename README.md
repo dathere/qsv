@@ -140,7 +140,9 @@ Full-featured prebuilt [binary variants](#variants) of the latest qsv version fo
 <a target="_blank" href="https://qsv.dathere.com/download/windows-gnu"><img src="https://github.com/user-attachments/assets/771660f3-e898-4ee2-acb5-e5f268434752" width="200" /></a>
 </div>
 
-Prebuilt binaries for Apple Silicon, Windows for ARM, PowerPC and S390x have CPU optimizations enabled ([`target-cpu=native`](https://rust-lang.github.io/packed_simd/perf-guide/target-feature/rustflags.html#target-cpu)) for even more performance gains. This may prevent some older CPUs from running qsv. If so, "portable" binaries (all CPU optimizations disabled) are also included in the release zip archives (qsv with a "p" suffix - e.g. `qsvp`, `qsvplite` `qsvpdp`).
+Prebuilt binaries for Apple Silicon, Windows for ARM, PowerPC and S390x have CPU optimizations enabled ([`target-cpu=native`](https://rust-lang.github.io/packed_simd/perf-guide/target-feature/rustflags.html#target-cpu)) for even more performance gains.
+
+We do not enable CPU optimizations on prebuilt binaries on x86_64 platforms as there are too many CPU variants which often lead to Illegal Instruction (SIGILL) faults. If you still get SIGILL faults, "portable" binaries (all CPU optimizations disabled) are also included in the release zip archives (qsv with a "p for portable" suffix - e.g. `qsvp`, `qsvplite` `qsvpdp`).
 
 For Windows, an MSI "Easy installer" for the x86_64 MSVC `qsvp` binary is also available. After downloading and installing the Easy installer, launch the Easy installer and click "Install qsv" to download the latest `qsvp` pre-built binary to a folder that is added to your `PATH`. Afterwards qsv should be installed and you may launch a new terminal to use qsv.
 

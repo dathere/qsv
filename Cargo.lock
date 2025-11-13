@@ -3629,7 +3629,7 @@ dependencies = [
 [[package]]
 name = "jsonschema"
 version = "0.33.0"
-source = "git+https://github.com/Stranger6667/jsonschema?rev=5f3afb9#5f3afb947ec122b34c6eb364f14e27816df813b1"
+source = "git+https://github.com/Stranger6667/jsonschema?rev=782676c#782676c218fb2e1ed4f3d6cb87eacb52999b5ded"
 dependencies = [
  "ahash 0.8.12",
  "base64",
@@ -3637,11 +3637,11 @@ dependencies = [
  "email_address",
  "fancy-regex",
  "fraction",
+ "getrandom 0.3.4",
  "idna",
  "itoa",
  "num-cmp",
  "num-traits",
- "once_cell",
  "percent-encoding",
  "referencing",
  "regex",
@@ -6388,11 +6388,11 @@ dependencies = [
 [[package]]
 name = "referencing"
 version = "0.33.0"
-source = "git+https://github.com/Stranger6667/jsonschema?rev=5f3afb9#5f3afb947ec122b34c6eb364f14e27816df813b1"
+source = "git+https://github.com/Stranger6667/jsonschema?rev=782676c#782676c218fb2e1ed4f3d6cb87eacb52999b5ded"
 dependencies = [
  "ahash 0.8.12",
  "fluent-uri",
- "once_cell",
+ "getrandom 0.3.4",
  "parking_lot",
  "percent-encoding",
  "serde_json",
@@ -8211,7 +8211,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b082222b4f6619906941c17eb2297fff4c2fb96cb60164170522942a200bd8"
 dependencies = [
  "outref",
- "uuid",
  "vsimd",
 ]
 

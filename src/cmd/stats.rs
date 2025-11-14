@@ -608,6 +608,9 @@ const DEFAULT_ANTIMODES_LEN: usize = 100;
 // in one column, i.e. antimodes/modes & percentiles
 pub const DEFAULT_STATS_SEPARATOR: &str = "|";
 
+// empty string constant to avoid repeated allocations
+const EMPTY_STR: &str = "";
+
 static BOOLEAN_PATTERNS: OnceLock<Vec<BooleanPattern>> = OnceLock::new();
 #[derive(Clone, Debug)]
 /// Represents a pattern for boolean value inference in CSV data.
@@ -2364,9 +2367,8 @@ impl Stats {
         let typ = self.typ;
         // prealloc memory for performance
         // we have MAX_STAT_COLUMNS columns at most with --everything
-        let mut pieces = Vec::with_capacity(MAX_STAT_COLUMNS);
-
-        let empty = String::new;
+        let empty_string = String::new;
+        let mut record = csv::StringRecord::with_capacity(512, MAX_STAT_COLUMNS);
 
         // min/max/range/sort_order/sortiness
         // we do this first as we want to get the sort_order, so we can skip sorting if not
@@ -2391,25 +2393,27 @@ impl Stats {
             minmax_range_sortorder_pieces.extend_from_slice(&[mm.0, mm.1, mm.2, mm.3, mm.4]);
         } else {
             minmax_range_sortorder_pieces.extend_from_slice(&[
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
+                empty_string(),
+                empty_string(),
+                empty_string(),
+                empty_string(),
+                empty_string(),
             ]);
         }
 
         let record_count = *RECORD_COUNT.get().unwrap_or(&1);
 
         // get the stats separator
-        let stats_separator = STATS_SEPARATOR.get_or_init(|| {
-            if self.which.mode || self.which.percentiles {
-                std::env::var("QSV_STATS_SEPARATOR")
-                    .unwrap_or_else(|_| DEFAULT_STATS_SEPARATOR.to_string())
-            } else {
-                DEFAULT_STATS_SEPARATOR.to_string()
-            }
-        });
+        let stats_separator = STATS_SEPARATOR
+            .get_or_init(|| {
+                if self.which.mode || self.which.percentiles {
+                    std::env::var("QSV_STATS_SEPARATOR")
+                        .unwrap_or_else(|_| DEFAULT_STATS_SEPARATOR.to_string())
+                } else {
+                    DEFAULT_STATS_SEPARATOR.to_string()
+                }
+            })
+            .to_string();
 
         // modes/antimodes & cardinality/uniqueness_ratio
         // we do this second because we can use the sort order with cardinality, to skip sorting
@@ -2421,16 +2425,16 @@ impl Stats {
         match self.modes.as_mut() {
             None => {
                 if self.which.cardinality {
-                    mc_pieces.extend_from_slice(&[empty(), empty()]);
+                    mc_pieces.extend_from_slice(&[empty_string(), empty_string()]);
                 }
                 if self.which.mode {
                     mc_pieces.extend_from_slice(&[
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
+                        empty_string(),
+                        empty_string(),
+                        empty_string(),
+                        empty_string(),
+                        empty_string(),
+                        empty_string(),
                     ]);
                 }
             },
@@ -2451,7 +2455,7 @@ impl Stats {
                         mc_pieces.extend_from_slice(
                             // modes - short-circuit modes calculation as there is none
                             &[
-                                empty(),
+                                empty_string(),
                                 "0".to_string(),
                                 "0".to_string(),
                                 // antimodes - instead of returning everything, just say *ALL
@@ -2470,12 +2474,12 @@ impl Stats {
                             modes_result
                                 .iter()
                                 .map(|c| util::visualize_whitespace(&String::from_utf8_lossy(c)))
-                                .join(stats_separator)
+                                .join(&stats_separator)
                         } else {
                             modes_result
                                 .iter()
                                 .map(|c| String::from_utf8_lossy(c))
-                                .join(stats_separator)
+                                .join(&stats_separator)
                         };
 
                         // antimode/s ============
@@ -2501,11 +2505,11 @@ impl Stats {
                         let antimodes_vals = &antimodes_result
                             .iter()
                             .map(|c| String::from_utf8_lossy(c))
-                            .join(stats_separator);
+                            .join(&stats_separator);
 
                         // if the antimodes result starts with the separator,
                         // it indicates that NULL is the first antimode. Add NULL to the list.
-                        if antimodes_vals.starts_with(stats_separator) {
+                        if antimodes_vals.starts_with(&stats_separator) {
                             antimodes_list.push_str("NULL");
                         }
                         antimodes_list.push_str(antimodes_vals);
@@ -2543,31 +2547,31 @@ impl Stats {
                 let mut is_boolean = false;
                 for pattern in patterns {
                     if pattern.matches(&minval).is_some() && pattern.matches(&maxval).is_some() {
-                        pieces.push("Boolean".to_string());
+                        record.push_field("Boolean");
                         is_boolean = true;
                         break;
                     }
                 }
                 if !is_boolean {
-                    pieces.push(typ.to_string());
+                    record.push_field(typ.as_str());
                 }
             } else {
-                pieces.push(typ.to_string());
+                record.push_field(typ.as_str());
             }
         } else {
-            pieces.push(typ.to_string());
+            record.push_field(typ.as_str());
         }
 
         // we're doing --typesonly with --infer-boolean, we don't need to calculate anything else
         if self.which.typesonly && infer_boolean {
-            return csv::StringRecord::from(pieces);
+            return record;
         }
 
         // is_ascii
         if typ == FieldType::TString {
-            pieces.push(self.is_ascii.to_string());
+            record.push_field(&self.is_ascii.to_string());
         } else {
-            pieces.push(empty());
+            record.push_field(EMPTY_STR);
         }
 
         // sum
@@ -2575,89 +2579,69 @@ impl Stats {
             if let Some((stotlen_work, sum)) = self.sum.as_ref().and_then(|sum| sum.show(typ)) {
                 if typ == FieldType::TFloat {
                     if let Ok(f64_val) = fast_float2::parse::<f64, &[u8]>(sum.as_bytes()) {
-                        pieces.push(util::round_num(f64_val, round_places));
+                        record.push_field(&util::round_num(f64_val, round_places));
                     } else {
-                        pieces.push(format!("ERROR: Cannot convert {sum} to a float."));
+                        record.push_field(&format!("ERROR: Cannot convert {sum} to a float."));
                     }
                 } else {
-                    pieces.push(sum);
+                    record.push_field(&sum);
                 }
                 stotlen_work
             } else {
-                pieces.push(empty());
+                record.push_field(EMPTY_STR);
                 0
             };
 
         // min/max/range/sort_order
         // actually append it here - to preserve legacy ordering of columns
-        pieces.extend_from_slice(&minmax_range_sortorder_pieces);
+        for field in &minmax_range_sortorder_pieces {
+            record.push_field(field);
+        }
 
         // min/max/sum/avg/stddev/variance/cv length
         // we only show string length stats for String type
         if typ != FieldType::TString {
-            pieces.extend_from_slice(&[
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-            ]);
+            for _ in 0..7 {
+                record.push_field(EMPTY_STR);
+            }
         } else if let Some(mm) = self.minmax.as_ref().and_then(TypedMinMax::len_range) {
             // we have a min/max length
-            pieces.extend_from_slice(&[mm.0, mm.1]);
+            record.push_field(&mm.0);
+            record.push_field(&mm.1);
             if stotlen < u64::MAX {
-                pieces.push(itoa::Buffer::new().format(stotlen).to_owned());
+                record.push_field(itoa::Buffer::new().format(stotlen));
                 #[allow(clippy::cast_precision_loss)]
                 let avg_len = stotlen as f64 / record_count as f64;
-                pieces.push(util::round_num(avg_len, round_places));
+                record.push_field(&util::round_num(avg_len, round_places));
 
                 if let Some(vl) = self.online_len.as_ref() {
                     let vlen_stddev = vl.stddev();
-                    let vlen_variance = vl.variance();
-                    pieces.push(util::round_num(vlen_stddev, round_places));
-                    pieces.push(util::round_num(vlen_variance, round_places));
-                    pieces.push(util::round_num(vlen_stddev / avg_len, round_places));
+                    record.push_field(&util::round_num(vlen_stddev, round_places));
+                    record.push_field(&util::round_num(vl.variance(), round_places));
+                    record.push_field(&util::round_num(vlen_stddev / avg_len, round_places));
                 } else {
-                    pieces.push(empty());
-                    pieces.push(empty());
-                    pieces.push(empty());
+                    for _ in 0..3 {
+                        record.push_field(EMPTY_STR);
+                    }
                 }
             } else {
                 // we saturated the sum of string lengths, it means we had an overflow
                 // so we return OVERFLOW_STRING for sum,avg,stddev,variance length
-                pieces.extend_from_slice(&[
-                    OVERFLOW_STRING.to_string(),
-                    OVERFLOW_STRING.to_string(),
-                    OVERFLOW_STRING.to_string(),
-                    OVERFLOW_STRING.to_string(),
-                    OVERFLOW_STRING.to_string(),
-                ]);
+                for _ in 0..5 {
+                    record.push_field(OVERFLOW_STRING);
+                }
             }
         } else {
-            pieces.extend_from_slice(&[
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-            ]);
+            for _ in 0..7 {
+                record.push_field(EMPTY_STR);
+            }
         }
 
         // mean, sem, geometric_mean, harmonic_mean, stddev, variance & cv
         if typ == TString || typ == TNull {
-            pieces.extend_from_slice(&[
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-            ]);
+            for _ in 0..7 {
+                record.push_field(EMPTY_STR);
+            }
         } else if let Some(ref v) = self.online {
             let std_dev = v.stddev();
             #[allow(clippy::cast_precision_loss)]
@@ -2676,69 +2660,62 @@ impl Stats {
             let geometric_mean = v.geometric_mean();
             let harmonic_mean = v.harmonic_mean();
             if self.typ == TFloat || self.typ == TInteger {
-                pieces.extend_from_slice(&[
-                    mean_string,
-                    util::round_num(sem, round_places),
-                    util::round_num(geometric_mean, round_places),
-                    util::round_num(harmonic_mean, round_places),
-                    util::round_num(std_dev, round_places),
-                    util::round_num(v.variance(), round_places),
-                    util::round_num(cv, round_places),
-                ]);
+                record.push_field(&mean_string);
+                record.push_field(&util::round_num(sem, round_places));
+                record.push_field(&util::round_num(geometric_mean, round_places));
+                record.push_field(&util::round_num(harmonic_mean, round_places));
+                record.push_field(&util::round_num(std_dev, round_places));
+                record.push_field(&util::round_num(v.variance(), round_places));
             } else {
                 // by the time we get here, the type is a TDateTime or TDate
-                pieces.push(timestamp_ms_to_rfc3339(mean as i64, typ));
+                record.push_field(&timestamp_ms_to_rfc3339(mean as i64, typ));
                 // instead of returning sem, stdev & variance as timestamps, return it in
                 // days as its more human readable and practical for real-world use cases
                 // Round to at least 5 decimal places, so we have millisecond precision
-                pieces.push(util::round_num(
+                record.push_field(&util::round_num(
                     sem / MS_IN_DAY,
                     u32::max(round_places, DAY_DECIMAL_PLACES),
                 ));
-                pieces.push(util::round_num(
+                record.push_field(&util::round_num(
                     geometric_mean / MS_IN_DAY,
                     u32::max(round_places, DAY_DECIMAL_PLACES),
                 ));
-                pieces.push(util::round_num(
+                record.push_field(&util::round_num(
                     harmonic_mean / MS_IN_DAY,
                     u32::max(round_places, DAY_DECIMAL_PLACES),
                 ));
-                pieces.push(util::round_num(
+                record.push_field(&util::round_num(
                     std_dev / MS_IN_DAY,
                     u32::max(round_places, DAY_DECIMAL_PLACES),
                 ));
-                pieces.push(util::round_num(
+                record.push_field(&util::round_num(
                     v.variance() / (MS_IN_DAY * MS_IN_DAY),
                     u32::max(round_places, DAY_DECIMAL_PLACES),
                 ));
-                pieces.push(util::round_num(cv, round_places));
             }
+            record.push_field(&util::round_num(cv, round_places));
         } else {
-            pieces.extend_from_slice(&[
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-            ]);
+            for _ in 0..7 {
+                record.push_field(EMPTY_STR);
+            }
         }
 
         // nullcount
-        pieces.push(itoa::Buffer::new().format(self.nullcount).to_owned());
+        record.push_field(itoa::Buffer::new().format(self.nullcount));
 
         // max precision
         if typ == TFloat {
-            pieces.push(self.max_precision.to_string());
+            record.push_field(itoa::Buffer::new().format(self.max_precision));
         } else {
-            pieces.push(empty());
+            record.push_field(EMPTY_STR);
         }
 
         // sparsity
         #[allow(clippy::cast_precision_loss)]
-        let sparsity: f64 = self.nullcount as f64 / *RECORD_COUNT.get().unwrap_or(&1) as f64;
-        pieces.push(util::round_num(sparsity, round_places));
+        record.push_field(&util::round_num(
+            self.nullcount as f64 / *RECORD_COUNT.get().unwrap_or(&1) as f64,
+            round_places,
+        ));
 
         // quartiles
         // as q2==median, cache and reuse it if the --median or --mad flags are set
@@ -2757,15 +2734,15 @@ impl Stats {
             None => {
                 if self.which.quartiles {
                     quartile_pieces.extend_from_slice(&[
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
+                        empty_string(),
+                        empty_string(),
+                        empty_string(),
+                        empty_string(),
+                        empty_string(),
+                        empty_string(),
+                        empty_string(),
+                        empty_string(),
+                        empty_string(),
                     ]);
                 }
             },
@@ -2850,12 +2827,14 @@ impl Stats {
             }
         }) {
             if typ == TDateTime || typ == TDate {
-                pieces.push(timestamp_ms_to_rfc3339(v as i64, typ));
+                // median rfc3339 timestamp
+                record.push_field(&timestamp_ms_to_rfc3339(v as i64, typ));
             } else {
-                pieces.push(util::round_num(v, round_places));
+                // median as a floating point number
+                record.push_field(&util::round_num(v, round_places));
             }
         } else if self.which.median {
-            pieces.push(empty());
+            record.push_field(EMPTY_STR);
         }
 
         // median absolute deviation (MAD)
@@ -2870,24 +2849,28 @@ impl Stats {
         }) {
             if typ == TDateTime || typ == TDate {
                 // like stddev, return MAD in days when the type is a date or datetime
-                pieces.push(util::round_num(
+                record.push_field(&util::round_num(
                     v / MS_IN_DAY,
                     u32::max(round_places, DAY_DECIMAL_PLACES),
                 ));
             } else {
-                pieces.push(util::round_num(v, round_places));
+                record.push_field(&util::round_num(v, round_places));
             }
         } else if self.which.mad {
-            pieces.push(empty());
+            record.push_field(EMPTY_STR);
         }
 
         // quartiles
         // append it here to preserve legacy ordering of columns
-        pieces.extend_from_slice(&quartile_pieces);
+        for field in &quartile_pieces {
+            record.push_field(field);
+        }
 
         // mode/modes/antimodes & cardinality
         // append it here to preserve legacy ordering of columns
-        pieces.extend_from_slice(&mc_pieces);
+        for field in &mc_pieces {
+            record.push_field(field);
+        }
 
         // Add percentiles after quartiles
         if let Some(v) = self.unsorted_stats.as_mut() {
@@ -2918,23 +2901,23 @@ impl Stats {
                                 .map(|p| util::round_num(*p, round_places))
                                 .collect::<Vec<_>>()
                         };
-                        pieces.push(formatted_values.join(stats_separator));
+                        record.push_field(&formatted_values.join(&stats_separator));
                     } else {
-                        pieces.push(empty());
+                        record.push_field(EMPTY_STR);
                     }
                 },
-                _ => pieces.push(empty()),
+                _ => record.push_field(EMPTY_STR),
             }
         } else if self.which.percentiles {
-            pieces.push(empty());
+            record.push_field(EMPTY_STR);
         }
 
         if dataset_stats {
             // add an empty field for qsv__value
-            pieces.push(empty());
+            record.push_field(EMPTY_STR);
         }
 
-        csv::StringRecord::from(pieces)
+        record
     }
 }
 
@@ -3071,15 +3054,22 @@ impl Commute for FieldType {
     }
 }
 
+const NULL_FTYPE: &str = "NULL";
+const STRING_FTYPE: &str = "String";
+const FLOAT_FTYPE: &str = "Float";
+const INTEGER_FTYPE: &str = "Integer";
+const DATE_FTYPE: &str = "Date";
+const DATETIME_FTYPE: &str = "DateTime";
+
 impl fmt::Display for FieldType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            TNull => write!(f, "NULL"),
-            TString => write!(f, "String"),
-            TFloat => write!(f, "Float"),
-            TInteger => write!(f, "Integer"),
-            TDate => write!(f, "Date"),
-            TDateTime => write!(f, "DateTime"),
+            TNull => write!(f, "{NULL_FTYPE}"),
+            TString => write!(f, "{STRING_FTYPE}"),
+            TFloat => write!(f, "{FLOAT_FTYPE}"),
+            TInteger => write!(f, "{INTEGER_FTYPE}"),
+            TDate => write!(f, "{DATE_FTYPE}"),
+            TDateTime => write!(f, "{DATETIME_FTYPE}"),
         }
     }
 }
@@ -3087,12 +3077,25 @@ impl fmt::Display for FieldType {
 impl fmt::Debug for FieldType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            TNull => write!(f, "NULL"),
-            TString => write!(f, "String"),
-            TFloat => write!(f, "Float"),
-            TInteger => write!(f, "Integer"),
-            TDate => write!(f, "Date"),
-            TDateTime => write!(f, "DateTime"),
+            TNull => write!(f, "{NULL_FTYPE}"),
+            TString => write!(f, "{STRING_FTYPE}"),
+            TFloat => write!(f, "{FLOAT_FTYPE}"),
+            TInteger => write!(f, "{INTEGER_FTYPE}"),
+            TDate => write!(f, "{DATE_FTYPE}"),
+            TDateTime => write!(f, "{DATETIME_FTYPE}"),
+        }
+    }
+}
+
+impl FieldType {
+    pub const fn as_str(&self) -> &str {
+        match *self {
+            TNull => NULL_FTYPE,
+            TString => STRING_FTYPE,
+            TFloat => FLOAT_FTYPE,
+            TInteger => INTEGER_FTYPE,
+            TDate => DATE_FTYPE,
+            TDateTime => DATETIME_FTYPE,
         }
     }
 }

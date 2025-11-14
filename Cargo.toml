@@ -132,7 +132,7 @@ geozero = { version = "0.14.0", features = [
     "with-shp",
 ], optional = true }
 governor = { version = "0.10", optional = true }
-grex = { version = "=1.4.5", default-features = false }
+grex = { version = "1.4", default-features = false }
 gzp = { version = "2", default-features = false, features = ["snappy_default"] }
 human-panic = "2"
 iana-time-zone = "0.1"
@@ -328,11 +328,6 @@ csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "
 
 # use upstream geozero with unreleased fixes
 geozero = { git = "https://github.com/georust/geozero", rev = "572cfc2" }
-
-# use our patched fork of grex to bump deps and Unicode tables from 15 to 16 until our latest PR is merged
-# though our earlier PR was not merged, it was used as reference to implement the Unicode upgrade.
-# This fork also replaces the unmaintained `unic-*` crates in the RUSTSEC-2025-0094 advisory
-grex = { git = "https://github.com/jqnatividad/grex", branch = "replace-unmaintained-rust-unic-grex-145" }
 
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }

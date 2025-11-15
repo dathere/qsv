@@ -2367,15 +2367,14 @@ impl Stats {
         let typ = self.typ;
         // prealloc memory for performance
         // we have MAX_STAT_COLUMNS columns at most with --everything
-        let empty_string = String::new;
         let mut record = csv::StringRecord::with_capacity(512, MAX_STAT_COLUMNS);
 
-        // min/max/range/sort_order/sortiness
+        // min/max/range/sort_order/sortiness (5 fields)
         // we do this first as we want to get the sort_order, so we can skip sorting if not
         // required. We also need to do this before --infer-boolean because we need to know
         // the min/max values to determine if the range is equal to the supported boolean
         // ranges as specified by --boolean-patterns.
-        let mut minmax_range_sortorder_pieces = Vec::with_capacity(5);
+        let minmax_range_sortorder_pieces: Vec<String>;
         let mut minval = String::new();
         let mut maxval = String::new();
         let mut column_sorted = false;
@@ -2390,15 +2389,9 @@ impl Stats {
             if mm.3.starts_with("Ascending") {
                 column_sorted = true;
             }
-            minmax_range_sortorder_pieces.extend_from_slice(&[mm.0, mm.1, mm.2, mm.3, mm.4]);
+            minmax_range_sortorder_pieces = vec![mm.0, mm.1, mm.2, mm.3, mm.4];
         } else {
-            minmax_range_sortorder_pieces.extend_from_slice(&[
-                empty_string(),
-                empty_string(),
-                empty_string(),
-                empty_string(),
-                empty_string(),
-            ]);
+            minmax_range_sortorder_pieces = vec![String::new(); 5];
         }
 
         let record_count = *RECORD_COUNT.get().unwrap_or(&1);
@@ -2413,7 +2406,7 @@ impl Stats {
             }
         });
 
-        // modes/antimodes & cardinality/uniqueness_ratio
+        // cardinality, uniqueness_ratio & modes/antimodes (3 fields each) - 8 total fields
         // we do this second because we can use the sort order with cardinality, to skip sorting
         // if its not required. This makes not only cardinality computation faster, it also makes
         // modes/antimodes computation faster.
@@ -2433,10 +2426,12 @@ impl Stats {
                 mc_pieces.reserve(8);
                 if self.which.cardinality {
                     cardinality = v.cardinality(column_sorted, 1);
-                    #[allow(clippy::cast_precision_loss)]
-                    let uniqueness_ratio = (cardinality as f64) / (record_count as f64);
                     mc_pieces.push(itoa::Buffer::new().format(cardinality).to_owned());
-                    mc_pieces.push(util::round_num(uniqueness_ratio, round_places));
+                    // uniqueness_ratio = cardinality / record_count
+                    mc_pieces.push(util::round_num(
+                        (cardinality as f64) / (record_count as f64),
+                        round_places,
+                    ));
                 }
                 if self.which.mode {
                     // mode/s & antimode/s
@@ -2445,7 +2440,7 @@ impl Stats {
                         mc_pieces.extend_from_slice(
                             // modes - short-circuit modes calculation as there is none
                             &[
-                                empty_string(),
+                                String::new(),
                                 "0".to_string(),
                                 "0".to_string(),
                                 // antimodes - instead of returning everything, just say *ALL
@@ -2588,7 +2583,7 @@ impl Stats {
             record.push_field(field);
         }
 
-        // min/max/sum/avg/stddev/variance/cv length
+        // min/max/sum/avg/stddev/variance/cv length (7 fields)
         // we only show string length stats for String type
         if typ != FieldType::TString {
             for _ in 0..7 {
@@ -2627,7 +2622,7 @@ impl Stats {
             }
         }
 
-        // mean, sem, geometric_mean, harmonic_mean, stddev, variance & cv
+        // mean, sem, geometric_mean, harmonic_mean, stddev, variance & cv (7 fields)
         if typ == TString || typ == TNull {
             for _ in 0..7 {
                 record.push_field(EMPTY_STR);
@@ -2703,11 +2698,12 @@ impl Stats {
         // sparsity
         #[allow(clippy::cast_precision_loss)]
         record.push_field(&util::round_num(
-            self.nullcount as f64 / *RECORD_COUNT.get().unwrap_or(&1) as f64,
+            self.nullcount as f64 / record_count as f64,
             round_places,
         ));
 
-        // quartiles
+        // quartiles: lower_outer_fence, lower_inner_fence, q1, q2_median, q3, iqr,
+        // upper_inner_fence, upper_outer_fence, skewness (9 fields)
         // as q2==median, cache and reuse it if the --median or --mad flags are set
         let mut existing_median = None;
         let mut quartile_pieces: Vec<String> = Vec::new();
@@ -2730,7 +2726,7 @@ impl Stats {
                 existing_median = Some(q2);
                 let iqr = q3 - q1;
 
-                // use fused multiply add (mul_add) when possible
+                // use fused multiply add (mul_add)
                 // fused mul_add is more accurate & is more performant if the
                 // target architecture has a dedicated `fma` CPU instruction
                 // https://doc.rust-lang.org/std/primitive.f64.html#method.mul_add

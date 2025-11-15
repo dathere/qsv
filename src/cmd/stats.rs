@@ -2404,16 +2404,14 @@ impl Stats {
         let record_count = *RECORD_COUNT.get().unwrap_or(&1);
 
         // get the stats separator
-        let stats_separator = STATS_SEPARATOR
-            .get_or_init(|| {
-                if self.which.mode || self.which.percentiles {
-                    std::env::var("QSV_STATS_SEPARATOR")
-                        .unwrap_or_else(|_| DEFAULT_STATS_SEPARATOR.to_string())
-                } else {
-                    DEFAULT_STATS_SEPARATOR.to_string()
-                }
-            })
-            .to_string();
+        let stats_separator = STATS_SEPARATOR.get_or_init(|| {
+            if self.which.mode || self.which.percentiles {
+                std::env::var("QSV_STATS_SEPARATOR")
+                    .unwrap_or_else(|_| DEFAULT_STATS_SEPARATOR.to_string())
+            } else {
+                DEFAULT_STATS_SEPARATOR.to_string()
+            }
+        });
 
         // modes/antimodes & cardinality/uniqueness_ratio
         // we do this second because we can use the sort order with cardinality, to skip sorting
@@ -2421,32 +2419,24 @@ impl Stats {
         // modes/antimodes computation faster.
         // We also need to know the cardinality to --infer-boolean should that be enabled
         let mut cardinality = 0;
-        let mut mc_pieces = Vec::with_capacity(8);
+        let mut mc_pieces: Vec<String> = Vec::new();
         match self.modes.as_mut() {
             None => {
                 if self.which.cardinality {
-                    mc_pieces.extend_from_slice(&[empty_string(), empty_string()]);
+                    mc_pieces = vec![String::new(); 2];
                 }
                 if self.which.mode {
-                    mc_pieces.extend_from_slice(&[
-                        empty_string(),
-                        empty_string(),
-                        empty_string(),
-                        empty_string(),
-                        empty_string(),
-                        empty_string(),
-                    ]);
+                    mc_pieces = vec![String::new(); 6];
                 }
             },
             Some(ref mut v) => {
+                mc_pieces.reserve(8);
                 if self.which.cardinality {
                     cardinality = v.cardinality(column_sorted, 1);
                     #[allow(clippy::cast_precision_loss)]
                     let uniqueness_ratio = (cardinality as f64) / (record_count as f64);
-                    mc_pieces.extend_from_slice(&[
-                        itoa::Buffer::new().format(cardinality).to_owned(),
-                        util::round_num(uniqueness_ratio, round_places),
-                    ]);
+                    mc_pieces.push(itoa::Buffer::new().format(cardinality).to_owned());
+                    mc_pieces.push(util::round_num(uniqueness_ratio, round_places));
                 }
                 if self.which.mode {
                     // mode/s & antimode/s
@@ -2474,12 +2464,12 @@ impl Stats {
                             modes_result
                                 .iter()
                                 .map(|c| util::visualize_whitespace(&String::from_utf8_lossy(c)))
-                                .join(&stats_separator)
+                                .join(stats_separator)
                         } else {
                             modes_result
                                 .iter()
                                 .map(|c| String::from_utf8_lossy(c))
-                                .join(&stats_separator)
+                                .join(stats_separator)
                         };
 
                         // antimode/s ============
@@ -2505,11 +2495,11 @@ impl Stats {
                         let antimodes_vals = &antimodes_result
                             .iter()
                             .map(|c| String::from_utf8_lossy(c))
-                            .join(&stats_separator);
+                            .join(stats_separator);
 
                         // if the antimodes result starts with the separator,
                         // it indicates that NULL is the first antimode. Add NULL to the list.
-                        if antimodes_vals.starts_with(&stats_separator) {
+                        if antimodes_vals.starts_with(stats_separator) {
                             antimodes_list.push_str("NULL");
                         }
                         antimodes_list.push_str(antimodes_vals);
@@ -2523,16 +2513,16 @@ impl Stats {
                         mc_pieces.extend_from_slice(&[
                             // mode/s
                             modes_list,
-                            modes_count.to_string(),
-                            mode_occurrences.to_string(),
+                            itoa::Buffer::new().format(modes_count).to_owned(),
+                            itoa::Buffer::new().format(mode_occurrences).to_owned(),
                             // antimode/s
                             if visualize_ws {
                                 util::visualize_whitespace(&antimodes_list)
                             } else {
                                 antimodes_list
                             },
-                            antimodes_count.to_string(),
-                            antimode_occurrences.to_string(),
+                            itoa::Buffer::new().format(antimodes_count).to_owned(),
+                            itoa::Buffer::new().format(antimode_occurrences).to_owned(),
                         ]);
                     }
                 }
@@ -2720,7 +2710,7 @@ impl Stats {
         // quartiles
         // as q2==median, cache and reuse it if the --median or --mad flags are set
         let mut existing_median = None;
-        let mut quartile_pieces = Vec::with_capacity(9);
+        let mut quartile_pieces: Vec<String> = Vec::new();
         match self.unsorted_stats.as_mut().and_then(|v| match typ {
             TInteger | TFloat | TDate | TDateTime => {
                 if self.which.quartiles {
@@ -2733,17 +2723,7 @@ impl Stats {
         }) {
             None => {
                 if self.which.quartiles {
-                    quartile_pieces.extend_from_slice(&[
-                        empty_string(),
-                        empty_string(),
-                        empty_string(),
-                        empty_string(),
-                        empty_string(),
-                        empty_string(),
-                        empty_string(),
-                        empty_string(),
-                        empty_string(),
-                    ]);
+                    quartile_pieces = vec![String::new(); 9];
                 }
             },
             Some((q1, q2, q3)) => {
@@ -2773,6 +2753,7 @@ impl Stats {
                 // which in turn, is the basis of the fused multiply add version below
                 let skewness = (2.0f64.mul_add(-q2, q3) + q1) / iqr;
 
+                quartile_pieces.reserve(9);
                 if typ == TDateTime || typ == TDate {
                     // casting from f64 to i64 is OK, per
                     // https://doc.rust-lang.org/reference/expressions/operator-expr.html#numeric-cast
@@ -2901,7 +2882,7 @@ impl Stats {
                                 .map(|p| util::round_num(*p, round_places))
                                 .collect::<Vec<_>>()
                         };
-                        record.push_field(&formatted_values.join(&stats_separator));
+                        record.push_field(&formatted_values.join(stats_separator));
                     } else {
                         record.push_field(EMPTY_STR);
                     }

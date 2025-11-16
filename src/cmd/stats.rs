@@ -610,6 +610,7 @@ pub const DEFAULT_STATS_SEPARATOR: &str = "|";
 
 // empty string constant to avoid repeated allocations
 const EMPTY_STR: &str = "";
+const EMPTY_STRING: String = String::new();
 
 static BOOLEAN_PATTERNS: OnceLock<Vec<BooleanPattern>> = OnceLock::new();
 #[derive(Clone, Debug)]
@@ -2391,7 +2392,7 @@ impl Stats {
             }
             minmax_range_sortorder_pieces = vec![mm.0, mm.1, mm.2, mm.3, mm.4];
         } else {
-            minmax_range_sortorder_pieces = vec![String::new(); 5];
+            minmax_range_sortorder_pieces = vec![EMPTY_STRING; 5];
         }
 
         let record_count = *RECORD_COUNT.get().unwrap_or(&1);
@@ -2416,10 +2417,10 @@ impl Stats {
         match self.modes.as_mut() {
             None => {
                 if self.which.cardinality {
-                    mc_pieces = vec![String::new(); 2];
+                    mc_pieces = vec![EMPTY_STRING; 2];
                 }
                 if self.which.mode {
-                    mc_pieces = vec![String::new(); 6];
+                    mc_pieces = vec![EMPTY_STRING; 6];
                 }
             },
             Some(ref mut v) => {
@@ -2440,7 +2441,7 @@ impl Stats {
                         mc_pieces.extend_from_slice(
                             // modes - short-circuit modes calculation as there is none
                             &[
-                                String::new(),
+                                EMPTY_STRING,
                                 "0".to_string(),
                                 "0".to_string(),
                                 // antimodes - instead of returning everything, just say *ALL
@@ -2719,7 +2720,7 @@ impl Stats {
         }) {
             None => {
                 if self.which.quartiles {
-                    quartile_pieces = vec![String::new(); 9];
+                    quartile_pieces = vec![EMPTY_STRING; 9];
                 }
             },
             Some((q1, q2, q3)) => {

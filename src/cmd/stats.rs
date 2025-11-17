@@ -2429,6 +2429,7 @@ impl Stats {
                     cardinality = v.cardinality(column_sorted, 1);
                     mc_pieces.push(itoa::Buffer::new().format(cardinality).to_owned());
                     // uniqueness_ratio = cardinality / record_count
+                    #[allow(clippy::cast_precision_loss)]
                     mc_pieces.push(util::round_num(
                         (cardinality as f64) / (record_count as f64),
                         round_places,

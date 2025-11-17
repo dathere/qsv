@@ -1076,48 +1076,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if let Some(ref schema) = args.arg_json_schema {
             let schema_json_string = load_json(schema)?;
             let schema_json = serde_json::from_str(&schema_json_string)?;
-            // First, try_is_valid the JSON Schema
-            match jsonschema::meta::try_is_valid(&schema_json) {
-                Ok(is_valid) => {
-                    if is_valid {
-                        // Now, try_validate the JSON Schema
-                        let validated = jsonschema::meta::try_validate(&schema_json);
-                        match validated {
-                            Ok(Ok(())) => {
-                                let test_validator = if args.flag_no_format_validation {
-                                    Validator::options()
-                                        .should_validate_formats(false)
-                                        .should_ignore_unknown_formats(true)
-                                        .build(&schema_json)
-                                } else {
-                                    Validator::options()
-                                        .should_validate_formats(true)
-                                        .should_ignore_unknown_formats(false)
-                                        .build(&schema_json)
-                                };
-                                if let Err(e) = test_validator {
-                                    return fail_clierror!(
-                                        "JSON Schema Format Validation Error: {e}"
-                                    );
-                                }
-                                if !args.flag_quiet {
-                                    winfo!("Valid JSON Schema.");
-                                }
-                                return Ok(());
-                            },
-                            Ok(Err(e)) => {
-                                return fail_clierror!("JSON Schema Meta-Validation Error: {e}");
-                            },
-                            Err(e) => {
-                                return fail_clierror!("JSON Schema Meta-Reference Error: {e}");
-                            },
-                        }
-                    }
-                    return fail_clierror!("Invalid JSON Schema.");
-                },
-                Err(e) => {
-                    return fail_clierror!("JSON Schema Meta-Reference Error: {e}");
-                },
+            // First, validate the JSON Schema
+            if let Err(e) = jsonschema::meta::validate(&schema_json) {
+                return fail_clierror!("JSON Schema Meta-Reference Error: {e}");
+            } else {
+                // Now, validate the JSON Schema formats
+                let test_validator = if args.flag_no_format_validation {
+                    Validator::options()
+                        .should_validate_formats(false)
+                        .should_ignore_unknown_formats(true)
+                        .build(&schema_json)
+                } else {
+                    Validator::options()
+                        .should_validate_formats(true)
+                        .should_ignore_unknown_formats(false)
+                        .build(&schema_json)
+                };
+                if let Err(e) = test_validator {
+                    return fail_clierror!("JSON Schema Format Validation Error: {e}");
+                }
+                if !args.flag_quiet {
+                    winfo!("Valid JSON Schema.");
+                }
+                return Ok(());
             }
         }
         return fail_clierror!("No JSON Schema file supplied.");

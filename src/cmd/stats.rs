@@ -608,10 +608,6 @@ const DEFAULT_ANTIMODES_LEN: usize = 100;
 // in one column, i.e. antimodes/modes & percentiles
 pub const DEFAULT_STATS_SEPARATOR: &str = "|";
 
-// empty string constant to avoid repeated allocations
-const EMPTY_STR: &str = "";
-const EMPTY_STRING: String = String::new();
-
 static BOOLEAN_PATTERNS: OnceLock<Vec<BooleanPattern>> = OnceLock::new();
 #[derive(Clone, Debug)]
 /// Represents a pattern for boolean value inference in CSV data.
@@ -2360,6 +2356,10 @@ impl Stats {
         visualize_ws: bool,
         dataset_stats: bool,
     ) -> csv::StringRecord {
+        // empty string constant to avoid repeated allocations
+        const EMPTY_STR: &str = "";
+        const EMPTY_STRING: String = String::new();
+
         // we're doing typesonly and not inferring boolean, just return the type
         if self.which.typesonly && !infer_boolean {
             return csv::StringRecord::from(vec![self.typ.to_string()]);

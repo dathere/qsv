@@ -1279,7 +1279,7 @@ source = "git+https://github.com/jqnatividad/cached?branch=nov2025-tweaks#177792
 [[package]]
 name = "calamine"
 version = "0.31.0"
-source = "git+https://github.com/tafia/calamine?rev=f514bcb#f514bcb312bc49b0e5d215caf44805ec13a21e67"
+source = "git+https://github.com/tafia/calamine?rev=6cf8454#6cf8454ec8ffd981012287c303f2084a844bcc2b"
 dependencies = [
  "atoi_simd",
  "byteorder",

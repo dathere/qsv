@@ -317,7 +317,7 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 cached = { git = "https://github.com/jqnatividad/cached", branch = "nov2025-tweaks" }
 
 # use upstream calamine with unreleased fixes
-calamine = { git = "https://github.com/tafia/calamine", rev = "f514bcb" }
+calamine = { git = "https://github.com/tafia/calamine", rev = "6cf8454" }
 
 # 0.14 has been released but has an old qsv-sniffer dependency
 # until the next release, until the qsv-sniffer dependency is updated

@@ -1535,7 +1535,12 @@ fn validate_invalid_json_schema_file() {
     wrk.assert_err(&mut cmd);
 
     let got = wrk.output_stderr(&mut cmd);
-    assert_eq!(got, "JSON Schema Meta-Reference Error: Unknown specification: https://json-schema.org/draft/2020-25/schema\n");
+    assert_eq!(
+        got,
+        "JSON Schema Meta-Reference Error: Resource \
+         'https://json-schema.org/draft/2020-25/schema' is not present in a registry and \
+         retrieving it failed: error decoding response body\n"
+    );
 
     // Create schema with format validation
     // This schema is invalid because of invalid types "stringy"
@@ -1562,7 +1567,11 @@ fn validate_invalid_json_schema_file() {
     wrk.assert_err(&mut cmd);
 
     let got = wrk.output_stderr(&mut cmd);
-    assert_eq!(got, "Invalid JSON Schema.\n");
+    assert_eq!(
+        got,
+        "JSON Schema Meta-Reference Error: \"stringy\" is not valid under any of the schemas \
+         listed in the 'anyOf' keyword\n"
+    );
 }
 
 #[test]
@@ -1711,7 +1720,8 @@ fn validate_schema_subcommand_invalid_schema() {
     wrk.assert_err(&mut cmd);
 
     let got: String = wrk.output_stderr(&mut cmd);
-    let expected = "Invalid JSON Schema.\n";
+    let expected = "JSON Schema Meta-Reference Error: \"invalid_type\" is not valid under any of \
+                    the schemas listed in the 'anyOf' keyword\n";
     assert_eq!(got, expected);
 }
 
@@ -1738,7 +1748,10 @@ fn validate_schema_subcommand_invalid_draft() {
     wrk.assert_err(&mut cmd);
 
     let got: String = wrk.output_stderr(&mut cmd);
-    let expected = "JSON Schema Meta-Reference Error: Unknown specification: https://json-schema.org/draft/2020-25/schema\n";
+    let expected =
+        "JSON Schema Meta-Reference Error: Resource \
+         'https://json-schema.org/draft/2020-25/schema' is not present in a registry and \
+         retrieving it failed: error decoding response body\n";
     assert_eq!(got, expected);
 }
 

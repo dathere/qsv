@@ -1230,7 +1230,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // parse and compile supplied JSON Schema
     let json_schema_path =
         json_schema_path.unwrap_or_else(|| PathBuf::from(json_schema_arg.as_ref().unwrap()));
-    let (schema_json, schema_compiled): (Value, Validator) =
+    let (schema_json, schema_compiled, has_unique_combined): (Value, Validator, bool) =
             // safety: we know the schema is_some() because we checked above
             match load_json(&json_schema_path.to_string_lossy()) {
             Ok(s) => {
@@ -1281,7 +1281,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         }
 
                         match validator_options.build(&json) {
-                            Ok(schema) => (json, schema),
+                            Ok(schema) => (json, schema, has_unique_combined),
                             Err(e) => {
                                 return fail_clierror!(r#"Cannot compile JSONschema. error: {e}
 Try running `qsv validate schema {}` to check the JSON Schema file."#, json_schema_path.to_string_lossy());
@@ -1380,7 +1380,16 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
                 };
 
                 // validate JSON instance against JSON Schema
-                let evaluation = schema_compiled.evaluate(&json_instance);
+                // if the schema has no stateful validators (like uniqueCombinedWith),
+                // and the record is valid, then short-circuit and return None
+                let evaluation = if !has_unique_combined && schema_compiled.is_valid(&json_instance)
+                {
+                    return None;
+                } else {
+                    // otherwise, fully evaluate the record
+                    schema_compiled.evaluate(&json_instance)
+                };
+
                 if evaluation.flag().valid {
                     None
                 } else {
@@ -2084,12 +2093,14 @@ fn validate_json_instance(
     instance: &Value,
     schema_compiled: &Validator,
 ) -> Option<Vec<(String, String)>> {
-    let evaluation = schema_compiled.evaluate(instance);
-    if evaluation.flag().valid {
+    // Use is_valid() for fast boolean check on valid records (doesn't walk full tree)
+    // Only call evaluate() when invalid to get detailed errors
+    if schema_compiled.is_valid(instance) {
         None
     } else {
         Some(
-            evaluation
+            schema_compiled
+                .evaluate(instance)
                 .iter_errors()
                 .map(|e| (e.instance_location.to_string(), e.error.to_string()))
                 .collect(),

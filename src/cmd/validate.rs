@@ -277,7 +277,6 @@ use indicatif::HumanCount;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use jsonschema::{
     Keyword, PatternOptions, ValidationError, Validator,
-    output::BasicOutput,
     paths::{LazyLocation, Location},
 };
 use log::debug;
@@ -1231,7 +1230,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // parse and compile supplied JSON Schema
     let json_schema_path =
         json_schema_path.unwrap_or_else(|| PathBuf::from(json_schema_arg.as_ref().unwrap()));
-    let (schema_json, schema_compiled): (Value, Validator) =
+    let (schema_json, schema_compiled, has_unique_combined): (Value, Validator, bool) =
             // safety: we know the schema is_some() because we checked above
             match load_json(&json_schema_path.to_string_lossy()) {
             Ok(s) => {
@@ -1282,7 +1281,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         }
 
                         match validator_options.build(&json) {
-                            Ok(schema) => (json, schema),
+                            Ok(schema) => (json, schema, has_unique_combined),
                             Err(e) => {
                                 return fail_clierror!(r#"Cannot compile JSONschema. error: {e}
 Try running `qsv validate schema {}` to check the JSON Schema file."#, json_schema_path.to_string_lossy());
@@ -1381,29 +1380,41 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
                 };
 
                 // validate JSON instance against JSON Schema
-                match schema_compiled.apply(&json_instance).basic() {
-                    BasicOutput::Valid(_) => None,
-                    BasicOutput::Invalid(errors) => {
-                        // Only convert to string when we have validation errors
-                        // safety: see safety comment above
-                        let row_number_string = unsafe {
-                            simdutf8::basic::from_utf8(&record[header_len]).unwrap_unchecked()
-                        };
+                // if the schema has no stateful validators (like uniqueCombinedWith),
+                // and the record is valid, then short-circuit and return None
+                let evaluation = if !has_unique_combined && schema_compiled.is_valid(&json_instance)
+                {
+                    return None;
+                } else {
+                    // otherwise, fully evaluate the record
+                    schema_compiled.evaluate(&json_instance)
+                };
 
-                        // Preallocate the vector with the known size
-                        let mut error_messages = Vec::with_capacity(errors.len());
+                if evaluation.flag().valid {
+                    None
+                } else {
+                    // Only convert to string when we have validation errors
+                    // safety: see safety comment above
+                    let row_number_string = unsafe {
+                        simdutf8::basic::from_utf8(&record[header_len]).unwrap_unchecked()
+                    };
 
-                        // there can be multiple validation errors for a single record,
-                        // squash multiple errors into one long String with linebreaks
-                        for e in errors {
-                            error_messages.push(format!(
-                                "{row_number_string}\t{field}\t{error}",
-                                field = e.instance_location().as_str().trim_start_matches('/'),
-                                error = e.error_description()
-                            ));
-                        }
-                        Some(error_messages.join("\n"))
-                    },
+                    // Collect errors into a vector
+                    let errors: Vec<_> = evaluation.iter_errors().collect();
+
+                    // Preallocate the vector with the known size
+                    let mut error_messages = Vec::with_capacity(errors.len());
+
+                    // there can be multiple validation errors for a single record,
+                    // squash multiple errors into one long String with linebreaks
+                    for e in errors {
+                        error_messages.push(format!(
+                            "{row_number_string}\t{field}\t{error}",
+                            field = e.instance_location.as_str().trim_start_matches('/'),
+                            error = e.error
+                        ));
+                    }
+                    Some(error_messages.join("\n"))
                 }
             })
             .collect_into_vec(&mut batch_validation_results);
@@ -2082,19 +2093,18 @@ fn validate_json_instance(
     instance: &Value,
     schema_compiled: &Validator,
 ) -> Option<Vec<(String, String)>> {
-    match schema_compiled.apply(instance).basic() {
-        BasicOutput::Valid(_) => None,
-        BasicOutput::Invalid(errors) => Some(
-            errors
-                .iter()
-                .map(|e| {
-                    (
-                        e.instance_location().to_string(),
-                        e.error_description().to_string(),
-                    )
-                })
+    // Use is_valid() for fast boolean check on valid records (doesn't walk full tree)
+    // Only call evaluate() when invalid to get detailed errors
+    if schema_compiled.is_valid(instance) {
+        None
+    } else {
+        Some(
+            schema_compiled
+                .evaluate(instance)
+                .iter_errors()
+                .map(|e| (e.instance_location.to_string(), e.error.to_string()))
                 .collect(),
-        ),
+        )
     }
 }
 

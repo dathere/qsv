@@ -277,7 +277,6 @@ use indicatif::HumanCount;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use jsonschema::{
     Keyword, PatternOptions, ValidationError, Validator,
-    output::BasicOutput,
     paths::{LazyLocation, Location},
 };
 use log::debug;
@@ -1381,29 +1380,32 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
                 };
 
                 // validate JSON instance against JSON Schema
-                match schema_compiled.apply(&json_instance).basic() {
-                    BasicOutput::Valid(_) => None,
-                    BasicOutput::Invalid(errors) => {
-                        // Only convert to string when we have validation errors
-                        // safety: see safety comment above
-                        let row_number_string = unsafe {
-                            simdutf8::basic::from_utf8(&record[header_len]).unwrap_unchecked()
-                        };
+                let evaluation = schema_compiled.evaluate(&json_instance);
+                if evaluation.flag().valid {
+                    None
+                } else {
+                    // Only convert to string when we have validation errors
+                    // safety: see safety comment above
+                    let row_number_string = unsafe {
+                        simdutf8::basic::from_utf8(&record[header_len]).unwrap_unchecked()
+                    };
 
-                        // Preallocate the vector with the known size
-                        let mut error_messages = Vec::with_capacity(errors.len());
+                    // Collect errors into a vector
+                    let errors: Vec<_> = evaluation.iter_errors().collect();
 
-                        // there can be multiple validation errors for a single record,
-                        // squash multiple errors into one long String with linebreaks
-                        for e in errors {
-                            error_messages.push(format!(
-                                "{row_number_string}\t{field}\t{error}",
-                                field = e.instance_location().as_str().trim_start_matches('/'),
-                                error = e.error_description()
-                            ));
-                        }
-                        Some(error_messages.join("\n"))
-                    },
+                    // Preallocate the vector with the known size
+                    let mut error_messages = Vec::with_capacity(errors.len());
+
+                    // there can be multiple validation errors for a single record,
+                    // squash multiple errors into one long String with linebreaks
+                    for e in errors {
+                        error_messages.push(format!(
+                            "{row_number_string}\t{field}\t{error}",
+                            field = e.instance_location.as_str().trim_start_matches('/'),
+                            error = e.error
+                        ));
+                    }
+                    Some(error_messages.join("\n"))
                 }
             })
             .collect_into_vec(&mut batch_validation_results);
@@ -2082,19 +2084,16 @@ fn validate_json_instance(
     instance: &Value,
     schema_compiled: &Validator,
 ) -> Option<Vec<(String, String)>> {
-    match schema_compiled.apply(instance).basic() {
-        BasicOutput::Valid(_) => None,
-        BasicOutput::Invalid(errors) => Some(
-            errors
-                .iter()
-                .map(|e| {
-                    (
-                        e.instance_location().to_string(),
-                        e.error_description().to_string(),
-                    )
-                })
+    let evaluation = schema_compiled.evaluate(instance);
+    if evaluation.flag().valid {
+        None
+    } else {
+        Some(
+            evaluation
+                .iter_errors()
+                .map(|e| (e.instance_location.to_string(), e.error.to_string()))
                 .collect(),
-        ),
+        )
     }
 }
 

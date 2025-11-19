@@ -3800,3 +3800,25 @@ fn sqlp_union_positional() {
     ];
     assert_eq!(got, expected);
 }
+
+#[test]
+fn sqlp_unnest_issue_3108() {
+    let wrk = Workdir::new("sqlp_unnest_issue_3108");
+
+    wrk.create("data.csv", vec![svec!["id", "data"], svec!["1", "a,b,c"]]);
+
+    // Test: UNNEST should unnest the array column
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .arg("select first(id) as idf, unnest(string_to_array(data, ',')) as value from data");
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["idf", "value"],
+        svec!["1", "a"],
+        svec!["1", "b"],
+        svec!["1", "c"],
+    ];
+    assert_eq!(got, expected);
+}

@@ -1427,6 +1427,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
         for (i, result) in batch_validation_results.iter().enumerate() {
             if let Some(validation_error_msg) = result {
                 invalid_count += 1;
+                // safety: we know the index is in bounds because we just extended the vector
                 unsafe { valid_flags.set_unchecked(start_idx + i, false) };
                 validation_error_messages.push(validation_error_msg.to_owned());
             }
@@ -2538,7 +2539,7 @@ fn test_dyn_enum_validator() {
         Err(e) => {
             assert_eq!(
                 format!("{e:?}"),
-                r#"ValidationError { instance: String("lanzones"), kind: Custom { message: "\"lanzones\" is not a valid dynamicEnum value" }, instance_path: Location(""), schema_path: Location("") }"#
+                r#"ValidationError { repr: ValidationErrorRepr { instance: String("lanzones"), kind: Custom { message: "\"lanzones\" is not a valid dynamicEnum value" }, instance_path: Location(""), schema_path: Location("") } }"#
             );
         },
         _ => {

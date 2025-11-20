@@ -473,7 +473,7 @@ dependencies = [
  "arrow-schema",
  "chrono",
  "half",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "num",
 ]
 
@@ -1248,7 +1248,7 @@ dependencies = [
  "cached_proc_macro",
  "cached_proc_macro_types",
  "directories",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "once_cell",
  "r2d2",
  "redis",
@@ -2955,7 +2955,7 @@ dependencies = [
  "futures-timer",
  "futures-util",
  "getrandom 0.3.4",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "nonzero_ext",
  "parking_lot",
  "portable-atomic",
@@ -3035,7 +3035,7 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c7ed2f2edad8a14c8186b847909a41fbb9c3eafa44f88bd891114ed5019da09"
 dependencies = [
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "serde",
 ]
 
@@ -3067,15 +3067,16 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.16.0"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5419bdc4f6a9207fbeba6d11b604d481addf78ecd10c11ad51e76c2f6482748d"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.2.0",
  "rayon",
  "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -3412,12 +3413,12 @@ checksum = "e8a5a9a0ff0086c7a148acb942baaabeadf9504d10400b5a05645853729b9cd2"
 
 [[package]]
 name = "indexmap"
-version = "2.12.0"
+version = "2.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6717a8d2a5a929a1a2eb43a12812498ed141a0bcfb7e8f7844fbdbe4303bba9f"
+checksum = "0ad4bb2b565bca0645f4d68c5c9af97fba094e9791da685bf83cb5f3ce74acf2"
 dependencies = [
  "equivalent",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "serde",
  "serde_core",
 ]
@@ -4720,7 +4721,7 @@ dependencies = [
  "bytes",
  "chrono",
  "half",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "num",
  "num-bigint",
  "paste",
@@ -5003,7 +5004,7 @@ dependencies = [
  "ethnum",
  "getrandom 0.2.16",
  "getrandom 0.3.4",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "itoa",
  "lz4",
  "num-traits",
@@ -5039,7 +5040,7 @@ dependencies = [
  "chrono",
  "either",
  "fast-float2",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "itoa",
  "num-traits",
  "polars-arrow",
@@ -5065,7 +5066,7 @@ dependencies = [
  "chrono-tz",
  "comfy-table",
  "either",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "indexmap",
  "itoa",
  "num-traits",
@@ -5094,7 +5095,7 @@ version = "0.52.0"
 source = "git+https://github.com/pola-rs/polars?rev=a0ab2dc#a0ab2dc83d4391fe25310b1f6c410b7a4a7428a1"
 dependencies = [
  "boxcar",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "polars-arrow",
  "polars-error",
  "polars-utils",
@@ -5122,7 +5123,7 @@ version = "0.52.0"
 source = "git+https://github.com/pola-rs/polars?rev=a0ab2dc#a0ab2dc83d4391fe25310b1f6c410b7a4a7428a1"
 dependencies = [
  "bitflags",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "num-traits",
  "polars-arrow",
  "polars-compute",
@@ -5157,7 +5158,7 @@ dependencies = [
  "fs4",
  "futures",
  "glob",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "home",
  "itoa",
  "memchr",
@@ -5194,7 +5195,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "fallible-streaming-iterator",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "indexmap",
  "itoa",
  "num-traits",
@@ -5266,7 +5267,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "either",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "hex",
  "indexmap",
  "jsonpath_lib_polars_vendor",
@@ -5304,7 +5305,7 @@ dependencies = [
  "ethnum",
  "flate2",
  "futures",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "lz4",
  "num-traits",
  "polars-arrow",
@@ -5342,7 +5343,7 @@ dependencies = [
  "chrono-tz",
  "either",
  "futures",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "memmap2",
  "num-traits",
  "percent-encoding",
@@ -5486,7 +5487,7 @@ dependencies = [
  "either",
  "flate2",
  "foldhash 0.2.0",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "indexmap",
  "libc",
  "memmap2",
@@ -6387,7 +6388,7 @@ dependencies = [
  "ahash 0.8.12",
  "fluent-uri",
  "getrandom 0.3.4",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "parking_lot",
  "percent-encoding",
  "serde_json",

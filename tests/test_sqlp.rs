@@ -3822,3 +3822,96 @@ fn sqlp_unnest_issue_3108() {
     ];
     assert_eq!(got, expected);
 }
+
+#[test]
+fn sqlp_rank_funcs() {
+    let wrk = Workdir::new("sqlp_rank_funcs");
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "category", "value"],
+            svec!["1", "A", "20"],
+            svec!["2", "A", "10"],
+            svec!["3", "A", "25"],
+            svec!["4", "B", "10"],
+            svec!["5", "B", "40"],
+            svec!["6", "B", "25"],
+            svec!["7", "C", "35"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv").arg(
+        r#"SELECT
+            value,
+            ROW_NUMBER() OVER (ORDER BY value DESC, category DESC) AS row_num,
+            RANK() OVER (ORDER BY value DESC, category DESC) AS rank,
+            DENSE_RANK() OVER (ORDER BY value DESC, category DESC) AS dense_rank
+        FROM data
+        ORDER BY value, id DESC"#,
+    );
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["value", "row_num", "rank", "dense_rank"],
+        svec!["10", "6", "6", "6"],
+        svec!["10", "7", "7", "7"],
+        svec!["20", "5", "5", "5"],
+        svec!["25", "3", "3", "3"],
+        svec!["25", "4", "4", "4"],
+        svec!["35", "2", "2", "2"],
+        svec!["40", "1", "1", "1"],
+    ];
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv").arg(
+        r#"SELECT
+            value,
+            ROW_NUMBER() OVER (ORDER BY value) AS row_num,
+            RANK() OVER (ORDER BY value) AS rank,
+            DENSE_RANK() OVER (ORDER BY value) AS dense_rank
+        FROM data
+        ORDER BY value, id"#,
+    );
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["value", "row_num", "rank", "dense_rank"],
+        svec!["10", "1", "1", "1"],
+        svec!["10", "2", "1", "1"],
+        svec!["20", "3", "3", "2"],
+        svec!["25", "4", "4", "3"],
+        svec!["25", "5", "4", "3"],
+        svec!["35", "6", "6", "4"],
+        svec!["40", "7", "7", "5"],
+    ];
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv").arg(
+        r#"SELECT
+            category,
+            value,
+            ROW_NUMBER() OVER (PARTITION BY category ORDER BY value) AS row_num,
+            RANK() OVER (PARTITION BY category ORDER BY value) AS rank,
+            DENSE_RANK() OVER (PARTITION BY category ORDER BY value) AS dense
+        FROM data
+        ORDER BY category, value"#,
+    );
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category", "value", "row_num", "rank", "dense"],
+        svec!["A", "10", "1", "1", "1"],
+        svec!["A", "20", "2", "2", "2"],
+        svec!["A", "25", "3", "3", "3"],
+        svec!["B", "10", "1", "1", "1"],
+        svec!["B", "25", "2", "2", "2"],
+        svec!["B", "40", "3", "3", "3"],
+        svec!["C", "35", "1", "1", "1"],
+    ];
+    assert_eq!(got, expected);
+}

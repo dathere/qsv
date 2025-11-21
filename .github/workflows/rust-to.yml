@@ -24,7 +24,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libwayland-dev
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Installing Rust toolchain
       uses: dtolnay/rust-toolchain@master
       with:

@@ -61,7 +61,7 @@ jobs:
         override: true
         default: true
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
       with:
         submodules: recursive
     # - name: build prep for x86_64-unknown-linux-musl

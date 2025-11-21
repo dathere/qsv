@@ -30,7 +30,7 @@ jobs:
         sudo apt-get autoremove --purge
         sudo apt-get autoclean
         sudo apt-get clean
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Installing Rust toolchain
       uses: dtolnay/rust-toolchain@master
       with:

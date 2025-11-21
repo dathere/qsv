@@ -127,7 +127,7 @@ jobs:
         target: ${{ matrix.job.target }}
         override: true
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
       with:
         submodules: recursive
         ref: ${{ needs.analyze-tags.outputs.previous-tag }}

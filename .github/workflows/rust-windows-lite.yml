@@ -20,7 +20,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Installing Rust toolchain
       uses: dtolnay/rust-toolchain@master
       with:

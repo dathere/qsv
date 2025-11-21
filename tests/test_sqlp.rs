@@ -3915,3 +3915,83 @@ fn sqlp_rank_funcs() {
     ];
     assert_eq!(got, expected);
 }
+
+#[test]
+fn sqlp_named_window_references() {
+    let wrk = Workdir::new("sqlp_named_window_references");
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "category", "value"],
+            svec!["1", "A", "20"],
+            svec!["2", "A", "10"],
+            svec!["3", "A", "30"],
+            svec!["4", "B", "15"],
+            svec!["5", "B", "50"],
+            svec!["6", "B", "30"],
+            svec!["7", "C", "35"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv").arg(
+        r#"SELECT
+        category,
+        value,
+        SUM(value) OVER w AS "w:sum",
+        MIN(value) OVER w AS "w:min",
+        AVG(value) OVER w AS "w:avg",
+      FROM data
+      WINDOW w AS (PARTITION BY category ORDER BY value)
+      ORDER BY category, value"#,
+    );
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category", "value", "w:sum", "w:min", "w:avg"],
+        svec!["A", "10", "10", "10", "20.0"],
+        svec!["A", "20", "30", "10", "20.0"],
+        svec!["A", "30", "60", "10", "20.0"],
+        svec!["B", "15", "15", "15", "31.666666666666668"],
+        svec!["B", "30", "45", "15", "31.666666666666668"],
+        svec!["B", "50", "95", "15", "31.666666666666668"],
+        svec!["C", "35", "35", "35", "35.0"],
+    ];
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv").arg(
+        r#"SELECT
+        category,
+        value,
+        AVG(value) OVER w1 AS category_avg,
+        SUM(value) OVER w2 AS running_value,
+        COUNT(*) OVER w3 AS total_count
+      FROM data
+      WINDOW
+        w1 AS (PARTITION BY category),
+        w2 AS (ORDER BY value),
+        w3 AS ()
+      ORDER BY category, value"#,
+    );
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec![
+            "category",
+            "value",
+            "category_avg",
+            "running_value",
+            "total_count"
+        ],
+        svec!["A", "10", "20.0", "10", "7"],
+        svec!["A", "20", "20.0", "45", "7"],
+        svec!["A", "30", "20.0", "75", "7"],
+        svec!["B", "15", "31.666666666666668", "25", "7"],
+        svec!["B", "30", "31.666666666666668", "105", "7"],
+        svec!["B", "50", "31.666666666666668", "190", "7"],
+        svec!["C", "35", "35.0", "140", "7"],
+    ];
+    assert_eq!(got, expected);
+}

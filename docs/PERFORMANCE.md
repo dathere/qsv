@@ -152,7 +152,7 @@ To prevent this, qsv has two memory check heuristics when running "non-streaming
 2. subtract a percentage headroom from the total available memory (default: 20%)
 3. if this adjusted total available memory is less than the size of the CSV file, qsv will abort with an error
 
-The percentage headroom can be changed by setting the `QSV_MEMORY_HEADROOM_PCT` environment variable to a value between 10 and 90 (default: 20).
+The percentage headroom can be changed by setting the `QSV_FREEMEMORY_HEADROOM_PCT` environment variable to a value between 10 and 90 (default: 20).
 
 This CONSERVATIVE heuristic can have false positives however, as modern operating systems can do a fair bit of juggling to handle file sizes larger than what this heuristic will allow, as it dynamically swaps apps to the swapfile, expand the swapfile, compress memory, etc.
 
@@ -160,7 +160,7 @@ For example, on a 16gb Mac mini running several common apps, it only allowed ~3g
 
 To apply this CONSERVATIVE heuristic, you can use the command's `--memcheck` option or set the `QSV_MEMORY_CHECK` environment variable.
 
-Otherwise, the default memory check heuristic (NORMAL mode) will only check if the input file's size is larger than the TOTAL memory of the computer minus `QSV_MEMORY_HEADROOM_PCT`.  We still do this to prevent OOM panics, but it's not as restrictive as the CONSERVATIVE heuristic. (e.g. if you have a 16gb computer, the maximum input file size is 12.8gb file - 16gb minus 20% headroom).
+Otherwise, the default memory check heuristic (NORMAL mode) will only check if the input file's size is larger than the TOTAL memory of the computer minus `QSV_FREEMEMORY_HEADROOM_PCT`.  We still do this to prevent OOM panics, but it's not as restrictive as the CONSERVATIVE heuristic. (e.g. if you have a 16gb computer, the maximum input file size is 12.8gb file - 16gb minus 20% headroom).
 
 > NOTE: These memory checks are not invoked when using stdin as input, as the size of the input file is not known. Though `schema` and `tojsonl` will still abort if stdin is too large per this memory check as it creates a temporary file from stdin before inferring the schema.
 

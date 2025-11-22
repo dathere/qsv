@@ -1242,7 +1242,7 @@ dependencies = [
 [[package]]
 name = "cached"
 version = "0.56.0"
-source = "git+https://github.com/jqnatividad/cached?branch=nov2025-tweaks#17779283f313e7e0640f8fa16997386aa1c3ad97"
+source = "git+https://github.com/jaemk/cached?rev=0b6a255#0b6a2555fd849c353e90af61000dca89bea01156"
 dependencies = [
  "ahash 0.8.12",
  "cached_proc_macro",
@@ -1263,7 +1263,7 @@ dependencies = [
 [[package]]
 name = "cached_proc_macro"
 version = "0.25.0"
-source = "git+https://github.com/jqnatividad/cached?branch=nov2025-tweaks#17779283f313e7e0640f8fa16997386aa1c3ad97"
+source = "git+https://github.com/jaemk/cached?rev=0b6a255#0b6a2555fd849c353e90af61000dca89bea01156"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -1274,7 +1274,7 @@ dependencies = [
 [[package]]
 name = "cached_proc_macro_types"
 version = "0.1.1"
-source = "git+https://github.com/jqnatividad/cached?branch=nov2025-tweaks#17779283f313e7e0640f8fa16997386aa1c3ad97"
+source = "git+https://github.com/jaemk/cached?rev=0b6a255#0b6a2555fd849c353e90af61000dca89bea01156"
 
 [[package]]
 name = "calamine"

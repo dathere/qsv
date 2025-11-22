@@ -160,17 +160,17 @@ pub enum CliError {
 
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            CliError::Flag(ref e) => e.fmt(f),
-            CliError::Help(ref e) => e.fmt(f),
-            CliError::Csv(ref e) => e.fmt(f),
-            CliError::Io(ref e) => e.fmt(f),
+        match self {
+            CliError::Flag(e) => e.fmt(f),
+            CliError::Help(e) => e.fmt(f),
+            CliError::Csv(e) => e.fmt(f),
+            CliError::Io(e) => e.fmt(f),
             CliError::NoMatch() => f.write_str("no_match"),
-            CliError::Other(ref s)
-            | CliError::IncorrectUsage(ref s)
-            | CliError::Encoding(ref s)
-            | CliError::OutOfMemory(ref s)
-            | CliError::Network(ref s) => f.write_str(s),
+            CliError::Other(s)
+            | CliError::IncorrectUsage(s)
+            | CliError::Encoding(s)
+            | CliError::OutOfMemory(s)
+            | CliError::Network(s) => f.write_str(s),
         }
     }
 }

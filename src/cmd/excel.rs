@@ -1022,11 +1022,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             for (row_idx, row) in chunk {
                 for (col_idx, cell) in row.iter().enumerate() {
-                    match *cell {
+                    match cell {
                         Data::Empty => record.push_field(""),
-                        Data::String(ref s) => record.push_field(s),
-                        Data::Int(ref i) => record.push_field(itoa_buf.format(*i)),
-                        Data::Float(ref float_val) => {
+                        Data::String(s) => record.push_field(s),
+                        Data::Int(i) => record.push_field(itoa_buf.format(*i)),
+                        Data::Float(float_val) => {
                             // push the ryu-formatted float value if its
                             // not an integer or the candidate
                             // integer is too big or too small to be an i64
@@ -1042,7 +1042,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 record.push_field(itoa_buf.format(*float_val as i64));
                             }
                         },
-                        Data::DateTime(ref edt) => {
+                        Data::DateTime(edt) => {
                             if edt.is_datetime() {
                                 if let Some(dt) = edt.as_datetime() {
                                     if no_date_format {
@@ -1086,12 +1086,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                             record.push_field(&work_date);
                         },
-                        Data::Bool(ref b) => {
+                        Data::Bool(b) => {
                             record.push_field(if *b { "true" } else { "false" });
                         },
-                        Data::DateTimeIso(ref dt) => record.push_field(dt),
-                        Data::DurationIso(ref d) => record.push_field(d),
-                        Data::Error(ref e) => {
+                        Data::DateTimeIso(dt) => record.push_field(dt),
+                        Data::DurationIso(d) => record.push_field(d),
+                        Data::Error(e) => {
                             // safety: the unwraps in this block are safe because the format strings
                             // are hardcoded and are guaranteed to be correct
                             error_buffer.clear();

@@ -154,8 +154,8 @@ trait GroupKeyConstructor {
 
 impl GroupKeyConstructor for GroupKeySelection {
     fn key(&self, record: &csv::ByteRecord) -> Result<GroupKey, String> {
-        match *self {
-            Some(ref value) => Ok(Some(value.iter().map(|&i| record[i].to_vec()).collect())),
+        match self {
+            Some(value) => Ok(Some(value.iter().map(|&i| record[i].to_vec()).collect())),
             None => Ok(None),
         }
     }

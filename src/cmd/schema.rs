@@ -583,7 +583,7 @@ fn get_unique_values(
     // safety: we are in single-threaded code.
     unsafe { std::env::set_var("QSV_STATSCACHE_MODE", "none") };
     let (headers, ftables) = match freq_args.rconfig().indexed()? {
-        Some(ref mut idx) => freq_args.parallel_ftables(idx),
+        Some(idx) => freq_args.parallel_ftables(&idx),
         _ => freq_args.sequential_ftables(),
     }?;
     if let Ok(orig_mode) = curr_mode {

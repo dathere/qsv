@@ -2423,7 +2423,7 @@ impl Stats {
                     mc_pieces = vec![EMPTY_STRING; 6];
                 }
             },
-            Some(ref mut v) => {
+            Some(v) => {
                 mc_pieces.reserve(8);
                 if self.which.cardinality {
                     cardinality = v.cardinality(column_sorted, 1);
@@ -3042,7 +3042,7 @@ const DATETIME_FTYPE: &str = "DateTime";
 
 impl fmt::Display for FieldType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        match self {
             TNull => write!(f, "{NULL_FTYPE}"),
             TString => write!(f, "{STRING_FTYPE}"),
             TFloat => write!(f, "{FLOAT_FTYPE}"),
@@ -3055,7 +3055,7 @@ impl fmt::Display for FieldType {
 
 impl fmt::Debug for FieldType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        match self {
             TNull => write!(f, "{NULL_FTYPE}"),
             TString => write!(f, "{STRING_FTYPE}"),
             TFloat => write!(f, "{FLOAT_FTYPE}"),
@@ -3068,7 +3068,7 @@ impl fmt::Debug for FieldType {
 
 impl FieldType {
     pub const fn as_str(&self) -> &str {
-        match *self {
+        match self {
             TNull => NULL_FTYPE,
             TString => STRING_FTYPE,
             TFloat => FLOAT_FTYPE,
@@ -3097,8 +3097,8 @@ impl TypedSum {
         #[allow(clippy::cast_precision_loss)]
         match typ {
             TInteger => {
-                if let Some(ref mut float) = self.float {
-                    *float += float_val;
+                if let Some(ref mut f) = self.float {
+                    *f += float_val;
                 } else {
                     self.integer = self.integer.saturating_add(int_val);
                 }

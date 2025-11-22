@@ -370,21 +370,21 @@ impl OneSelector {
 
 impl fmt::Debug for Selector {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Selector::One(ref sel) => sel.fmt(f),
-            Selector::Range(ref s, ref e) => write!(f, "Range({s:?}, {e:?})"),
-            Selector::Regex(ref re) => re.fmt(f),
+        match self {
+            Selector::One(sel) => sel.fmt(f),
+            Selector::Range(s, e) => write!(f, "Range({s:?}, {e:?})"),
+            Selector::Regex(re) => re.fmt(f),
         }
     }
 }
 
 impl fmt::Debug for OneSelector {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        match self {
             OneSelector::Start => write!(f, "Start"),
             OneSelector::End => write!(f, "End"),
             OneSelector::Index(idx) => write!(f, "Index({idx})"),
-            OneSelector::IndexedName(ref s, idx) => write!(f, "IndexedName({s}[{idx}])"),
+            OneSelector::IndexedName(s, idx) => write!(f, "IndexedName({s}[{idx}])"),
         }
     }
 }

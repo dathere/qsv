@@ -849,9 +849,10 @@ pub fn file_metadata(md: &fs::Metadata) -> (u64, u64) {
 /// Check if there is enough memory to process the file.
 /// Return the maximum file size that can be processed.
 /// If the file is larger than the maximum file size, return an error.
-/// If memcheck is true, check memory in CONSERVATIVE mode (i.e., Filesize < AVAIL memory + SWAP -
-/// headroom) If memcheck is false, check memory in NORMAL mode (i.e., Filesize < TOTAL memory -
-/// headroom)
+/// If memcheck is true, check memory in CONSERVATIVE mode
+///   (i.e., Filesize < (AVAIL memory + SWAP) * platform_factor - headroom)
+/// If memcheck is false, check memory in NORMAL mode
+///   (i.e., Filesize < TOTAL memory - headroom)
 pub fn mem_file_check(
     path: &Path,
     version_check: bool,
@@ -868,8 +869,9 @@ pub fn mem_file_check(
     let conservative_memcheck_work = get_envvar_flag("QSV_MEMORY_CHECK") || conservative_memcheck;
 
     let mut mem_pct = env::var("QSV_FREEMEMORY_HEADROOM_PCT")
-        .unwrap_or_else(|_| DEFAULT_FREEMEMORY_HEADROOM_PCT.to_string())
-        .parse::<u8>()
+        .map(|val| {
+            atoi_simd::parse::<u8>(val.as_bytes()).unwrap_or(DEFAULT_FREEMEMORY_HEADROOM_PCT)
+        })
         .unwrap_or(DEFAULT_FREEMEMORY_HEADROOM_PCT);
 
     // if QSV_FREEMEMORY_HEADROOM_PCT is 0, we skip the memory check
@@ -887,11 +889,30 @@ pub fn mem_file_check(
     // nor above 90% memory headroom as its too memory-restrictive
     mem_pct = mem_pct.clamp(10, 90);
 
+    // Platform-specific adjustment factors for conservative mode
+    // These account for OS-specific memory management capabilities
+    #[cfg(target_os = "macos")]
+    let platform_factor = 1.3; // macOS has aggressive memory compression & dynamic swap                                                                                                    
+
+    #[cfg(target_os = "linux")]
+    let platform_factor = 1.15; // Linux page cache is reclaimable, but be conservative                                                                                                     
+
+    #[cfg(target_os = "windows")]
+    let platform_factor = 1.0; // Windows memory reporting is already conservative                                                                                                          
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    let platform_factor = 1.0; // Other platforms: no adjustment   
+
+    // Calculate maximum available memory based on mode
     #[allow(clippy::cast_precision_loss)]
     let max_avail_mem = if conservative_memcheck_work {
-        ((avail_mem + free_swap) as f32 * ((100 - mem_pct) as f32 / 100.0_f32)) as u64
+        // CONSERVATIVE: Use available + swap, with platform adjustments
+        let base_mem = (avail_mem + free_swap) as f64;
+        let adjusted_mem = base_mem * platform_factor;
+        (adjusted_mem * ((100 - mem_pct) as f64 / 100.0)) as u64
     } else {
-        (total_mem as f32 * ((100 - mem_pct) as f32 / 100.0_f32)) as u64
+        // NORMAL: Use total memory
+        (total_mem as f64 * ((100 - mem_pct) as f64 / 100.0)) as u64
     };
 
     // if we're calling this from version(), we don't need to check the file size

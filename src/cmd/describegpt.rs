@@ -347,10 +347,23 @@ static READ_CSV_AUTO_REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyL
     regex::Regex::new("read_csv_auto\\([^)]*\\)").expect("Invalid regex pattern")
 });
 
-/// Escapes single quotes in a string for safe use in SQL string literals.
-/// SQL standard: single quotes are escaped by doubling them: ' becomes ''
+/// Escape a string for safe usage as a SQL string literal.
+///
+/// This function ensures that common problematic characters (such as single quotes, backslashes,
+/// newlines, carriage returns, and null bytes) are properly escaped according to SQL string
+/// literal rules.
+///
+/// - Single quotes are escaped by doubling them (`'` → `''`), as per the SQL standard.
+/// - Backslashes are escaped by doubling (`\` → `\\`). Backslash escaping is non-standard SQL but
+///   prevents certain injection scenarios, and must come first in this implementation.
+/// - Newline (`\n`), carriage return (`\r`), and null byte (`\0`) are replaced by their C-like
+///   escape sequence representations (`\\n`, `\\r`, `\\0`).
 fn escape_sql_string(s: &str) -> String {
-    s.replace('\'', "''")
+    s.replace('\\', "\\\\") // Backslash must be first!
+        .replace('\'', "''")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\0', "\\0")
 }
 
 static DEFAULT_REDIS_CONN_STRING: OnceLock<String> = OnceLock::new();

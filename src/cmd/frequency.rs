@@ -45,9 +45,9 @@ the already inferred dates and boolean types.
 NOTE: "Complete" Frequency Tables:
 
     By default, ID columns will have an "<ALL UNIQUE>" value with count equal to
-    rowcount and percentage set to 100. This is done by using the stats cache to
-    fetch each column's cardinality - allowing qsv to short-circuit frequency
-    compilation and eliminate the need to maintain a hashmap for ID columns.
+    rowcount and percentage set to 100 with a rank of 0. This is done by using the
+    stats cache to fetch each column's cardinality - allowing qsv to short-circuit
+    frequency compilation and eliminate the need to maintain a hashmap for ID columns.
 
     If you wish to compile a "complete" frequency table even for ID columns, set
     QSV_STATSCACHE_MODE to "none". This will force the frequency command to compute
@@ -438,7 +438,7 @@ impl Args {
                 count:                row_count,
                 percentage:           100.0,
                 formatted_percentage: self.format_percentage(100.0, abs_dec_places),
-                rank:                 1.0, // Rank 1 for all-unique headers
+                rank:                 0.0, // Rank 0 for all-unique headers
             });
         } else {
             // Process regular frequencies

@@ -1,8 +1,8 @@
 name = "QSV Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "QSV Team"
-version = "3.3.0"
-tokens = 5000
+version = "4.0.0"
+tokens = 10000
 base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
 timeout = 300
@@ -24,44 +24,55 @@ You are an expert library scientist with extensive expertise in Statistics, Data
 You are also an expert on the DCAT-US 3 metadata specification (https://doi-do.github.io/dcat-us/).
 
 When you are asked to generate a Data Dictionary, Description or Tags, use the provided Summary Statistics and
-Frequency Distribution to guide your response. They both describe the same Dataset.
+Frequency Distribution to guide your response. They both describe the same Dataset and are joined on the `field` column.
 
 The provided Summary Statistics is a CSV file. Each record contains statistics for each Dataset field.
-For a detailed explanation of the Summary Statistics columns,
-see https://github.com/dathere/qsv/wiki/Supplemental#stats-command-output-explanation
 
-The provided Frequency Distribution is a CSV file with the following columns - field, value, count, percentage, rank.
-For each Dataset field, it lists the top {TOP_N} (or less if there are less than {TOP_N} unique values) most frequent unique values
-sorted in descending order, with the special value "Other (N)" indicating "other" unique values beyond the top {TOP_N}.
-The "(N)" in "Other (N)" indicates the count of "other" unique values.
+The provided Frequency Distribution is a CSV file with these columns - `field`, `value`, `count`, `percentage`, `rank`.
+For each Dataset field, it lists the top {TOP_N} most frequent unique values sorted in descending order,
+with the special value "Other (N)" indicating "Other" unique values beyond the top {TOP_N}.
+The "N" in "Other (N)" indicates the count of "Other" unique values. The "Other" category has a special rank of 0.
 
-The rank column is 1-based and is calculated based on the count of the values, with the most frequent having a rank of 1.
-In case of ties, the rank is calculated based on the "dense" rank-strategy (AKA "1223" ranking).
-The "Other" category has a special rank of 0.
+The Frequency Distribution's `rank` column is 1-based and is calculated based on the count of the values, with the
+most frequent having a rank of 1. In case of ties, `rank` is calculated based on the "dense" rank-strategy (AKA "1223" ranking).
 
-For Dataset fields with all unique values (i.e. cardinality is equal to the number of records), the value column is the
-special value "<ALL_UNIQUE>", the count column is the number of records, the percentage column is 100, and the rank column is 1.
+For Dataset fields with all unique values (i.e. cardinality is equal to the number of records), the Frequency Distribution's 
+`value` column is the special value "<ALL_UNIQUE>"; `count` - the number of records; `percentage` - 100; and `rank` - 0.
 """
 
 dictionary_prompt = """
 Here are the columns for each field in a Data Dictionary:
 
-- Type: the data type of this column as indicated in the Summary Statistics below.
-- Label: a human-friendly label for this column
-- Description: a full description for this column (can be multiple sentences)
+- Name: `field` from Summary Statistics.
+- Type: `type` from Summary Statistics.
+- Label: a human-friendly label for this field
+- Description: a full description for this field (can be multiple sentences).
+- Cardinality: `cardinality` from Summary Statistics.
+- Enumeration: If `cardinality` > {TOP_N}, leave empty. Otherwise, if none of the corresponding unique values in the Frequency Distribution
+  have `rank` = 0, enumerate unique values for this field from the Frequency Distribution.
+- Null Count: `nullcount` from Summary Statistics.
+- Examples: At least 5 top values for this field based on the Frequency Distribution, in `count` descending order.
+  Include the Frequency Distribution `count` in parentheses after each value.
+  Set to "<ALL_UNIQUE>" if the field has Frequency Distribution `percentage` = 100.
 
-Generate a Data Dictionary as aforementioned {JSON_ADD} where each field has Name, Type, Label, and Description
-(so four columns in total) based on the following Summary Statistics and Frequency Distribution data of the Dataset.
+Generate a Data Dictionary as aforementioned {JSON_ADD} for ALL fields in the Dataset, where each field has 
+Name,Type,Label,Description,Cardinality,Enumeration,Null Count,Examples (so eight columns in total)
+based on the Summary Statistics and Frequency Distribution.
+Always use the exact values from the Summary Statistics and Frequency Distribution data, never approximate them.
 
-Let's think step by step.
+Add a Footnote with the placeholder "{GENERATED_BY_SIGNATURE}". If generating JSON format,
+add the footnote as a separate key at the top level of the JSON object, otherwise add it
+at the bottom of the Data Dictionary.
+
+Let's think step by step, correcting yourself as needed.
 
 ---
 
-Summary Statistics:
+Summary Statistics (CSV):
 
 {STATS}
 
-Frequency Distribution:
+Frequency Distribution (CSV):
 
 {FREQUENCY}
 """
@@ -73,11 +84,11 @@ Let's think step by step.
 
 ---
 
-Summary Statistics:
+Summary Statistics (CSV):
 
 {STATS}
 
-Frequency Distribution:
+Frequency Distribution (CSV):
 
 {FREQUENCY}
 
@@ -109,11 +120,11 @@ Let's think step by step.
 
 ---
 
-Summary Statistics:
+Summary Statistics (CSV):
 
 {STATS}
 
-Frequency Distribution:
+Frequency Distribution (CSV):
 
 {FREQUENCY}"""
 
@@ -141,11 +152,11 @@ Return the SQL query as a SQL code block preceded by a newline.
 
 ---
 
-Summary Statistics:
+Summary Statistics (CSV):
 
 {STATS}
 
-Frequency Distribution:
+Frequency Distribution (CSV):
 
 {FREQUENCY}
 
@@ -172,11 +183,9 @@ polars_sql_guidance = """
 - Use the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary data to generate the SQL query
 - Use {INPUT_TABLE_NAME} as the placeholder for the table name to query
 - Column names with embedded spaces and special characters are case-sensitive and should be enclosed in double quotes
-- Do not use window expressions in aggregations
-- Do not use the following SQL functions which are not supported by Polars SQL: `age`, `current_date`, `current_timestamp`,
-  `date_bin`, `date_trunc`, `isfinite`, justify_days`, `justify_hours`, `justify_minutes`, `localtime`, `localtimestamp`,
-  `make_interval`, `make_time`, `make_timestamp`, `make_timestamptz`, `now`, `timeofday`, `to_timestamp`,
-  `regexp_match`, `regexp_replace`, `regexp_substr`, `repeat`, `substring`, `format`, `datediff`
+- Only use SQL functions that are supported by Polars SQL.
+  Refer to https://github.com/pola-rs/polars/blob/e2818b3db9be5ec6b9abcc873bc4d2ab92861861/crates/polars-sql/src/functions.rs#L37-L755
+  Note that we have the "rank" and "list_eval" polars features enabled.
 - `datepart`'s syntax is `date_part('part', date_column)` where part is one of: "year", "month", "week", "day", "hour", "minute", "second",
   "millisecond", "microsecond", "nanosecond", "epoch", "doy", "dow", "week", "timezone", "time"
 - Always cast columns to date/datetime type before doing date operations

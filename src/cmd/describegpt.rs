@@ -1721,8 +1721,8 @@ fn run_inference_options(
             args.flag_max_tokens,
             completion_response.token_usage.completion,
         );
-    } 
-    
+    }
+
     print_status("LLM inference/s completed.", Some(llm_start.elapsed()));
 
     if let Some(sql_results) = &args.flag_sql_results

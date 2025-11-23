@@ -4,8 +4,8 @@ $ QSV_LLM_BASE_URL=https://api.together.xyz/v1 QSV_LLM_APIKEY=THEKEY qsv describ
      NYC_311_SR_2010-2020-sample-1M.csv --all \
      --output nyc311-describegpt.md
 ```
----# Dictionary
-**Data Dictionary**
+---
+# Data Dictionary
 
 | Name | Type | Label | Description | Cardinality | Enumeration | Null Count | Examples |
 |------|------|-------|-------------|------------|--------------|-----------|----------|

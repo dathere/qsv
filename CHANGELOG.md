@@ -6,6 +6,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## What's Changed
+* build(deps): bump geosuggest-core from 0.8.1 to 0.8.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3087
+* build(deps): bump geosuggest-utils from 0.8.1 to 0.8.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3088
+* publish: remove target-cpu=native as it causes SIGILL on GH Action Runners by @jqnatividad in https://github.com/dathere/qsv/pull/3090
+* 3090 luau string.find reserved chars by @jqnatividad in https://github.com/dathere/qsv/pull/3092
+* feat: `search` & `searchset `add `--exact` option by @jqnatividad in https://github.com/dathere/qsv/pull/3094
+* feat: Parallel `search` by @jqnatividad in https://github.com/dathere/qsv/pull/3096
+* feat: `searchset` parallel set when indexed by @jqnatividad in https://github.com/dathere/qsv/pull/3097
+* feat: `replace` parallel when indexed by @jqnatividad in https://github.com/dathere/qsv/pull/3098
+* refactor: `pivotp` to adapt to new Polars LazyFrame pivot API by @jqnatividad in https://github.com/dathere/qsv/pull/3102
+* fix: `count` still count "schema broken" CSVs when polars feature is enabled by @jqnatividad in https://github.com/dathere/qsv/pull/3104
+* build(deps): bump governor from 0.10.1 to 0.10.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3105
+* deps: bump jsonschema to 0.35 by @jqnatividad in https://github.com/dathere/qsv/pull/3107
+* deps: bump jsonschema from 0.35 to 0.36 by @jqnatividad in https://github.com/dathere/qsv/pull/3110
+* build(deps): bump jsonschema from 0.37.0 to 0.37.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3111
+* build(deps): bump gzp from 2.0.1 to 2.0.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3114
+* feat: `sqlp` add `rank`, `row_number` and `dense_rank` SQL functions by @jqnatividad in https://github.com/dathere/qsv/pull/3115
+* build(deps): bump indexmap from 2.12.0 to 2.12.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3116
+* build(deps): bump actions/checkout from 5 to 6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3117
+* feat: `sqlp` add named window references support by @jqnatividad in https://github.com/dathere/qsv/pull/3118
+* build(deps): bump mlua from 0.11.4 to 0.11.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3119
+
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/9.1.0...10.0.0
+
 ## [9.1.0] - 2025-11-03
 
 [FAIRification](https://www.go-fair.org/fair-principles/fairification-process/) continues to be a focus, as we tweak key commands that enable us to FAIRify raw data at blazing speed:

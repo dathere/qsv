@@ -196,6 +196,7 @@ polars = { version = "0.52", features = [
     "ipc",
     "json",
     "lazy",
+    "list_eval",
     "object",
     "parquet",
     "performant",

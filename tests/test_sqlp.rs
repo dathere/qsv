@@ -3995,3 +3995,30 @@ fn sqlp_named_window_references() {
     ];
     assert_eq!(got, expected);
 }
+
+#[test]
+fn sqlp_array_to_string() {
+    let wrk = Workdir::new("sqlp_array_to_string");
+
+    wrk.create("data.csv", vec![svec!["a", "b"], 
+    svec!["first", "1"],
+    svec!["first", "1"],
+    svec!["third", "42"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv").arg(
+        r#"
+        SELECT b, ARRAY_TO_STRING("a",', ') AS a2s,
+        FROM (
+            SELECT b, ARRAY_AGG(a) AS "a"
+            FROM data
+            GROUP BY b
+        ) tbl
+        ORDER BY a2s"#
+        );
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["string"], svec!["a,b,c"]];
+    assert_eq!(got, expected);
+}

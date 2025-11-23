@@ -6,28 +6,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## What's Changed
-* build(deps): bump geosuggest-core from 0.8.1 to 0.8.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3087
-* build(deps): bump geosuggest-utils from 0.8.1 to 0.8.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3088
-* publish: remove target-cpu=native as it causes SIGILL on GH Action Runners by @jqnatividad in https://github.com/dathere/qsv/pull/3090
-* 3090 luau string.find reserved chars by @jqnatividad in https://github.com/dathere/qsv/pull/3092
-* feat: `search` & `searchset `add `--exact` option by @jqnatividad in https://github.com/dathere/qsv/pull/3094
-* feat: Parallel `search` by @jqnatividad in https://github.com/dathere/qsv/pull/3096
-* feat: `searchset` parallel set when indexed by @jqnatividad in https://github.com/dathere/qsv/pull/3097
-* feat: `replace` parallel when indexed by @jqnatividad in https://github.com/dathere/qsv/pull/3098
-* refactor: `pivotp` to adapt to new Polars LazyFrame pivot API by @jqnatividad in https://github.com/dathere/qsv/pull/3102
-* fix: `count` still count "schema broken" CSVs when polars feature is enabled by @jqnatividad in https://github.com/dathere/qsv/pull/3104
-* build(deps): bump governor from 0.10.1 to 0.10.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3105
-* deps: bump jsonschema to 0.35 by @jqnatividad in https://github.com/dathere/qsv/pull/3107
-* deps: bump jsonschema from 0.35 to 0.36 by @jqnatividad in https://github.com/dathere/qsv/pull/3110
-* build(deps): bump jsonschema from 0.37.0 to 0.37.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3111
-* build(deps): bump gzp from 2.0.1 to 2.0.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3114
-* feat: `sqlp` add `rank`, `row_number` and `dense_rank` SQL functions by @jqnatividad in https://github.com/dathere/qsv/pull/3115
-* build(deps): bump indexmap from 2.12.0 to 2.12.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3116
-* build(deps): bump actions/checkout from 5 to 6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3117
-* feat: `sqlp` add named window references support by @jqnatividad in https://github.com/dathere/qsv/pull/3118
-* build(deps): bump mlua from 0.11.4 to 0.11.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3119
+## [10.0.0] - 2025-11-23
 
+## Highlights:
+* **Enhanced Data Dictionary**: `describegpt` now features an expanded default prompt (v4.0) that generates more comprehensive data dictionaries.
+* **Parallel Search Operations**: `search`, `searchset`, and `replace` commands now support parallel execution when working with indexed CSV files, delivering significant performance improvements for large datasets.
+* **Exact Match Options**: Added `--exact` option to `search`, `searchset`, and `replace` commands for precise string matching without regex patterns.
+* **Enhanced SQL Capabilities**: `sqlp` now supports arbitrary expressions in SQL JOIN constraints, named window references, and new SQL functions including `row_number`, `rank`, `dense_rank`, and `array_to_string`.
+* **Improved `pivotp` Performance**: Updated to use Polars' new lazy pivot API with `--maintain-order` flag for predictable output ordering.
+* **Luau 0.701**: Updated embedded Luau from 0.697 to 0.701 with additional pattern matching documentation and tests.
+
+### Added
+* `search` & `searchset`: add `--exact` option for literal string matching https://github.com/dathere/qsv/pull/3094
+* `search`: parallel search when file is indexed https://github.com/dathere/qsv/pull/3096
+* `searchset`: parallel execution when indexed https://github.com/dathere/qsv/pull/3097
+* `replace`: add `--exact` option https://github.com/dathere/qsv/commit/e73d9bf
+* `replace`: parallel execution when indexed https://github.com/dathere/qsv/pull/3098
+* `sqlp`: added support for arbitrary expressions in SQL JOIN constraints https://github.com/dathere/qsv/commit/d47c44e & https://github.com/dathere/qsv/commit/0d2402b
+* `sqlp`: added support for `row_number`, `rank`, and `dense_rank` SQL window functions https://github.com/dathere/qsv/pull/3115
+* `sqlp`: added support for named window references https://github.com/dathere/qsv/pull/3118
+* `sqlp`: added support for `array_to_string` list evaluation https://github.com/dathere/qsv/commit/64cbf34
+* `pivotp`: added `--maintain-order` flag for predictable output ordering https://github.com/dathere/qsv/commit/02dca12
+* `describegpt`: default-prompt-file v4.0 with expanded Data Dictionary generation https://github.com/dathere/qsv/commit/4db0d18
+* `luau`: expanded documentation for string functions using pattern matching https://github.com/dathere/qsv/commit/a7344e3 & https://github.com/dathere/qsv/commit/2dcc9a4
+* `util::mem_file_check`: added platform adjustment factor https://github.com/dathere/qsv/commit/421be84
+* benchmarks: v7.0 added search & searchset indexed parallel benchmarks https://github.com/dathere/qsv/commit/55df784
+* benchmarks: v7.1.0 added replace_indexed_parallel benchmark https://github.com/dathere/qsv/commit/05c89d8
+
+### Changed
+* `describegpt`: refactored for improved reliability https://github.com/dathere/qsv/commit/1433bf1 & https://github.com/dathere/qsv/commit/b6190a4
+* `frequency`: special rank of 0 now assigned to `<ALL_UNIQUE>` rows https://github.com/dathere/qsv/commit/effa13b
+* `frequency`: microoptimizations https://github.com/dathere/qsv/commit/775bb88 & https://github.com/dathere/qsv/commit/29ec7af
+* `search`, `searchset` & `replace`: now parallelizable with an index, with significant performance improvements https://github.com/dathere/qsv/commit/45fc83d
+* `search`: use faster, non-allocating `par_sort_unstable_by_key` for improved performance https://github.com/dathere/qsv/commit/5f50f23
+* `search`: optimize `--quick` option https://github.com/dathere/qsv/commit/1fc1b85
+* `search`: `--preview-match` option forces sequential search https://github.com/dathere/qsv/commit/017ca6f
+* `search`, `searchset` & `replace`: sort chunks instead of raw data for better performance https://github.com/dathere/qsv/commit/5b58cb8
+* `searchset`: microoptimizations for performance https://github.com/dathere/qsv/commit/c4ce324
+* `replace`: remove unneeded index rebuild logic https://github.com/dathere/qsv/commit/cfdba60
+* `pivotp`: refactored to adapt to Polars' new lazy pivot API https://github.com/dathere/qsv/pull/3102
+* `excel`: microoptimize hot loop and formula retrieval https://github.com/dathere/qsv/commit/f141c1b & https://github.com/dathere/qsv/commit/17780b5
+* `stats`: cache repetitive expensive env_var access in hot path https://github.com/dathere/qsv/commit/a6ad0ce
+* `stats`: multiple microoptimizations https://github.com/dathere/qsv/commit/2f41c33 & https://github.com/dathere/qsv/commit/9bf43e5 & https://github.com/dathere/qsv/commit/00958a1
+* `validate`: updated to jsonschema 0.37.x with improved error handling https://github.com/dathere/qsv/commit/f45693d & https://github.com/dathere/qsv/commit/c7ad5d2 & https://github.com/dathere/qsv/commit/b9ea447
+* `luau`: updated embedded Luau from 0.697 to 0.701 https://github.com/dathere/qsv/commit/8885dce
+* deps: bump polars to latest upstream with numerous SQL and LazyFrame improvements
+* deps: bump jsonschema from 0.34 to 0.37.1
+* deps: bump syn from 2.0.109 to 2.0.110 https://github.com/dathere/qsv/commit/d207524
+* deps: bump quick-xml from 0.38.3 to 0.38.4 https://github.com/dathere/qsv/commit/11a5ae4
+* deps: bump geosuggest-core from 0.8.1 to 0.8.2 https://github.com/dathere/qsv/commit/baf3194
+* deps: bump geosuggest-utils from 0.8.1 to 0.8.2 https://github.com/dathere/qsv/commit/c5bcd1b
+* deps: bump governor from 0.10.1 to 0.10.2 https://github.com/dathere/qsv/commit/b0068ef
+* deps: bump gzp from 2.0.1 to 2.0.2 https://github.com/dathere/qsv/commit/2a0b901
+* deps: bump indexmap from 2.12.0 to 2.12.1 https://github.com/dathere/qsv/commit/afa9c1f
+* deps: bump mlua from 0.11.4 to 0.11.5 https://github.com/dathere/qsv/commit/49eedb9
+* deps: bump signal-hook-registry from 1.4.6 to 1.4.7 https://github.com/dathere/qsv/commit/5c2e705
+* deps: bump calamine to 0.32 (removed git dependency) https://github.com/dathere/qsv/commit/449f162
+* deps: bump cached to latest upstream (removed patched fork) https://github.com/dathere/qsv/commit/508d1ce
+* deps: bump actions/checkout from 5 to 6 https://github.com/dathere/qsv/commit/f76e009
+* deps: removed hashbrown patched fork https://github.com/dathere/qsv/commit/ad30460
+* deps: removed grex patched fork https://github.com/dathere/qsv/commit/88cd3fc
+* deps: updated Cargo.lock file multiple times with indirect dependency updates
+* docs: updated rust-version requirement to 1.91 https://github.com/dathere/qsv/commit/c288d4d
+* docs: prebuilt binaries on Linux and Windows x86_64 are no longer compiled with target-cpu=native https://github.com/dathere/qsv/commit/5f892a1
+* docs: expanded note about Illegal Instruction (SIGILL) faults and portable builds https://github.com/dathere/qsv/commit/e4df784
+* docs: `describegpt` update with expanded Data Dictionary example and link to defaults https://github.com/dathere/qsv/commit/d722afd & https://github.com/dathere/qsv/commit/cedcd41 & https://github.com/dathere/qsv/commit/bba4f76
+* applied select clippy lint suggestions
+* bumped several indirect dependencies
+
+### Fixed
+* `count`: should still work with "broken" CSVs when polars feature is enabled https://github.com/dathere/qsv/pull/3104
+* `describegpt`: more robust SQL escaping to prevent SQL injection https://github.com/dathere/qsv/commit/e958329
+* `excel`: formula retrieval bug on error https://github.com/dathere/qsv/commit/b894515
+* `excel`: reverted mistaken alloc optimization for trim path https://github.com/dathere/qsv/commit/b37361a
+* `index`: added check to confirm that only uncompressed CSV files can be indexed https://github.com/dathere/qsv/commit/1be485b
+* `sqlp`: unnest workaround for test compatibility https://github.com/dathere/qsv/commit/54d079b
+* `sqlp`: corrected array_to_string test https://github.com/dathere/qsv/commit/6c661ac
+* docs: fixed typo `QSV_MEMORY_HEADROOM_PCT` -> `QSV_FREEMEMORY_HEADROOM_PCT` https://github.com/dathere/qsv/commit/f15d03e
+
+### Removed
+* deps: removed polars crates (`polars-utils`, `polars-ops`) that are no longer needed https://github.com/dathere/qsv/commit/a7785f6
+* publish: removed target-cpu=native as it causes SIGILL on GitHub Action Runners https://github.com/dathere/qsv/commit/fd74f8f
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/9.1.0...10.0.0
 

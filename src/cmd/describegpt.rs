@@ -109,7 +109,7 @@ describegpt options:
                            [default: --infer-dates --everything --stats-jsonl]
     --enum-threshold <n>   The threshold for compiling enumerations with the frequency command
                            before bucketing other unique values into the "Other" category.
-                           [default: 20]
+                           [default: 10]
 
                            CUSTOM PROMPT OPTIONS:
     -p, --prompt <prompt>  Custom prompt to answer questions about the dataset.
@@ -164,7 +164,7 @@ describegpt options:
                            Set to 0 to disable token limits.
                            If the --base-url is localhost, indicating a local LLM,
                            the default is automatically set to 0.
-                           [default: 5000]
+                           [default: 10000]
     --timeout <secs>       Timeout for completions in seconds. If 0, no timeout is used.
                            [default: 300]
     --user-agent <agent>   Specify custom user agent. It supports the following variables -
@@ -1712,6 +1712,17 @@ fn run_inference_options(
         )?;
     }
 
+    // if max-tokens is set and completion token usage is greater than max-tokens, return an error
+    if args.flag_max_tokens > 0
+        && completion_response.token_usage.completion >= args.flag_max_tokens as u64
+    {
+        return fail_clierror!(
+            "Completion token usage is greater than or equal to --max-tokens ({}): {}",
+            args.flag_max_tokens,
+            completion_response.token_usage.completion,
+        );
+    } 
+    
     print_status("LLM inference/s completed.", Some(llm_start.elapsed()));
 
     if let Some(sql_results) = &args.flag_sql_results

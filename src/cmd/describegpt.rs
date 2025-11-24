@@ -106,7 +106,7 @@ describegpt options:
                            for grouping datasets and filtering.
     -A, --all              Shortcut for --dictionary --description --tags.
     --stats-options <arg>  Options for the stats command used to generate summary statistics.
-                           [default: --infer-dates --cardinality --force --stats-jsonl]
+                           [default: --infer-dates --infer-boolean --cardinality --force --stats-jsonl]
     --enum-threshold <n>   The threshold for compiling enumerations with the frequency command
                            before bucketing other unique values into the "Other" category.
                            [default: 10]

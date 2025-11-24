@@ -150,7 +150,7 @@ jobs:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         file: qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip
         asset_name: qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip
-        prerelease: true
+        prerelease: false
         make_latest: false
         overwrite: true
         tag: ${{ needs.analyze-tags.outputs.previous-tag }} 

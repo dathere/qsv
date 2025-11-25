@@ -106,8 +106,8 @@ pub fn num_cpus() -> usize {
     num_cpus::get()
 }
 
-const CARGO_BIN_NAME: &str = env!("CARGO_BIN_NAME");
-const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CARGO_BIN_NAME: &str = env!("CARGO_BIN_NAME");
+pub const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const TARGET: &str = match option_env!("TARGET") {
     Some(target) => target,

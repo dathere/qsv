@@ -140,7 +140,7 @@ Full-featured prebuilt [binary variants](#variants) of the latest qsv version fo
 <a target="_blank" href="https://qsv.dathere.com/download/windows-gnu"><img src="https://github.com/user-attachments/assets/771660f3-e898-4ee2-acb5-e5f268434752" width="200" /></a>
 </div>
 
-Prebuilt binaries for Apple Silicon, Windows for ARM, PowerPC and S390x have CPU optimizations enabled ([`target-cpu=native`](https://rust-lang.github.io/packed_simd/perf-guide/target-feature/rustflags.html#target-cpu)) for even more performance gains.
+Prebuilt binaries for Apple Silicon, Windows for ARM, [IBM Power Servers (PowerPC64 LE Linux)](https://www.ibm.com/products/power) and [IBM Z mainframes (s390x)](https://www.ibm.com/products/z) have CPU optimizations enabled ([`target-cpu=native`](https://rust-lang.github.io/packed_simd/perf-guide/target-feature/rustflags.html#target-cpu)) for even more performance gains.
 
 We do not enable CPU optimizations on prebuilt binaries on x86_64 platforms as there are too many CPU variants which often lead to Illegal Instruction (SIGILL) faults. If you still get SIGILL faults, "portable" binaries (all CPU optimizations disabled) are also included in the release zip archives (qsv with a "p for portable" suffix - e.g. `qsvp`, `qsvplite` `qsvpdp`).
 

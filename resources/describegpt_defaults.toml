@@ -1,6 +1,6 @@
 name = "qsv Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
-author = "qsv Team"
+author = "qsv team"
 version = "5.1.0"
 tokens = 10000
 base_url = "https://api.openai.com/v1"

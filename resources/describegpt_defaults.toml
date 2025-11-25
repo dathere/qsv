@@ -19,7 +19,7 @@ jsonl = false
 # {DUCKDB_VERSION} - only up to the minor version - e.g "1.3"
 # {TOP_N} - The enum threshold for the frequency command
 # {NUM_TAGS} - The maximum number of tags to infer when the --tags option is used
-# {TAG_VOCAB} - The tag vocabulary CSV file
+# {TAG_VOCAB} - The tag vocabulary text file (one tag per line with description after colon)
 
 system_prompt = """
 You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.

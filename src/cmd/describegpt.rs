@@ -104,6 +104,14 @@ describegpt options:
     --description          Infer a general Description of the dataset.
     --tags                 Infer Tags that categorize the dataset. Useful
                            for grouping datasets and filtering.
+    --num-tags <n>         The maximum number of tags to infer when the --tags option is used.
+                           [default: 10]
+    --tag-vocab <file>     The file containing the tag vocabulary to use for inferring tags.
+                           If no tag vocabulary file is provided, the model will use free-form tags.
+                           The tag vocabulary file should be a CSV file with two columns:
+                           "tag" and "description".
+                           The "tag" column should contain the lowercase tag name, using _ to separate words.
+                           The "description" column is used to guide the tag inference.
     -A, --all              Shortcut for --dictionary --description --tags.
     --stats-options <arg>  Options for the stats command used to generate summary statistics.
                            [default: --infer-dates --infer-boolean --cardinality --force --stats-jsonl]
@@ -238,6 +246,8 @@ struct Args {
     flag_dictionary:       bool,
     flag_description:      bool,
     flag_tags:             bool,
+    flag_num_tags:         u16,
+    flag_tag_vocab:        Option<String>,
     flag_all:              bool,
     flag_stats_options:    String,
     flag_enum_threshold:   usize,
@@ -871,6 +881,22 @@ fn get_prompt(
         }
     }
 
+    let tag_vocab = if let Some(tag_vocab) = args.flag_tag_vocab.as_ref() {
+        // check if the tag vocabulary file exists
+        if !fs::metadata(tag_vocab)?.is_file() {
+            return fail_incorrectusage_clierror!(
+                "Tag vocabulary file does not exist: {tag_vocab}"
+            );
+        }
+        let tag_vocab_content = fs::read_to_string(tag_vocab)?;
+        format!(
+            "Use the following Tag Vocabulary (CSV):\n\n{tag_vocab_content}\n\nOnly use tags from \
+             the Tag Vocabulary, using the `description` column to guide the tag inference."
+        )
+    } else {
+        "Do not use field names in the tags.".to_string()
+    };
+
     // Replace variable data in prompt
     #[allow(clippy::to_string_in_format_args)]
     #[allow(clippy::literal_string_with_formatting_args)]
@@ -881,6 +907,8 @@ fn get_prompt(
         .replace("{DELIMITER}", &delimiter.to_string())
         .replace("{DUCKDB_VERSION}", &duckdb_version)
         .replace("{TOP_N}", &args.flag_enum_threshold.to_string())
+        .replace("{NUM_TAGS}", &args.flag_num_tags.to_string())
+        .replace("{TAG_VOCAB}", &tag_vocab)
         .replace(
             "{DICTIONARY}",
             DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),

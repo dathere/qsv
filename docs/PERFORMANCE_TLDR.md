@@ -92,7 +92,7 @@ If you need to fine-tune performance further:
    # Adjust memory safety margin (10-90%, default 20)
    # Modern Operating Systems are very smart in dynamically allocating
    # memory so this is just a safeguard
-   export QSV_MEMORY_HEADROOM_PCT=10
+   export QSV_FREEMEMORY_HEADROOM_PCT=10
    ```
 
 For most users, the default settings will work well. These advanced options are here if you need to optimize for specific scenarios.

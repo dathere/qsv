@@ -249,6 +249,7 @@ simd-json = "0.17"
 self_update = { version = "0.42", features = [
     "archive-zip",
     "compression-zip-deflate",
+    "reqwest",
     "rustls",
     "signatures",
 ], default-features = false, optional = true }
@@ -334,8 +335,8 @@ json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-cs
 # use upstream of mimalloc with unreleased fixes
 mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "0a32a38" }
 
-# use our patched fork of self_update to bump zip 2 to 4, until our PR is merged
-self_update = { git = "https://github.com/jqnatividad/self_update", branch = "bump-deps-july2025" }
+# use upstream of self_update with unreleased fixes and dependencies
+self_update = { git = "https://github.com/jaemk/self_update", rev = "9ec008b" }
 
 # use our patched fork of sled to get rid of unmaintained instant
 sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }

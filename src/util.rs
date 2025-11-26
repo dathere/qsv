@@ -507,8 +507,11 @@ pub fn version() -> String {
     sys.refresh_cpu_all();
     let os_version = System::long_os_version().unwrap_or("Unknown".to_string());
     let kernel_version = System::kernel_long_version();
-    let cpu_brand = sys.cpus()[0].brand().trim();
-    let cpu_count = sys.cpus().len();
+    let cpu_brand = sys
+        .cpus()
+        .get(0)
+        .map(|cpu| cpu.brand().trim())
+        .unwrap_or("Unknown");
     let physical_cpu_count = System::physical_core_count().unwrap_or(0);
 
     #[cfg(feature = "mimalloc")]
@@ -535,8 +538,8 @@ pub fn version() -> String {
             format!(
                 "{qsvtype} {maj}.{min}.{pat}-{malloc_kind}-{enabled_features}{maxjobs}-{numcpus};\
                  {max_file_size}-{free_swap}-{avail_mem}-{total_mem} ({TARGET} compiled with Rust \
-                 {rustversion}; os: {os_version}-{kernel_version} cpu: \
-                 {cpu_brand}-{cpu_count}-{physical_cpu_count}) {QSV_KIND}",
+                 {rustversion};{os_version}-{kernel_version};{cpu_brand}-{physical_cpu_count}) \
+                 {QSV_KIND}",
                 maxjobs = max_jobs(),
                 numcpus = num_cpus(),
                 max_file_size = indicatif::HumanBytes(max_file_size),

@@ -70,7 +70,7 @@ use std::{
     fs::File,
     io,
     io::{BufReader, Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
     sync::OnceLock,
 };
 
@@ -148,6 +148,7 @@ fn calculate_pivot_metadata(
         flag_delimiter:       args.flag_delimiter,
         arg_input:            Some(args.arg_input.clone()),
         flag_memcheck:        false,
+        flag_output:          None,
     };
 
     #[allow(unused_variables)]
@@ -254,6 +255,7 @@ fn suggest_agg_function(
         flag_delimiter:       args.flag_delimiter,
         arg_input:            Some(args.arg_input.clone()),
         flag_memcheck:        false,
+        flag_output:          None,
     };
 
     let (csv_fields, csv_stats, dataset_stats) = STATS_RECORDS.get_or_init(|| {
@@ -568,7 +570,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // check if the pschema.json file exists and is newer or created at the same time
     // as the table file
     let input_path = Path::new(&args.arg_input);
-    let schema_file = input_path.canonicalize()?.with_extension("pschema.json");
+    let schema_file = PathBuf::from(format!(
+        "{}.pschema.json",
+        input_path.canonicalize()?.display()
+    ));
     let valid_schema_exists = schema_file.exists()
         && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?;
 

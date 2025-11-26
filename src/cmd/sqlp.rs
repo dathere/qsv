@@ -683,9 +683,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // if there is only one input file, check if the pschema.json file exists and is newer or
     // created at the same time as the table file, if so, we can enable the cache schema flag
     if args.arg_input.len() == 1 {
-        let schema_file = args.arg_input[0]
-            .canonicalize()?
-            .with_extension("pschema.json");
+        let schema_file = PathBuf::from(format!(
+            "{}.pschema.json",
+            args.arg_input[0].canonicalize()?.display()
+        ));
         if schema_file.exists()
             && schema_file.metadata()?.modified()? >= args.arg_input[0].metadata()?.modified()?
         {
@@ -737,7 +738,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // we build the lazyframe, accounting for the --cache-schema flag
             let mut create_schema = cache_schemas;
 
-            let schema_file = table.canonicalize()?.with_extension("pschema.json");
+            let schema_file =
+                PathBuf::from(format!("{}.pschema.json", table.canonicalize()?.display()));
 
             // check if the pschema.json file exists and is newer or created at the same time
             // as the table file
@@ -878,7 +880,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 let schema = lf.collect_schema()?;
                 let schema_json = simd_json::to_string_pretty(&schema)?;
 
-                let schema_file = table.canonicalize()?.with_extension("pschema.json");
+                let schema_file =
+                    PathBuf::from(format!("{}.pschema.json", table.canonicalize()?.display()));
                 let mut file = BufWriter::new(File::create(&schema_file)?);
                 file.write_all(schema_json.as_bytes())?;
                 file.flush()?;

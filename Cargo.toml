@@ -134,6 +134,7 @@ geozero = { version = "0.14.0", features = [
 governor = { version = "0.10", optional = true }
 grex = { version = "1.4", default-features = false }
 gzp = { version = "2", default-features = false, features = ["snappy_default"] }
+hostname-validator = "1.1"
 human-panic = "2"
 iana-time-zone = "0.1"
 indexmap = "2.12"

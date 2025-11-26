@@ -911,6 +911,7 @@ impl Args {
                 flag_enum_threshold:  0,
                 flag_ignore_case:     false,
                 flag_strict_dates:    false,
+                flag_strict_formats:  false,
                 flag_pattern_columns: crate::select::SelectColumns::parse("").unwrap(),
                 flag_dates_whitelist: String::new(),
                 flag_prefer_dmy:      false,

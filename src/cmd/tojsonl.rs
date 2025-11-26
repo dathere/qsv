@@ -140,6 +140,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // with a case-insensitive cardinality of 2
         flag_ignore_case:     true,
         flag_strict_dates:    false,
+        flag_strict_formats:  false,
         flag_pattern_columns: crate::select::SelectColumns::parse("")?,
         // json doesn't have a date type, so don't infer dates
         flag_dates_whitelist: "none".to_string(),

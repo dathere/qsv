@@ -870,6 +870,7 @@ impl Args {
             flag_enum_threshold:  0,
             flag_ignore_case:     self.flag_ignore_case,
             flag_strict_dates:    false,
+            flag_strict_formats:  false,
             // we still get all the stats columns so we can use the stats cache
             flag_pattern_columns: crate::select::SelectColumns::parse("").unwrap(),
             flag_dates_whitelist: String::new(),

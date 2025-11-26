@@ -332,6 +332,7 @@ fn check_stats_cache(args: &Args) -> Result<bool, CliError> {
         flag_strict_formats:  false,
         flag_pattern_columns: SelectColumns::parse("")?,
         flag_stdout:          false,
+        flag_output:          None,
     };
 
     // Set stats config for right file using same args

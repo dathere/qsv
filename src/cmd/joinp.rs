@@ -923,6 +923,7 @@ impl Args {
                 flag_delimiter:       args.flag_delimiter,
                 arg_input:            Some(input_path.to_string_lossy().into_owned()),
                 flag_memcheck:        false,
+                flag_output:          None,
             };
 
             let (csv_fields, csv_stats, _) =
@@ -1010,7 +1011,10 @@ impl Args {
 
             // First, check if the pschema.json file exists and is newer or created at the same time
             // as the table file
-            let schema_file = input_path.canonicalize()?.with_extension("pschema.json");
+            let schema_file = PathBuf::from(format!(
+                "{}.pschema.json",
+                input_path.canonicalize()?.display()
+            ));
             let mut valid_schema_exists = schema_file.exists()
                 && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?;
 
@@ -1158,7 +1162,10 @@ impl Args {
         if create_left_schema {
             let schema = left_lf.collect_schema()?;
             let schema_json = simd_json::to_string_pretty(&schema)?;
-            let schema_file = input1_path.canonicalize()?.with_extension("pschema.json");
+            let schema_file = PathBuf::from(format!(
+                "{}.pschema.json",
+                input1_path.canonicalize()?.display()
+            ));
             let mut file = BufWriter::new(File::create(&schema_file)?);
             file.write_all(schema_json.as_bytes())?;
             file.flush()?;
@@ -1192,7 +1199,10 @@ impl Args {
         if create_right_schema {
             let schema = right_lf.collect_schema()?;
             let schema_json = simd_json::to_string_pretty(&schema)?;
-            let schema_file = input2_path.canonicalize()?.with_extension("pschema.json");
+            let schema_file = PathBuf::from(format!(
+                "{}.pschema.json",
+                input2_path.canonicalize()?.display()
+            ));
             let mut file = BufWriter::new(File::create(&schema_file)?);
             file.write_all(schema_json.as_bytes())?;
             file.flush()?;

@@ -207,8 +207,8 @@ joinp_test_cache_schema!(
             ],
         );
         assert_eq!(got, expected);
-        assert!(wrk.path("cities.pschema.json").exists());
-        let cities_schema = std::fs::read_to_string(wrk.path("cities.pschema.json")).unwrap();
+        assert!(wrk.path("cities.csv.pschema.json").exists());
+        let cities_schema = std::fs::read_to_string(wrk.path("cities.csv.pschema.json")).unwrap();
         assert_eq!(
             cities_schema,
             r#"{
@@ -218,8 +218,8 @@ joinp_test_cache_schema!(
   }
 }"#
         );
-        assert!(wrk.path("places.pschema.json").exists());
-        let places_schema = std::fs::read_to_string(wrk.path("places.pschema.json")).unwrap();
+        assert!(wrk.path("places.csv.pschema.json").exists());
+        let places_schema = std::fs::read_to_string(wrk.path("places.csv.pschema.json")).unwrap();
         assert_eq!(
             places_schema,
             r#"{
@@ -1700,8 +1700,8 @@ fn test_joinp_cache_schema() {
     wrk.assert_success(&mut cmd);
 
     // Verify schema files were created
-    assert!(wrk.path("left.pschema.json").exists());
-    assert!(wrk.path("right.pschema.json").exists());
+    assert!(wrk.path("left.csv.pschema.json").exists());
+    assert!(wrk.path("right.csv.pschema.json").exists());
 
     // Test 3: Use string schema for all columns
     let mut cmd = wrk.command("joinp");

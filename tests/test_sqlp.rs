@@ -1068,8 +1068,9 @@ select ward,count(*) as cnt from temp_table2 group by ward order by cnt desc, wa
 {"ward":"Ward 6","cnt":1}"#;
 
     assert_eq!(got, expected);
-    assert!(wrk.path("boston311-100.pschema.json").exists());
-    let boston311_schema = std::fs::read_to_string(wrk.path("boston311-100.pschema.json")).unwrap();
+    assert!(wrk.path("boston311-100.csv.pschema.json").exists());
+    let boston311_schema =
+        std::fs::read_to_string(wrk.path("boston311-100.csv.pschema.json")).unwrap();
     assert_eq!(
         boston311_schema,
         r#"{
@@ -1119,7 +1120,7 @@ fn sqlp_boston311_sql_cache_schema_decimal_override() {
     );
 
     wrk.create_from_string(
-        "boston311-100.pschema.json",
+        "boston311-100.csv.pschema.json",
         r#"{
         "fields": {
           "case_enquiry_id": "Int64",
@@ -1156,7 +1157,7 @@ fn sqlp_boston311_sql_cache_schema_decimal_override() {
     );
 
     assert!(wrk.path("boston311-100.csv").exists());
-    assert!(wrk.path("boston311-100.pschema.json").exists());
+    assert!(wrk.path("boston311-100.csv.pschema.json").exists());
 
     let mut cmd = wrk.command("sqlp");
     cmd.arg(&test_file)

@@ -91,11 +91,15 @@ Schema options:
     -j, --jobs <arg>           The number of jobs to run in parallel.
                                When not set, the number of jobs is set to the
                                number of CPUs detected.
+    -o, --output <file>        Write output to <file> instead of using the default
+                               filename. For JSON Schema, the default is
+                               <input>.schema.json. For Polars schema, the default
+                               is <input>.pschema.json.
 
     --polars                   Infer a Polars schema instead of a JSON Schema.
                                This option is only available if the `polars` feature is enabled.
                                The generated Polars schema will be written to a file with the
-                               `.pschema.json` suffix appended to the input file stem.
+                               `.pschema.json` suffix appended to the input filename.
 
 Common options:
     -h, --help                 Display this message
@@ -109,7 +113,12 @@ Common options:
                                CSV into memory using CONSERVATIVE heuristics.
 "#;
 
-use std::{fs::File, io::Write, path::Path, str::FromStr};
+use std::{
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use csv::ByteRecord;
 use foldhash::{HashMap, HashMapExt, HashSet};
@@ -138,7 +147,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_polars {
         if let Some(input) = args.arg_input {
             let input_path = Path::new(&input);
-            let schema_file = input_path.with_extension("pschema.json");
+            let schema_file = if let Some(output) = args.flag_output {
+                PathBuf::from(output)
+            } else {
+                PathBuf::from(format!("{}.pschema.json", input_path.display()))
+            };
             if util::infer_polars_schema(
                 args.flag_delimiter,
                 log::log_enabled!(log::Level::Debug),
@@ -256,7 +269,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         info!("Schema written to stdout");
     } else {
-        let schema_output_filename = input_path + ".schema.json";
+        let schema_output_filename = if let Some(output) = args.flag_output {
+            output
+        } else {
+            input_path + ".schema.json"
+        };
         let mut schema_output_file = File::create(&schema_output_filename)?;
 
         schema_output_file.write_all(schema_pretty.as_bytes())?;
@@ -367,20 +384,15 @@ pub fn infer_schema_from_stats(
                 }
 
                 // Format inference for email, hostname, and IP addresses
-                if args.flag_strict_formats {
-                    if let Some(values) = unique_values_map.get(&header_string) {
-                        if let Some(format_str) = infer_format_from_values(values) {
-                            field_map.insert(
-                                "format".to_string(),
-                                Value::String(format_str.to_string()),
-                            );
-                            if !quiet {
-                                winfo!(
-                                    "Format constraint '{format_str}' added for field \
-                                     '{header_string}'"
-                                );
-                            }
-                        }
+                if args.flag_strict_formats
+                    && let Some(values) = unique_values_map.get(&header_string)
+                    && let Some(format_str) = infer_format_from_values(values)
+                {
+                    field_map.insert("format".to_string(), Value::String(format_str.to_string()));
+                    if !quiet {
+                        winfo!(
+                            "Format constraint '{format_str}' added for field '{header_string}'"
+                        );
                     }
                 }
 
@@ -711,7 +723,7 @@ fn infer_format_from_values(values: &[String]) -> Option<&'static str> {
     // Filter out empty strings
     let non_empty_values: Vec<&str> = values
         .iter()
-        .map(|s| s.as_str())
+        .map(std::string::String::as_str)
         .filter(|s| !s.is_empty())
         .collect();
 

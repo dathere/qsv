@@ -883,6 +883,7 @@ impl Args {
             flag_delimiter:       self.flag_delimiter,
             arg_input:            self.arg_input.clone(),
             flag_memcheck:        false,
+            flag_output:          None,
         };
         let is_json = self.flag_json || self.flag_pretty_json;
         // initialize the stats records hashmap

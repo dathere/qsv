@@ -678,7 +678,7 @@ fn slice_float_precision() {
             "value2": "Float64"
         }
     }"#;
-    wrk.create_from_string("float_data.pschema.json", schema_data);
+    wrk.create_from_string("float_data.csv.pschema.json", schema_data);
 
     // Create a parquet file using sqlp command
     let mut cmd = wrk.command("sqlp");
@@ -699,6 +699,12 @@ fn slice_float_precision() {
     // Check if the gzipped file exists
     let gzipped_file = wrk.path("float_data.csv.gz");
     assert!(gzipped_file.exists());
+    // Copy the schema file to match the gzipped filename
+    std::fs::copy(
+        wrk.path("float_data.csv.pschema.json"),
+        wrk.path("float_data.csv.gz.pschema.json"),
+    )
+    .unwrap();
 
     // Test with default precision
     let mut cmd = wrk.command("slice");
@@ -783,7 +789,7 @@ fn slice_from_json_with_pschema() {
             "active": "Boolean"
         }
     }"#;
-    wrk.create_from_string("test.pschema.json", schema_data);
+    wrk.create_from_string("test.json.pschema.json", schema_data);
 
     // Run slice command
     let mut cmd = wrk.command("slice");
@@ -818,7 +824,7 @@ fn slice_from_jsonl_with_pschema() {
             "active": "Boolean"
         }
     }"#;
-    wrk.create_from_string("test.pschema.json", schema_data);
+    wrk.create_from_string("test.jsonl.pschema.json", schema_data);
 
     // Run slice command
     let mut cmd = wrk.command("slice");
@@ -851,7 +857,7 @@ fn slice_from_csvgz_with_pschema() {
             "active": "Boolean"
         }
     }"#;
-    wrk.create_from_string("test.pschema.json", schema_data);
+    wrk.create_from_string("test.csv.pschema.json", schema_data);
 
     // Compress the CSV file with gzip
     let mut cmd = std::process::Command::new("gzip");
@@ -890,7 +896,7 @@ fn slice_from_csvzst_with_pschema() {
             "active": "Boolean"
         }
     }"#;
-    wrk.create_from_string("test.pschema.json", schema_data);
+    wrk.create_from_string("test.csv.pschema.json", schema_data);
 
     // Compress the CSV file with zstd
     let mut cmd = std::process::Command::new("zstd");
@@ -931,7 +937,7 @@ fn slice_from_csvzlib_with_pschema() {
             "active": "Boolean"
         }
     }"#;
-    wrk.create_from_string("test.pschema.json", schema_data);
+    wrk.create_from_string("test.csv.pschema.json", schema_data);
 
     // Compress the CSV file with zlib
     let mut cmd = std::process::Command::new("python3");
@@ -978,7 +984,7 @@ fn slice_from_jsonl_with_decimal_precision() {
             "value": { "Decimal": [25, 25] }
         }
     }"#;
-    wrk.create_from_string("test.pschema.json", schema_data);
+    wrk.create_from_string("test.jsonl.pschema.json", schema_data);
 
     // Run slice command
     let mut cmd = wrk.command("slice");
@@ -1026,7 +1032,7 @@ fn slice_from_tsvgz_with_decimal_precision() {
             "value": { "Decimal": [25, 25] }
         }
     }"#;
-    wrk.create_from_string("test.pschema.json", schema_data);
+    wrk.create_from_string("test.tsv.pschema.json", schema_data);
 
     // Compress the TSV file with gzip
     let mut cmd = std::process::Command::new("gzip");
@@ -1068,7 +1074,7 @@ fn slice_from_jsonl_with_decimal_precision_vs_float() {
             "value": { "Decimal": [35, 25] }
         }
     }"#;
-    wrk.create_from_string("test.pschema.json", decimal_schema);
+    wrk.create_from_string("test.jsonl.pschema.json", decimal_schema);
 
     // Run slice command with Decimal schema
     let mut cmd = wrk.command("slice");
@@ -1087,7 +1093,7 @@ fn slice_from_jsonl_with_decimal_precision_vs_float() {
             "value": "Float64"
         }
     }"#;
-    wrk.create_from_string("test.pschema.json", float_schema);
+    wrk.create_from_string("test.jsonl.pschema.json", float_schema);
 
     // Run slice command with Float64 schema
     let mut cmd = wrk.command("slice");

@@ -153,6 +153,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         flag_delimiter:       args.flag_delimiter,
         arg_input:            Some(input_filename.clone()),
         flag_memcheck:        args.flag_memcheck,
+        flag_output:          None,
     };
     // build schema for each field by their inferred type, min/max value/length, and unique values
     let properties_map: Map<String, Value> =

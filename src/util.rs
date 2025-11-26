@@ -509,9 +509,8 @@ pub fn version() -> String {
     let kernel_version = System::kernel_long_version();
     let cpu_brand = sys
         .cpus()
-        .get(0)
-        .map(|cpu| cpu.brand().trim())
-        .unwrap_or("Unknown");
+        .first()
+        .map_or("Unknown", |cpu| cpu.brand().trim());
     let physical_cpu_count = System::physical_core_count().unwrap_or(0);
 
     #[cfg(feature = "mimalloc")]

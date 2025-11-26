@@ -100,6 +100,7 @@ pub struct SchemaArgs {
     pub flag_delimiter:       Option<Delimiter>,
     pub arg_input:            Option<String>,
     pub flag_memcheck:        bool,
+    pub flag_output:          Option<String>,
 }
 
 #[inline]
@@ -506,7 +507,7 @@ pub fn version() -> String {
 
     // we also get System info to help with debugging and logging.
     sys.refresh_cpu_all();
-    let os_version = System::long_os_version().unwrap_or("Unknown".to_string());
+    let os_version = System::long_os_version().unwrap_or_else(|| "Unknown".to_string());
     let kernel_version = System::kernel_long_version();
     let cpu_brand = sys
         .cpus()
@@ -2956,14 +2957,9 @@ pub fn expand_tilde(path: impl AsRef<Path>) -> Option<PathBuf> {
 /// * `Option<Arc<Schema>>` - The loaded schema if the file exists and can be parsed, None otherwise
 #[cfg(feature = "polars")]
 fn load_schema_from_file(path: &Path) -> Result<Option<Arc<Schema>>, Box<dyn std::error::Error>> {
-    // Use only the input file prefix to create the schema file path
-    // e.g. data.tsv.gz, data.parquet, data.ssv should look for a schema file
-    // named data.pschema.json
-    let fileprefix = path
-        .file_prefix()
-        .and_then(|p| p.to_str())
-        .unwrap_or_default();
-    let schema_file = path.with_file_name(format!("{fileprefix}.pschema.json"));
+    // Append .pschema.json to the full filename (including extension)
+    // e.g. data.csv -> data.csv.pschema.json, data.tsv.gz -> data.tsv.gz.pschema.json
+    let schema_file = PathBuf::from(format!("{}.pschema.json", path.display()));
 
     if schema_file.exists() {
         // Load the schema from the pschema.json file
@@ -3169,6 +3165,7 @@ pub fn infer_polars_schema(
         flag_delimiter:       delimiter,
         arg_input:            Some(table.to_string_lossy().into_owned()),
         flag_memcheck:        false,
+        flag_output:          None,
     };
     let (csv_fields, csv_stats, _) = get_stats_records(&schema_args, StatsMode::PolarsSchema)?;
     let mut schema = polars::prelude::Schema::with_capacity(csv_stats.len());

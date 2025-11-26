@@ -352,6 +352,7 @@ fn check_stats_cache(
         flag_strict_formats:  false,
         flag_pattern_columns: SelectColumns::parse("")?,
         flag_stdout:          false,
+        flag_output:          None,
     };
 
     // Get stats records

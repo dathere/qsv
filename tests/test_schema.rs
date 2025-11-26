@@ -471,6 +471,207 @@ fn generate_schema_tsv_delimiter_detection_issue_2997() {
 
 #[test]
 #[file_serial]
+fn generate_schema_with_strict_formats_email() {
+    let wrk = Workdir::new("generate_schema_with_strict_formats_email").flexible(true);
+    wrk.clear_contents().unwrap();
+
+    let csv = "email
+user1@example.com
+user2@test.org
+admin@company.co.uk
+support@domain.net";
+
+    wrk.create_from_string("emails.csv", &csv);
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("emails.csv");
+    cmd.arg("--strict-formats");
+
+    wrk.assert_success(&mut cmd);
+
+    let output_schema_string: String = wrk.from_str(&wrk.path("emails.csv.schema.json"));
+    let output_schema_json: Value =
+        serde_json::from_str(&output_schema_string).expect("parse schema json");
+
+    jsonschema::Validator::options()
+        .build(&output_schema_json)
+        .expect("valid JSON Schema");
+
+    let properties = output_schema_json["properties"].as_object().unwrap();
+    let email_field = properties.get("email").unwrap();
+    assert_eq!(email_field["format"], "email");
+}
+
+#[test]
+#[file_serial]
+fn generate_schema_with_strict_formats_hostname() {
+    let wrk = Workdir::new("generate_schema_with_strict_formats_hostname").flexible(true);
+    wrk.clear_contents().unwrap();
+
+    let csv = "hostname
+example.com
+test.org
+subdomain.example.com
+host-name.co.uk";
+
+    wrk.create_from_string("hostnames.csv", &csv);
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("hostnames.csv");
+    cmd.arg("--strict-formats");
+
+    wrk.assert_success(&mut cmd);
+
+    let output_schema_string: String = wrk.from_str(&wrk.path("hostnames.csv.schema.json"));
+    let output_schema_json: Value =
+        serde_json::from_str(&output_schema_string).expect("parse schema json");
+
+    jsonschema::Validator::options()
+        .build(&output_schema_json)
+        .expect("valid JSON Schema");
+
+    let properties = output_schema_json["properties"].as_object().unwrap();
+    let hostname_field = properties.get("hostname").unwrap();
+    assert_eq!(hostname_field["format"], "hostname");
+}
+
+#[test]
+#[file_serial]
+fn generate_schema_with_strict_formats_ipv4() {
+    let wrk = Workdir::new("generate_schema_with_strict_formats_ipv4").flexible(true);
+    wrk.clear_contents().unwrap();
+
+    let csv = "ip_address
+192.168.1.1
+10.0.0.1
+172.16.0.1
+8.8.8.8";
+
+    wrk.create_from_string("ipv4s.csv", &csv);
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("ipv4s.csv");
+    cmd.arg("--strict-formats");
+
+    wrk.assert_success(&mut cmd);
+
+    let output_schema_string: String = wrk.from_str(&wrk.path("ipv4s.csv.schema.json"));
+    let output_schema_json: Value =
+        serde_json::from_str(&output_schema_string).expect("parse schema json");
+
+    jsonschema::Validator::options()
+        .build(&output_schema_json)
+        .expect("valid JSON Schema");
+
+    let properties = output_schema_json["properties"].as_object().unwrap();
+    let ip_field = properties.get("ip_address").unwrap();
+    assert_eq!(ip_field["format"], "ipv4");
+}
+
+#[test]
+#[file_serial]
+fn generate_schema_with_strict_formats_ipv6() {
+    let wrk = Workdir::new("generate_schema_with_strict_formats_ipv6").flexible(true);
+    wrk.clear_contents().unwrap();
+
+    let csv = "ip_address
+2001:0db8:85a3:0000:0000:8a2e:0370:7334
+2001:db8:85a3::8a2e:370:7334
+::1
+2001:db8::1";
+
+    wrk.create_from_string("ipv6s.csv", &csv);
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("ipv6s.csv");
+    cmd.arg("--strict-formats");
+
+    wrk.assert_success(&mut cmd);
+
+    let output_schema_string: String = wrk.from_str(&wrk.path("ipv6s.csv.schema.json"));
+    let output_schema_json: Value =
+        serde_json::from_str(&output_schema_string).expect("parse schema json");
+
+    jsonschema::Validator::options()
+        .build(&output_schema_json)
+        .expect("valid JSON Schema");
+
+    let properties = output_schema_json["properties"].as_object().unwrap();
+    let ip_field = properties.get("ip_address").unwrap();
+    assert_eq!(ip_field["format"], "ipv6");
+}
+
+#[test]
+#[file_serial]
+fn generate_schema_with_strict_formats_mixed_values_no_format() {
+    let wrk = Workdir::new("generate_schema_with_strict_formats_mixed").flexible(true);
+    wrk.clear_contents().unwrap();
+
+    // Mix of emails and non-emails - should not get format constraint
+    let csv = "contact
+user1@example.com
+user2@test.org
+not-an-email
+admin@company.co.uk";
+
+    wrk.create_from_string("mixed.csv", &csv);
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("mixed.csv");
+    cmd.arg("--strict-formats");
+
+    wrk.assert_success(&mut cmd);
+
+    let output_schema_string: String = wrk.from_str(&wrk.path("mixed.csv.schema.json"));
+    let output_schema_json: Value =
+        serde_json::from_str(&output_schema_string).expect("parse schema json");
+
+    jsonschema::Validator::options()
+        .build(&output_schema_json)
+        .expect("valid JSON Schema");
+
+    let properties = output_schema_json["properties"].as_object().unwrap();
+    let contact_field = properties.get("contact").unwrap();
+    // Should not have format constraint since not all values are emails
+    assert!(contact_field.get("format").is_none());
+}
+
+#[test]
+#[file_serial]
+fn generate_schema_with_strict_formats_ipv4_precedence_over_hostname() {
+    let wrk = Workdir::new("generate_schema_with_strict_formats_ipv4_precedence").flexible(true);
+    wrk.clear_contents().unwrap();
+
+    // IPv4 addresses should be detected before hostnames
+    let csv = "address
+192.168.1.1
+10.0.0.1
+172.16.0.1";
+
+    wrk.create_from_string("ipv4_precedence.csv", &csv);
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("ipv4_precedence.csv");
+    cmd.arg("--strict-formats");
+
+    wrk.assert_success(&mut cmd);
+
+    let output_schema_string: String = wrk.from_str(&wrk.path("ipv4_precedence.csv.schema.json"));
+    let output_schema_json: Value =
+        serde_json::from_str(&output_schema_string).expect("parse schema json");
+
+    jsonschema::Validator::options()
+        .build(&output_schema_json)
+        .expect("valid JSON Schema");
+
+    let properties = output_schema_json["properties"].as_object().unwrap();
+    let address_field = properties.get("address").unwrap();
+    // Should be ipv4, not hostname
+    assert_eq!(address_field["format"], "ipv4");
+}
+
+#[test]
+#[file_serial]
 #[cfg(target_arch = "s390x")]
 fn diagnose_schema_generation_s390x() {
     // This diagnostic test helps identify why validation error files aren't created on s390x

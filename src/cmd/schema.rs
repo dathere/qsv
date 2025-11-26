@@ -65,6 +65,12 @@ Schema options:
                                columns are inferred as date/datetime, they are set
                                to type "string" in the schema instead of
                                "date" or "date-time".
+    --strict-formats           Enforce JSON Schema format constraints for
+                               detected email, hostname, and IP address columns.
+                               When enabled, String fields are checked against
+                               email, hostname, IPv4, and IPv6 formats. Format
+                               constraints are only added if ALL unique values
+                               in the field match the detected format.
     --pattern-columns <args>   Select columns to derive regex pattern constraints.
                                That is, this will create a regular expression
                                that matches all values for each specified column.
@@ -103,7 +109,7 @@ Common options:
                                CSV into memory using CONSERVATIVE heuristics.
 "#;
 
-use std::{fs::File, io::Write, path::Path};
+use std::{fs::File, io::Write, path::Path, str::FromStr};
 
 use csv::ByteRecord;
 use foldhash::{HashMap, HashMapExt, HashSet};
@@ -111,6 +117,7 @@ use grex::RegExpBuilder;
 use itertools::Itertools;
 use log::{debug, info};
 use rayon::slice::ParallelSliceMut;
+use regex::Regex;
 use serde_json::{Map, Value, json, value::Number};
 use stats::Frequencies;
 
@@ -118,6 +125,7 @@ use crate::{
     CliResult,
     cmd::stats::StatsData,
     config::Config,
+    regex_oncelock,
     util::{self, StatsMode},
 };
 
@@ -356,6 +364,24 @@ pub fn infer_schema_from_stats(
                         "maxLength".to_string(),
                         Value::Number(Number::from(max_length)),
                     );
+                }
+
+                // Format inference for email, hostname, and IP addresses
+                if args.flag_strict_formats {
+                    if let Some(values) = unique_values_map.get(&header_string) {
+                        if let Some(format_str) = infer_format_from_values(values) {
+                            field_map.insert(
+                                "format".to_string(),
+                                Value::String(format_str.to_string()),
+                            );
+                            if !quiet {
+                                winfo!(
+                                    "Format constraint '{format_str}' added for field \
+                                     '{header_string}'"
+                                );
+                            }
+                        }
+                    }
                 }
 
                 // const or enum constraint
@@ -629,6 +655,91 @@ fn construct_map_of_unique_values(
     // dbg!(&unique_values_map);
 
     Ok(unique_values_map)
+}
+
+/// Check if a string is a valid email address using regex
+/// This uses a simplified email regex pattern that covers most common cases
+#[inline]
+fn is_email(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    // Email regex pattern: local-part@domain
+    // Local part: alphanumeric, dots, hyphens, underscores, plus signs
+    // Domain: alphanumeric, dots, hyphens
+    // This is a simplified pattern that covers most RFC 5322 compliant emails
+    let email_re: &'static Regex =
+        regex_oncelock!(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$");
+    email_re.is_match(value)
+}
+
+/// Check if a string is a valid hostname
+#[inline]
+fn is_hostname(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    hostname_validator::is_valid(value)
+}
+
+/// Check if a string is a valid IPv4 address
+#[inline]
+fn is_ipv4(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    std::net::Ipv4Addr::from_str(value).is_ok()
+}
+
+/// Check if a string is a valid IPv6 address
+#[inline]
+fn is_ipv6(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    std::net::Ipv6Addr::from_str(value).is_ok()
+}
+
+/// Infer format for a String field based on all unique values
+/// Returns the format string if all values match, None otherwise
+/// Checks formats in order: IPv6 → IPv4 → email → hostname (most specific first)
+fn infer_format_from_values(values: &[String]) -> Option<&'static str> {
+    if values.is_empty() {
+        return None;
+    }
+
+    // Filter out empty strings
+    let non_empty_values: Vec<&str> = values
+        .iter()
+        .map(|s| s.as_str())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if non_empty_values.is_empty() {
+        return None;
+    }
+
+    // Check IPv6 first (most specific)
+    if non_empty_values.iter().all(|v| is_ipv6(v)) {
+        return Some("ipv6");
+    }
+
+    // Check IPv4
+    if non_empty_values.iter().all(|v| is_ipv4(v)) {
+        return Some("ipv4");
+    }
+
+    // Check email
+    if non_empty_values.iter().all(|v| is_email(v)) {
+        return Some("email");
+    }
+
+    // Check hostname
+    if non_empty_values.iter().all(|v| is_hostname(v)) {
+        return Some("hostname");
+    }
+
+    None
 }
 
 /// convert byte slice to UTF8 String

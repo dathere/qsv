@@ -329,6 +329,7 @@ fn check_stats_cache(args: &Args) -> Result<bool, CliError> {
         flag_enum_threshold:  0,
         flag_ignore_case:     false,
         flag_strict_dates:    false,
+        flag_strict_formats:  false,
         flag_pattern_columns: SelectColumns::parse("")?,
         flag_stdout:          false,
     };

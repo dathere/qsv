@@ -88,6 +88,7 @@ pub struct SchemaArgs {
     pub flag_enum_threshold:  u64,
     pub flag_ignore_case:     bool,
     pub flag_strict_dates:    bool,
+    pub flag_strict_formats:  bool,
     pub flag_pattern_columns: SelectColumns,
     pub flag_dates_whitelist: String,
     pub flag_prefer_dmy:      bool,
@@ -3155,6 +3156,7 @@ pub fn infer_polars_schema(
         flag_enum_threshold:  0,
         flag_ignore_case:     false,
         flag_strict_dates:    false,
+        flag_strict_formats:  false,
         // we still get all the stats columns so we can use the stats cache
         flag_pattern_columns: crate::select::SelectColumns::parse("").unwrap(),
         flag_dates_whitelist: String::new(),

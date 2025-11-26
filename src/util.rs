@@ -503,6 +503,14 @@ pub fn version() -> String {
     let free_swap = sys.free_swap();
     let max_file_size = mem_file_check(Path::new(""), true, false).unwrap_or(0) as u64;
 
+    // we also get System info to help with debugging and logging.
+    sys.refresh_cpu_all();
+    let os_version = System::long_os_version().unwrap_or("Unknown".to_string());
+    let kernel_version = System::kernel_long_version();
+    let cpu_brand = sys.cpus()[0].brand().trim();
+    let cpu_count = sys.cpus().len();
+    let physical_cpu_count = System::physical_core_count().unwrap_or(0);
+
     #[cfg(feature = "mimalloc")]
     let malloc_kind = {
         let mimalloc_version = mimalloc::MiMalloc.version();
@@ -527,7 +535,8 @@ pub fn version() -> String {
             format!(
                 "{qsvtype} {maj}.{min}.{pat}-{malloc_kind}-{enabled_features}{maxjobs}-{numcpus};\
                  {max_file_size}-{free_swap}-{avail_mem}-{total_mem} ({TARGET} compiled with Rust \
-                 {rustversion}) {QSV_KIND}",
+                 {rustversion}; os: {os_version}-{kernel_version} cpu: \
+                 {cpu_brand}-{cpu_count}-{physical_cpu_count}) {QSV_KIND}",
                 maxjobs = max_jobs(),
                 numcpus = num_cpus(),
                 max_file_size = indicatif::HumanBytes(max_file_size),

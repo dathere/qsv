@@ -2591,3 +2591,424 @@ fn validate_json_schema_rejects_multiple_files() {
                     validation mode for multiple files.\n";
     assert_eq!(got, expected);
 }
+
+#[test]
+fn validate_with_email_format_strict() {
+    let wrk = Workdir::new("validate_with_email_format_strict").flexible(true);
+
+    // Create test data with valid and invalid email addresses
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "email"],
+            svec!["1", "John Doe", "user@example.com"], // Valid email
+            svec!["2", "Jane Smith", "admin@company.co.uk"], // Valid email
+            svec!["3", "Bob Wilson", "not-an-email"],   // Invalid email
+            svec!["4", "Alice Brown", "missing@domain"], // Invalid email
+            svec!["5", "Charlie Davis", "@nodomain.com"], // Invalid email
+        ],
+    );
+
+    // Create schema with email format constraint
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "email": { 
+                    "type": "string",
+                    "format": "email"
+                }
+            }
+        }"#,
+    );
+
+    // Run validation WITH format validation (default - strict format validation)
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check that format validation errors are present
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(validation_errors.contains("is not a \"email\""));
+
+    // Check valid records - should contain only valid emails
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["1", "John Doe", "user@example.com"],
+        svec!["2", "Jane Smith", "admin@company.co.uk"],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records - should contain invalid emails
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![
+        svec!["3", "Bob Wilson", "not-an-email"],
+        svec!["4", "Alice Brown", "missing@domain"],
+        svec!["5", "Charlie Davis", "@nodomain.com"],
+    ];
+    assert_eq!(invalid_records, expected_invalid);
+}
+
+#[test]
+fn validate_with_hostname_format_strict() {
+    let wrk = Workdir::new("validate_with_hostname_format_strict").flexible(true);
+
+    // Create test data with valid and invalid hostnames
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "hostname"],
+            svec!["1", "Server 1", "example.com"], // Valid hostname
+            svec!["2", "Server 2", "subdomain.example.com"], // Valid hostname
+            svec!["3", "Server 3", "host-name.co.uk"], // Valid hostname
+            svec!["4", "Server 4", "not a hostname"], // Invalid hostname
+            svec!["5", "Server 5", "host name with spaces"], // Invalid hostname
+            svec!["6", "Server 6", "invalid..hostname"], // Invalid hostname
+        ],
+    );
+
+    // Create schema with hostname format constraint
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "hostname": { 
+                    "type": "string",
+                    "format": "hostname"
+                }
+            }
+        }"#,
+    );
+
+    // Run validation WITH format validation (default - strict format validation)
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check that format validation errors are present
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(validation_errors.contains("is not a \"hostname\""));
+
+    // Check valid records - should contain only valid hostnames
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["1", "Server 1", "example.com"],
+        svec!["2", "Server 2", "subdomain.example.com"],
+        svec!["3", "Server 3", "host-name.co.uk"],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records - should contain invalid hostnames
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![
+        svec!["4", "Server 4", "not a hostname"],
+        svec!["5", "Server 5", "host name with spaces"],
+        svec!["6", "Server 6", "invalid..hostname"],
+    ];
+    assert_eq!(invalid_records, expected_invalid);
+}
+
+#[test]
+fn validate_with_ipv4_format_strict() {
+    let wrk = Workdir::new("validate_with_ipv4_format_strict").flexible(true);
+
+    // Create test data with valid and invalid IPv4 addresses
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "ip_address"],
+            svec!["1", "Server 1", "192.168.1.1"], // Valid IPv4
+            svec!["2", "Server 2", "10.0.0.1"],    // Valid IPv4
+            svec!["3", "Server 3", "8.8.8.8"],     // Valid IPv4
+            svec!["4", "Server 4", "999.999.999.999"], // Invalid IPv4
+            svec!["5", "Server 5", "192.168.1"],   // Invalid IPv4
+            svec!["6", "Server 6", "not.an.ip.address"], // Invalid IPv4
+        ],
+    );
+
+    // Create schema with ipv4 format constraint
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "ip_address": { 
+                    "type": "string",
+                    "format": "ipv4"
+                }
+            }
+        }"#,
+    );
+
+    // Run validation WITH format validation (default - strict format validation)
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check that format validation errors are present
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(validation_errors.contains("is not a \"ipv4\""));
+
+    // Check valid records - should contain only valid IPv4 addresses
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["1", "Server 1", "192.168.1.1"],
+        svec!["2", "Server 2", "10.0.0.1"],
+        svec!["3", "Server 3", "8.8.8.8"],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records - should contain invalid IPv4 addresses
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![
+        svec!["4", "Server 4", "999.999.999.999"],
+        svec!["5", "Server 5", "192.168.1"],
+        svec!["6", "Server 6", "not.an.ip.address"],
+    ];
+    assert_eq!(invalid_records, expected_invalid);
+}
+
+#[test]
+fn validate_with_ipv6_format_strict() {
+    let wrk = Workdir::new("validate_with_ipv6_format_strict").flexible(true);
+
+    // Create test data with valid and invalid IPv6 addresses
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "ip_address"],
+            svec!["1", "Server 1", "2001:0db8:85a3:0000:0000:8a2e:0370:7334"], // Valid IPv6
+            svec!["2", "Server 2", "2001:db8:85a3::8a2e:370:7334"],            // Valid IPv6
+            svec!["3", "Server 3", "::1"],                                     // Valid IPv6
+            svec!["4", "Server 4", "2001:db8::1"],                             // Valid IPv6
+            svec!["5", "Server 5", "not:an:ipv6:address"],                     // Invalid IPv6
+            svec!["6", "Server 6", "2001::db8::1"], // Invalid IPv6 (double colon)
+            svec!["7", "Server 7", "2001:db8:"],    // Invalid IPv6
+        ],
+    );
+
+    // Create schema with ipv6 format constraint
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "ip_address": { 
+                    "type": "string",
+                    "format": "ipv6"
+                }
+            }
+        }"#,
+    );
+
+    // Run validation WITH format validation (default - strict format validation)
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check that format validation errors are present
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(validation_errors.contains("is not a \"ipv6\""));
+
+    // Check valid records - should contain only valid IPv6 addresses
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["1", "Server 1", "2001:0db8:85a3:0000:0000:8a2e:0370:7334"],
+        svec!["2", "Server 2", "2001:db8:85a3::8a2e:370:7334"],
+        svec!["3", "Server 3", "::1"],
+        svec!["4", "Server 4", "2001:db8::1"],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records - should contain invalid IPv6 addresses
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![
+        svec!["5", "Server 5", "not:an:ipv6:address"],
+        svec!["6", "Server 6", "2001::db8::1"],
+        svec!["7", "Server 7", "2001:db8:"],
+    ];
+    assert_eq!(invalid_records, expected_invalid);
+}
+
+#[test]
+fn validate_with_multiple_formats_strict() {
+    let wrk = Workdir::new("validate_with_multiple_formats_strict").flexible(true);
+
+    // Create test data with mixed valid and invalid formats
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "email", "hostname", "ipv4_address", "ipv6_address"],
+            svec![
+                "1",
+                "user@example.com",
+                "example.com",
+                "192.168.1.1",
+                "2001:db8::1"
+            ], // All valid
+            svec![
+                "2",
+                "not-an-email",
+                "example.com",
+                "192.168.1.1",
+                "2001:db8::1"
+            ], // Invalid email
+            svec![
+                "3",
+                "user@example.com",
+                "not a hostname",
+                "192.168.1.1",
+                "2001:db8::1"
+            ], // Invalid hostname
+            svec![
+                "4",
+                "user@example.com",
+                "example.com",
+                "999.999.999.999",
+                "2001:db8::1"
+            ], // Invalid IPv4
+            svec![
+                "5",
+                "user@example.com",
+                "example.com",
+                "192.168.1.1",
+                "not:an:ipv6"
+            ], // Invalid IPv6
+            svec![
+                "6",
+                "admin@company.co.uk",
+                "subdomain.example.com",
+                "10.0.0.1",
+                "::1"
+            ], // All valid
+        ],
+    );
+
+    // Create schema with multiple format constraints (email, hostname, ipv4, ipv6)
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "email": { 
+                    "type": "string",
+                    "format": "email"
+                },
+                "hostname": { 
+                    "type": "string",
+                    "format": "hostname"
+                },
+                "ipv4_address": { 
+                    "type": "string",
+                    "format": "ipv4"
+                },
+                "ipv6_address": { 
+                    "type": "string",
+                    "format": "ipv6"
+                }
+            }
+        }"#,
+    );
+
+    // Run validation WITH format validation (default - strict format validation)
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check that format validation errors are present for each format type
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(validation_errors.contains("is not a \"email\""));
+    assert!(validation_errors.contains("is not a \"hostname\""));
+    assert!(validation_errors.contains("is not a \"ipv4\""));
+    assert!(validation_errors.contains("is not a \"ipv6\""));
+
+    // Check valid records - should contain only records with all valid formats
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec![
+            "1",
+            "user@example.com",
+            "example.com",
+            "192.168.1.1",
+            "2001:db8::1"
+        ],
+        svec![
+            "6",
+            "admin@company.co.uk",
+            "subdomain.example.com",
+            "10.0.0.1",
+            "::1"
+        ],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records - should contain records with any invalid format
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![
+        svec![
+            "2",
+            "not-an-email",
+            "example.com",
+            "192.168.1.1",
+            "2001:db8::1"
+        ],
+        svec![
+            "3",
+            "user@example.com",
+            "not a hostname",
+            "192.168.1.1",
+            "2001:db8::1"
+        ],
+        svec![
+            "4",
+            "user@example.com",
+            "example.com",
+            "999.999.999.999",
+            "2001:db8::1"
+        ],
+        svec![
+            "5",
+            "user@example.com",
+            "example.com",
+            "192.168.1.1",
+            "not:an:ipv6"
+        ],
+    ];
+    assert_eq!(invalid_records, expected_invalid);
+}

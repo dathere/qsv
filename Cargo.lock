@@ -1850,7 +1850,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.14.0"
-source = "git+https://github.com/jqnatividad/csvlens?branch=qsv-sniffer-0.12#4be138edf083c171fdc86461f60a070016f1d4c6"
+source = "git+https://github.com/jqnatividad/csvlens?branch=bump_qsv-sniffer_to_0.12#85e68e51cd06310aba6b966f6165a3d62b1e117e"
 dependencies = [
  "ansi-to-tui",
  "anyhow",

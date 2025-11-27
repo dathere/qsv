@@ -86,6 +86,7 @@ lens options:
                                    For convenience, the first character can be used as a shortcut:
                                      qsv lens -W w data.csv // wrap at word boundaries
                                    [default: disabled]
+  -A, --auto-reload                Automatically reload the data when the file changes.
 
   -P. --prompt <prompt>            Set a custom prompt in the status bar. Normally paired w/ --echo-column:
                                      qsv lens --prompt 'Select City:' --echo-column 'City'
@@ -131,6 +132,7 @@ struct Args {
     flag_prompt:         Option<String>,
     flag_echo_column:    Option<String>,
     flag_wrap_mode:      String,
+    flag_auto_reload:    bool,
     flag_debug:          bool,
 }
 
@@ -213,6 +215,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         color_columns: !monochrome,
         prompt,
         wrap_mode,
+        auto_reload: args.flag_auto_reload,
     };
 
     let out = run_csvlens_with_options(options)

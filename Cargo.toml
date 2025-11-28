@@ -281,10 +281,10 @@ zip = "6"
 
 # on macOS Apple Silicon, enable NEON CPU features
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
-blake3 = { version = "1.6", features = ["rayon", "mmap", "neon"] }
+blake3 = { version = "1.8", features = ["rayon", "mmap", "neon"] }
 # blake3 has CPU auto-detection on x86 platforms
 [target.'cfg(not(all(target_os = "macos", target_arch = "aarch64")))'.dependencies]
-blake3 = { version = "1.6", features = ["rayon", "mmap"] }
+blake3 = { version = "1.8", features = ["rayon", "mmap"] }
 
 [dev-dependencies]
 actix-governor = "0.10"

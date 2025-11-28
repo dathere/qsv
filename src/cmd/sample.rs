@@ -674,7 +674,7 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
 
     let client = util::create_reqwest_async_client(
         args.flag_user_agent.clone(),
-        util::timeout_secs(args.flag_timeout.unwrap_or(30)).unwrap_or(30) as u16,
+        util::timeout_secs(args.flag_timeout.unwrap_or(30)).map(|t| t as u16)?,
         Some(uri.to_string()),
     )?;
 
@@ -1627,8 +1627,8 @@ fn aggregate_numeric_values(values: &[f64], func: AggregationFunction) -> CliRes
 
     #[allow(clippy::cast_precision_loss)]
     match func {
-        AggregationFunction::First => Ok(values[0]),
-        AggregationFunction::Last => Ok(values[values.len() - 1]),
+        AggregationFunction::First => Ok(*values.first().unwrap_or(&0.0)),
+        AggregationFunction::Last => Ok(*values.last().unwrap_or(&0.0)),
         AggregationFunction::Mean => {
             let sum: f64 = values.iter().sum();
             Ok(sum / values.len() as f64)

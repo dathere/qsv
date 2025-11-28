@@ -1,7 +1,7 @@
 static USAGE: &str = r#"
 Randomly samples CSV data.
 
-It supports seven sampling methods:
+It supports eight sampling methods:
 - RESERVOIR: the default sampling method when NO INDEX is present and no sampling method
   is specified. Visits every CSV record exactly once, using MEMORY PROPORTIONAL to the
   sample size (k) - O(k).
@@ -62,6 +62,15 @@ It supports seven sampling methods:
   Uses MEMORY PROPORTIONAL to the number of clusters (c) - O(c).
   https://en.wikipedia.org/wiki/Cluster_sampling
 
+- TIMESERIES: the sampling method when the --timeseries option is specified.
+  Samples records based on time intervals from a time-series dataset. Groups records by
+  time windows (e.g., hourly, daily, weekly) and selects one record per interval.
+  Supports adaptive sampling (e.g., prefer business hours or weekends) and aggregation
+  (e.g., mean, sum, min, max) within each interval. The starting point can be "first"
+  (earliest), "last" (most recent), or "random". Particularly useful for time-series data
+  where simple row-based sampling would always return the same records due to sorting.
+  Uses MEMORY PROPORTIONAL to the number of records - O(n).
+
 Supports sampling from CSVs on remote URLs. Note that the entire file is downloaded first
 to a temporary file before sampling begins for all sampling methods except Bernoulli, which
 streams the file as it samples it, stopping when the desired sample size is reached or the
@@ -98,7 +107,10 @@ sample arguments:
                              population to sample. When there is no fractional part, it will
                              select every nth record for the entire population.
                            When using STRATIFIED sampling, the stratum sample size.
-                           When using CLUSTER sampling, the number of clusters.                       
+                           When using CLUSTER sampling, the number of clusters.
+                           When using TIMESERIES sampling, the interval number (treated as hours
+                             by default, e.g., 1 = 1 hour). Use --timeseries-interval for custom
+                             intervals like "1d" (daily), "1w" (weekly), etc.                       
 
 sample options:
     --seed <number>        Random Number Generator (RNG) seed.
@@ -133,6 +145,32 @@ sample options:
     --cluster <col>        Use cluster sampling. The cluster column is specified by <col>.
                            Can be either a column name or 0-based column index.
                            Uses MEMORY PROPORTIONAL to the number of clusters (c) - O(c).
+    --timeseries <col>     Use time-series sampling. The time column is specified by <col>.
+                           Can be either a column name or 0-based column index.
+                           Sorts records by the specified time column and then groups by time intervals
+                           and selects one record per interval.
+                           Supports various date formats (19 formats recognized by qsv-dateparser).
+                           Uses MEMORY PROPORTIONAL to the number of records - O(n).
+
+                          TIME-SERIES SAMPLING OPTIONS:
+    --ts-interval <itvl>  Time interval for grouping records. Format: <number><unit>
+                          where unit is h (hour), d (day), w (week), m (month), y (year).
+                          Examples: "1h", "1d", "1w", "2d" (every 2 days).
+                          If not specified, <sample-size> is treated as hours.
+    --ts-start <mode>     Starting point for time-series sampling.
+                          Options: "first" (earliest timestamp, default), "last" or "end"
+                          (most recent timestamp), "random" (random starting point).
+                          [default: first]
+    --ts-adaptive <mode>   Adaptive sampling mode for time-series data.
+                           Options: "business-hours" (prefer 9am-5pm Mon-Fri),
+                           "weekends" (prefer weekends), "business-days" (prefer weekdays),
+                           "both" (combine business-hours and weekends).
+    --ts-aggregate <func>  Aggregation function to apply within each time interval.
+                           Options: "first", "last", "mean", "sum", "count", "min", "max", "median".
+                           When specified, aggregates all records in each interval instead of selecting a single record.
+    --ts-input-tz <tz>     Timezone for parsing input timestamps. Can be an IANA timezone name or "local" for the local timezone.
+                           [default: UTC]
+    --ts-prefer-dmy        Prefer to parse dates in dmy format. Otherwise, use mdy format.
 
                            REMOTE FILE OPTIONS:
     --user-agent <agent>   Specify custom user agent to use when the input is a URL.
@@ -165,7 +203,10 @@ use std::{
     str::FromStr,
 };
 
+use chrono::{DateTime, Datelike, Duration, TimeZone, Timelike, Utc, Weekday};
+use chrono_tz::Tz;
 use futures_util::StreamExt;
+use qsv_dateparser::parse_with_preference_and_timezone;
 use rand::{
     Rng, SeedableRng,
     distr::{Bernoulli, Distribution},
@@ -189,22 +230,29 @@ use crate::{
 };
 #[derive(Deserialize)]
 struct Args {
-    arg_input:       Option<String>,
-    arg_sample_size: f64,
-    flag_output:     Option<String>,
-    flag_no_headers: bool,
-    flag_delimiter:  Option<Delimiter>,
-    flag_seed:       Option<u64>,
-    flag_rng:        String,
-    flag_user_agent: Option<String>,
-    flag_timeout:    Option<u16>,
-    flag_max_size:   Option<u64>,
-    flag_bernoulli:  bool,
-    flag_systematic: Option<String>,
-    flag_stratified: Option<String>,
-    flag_weighted:   Option<String>,
-    flag_cluster:    Option<String>,
-    flag_force:      bool,
+    arg_input:          Option<String>,
+    arg_sample_size:    f64,
+    flag_output:        Option<String>,
+    flag_no_headers:    bool,
+    flag_delimiter:     Option<Delimiter>,
+    flag_seed:          Option<u64>,
+    flag_rng:           String,
+    flag_user_agent:    Option<String>,
+    flag_timeout:       Option<u16>,
+    flag_max_size:      Option<u64>,
+    flag_bernoulli:     bool,
+    flag_systematic:    Option<String>,
+    flag_stratified:    Option<String>,
+    flag_weighted:      Option<String>,
+    flag_cluster:       Option<String>,
+    flag_timeseries:    Option<String>,
+    flag_ts_interval:   Option<String>,
+    flag_ts_start:      Option<String>,
+    flag_ts_adaptive:   Option<String>,
+    flag_ts_aggregate:  Option<String>,
+    flag_ts_input_tz:   Option<String>,
+    flag_ts_prefer_dmy: bool,
+    flag_force:         bool,
 }
 
 impl Args {
@@ -264,6 +312,17 @@ impl Args {
             },
         }
     }
+
+    fn get_timeseries_column(&self, header: &csv::ByteRecord) -> CliResult<usize> {
+        match &self.flag_timeseries {
+            Some(col) => Self::get_column_index(header, col, "timeseries"),
+            None => {
+                fail_incorrectusage_clierror!(
+                    "--timeseries <col> is required for timeseries sampling"
+                )
+            },
+        }
+    }
 }
 
 #[derive(Debug, EnumString, PartialEq)]
@@ -281,6 +340,7 @@ enum SamplingMethod {
     Stratified,
     Weighted,
     Cluster,
+    Timeseries,
     Default,
 }
 
@@ -325,6 +385,185 @@ impl RngProvider for CryptoRng {
     fn get_name() -> &'static str {
         "cryptosecure"
     }
+}
+
+// Time-series start mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TSStartMode {
+    First,
+    Last,
+    End,
+    Random,
+}
+
+impl std::str::FromStr for TSStartMode {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "first" => Ok(TSStartMode::First),
+            "last" => Ok(TSStartMode::Last),
+            "end" => Ok(TSStartMode::End),
+            "random" => Ok(TSStartMode::Random),
+            _ => Err("Time-series start mode must be 'first', 'last', 'end', or 'random'"),
+        }
+    }
+}
+
+// Time-series sampling helper functions
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum AggregationFunction {
+    First,
+    Last,
+    Mean,
+    Sum,
+    Count,
+    Min,
+    Max,
+    Median,
+}
+
+impl FromStr for AggregationFunction {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "first" => Ok(AggregationFunction::First),
+            "last" => Ok(AggregationFunction::Last),
+            "mean" => Ok(AggregationFunction::Mean),
+            "sum" => Ok(AggregationFunction::Sum),
+            "count" => Ok(AggregationFunction::Count),
+            "min" => Ok(AggregationFunction::Min),
+            "max" => Ok(AggregationFunction::Max),
+            "median" => Ok(AggregationFunction::Median),
+            _ => Err(format!(
+                "Invalid aggregation function: {s}. Supported: first, last, mean, sum, count, \
+                 min, max, median"
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum AdaptiveMode {
+    BusinessHours,
+    Weekends,
+    BusinessDays,
+    Both,
+}
+
+impl FromStr for AdaptiveMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "business-hours" | "businesshours" => Ok(AdaptiveMode::BusinessHours),
+            "weekends" => Ok(AdaptiveMode::Weekends),
+            "business-days" | "businessdays" => Ok(AdaptiveMode::BusinessDays),
+            "both" => Ok(AdaptiveMode::Both),
+            _ => Err(format!(
+                "Invalid adaptive mode: {s}. Supported: business-hours, weekends, business-days, \
+                 both"
+            )),
+        }
+    }
+}
+
+fn parse_time_interval(interval_str: &str) -> CliResult<Duration> {
+    let s = interval_str.trim().to_lowercase();
+
+    // Try to parse as number + unit (e.g., "1h", "2d", "3w")
+    if s.len() < 2 {
+        return fail_incorrectusage_clierror!(
+            "Invalid time interval format: {interval_str}. Expected format: <number><unit> (e.g., \
+             1h, 1d, 1w, 1m, 1y)"
+        );
+    }
+
+    let (num_str, unit) = s.split_at(s.len() - 1);
+    let num: i64 = num_str.parse().map_err(|_| {
+        format!(
+            "Invalid time interval number: {num_str}. Expected format: <number><unit> (e.g., 1h, \
+             1d, 1w, 1m, 1y)"
+        )
+    })?;
+
+    if num <= 0 {
+        return fail_incorrectusage_clierror!("Time interval must be positive");
+    }
+
+    let duration = match unit {
+        "h" => Duration::hours(num),
+        "d" => Duration::days(num),
+        "w" => Duration::weeks(num),
+        "m" => Duration::days(num * 30), // Approximate month as 30 days
+        "y" => Duration::days(num * 365), // Approximate year as 365 days
+        _ => {
+            return fail_incorrectusage_clierror!(
+                "Invalid time interval unit: {unit}. Supported units: h (hour), d (day), w \
+                 (week), m (month), y (year)"
+            );
+        },
+    };
+
+    Ok(duration)
+}
+
+fn parse_timestamp(
+    value: &[u8],
+    prefer_dmy: bool,
+    input_tz: Option<&str>,
+) -> CliResult<DateTime<Utc>> {
+    // Try to parse as UTF-8 string first
+
+    let Ok(value_str) = simdutf8::basic::from_utf8(value) else {
+        return fail_incorrectusage_clierror!("Time column value is not valid UTF-8");
+    };
+
+    // Try parsing as Unix timestamp first (simple integer check)
+    if let Ok(ts_val) = atoi_simd::parse::<i64>(value) {
+        // Try as seconds first
+        if let Some(dt) = Utc.timestamp_opt(ts_val, 0).single() {
+            return Ok(dt.with_timezone(&Utc));
+        }
+        // Try as milliseconds
+        if let Some(dt) = Utc.timestamp_millis_opt(ts_val).single() {
+            return Ok(dt.with_timezone(&Utc));
+        }
+    }
+
+    // Parse timezone
+    let tz: Tz = if let Some(tz_str) = input_tz {
+        if tz_str.eq_ignore_ascii_case("local") {
+            if let Ok(tz_name) = iana_time_zone::get_timezone() {
+                tz_name.parse::<Tz>().unwrap_or(chrono_tz::UTC)
+            } else {
+                chrono_tz::UTC
+            }
+        } else {
+            tz_str.parse::<Tz>().unwrap_or(chrono_tz::UTC)
+        }
+    } else {
+        chrono_tz::UTC
+    };
+
+    // Parse using qsv_dateparser
+    parse_with_preference_and_timezone(value_str, prefer_dmy, &tz)
+        .map_err(|e| format!("Failed to parse timestamp '{value_str}': {e}").into())
+}
+
+fn is_business_hours(dt: &DateTime<Utc>) -> bool {
+    let hour = dt.hour();
+    (9..17).contains(&hour)
+}
+
+fn is_weekend(dt: &DateTime<Utc>) -> bool {
+    matches!(dt.weekday(), Weekday::Sat | Weekday::Sun)
+}
+
+fn is_business_day(dt: &DateTime<Utc>) -> bool {
+    !is_weekend(dt)
 }
 
 fn check_stats_cache(
@@ -555,6 +794,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_stratified.is_some(),
         args.flag_weighted.is_some(),
         args.flag_cluster.is_some(),
+        args.flag_timeseries.is_some(),
     ];
     if methods.iter().filter(|&&x| x).count() > 1 {
         return fail_incorrectusage_clierror!("Only one sampling method can be specified");
@@ -573,13 +813,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_stratified.is_some(),
         args.flag_weighted.is_some(),
         args.flag_cluster.is_some(),
+        args.flag_timeseries.is_some(),
     ) {
-        (true, _, _, _, _) => SamplingMethod::Bernoulli,
-        (_, true, _, _, _) => SamplingMethod::Systematic,
-        (_, _, true, _, _) => SamplingMethod::Stratified,
-        (_, _, _, true, _) => SamplingMethod::Weighted,
-        (_, _, _, _, true) => SamplingMethod::Cluster,
-        (false, false, false, false, false) => SamplingMethod::Default,
+        (true, _, _, _, _, _) => SamplingMethod::Bernoulli,
+        (_, true, _, _, _, _) => SamplingMethod::Systematic,
+        (_, _, true, _, _, _) => SamplingMethod::Stratified,
+        (_, _, _, true, _, _) => SamplingMethod::Weighted,
+        (_, _, _, _, true, _) => SamplingMethod::Cluster,
+        (_, _, _, _, _, true) => SamplingMethod::Timeseries,
+        (false, false, false, false, false, false) => SamplingMethod::Default,
     };
 
     let temp_download = NamedTempFile::new()?;
@@ -736,6 +978,72 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 cluster_column,
                 cardinality,
                 args.arg_sample_size as usize,
+                args.flag_seed,
+                &rng_kind,
+            )?;
+        },
+        SamplingMethod::Timeseries => {
+            let time_column = args.get_timeseries_column(&rdr.byte_headers()?.clone())?;
+
+            // Parse interval - prefer --timeseries-interval flag, otherwise use sample_size as
+            // hours
+            let interval_str = if let Some(interval) = &args.flag_ts_interval {
+                interval.clone()
+            } else if args.arg_sample_size.fract() == 0.0 && args.arg_sample_size > 0.0 {
+                // If it's a whole number, treat as hours
+                format!("{}h", args.arg_sample_size as i64)
+            } else {
+                return fail_incorrectusage_clierror!(
+                    "Time-series sampling requires either --timeseries-interval (e.g., '1h', \
+                     '1d', '1w') or a positive whole number for <sample-size> (treated as hours)"
+                );
+            };
+
+            let start_mode = match args
+                .flag_ts_start
+                .as_deref()
+                .unwrap_or("first")
+                .parse::<TSStartMode>()
+            {
+                Ok(mode) => mode,
+                Err(msg) => return fail_incorrectusage_clierror!("{msg}"),
+            };
+
+            // Parse adaptive mode
+            let adaptive_mode = if let Some(adaptive_str) = &args.flag_ts_adaptive {
+                Some(
+                    AdaptiveMode::from_str(adaptive_str)
+                        .map_err(|e| format!("Invalid adaptive mode: {e}"))?,
+                )
+            } else {
+                None
+            };
+
+            // Parse aggregation function
+            let aggregate_func = if let Some(agg_str) = &args.flag_ts_aggregate {
+                Some(
+                    AggregationFunction::from_str(agg_str)
+                        .map_err(|e| format!("Invalid aggregation function: {e}"))?,
+                )
+            } else {
+                None
+            };
+
+            // Get timezone and prefer_dmy settings
+            let prefer_dmy = args.flag_ts_prefer_dmy || rconfig.get_dmy_preference();
+            let input_tz = args.flag_ts_input_tz.as_deref();
+
+            sample_timeseries(
+                &rconfig,
+                &mut rdr,
+                &mut wtr,
+                time_column,
+                &interval_str,
+                start_mode,
+                adaptive_mode,
+                aggregate_func,
+                prefer_dmy,
+                input_tz,
                 args.flag_seed,
                 &rng_kind,
             )?;
@@ -1284,6 +1592,253 @@ fn do_weighted_sampling<T: Rng + ?Sized>(
 
     if selected_len < sample_size {
         wwarn!("Could only sample {selected_len} records out of requested {sample_size}");
+    }
+
+    Ok(())
+}
+
+// Aggregation helper functions for time-series sampling
+fn aggregate_numeric_values(values: &[f64], func: AggregationFunction) -> CliResult<f64> {
+    if values.is_empty() {
+        return Ok(0.0);
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    match func {
+        AggregationFunction::First => Ok(values[0]),
+        AggregationFunction::Last => Ok(values[values.len() - 1]),
+        AggregationFunction::Mean => {
+            let sum: f64 = values.iter().sum();
+            Ok(sum / values.len() as f64)
+        },
+        AggregationFunction::Sum => Ok(values.iter().sum()),
+        AggregationFunction::Count => Ok(values.len() as f64),
+        AggregationFunction::Min => Ok(values.iter().copied().fold(f64::INFINITY, f64::min)),
+        AggregationFunction::Max => Ok(values.iter().copied().fold(f64::NEG_INFINITY, f64::max)),
+        AggregationFunction::Median => {
+            let mut sorted = values.to_vec();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let mid = sorted.len() / 2;
+            if sorted.len().is_multiple_of(2) {
+                Ok(f64::midpoint(sorted[mid - 1], sorted[mid]))
+            } else {
+                Ok(sorted[mid])
+            }
+        },
+    }
+}
+
+fn aggregate_records(
+    records: &[csv::ByteRecord],
+    headers: &csv::ByteRecord,
+    func: AggregationFunction,
+) -> CliResult<csv::ByteRecord> {
+    if records.is_empty() {
+        return fail_incorrectusage_clierror!("Cannot aggregate empty record set");
+    }
+
+    let mut result_fields = Vec::with_capacity(headers.len());
+
+    for col_idx in 0..headers.len() {
+        // Try to parse all values in this column as numbers
+        let mut numeric_values = Vec::new();
+        let mut all_numeric = true;
+
+        for record in records {
+            if let Some(field) = record.get(col_idx) {
+                if let Ok(num) = fast_float2::parse::<f64, &[u8]>(field) {
+                    numeric_values.push(num);
+                } else {
+                    all_numeric = false;
+                    break;
+                }
+            }
+        }
+
+        if all_numeric && !numeric_values.is_empty() {
+            // Aggregate numeric values
+            let aggregated = aggregate_numeric_values(&numeric_values, func)?;
+            result_fields.push(aggregated.to_string().into_bytes());
+        } else {
+            // For non-numeric columns, use first or last based on function
+            let value = match func {
+                AggregationFunction::First
+                | AggregationFunction::Min
+                | AggregationFunction::Mean
+                | AggregationFunction::Sum
+                | AggregationFunction::Count => records[0].get(col_idx).unwrap_or(b"").to_vec(),
+                AggregationFunction::Last
+                | AggregationFunction::Max
+                | AggregationFunction::Median => records[records.len() - 1]
+                    .get(col_idx)
+                    .unwrap_or(b"")
+                    .to_vec(),
+            };
+            result_fields.push(value);
+        }
+    }
+
+    Ok(csv::ByteRecord::from(result_fields))
+}
+
+// Time-series sampling implementation
+fn sample_timeseries<R: io::Read, W: io::Write>(
+    _rconfig: &Config,
+    rdr: &mut csv::Reader<R>,
+    wtr: &mut csv::Writer<W>,
+    time_column: usize,
+    interval_str: &str,
+    start_mode: TSStartMode,
+    adaptive_mode: Option<AdaptiveMode>,
+    aggregate_func: Option<AggregationFunction>,
+    prefer_dmy: bool,
+    input_tz: Option<&str>,
+    seed: Option<u64>,
+    rng_kind: &RngKind,
+) -> CliResult<()> {
+    let interval = parse_time_interval(interval_str)?;
+    let headers = rdr.byte_headers()?.clone();
+
+    // First pass: collect all records with their timestamps
+    let mut records_with_times: Vec<(DateTime<Utc>, csv::ByteRecord)> = Vec::new();
+
+    for record_result in rdr.byte_records() {
+        let record = record_result?;
+        if let Some(time_field) = record.get(time_column) {
+            match parse_timestamp(time_field, prefer_dmy, input_tz) {
+                Ok(dt) => {
+                    records_with_times.push((dt, record));
+                },
+                Err(e) => {
+                    log::warn!("Skipping record with invalid timestamp: {e}");
+                },
+            }
+        } else {
+            log::warn!("Skipping record with missing time column");
+        }
+    }
+
+    if records_with_times.is_empty() {
+        return fail_incorrectusage_clierror!("No valid timestamps found in time column");
+    }
+
+    // Sort by timestamp - parallel unstable sort for maximum performance
+    records_with_times.par_sort_unstable_by(|a, b| a.0.cmp(&b.0));
+
+    // Determine starting point
+    let start_time = match start_mode {
+        TSStartMode::Last | TSStartMode::End => {
+            // Start from the end (most recent)
+            records_with_times.last().unwrap().0
+        },
+        TSStartMode::Random => {
+            // Random starting point
+            let earliest = records_with_times.first().unwrap().0;
+            let latest = records_with_times.last().unwrap().0;
+            let range_secs = (latest - earliest).num_seconds();
+            if range_secs > 0 {
+                let random_offset = match rng_kind {
+                    RngKind::Standard => {
+                        let mut rng = StandardRng::create(seed);
+                        rng.random_range(0..=range_secs)
+                    },
+                    RngKind::Faster => {
+                        let mut rng = FasterRng::create(seed);
+                        rng.random_range(0..=range_secs)
+                    },
+                    RngKind::Cryptosecure => {
+                        let mut rng = CryptoRng::create(seed);
+                        rng.random_range(0..=range_secs)
+                    },
+                };
+                earliest + Duration::seconds(random_offset)
+            } else {
+                earliest
+            }
+        },
+        _ => {
+            // "first" or default: start from earliest
+            records_with_times.first().unwrap().0
+        },
+    };
+
+    // Group records by time intervals
+    let mut interval_groups: HashMap<i64, Vec<(DateTime<Utc>, csv::ByteRecord)>> = HashMap::new();
+
+    for (dt, record) in records_with_times {
+        // Calculate which interval this timestamp belongs to
+        let elapsed = dt - start_time;
+        let interval_num = if elapsed.num_seconds() >= 0 {
+            elapsed.num_seconds() / interval.num_seconds()
+        } else {
+            // Handle negative elapsed time (before start_time)
+            (elapsed.num_seconds() - interval.num_seconds() + 1) / interval.num_seconds()
+        };
+
+        // Add all records to groups (adaptive filtering happens during selection)
+        interval_groups
+            .entry(interval_num)
+            .or_default()
+            .push((dt, record));
+    }
+
+    // Sort intervals and process them
+    let mut interval_keys: Vec<i64> = interval_groups.keys().copied().collect();
+    interval_keys.sort_unstable();
+
+    for interval_key in interval_keys {
+        let group = interval_groups.get(&interval_key).unwrap();
+
+        if let Some(agg_func) = aggregate_func {
+            // Aggregate records in this interval
+            let records_only: Vec<csv::ByteRecord> = group.iter().map(|(_, r)| r.clone()).collect();
+            let aggregated = aggregate_records(&records_only, &headers, agg_func)?;
+            wtr.write_byte_record(&aggregated)?;
+        } else {
+            // Select one record per interval
+            // If adaptive mode is set, prefer records matching criteria
+            // Otherwise, select the first record in the interval
+            let selected = match adaptive_mode {
+                Some(AdaptiveMode::BusinessHours) => {
+                    // Prefer business hours records
+                    group
+                        .iter()
+                        .find(|(dt, _)| is_business_hours(dt) && is_business_day(dt))
+                        .or_else(|| group.first())
+                },
+                Some(AdaptiveMode::Weekends) => {
+                    // Prefer weekend records
+                    group
+                        .iter()
+                        .find(|(dt, _)| is_weekend(dt))
+                        .or_else(|| group.first())
+                },
+                Some(AdaptiveMode::BusinessDays) => {
+                    // Prefer business day records
+                    group
+                        .iter()
+                        .find(|(dt, _)| is_business_day(dt))
+                        .or_else(|| group.first())
+                },
+                Some(AdaptiveMode::Both) => {
+                    // Prefer business hours or weekends
+                    group
+                        .iter()
+                        .find(|(dt, _)| {
+                            (is_business_hours(dt) && is_business_day(dt)) || is_weekend(dt)
+                        })
+                        .or_else(|| group.first())
+                },
+                None => {
+                    // Default: first record in interval
+                    group.first()
+                },
+            };
+
+            if let Some((_, record)) = selected {
+                wtr.write_byte_record(record)?;
+            }
+        }
     }
 
     Ok(())

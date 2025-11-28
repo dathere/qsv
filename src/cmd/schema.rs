@@ -113,6 +113,7 @@ Common options:
                                CSV into memory using CONSERVATIVE heuristics.
 "#;
 
+#[allow(unused_imports)]
 use std::{
     fs::File,
     io::Write,

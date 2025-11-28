@@ -109,8 +109,8 @@ sample arguments:
                            When using STRATIFIED sampling, the stratum sample size.
                            When using CLUSTER sampling, the number of clusters.
                            When using TIMESERIES sampling, the interval number (treated as hours
-                             by default, e.g., 1 = 1 hour). Use --timeseries-interval for custom
-                             intervals like "1d" (daily), "1w" (weekly), etc.                       
+                             by default, e.g., 1 = 1 hour). Use --ts-interval for custom intervals
+                             like "1d" (daily), "1w" (weekly), "1m" (monthly), "1y" (yearly), etc.                       
 
 sample options:
     --seed <number>        Random Number Generator (RNG) seed.
@@ -152,15 +152,15 @@ sample options:
                            Supports various date formats (19 formats recognized by qsv-dateparser).
                            Uses MEMORY PROPORTIONAL to the number of records - O(n).
 
-                          TIME-SERIES SAMPLING OPTIONS:
-    --ts-interval <itvl>  Time interval for grouping records. Format: <number><unit>
-                          where unit is h (hour), d (day), w (week), m (month), y (year).
-                          Examples: "1h", "1d", "1w", "2d" (every 2 days).
-                          If not specified, <sample-size> is treated as hours.
-    --ts-start <mode>     Starting point for time-series sampling.
-                          Options: "first" (earliest timestamp, default), "last" or "end"
-                          (most recent timestamp), "random" (random starting point).
-                          [default: first]
+                           TIME-SERIES SAMPLING OPTIONS:
+    --ts-interval <intvl>  Time interval for grouping records. Format: <number><unit>
+                           where unit is h (hour), d (day), w (week), m (month), y (year).
+                           Examples: "1h", "1d", "1w", "2d" (every 2 days).
+                           If not specified, <sample-size> is treated as hours.
+    --ts-start <mode>      Starting point for time-series sampling.
+                           Options: "first" (earliest timestamp, default), "last" (most recent timestamp),
+                           "random" (random starting point).
+                           [default: first]
     --ts-adaptive <mode>   Adaptive sampling mode for time-series data.
                            Options: "business-hours" (prefer 9am-5pm Mon-Fri),
                            "weekends" (prefer weekends), "business-days" (prefer weekdays),
@@ -392,7 +392,6 @@ impl RngProvider for CryptoRng {
 enum TSStartMode {
     First,
     Last,
-    End,
     Random,
 }
 
@@ -403,9 +402,8 @@ impl std::str::FromStr for TSStartMode {
         match s.to_lowercase().as_str() {
             "first" => Ok(TSStartMode::First),
             "last" => Ok(TSStartMode::Last),
-            "end" => Ok(TSStartMode::End),
             "random" => Ok(TSStartMode::Random),
-            _ => Err("Time-series start mode must be 'first', 'last', 'end', or 'random'"),
+            _ => Err("Time-series start mode must be 'first', 'last' or 'random'"),
         }
     }
 }
@@ -529,7 +527,7 @@ fn parse_timestamp(
         }
         // Try as milliseconds
         if let Some(dt) = Utc.timestamp_millis_opt(ts_val).single() {
-            return Ok(dt.with_timezone(&Utc));
+            return Ok(dt);
         }
     }
 
@@ -985,8 +983,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         SamplingMethod::Timeseries => {
             let time_column = args.get_timeseries_column(&rdr.byte_headers()?.clone())?;
 
-            // Parse interval - prefer --timeseries-interval flag, otherwise use sample_size as
-            // hours
+            // Parse interval - prefer --ts-interval flag, otherwise use sample_size as hours
             let interval_str = if let Some(interval) = &args.flag_ts_interval {
                 interval.clone()
             } else if args.arg_sample_size.fract() == 0.0 && args.arg_sample_size > 0.0 {
@@ -994,8 +991,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 format!("{}h", args.arg_sample_size as i64)
             } else {
                 return fail_incorrectusage_clierror!(
-                    "Time-series sampling requires either --timeseries-interval (e.g., '1h', \
-                     '1d', '1w') or a positive whole number for <sample-size> (treated as hours)"
+                    "Time-series sampling requires either --ts-interval (e.g., '1h', '1d', '1w', \
+                     '1m', '1y') or a positive whole number for <sample-size> (treated as hours)"
                 );
             };
 
@@ -1652,6 +1649,10 @@ fn aggregate_records(
                     all_numeric = false;
                     break;
                 }
+            } else {
+                // missing field - treat as non-numeric
+                all_numeric = false;
+                break;
             }
         }
 
@@ -1727,12 +1728,14 @@ fn sample_timeseries<R: io::Read, W: io::Write>(
 
     // Determine starting point
     let start_time = match start_mode {
-        TSStartMode::Last | TSStartMode::End => {
-            // Start from the end (most recent)
+        TSStartMode::Last => {
+            // Start from the last (most recent)
+            // safety: we know there are records because we checked above
             records_with_times.last().unwrap().0
         },
         TSStartMode::Random => {
             // Random starting point
+            // safety: we know there are records because we checked above
             let earliest = records_with_times.first().unwrap().0;
             let latest = records_with_times.last().unwrap().0;
             let range_secs = (latest - earliest).num_seconds();
@@ -1787,6 +1790,7 @@ fn sample_timeseries<R: io::Read, W: io::Write>(
     interval_keys.sort_unstable();
 
     for interval_key in interval_keys {
+        // safety: interval_key is from interval_groups so it exists
         let group = interval_groups.get(&interval_key).unwrap();
 
         if let Some(agg_func) = aggregate_func {

@@ -1615,3 +1615,422 @@ fn sample_timeseries_invalid_interval() {
 
     wrk.assert_err(&mut cmd);
 }
+
+#[test]
+fn sample_timeseries_adaptive_business_hours() {
+    let wrk = Workdir::new("sample_timeseries_adaptive_business_hours");
+    // Create data with business hours (9am-5pm) and non-business hours
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-01T08:00:00Z", "10"], // Before business hours
+            svec!["2024-01-01T09:00:00Z", "20"], // Start of business hours (Monday)
+            svec!["2024-01-01T12:00:00Z", "30"], // During business hours
+            svec!["2024-01-01T17:00:00Z", "40"], // End of business hours
+            svec!["2024-01-01T18:00:00Z", "50"], // After business hours
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1d"])
+        .args(["--ts-adaptive", "business-hours"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should prefer business hours records (9am-5pm on weekdays)
+    assert_eq!(got.len(), 2); // Header + 1 record
+    assert_eq!(got[0], svec!["timestamp", "value"]);
+    // Should prefer a business hours record (9:00 or 12:00)
+    assert!(
+        got[1][0] == "2024-01-01T09:00:00Z"
+            || got[1][0] == "2024-01-01T12:00:00Z"
+            || got[1][0] == "2024-01-01T17:00:00Z",
+        "Expected business hours timestamp, got {}",
+        got[1][0]
+    );
+}
+
+#[test]
+fn sample_timeseries_adaptive_weekends() {
+    let wrk = Workdir::new("sample_timeseries_adaptive_weekends");
+    // Create data with weekend (Saturday) and weekday records
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-05T10:00:00Z", "10"], // Friday (weekday)
+            svec!["2024-01-06T10:00:00Z", "20"], // Saturday (weekend)
+            svec!["2024-01-07T10:00:00Z", "30"], // Sunday (weekend)
+            svec!["2024-01-08T10:00:00Z", "40"], // Monday (weekday)
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1d"])
+        .args(["--ts-adaptive", "weekends"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should prefer weekend records
+    // We have 4 days (Fri, Sat, Sun, Mon), so 4 records + header = 5 total
+    assert_eq!(got.len(), 5); // Header + 4 records (one per day)
+    assert_eq!(got[0], svec!["timestamp", "value"]);
+    // Check that weekend records are preferred when available
+    // For Saturday, should get the weekend record
+    let sat_record = got.iter().find(|r| r[0] == "2024-01-06T10:00:00Z");
+    assert!(sat_record.is_some(), "Should include Saturday record");
+    // For Sunday, should get the weekend record
+    let sun_record = got.iter().find(|r| r[0] == "2024-01-07T10:00:00Z");
+    assert!(sun_record.is_some(), "Should include Sunday record");
+}
+
+#[test]
+fn sample_timeseries_adaptive_business_days() {
+    let wrk = Workdir::new("sample_timeseries_adaptive_business_days");
+    // Create data with weekday and weekend records
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-05T10:00:00Z", "10"], // Friday (weekday)
+            svec!["2024-01-06T10:00:00Z", "20"], // Saturday (weekend)
+            svec!["2024-01-08T10:00:00Z", "30"], // Monday (weekday)
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1d"])
+        .args(["--ts-adaptive", "business-days"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should prefer weekday records
+    assert_eq!(got.len(), 4); // Header + 3 records
+    assert_eq!(got[0], svec!["timestamp", "value"]);
+    // Should prefer weekday records when available
+    let friday_record = got.iter().find(|r| r[0] == "2024-01-05T10:00:00Z");
+    assert!(friday_record.is_some(), "Should include Friday record");
+    let monday_record = got.iter().find(|r| r[0] == "2024-01-08T10:00:00Z");
+    assert!(monday_record.is_some(), "Should include Monday record");
+}
+
+#[test]
+fn sample_timeseries_aggregate_first() {
+    let wrk = Workdir::new("sample_timeseries_aggregate_first");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-01T00:00:00Z", "10"],
+            svec!["2024-01-01T00:30:00Z", "20"],
+            svec!["2024-01-01T01:00:00Z", "30"],
+            svec!["2024-01-01T01:30:00Z", "40"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1h"])
+        .args(["--ts-aggregate", "first"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 3); // Header + 2 aggregated records
+    assert_eq!(got[0], svec!["timestamp", "value"]);
+    // First hour: first value should be 10
+    assert_eq!(got[1][1], "10");
+    // Second hour: first value should be 30
+    assert_eq!(got[2][1], "30");
+}
+
+#[test]
+fn sample_timeseries_aggregate_last() {
+    let wrk = Workdir::new("sample_timeseries_aggregate_last");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-01T00:00:00Z", "10"],
+            svec!["2024-01-01T00:30:00Z", "20"],
+            svec!["2024-01-01T01:00:00Z", "30"],
+            svec!["2024-01-01T01:30:00Z", "40"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1h"])
+        .args(["--ts-aggregate", "last"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 3); // Header + 2 aggregated records
+    assert_eq!(got[0], svec!["timestamp", "value"]);
+    // First hour: last value should be 20
+    assert_eq!(got[1][1], "20");
+    // Second hour: last value should be 40
+    assert_eq!(got[2][1], "40");
+}
+
+#[test]
+fn sample_timeseries_aggregate_sum() {
+    let wrk = Workdir::new("sample_timeseries_aggregate_sum");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-01T00:00:00Z", "10"],
+            svec!["2024-01-01T00:30:00Z", "20"],
+            svec!["2024-01-01T01:00:00Z", "30"],
+            svec!["2024-01-01T01:30:00Z", "40"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1h"])
+        .args(["--ts-aggregate", "sum"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 3); // Header + 2 aggregated records
+    assert_eq!(got[0], svec!["timestamp", "value"]);
+    // First hour: sum of 10 and 20 = 30
+    let first_value: f64 = got[1][1].parse().unwrap_or(0.0);
+    assert!(
+        (first_value - 30.0).abs() < 0.01,
+        "Expected sum ~30.0, got {}",
+        first_value
+    );
+    // Second hour: sum of 30 and 40 = 70
+    let second_value: f64 = got[2][1].parse().unwrap_or(0.0);
+    assert!(
+        (second_value - 70.0).abs() < 0.01,
+        "Expected sum ~70.0, got {}",
+        second_value
+    );
+}
+
+#[test]
+fn sample_timeseries_aggregate_count() {
+    let wrk = Workdir::new("sample_timeseries_aggregate_count");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-01T00:00:00Z", "10"],
+            svec!["2024-01-01T00:30:00Z", "20"],
+            svec!["2024-01-01T01:00:00Z", "30"],
+            svec!["2024-01-01T01:30:00Z", "40"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1h"])
+        .args(["--ts-aggregate", "count"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 3); // Header + 2 aggregated records
+    assert_eq!(got[0], svec!["timestamp", "value"]);
+    // First hour: count should be 2
+    let first_count: f64 = got[1][1].parse().unwrap_or(0.0);
+    assert!(
+        (first_count - 2.0).abs() < 0.01,
+        "Expected count ~2.0, got {}",
+        first_count
+    );
+    // Second hour: count should be 2
+    let second_count: f64 = got[2][1].parse().unwrap_or(0.0);
+    assert!(
+        (second_count - 2.0).abs() < 0.01,
+        "Expected count ~2.0, got {}",
+        second_count
+    );
+}
+
+#[test]
+fn sample_timeseries_aggregate_min() {
+    let wrk = Workdir::new("sample_timeseries_aggregate_min");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-01T00:00:00Z", "10"],
+            svec!["2024-01-01T00:30:00Z", "20"],
+            svec!["2024-01-01T01:00:00Z", "30"],
+            svec!["2024-01-01T01:30:00Z", "40"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1h"])
+        .args(["--ts-aggregate", "min"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 3); // Header + 2 aggregated records
+    assert_eq!(got[0], svec!["timestamp", "value"]);
+    // First hour: min of 10 and 20 = 10
+    let first_value: f64 = got[1][1].parse().unwrap_or(0.0);
+    assert!(
+        (first_value - 10.0).abs() < 0.01,
+        "Expected min ~10.0, got {}",
+        first_value
+    );
+    // Second hour: min of 30 and 40 = 30
+    let second_value: f64 = got[2][1].parse().unwrap_or(0.0);
+    assert!(
+        (second_value - 30.0).abs() < 0.01,
+        "Expected min ~30.0, got {}",
+        second_value
+    );
+}
+
+#[test]
+fn sample_timeseries_aggregate_max() {
+    let wrk = Workdir::new("sample_timeseries_aggregate_max");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-01T00:00:00Z", "10"],
+            svec!["2024-01-01T00:30:00Z", "20"],
+            svec!["2024-01-01T01:00:00Z", "30"],
+            svec!["2024-01-01T01:30:00Z", "40"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1h"])
+        .args(["--ts-aggregate", "max"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 3); // Header + 2 aggregated records
+    assert_eq!(got[0], svec!["timestamp", "value"]);
+    // First hour: max of 10 and 20 = 20
+    let first_value: f64 = got[1][1].parse().unwrap_or(0.0);
+    assert!(
+        (first_value - 20.0).abs() < 0.01,
+        "Expected max ~20.0, got {}",
+        first_value
+    );
+    // Second hour: max of 30 and 40 = 40
+    let second_value: f64 = got[2][1].parse().unwrap_or(0.0);
+    assert!(
+        (second_value - 40.0).abs() < 0.01,
+        "Expected max ~40.0, got {}",
+        second_value
+    );
+}
+
+#[test]
+fn sample_timeseries_aggregate_median() {
+    let wrk = Workdir::new("sample_timeseries_aggregate_median");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-01T00:00:00Z", "10"],
+            svec!["2024-01-01T00:30:00Z", "20"],
+            svec!["2024-01-01T01:00:00Z", "30"],
+            svec!["2024-01-01T01:30:00Z", "40"],
+            svec!["2024-01-01T02:00:00Z", "50"], // Third hour with single value
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1h"])
+        .args(["--ts-aggregate", "median"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 4); // Header + 3 aggregated records
+    assert_eq!(got[0], svec!["timestamp", "value"]);
+    // First hour: median of 10 and 20 = 15
+    let first_value: f64 = got[1][1].parse().unwrap_or(0.0);
+    assert!(
+        (first_value - 15.0).abs() < 0.01,
+        "Expected median ~15.0, got {}",
+        first_value
+    );
+    // Second hour: median of 30 and 40 = 35
+    let second_value: f64 = got[2][1].parse().unwrap_or(0.0);
+    assert!(
+        (second_value - 35.0).abs() < 0.01,
+        "Expected median ~35.0, got {}",
+        second_value
+    );
+    // Third hour: median of single value 50 = 50
+    let third_value: f64 = got[3][1].parse().unwrap_or(0.0);
+    assert!(
+        (third_value - 50.0).abs() < 0.01,
+        "Expected median ~50.0, got {}",
+        third_value
+    );
+}
+
+#[test]
+fn sample_timeseries_adaptive_both() {
+    let wrk = Workdir::new("sample_timeseries_adaptive_both");
+    // Create data with business hours, weekends, and other times
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-06T08:00:00Z", "10"], // Saturday 8am (weekend but not business hours)
+            svec!["2024-01-06T10:00:00Z", "20"], // Saturday 10am (weekend)
+            svec!["2024-01-08T08:00:00Z", "30"], /* Monday 8am (business day but before business
+                                                  * hours) */
+            svec!["2024-01-08T10:00:00Z", "40"], // Monday 10am (business hours + business day)
+            svec!["2024-01-08T18:00:00Z", "50"], /* Monday 6pm (business day but after business
+                                                  * hours) */
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1d"])
+        .args(["--ts-adaptive", "both"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should prefer business hours on weekdays OR weekends
+    assert_eq!(got.len(), 3); // Header + 2 records (one per day)
+    assert_eq!(got[0], svec!["timestamp", "value"]);
+    // For Saturday, should prefer weekend record (both 8am and 10am are weekends, so either is
+    // valid)
+    let sat_record_8am = got.iter().find(|r| r[0] == "2024-01-06T08:00:00Z");
+    let sat_record_10am = got.iter().find(|r| r[0] == "2024-01-06T10:00:00Z");
+    assert!(
+        sat_record_8am.is_some() || sat_record_10am.is_some(),
+        "Should prefer weekend record for Saturday (8am or 10am), got: {:?}",
+        got.iter().map(|r| &r[0]).collect::<Vec<_>>()
+    );
+    // For Monday, should prefer business hours record (10:00)
+    let mon_record = got.iter().find(|r| r[0] == "2024-01-08T10:00:00Z");
+    assert!(
+        mon_record.is_some(),
+        "Should prefer business hours record for Monday"
+    );
+}

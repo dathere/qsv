@@ -1756,8 +1756,8 @@ fn sample_timeseries<R: io::Read, W: io::Write>(
                 earliest
             }
         },
-        _ => {
-            // "first" or default: start from earliest
+        TSStartMode::First => {
+            // Start from earliest
             records_with_times.first().unwrap().0
         },
     };

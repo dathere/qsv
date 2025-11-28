@@ -1433,3 +1433,185 @@ fn sample_remote_bernoulli_streaming_cryptosecure() {
         assert!(!record[1].is_empty()); // Created Date should not be empty
     }
 }
+
+#[test]
+fn sample_timeseries_basic() {
+    let wrk = Workdir::new("sample_timeseries_basic");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-01T00:00:00Z", "10"],
+            svec!["2024-01-01T01:00:00Z", "20"],
+            svec!["2024-01-01T02:00:00Z", "30"],
+            svec!["2024-01-01T03:00:00Z", "40"],
+            svec!["2024-01-01T04:00:00Z", "50"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1h"])
+        .args(["--ts-start", "first"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["timestamp", "value"],
+        svec!["2024-01-01T00:00:00Z", "10"],
+        svec!["2024-01-01T01:00:00Z", "20"],
+        svec!["2024-01-01T02:00:00Z", "30"],
+        svec!["2024-01-01T03:00:00Z", "40"],
+        svec!["2024-01-01T04:00:00Z", "50"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sample_timeseries_daily() {
+    let wrk = Workdir::new("sample_timeseries_daily");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["date", "value"],
+            svec!["2024-01-01", "10"],
+            svec!["2024-01-02", "20"],
+            svec!["2024-01-03", "30"],
+            svec!["2024-01-04", "40"],
+            svec!["2024-01-05", "50"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "date"])
+        .args(["--ts-interval", "1d"])
+        .args(["--ts-start", "first"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["date", "value"],
+        svec!["2024-01-01", "10"],
+        svec!["2024-01-02", "20"],
+        svec!["2024-01-03", "30"],
+        svec!["2024-01-04", "40"],
+        svec!["2024-01-05", "50"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sample_timeseries_start_last() {
+    let wrk = Workdir::new("sample_timeseries_start_last");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-01T00:00:00Z", "10"],
+            svec!["2024-01-01T01:00:00Z", "20"],
+            svec!["2024-01-01T02:00:00Z", "30"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1h"])
+        .args(["--ts-start", "last"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Starting from last (02:00), intervals are calculated backwards but output is still
+    // chronological The start_time affects which intervals are selected, but records are output
+    // in time order
+    let expected = vec![
+        svec!["timestamp", "value"],
+        svec!["2024-01-01T00:00:00Z", "10"],
+        svec!["2024-01-01T01:00:00Z", "20"],
+        svec!["2024-01-01T02:00:00Z", "30"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sample_timeseries_aggregate_mean() {
+    let wrk = Workdir::new("sample_timeseries_aggregate_mean");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-01T00:00:00Z", "10"],
+            svec!["2024-01-01T00:30:00Z", "20"],
+            svec!["2024-01-01T01:00:00Z", "30"],
+            svec!["2024-01-01T01:30:00Z", "40"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "1h"])
+        .args(["--ts-aggregate", "mean"])
+        .args(["--ts-start", "first"])
+        .arg("1")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 3); // Header + 2 aggregated records (one per hour)
+    assert_eq!(got[0], svec!["timestamp", "value"]);
+    // First hour: mean of 10 and 20 = 15
+    let first_value: f64 = got[1][1].parse().unwrap_or(0.0);
+    assert!(
+        (first_value - 15.0).abs() < 0.01,
+        "Expected mean ~15.0, got {}",
+        first_value
+    );
+    // Second hour: mean of 30 and 40 = 35
+    let second_value: f64 = got[2][1].parse().unwrap_or(0.0);
+    assert!(
+        (second_value - 35.0).abs() < 0.01,
+        "Expected mean ~35.0, got {}",
+        second_value
+    );
+}
+
+#[test]
+fn sample_timeseries_invalid_column() {
+    let wrk = Workdir::new("sample_timeseries_invalid_column");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-01T00:00:00Z", "10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "nonexistent"])
+        .args(["--ts-interval", "1h"])
+        .arg("1")
+        .arg("in.csv");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn sample_timeseries_invalid_interval() {
+    let wrk = Workdir::new("sample_timeseries_invalid_interval");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["timestamp", "value"],
+            svec!["2024-01-01T00:00:00Z", "10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--timeseries", "timestamp"])
+        .args(["--ts-interval", "invalid"])
+        .arg("1")
+        .arg("in.csv");
+
+    wrk.assert_err(&mut cmd);
+}

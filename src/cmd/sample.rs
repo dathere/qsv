@@ -523,7 +523,7 @@ fn parse_timestamp(
     if let Ok(ts_val) = atoi_simd::parse::<i64>(value) {
         // Try as seconds first
         if let Some(dt) = Utc.timestamp_opt(ts_val, 0).single() {
-            return Ok(dt.with_timezone(&Utc));
+            return Ok(dt);
         }
         // Try as milliseconds
         if let Some(dt) = Utc.timestamp_millis_opt(ts_val).single() {
@@ -553,7 +553,7 @@ fn parse_timestamp(
 
 fn is_business_hours(dt: &DateTime<Utc>) -> bool {
     let hour = dt.hour();
-    (9..17).contains(&hour)
+    (9..=17).contains(&hour)
 }
 
 fn is_weekend(dt: &DateTime<Utc>) -> bool {
@@ -1028,7 +1028,32 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // Get timezone and prefer_dmy settings
             let prefer_dmy = args.flag_ts_prefer_dmy || rconfig.get_dmy_preference();
-            let input_tz = args.flag_ts_input_tz.as_deref();
+            let input_tz = match args.flag_ts_input_tz.as_deref() {
+                Some(tz_str) => {
+                    if tz_str.eq_ignore_ascii_case("local") {
+                        if let Ok(tz_name) = iana_time_zone::get_timezone() {
+                            if tz_name.parse::<chrono_tz::Tz>().is_ok() {
+                                Some(tz_str)
+                            } else {
+                                wwarn!(
+                                    "Invalid local timezone from iana_time_zone, falling back to \
+                                     UTC."
+                                );
+                                None
+                            }
+                        } else {
+                            wwarn!("Could not determine local timezone, falling back to UTC.");
+                            None
+                        }
+                    } else if tz_str.parse::<chrono_tz::Tz>().is_ok() {
+                        Some(tz_str)
+                    } else {
+                        wwarn!("Invalid timezone '{tz_str}', falling back to UTC.");
+                        None
+                    }
+                },
+                None => None,
+            };
 
             sample_timeseries(
                 &rconfig,
@@ -1761,6 +1786,7 @@ fn sample_timeseries<R: io::Read, W: io::Write>(
         },
         TSStartMode::First => {
             // Start from earliest
+            // safety: we know there are records because we checked above
             records_with_times.first().unwrap().0
         },
     };

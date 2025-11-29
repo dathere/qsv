@@ -51,6 +51,12 @@ as it may contain special characters like ! and $:
   $ qsv excel --range 'Sheet2!C3:T25' input.xlsx
   $ qsv excel --range 'Sheet2!$C$3:$T$25' input.xlsx
 
+Export the cell C3 in the first sheet:
+  $ qsv excel --cell C3 input.xlsx
+
+Export a single cell from a specific sheet:
+  $ qsv excel --cell 'Sheet2!C3' input.xlsx
+
 Export metadata for all sheets in CSV format:
   $ qsv excel --metadata csv input.xlsx
   $ qsv excel --metadata c input.xlsx
@@ -127,6 +133,9 @@ Excel options:
                                extract to the CSV. If the specified range contains the required sheet,
                                the --sheet option is ignored.
                                If the range is not found, qsv will exit with an error.
+    --cell <cell>              A single cell reference - like C3 or 'Sheet1!C3' to extract.
+                               This is a convenience option equivalent to --range C3:C3.
+                               If both --cell and --range are specified, --cell takes precedence.
 
     --error-format <format>    The format to use when formatting error cells.
                                There are 3 formats:
@@ -184,6 +193,7 @@ struct Args {
     flag_error_format:   String,
     flag_table:          Option<String>,
     flag_range:          Option<String>,
+    flag_cell:           Option<String>,
     flag_flexible:       bool,
     flag_trim:           bool,
     flag_output:         Option<String>,
@@ -403,7 +413,23 @@ fn get_requested_range(
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
-    let args: Args = util::get_args(USAGE, argv)?;
+    let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // Convert --cell to --range format if --cell is specified
+    if let Some(ref cell_ref) = args.flag_cell {
+        // If both --cell and --range are specified, --cell takes precedence
+        let range_str = if cell_ref.contains('!') {
+            // Sheet-qualified cell reference: Sheet2!C3 -> Sheet2!C3:C3
+            format!(
+                "{cell_ref}:{}",
+                cell_ref.split('!').next_back().unwrap_or(cell_ref)
+            )
+        } else {
+            // Simple cell reference: C3 -> C3:C3
+            format!("{cell_ref}:{cell_ref}")
+        };
+        args.flag_range = Some(range_str);
+    }
 
     // accept spreadsheets from stdin
     let tmpdir = tempfile::tempdir()?;

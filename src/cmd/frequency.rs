@@ -21,26 +21,27 @@ Since this command computes an exact frequency distribution table, memory propor
 to the cardinality of each column would be normally required.
 
 However, this is problematic for columns with ALL unique values (e.g. an ID column),
-as the command will need to allocate memory proportional to the column's cardinality,
-potentially causing Out-of-Memory (OOM) errors for larger-than-memory datasets.
+as the command will need to allocate memory proportional to the column's cardinality.
 
-To overcome this, the frequency command uses the stats cache if it exists to get
-column cardinality information. This short-circuits frequency compilation for columns
-with all unique values (i.e. where rowcount == cardinality), eliminating the need to
-maintain an in-memory hashmap for ID columns. This allows `frequency` to handle
-larger-than-memory datasets with the added benefit of also making it faster when
-working with datasets with ID columns.
+To overcome this, the frequency command uses several mechanisms:
 
-This is also why it is HIGHLY RECOMMENDED to INDEX the CSV and run the STATS command
-first BEFORE running the frequency command.
+STATS CACHE:
+If the stats cache exists for the input file, it is used to get column cardinality information.
+This short-circuits frequency compilation for columns with all unique values (i.e. where
+rowcount == cardinality), eliminating the need to maintain an in-memory hashmap for ID columns.
+This allows `frequency` to handle larger-than-memory datasets with the added benefit of also
+making it faster when working with datasets with ID columns.
 
-When using the JSON output mode, note that boolean and date type inference are
-disabled by default. If you want to infer dates and boolean types, you can
-"prime" the stats cache by running the stats command with the `--infer-dates`
-or `--infer-boolean` options with the `--stats-jsonl` option
-(e.g. `qsv stats --infer-dates --infer-boolean --stats-jsonl <input>`).
-This will allow the frequency command to use the "primed" stats cache to inherit
-the already inferred dates and boolean types.
+MEMORY-AWARE CHUNKING:
+When working with large datasets, memory-aware chunking is automatically enabled to handle
+files larger than available memory. Chunk size is dynamically calculated based on available
+memory and record sampling.
+
+You can override this behavior by setting the QSV_FREQ_CHUNK_MEMORY_MB environment variable.
+Set to a positive number for a fixed memory limit per chunk which is distributed across
+the number of parallel jobs. When unset or set to 0, uses dynamic memory-aware chunking and
+record sampling to determine the chunk size. By default, chunk size is based on the number of
+logical CPUs detected. You can override this by setting the --jobs option.
 
 NOTE: "Complete" Frequency Tables:
 
@@ -408,8 +409,8 @@ const fn estimate_chunk_memory_for_frequency(
 ///
 /// * `idx_count` - Total number of records in the file
 /// * `njobs` - Number of parallel jobs
-/// * `max_chunk_memory_mb` - Maximum memory per chunk in MB (None = use CPU-based, Some(0) =
-///   dynamic, Some(n) = fixed limit)
+/// * `max_chunk_memory_mb` - Maximum memory per chunk in MB ( None = dynamic sizing based on
+///   available memory, Some(0) = dynamic sizing based on sampling, Some(n) = fixed limit)
 /// * `field_count` - Number of fields in the record
 /// * `sample_records` - Optional slice of sample records for dynamic sizing
 ///
@@ -423,7 +424,12 @@ fn calculate_memory_aware_chunk_size_for_frequency(
     field_count: usize,
     sample_records: Option<&[csv::ByteRecord]>,
 ) -> usize {
-    // Frequency always needs memory-aware chunking since it builds hash tables
+    // Frequency always uses memory-aware chunking since it builds hash tables.
+    // This function has three configuration paths:
+    //   - None: dynamic sizing based on sample records and estimated memory usage.
+    //   - Some(0): dynamic sizing, also based on sample records and estimated memory usage.
+    //   - Some(n): fixed memory limit per chunk.
+    // In all cases, chunk size is calculated using memory-based estimates, not CPU-based chunking.
     match max_chunk_memory_mb {
         None => {
             // No memory limit configured, use dynamic sizing
@@ -1042,31 +1048,28 @@ impl Args {
             .ok()
             .and_then(|v| atoi_simd::parse::<u64>(v.as_bytes()).ok());
 
-        // Sample records for memory estimation if needed
+        // Sample first 1000 records for memory estimation
         // Always sample when QSV_FREQ_CHUNK_MEMORY_MB is set to ANY value (including 0)
         // or when not set (to enable dynamic sizing)
         let mut sample_records: Option<Vec<csv::ByteRecord>> = None;
-        if max_chunk_memory_mb.is_some() || max_chunk_memory_mb.is_none() {
-            // Sample first 1000 records
-            // TODO: getting the first 1000 records is simple, but we should
-            // revisit this in the future for a more sophisticated sampling method.
-            let mut samples = Vec::with_capacity(1000);
-            if let Ok(mut sample_rdr) = self.rconfig().reader() {
-                let _ = sample_rdr.byte_headers(); // consume header row
-                for (i, record_result) in sample_rdr.byte_records().enumerate() {
-                    if i >= 1000 {
-                        break;
-                    }
-                    if let Ok(record) = record_result {
-                        samples.push(record);
-                    } else {
-                        break;
-                    }
+        // TODO: getting the first 1000 records is simple, but we should
+        // revisit this in the future for a more sophisticated sampling method.
+        let mut samples = Vec::with_capacity(1000);
+        if let Ok(mut sample_rdr) = self.rconfig().reader() {
+            let _ = sample_rdr.byte_headers(); // consume header row
+            for (i, record_result) in sample_rdr.byte_records().enumerate() {
+                if i >= 1000 {
+                    break;
+                }
+                if let Ok(record) = record_result {
+                    samples.push(record);
+                } else {
+                    break;
                 }
             }
-            if !samples.is_empty() {
-                sample_records = Some(samples);
-            }
+        }
+        if !samples.is_empty() {
+            sample_records = Some(samples);
         }
 
         // Calculate memory-aware chunk size
@@ -1080,33 +1083,31 @@ impl Args {
 
         // Log chunk size and memory estimates for debugging
         // Log when memory-aware chunking is active (either explicitly set or automatically enabled)
-        if max_chunk_memory_mb.is_some() || max_chunk_memory_mb.is_none() {
-            // Estimate average record size from samples if available
-            let avg_record_size = if let Some(samples) = sample_records {
-                calculate_avg_record_size_for_frequency(&samples)
-            } else {
-                1024
-            };
+        // Estimate average record size from samples if available
+        let avg_record_size = if let Some(samples) = sample_records {
+            calculate_avg_record_size_for_frequency(&samples)
+        } else {
+            1024 // Default: 1KB per record
+        };
 
-            let estimated_memory_mb =
-                estimate_chunk_memory_for_frequency(chunk_size, avg_record_size, headers.len())
-                    / (1024 * 1024);
+        let estimated_memory_mb =
+            estimate_chunk_memory_for_frequency(chunk_size, avg_record_size, headers.len())
+                / (1024 * 1024);
 
-            let chunking_mode = if let Some(limit_mb) = max_chunk_memory_mb {
-                if limit_mb == 0 {
-                    "dynamic (auto)"
-                } else {
-                    "fixed limit"
-                }
-            } else {
+        let chunking_mode = if let Some(limit_mb) = max_chunk_memory_mb {
+            if limit_mb == 0 {
                 "dynamic (auto)"
-            };
+            } else {
+                "fixed limit"
+            }
+        } else {
+            "dynamic (auto)"
+        };
 
-            log::info!(
-                "Memory-aware chunking ({chunking_mode}): chunk_size={chunk_size}, \
-                 estimated_memory_mb={estimated_memory_mb:.2}"
-            );
-        }
+        log::info!(
+            "Memory-aware chunking ({chunking_mode}): chunk_size={chunk_size}, \
+             estimated_memory_mb={estimated_memory_mb:.2}"
+        );
 
         let nchunks = util::num_of_chunks(idx_count, chunk_size);
 

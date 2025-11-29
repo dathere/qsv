@@ -61,15 +61,13 @@ https://github.com/dathere/qsv-dateparser?tab=readme-ov-file#accepted-date-forma
 
 Computing statistics on a large file can be made MUCH faster if you create an index for it
 first with 'qsv index' to enable multithreading. With an index, the file is split into chunks
-and each chunk is processed in parallel. For non-streaming statistics (median, quartiles, modes,
-cardinality), memory-aware chunking is automatically enabled to handle files larger than available
-memory. Chunk size is dynamically calculated based on available memory and record sampling.
+and each chunk is processed in parallel.
+For non-streaming statistics (median, quartiles, modes, cardinality), memory-aware chunking is
+automatically enabled, dynamically calculating chunk size based on available memory & record sampling.
+For streaming statistics, chunk size is based on the number of logical CPUs detected.
 You can override this behavior by setting the QSV_STATS_CHUNK_MEMORY_MB environment variable
-(set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk).
-When unset, uses dynamic memory-aware chunking for non-streaming statistics (median,
-quartiles, modes, cardinality) and CPU-based chunking for streaming statistics only.
-By default, chunk size is based on the number of logical CPUs detected for streaming statistics.
-You can override this by setting the --jobs option.
+(set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk),
+or by setting the --jobs option.
 
 As stats is a central command in qsv, and can be expensive to compute, `stats` caches results
 in <FILESTEM>.stats.csv & if the --stats-json option is used, <FILESTEM>.stats.csv.data.jsonl
@@ -1599,13 +1597,15 @@ impl Args {
         // Log when memory-aware chunking is active (either explicitly set or automatically enabled)
         if max_chunk_memory_mb.is_some() || needs_memory_aware_chunking {
             // Estimate average record size from samples if available
-            let avg_record_size = match sample_records {
-                Some(samples) => calculate_avg_record_size(&samples, &which_stats),
-                None => 1024,
+            let avg_record_size = if let Some(samples) = sample_records {
+                calculate_avg_record_size(&samples, &which_stats)
+            } else {
+                1024
             };
 
             let estimated_memory_mb =
-                estimate_chunk_memory(chunk_size, avg_record_size, &which_stats) / (1024 * 1024);
+                estimate_chunk_memory(chunk_size, avg_record_size, &which_stats, headers.len())
+                    / (1024 * 1024);
 
             let chunking_mode = if let Some(limit_mb) = max_chunk_memory_mb {
                 if limit_mb == 0 {
@@ -2086,7 +2086,8 @@ fn estimate_record_memory(record: &csv::ByteRecord, which_stats: &WhichStats) ->
         additional_memory += base_size; // Store all field values
     }
 
-    // Add overhead for Vec capacity (50% of base_size + additional_memory)
+    // Add overhead for Vec capacity (midpoint of base_size and additional_memory, i.e., 50% of
+    // their sum)
     let overhead = usize::midpoint(base_size, additional_memory);
 
     base_size + additional_memory + overhead
@@ -2099,6 +2100,7 @@ fn estimate_record_memory(record: &csv::ByteRecord, which_stats: &WhichStats) ->
 /// * `record_count` - Number of records in the chunk
 /// * `avg_record_size` - Average size of a record in bytes
 /// * `which_stats` - Configuration indicating which statistics are enabled
+/// * `field_count` - Number of fields in the record
 ///
 /// # Returns
 ///
@@ -2107,6 +2109,7 @@ const fn estimate_chunk_memory(
     record_count: usize,
     avg_record_size: usize,
     which_stats: &WhichStats,
+    field_count: usize,
 ) -> usize {
     // Base memory for records
     let base_memory = record_count.saturating_mul(avg_record_size);
@@ -2116,8 +2119,8 @@ const fn estimate_chunk_memory(
 
     // For unsorted_stats: 8 bytes per record per numeric/date field
     if which_stats.quartiles || which_stats.median || which_stats.mad || which_stats.percentiles {
-        // Estimate: assume average of 5 numeric/date fields per record * 8 bytes per field = 40
-        additional_memory += record_count.saturating_mul(40);
+        // Estimate: assume half the fields are numeric/date (conservative)
+        additional_memory += record_count.saturating_mul(field_count / 2 * 8);
     }
 
     // For modes: store all field values
@@ -2190,10 +2193,10 @@ fn calculate_memory_aware_chunk_size(
                 if samples.is_empty() {
                     1024 // Default: 1KB per record
                 } else {
-                    let mut total_size = 0;
-                    for record in samples {
-                        total_size += estimate_record_memory(record, which_stats);
-                    }
+                    let total_size: usize = samples
+                        .iter()
+                        .map(|record| estimate_record_memory(record, which_stats))
+                        .sum();
                     debug_assert!(total_size > 0, "total_size should be positive here");
                     total_size / samples.len() // samples.len() is guaranteed to be positive here
                 }
@@ -2224,10 +2227,10 @@ fn calculate_chunk_size(
             return util::chunk_size(idx_count as usize, njobs);
         }
 
-        let mut total_size = 0;
-        for record in samples {
-            total_size += estimate_record_memory(record, which_stats);
-        }
+        let total_size: usize = samples
+            .iter()
+            .map(|record| estimate_record_memory(record, which_stats))
+            .sum();
 
         debug_assert!(total_size > 0, "total_size should be positive here");
         // samples.len() is guaranteed to be positive here as we checked above that it is not empty

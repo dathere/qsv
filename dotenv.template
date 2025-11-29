@@ -47,8 +47,8 @@ QSV_NO_HEADERS = False
 # Controls memory-aware chunk sizing for parallel statistics processing.
 # When set to a positive number, limits the maximum memory per chunk (in MB).
 # When set to 0, dynamically estimates chunk size by sampling records.
-# When unset, uses dynamic memory-aware chunking by sampling records for non-streaming statistics,
-# and uses CPU-based chunking for streaming statistics only.
+# When unset, automatically uses dynamic memory-aware chunking for non-streaming statistics
+# (median, quartiles, modes, cardinality) and CPU-based chunking for streaming statistics.
 # This helps process arbitrarily large files by creating smaller chunks that fit in available memory.
 # QSV_STATS_CHUNK_MEMORY_MB = 0
 

@@ -21,26 +21,25 @@ Since this command computes an exact frequency distribution table, memory propor
 to the cardinality of each column would be normally required.
 
 However, this is problematic for columns with ALL unique values (e.g. an ID column),
-as the command will need to allocate memory proportional to the column's cardinality,
-potentially causing Out-of-Memory (OOM) errors for larger-than-memory datasets.
+as the command will need to allocate memory proportional to the column's cardinality.
 
-To overcome this, the frequency command uses the stats cache if it exists to get
-column cardinality information. This short-circuits frequency compilation for columns
-with all unique values (i.e. where rowcount == cardinality), eliminating the need to
-maintain an in-memory hashmap for ID columns. This allows `frequency` to handle
-larger-than-memory datasets with the added benefit of also making it faster when
-working with datasets with ID columns.
+To overcome this, the frequency command uses several mechanisms:
 
-This is also why it is HIGHLY RECOMMENDED to INDEX the CSV and run the STATS command
-first BEFORE running the frequency command.
+STATS CACHE:
+If the stats cache exists for the input file, it is used to get column cardinality information.
+This short-circuits frequency compilation for columns with all unique values (i.e. where
+rowcount == cardinality), eliminating the need to maintain an in-memory hashmap for ID columns.
+This allows `frequency` to handle larger-than-memory datasets with the added benefit of also
+making it faster when working with datasets with ID columns.
 
-When using the JSON output mode, note that boolean and date type inference are
-disabled by default. If you want to infer dates and boolean types, you can
-"prime" the stats cache by running the stats command with the `--infer-dates`
-or `--infer-boolean` options with the `--stats-jsonl` option
-(e.g. `qsv stats --infer-dates --infer-boolean --stats-jsonl <input>`).
-This will allow the frequency command to use the "primed" stats cache to inherit
-the already inferred dates and boolean types.
+MEMORY-AWARE CHUNKING:
+When working with large datasets, memory-aware chunking is automatically enabled to handle
+files larger than available memory. Chunk size is dynamically calculated based on available
+memory and record sampling.
+
+You can override this behavior by setting the QSV_FREQ_CHUNK_MEMORY_MB environment variable.
+Set to a positive number for a fixed memory limit per chunk which is distributed across
+the number of parallel jobs. When unset or set to 0, chunk size is dynamically calculated based on available memory and sampled records. You can override the number of parallel jobs used with the --jobs option.
 
 NOTE: "Complete" Frequency Tables:
 
@@ -158,21 +157,29 @@ Common options:
                            CSV into memory using CONSERVATIVE heuristics.
 "#;
 
-use std::{fs, io, str::FromStr, sync::OnceLock};
+use std::{
+    fs,
+    io::{self, Write},
+    path::Path,
+    str::FromStr,
+    sync::OnceLock,
+};
 
 use crossbeam_channel;
+use csv_index::RandomAccessSimple;
 use foldhash::{HashMap, HashMapExt};
 use indicatif::HumanCount;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use stats::{Frequencies, merge_all};
+use sysinfo::System;
 use threadpool::ThreadPool;
 
 use crate::{
     CliResult,
     cmd::stats::StatsData,
-    config::{Config, Delimiter},
+    config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
     index::Indexed,
     select::{SelectColumns, Selection},
     util::{self, ByteString, StatsMode, get_stats_records},
@@ -236,6 +243,11 @@ pub struct Args {
 
 const NON_UTF8_ERR: &str = "<Non-UTF8 ERROR>";
 const EMPTY_BYTE_VEC: Vec<u8> = Vec::new();
+
+// safety margin for memory-aware chunking
+// (uses 80% of available memory to leave headroom for system operations & other processes)
+const SAFETY_MARGIN: f64 = 0.8;
+
 static STATS_RECORDS: OnceLock<HashMap<String, StatsData>> = OnceLock::new();
 static NULL_VAL: OnceLock<Vec<u8>> = OnceLock::new();
 static UNIQUE_COLUMNS_VEC: OnceLock<Vec<usize>> = OnceLock::new();
@@ -292,6 +304,258 @@ struct ProcessedFrequency {
     rank:                 f64,
 }
 
+/// Estimates memory usage per record for frequency table computation.
+///
+/// This function calculates the approximate memory footprint of a single CSV record
+/// when computing frequency tables. The estimate includes:
+/// - Base record size (sum of field lengths)
+/// - Hashmap overhead for storing unique values in Frequencies<Vec<u8>>
+///
+/// # Arguments
+///
+/// * `record` - The CSV record to estimate memory for
+///
+/// # Returns
+///
+/// Estimated memory in bytes per record
+fn estimate_record_memory_for_frequency(record: &csv::ByteRecord) -> usize {
+    // Base memory: sum of all field lengths
+    let base_size: usize = record.iter().map(<[u8]>::len).sum();
+
+    // Hashmap overhead: Frequencies<Vec<u8>> stores unique values
+    // Each hashmap entry has overhead (~24 bytes) plus the value size
+    // We estimate based on average field size
+    let avg_field_size = if record.is_empty() {
+        0
+    } else {
+        base_size / record.len()
+    };
+
+    // Estimate hashmap overhead: ~24 bytes per entry + value size
+    // For frequency tables, we store each unique value once
+    // Conservative estimate: assume we'll store all field values
+    let hashmap_overhead = record.len() * (24 + avg_field_size);
+
+    // Add overhead for Vec capacity
+    let overhead = base_size / 4;
+
+    base_size + hashmap_overhead + overhead
+}
+
+/// Helper function to calculate average record size from samples
+fn calculate_avg_record_size_for_frequency(samples: &[csv::ByteRecord]) -> usize {
+    if samples.is_empty() {
+        1024 // Default: 1KB per record
+    } else {
+        let total_size: usize = samples
+            .iter()
+            .map(estimate_record_memory_for_frequency)
+            .sum();
+        (total_size / samples.len()).max(1024)
+    }
+}
+
+/// Estimates total memory required for processing a chunk of records for frequency tables.
+///
+/// # Arguments
+///
+/// * `record_count` - Number of records in the chunk
+/// * `avg_record_size` - Average size of a record in bytes
+/// * `field_count` - Number of fields in the record
+///
+/// # Returns
+///
+/// Estimated total memory in bytes for the chunk
+const fn estimate_chunk_memory_for_frequency(
+    record_count: usize,
+    avg_record_size: usize,
+    field_count: usize,
+) -> usize {
+    // Base memory for records
+    let base_memory = record_count.saturating_mul(avg_record_size);
+
+    // Hashmap overhead: frequency tables store unique values
+    // Estimate based on cardinality (assume 10% of records are unique per field)
+    // Each hashmap entry: ~24 bytes overhead + value size
+    let estimated_unique_per_field = if record_count / 10 > 0 {
+        record_count / 10
+    } else {
+        1
+    };
+    let field_count_divisor = if field_count > 0 { field_count } else { 1 };
+    let hashmap_overhead = estimated_unique_per_field
+        .saturating_mul(field_count)
+        .saturating_mul(avg_record_size / field_count_divisor + 24);
+
+    // Add overhead for data structures (Frequencies objects, Vec capacity, etc.)
+    // Estimate 20% overhead
+    let overhead = (base_memory + hashmap_overhead) / 5;
+
+    base_memory
+        .saturating_add(hashmap_overhead)
+        .saturating_add(overhead)
+}
+
+/// Calculates memory-aware chunk size for parallel frequency table processing.
+///
+/// This function determines an appropriate chunk size based on:
+/// - Available memory per chunk (if configured)
+/// - Dynamic estimation via sampling (if max_chunk_memory_mb is Some(0))
+/// - CPU-based chunking (fallback)
+///
+/// # Arguments
+///
+/// * `idx_count` - Total number of records in the file
+/// * `njobs` - Number of parallel jobs
+/// * `max_chunk_memory_mb` - Maximum memory per chunk in MB ( None = dynamic sizing based on
+///   available memory, Some(0) = dynamic sizing based on sampling, Some(n) = fixed limit)
+/// * `field_count` - Number of fields in the record
+/// * `sample_records` - Optional slice of sample records for dynamic sizing
+///
+/// # Returns
+///
+/// Calculated chunk size (number of records per chunk)
+fn calculate_memory_aware_chunk_size_for_frequency(
+    idx_count: u64,
+    njobs: usize,
+    max_chunk_memory_mb: Option<u64>,
+    field_count: usize,
+    sample_records: Option<&[csv::ByteRecord]>,
+) -> usize {
+    // Frequency always uses memory-aware chunking since it builds hash tables.
+    // This function has three configuration paths:
+    //   - None: dynamic sizing based on sample records and estimated memory usage.
+    //   - Some(0): dynamic sizing, also based on sample records and estimated memory usage.
+    //   - Some(n): fixed memory limit per chunk.
+    // In all cases, chunk size is calculated using memory-based estimates, not CPU-based chunking.
+    match max_chunk_memory_mb {
+        None => {
+            // No memory limit configured, use dynamic sizing
+            calculate_dynamic_chunk_size_for_frequency(
+                idx_count,
+                njobs,
+                field_count,
+                sample_records,
+            )
+        },
+        Some(0) => {
+            // Dynamic sizing: sample records to estimate average size
+            calculate_dynamic_chunk_size_for_frequency(
+                idx_count,
+                njobs,
+                field_count,
+                sample_records,
+            )
+        },
+        Some(limit_mb) => {
+            // Fixed memory limit per chunk
+            #[allow(clippy::cast_precision_loss)]
+            let max_memory_bytes = (limit_mb as usize * 1024 * 1024) as f64 * SAFETY_MARGIN;
+
+            // Estimate average record size
+            // If we can't estimate, use a conservative default (1KB per record)
+            let avg_record_size = if let Some(samples) = sample_records {
+                if samples.is_empty() {
+                    1024 // Default: 1KB per record
+                } else {
+                    let total_size: usize = samples
+                        .iter()
+                        .map(estimate_record_memory_for_frequency)
+                        .sum();
+                    debug_assert!(total_size > 0, "total_size should be positive here");
+                    (total_size / samples.len()).max(1024) // ensure minimum 1KB estimate, samples.len() is guaranteed to be positive here
+                }
+            } else {
+                1024 // Default: 1KB per record
+            };
+
+            // Calculate chunk size based on memory limit
+            #[allow(clippy::cast_precision_loss)]
+            let chunk_size = (max_memory_bytes / (avg_record_size as f64).max(1.0)) as usize;
+
+            // Ensure chunk size is reasonable
+            chunk_size.max(1).min(idx_count as usize)
+        },
+    }
+}
+
+fn calculate_dynamic_chunk_size_for_frequency(
+    idx_count: u64,
+    njobs: usize,
+    _field_count: usize,
+    sample_records: Option<&[csv::ByteRecord]>,
+) -> usize {
+    if let Some(samples) = sample_records {
+        if samples.is_empty() {
+            // No samples available, fall back to CPU-based chunking
+            log::warn!("No records available for sampling, falling back to CPU-based chunking");
+            return util::chunk_size(idx_count as usize, njobs);
+        }
+
+        let total_size: usize = samples
+            .iter()
+            .map(estimate_record_memory_for_frequency)
+            .sum();
+
+        // samples.len() is guaranteed to be positive here as we checked above that it is not empty
+        let avg_record_size = (total_size / samples.len()).max(1024);
+
+        // Get available memory from system
+        let mut sys = System::new();
+        sys.refresh_memory();
+        let avail_mem = sys.available_memory();
+
+        // Calculate chunk size based on available memory
+        // Use 80% of available memory divided by number of jobs
+        #[allow(clippy::cast_precision_loss)]
+        let memory_per_chunk = ((avail_mem as f64 * SAFETY_MARGIN) / njobs as f64) as usize;
+        debug_assert!(avg_record_size > 0, "avg_record_size must be positive");
+        let chunk_size = memory_per_chunk / avg_record_size.max(1);
+
+        // Ensure chunk size is reasonable
+        chunk_size.max(1).min(idx_count as usize)
+    } else {
+        // No sample records provided, fall back to CPU-based chunking
+        util::chunk_size(idx_count as usize, njobs)
+    }
+}
+
+/// Creates an index file for the given CSV file path.
+///
+/// This function creates a CSV index file that enables random access and parallel processing.
+/// It checks for edge cases like snappy-compressed files and stdin input.
+///
+/// # Arguments
+///
+/// * `path` - Path to the CSV file to index
+/// * `rconfig` - CSV reader configuration
+///
+/// # Returns
+///
+/// * `Ok(())` - Index was successfully created
+/// * `Err(CliError)` - If index creation failed
+fn create_index_for_file(path: &Path, rconfig: &Config) -> CliResult<()> {
+    // Don't create index for snappy-compressed files
+    if path.to_string_lossy().to_ascii_lowercase().ends_with(".sz") {
+        return fail_clierror!(
+            "Cannot create index for snappy-compressed files. Please decompress first."
+        );
+    }
+
+    let pidx = util::idx_path(path);
+    log::info!("Auto-creating index file: {}", pidx.display());
+
+    let mut rdr = rconfig.reader_file()?;
+    let idxfile = fs::File::create(&pidx)?;
+    let mut wtr = io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, idxfile);
+
+    RandomAccessSimple::create(&mut rdr, &mut wtr)?;
+    wtr.flush()?;
+
+    log::info!("Successfully created index file: {}", pidx.display());
+    Ok(())
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
     let mut rconfig = args.rconfig();
@@ -312,9 +576,65 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         rconfig = args.rconfig();
     }
 
+    // Check if we have an index and will use parallel processing
+    // If so, skip mem_file_check since memory-aware chunking will handle it
+    let mut indexed_result = args.rconfig().indexed()?;
+    let will_use_parallel = match &indexed_result {
+        Some(_) => {
+            // We have an index, check if we'll use parallel processing
+            match args.flag_jobs {
+                Some(num_jobs) => num_jobs != 1,
+                _ => true, // Default to parallel when index exists
+            }
+        },
+        None => false, // No index, will use sequential
+    };
+
     // we're loading the entire file into memory, we need to check avail mem
-    if let Some(path) = rconfig.path.clone() {
-        util::mem_file_check(&path, false, args.flag_memcheck)?;
+    // Skip this check for parallel processing since memory-aware chunking handles it
+    if !will_use_parallel && let Some(path) = rconfig.path.clone() {
+        // Try mem_file_check, and if it fails for an unindexed file, auto-create index
+        match util::mem_file_check(&path, false, args.flag_memcheck) {
+            Ok(_) => {
+                // Memory check passed, proceed with sequential processing
+            },
+            Err(e) => {
+                // Memory check failed - if we don't have an index, try creating one
+                if indexed_result.is_none() && !rconfig.is_stdin() {
+                    log::info!(
+                        "File too large for sequential processing. Auto-creating index to enable \
+                         parallel processing..."
+                    );
+
+                    // Create index and retry
+                    match create_index_for_file(&path, &rconfig) {
+                        Ok(()) => {
+                            // Re-check for index after creation
+                            indexed_result = args.rconfig().indexed()?;
+                            if indexed_result.is_some() {
+                                log::info!(
+                                    "Index created successfully. Switching to parallel processing."
+                                );
+                                // Continue - the match statement below will use
+                                // indexed_result to determine parallel/sequential
+                            } else {
+                                // Index creation succeeded but we still can't get it
+                                // Return the original memory error
+                                return Err(e);
+                            }
+                        },
+                        Err(index_err) => {
+                            // Index creation failed, return the original memory error
+                            log::warn!("Failed to auto-create index: {index_err}");
+                            return Err(e);
+                        },
+                    }
+                } else {
+                    // Either we already have an index or it's stdin - return the error
+                    return Err(e);
+                }
+            },
+        }
     }
 
     // Create NULL_VAL & ALL_UNIQUE_TEXT once at the start to avoid
@@ -328,7 +648,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .set(args.flag_all_unique_text.as_bytes().to_vec())
         .unwrap();
 
-    let (headers, tables) = if let Some(idx) = args.rconfig().indexed()?
+    let (headers, tables) = if let Some(idx) = indexed_result
         && util::njobs(args.flag_jobs) > 1
     {
         args.parallel_ftables(&idx)
@@ -720,7 +1040,73 @@ impl Args {
         }
 
         let njobs = util::njobs(self.flag_jobs);
-        let chunk_size = util::chunk_size(idx_count, njobs);
+
+        // Read memory limit from environment variable
+        let max_chunk_memory_mb = std::env::var("QSV_FREQ_CHUNK_MEMORY_MB")
+            .ok()
+            .and_then(|v| atoi_simd::parse::<u64>(v.as_bytes()).ok());
+
+        // Sample first 1000 records for memory estimation
+        // Always sample when QSV_FREQ_CHUNK_MEMORY_MB is set to ANY value (including 0)
+        // or when not set (to enable dynamic sizing)
+        let mut sample_records: Option<Vec<csv::ByteRecord>> = None;
+        // TODO: getting the first 1000 records is simple, but we should
+        // revisit this in the future for a more sophisticated sampling method.
+        let mut samples = Vec::with_capacity(1000);
+        if let Ok(mut sample_rdr) = self.rconfig().reader() {
+            let _ = sample_rdr.byte_headers(); // consume header row
+            for (i, record_result) in sample_rdr.byte_records().enumerate() {
+                if i >= 1000 {
+                    break;
+                }
+                if let Ok(record) = record_result {
+                    samples.push(record);
+                } else {
+                    break;
+                }
+            }
+        }
+        if !samples.is_empty() {
+            sample_records = Some(samples);
+        }
+
+        // Calculate memory-aware chunk size
+        let chunk_size = calculate_memory_aware_chunk_size_for_frequency(
+            idx_count as u64,
+            njobs,
+            max_chunk_memory_mb,
+            headers.len(),
+            sample_records.as_deref(),
+        );
+
+        // Log chunk size and memory estimates for debugging
+        // Log when memory-aware chunking is active (either explicitly set or automatically enabled)
+        // Estimate average record size from samples if available
+        let avg_record_size = if let Some(samples) = sample_records {
+            calculate_avg_record_size_for_frequency(&samples)
+        } else {
+            1024 // Default: 1KB per record
+        };
+
+        let estimated_memory_mb =
+            estimate_chunk_memory_for_frequency(chunk_size, avg_record_size, headers.len())
+                / (1024 * 1024);
+
+        let chunking_mode = if let Some(limit_mb) = max_chunk_memory_mb {
+            if limit_mb == 0 {
+                "dynamic (auto)"
+            } else {
+                "fixed limit"
+            }
+        } else {
+            "dynamic (auto)"
+        };
+
+        log::info!(
+            "Memory-aware chunking ({chunking_mode}): chunk_size={chunk_size}, \
+             estimated_memory_mb={estimated_memory_mb:.2}"
+        );
+
         let nchunks = util::num_of_chunks(idx_count, chunk_size);
 
         let pool = ThreadPool::new(njobs);

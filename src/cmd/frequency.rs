@@ -39,9 +39,7 @@ memory and record sampling.
 
 You can override this behavior by setting the QSV_FREQ_CHUNK_MEMORY_MB environment variable.
 Set to a positive number for a fixed memory limit per chunk which is distributed across
-the number of parallel jobs. When unset or set to 0, uses dynamic memory-aware chunking and
-record sampling to determine the chunk size. By default, chunk size is based on the number of
-logical CPUs detected. You can override this by setting the --jobs option.
+the number of parallel jobs. When unset or set to 0, chunk size is dynamically calculated based on available memory and sampled records. You can override the number of parallel jobs used with the --jobs option.
 
 NOTE: "Complete" Frequency Tables:
 

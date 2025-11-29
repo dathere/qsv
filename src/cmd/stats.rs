@@ -328,7 +328,6 @@ use std::{
 
 use blake3;
 use crossbeam_channel;
-use csv_index::RandomAccessSimple;
 use itertools::Itertools;
 use phf::phf_map;
 use qsv_dateparser::parse_with_preference;
@@ -338,14 +337,13 @@ use serde::{Deserialize, Serialize};
 use simd_json::{OwnedValue, prelude::ValueAsScalar};
 use smallvec::SmallVec;
 use stats::{Commute, MinMax, OnlineStats, Unsorted, merge_all};
-use sysinfo::System;
 use tempfile::NamedTempFile;
 use threadpool::ThreadPool;
 
 use self::FieldType::{TDate, TDateTime, TFloat, TInteger, TNull, TString};
 use crate::{
     CliResult,
-    config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter, get_delim_by_extension},
+    config::{Config, Delimiter, get_delim_by_extension},
     select::{SelectColumns, Selection},
     util,
 };
@@ -610,10 +608,6 @@ const FINGERPRINT_HASH_COLUMNS: usize = 26;
 const MAX_ANTIMODES: usize = 10;
 // default length of antimode string before truncating and appending "..."
 const DEFAULT_ANTIMODES_LEN: usize = 100;
-
-// safety margin for memory-aware chunking
-// (uses 80% of available memory to leave headroom for system operations & other processes)
-const SAFETY_MARGIN: f64 = 0.8;
 
 // the default separator we use for stats that have multiple values
 // in one column, i.e. antimodes/modes & percentiles
@@ -1138,7 +1132,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             );
 
                             // Create index and retry
-                            match create_index_for_file(&path, &rconfig) {
+                            match util::create_index_for_file(&path, &rconfig) {
                                 Ok(()) => {
                                     // Re-check for index after creation
                                     indexed_result = rconfig.indexed()?;
@@ -1562,29 +1556,13 @@ impl Args {
         // Sample records for memory estimation if needed
         // Always sample when non-streaming stats are enabled OR when QSV_STATS_CHUNK_MEMORY_MB is
         // set to ANY value (including 0)
-        let mut sample_records: Option<Vec<csv::ByteRecord>> = None;
-        if max_chunk_memory_mb.is_some() || needs_memory_aware_chunking {
-            // Sample first 1000 records
-            // TODO: getting the first 1000 records is simple, but we should
-            // revisit this in the future for a more sophisticated sampling method.
-            let mut samples = Vec::with_capacity(1000);
-            if let Ok(mut sample_rdr) = self.rconfig().reader() {
-                let _ = sample_rdr.byte_headers(); // consume header row
-                for (i, record_result) in sample_rdr.byte_records().enumerate() {
-                    if i >= 1000 {
-                        break;
-                    }
-                    if let Ok(record) = record_result {
-                        samples.push(record);
-                    } else {
-                        break;
-                    }
-                }
-            }
-            if !samples.is_empty() {
-                sample_records = Some(samples);
-            }
-        }
+        let sample_records: Option<Vec<csv::ByteRecord>> =
+            if max_chunk_memory_mb.is_some() || needs_memory_aware_chunking {
+                // Sample first 1000 records
+                util::sample_records(&self.rconfig(), 1000)
+            } else {
+                None
+            };
 
         // Calculate memory-aware chunk size
         let chunk_size = calculate_memory_aware_chunk_size(
@@ -2004,42 +1982,6 @@ impl Args {
     }
 }
 
-/// Creates an index file for the given CSV file path.
-///
-/// This function creates a CSV index file that enables random access and parallel processing.
-/// It checks for edge cases like snappy-compressed files and stdin input.
-///
-/// # Arguments
-///
-/// * `path` - Path to the CSV file to index
-/// * `rconfig` - CSV reader configuration
-///
-/// # Returns
-///
-/// * `Ok(())` - Index was successfully created
-/// * `Err(CliError)` - If index creation failed
-fn create_index_for_file(path: &Path, rconfig: &Config) -> CliResult<()> {
-    // Don't create index for snappy-compressed files
-    if path.to_string_lossy().to_ascii_lowercase().ends_with(".sz") {
-        return fail_clierror!(
-            "Cannot create index for snappy-compressed files. Please decompress first."
-        );
-    }
-
-    let pidx = util::idx_path(path);
-    log::info!("Auto-creating index file: {}", pidx.display());
-
-    let mut rdr = rconfig.reader_file()?;
-    let idxfile = fs::File::create(&pidx)?;
-    let mut wtr = io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, idxfile);
-
-    RandomAccessSimple::create(&mut rdr, &mut wtr)?;
-    wtr.flush()?;
-
-    log::info!("Successfully created index file: {}", pidx.display());
-    Ok(())
-}
-
 /// Helper function to calculate average record size from samples
 fn calculate_avg_record_size(samples: &[csv::ByteRecord], which_stats: &WhichStats) -> usize {
     if samples.is_empty() {
@@ -2173,7 +2115,9 @@ fn calculate_memory_aware_chunk_size(
             if needs_memory_aware_chunking {
                 // Non-streaming stats require memory-aware chunking, default to dynamic sizing
                 // This is equivalent to Some(0) - dynamic sizing
-                calculate_dynamic_chunk_size(idx_count, njobs, which_stats, sample_records)
+                util::calculate_dynamic_chunk_size(idx_count, njobs, sample_records, |record| {
+                    estimate_record_memory(record, which_stats)
+                })
             } else {
                 // Streaming stats only, use CPU-based chunking
                 util::chunk_size(idx_count as usize, njobs)
@@ -2181,12 +2125,14 @@ fn calculate_memory_aware_chunk_size(
         },
         Some(0) => {
             // Dynamic sizing: sample records to estimate average size
-            calculate_dynamic_chunk_size(idx_count, njobs, which_stats, sample_records)
+            util::calculate_dynamic_chunk_size(idx_count, njobs, sample_records, |record| {
+                estimate_record_memory(record, which_stats)
+            })
         },
         Some(limit_mb) => {
             // Fixed memory limit per chunk
             #[allow(clippy::cast_precision_loss)]
-            let max_memory_bytes = (limit_mb as usize * 1024 * 1024) as f64 * SAFETY_MARGIN;
+            let max_memory_bytes = (limit_mb as usize * 1024 * 1024) as f64 * util::SAFETY_MARGIN;
 
             // Estimate average record size
             // If we can't estimate, use a conservative default (1KB per record)
@@ -2212,47 +2158,6 @@ fn calculate_memory_aware_chunk_size(
             // Ensure chunk size is reasonable
             chunk_size.max(1).min(idx_count as usize)
         },
-    }
-}
-
-fn calculate_dynamic_chunk_size(
-    idx_count: u64,
-    njobs: usize,
-    which_stats: &WhichStats,
-    sample_records: Option<&[csv::ByteRecord]>,
-) -> usize {
-    if let Some(samples) = sample_records {
-        if samples.is_empty() {
-            // No samples available, fall back to CPU-based chunking
-            log::warn!("No records available for sampling, falling back to CPU-based chunking");
-            return util::chunk_size(idx_count as usize, njobs);
-        }
-
-        let total_size: usize = samples
-            .iter()
-            .map(|record| estimate_record_memory(record, which_stats))
-            .sum();
-
-        // samples.len() is guaranteed to be positive here as we checked above that it is not empty
-        let avg_record_size = (total_size / samples.len()).max(1024);
-
-        // Get available memory from system
-        let mut sys = System::new();
-        sys.refresh_memory();
-        let avail_mem = sys.available_memory();
-
-        // Calculate chunk size based on available memory
-        // Use 80% of available memory divided by number of jobs
-        #[allow(clippy::cast_precision_loss)]
-        let memory_per_chunk = ((avail_mem as f64 * SAFETY_MARGIN) / njobs as f64) as usize;
-        debug_assert!(avg_record_size > 0, "avg_record_size must be positive");
-        let chunk_size = memory_per_chunk / avg_record_size.max(1);
-
-        // Ensure chunk size is reasonable
-        chunk_size.max(1).min(idx_count as usize)
-    } else {
-        // No sample records provided, fall back to CPU-based chunking
-        util::chunk_size(idx_count as usize, njobs)
     }
 }
 

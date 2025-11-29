@@ -19,6 +19,7 @@ use std::{
 };
 
 use csv::ByteRecord;
+use csv_index::RandomAccessSimple;
 use docopt::Docopt;
 use filetime::FileTime;
 use human_panic::setup_panic;
@@ -57,6 +58,10 @@ macro_rules! regex_oncelock {
 
 // leave at least 20% of the available memory free
 const DEFAULT_FREEMEMORY_HEADROOM_PCT: u8 = 20;
+
+// safety margin for memory-aware chunking
+// (uses 80% of available memory to leave headroom for system operations & other processes)
+pub const SAFETY_MARGIN: f64 = 0.8;
 
 const DEFAULT_BATCH_SIZE: usize = 50_000;
 
@@ -995,6 +1000,139 @@ pub fn idx_path(csv_path: &Path) -> PathBuf {
         .unwrap();
     p.push_str(".idx");
     PathBuf::from(&p)
+}
+
+/// Creates an index file for the given CSV file path.
+///
+/// This function creates a CSV index file that enables random access and parallel processing.
+/// It checks for edge cases like snappy-compressed files and stdin input.
+///
+/// # Arguments
+///
+/// * `path` - Path to the CSV file to index
+/// * `rconfig` - CSV reader configuration
+///
+/// # Returns
+///
+/// * `Ok(())` - Index was successfully created
+/// * `Err(CliError)` - If index creation failed
+pub fn create_index_for_file(path: &Path, rconfig: &Config) -> CliResult<()> {
+    // Don't create index for snappy-compressed files
+    if path.to_string_lossy().to_ascii_lowercase().ends_with(".sz") {
+        return fail_clierror!(
+            "Cannot create index for snappy-compressed files. Please decompress first."
+        );
+    }
+
+    let pidx = idx_path(path);
+    log::info!("Auto-creating index file: {}", pidx.display());
+
+    let mut rdr = rconfig.reader_file()?;
+    let idxfile = fs::File::create(&pidx)?;
+    let mut wtr = BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, idxfile);
+
+    RandomAccessSimple::create(&mut rdr, &mut wtr)?;
+    wtr.flush()?;
+
+    log::info!("Successfully created index file: {}", pidx.display());
+    Ok(())
+}
+
+/// Samples records from a CSV file for memory estimation.
+///
+/// This function reads the first `sample_size` records from the CSV file
+/// to estimate average record size for memory-aware chunking.
+///
+/// # Arguments
+///
+/// * `rconfig` - CSV reader configuration
+/// * `sample_size` - Number of records to sample (typically 1000)
+///
+/// # Returns
+///
+/// * `Some(Vec<ByteRecord>)` - Sample records if available
+/// * `None` - If no records could be sampled
+pub fn sample_records(rconfig: &Config, sample_size: usize) -> Option<Vec<ByteRecord>> {
+    // TODO: getting the first 1000 records is simple, but we should
+    // revisit this in the future for a more sophisticated sampling method.
+    let mut samples = Vec::with_capacity(sample_size);
+    if let Ok(mut sample_rdr) = rconfig.reader() {
+        let _ = sample_rdr.byte_headers(); // consume header row
+        for (i, record_result) in sample_rdr.byte_records().enumerate() {
+            if i >= sample_size {
+                break;
+            }
+            if let Ok(record) = record_result {
+                samples.push(record);
+            } else {
+                break;
+            }
+        }
+    }
+    if samples.is_empty() {
+        None
+    } else {
+        Some(samples)
+    }
+}
+
+/// Calculates dynamic chunk size based on available memory and record sampling.
+///
+/// This function estimates an appropriate chunk size by:
+/// 1. Calculating average record size from sample records
+/// 2. Getting available system memory
+/// 3. Calculating memory per chunk (80% of available memory / number of jobs)
+/// 4. Dividing memory per chunk by average record size
+///
+/// # Arguments
+///
+/// * `idx_count` - Total number of records in the file
+/// * `njobs` - Number of parallel jobs
+/// * `sample_records` - Optional slice of sample records for memory estimation
+/// * `estimate_fn` - Function to estimate memory usage per record
+///
+/// # Returns
+///
+/// Calculated chunk size (number of records per chunk)
+pub fn calculate_dynamic_chunk_size<F>(
+    idx_count: u64,
+    njobs: usize,
+    sample_records: Option<&[ByteRecord]>,
+    estimate_fn: F,
+) -> usize
+where
+    F: Fn(&ByteRecord) -> usize,
+{
+    if let Some(samples) = sample_records {
+        if samples.is_empty() {
+            // No samples available, fall back to CPU-based chunking
+            log::warn!("No records available for sampling, falling back to CPU-based chunking");
+            return chunk_size(idx_count as usize, njobs);
+        }
+
+        let total_size: usize = samples.iter().map(&estimate_fn).sum();
+
+        // samples.len() is guaranteed to be positive here as we checked above that it is not empty
+        let avg_record_size = (total_size / samples.len()).max(1024);
+
+        // Get available memory from system
+        let mut sys = System::new();
+        sys.refresh_memory();
+        let avail_mem = sys.available_memory();
+
+        // Calculate chunk size based on available memory
+        // Use 80% of available memory divided by number of jobs
+        #[allow(clippy::cast_precision_loss)]
+        let memory_per_chunk = ((avail_mem as f64 * SAFETY_MARGIN) / njobs as f64) as usize;
+        debug_assert!(avg_record_size > 0, "avg_record_size must be positive");
+        let chunk_size = memory_per_chunk / avg_record_size.max(1);
+
+        // Ensure chunk size is reasonable
+        chunk_size.max(1).min(idx_count as usize)
+    } else {
+        // No sample records provided, fall back to CPU-based chunking
+        chunk_size(idx_count as usize, njobs)
+    }
 }
 
 pub type Idx = Option<usize>;

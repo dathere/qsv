@@ -60,9 +60,14 @@ The date formats recognized and its sub-variants along with examples can be foun
 https://github.com/dathere/qsv-dateparser?tab=readme-ov-file#accepted-date-formats.
 
 Computing statistics on a large file can be made MUCH faster if you create an index for it
-first with 'qsv index' to enable multithreading. With an index, the file is split into equal
-chunks and each chunk is processed in parallel. The number of chunks is determined by the
-number of logical CPUs detected. You can override this by setting the --jobs option.
+first with 'qsv index' to enable multithreading. With an index, the file is split into chunks
+and each chunk is processed in parallel.
+For non-streaming statistics (median, quartiles, modes, cardinality), memory-aware chunking is
+automatically enabled, dynamically calculating chunk size based on available memory & record sampling.
+For streaming statistics, chunk size is based on the number of logical CPUs detected.
+You can override this behavior by setting the QSV_STATS_CHUNK_MEMORY_MB environment variable
+(set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk),
+or by setting the --jobs option.
 
 As stats is a central command in qsv, and can be expensive to compute, `stats` caches results
 in <FILESTEM>.stats.csv & if the --stats-json option is used, <FILESTEM>.stats.csv.data.jsonl
@@ -323,6 +328,7 @@ use std::{
 
 use blake3;
 use crossbeam_channel;
+use csv_index::RandomAccessSimple;
 use itertools::Itertools;
 use phf::phf_map;
 use qsv_dateparser::parse_with_preference;
@@ -332,13 +338,14 @@ use serde::{Deserialize, Serialize};
 use simd_json::{OwnedValue, prelude::ValueAsScalar};
 use smallvec::SmallVec;
 use stats::{Commute, MinMax, OnlineStats, Unsorted, merge_all};
+use sysinfo::System;
 use tempfile::NamedTempFile;
 use threadpool::ThreadPool;
 
 use self::FieldType::{TDate, TDateTime, TFloat, TInteger, TNull, TString};
 use crate::{
     CliResult,
-    config::{Config, Delimiter, get_delim_by_extension},
+    config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter, get_delim_by_extension},
     select::{SelectColumns, Selection},
     util,
 };
@@ -603,6 +610,10 @@ const FINGERPRINT_HASH_COLUMNS: usize = 26;
 const MAX_ANTIMODES: usize = 10;
 // default length of antimode string before truncating and appending "..."
 const DEFAULT_ANTIMODES_LEN: usize = 100;
+
+// safety margin for memory-aware chunking
+// (uses 80% of available memory to leave headroom for system operations & other processes)
+const SAFETY_MARGIN: f64 = 0.8;
 
 // the default separator we use for stats that have multiple values
 // in one column, i.e. antimodes/modes & percentiles
@@ -1081,17 +1092,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if compute_stats {
             let start_time = std::time::Instant::now();
 
-            // we're loading the entire file into memory, we need to check avail mem
-            if args.flag_everything
-                || args.flag_mode
-                || args.flag_cardinality
-                || args.flag_median
-                || args.flag_quartiles
-                || args.flag_mad
-            {
-                util::mem_file_check(&path, false, args.flag_memcheck)?;
-            }
-
             // check if flag_cache_threshold is a negative number,
             // if so, set the autoindex_size to absolute of the number
             if args.flag_cache_threshold.is_negative() {
@@ -1099,11 +1099,81 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 autoindex_set = true;
             }
 
+            // Check if we have an index and will use parallel processing
+            // If so, skip mem_file_check since memory-aware chunking will handle it
+            let mut indexed_result = rconfig.indexed()?;
+            let will_use_parallel = match &indexed_result {
+                Some(_) => {
+                    // We have an index, check if we'll use parallel processing
+                    match args.flag_jobs {
+                        Some(num_jobs) => num_jobs != 1,
+                        _ => true, // Default to parallel when index exists
+                    }
+                },
+                None => false, // No index, will use sequential
+            };
+
+            // we're loading the entire file into memory, we need to check avail mem
+            // Skip this check for parallel processing since memory-aware chunking handles it
+            if !will_use_parallel
+                && (args.flag_everything
+                    || args.flag_mode
+                    || args.flag_cardinality
+                    || args.flag_median
+                    || args.flag_quartiles
+                    || args.flag_mad
+                    || args.flag_percentiles)
+            {
+                // Try mem_file_check, and if it fails for an unindexed file, auto-create index
+                match util::mem_file_check(&path, false, args.flag_memcheck) {
+                    Ok(_) => {
+                        // Memory check passed, proceed with sequential processing
+                    },
+                    Err(e) => {
+                        // Memory check failed - if we don't have an index, try creating one
+                        if indexed_result.is_none() && !rconfig.is_stdin() {
+                            log::info!(
+                                "File too large for sequential processing. Auto-creating index to \
+                                 enable parallel processing..."
+                            );
+
+                            // Create index and retry
+                            match create_index_for_file(&path, &rconfig) {
+                                Ok(()) => {
+                                    // Re-check for index after creation
+                                    indexed_result = rconfig.indexed()?;
+                                    if indexed_result.is_some() {
+                                        log::info!(
+                                            "Index created successfully. Switching to parallel \
+                                             processing."
+                                        );
+                                        // Continue - the match statement below will use
+                                        // indexed_result to determine parallel/sequential
+                                    } else {
+                                        // Index creation succeeded but we still can't get it
+                                        // Return the original memory error
+                                        return Err(e);
+                                    }
+                                },
+                                Err(index_err) => {
+                                    // Index creation failed, return the original memory error
+                                    log::warn!("Failed to auto-create index: {index_err}");
+                                    return Err(e);
+                                },
+                            }
+                        } else {
+                            // Either we already have an index or it's stdin - return the error
+                            return Err(e);
+                        }
+                    },
+                }
+            }
+
             // we need to count the number of records in the file to calculate sparsity and
             // cardinality
             let record_count: u64;
 
-            let (headers, stats) = match rconfig.indexed()? {
+            let (headers, stats) = match indexed_result {
                 None => {
                     // without an index, we need to count the number of records in the file
                     // safety: we know util::count_rows() will not return an Err
@@ -1477,7 +1547,84 @@ impl Args {
         init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
 
         let njobs = util::njobs(self.flag_jobs);
-        let chunk_size = util::chunk_size(idx_count as usize, njobs);
+
+        // Read memory limit from environment variable
+        let max_chunk_memory_mb = std::env::var("QSV_STATS_CHUNK_MEMORY_MB")
+            .ok()
+            .and_then(|v| atoi_simd::parse::<u64>(v.as_bytes()).ok());
+
+        // Get WhichStats configuration
+        let which_stats = self.which_stats();
+
+        // Check if non-streaming stats are enabled (require memory-aware chunking)
+        let needs_memory_aware_chunking = which_stats.needs_memory_aware_chunking();
+
+        // Sample records for memory estimation if needed
+        // Always sample when non-streaming stats are enabled OR when QSV_STATS_CHUNK_MEMORY_MB is
+        // set to ANY value (including 0)
+        let mut sample_records: Option<Vec<csv::ByteRecord>> = None;
+        if max_chunk_memory_mb.is_some() || needs_memory_aware_chunking {
+            // Sample first 1000 records
+            // TODO: getting the first 1000 records is simple, but we should
+            // revisit this in the future for a more sophisticated sampling method.
+            let mut samples = Vec::with_capacity(1000);
+            if let Ok(mut sample_rdr) = self.rconfig().reader() {
+                let _ = sample_rdr.byte_headers(); // consume header row
+                for (i, record_result) in sample_rdr.byte_records().enumerate() {
+                    if i >= 1000 {
+                        break;
+                    }
+                    if let Ok(record) = record_result {
+                        samples.push(record);
+                    } else {
+                        break;
+                    }
+                }
+            }
+            if !samples.is_empty() {
+                sample_records = Some(samples);
+            }
+        }
+
+        // Calculate memory-aware chunk size
+        let chunk_size = calculate_memory_aware_chunk_size(
+            idx_count,
+            njobs,
+            max_chunk_memory_mb,
+            &which_stats,
+            sample_records.as_deref(),
+        );
+
+        // Log chunk size and memory estimates for debugging
+        // Log when memory-aware chunking is active (either explicitly set or automatically enabled)
+        if max_chunk_memory_mb.is_some() || needs_memory_aware_chunking {
+            // Estimate average record size from samples if available
+            let avg_record_size = if let Some(samples) = sample_records {
+                calculate_avg_record_size(&samples, &which_stats)
+            } else {
+                1024
+            };
+
+            let estimated_memory_mb =
+                estimate_chunk_memory(chunk_size, avg_record_size, &which_stats, headers.len())
+                    / (1024 * 1024);
+
+            let chunking_mode = if let Some(limit_mb) = max_chunk_memory_mb {
+                if limit_mb == 0 {
+                    "dynamic (auto)"
+                } else {
+                    "fixed limit"
+                }
+            } else {
+                "dynamic (auto)"
+            };
+
+            log::info!(
+                "Memory-aware chunking ({chunking_mode}): chunk_size={chunk_size}, \
+                 estimated_memory_mb={estimated_memory_mb:.2}"
+            );
+        }
+
         let nchunks = util::num_of_chunks(idx_count as usize, chunk_size);
 
         let pool = ThreadPool::new(njobs);
@@ -1714,6 +1861,25 @@ impl Args {
             .select(self.flag_select.clone())
     }
 
+    /// Creates a WhichStats configuration from the current arguments.
+    #[inline]
+    fn which_stats(&self) -> WhichStats {
+        WhichStats {
+            include_nulls:   self.flag_nulls,
+            sum:             !self.flag_typesonly || self.flag_infer_boolean,
+            range:           !self.flag_typesonly || self.flag_infer_boolean,
+            dist:            !self.flag_typesonly || self.flag_infer_boolean,
+            cardinality:     self.flag_everything || self.flag_cardinality,
+            median:          !self.flag_everything && self.flag_median && !self.flag_quartiles,
+            mad:             self.flag_everything || self.flag_mad,
+            quartiles:       self.flag_everything || self.flag_quartiles,
+            mode:            self.flag_everything || self.flag_mode,
+            typesonly:       self.flag_typesonly,
+            percentiles:     self.flag_everything || self.flag_percentiles,
+            percentile_list: self.flag_percentile_list.clone(),
+        }
+    }
+
     /// Creates a vector of `Stats` objects for statistics computation.
     ///
     /// This function initializes a vector of `Stats` objects, one for each column
@@ -1748,23 +1914,7 @@ impl Args {
     #[inline]
     fn new_stats(&self, record_len: usize) -> Vec<Stats> {
         let mut stats: Vec<Stats> = Vec::with_capacity(record_len);
-        stats.extend(repeat_n(
-            Stats::new(WhichStats {
-                include_nulls:   self.flag_nulls,
-                sum:             !self.flag_typesonly || self.flag_infer_boolean,
-                range:           !self.flag_typesonly || self.flag_infer_boolean,
-                dist:            !self.flag_typesonly || self.flag_infer_boolean,
-                cardinality:     self.flag_everything || self.flag_cardinality,
-                median:          !self.flag_everything && self.flag_median && !self.flag_quartiles,
-                mad:             self.flag_everything || self.flag_mad,
-                quartiles:       self.flag_everything || self.flag_quartiles,
-                mode:            self.flag_everything || self.flag_mode,
-                typesonly:       self.flag_typesonly,
-                percentiles:     self.flag_everything || self.flag_percentiles,
-                percentile_list: self.flag_percentile_list.clone(),
-            }),
-            record_len,
-        ));
+        stats.extend(repeat_n(Stats::new(self.which_stats()), record_len));
         stats
     }
 
@@ -1851,6 +2001,258 @@ impl Args {
         }
 
         csv::StringRecord::from(fields)
+    }
+}
+
+/// Creates an index file for the given CSV file path.
+///
+/// This function creates a CSV index file that enables random access and parallel processing.
+/// It checks for edge cases like snappy-compressed files and stdin input.
+///
+/// # Arguments
+///
+/// * `path` - Path to the CSV file to index
+/// * `rconfig` - CSV reader configuration
+///
+/// # Returns
+///
+/// * `Ok(())` - Index was successfully created
+/// * `Err(CliError)` - If index creation failed
+fn create_index_for_file(path: &Path, rconfig: &Config) -> CliResult<()> {
+    // Don't create index for snappy-compressed files
+    if path.to_string_lossy().to_ascii_lowercase().ends_with(".sz") {
+        return fail_clierror!(
+            "Cannot create index for snappy-compressed files. Please decompress first."
+        );
+    }
+
+    let pidx = util::idx_path(path);
+    log::info!("Auto-creating index file: {}", pidx.display());
+
+    let mut rdr = rconfig.reader_file()?;
+    let idxfile = fs::File::create(&pidx)?;
+    let mut wtr = io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, idxfile);
+
+    RandomAccessSimple::create(&mut rdr, &mut wtr)?;
+    wtr.flush()?;
+
+    log::info!("Successfully created index file: {}", pidx.display());
+    Ok(())
+}
+
+/// Helper function to calculate average record size from samples
+fn calculate_avg_record_size(samples: &[csv::ByteRecord], which_stats: &WhichStats) -> usize {
+    if samples.is_empty() {
+        1024 // Default
+    } else {
+        let total_size: usize = samples
+            .iter()
+            .map(|record| estimate_record_memory(record, which_stats))
+            .sum();
+        (total_size / samples.len()).max(1024)
+    }
+}
+
+/// Estimates memory usage per record based on enabled statistics.
+///
+/// This function calculates the approximate memory footprint of a single CSV record
+/// when computing statistics. The estimate includes:
+/// - Base record size (sum of field lengths)
+/// - Additional memory for non-streaming statistics (median, quartiles, modes, etc.)
+///
+/// # Arguments
+///
+/// * `record` - The CSV record to estimate memory for
+/// * `which_stats` - Configuration indicating which statistics are enabled
+///
+/// # Returns
+///
+/// Estimated memory in bytes per record
+fn estimate_record_memory(record: &csv::ByteRecord, which_stats: &WhichStats) -> usize {
+    // Base memory: sum of all field lengths
+    let base_size: usize = record.iter().map(<[u8]>::len).sum();
+
+    // Additional memory for non-streaming statistics
+    let mut additional_memory = 0;
+
+    // For unsorted_stats (median, quartiles, MAD, percentiles)
+    // Each numeric/date field requires 8 bytes (f64) to be stored
+    if which_stats.quartiles || which_stats.median || which_stats.mad || which_stats.percentiles {
+        // Estimate: assume half the fields are numeric/date (conservative)
+        additional_memory += (record.len() / 2) * 8;
+    }
+
+    // For modes (mode/cardinality)
+    // Each field value is stored as Vec<u8>, so we need the field length
+    if which_stats.mode || which_stats.cardinality {
+        additional_memory += base_size; // Store all field values
+    }
+
+    // Add overhead for Vec capacity (average of base_size and additional_memory)
+    let overhead = usize::midpoint(base_size, additional_memory);
+
+    base_size + additional_memory + overhead
+}
+
+/// Estimates total memory required for processing a chunk of records.
+///
+/// # Arguments
+///
+/// * `record_count` - Number of records in the chunk
+/// * `avg_record_size` - Average size of a record in bytes
+/// * `which_stats` - Configuration indicating which statistics are enabled
+/// * `field_count` - Number of fields in the record
+///
+/// # Returns
+///
+/// Estimated total memory in bytes for the chunk
+const fn estimate_chunk_memory(
+    record_count: usize,
+    avg_record_size: usize,
+    which_stats: &WhichStats,
+    field_count: usize,
+) -> usize {
+    // Base memory for records
+    let base_memory = record_count.saturating_mul(avg_record_size);
+
+    // Additional memory for non-streaming statistics
+    let mut additional_memory = 0;
+
+    // For unsorted_stats: 8 bytes per record per numeric/date field
+    if which_stats.quartiles || which_stats.median || which_stats.mad || which_stats.percentiles {
+        // Estimate: assume half the fields are numeric/date (conservative)
+        additional_memory += record_count.saturating_mul((field_count / 2).saturating_mul(8));
+    }
+
+    // For modes: store all field values
+    if which_stats.mode || which_stats.cardinality {
+        additional_memory += record_count.saturating_mul(avg_record_size);
+    }
+
+    // Add overhead for data structures (Stats objects, Vec capacity, etc.)
+    // Estimate 20% overhead
+    let overhead = (base_memory + additional_memory) / 5;
+
+    base_memory
+        .saturating_add(additional_memory)
+        .saturating_add(overhead)
+}
+
+/// Calculates memory-aware chunk size for parallel statistics processing.
+///
+/// This function determines an appropriate chunk size based on:
+/// - Available memory per chunk (if configured)
+/// - Dynamic estimation via sampling (if max_chunk_memory_mb is Some(0))
+/// - CPU-based chunking (fallback)
+///
+/// # Arguments
+///
+/// * `idx_count` - Total number of records in the file
+/// * `njobs` - Number of parallel jobs
+/// * `max_chunk_memory_mb` - Maximum memory per chunk in MB (None = use CPU-based, Some(0) =
+///   dynamic, Some(n) = fixed limit)
+/// * `which_stats` - Configuration indicating which statistics are enabled
+/// * `sample_records` - Optional slice of sample records for dynamic sizing
+///
+/// # Returns
+///
+/// Calculated chunk size (number of records per chunk)
+fn calculate_memory_aware_chunk_size(
+    idx_count: u64,
+    njobs: usize,
+    max_chunk_memory_mb: Option<u64>,
+    which_stats: &WhichStats,
+    sample_records: Option<&[csv::ByteRecord]>,
+) -> usize {
+    // Check if non-streaming stats are enabled (require memory-aware chunking)
+    let needs_memory_aware_chunking = which_stats.needs_memory_aware_chunking();
+
+    match max_chunk_memory_mb {
+        None => {
+            // No memory limit configured
+            if needs_memory_aware_chunking {
+                // Non-streaming stats require memory-aware chunking, default to dynamic sizing
+                // This is equivalent to Some(0) - dynamic sizing
+                calculate_dynamic_chunk_size(idx_count, njobs, which_stats, sample_records)
+            } else {
+                // Streaming stats only, use CPU-based chunking
+                util::chunk_size(idx_count as usize, njobs)
+            }
+        },
+        Some(0) => {
+            // Dynamic sizing: sample records to estimate average size
+            calculate_dynamic_chunk_size(idx_count, njobs, which_stats, sample_records)
+        },
+        Some(limit_mb) => {
+            // Fixed memory limit per chunk
+            #[allow(clippy::cast_precision_loss)]
+            let max_memory_bytes = (limit_mb as usize * 1024 * 1024) as f64 * SAFETY_MARGIN;
+
+            // Estimate average record size
+            // If we can't estimate, use a conservative default (1KB per record)
+            let avg_record_size = if let Some(samples) = sample_records {
+                if samples.is_empty() {
+                    1024 // Default: 1KB per record
+                } else {
+                    let total_size: usize = samples
+                        .iter()
+                        .map(|record| estimate_record_memory(record, which_stats))
+                        .sum();
+                    debug_assert!(total_size > 0, "total_size should be positive here");
+                    total_size / samples.len() // samples.len() is guaranteed to be positive here
+                }
+            } else {
+                1024 // Default: 1KB per record
+            };
+
+            // Calculate chunk size based on memory limit
+            #[allow(clippy::cast_precision_loss)]
+            let chunk_size = (max_memory_bytes / (avg_record_size as f64).max(1.0)) as usize;
+
+            // Ensure chunk size is reasonable
+            chunk_size.max(1).min(idx_count as usize)
+        },
+    }
+}
+
+fn calculate_dynamic_chunk_size(
+    idx_count: u64,
+    njobs: usize,
+    which_stats: &WhichStats,
+    sample_records: Option<&[csv::ByteRecord]>,
+) -> usize {
+    if let Some(samples) = sample_records {
+        if samples.is_empty() {
+            // No samples available, fall back to CPU-based chunking
+            log::warn!("No records available for sampling, falling back to CPU-based chunking");
+            return util::chunk_size(idx_count as usize, njobs);
+        }
+
+        let total_size: usize = samples
+            .iter()
+            .map(|record| estimate_record_memory(record, which_stats))
+            .sum();
+
+        // samples.len() is guaranteed to be positive here as we checked above that it is not empty
+        let avg_record_size = (total_size / samples.len()).max(1024);
+
+        // Get available memory from system
+        let mut sys = System::new();
+        sys.refresh_memory();
+        let avail_mem = sys.available_memory();
+
+        // Calculate chunk size based on available memory
+        // Use 80% of available memory divided by number of jobs
+        #[allow(clippy::cast_precision_loss)]
+        let memory_per_chunk = ((avail_mem as f64 * SAFETY_MARGIN) / njobs as f64) as usize;
+        debug_assert!(avg_record_size > 0, "avg_record_size must be positive");
+        let chunk_size = memory_per_chunk / avg_record_size.max(1);
+
+        // Ensure chunk size is reasonable
+        chunk_size.max(1).min(idx_count as usize)
+    } else {
+        // No sample records provided, fall back to CPU-based chunking
+        util::chunk_size(idx_count as usize, njobs)
     }
 }
 
@@ -1977,6 +2379,17 @@ impl Commute for WhichStats {
     #[inline]
     fn merge(&mut self, other: WhichStats) {
         assert_eq!(*self, other);
+    }
+}
+
+impl WhichStats {
+    const fn needs_memory_aware_chunking(&self) -> bool {
+        self.quartiles
+            || self.median
+            || self.mad
+            || self.percentiles
+            || self.mode
+            || self.cardinality
     }
 }
 

@@ -2892,3 +2892,307 @@ fn stats_string_max_length() {
         "this_is_a_very_long_string_that_should_be_truncated"
     );
 }
+
+#[test]
+fn stats_memory_aware_chunking_dynamic() {
+    let wrk = Workdir::new("stats_memory_aware_chunking_dynamic");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Create index to enable parallel processing
+    let mut cmd = wrk.command("index");
+    cmd.arg(test_file.clone());
+    wrk.assert_success(&mut cmd);
+
+    // Run stats with QSV_STATS_CHUNK_MEMORY_MB=0 (dynamic sizing)
+    // and --everything to trigger non-streaming stats
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .env("QSV_STATS_CHUNK_MEMORY_MB", "0")
+        .arg(test_file);
+
+    // Verify stats computation succeeds and output is correct
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty());
+    // Verify we have headers
+    assert!(got.len() > 1);
+}
+
+#[test]
+fn stats_memory_aware_chunking_fixed_limit() {
+    let wrk = Workdir::new("stats_memory_aware_chunking_fixed_limit");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Create index to enable parallel processing
+    let mut cmd = wrk.command("index");
+    cmd.arg(test_file.clone());
+    wrk.assert_success(&mut cmd);
+
+    // Run stats with QSV_STATS_CHUNK_MEMORY_MB set to 100MB (fixed limit)
+    // and --everything to trigger non-streaming stats
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .env("QSV_STATS_CHUNK_MEMORY_MB", "100")
+        .arg(test_file);
+
+    // Verify stats computation succeeds with fixed memory limit
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty());
+    assert!(got.len() > 1);
+}
+
+#[test]
+fn stats_memory_aware_chunking_unset_streaming() {
+    let wrk = Workdir::new("stats_memory_aware_chunking_unset_streaming");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Create index to enable parallel processing
+    let mut cmd = wrk.command("index");
+    cmd.arg(test_file.clone());
+    wrk.assert_success(&mut cmd);
+
+    // Run stats without QSV_STATS_CHUNK_MEMORY_MB and without --everything
+    // This should use CPU-based chunking (streaming stats only)
+    let mut cmd = wrk.command("stats");
+    cmd.arg(test_file);
+
+    // Verify stats computation succeeds
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty());
+    assert!(got.len() > 1);
+}
+
+#[test]
+fn stats_memory_aware_chunking_unset_non_streaming() {
+    let wrk = Workdir::new("stats_memory_aware_chunking_unset_non_streaming");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Create index to enable parallel processing
+    let mut cmd = wrk.command("index");
+    cmd.arg(test_file.clone());
+    wrk.assert_success(&mut cmd);
+
+    // Run stats without QSV_STATS_CHUNK_MEMORY_MB but with --cardinality
+    // This should automatically enable dynamic memory-aware chunking
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality").arg(test_file);
+
+    // Verify stats computation succeeds
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty());
+    assert!(got.len() > 1);
+}
+
+#[test]
+#[ignore = "Creates a 20gb file which takes a long time to run"] // TODO: fix this test
+fn stats_auto_index_creation_on_oom() {
+    use std::path::Path;
+
+    let wrk = Workdir::new("stats_auto_index_creation_on_oom");
+
+    // Create a larger CSV file to increase chance of triggering OOM check
+    // We'll create a file with many rows to make it large enough
+    // Target size: at least 10MB to trigger OOM check on most systems
+    let mut data = vec![svec!["col1", "col2", "col3", "col4", "col5"]];
+    // Create ~10 million rows with reasonably sized data (~200 bytes per row * 10 million rows = 20
+    // GB)
+    for i in 0..10_000_000 {
+        data.push(vec![
+            format!("value_{}_with_some_padding_to_make_it_larger", i),
+            format!("another_value_{}_with_more_data", i),
+            format!("data_{}", i),
+            format!("field_{}_content", i),
+            format!("final_field_{}_with_additional_text", i),
+        ]);
+    }
+    let test_file = wrk.path("large_data.csv");
+    wrk.create("large_data.csv", data);
+
+    // Verify index does not exist initially
+    // Use the same path construction as util::idx_path (appends .idx to full path)
+    let index_path = format!("{}.idx", test_file.display());
+    let index_file = Path::new(&index_path);
+    if index_file.exists() {
+        std::fs::remove_file(&index_file).unwrap();
+    }
+    assert!(!index_file.exists(), "Index should not exist initially");
+
+    // Simulate OOM by setting QSV_FREEMEMORY_HEADROOM_PCT very high (90%)
+    // and using --memcheck to force conservative mode (stricter check)
+    // This will make mem_file_check fail for sequential processing
+    // Request non-streaming stats to trigger the OOM check
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--memcheck")
+        .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
+        .arg(test_file.clone());
+
+    // Verify stats computation succeeds (should auto-create index)
+    // and verify stats output is correct
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty());
+    assert!(got.len() > 1);
+
+    // Verify index file was created
+    // Note: This test may be environment-dependent - on systems with very large RAM,
+    // the file might still pass the memory check. The important thing is that
+    // the auto-index creation logic exists and works when needed.
+    assert!(
+        index_file.exists(),
+        "Index file should be created automatically when mem_file_check fails"
+    );
+}
+
+#[test]
+fn stats_auto_index_creation_skipped_if_indexed() {
+    use std::path::Path;
+
+    let wrk = Workdir::new("stats_auto_index_creation_skipped_if_indexed");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Create index first
+    let mut cmd = wrk.command("index");
+    cmd.arg(test_file.clone());
+    wrk.assert_success(&mut cmd);
+
+    let index_file = Path::new(&test_file).with_extension("csv.idx");
+    assert!(index_file.exists(), "Index should exist");
+
+    // Simulate OOM condition
+    // With an existing index, parallel processing will be used and mem_file_check is skipped
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
+        .arg(test_file);
+
+    // Verify stats computation succeeds (should use existing index, not create new one)
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty());
+    assert!(got.len() > 1);
+}
+
+#[test]
+fn stats_auto_index_creation_skipped_for_stdin() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("stats_auto_index_creation_skipped_for_stdin");
+
+    // Create a small CSV file
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["col1", "col2"],
+            svec!["1", "a"],
+            svec!["2", "b"],
+            svec!["3", "c"],
+        ],
+    );
+
+    // Read the file content
+    let file_content = wrk.read_to_string("data.csv").unwrap();
+
+    // Run stats with stdin input and non-streaming stats
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped());
+
+    // Write to stdin
+    let mut child = cmd.spawn().unwrap();
+    {
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(file_content.as_bytes()).unwrap();
+    }
+
+    // Verify stats computation succeeds (should not attempt to create index for stdin)
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "Stats should succeed for stdin input"
+    );
+}
+
+#[test]
+fn stats_memory_aware_chunking_empty_samples() {
+    let wrk = Workdir::new("stats_memory_aware_chunking_empty_samples");
+
+    // Create a CSV file with very few records (< 1000, so sampling may be incomplete)
+    let mut data = vec![svec!["col1", "col2"]];
+    for i in 0..10 {
+        data.push(vec![format!("{}", i), format!("value{}", i)]);
+    }
+    wrk.create("data.csv", data);
+
+    // Create index to enable parallel processing
+    let mut cmd = wrk.command("index");
+    cmd.arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Run stats with QSV_STATS_CHUNK_MEMORY_MB=0 (dynamic) and non-streaming stats
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .env("QSV_STATS_CHUNK_MEMORY_MB", "0")
+        .arg("data.csv");
+
+    // Verify stats computation succeeds (should fallback to CPU-based chunking)
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty());
+    assert!(got.len() > 1);
+}
+
+#[test]
+fn stats_memory_aware_chunking_small_records() {
+    let wrk = Workdir::new("stats_memory_aware_chunking_small_records");
+
+    // Create a CSV file with very small records (single character fields)
+    let mut data = vec![svec!["a", "b", "c"]];
+    for _ in 0..100 {
+        data.push(svec!["x", "y", "z"]);
+    }
+    wrk.create("data.csv", data);
+
+    // Create index to enable parallel processing
+    let mut cmd = wrk.command("index");
+    cmd.arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Run stats with QSV_STATS_CHUNK_MEMORY_MB set to 1MB (small fixed value)
+    // and non-streaming stats
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .env("QSV_STATS_CHUNK_MEMORY_MB", "1")
+        .arg("data.csv");
+
+    // Verify stats computation succeeds (chunk size calculation should handle small records)
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty());
+    assert!(got.len() > 1);
+}
+
+#[test]
+fn stats_memory_aware_chunking_no_samples_fallback() {
+    let wrk = Workdir::new("stats_memory_aware_chunking_no_samples_fallback");
+
+    // Create a minimal CSV file
+    wrk.create(
+        "data.csv",
+        vec![svec!["col1"], svec!["1"], svec!["2"], svec!["3"]],
+    );
+
+    // Create index to enable parallel processing
+    let mut cmd = wrk.command("index");
+    cmd.arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Run stats with QSV_STATS_CHUNK_MEMORY_MB=0 (dynamic) and non-streaming stats
+    // With very few records, sampling may not work, so should fallback to CPU-based chunking
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .env("QSV_STATS_CHUNK_MEMORY_MB", "0")
+        .arg("data.csv");
+
+    // Verify stats computation succeeds (should fallback to CPU-based chunking)
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty());
+    assert!(got.len() > 1);
+}

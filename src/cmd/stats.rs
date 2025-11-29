@@ -1567,8 +1567,9 @@ impl Args {
             // TODO: getting the first 1000 records is simple, but we should
             // revisit this in the future for a more sophisticated sampling method.
             let mut samples = Vec::with_capacity(1000);
-            if let Ok(mut rdr) = self.rconfig().reader() {
-                for (i, record_result) in rdr.byte_records().enumerate() {
+            if let Ok(mut sample_rdr) = self.rconfig().reader() {
+                let _ = sample_rdr.byte_headers(); // consume header row
+                for (i, record_result) in sample_rdr.byte_records().enumerate() {
                     if i >= 1000 {
                         break;
                     }
@@ -2047,7 +2048,7 @@ fn calculate_avg_record_size(samples: &[csv::ByteRecord], which_stats: &WhichSta
             .iter()
             .map(|record| estimate_record_memory(record, which_stats))
             .sum();
-        total_size.max(1024) / samples.len()
+        (total_size / samples.len()).max(1024)
     }
 }
 
@@ -2119,7 +2120,7 @@ const fn estimate_chunk_memory(
     // For unsorted_stats: 8 bytes per record per numeric/date field
     if which_stats.quartiles || which_stats.median || which_stats.mad || which_stats.percentiles {
         // Estimate: assume half the fields are numeric/date (conservative)
-        additional_memory += record_count.saturating_mul(field_count / 2 * 8);
+        additional_memory += record_count.saturating_mul((field_count / 2).saturating_mul(8));
     }
 
     // For modes: store all field values
@@ -2171,7 +2172,7 @@ fn calculate_memory_aware_chunk_size(
             if needs_memory_aware_chunking {
                 // Non-streaming stats require memory-aware chunking, default to dynamic sizing
                 // This is equivalent to Some(0) - dynamic sizing
-                calculate_chunk_size(idx_count, njobs, which_stats, sample_records)
+                calculate_dynamic_chunk_size(idx_count, njobs, which_stats, sample_records)
             } else {
                 // Streaming stats only, use CPU-based chunking
                 util::chunk_size(idx_count as usize, njobs)
@@ -2179,7 +2180,7 @@ fn calculate_memory_aware_chunk_size(
         },
         Some(0) => {
             // Dynamic sizing: sample records to estimate average size
-            calculate_chunk_size(idx_count, njobs, which_stats, sample_records)
+            calculate_dynamic_chunk_size(idx_count, njobs, which_stats, sample_records)
         },
         Some(limit_mb) => {
             // Fixed memory limit per chunk
@@ -2213,7 +2214,7 @@ fn calculate_memory_aware_chunk_size(
     }
 }
 
-fn calculate_chunk_size(
+fn calculate_dynamic_chunk_size(
     idx_count: u64,
     njobs: usize,
     which_stats: &WhichStats,

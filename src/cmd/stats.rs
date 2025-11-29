@@ -2047,7 +2047,7 @@ fn calculate_avg_record_size(samples: &[csv::ByteRecord], which_stats: &WhichSta
             .iter()
             .map(|record| estimate_record_memory(record, which_stats))
             .sum();
-        total_size / samples.len()
+        total_size.max(1024) / samples.len()
     }
 }
 
@@ -2086,8 +2086,7 @@ fn estimate_record_memory(record: &csv::ByteRecord, which_stats: &WhichStats) ->
         additional_memory += base_size; // Store all field values
     }
 
-    // Add overhead for Vec capacity (midpoint of base_size and additional_memory, i.e., 50% of
-    // their sum)
+    // Add overhead for Vec capacity (average of base_size and additional_memory)
     let overhead = usize::midpoint(base_size, additional_memory);
 
     base_size + additional_memory + overhead
@@ -2246,7 +2245,7 @@ fn calculate_chunk_size(
         #[allow(clippy::cast_precision_loss)]
         let memory_per_chunk = ((avail_mem as f64 * SAFETY_MARGIN) / njobs as f64) as usize;
         debug_assert!(avg_record_size > 0, "avg_record_size must be positive");
-        let chunk_size = memory_per_chunk / avg_record_size;
+        let chunk_size = memory_per_chunk / avg_record_size.max(1);
 
         // Ensure chunk size is reasonable
         chunk_size.max(1).min(idx_count as usize)

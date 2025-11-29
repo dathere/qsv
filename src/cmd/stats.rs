@@ -1598,22 +1598,25 @@ impl Args {
             sample_records.as_deref(),
         );
 
+        /// Helper function to calculate average record size from samples
+        fn calculate_avg_record_size(samples: &[csv::ByteRecord], which_stats: &WhichStats) -> usize {
+            if samples.is_empty() {
+                1024 // Default
+            } else {
+                let total_size: usize = samples.iter()
+                    .map(|record| estimate_record_memory(record, which_stats))
+                    .sum();
+                total_size / samples.len()
+            }
+        }
+
         // Log chunk size and memory estimates for debugging
         // Log when memory-aware chunking is active (either explicitly set or automatically enabled)
         if max_chunk_memory_mb.is_some() || needs_memory_aware_chunking {
             // Estimate average record size from samples if available
-            let avg_record_size = if let Some(ref samples) = sample_records {
-                let mut total_size = 0;
-                for record in samples {
-                    total_size += estimate_record_memory(record, &which_stats);
-                }
-                if samples.is_empty() {
-                    1024 // Default
-                } else {
-                    total_size / samples.len()
-                }
-            } else {
-                1024 // Default estimate
+            let avg_record_size = match sample_records {
+                Some(samples) => calculate_avg_record_size(samples, &which_stats),
+                None => 1024,
             };
 
             let estimated_memory_mb =

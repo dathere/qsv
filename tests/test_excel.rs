@@ -1741,3 +1741,88 @@ fn excel_absolute_range2() {
     assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
+
+#[test]
+fn excel_cell_simple() {
+    let wrk = Workdir::new("excel_cell_simple");
+
+    let xls_file = wrk.load_test_file("excel-range.xlsx");
+
+    let mut cmd = wrk.command("excel");
+    cmd.arg("--cell").arg("d2").arg(xls_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["5"]];
+
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn excel_cell_sheet_qualified() {
+    let wrk = Workdir::new("excel_cell_sheet_qualified");
+
+    let xlsx_file = wrk.load_test_file("excel-xlsx.xlsx");
+
+    let mut cmd = wrk.command("excel");
+    cmd.arg("--cell").arg("Sheet2!C2").arg(xlsx_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["1.1"]];
+
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn excel_cell_absolute() {
+    let wrk = Workdir::new("excel_cell_absolute");
+
+    let xlsx_file = wrk.load_test_file("excel-xlsx.xlsx");
+
+    let mut cmd = wrk.command("excel");
+    cmd.arg("--cell").arg("Sheet2!$C$2").arg(xlsx_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["1.1"]];
+
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn excel_cell_double_letter_col() {
+    let wrk = Workdir::new("excel_cell_double_letter_col");
+
+    let xls_file = wrk.load_test_file("excel-range.xlsx");
+
+    let mut cmd = wrk.command("excel");
+    cmd.arg("--cell").arg("aa2").arg(xls_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["28"]];
+
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn excel_cell_precedence() {
+    let wrk = Workdir::new("excel_cell_precedence");
+
+    let xls_file = wrk.load_test_file("excel-range.xlsx");
+
+    let mut cmd = wrk.command("excel");
+    cmd.arg("--cell")
+        .arg("d2")
+        .arg("--range")
+        .arg("e2:e2")
+        .arg(xls_file);
+
+    // --cell should take precedence, so we should get d2's value, not e2's
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["5"]];
+
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+}

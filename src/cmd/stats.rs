@@ -328,6 +328,7 @@ use std::{
 
 use blake3;
 use crossbeam_channel;
+use csv_index::RandomAccessSimple;
 use itertools::Itertools;
 use phf::phf_map;
 use qsv_dateparser::parse_with_preference;
@@ -344,7 +345,7 @@ use threadpool::ThreadPool;
 use self::FieldType::{TDate, TDateTime, TFloat, TInteger, TNull, TString};
 use crate::{
     CliResult,
-    config::{Config, Delimiter, get_delim_by_extension},
+    config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter, get_delim_by_extension},
     select::{SelectColumns, Selection},
     util,
 };
@@ -1096,7 +1097,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // Check if we have an index and will use parallel processing
             // If so, skip mem_file_check since memory-aware chunking will handle it
-            let indexed_result = rconfig.indexed()?;
+            let mut indexed_result = rconfig.indexed()?;
             let will_use_parallel = match &indexed_result {
                 Some(_) => {
                     // We have an index, check if we'll use parallel processing
@@ -1118,7 +1119,49 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     || args.flag_quartiles
                     || args.flag_mad)
             {
-                util::mem_file_check(&path, false, args.flag_memcheck)?;
+                // Try mem_file_check, and if it fails for an unindexed file, auto-create index
+                match util::mem_file_check(&path, false, args.flag_memcheck) {
+                    Ok(_) => {
+                        // Memory check passed, proceed with sequential processing
+                    },
+                    Err(e) => {
+                        // Memory check failed - if we don't have an index, try creating one
+                        if indexed_result.is_none() && !rconfig.is_stdin() {
+                            log::info!(
+                                "File too large for sequential processing. Auto-creating index to \
+                                 enable parallel processing..."
+                            );
+
+                            // Create index and retry
+                            match create_index_for_file(&path, &rconfig) {
+                                Ok(()) => {
+                                    // Re-check for index after creation
+                                    indexed_result = rconfig.indexed()?;
+                                    if indexed_result.is_some() {
+                                        log::info!(
+                                            "Index created successfully. Switching to parallel \
+                                             processing."
+                                        );
+                                        // Continue - the match statement below will use
+                                        // indexed_result to determine parallel/sequential
+                                    } else {
+                                        // Index creation succeeded but we still can't get it
+                                        // Return the original memory error
+                                        return Err(e);
+                                    }
+                                },
+                                Err(index_err) => {
+                                    // Index creation failed, return the original memory error
+                                    log::warn!("Failed to auto-create index: {index_err}");
+                                    return Err(e);
+                                },
+                            }
+                        } else {
+                            // Either we already have an index or it's stdin - return the error
+                            return Err(e);
+                        }
+                    },
+                }
             }
 
             // we need to count the number of records in the file to calculate sparsity and
@@ -1965,6 +2008,42 @@ impl Args {
 
         csv::StringRecord::from(fields)
     }
+}
+
+/// Creates an index file for the given CSV file path.
+///
+/// This function creates a CSV index file that enables random access and parallel processing.
+/// It checks for edge cases like snappy-compressed files and stdin input.
+///
+/// # Arguments
+///
+/// * `path` - Path to the CSV file to index
+/// * `rconfig` - CSV reader configuration
+///
+/// # Returns
+///
+/// * `Ok(())` - Index was successfully created
+/// * `Err(CliError)` - If index creation failed
+fn create_index_for_file(path: &Path, rconfig: &Config) -> CliResult<()> {
+    // Don't create index for snappy-compressed files
+    if path.to_string_lossy().to_ascii_lowercase().ends_with(".sz") {
+        return fail_clierror!(
+            "Cannot create index for snappy-compressed files. Please decompress first."
+        );
+    }
+
+    let pidx = util::idx_path(path);
+    log::info!("Auto-creating index file: {}", pidx.display());
+
+    let mut rdr = rconfig.reader_file()?;
+    let idxfile = fs::File::create(&pidx)?;
+    let mut wtr = io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, idxfile);
+
+    RandomAccessSimple::create(&mut rdr, &mut wtr)?;
+    wtr.flush()?;
+
+    log::info!("Successfully created index file: {}", pidx.display());
+    Ok(())
 }
 
 /// Estimates memory usage per record based on enabled statistics.

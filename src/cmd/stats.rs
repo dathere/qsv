@@ -612,6 +612,7 @@ const MAX_ANTIMODES: usize = 10;
 const DEFAULT_ANTIMODES_LEN: usize = 100;
 
 // safety margin for memory-aware chunking
+// (uses 80% of available memory to leave headroom for system operations & other processes)
 const SAFETY_MARGIN: f64 = 0.8;
 
 // the default separator we use for stats that have multiple values
@@ -2232,9 +2233,8 @@ fn calculate_dynamic_chunk_size(
             .map(|record| estimate_record_memory(record, which_stats))
             .sum();
 
-        debug_assert!(total_size > 0, "total_size should be positive here");
         // samples.len() is guaranteed to be positive here as we checked above that it is not empty
-        let avg_record_size = total_size / samples.len();
+        let avg_record_size = (total_size / samples.len()).max(1024);
 
         // Get available memory from system
         let mut sys = System::new();

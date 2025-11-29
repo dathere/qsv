@@ -1551,7 +1551,7 @@ impl Args {
                 total_size / samples.len()
             }
         }
-        
+
         // N.B. This method doesn't handle the case when the number of records
         // is zero correctly. So we use `sequential_stats` instead.
         if idx_count == 0 {

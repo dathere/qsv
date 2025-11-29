@@ -465,7 +465,7 @@ fn calculate_memory_aware_chunk_size_for_frequency(
                         .map(estimate_record_memory_for_frequency)
                         .sum();
                     debug_assert!(total_size > 0, "total_size should be positive here");
-                    total_size / samples.len() // samples.len() is guaranteed to be positive here
+                    (total_size / samples.len()).max(1024) // ensure minimum 1KB estimate, samples.len() is guaranteed to be positive here
                 }
             } else {
                 1024 // Default: 1KB per record

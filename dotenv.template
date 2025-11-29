@@ -52,6 +52,11 @@ QSV_NO_HEADERS = False
 # This helps process arbitrarily large files by creating smaller chunks that fit in available memory.
 # QSV_STATS_CHUNK_MEMORY_MB = 0
 
+# Controls memory-aware chunk sizing for parallel frequency distribution processing.
+# When set to a positive number, limits the maximum memory per chunk (in MB).
+# When unset or set to 0, dynamically estimates chunk size by sampling records and available system memory.
+# QSV_FREQ_CHUNK_MEMORY_MB = 0
+
 # if set, specifies the minimum file size (in bytes) of a CSV file before an 
 # index is automatically created. Note that stale indices are automatically 
 # updated regardless of this setting.

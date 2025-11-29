@@ -111,7 +111,6 @@ dunce = "1"
 dynfmt2 = { version = "0.3", default-features = false, features = ["curly"] }
 eudex = { version = "0.1", optional = true }
 ext-sort = { version = "0.1", default-features = false }
-fancy-regex = "0.16"
 fast-float2 = "0.2"
 flate2 = { version = "1", optional = true }
 foldhash = "0.2"
@@ -210,7 +209,6 @@ polars = { version = "0.52", features = [
     "sql",
     "timezones",
 ], optional = true }
-publicsuffix = { version = "2.2", optional = true }
 pyo3 = { version = "0.27", features = ["auto-initialize"], optional = true }
 qsv-dateparser = "0.13"
 qsv_docopt = "1.9"
@@ -321,25 +319,25 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 cached = { git = "https://github.com/jaemk/cached", rev = "0b6a255" }
 
 # 0.14 has been released but has an old qsv-sniffer dependency. Use our patched fork until our PR is merged
-csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "bump_qsv-sniffer_to_0.12" }
+csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "bump_qsv-sniffer_to_0.12", optional = true }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
-csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88" }
+csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88", optional = true }
 
 # use upstream geozero with unreleased fixes
-geozero = { git = "https://github.com/georust/geozero", rev = "572cfc2" }
+geozero = { git = "https://github.com/georust/geozero", rev = "572cfc2", optional = true }
 
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }
 
 # use upstream of mimalloc with unreleased fixes
-mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "0a32a38" }
+mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "0a32a38", optional = true }
 
 # use upstream of self_update with unreleased fixes and dependencies
-self_update = { git = "https://github.com/jaemk/self_update", rev = "9ec008b" }
+self_update = { git = "https://github.com/jaemk/self_update", rev = "9ec008b", optional = true }
 
 # use our patched fork of sled to get rid of unmaintained instant
-sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }
+sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12", optional = true }
 
 # Polars has a much higher release tempo for its Python bindings compared
 # to its underlying Rust library. See https://github.com/pola-rs/polars/releases
@@ -361,7 +359,7 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parki
 # ================================
 # QSV_POLARS_REV=a03ac95
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.35.2" }
-polars = { git = "https://github.com/pola-rs/polars", rev = "a03ac95" }
+polars = { git = "https://github.com/pola-rs/polars", rev = "a03ac95", optional = true }
 
 [features]
 default = ["mimalloc"]
@@ -396,7 +394,6 @@ fetch = [
     "console",
     "flate2",
     "governor",
-    "publicsuffix",
     "serde_urlencoded",
     "sled",
 ]

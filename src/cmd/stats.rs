@@ -66,6 +66,8 @@ cardinality), memory-aware chunking is automatically enabled to handle files lar
 memory. Chunk size is dynamically calculated based on available memory and record sampling.
 You can override this behavior by setting the QSV_STATS_CHUNK_MEMORY_MB environment variable
 (set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk).
+When unset, automatically uses dynamic sizing for non-streaming statistics (median, quartiles, modes, 
+cardinality) and CPU-based chunking for streaming statistics only.
 By default, chunk size is based on the number of logical CPUs detected for streaming statistics.
 You can override this by setting the --jobs option.
 
@@ -1534,6 +1536,22 @@ impl Args {
         whitelist: &str,
         idx_count: u64,
     ) -> CliResult<(csv::ByteRecord, Vec<Stats>)> {
+        /// Helper function to calculate average record size from samples
+        fn calculate_avg_record_size(
+            samples: &[csv::ByteRecord],
+            which_stats: &WhichStats,
+        ) -> usize {
+            if samples.is_empty() {
+                1024 // Default
+            } else {
+                let total_size: usize = samples
+                    .iter()
+                    .map(|record| estimate_record_memory(record, which_stats))
+                    .sum();
+                total_size / samples.len()
+            }
+        }
+        
         // N.B. This method doesn't handle the case when the number of records
         // is zero correctly. So we use `sequential_stats` instead.
         if idx_count == 0 {
@@ -1556,19 +1574,16 @@ impl Args {
         let which_stats = self.which_stats();
 
         // Check if non-streaming stats are enabled (require memory-aware chunking)
-        let needs_memory_aware_chunking = which_stats.quartiles
-            || which_stats.median
-            || which_stats.mad
-            || which_stats.percentiles
-            || which_stats.mode
-            || which_stats.cardinality;
+        let needs_memory_aware_chunking = which_stats.needs_memory_aware_chunking();
 
         // Sample records for memory estimation if needed
         // Always sample when non-streaming stats are enabled OR when QSV_STATS_CHUNK_MEMORY_MB is
-        // set
+        // set to ANY value (including 0)
         let mut sample_records: Option<Vec<csv::ByteRecord>> = None;
         if max_chunk_memory_mb.is_some() || needs_memory_aware_chunking {
             // Create a sample from the indexed reader
+            // TODO: getting the first 1000 records is simple, but we should
+            // revisit this in the future for a more sophisticated sampling method.
             if let Ok(Some(mut idx)) = self.rconfig().indexed() {
                 // Sample first 1000 records (or fewer if file is smaller)
                 let sample_size = (idx_count as usize).min(1000);
@@ -1598,24 +1613,12 @@ impl Args {
             sample_records.as_deref(),
         );
 
-        /// Helper function to calculate average record size from samples
-        fn calculate_avg_record_size(samples: &[csv::ByteRecord], which_stats: &WhichStats) -> usize {
-            if samples.is_empty() {
-                1024 // Default
-            } else {
-                let total_size: usize = samples.iter()
-                    .map(|record| estimate_record_memory(record, which_stats))
-                    .sum();
-                total_size / samples.len()
-            }
-        }
-
         // Log chunk size and memory estimates for debugging
         // Log when memory-aware chunking is active (either explicitly set or automatically enabled)
         if max_chunk_memory_mb.is_some() || needs_memory_aware_chunking {
             // Estimate average record size from samples if available
             let avg_record_size = match sample_records {
-                Some(samples) => calculate_avg_record_size(samples, &which_stats),
+                Some(samples) => calculate_avg_record_size(&samples, &which_stats),
                 None => 1024,
             };
 
@@ -2105,26 +2108,26 @@ fn estimate_record_memory(record: &csv::ByteRecord, which_stats: &WhichStats) ->
 /// # Returns
 ///
 /// Estimated total memory in bytes for the chunk
-const fn estimate_chunk_memory(
+fn estimate_chunk_memory(
     record_count: usize,
     avg_record_size: usize,
     which_stats: &WhichStats,
 ) -> usize {
     // Base memory for records
-    let base_memory = record_count * avg_record_size;
+    let base_memory = record_count.saturating_mul(avg_record_size);
 
     // Additional memory for non-streaming statistics
     let mut additional_memory = 0;
 
     // For unsorted_stats: 8 bytes per record per numeric/date field
     if which_stats.quartiles || which_stats.median || which_stats.mad || which_stats.percentiles {
-        // Estimate: assume average of 5 numeric/date fields per record
-        additional_memory += record_count * 5 * 8;
+        // Estimate: assume average of 5 numeric/date fields per record * 8 bytes per field = 40
+        additional_memory += record_count.saturating_mul(40);
     }
 
     // For modes: store all field values
     if which_stats.mode || which_stats.cardinality {
-        additional_memory += record_count * avg_record_size;
+        additional_memory += record_count.saturating_mul(avg_record_size);
     }
 
     // Add overhead for data structures (Stats objects, Vec capacity, etc.)
@@ -2161,12 +2164,7 @@ fn calculate_memory_aware_chunk_size(
     sample_records: Option<&[csv::ByteRecord]>,
 ) -> usize {
     // Check if non-streaming stats are enabled (require memory-aware chunking)
-    let needs_memory_aware_chunking = which_stats.quartiles
-        || which_stats.median
-        || which_stats.mad
-        || which_stats.percentiles
-        || which_stats.mode
-        || which_stats.cardinality;
+    let needs_memory_aware_chunking = which_stats.needs_memory_aware_chunking();
 
     match max_chunk_memory_mb {
         None => {
@@ -2242,6 +2240,7 @@ fn calculate_chunk_size(
 
         // Calculate chunk size based on available memory
         // Use 80% of available memory divided by number of jobs
+        debug_assert!(njobs > 0, "njobs must be greater than 0");
         #[allow(clippy::cast_precision_loss)]
         let memory_per_chunk = ((avail_mem as f64 * SAFETY_MARGIN) / njobs as f64) as usize;
         let chunk_size = memory_per_chunk / avg_record_size.max(1);
@@ -2377,6 +2376,17 @@ impl Commute for WhichStats {
     #[inline]
     fn merge(&mut self, other: WhichStats) {
         assert_eq!(*self, other);
+    }
+}
+
+impl WhichStats {
+    fn needs_memory_aware_chunking(&self) -> bool {
+        self.quartiles
+            || self.median
+            || self.mad
+            || self.percentiles
+            || self.mode
+            || self.cardinality
     }
 }
 

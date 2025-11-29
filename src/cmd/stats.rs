@@ -611,6 +611,9 @@ const MAX_ANTIMODES: usize = 10;
 // default length of antimode string before truncating and appending "..."
 const DEFAULT_ANTIMODES_LEN: usize = 100;
 
+// safety margin for memory-aware chunking
+const SAFETY_MARGIN: f64 = 0.8;
+
 // the default separator we use for stats that have multiple values
 // in one column, i.e. antimodes/modes & percentiles
 pub const DEFAULT_STATS_SEPARATOR: &str = "|";
@@ -1117,7 +1120,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     || args.flag_cardinality
                     || args.flag_median
                     || args.flag_quartiles
-                    || args.flag_mad)
+                    || args.flag_mad
+                    || args.flag_percentiles)
             {
                 // Try mem_file_check, and if it fails for an unindexed file, auto-create index
                 match util::mem_file_check(&path, false, args.flag_memcheck) {
@@ -1867,6 +1871,25 @@ impl Args {
             .select(self.flag_select.clone())
     }
 
+    /// Creates a WhichStats configuration from the current arguments.
+    #[inline]
+    fn which_stats(&self) -> WhichStats {
+        WhichStats {
+            include_nulls:   self.flag_nulls,
+            sum:             !self.flag_typesonly || self.flag_infer_boolean,
+            range:           !self.flag_typesonly || self.flag_infer_boolean,
+            dist:            !self.flag_typesonly || self.flag_infer_boolean,
+            cardinality:     self.flag_everything || self.flag_cardinality,
+            median:          !self.flag_everything && self.flag_median && !self.flag_quartiles,
+            mad:             self.flag_everything || self.flag_mad,
+            quartiles:       self.flag_everything || self.flag_quartiles,
+            mode:            self.flag_everything || self.flag_mode,
+            typesonly:       self.flag_typesonly,
+            percentiles:     self.flag_everything || self.flag_percentiles,
+            percentile_list: self.flag_percentile_list.clone(),
+        }
+    }
+
     /// Creates a vector of `Stats` objects for statistics computation.
     ///
     /// This function initializes a vector of `Stats` objects, one for each column
@@ -1897,26 +1920,7 @@ impl Args {
     ///
     /// * **Inline**: Function is marked as `#[inline]` for performance
     /// * **Pre-allocated**: Uses `Vec::with_capacity` for efficient allocation
-    /// * **Bulk Initialization**: Uses `repeat_n` for efficient object creation Creates a
-    ///   `WhichStats` configuration from the current arguments.
-    #[inline]
-    fn which_stats(&self) -> WhichStats {
-        WhichStats {
-            include_nulls:   self.flag_nulls,
-            sum:             !self.flag_typesonly || self.flag_infer_boolean,
-            range:           !self.flag_typesonly || self.flag_infer_boolean,
-            dist:            !self.flag_typesonly || self.flag_infer_boolean,
-            cardinality:     self.flag_everything || self.flag_cardinality,
-            median:          !self.flag_everything && self.flag_median && !self.flag_quartiles,
-            mad:             self.flag_everything || self.flag_mad,
-            quartiles:       self.flag_everything || self.flag_quartiles,
-            mode:            self.flag_everything || self.flag_mode,
-            typesonly:       self.flag_typesonly,
-            percentiles:     self.flag_everything || self.flag_percentiles,
-            percentile_list: self.flag_percentile_list.clone(),
-        }
-    }
-
+    /// * **Bulk Initialization**: Uses `repeat_n` for efficient object creation
     #[inline]
     fn new_stats(&self, record_len: usize) -> Vec<Stats> {
         let mut stats: Vec<Stats> = Vec::with_capacity(record_len);
@@ -2153,9 +2157,6 @@ fn calculate_memory_aware_chunk_size(
     which_stats: &WhichStats,
     sample_records: Option<&[csv::ByteRecord]>,
 ) -> usize {
-    // Safety margin: use 80% of available memory to account for overhead
-    const SAFETY_MARGIN: f64 = 0.8;
-
     // Check if non-streaming stats are enabled (require memory-aware chunking)
     let needs_memory_aware_chunking = which_stats.quartiles
         || which_stats.median
@@ -2170,40 +2171,7 @@ fn calculate_memory_aware_chunk_size(
             if needs_memory_aware_chunking {
                 // Non-streaming stats require memory-aware chunking, default to dynamic sizing
                 // This is equivalent to Some(0) - dynamic sizing
-                if let Some(samples) = sample_records {
-                    if samples.is_empty() {
-                        // No samples available, fall back to CPU-based chunking
-                        log::warn!(
-                            "No records available for sampling, falling back to CPU-based chunking"
-                        );
-                        return util::chunk_size(idx_count as usize, njobs);
-                    }
-
-                    let mut total_size = 0;
-                    for record in samples {
-                        total_size += estimate_record_memory(record, which_stats);
-                    }
-
-                    let avg_record_size = total_size / samples.len().max(1);
-
-                    // Get available memory from system
-                    let mut sys = System::new();
-                    sys.refresh_memory();
-                    let avail_mem = sys.available_memory();
-
-                    // Calculate chunk size based on available memory
-                    // Use 80% of available memory divided by number of jobs
-                    #[allow(clippy::cast_precision_loss)]
-                    let memory_per_chunk =
-                        ((avail_mem as f64 * SAFETY_MARGIN) / njobs as f64) as usize;
-                    let chunk_size = memory_per_chunk / avg_record_size.max(1);
-
-                    // Ensure chunk size is reasonable
-                    chunk_size.max(1).min(idx_count as usize)
-                } else {
-                    // No sample records provided, fall back to CPU-based chunking
-                    util::chunk_size(idx_count as usize, njobs)
-                }
+                calculate_chunk_size(idx_count, njobs, which_stats, sample_records)
             } else {
                 // Streaming stats only, use CPU-based chunking
                 util::chunk_size(idx_count as usize, njobs)
@@ -2211,39 +2179,7 @@ fn calculate_memory_aware_chunk_size(
         },
         Some(0) => {
             // Dynamic sizing: sample records to estimate average size
-            if let Some(samples) = sample_records {
-                if samples.is_empty() {
-                    // No samples available, fall back to CPU-based chunking
-                    log::warn!(
-                        "No records available for sampling, falling back to CPU-based chunking"
-                    );
-                    return util::chunk_size(idx_count as usize, njobs);
-                }
-
-                let mut total_size = 0;
-                for record in samples {
-                    total_size += estimate_record_memory(record, which_stats);
-                }
-
-                let avg_record_size = total_size / samples.len().max(1);
-
-                // Get available memory from system
-                let mut sys = System::new();
-                sys.refresh_memory();
-                let avail_mem = sys.available_memory();
-
-                // Calculate chunk size based on available memory
-                // Use 80% of available memory divided by number of jobs
-                #[allow(clippy::cast_precision_loss)]
-                let memory_per_chunk = ((avail_mem as f64 * SAFETY_MARGIN) / njobs as f64) as usize;
-                let chunk_size = memory_per_chunk / avg_record_size.max(1);
-
-                // Ensure chunk size is reasonable
-                chunk_size.max(1).min(idx_count as usize)
-            } else {
-                // No sample records provided, fall back to CPU-based chunking
-                util::chunk_size(idx_count as usize, njobs)
-            }
+            calculate_chunk_size(idx_count, njobs, which_stats, sample_records)
         },
         Some(limit_mb) => {
             // Fixed memory limit per chunk
@@ -2260,7 +2196,7 @@ fn calculate_memory_aware_chunk_size(
                     for record in samples {
                         total_size += estimate_record_memory(record, which_stats);
                     }
-                    total_size / samples.len()
+                    total_size / samples.len().max(1)
                 }
             } else {
                 1024 // Default: 1KB per record
@@ -2268,11 +2204,50 @@ fn calculate_memory_aware_chunk_size(
 
             // Calculate chunk size based on memory limit
             #[allow(clippy::cast_precision_loss)]
-            let chunk_size = (max_memory_bytes / avg_record_size as f64) as usize;
+            let chunk_size = (max_memory_bytes / (avg_record_size as f64).max(1.0)) as usize;
 
             // Ensure chunk size is reasonable
             chunk_size.max(1).min(idx_count as usize)
         },
+    }
+}
+
+fn calculate_chunk_size(
+    idx_count: u64,
+    njobs: usize,
+    which_stats: &WhichStats,
+    sample_records: Option<&[csv::ByteRecord]>,
+) -> usize {
+    if let Some(samples) = sample_records {
+        if samples.is_empty() {
+            // No samples available, fall back to CPU-based chunking
+            log::warn!("No records available for sampling, falling back to CPU-based chunking");
+            return util::chunk_size(idx_count as usize, njobs);
+        }
+
+        let mut total_size = 0;
+        for record in samples {
+            total_size += estimate_record_memory(record, which_stats);
+        }
+
+        let avg_record_size = total_size / samples.len().max(1);
+
+        // Get available memory from system
+        let mut sys = System::new();
+        sys.refresh_memory();
+        let avail_mem = sys.available_memory();
+
+        // Calculate chunk size based on available memory
+        // Use 80% of available memory divided by number of jobs
+        #[allow(clippy::cast_precision_loss)]
+        let memory_per_chunk = ((avail_mem as f64 * SAFETY_MARGIN) / njobs as f64) as usize;
+        let chunk_size = memory_per_chunk / avg_record_size.max(1);
+
+        // Ensure chunk size is reasonable
+        chunk_size.max(1).min(idx_count as usize)
+    } else {
+        // No sample records provided, fall back to CPU-based chunking
+        util::chunk_size(idx_count as usize, njobs)
     }
 }
 

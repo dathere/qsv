@@ -44,6 +44,13 @@ QSV_NO_HEADERS = False
 # set to 0 to disable length limiting
 # QSV_ANTIMODES_LEN = 100
 
+# Controls memory-aware chunk sizing for parallel statistics processing.
+# When set to a positive number, limits the maximum memory per chunk (in MB).
+# When set to 0, dynamically estimates chunk size by sampling records.
+# When unset, uses CPU-based chunking (default).
+# This helps process arbitrarily large files by creating smaller chunks that fit in available memory.
+# QSV_STATS_CHUNK_MEMORY_MB = 0
+
 # if set, specifies the minimum file size (in bytes) of a CSV file before an 
 # index is automatically created. Note that stale indices are automatically 
 # updated regardless of this setting.

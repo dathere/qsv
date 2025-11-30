@@ -1,7 +1,7 @@
 name = "qsv Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "qsv team"
-version = "5.1.0"
+version = "6.0.0"
 tokens = 10000
 base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
@@ -113,10 +113,6 @@ The entire output should be in Markdown format.
 tags_prompt = """
 A Tag is a keyword or label that categorizes datasets with other, similar datasets.
 Using the right Tags makes it easier for others to find and use datasets.
-
-Generate no more than {NUM_TAGS} most thematic Tags{JSON_ADD} about the contents of the Dataset in descending
-order of importance (lowercase only and use _ to separate words) based on the following Summary Statistics and
-Frequency Distribution data about the Dataset.
 
 {TAG_VOCAB}
 

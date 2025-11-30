@@ -318,8 +318,8 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # use latest upstream now that our PR is merged, but we're still awaiting a new release
 cached = { git = "https://github.com/jaemk/cached", rev = "0b6a255" }
 
-# 0.14 has been released but has an old qsv-sniffer dependency. Use our patched fork until our PR is merged
-csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "bump_qsv-sniffer_to_0.12", optional = true }
+# Use latest upstream now that has been merged but awaiting a new release
+csvlens = { git = "https://github.com/YS-L/csvlens", rev = "05aaece", optional = true }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88", optional = true }

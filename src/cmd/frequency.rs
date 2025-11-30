@@ -952,9 +952,6 @@ impl Args {
         let njobs = util::njobs(self.flag_jobs);
 
         // Read memory limit from environment variable
-        // let max_chunk_memory_mb = std::env::var("QSV_FREQ_CHUNK_MEMORY_MB")
-        //     .ok()
-        //     .and_then(|v| atoi_simd::parse::<u64>(v.as_bytes()).ok());
 
         // Read memory limit from environment variable
         // If QSV_FREQ_CHUNK_MEMORY_MB is set & valid, set max chunk memory

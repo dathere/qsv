@@ -689,13 +689,11 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
     if let Some(prompt_file) = PROMPT_FILE.get() {
         Ok(prompt_file)
     } else {
-        let prompt_file_content = if args.flag_prompt_file.is_none() {
-            // If no prompt file is provided, use the default prompt file
-            let default_prompt_file = include_str!("../../resources/describegpt_defaults.toml");
-            default_prompt_file
+        let prompt_file_content = if let Some(ref prompt_file) = args.flag_prompt_file {
+            &fs::read_to_string(prompt_file)?
         } else {
-            let prompt_file_path = args.flag_prompt_file.as_ref().unwrap();
-            &fs::read_to_string(prompt_file_path)?
+            // If no prompt file is provided, use the default prompt file
+            include_str!("../../resources/describegpt_defaults.toml")
         };
 
         // Try to parse prompt file as TOML
@@ -885,14 +883,13 @@ fn get_prompt(
         }
     }
 
-    let tag_vocab = if prompt_type == PromptType::Tags && args.flag_tag_vocab.is_some() {
-        // safety: tag_vocab is_some
-        let tag_vocab = args.flag_tag_vocab.as_ref().unwrap();
-
+    let tag_vocab = if prompt_type == PromptType::Tags
+        && let Some(ref tag_vocab) = args.flag_tag_vocab
+    {
         // check if the tag vocabulary file exists
-        if !fs::metadata(tag_vocab)?.is_file() {
+        if fs::metadata(tag_vocab).map_or(true, |m| !m.is_file()) {
             return fail_incorrectusage_clierror!(
-                "Tag vocabulary file does not exist: {tag_vocab}"
+                "Tag vocabulary file does not exist or is not a file: {tag_vocab}"
             );
         }
         let tag_vocab_content = fs::read_to_string(tag_vocab)?;
@@ -901,26 +898,37 @@ fn get_prompt(
             return fail_incorrectusage_clierror!("Tag vocabulary file is empty");
         }
         format!(
-            "Use the following Tag Vocabulary:\n\n{tag_vocab_content}\n\nThe tag and its \
-             corresponding description are separated by a colon.\nOnly use tags from the Tag \
-             Vocabulary, using the description to guide the tag inference."
+            r#"Limit your choices to only {{NUM_TAGS}} unique Tags{{JSON_ADD}} in the following Tag Vocabulary,
+            in order of relevance, based on the Summary Statistics and Frequency Distribution about the Dataset provided further below:
+
+{tag_vocab_content}
+
+Each Tag in the Tag Vocabulary is separated by a colon from its corresponding Description.
+Take the Description into account to guide your Tag choices.
+
+When listing the chosen Tags, only use the Tag, not the Description nor the colon."#
         )
     } else {
-        "Do not use field names in the tags.".to_string()
+        format!(
+            "Choose no more than {{NUM_TAGS}} most thematic Tags{{JSON_ADD}} about the contents \
+             of the Dataset in descending order of importance (lowercase only and use _ to \
+             separate words) based on the Summary Statistics and Frequency Distribution about the \
+             Dataset provided below. Do not use field names in the tags."
+        )
     };
 
     // Replace variable data in prompt
     #[allow(clippy::to_string_in_format_args)]
     #[allow(clippy::literal_string_with_formatting_args)]
     let prompt = prompt
+        .replace("{TAG_VOCAB}", &tag_vocab)
+        .replace("{NUM_TAGS}", &args.flag_num_tags.to_string())
         .replace("{STATS}", stats)
         .replace("{FREQUENCY}", frequency)
         .replace("{HEADERS}", headers)
         .replace("{DELIMITER}", &delimiter.to_string())
         .replace("{DUCKDB_VERSION}", &duckdb_version)
         .replace("{TOP_N}", &args.flag_enum_threshold.to_string())
-        .replace("{NUM_TAGS}", &args.flag_num_tags.to_string())
-        .replace("{TAG_VOCAB}", &tag_vocab)
         .replace(
             "{DICTIONARY}",
             DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),
@@ -928,8 +936,8 @@ fn get_prompt(
         .replace(
             "{JSON_ADD}",
             if prompt_file.json || prompt_file.jsonl || args.flag_json || args.flag_jsonl {
-                " (in valid JSON format, ensuring string values are properly escaped. Surround it \
-                 with ```json and ```)"
+                " (in valid, pretty-printed JSON format, ensuring string values are properly \
+                 escaped)"
             } else {
                 " (in Markdown format)"
             },
@@ -1694,7 +1702,14 @@ fn run_inference_options(
         };
         messages = get_messages(&prompt, &system_prompt, dictionary_context);
         let start_time = Instant::now();
-        print_status("  Inferring Tags...", None);
+        if let Some(ref tag_vocab) = args.flag_tag_vocab {
+            print_status(
+                &format!("  Inferring Tags with Tag Vocabulary ({tag_vocab})...",),
+                None,
+            );
+        } else {
+            print_status("  Inferring Tags...", None);
+        }
         completion_response = get_cached_completion(
             args,
             &client,

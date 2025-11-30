@@ -49,12 +49,14 @@ QSV_NO_HEADERS = False
 # When set to 0, dynamically estimates chunk size by sampling records.
 # When unset, automatically uses dynamic memory-aware chunking for non-streaming statistics
 # (median, quartiles, modes, cardinality) and CPU-based chunking for streaming statistics.
+# Set to -1 to force CPU-based chunking (i.e chunk size = num records/num CPUs)
 # This helps process arbitrarily large files by creating smaller chunks that fit in available memory.
 # QSV_STATS_CHUNK_MEMORY_MB = 0
 
 # Controls memory-aware chunk sizing for parallel frequency distribution processing.
 # When set to a positive number, limits the maximum memory per chunk (in MB).
 # When unset or set to 0, dynamically estimates chunk size by sampling records and available system memory.
+# Set to -1 to force CPU-based chunking (i.e chunk size = num records/num CPUs)
 # QSV_FREQ_CHUNK_MEMORY_MB = 0
 
 # if set, specifies the minimum file size (in bytes) of a CSV file before an 

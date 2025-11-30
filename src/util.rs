@@ -1125,10 +1125,29 @@ where
         #[allow(clippy::cast_precision_loss)]
         let memory_per_chunk = ((avail_mem as f64 * SAFETY_MARGIN) / njobs as f64) as usize;
         debug_assert!(avg_record_size > 0, "avg_record_size must be positive");
-        let chunk_size = memory_per_chunk / avg_record_size.max(1);
+        let memory_based_chunk_size = memory_per_chunk / avg_record_size.max(1);
 
         // Ensure chunk size is reasonable
-        chunk_size.max(1).min(idx_count as usize)
+        let memory_based_chunk_size = memory_based_chunk_size.max(1).min(idx_count as usize);
+
+        // Calculate CPU-based chunk size for optimal parallelization
+        let cpu_based_chunk_size = chunk_size(idx_count as usize, njobs);
+
+        // Calculate how many chunks each approach would create
+        let memory_based_chunks = num_of_chunks(idx_count as usize, memory_based_chunk_size);
+        let cpu_based_chunks = num_of_chunks(idx_count as usize, cpu_based_chunk_size);
+
+        // Prefer CPU-based chunking if:
+        // 1. It creates more chunks (better parallelization), OR
+        // 2. Memory allows for CPU-based chunks (memory_based_chunk_size >= cpu_based_chunk_size)
+        //    and CPU-based creates at least as many chunks as CPUs
+        if (cpu_based_chunks > memory_based_chunks)
+            || (memory_based_chunk_size >= cpu_based_chunk_size && cpu_based_chunks >= njobs)
+        {
+            cpu_based_chunk_size
+        } else {
+            memory_based_chunk_size
+        }
     } else {
         // No sample records provided, fall back to CPU-based chunking
         chunk_size(idx_count as usize, njobs)

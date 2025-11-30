@@ -897,24 +897,25 @@ fn get_prompt(
         if tag_vocab_content.trim().is_empty() {
             return fail_incorrectusage_clierror!("Tag vocabulary file is empty");
         }
+        // we use double curly braces to escape the variables in the format string
+        // otherwise, the format! macro will try to interpolate the variables into the string
         format!(
-            r#"Limit your choices to only {{NUM_TAGS}} unique Tags{{JSON_ADD}} in the following Tag Vocabulary,
-            in order of relevance, based on the Summary Statistics and Frequency Distribution about the Dataset provided further below:
-
-{tag_vocab_content}
-
-Each Tag in the Tag Vocabulary is separated by a colon from its corresponding Description.
-Take the Description into account to guide your Tag choices.
-
-When listing the chosen Tags, only use the Tag, not the Description nor the colon."#
+            "Limit your choices to only {{NUM_TAGS}} unique Tags{{JSON_ADD}} in the following Tag \
+             Vocabulary, in order of relevance, based on the Summary Statistics and Frequency \
+             Distribution about the Dataset provided further \
+             below:\n\n{tag_vocab_content}\n\nEach Tag in the Tag Vocabulary is separated by a \
+             colon from its corresponding Description. Take the Description into account to guide \
+             your Tag choices.\n\nWhen listing the chosen Tags, only use the Tag, not the \
+             Description nor the colon."
         )
     } else {
-        format!(
-            "Choose no more than {{NUM_TAGS}} most thematic Tags{{JSON_ADD}} about the contents \
-             of the Dataset in descending order of importance (lowercase only and use _ to \
-             separate words) based on the Summary Statistics and Frequency Distribution about the \
-             Dataset provided below. Do not use field names in the tags."
-        )
+        // we don't use double curly braces to escape the variables in the format string
+        // because we're not using the format! macro here
+        "Choose no more than {NUM_TAGS} most thematic Tags{JSON_ADD} about the contents of the \
+         Dataset in descending order of importance (lowercase only and use _ to separate words) \
+         based on the Summary Statistics and Frequency Distribution about the Dataset provided \
+         below. Do not use field names in the tags."
+            .to_string()
     };
 
     // Replace variable data in prompt

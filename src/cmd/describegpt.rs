@@ -887,9 +887,9 @@ fn get_prompt(
         && let Some(ref tag_vocab) = args.flag_tag_vocab
     {
         // check if the tag vocabulary file exists
-        if fs::metadata(tag_vocab).is_err() {
+        if fs::metadata(tag_vocab).map_or(true, |m| !m.is_file()) {
             return fail_incorrectusage_clierror!(
-                "Tag vocabulary file does not exist: {tag_vocab}"
+                "Tag vocabulary file does not exist or is not a file: {tag_vocab}"
             );
         }
         let tag_vocab_content = fs::read_to_string(tag_vocab)?;

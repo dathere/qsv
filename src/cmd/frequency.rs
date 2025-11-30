@@ -38,8 +38,8 @@ files larger than available memory. Chunk size is dynamically calculated based o
 memory and record sampling.
 
 You can override this behavior by setting the QSV_FREQ_CHUNK_MEMORY_MB environment variable.
-Set to a positive number for a fixed memory limit per chunk which is distributed across
-the number of parallel jobs. When unset or set to 0, chunk size is dynamically calculated based on available memory and sampled records. You can override the number of parallel jobs used with the --jobs option.
+(set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk,
+or -1 for CPU-based chunking (1 chunk = num records/number of CPUs)), or by setting the --jobs option.
 
 NOTE: "Complete" Frequency Tables:
 
@@ -952,52 +952,71 @@ impl Args {
         let njobs = util::njobs(self.flag_jobs);
 
         // Read memory limit from environment variable
-        let max_chunk_memory_mb = std::env::var("QSV_FREQ_CHUNK_MEMORY_MB")
-            .ok()
-            .and_then(|v| atoi_simd::parse::<u64>(v.as_bytes()).ok());
+
+        // Read memory limit from environment variable
+        // If QSV_FREQ_CHUNK_MEMORY_MB is set & valid, set max chunk memory
+        // If QSV_FREQ_CHUNK_MEMORY_MB is not set, use 0 (dynamic sizing)
+        // If QSV_FREQ_CHUNK_MEMORY_MB is set to a value that cannot be parsed as u64 (e.g., -1 or any invalid/non-positive value), use CPU-based chunking
+        let max_chunk_memory_mb = if let Ok(val) = std::env::var("QSV_FREQ_CHUNK_MEMORY_MB") {
+            // if valid, set max chunk memory
+            // if invalid (cannot be parsed as u64), use CPU-based chunking
+            atoi_simd::parse::<u64>(val.as_bytes()).ok()
+        } else {
+            Some(0) // default to dynamic sizing
+        };
 
         // Sample first 1000 records for memory estimation
         // Always sample when QSV_FREQ_CHUNK_MEMORY_MB is set to ANY value (including 0)
         // or when not set (to enable dynamic sizing)
-        let sample_records = util::sample_records(&self.rconfig(), 1000);
-
-        // Calculate memory-aware chunk size
-        let chunk_size = calculate_memory_aware_chunk_size_for_frequency(
-            idx_count as u64,
-            njobs,
-            max_chunk_memory_mb,
-            sample_records.as_deref(),
-        );
-
-        // Log chunk size and memory estimates for debugging
-        // Log when memory-aware chunking is active (either explicitly set or automatically enabled)
-        // Estimate average record size from samples if available
-        let avg_record_size = if let Some(samples) = sample_records {
-            calculate_avg_record_size_for_frequency(&samples)
+        let sample_records = if max_chunk_memory_mb.is_some() {
+            util::sample_records(&self.rconfig(), 1000)
         } else {
-            1024 // Default: 1KB per record
+            None
         };
 
-        let estimated_memory_mb =
-            estimate_chunk_memory_for_frequency(chunk_size, avg_record_size, headers.len())
-                / (1024 * 1024);
+        let (chunking_mode, chunk_size) = if let Some(limit_mb) = max_chunk_memory_mb {
+            // Calculate memory-aware chunk size
+            let chunk_size = calculate_memory_aware_chunk_size_for_frequency(
+                idx_count as u64,
+                njobs,
+                max_chunk_memory_mb,
+                sample_records.as_deref(),
+            );
 
-        let chunking_mode = if let Some(limit_mb) = max_chunk_memory_mb {
-            if limit_mb == 0 {
+            // Log chunk size and memory estimates for debugging
+            // Log when memory-aware chunking is active (either explicitly set or automatically
+            // enabled) Estimate average record size from samples if available
+            let avg_record_size = if let Some(samples) = sample_records {
+                calculate_avg_record_size_for_frequency(&samples)
+            } else {
+                1024 // Default: 1KB per record
+            };
+
+            let estimated_memory_mb =
+                estimate_chunk_memory_for_frequency(chunk_size, avg_record_size, headers.len())
+                    / (1024 * 1024);
+            let chunking_mode = if limit_mb == 0 {
                 "dynamic (auto)"
             } else {
                 "fixed limit"
-            }
+            };
+            (
+                format!(
+                    "Memory-aware chunking ({chunking_mode}): chunk_size={chunk_size}, \
+                     estimated_memory_mb={estimated_memory_mb:.2}"
+                ),
+                chunk_size,
+            )
         } else {
-            "dynamic (auto)"
+            let chunk_size = util::chunk_size(idx_count, njobs);
+            (
+                format!("CPU-based chunking: chunk_size={chunk_size}"),
+                chunk_size,
+            )
         };
 
-        log::info!(
-            "Memory-aware chunking ({chunking_mode}): chunk_size={chunk_size}, \
-             estimated_memory_mb={estimated_memory_mb:.2}"
-        );
-
         let nchunks = util::num_of_chunks(idx_count, chunk_size);
+        log::info!("({chunking_mode}) nchunks={nchunks}");
 
         let pool = ThreadPool::new(njobs);
         let (send, recv) = crossbeam_channel::bounded(nchunks);

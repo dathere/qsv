@@ -66,8 +66,8 @@ For non-streaming statistics (median, quartiles, modes, cardinality), memory-awa
 automatically enabled, dynamically calculating chunk size based on available memory & record sampling.
 For streaming statistics, chunk size is based on the number of logical CPUs detected.
 You can override this behavior by setting the QSV_STATS_CHUNK_MEMORY_MB environment variable
-(set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk),
-or by setting the --jobs option.
+(set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk,
+or -1 for CPU-based chunking (1 chunk = records/number of CPUs)), or by setting the --jobs option.
 
 As stats is a central command in qsv, and can be expensive to compute, `stats` caches results
 in <FILESTEM>.stats.csv & if the --stats-json option is used, <FILESTEM>.stats.csv.data.jsonl
@@ -1543,67 +1543,76 @@ impl Args {
         let njobs = util::njobs(self.flag_jobs);
 
         // Read memory limit from environment variable
-        let max_chunk_memory_mb = std::env::var("QSV_STATS_CHUNK_MEMORY_MB")
-            .ok()
-            .and_then(|v| atoi_simd::parse::<u64>(v.as_bytes()).ok());
+        // If QSV_STATS_CHUNK_MEMORY_MB is set and can be parsed as a positive u64, set max chunk memory.
+        // If QSV_STATS_CHUNK_MEMORY_MB is not set, use 0 (dynamic sizing).
+        // If QSV_STATS_CHUNK_MEMORY_MB is set to -1, any non-positive value, or any value that cannot be parsed as u64, use CPU-based chunking (None).
+        let max_chunk_memory_mb = if let Ok(val) = std::env::var("QSV_STATS_CHUNK_MEMORY_MB") {
+            // if valid, set max chunk memory
+            // if invalid or non-positive, use CPU-based chunking
+            atoi_simd::parse::<u64>(val.as_bytes()).ok()
+        } else {
+            Some(0) // default to dynamic sizing
+        };
 
         // Get WhichStats configuration
         let which_stats = self.which_stats();
 
         // Check if non-streaming stats are enabled (require memory-aware chunking)
-        let needs_memory_aware_chunking = which_stats.needs_memory_aware_chunking();
+        let needs_memory_aware_chunking =
+            which_stats.needs_memory_aware_chunking() && max_chunk_memory_mb.is_some();
 
-        // Sample records for memory estimation if needed
-        // Always sample when non-streaming stats are enabled OR when QSV_STATS_CHUNK_MEMORY_MB is
-        // set to ANY value (including 0)
-        let sample_records: Option<Vec<csv::ByteRecord>> =
+        let (chunking_mode_info, chunk_size) =
             if max_chunk_memory_mb.is_some() || needs_memory_aware_chunking {
-                // Sample first 1000 records
-                util::sample_records(&self.rconfig(), 1000)
-            } else {
-                None
-            };
+                // Sample records for memory estimation
+                let sample_records = util::sample_records(&self.rconfig(), 1000);
 
-        // Calculate memory-aware chunk size
-        let chunk_size = calculate_memory_aware_chunk_size(
-            idx_count,
-            njobs,
-            max_chunk_memory_mb,
-            &which_stats,
-            sample_records.as_deref(),
-        );
-
-        // Log chunk size and memory estimates for debugging
-        // Log when memory-aware chunking is active (either explicitly set or automatically enabled)
-        if max_chunk_memory_mb.is_some() || needs_memory_aware_chunking {
-            // Estimate average record size from samples if available
-            let avg_record_size = if let Some(samples) = sample_records {
-                calculate_avg_record_size(&samples, &which_stats)
-            } else {
-                1024
-            };
-
-            let estimated_memory_mb =
-                estimate_chunk_memory(chunk_size, avg_record_size, &which_stats, headers.len())
-                    / (1024 * 1024);
-
-            let chunking_mode = if let Some(limit_mb) = max_chunk_memory_mb {
-                if limit_mb == 0 {
-                    "dynamic (auto)"
+                // Calculate memory-aware chunk size
+                let chunk_size = calculate_memory_aware_chunk_size(
+                    idx_count,
+                    njobs,
+                    max_chunk_memory_mb,
+                    &which_stats,
+                    sample_records.as_deref(),
+                );
+                // Estimate average record size from samples if available
+                let avg_record_size = if let Some(samples) = sample_records {
+                    calculate_avg_record_size(&samples, &which_stats)
                 } else {
-                    "fixed limit"
-                }
-            } else {
-                "dynamic (auto)"
-            };
+                    1024
+                };
 
-            log::info!(
-                "Memory-aware chunking ({chunking_mode}): chunk_size={chunk_size}, \
-                 estimated_memory_mb={estimated_memory_mb:.2}"
-            );
-        }
+                let estimated_memory_mb =
+                    estimate_chunk_memory(chunk_size, avg_record_size, &which_stats, headers.len())
+                        / (1024 * 1024);
+
+                let chunking_mode = if let Some(limit_mb) = max_chunk_memory_mb {
+                    if limit_mb == 0 {
+                        "dynamic (auto)"
+                    } else {
+                        "fixed limit"
+                    }
+                } else {
+                    "dynamic (auto)"
+                };
+
+                (
+                    format!(
+                        "Memory-aware chunking ({chunking_mode}): chunk_size={chunk_size}, \
+                         estimated_memory_mb={estimated_memory_mb:.2}"
+                    ),
+                    chunk_size,
+                )
+            } else {
+                // CPU-based chunking
+                let chunk_size = util::chunk_size(idx_count as usize, njobs);
+                (
+                    format!("CPU-based chunking: chunk_size={chunk_size}"),
+                    chunk_size,
+                )
+            };
 
         let nchunks = util::num_of_chunks(idx_count as usize, chunk_size);
+        log::info!("({chunking_mode_info}) nchunks={nchunks}");
 
         let pool = ThreadPool::new(njobs);
         let (send, recv) = crossbeam_channel::bounded(nchunks);

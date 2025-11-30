@@ -180,7 +180,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // We use a fixed "stdin.csv" filename instead of a temporary file with random characters
     // so the name of the generated schema.json file is readable and predictable
     // (stdin.csv.schema.json)
-    let (input_path, input_filename) = if args.arg_input.is_none() {
+    let (input_path, input_filename) = if let Some(ref input) = args.arg_input {
+        let filename = Path::new(&input)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        (input.clone(), filename)
+    } else {
         let mut stdin_file = File::create(STDIN_CSV)?;
         let stdin = std::io::stdin();
         let mut stdin_handle = stdin.lock();
@@ -188,13 +195,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         drop(stdin_handle);
         args.arg_input = Some(STDIN_CSV.to_string());
         (STDIN_CSV.to_string(), STDIN_CSV.to_string())
-    } else {
-        let filename = Path::new(args.arg_input.as_ref().unwrap())
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
-        (args.arg_input.clone().unwrap(), filename)
     };
 
     // we're loading the entire file into memory, we need to check avail mem

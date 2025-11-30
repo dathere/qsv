@@ -519,23 +519,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     asof_options.tolerance_str = Some(tolerance.into());
                 }
             }
-            if args.flag_left_by.is_some() {
-                asof_options.left_by = Some(
-                    args.flag_left_by
-                        .unwrap()
-                        .split(',')
-                        .map(PlSmallStr::from_str)
-                        .collect(),
-                );
+            if let Some(left_by) = args.flag_left_by {
+                asof_options.left_by = Some(left_by.split(',').map(PlSmallStr::from_str).collect());
             }
-            if args.flag_right_by.is_some() {
-                asof_options.right_by = Some(
-                    args.flag_right_by
-                        .unwrap()
-                        .split(',')
-                        .map(PlSmallStr::from_str)
-                        .collect(),
-                );
+            if let Some(right_by) = args.flag_right_by {
+                asof_options.right_by =
+                    Some(right_by.split(',').map(PlSmallStr::from_str).collect());
             }
             join.run(
                 JoinType::AsOf(Box::new(asof_options)),

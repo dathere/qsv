@@ -956,10 +956,10 @@ impl Args {
         // Read memory limit from environment variable
         // If QSV_FREQ_CHUNK_MEMORY_MB is set & valid, set max chunk memory
         // If QSV_FREQ_CHUNK_MEMORY_MB is not set, use 0 (dynamic sizing)
-        // If QSV_FREQ_CHUNK_MEMORY_MB is set to -1 or invalid, use CPU-based chunking
+        // If QSV_FREQ_CHUNK_MEMORY_MB is set to a value that cannot be parsed as u64 (e.g., -1 or any invalid/non-positive value), use CPU-based chunking
         let max_chunk_memory_mb = if let Ok(val) = std::env::var("QSV_FREQ_CHUNK_MEMORY_MB") {
             // if valid, set max chunk memory
-            // if invalid, use CPU-based chunking
+            // if invalid (cannot be parsed as u64), use CPU-based chunking
             atoi_simd::parse::<u64>(val.as_bytes()).ok()
         } else {
             Some(0) // default to dynamic sizing

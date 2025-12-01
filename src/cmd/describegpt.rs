@@ -1255,7 +1255,7 @@ fn format_dictionary_markdown(entries: &[DictionaryEntry]) -> String {
 }
 
 /// Format dictionary entries as JSON
-fn format_dictionary_json(entries: &[DictionaryEntry]) -> serde_json::Value {
+fn format_dictionary_json(entries: &[DictionaryEntry], args: &Args) -> serde_json::Value {
     let entries_json: Vec<serde_json::Value> = entries
         .iter()
         .map(|e| {
@@ -1276,6 +1276,9 @@ fn format_dictionary_json(entries: &[DictionaryEntry]) -> serde_json::Value {
 
     json!({
         "fields": entries_json,
+        "enum_threshold": args.flag_enum_threshold,
+        "num_examples": args.flag_num_examples,
+        "truncate_str": args.flag_truncate_str,
         "attribution": "{GENERATED_BY_SIGNATURE}"
     })
 }
@@ -2059,7 +2062,7 @@ fn run_inference_options(
 
             let combined_entries =
                 combine_dictionary_entries(code_entries, &llm_labels_descriptions);
-            let mut dictionary_json = format_dictionary_json(&combined_entries);
+            let mut dictionary_json = format_dictionary_json(&combined_entries, args);
             // Replace attribution placeholder in JSON
             if let Some(attribution) = dictionary_json.get_mut("attribution")
                 && let Some(attr_str) = attribution.as_str()
@@ -2102,7 +2105,7 @@ fn run_inference_options(
 
             // Format output
             if is_json_output(args)? || is_jsonl_output(args)? {
-                let mut dictionary_json = format_dictionary_json(&combined_entries);
+                let mut dictionary_json = format_dictionary_json(&combined_entries, args);
                 // Replace attribution placeholder in JSON
                 if let Some(attribution) = dictionary_json.get_mut("attribution")
                     && let Some(attr_str) = attribution.as_str()
@@ -2133,7 +2136,7 @@ fn run_inference_options(
                 );
 
                 // Store in DATA_DICTIONARY_JSON for use by other prompts
-                let dictionary_json = format_dictionary_json(&combined_entries);
+                let dictionary_json = format_dictionary_json(&combined_entries, args);
                 DATA_DICTIONARY_JSON
                     .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
 
@@ -2170,7 +2173,8 @@ fn run_inference_options(
                 })
             } else {
                 // For dictionary and tags, try to extract JSON from response, but include reasoning
-                match extract_json_from_output(&completion_response.response) {
+                let mut output_value = match extract_json_from_output(&completion_response.response)
+                {
                     Ok(json_value) => {
                         // Create a structured object with data and reasoning
                         json!({
@@ -2187,7 +2191,22 @@ fn run_inference_options(
                             "token_usage": completion_response.token_usage,
                         })
                     },
+                };
+                // Add metadata properties for Tags at the top level (always present)
+                if kind == PromptType::Tags
+                    && let Some(obj) = output_value.as_object_mut()
+                {
+                    obj.insert("num_tags".to_string(), json!(args.flag_num_tags));
+                    obj.insert(
+                        "tag_vocab".to_string(),
+                        match &args.flag_tag_vocab {
+                            Some(path) => json!(path.as_str()),
+                            None => serde_json::Value::Null,
+                        },
+                    );
                 }
+
+                output_value
             };
             if kind == PromptType::Dictionary {
                 DATA_DICTIONARY_JSON.get_or_init(|| {

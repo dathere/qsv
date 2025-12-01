@@ -214,6 +214,7 @@ Common options:
 "#;
 
 use std::{
+    collections::HashMap,
     env, fs,
     io::Write,
     path::{Path, PathBuf},
@@ -228,6 +229,7 @@ use std::{
 use cached::{
     DiskCache, IOCached, RedisCache, Return, proc_macro::io_cached, stores::DiskCacheBuilder,
 };
+use indicatif::HumanCount;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -348,6 +350,41 @@ struct AnalysisResults {
     headers:   String,
     file_hash: String,
     delimiter: char,
+}
+
+// Data structures for neuro-symbolic dictionary generation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DictionaryEntry {
+    name:        String,
+    r#type:      String,
+    label:       String,
+    description: String,
+    min:         String, // Empty string if not available
+    max:         String, // Empty string if not available
+    cardinality: u64,
+    enumeration: String, // Empty string if not enumerable, otherwise values on separate lines
+    null_count:  u64,
+    examples:    String, // Format: "value1 [count1], value2 [count2], ..." or "<ALL_UNIQUE>"
+}
+
+// Helper structs for parsing CSV data
+#[derive(Debug, Clone)]
+struct StatsRecord {
+    field:       String,
+    r#type:      String,
+    cardinality: u64,
+    nullcount:   u64,
+    min:         String, // Empty string if not available
+    max:         String, // Empty string if not available
+}
+
+#[derive(Debug, Clone)]
+struct FrequencyRecord {
+    field:      String,
+    value:      String,
+    count:      u64,
+    percentage: f64,
+    rank:       f64,
 }
 
 static QSV_REDIS_CONNSTR_ENV: &str = "QSV_DG_REDIS_CONNSTR";
@@ -743,6 +780,493 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
         PROMPT_FILE.set(prompt_file).unwrap();
         Ok(PROMPT_FILE.get().unwrap())
     }
+}
+
+/// Parse stats CSV into structured records
+fn parse_stats_csv(stats_csv: &str) -> CliResult<Vec<StatsRecord>> {
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_csv.as_bytes());
+
+    let headers = rdr.headers()?.clone();
+
+    // Find column indices
+    let field_idx = headers
+        .iter()
+        .position(|h| h == "field")
+        .ok_or_else(|| CliError::Other("Stats CSV missing 'field' column".to_string()))?;
+
+    let type_idx = headers
+        .iter()
+        .position(|h| h == "type")
+        .ok_or_else(|| CliError::Other("Stats CSV missing 'type' column".to_string()))?;
+
+    let cardinality_idx = headers.iter().position(|h| h == "cardinality");
+    let nullcount_idx = headers
+        .iter()
+        .position(|h| h == "nullcount")
+        .ok_or_else(|| CliError::Other("Stats CSV missing 'nullcount' column".to_string()))?;
+    let min_idx = headers.iter().position(|h| h == "min");
+    let max_idx = headers.iter().position(|h| h == "max");
+
+    let mut records = Vec::new();
+
+    for result in rdr.records() {
+        let record = result?;
+        let field = record
+            .get(field_idx)
+            .ok_or_else(|| CliError::Other("Stats CSV record missing field value".to_string()))?
+            .to_string();
+
+        let r#type = record
+            .get(type_idx)
+            .ok_or_else(|| CliError::Other("Stats CSV record missing type value".to_string()))?
+            .to_string();
+
+        let cardinality = cardinality_idx
+            .and_then(|idx| record.get(idx))
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
+
+        let nullcount = record
+            .get(nullcount_idx)
+            .ok_or_else(|| CliError::Other("Stats CSV record missing nullcount value".to_string()))?
+            .parse::<u64>()
+            .map_err(|e| CliError::Other(format!("Failed to parse nullcount: {e}")))?;
+
+        let min = min_idx
+            .and_then(|idx| record.get(idx))
+            .map(std::string::ToString::to_string)
+            .unwrap_or_default();
+
+        let max = max_idx
+            .and_then(|idx| record.get(idx))
+            .map(std::string::ToString::to_string)
+            .unwrap_or_default();
+
+        records.push(StatsRecord {
+            field,
+            r#type,
+            cardinality,
+            nullcount,
+            min,
+            max,
+        });
+    }
+
+    Ok(records)
+}
+
+/// Parse frequency CSV into structured records
+fn parse_frequency_csv(frequency_csv: &str) -> CliResult<Vec<FrequencyRecord>> {
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(frequency_csv.as_bytes());
+
+    let headers = rdr.headers()?.clone();
+
+    // Find column indices
+    let field_idx = headers
+        .iter()
+        .position(|h| h == "field")
+        .ok_or_else(|| CliError::Other("Frequency CSV missing 'field' column".to_string()))?;
+
+    let value_idx = headers
+        .iter()
+        .position(|h| h == "value")
+        .ok_or_else(|| CliError::Other("Frequency CSV missing 'value' column".to_string()))?;
+
+    let count_idx = headers
+        .iter()
+        .position(|h| h == "count")
+        .ok_or_else(|| CliError::Other("Frequency CSV missing 'count' column".to_string()))?;
+
+    let percentage_idx = headers
+        .iter()
+        .position(|h| h == "percentage")
+        .ok_or_else(|| CliError::Other("Frequency CSV missing 'percentage' column".to_string()))?;
+
+    let rank_idx = headers
+        .iter()
+        .position(|h| h == "rank")
+        .ok_or_else(|| CliError::Other("Frequency CSV missing 'rank' column".to_string()))?;
+
+    let mut records = Vec::new();
+
+    for result in rdr.records() {
+        let record = result?;
+        let field = record
+            .get(field_idx)
+            .ok_or_else(|| CliError::Other("Frequency CSV record missing field value".to_string()))?
+            .to_string();
+
+        let value = record
+            .get(value_idx)
+            .ok_or_else(|| CliError::Other("Frequency CSV record missing value".to_string()))?
+            .to_string();
+
+        let count = record
+            .get(count_idx)
+            .ok_or_else(|| CliError::Other("Frequency CSV record missing count".to_string()))?
+            .parse::<u64>()
+            .map_err(|e| CliError::Other(format!("Failed to parse count in frequency CSV: {e}")))?;
+
+        let percentage = record
+            .get(percentage_idx)
+            .ok_or_else(|| CliError::Other("Frequency CSV record missing percentage".to_string()))?
+            .parse::<f64>()
+            .map_err(|e| {
+                CliError::Other(format!("Failed to parse percentage in frequency CSV: {e}"))
+            })?;
+
+        let rank = record
+            .get(rank_idx)
+            .ok_or_else(|| CliError::Other("Frequency CSV record missing rank".to_string()))?
+            .parse::<f64>()
+            .map_err(|e| CliError::Other(format!("Failed to parse rank in frequency CSV: {e}")))?;
+
+        records.push(FrequencyRecord {
+            field,
+            value,
+            count,
+            percentage,
+            rank,
+        });
+    }
+
+    Ok(records)
+}
+
+/// Generate code-based dictionary entries from stats and frequency data
+fn generate_code_based_dictionary(
+    stats_records: &[StatsRecord],
+    frequency_records: &[FrequencyRecord],
+    enum_threshold: usize,
+) -> CliResult<Vec<DictionaryEntry>> {
+    // Group frequency records by field
+    let mut frequency_by_field: HashMap<String, Vec<&FrequencyRecord>> = HashMap::new();
+    for freq_record in frequency_records {
+        frequency_by_field
+            .entry(freq_record.field.clone())
+            .or_default()
+            .push(freq_record);
+    }
+
+    let mut dictionary_entries = Vec::new();
+
+    for stats_record in stats_records {
+        let field_name = &stats_record.field;
+        let field_frequencies = frequency_by_field
+            .get(field_name)
+            .cloned()
+            .unwrap_or_default();
+
+        // Generate enumeration
+        let enumeration = if stats_record.cardinality <= enum_threshold as u64 {
+            // Check if there's a rank=0 entry (Other category) or <ALL_UNIQUE> value
+            let has_other = field_frequencies
+                .iter()
+                .any(|f| f.rank == 0.0 && !f.value.contains("<ALL_UNIQUE>"));
+            if has_other {
+                String::new()
+            } else {
+                // Enumerate all values (excluding <ALL_UNIQUE>), each on its own line
+                let mut enum_values: Vec<String> = field_frequencies
+                    .iter()
+                    .filter(|f| !f.value.contains("<ALL_UNIQUE>"))
+                    .map(|f| f.value.clone())
+                    .collect();
+                enum_values.sort(); // Sort alphabetically for consistency
+                enum_values.join("\n")
+            }
+        } else {
+            String::new()
+        };
+
+        // Generate examples
+        let examples = if field_frequencies
+            .iter()
+            .any(|f| (f.percentage - 100.0).abs() < f64::EPSILON * 100.0)
+        {
+            "<ALL_UNIQUE>".to_string()
+        } else {
+            // Get top 5 values sorted by count descending
+            let mut sorted_freqs = field_frequencies.clone();
+            sorted_freqs.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
+
+            let top_5: Vec<String> = sorted_freqs
+                .iter()
+                .take(5)
+                .map(|f| {
+                    let v = if f.value.chars().count() > 20 {
+                        let mut s = f.value.chars().take(20).collect::<String>();
+                        s.push('…');
+                        s
+                    } else {
+                        f.value.clone()
+                    };
+                    format!("{} [{}]", v, f.count)
+                })
+                .collect();
+
+            top_5.join("\n")
+        };
+
+        dictionary_entries.push(DictionaryEntry {
+            name: stats_record.field.clone(),
+            r#type: stats_record.r#type.clone(),
+            label: String::new(),       // Will be filled by LLM
+            description: String::new(), // Will be filled by LLM
+            min: stats_record.min.clone(),
+            max: stats_record.max.clone(),
+            cardinality: stats_record.cardinality,
+            enumeration,
+            null_count: stats_record.nullcount,
+            examples,
+        });
+    }
+
+    Ok(dictionary_entries)
+}
+
+/// Parse LLM JSON response to extract Label and Description for each field
+fn parse_llm_dictionary_response(
+    llm_response: &str,
+    field_names: &[String],
+) -> CliResult<HashMap<String, (String, String)>> {
+    // Extract JSON from LLM response (similar to extract_json_from_output)
+    fn validate_json_candidate(candidate: &str) -> Option<serde_json::Value> {
+        serde_json::from_str::<serde_json::Value>(candidate.trim()).ok()
+    }
+
+    let json_value = {
+        // Pattern 1: JSON wrapped in ```json and ``` blocks
+        if let Some(caps) = regex_oncelock!(r"(?s)```json\n(.*?)\n```").captures(llm_response)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = validate_json_candidate(m.as_str())
+        {
+            valid_json
+        }
+        // Pattern 2: JSON wrapped in ``` and ``` blocks (without json specifier)
+        else if let Some(caps) = regex_oncelock!(r"(?s)```\n(.*?)\n```").captures(llm_response)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = validate_json_candidate(m.as_str())
+        {
+            valid_json
+        }
+        // Pattern 3: Try to find JSON array or object at the start of the response
+        else if let Some(caps) =
+            regex_oncelock!(r"(?s)^\s*(\[.*?\]|\{.*?\})").captures(llm_response)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = validate_json_candidate(m.as_str())
+        {
+            valid_json
+        }
+        // Pattern 4: Try to find JSON array or object anywhere in the response (non-greedy)
+        else if let Some(caps) = regex_oncelock!(r"(?s)(\[.*?\]|\{.*?\})").captures(llm_response)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = validate_json_candidate(m.as_str())
+        {
+            valid_json
+        }
+        // If no pattern matches, try the entire output (might be raw JSON)
+        else if (llm_response.trim().starts_with('[') || llm_response.trim().starts_with('{'))
+            && let Some(valid_json) = validate_json_candidate(llm_response)
+        {
+            valid_json
+        } else {
+            return fail_clierror!(
+                "Failed to extract JSON content from LLM response. Output: {}",
+                if llm_response.is_empty() {
+                    "<empty>"
+                } else {
+                    llm_response
+                }
+            );
+        }
+    };
+
+    let mut result = HashMap::new();
+
+    // Parse JSON object
+    if let Some(obj) = json_value.as_object() {
+        for field_name in field_names {
+            if let Some(field_obj) = obj.get(field_name)
+                && let Some(field_map) = field_obj.as_object()
+            {
+                let label = field_map
+                    .get("label")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let description = field_map
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                result.insert(field_name.clone(), (label, description));
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Combine code-generated dictionary entries with LLM-generated Label/Description
+fn combine_dictionary_entries(
+    mut code_entries: Vec<DictionaryEntry>,
+    llm_labels_descriptions: &HashMap<String, (String, String)>,
+) -> Vec<DictionaryEntry> {
+    for entry in &mut code_entries {
+        if let Some((label, description)) = llm_labels_descriptions.get(&entry.name) {
+            entry.label = label.clone();
+            entry.description = description.clone();
+        }
+    }
+    code_entries
+}
+
+/// Replace {GENERATED_BY_SIGNATURE} placeholder with actual attribution
+fn replace_attribution_placeholder(text: &str, args: &Args, model: &str, base_url: &str) -> String {
+    let prompt_file = get_prompt_file(args).ok();
+    let prompt_file_kind = if args.flag_prompt_file.is_some() {
+        if let Some(prompt_file_path) = args.flag_prompt_file.as_ref() {
+            format!("Custom (file: {prompt_file_path})")
+        } else {
+            "Default".to_string()
+        }
+    } else {
+        "Default".to_string()
+    };
+    let prompt_file_ver = prompt_file
+        .as_ref()
+        .map_or_else(|| "unknown".to_string(), |pf| pf.version.clone());
+
+    let attribution = format!(
+        r#"Generated by {qsv_variant} v{qsv_version} describegpt
+Prompt file: {prompt_file_kind} v{prompt_file_ver}
+Model: {model}
+LLM API URL: {base_url}
+Timestamp: {ts}
+WARNING: Generated by an LLM and may contain inaccuracies. Verify before using!"#,
+        qsv_variant = util::CARGO_BIN_NAME,
+        qsv_version = util::CARGO_PKG_VERSION,
+        ts = chrono::Utc::now().to_rfc3339(),
+    );
+
+    text.replace("{GENERATED_BY_SIGNATURE}", &attribution)
+}
+
+/// Format dictionary entries as markdown table
+fn format_dictionary_markdown(entries: &[DictionaryEntry]) -> String {
+    use std::fmt::Write;
+
+    let mut output = String::with_capacity(1024); //from("# Data Dictionary\n");
+    output.push_str(
+        "| Name | Type | Label | Description | Min | Max | Cardinality | Enumeration | Null Count \
+         | Examples |\n",
+    );
+    output.push_str("|------|------|-------|-------------|-----|-----|-------------|-------------|------------|----------|\n");
+
+    for entry in entries {
+        // Escape pipe characters in markdown table cells
+        let name = entry.name.replace('|', "\\|");
+        let r#type = entry.r#type.replace('|', "\\|");
+        let label = entry.label.replace('|', "\\|");
+        let description = entry.description.replace('|', "\\|").replace('\n', "<br>");
+        let min = entry.min.replace('|', "\\|");
+        let max = entry.max.replace('|', "\\|");
+        let enumeration = entry.enumeration.replace('|', "\\|");
+        let examples = entry.examples.replace('|', "\\|");
+
+        // Format enumeration: if empty, show empty string, otherwise show values on separate lines
+        let enumeration_display = if enumeration.is_empty() {
+            String::new()
+        } else {
+            // Replace newlines with <br> for markdown table compatibility
+            enumeration.replace('\n', "<br>")
+        };
+
+        // Format examples: replace newlines with <br> and format counts using HumanCount
+        let examples_display = if examples == "<ALL_UNIQUE>" {
+            examples.clone()
+        } else {
+            // Parse and reformat counts in examples (format: "value [count]")
+            examples
+                .lines()
+                .map(|line| {
+                    if let Some(pos) = line.rfind(" [") {
+                        let (value_part, count_part) = line.split_at(pos + 2);
+                        if let Some(end_pos) = count_part.find(']') {
+                            let count_str = &count_part[..end_pos];
+                            if let Ok(count) = count_str.parse::<u64>() {
+                                format!(
+                                    "{} [{}]",
+                                    value_part.trim_end_matches(" ["),
+                                    HumanCount(count)
+                                )
+                            } else {
+                                line.to_string()
+                            }
+                        } else {
+                            line.to_string()
+                        }
+                    } else {
+                        line.to_string()
+                    }
+                })
+                .collect::<Vec<String>>()
+                .join("<br>")
+        };
+
+        let _ = writeln!(
+            output,
+            "| **{}** | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            name,
+            r#type,
+            label,
+            description,
+            min,
+            max,
+            HumanCount(entry.cardinality),
+            enumeration_display,
+            HumanCount(entry.null_count),
+            examples_display
+        );
+    }
+
+    // Add attribution at the bottom
+    output.push_str("\n*Attribution: {GENERATED_BY_SIGNATURE}*\n");
+
+    output
+}
+
+/// Format dictionary entries as JSON
+fn format_dictionary_json(entries: &[DictionaryEntry]) -> serde_json::Value {
+    let entries_json: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|e| {
+            json!({
+                "name": e.name,
+                "type": e.r#type,
+                "label": e.label,
+                "description": e.description,
+                "min": if e.min.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(e.min.clone()) },
+                "max": if e.max.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(e.max.clone()) },
+                "cardinality": e.cardinality,
+                "enumeration": if e.enumeration.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(e.enumeration.clone()) },
+                "null_count": e.null_count,
+                "examples": e.examples,
+            })
+        })
+        .collect();
+
+    json!({
+        "fields": entries_json,
+        "attribution": "{GENERATED_BY_SIGNATURE}"
+    })
 }
 
 /// Generates a prompt for a given prompt type based on either a custom prompt file or default
@@ -1491,12 +2015,116 @@ fn run_inference_options(
         completion_response: &CompletionResponse,
         total_json_output: &mut serde_json::Value,
         args: &Args,
+        analysis_results: &AnalysisResults,
+        model: &str,
+        base_url: &str,
     ) -> CliResult<()> {
         // Skip outputting dictionary when using --prompt (but still generate it for context)
         if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
             // Still store the dictionary in DATA_DICTIONARY_JSON for context, but don't output it
-            DATA_DICTIONARY_JSON.get_or_init(|| completion_response.response.clone());
+            // For --prompt mode, we still need to generate the full dictionary for context
+            let stats_records = parse_stats_csv(&analysis_results.stats)?;
+            let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
+            let code_entries = generate_code_based_dictionary(
+                &stats_records,
+                &frequency_records,
+                args.flag_enum_threshold,
+            )?;
+
+            let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
+            let llm_labels_descriptions =
+                parse_llm_dictionary_response(&completion_response.response, &field_names)
+                    .unwrap_or_default();
+
+            let combined_entries =
+                combine_dictionary_entries(code_entries, &llm_labels_descriptions);
+            let mut dictionary_json = format_dictionary_json(&combined_entries);
+            // Replace attribution placeholder in JSON
+            if let Some(attribution) = dictionary_json.get_mut("attribution")
+                && let Some(attr_str) = attribution.as_str()
+            {
+                *attribution = json!(replace_attribution_placeholder(
+                    attr_str, args, model, base_url
+                ));
+            }
+
+            DATA_DICTIONARY_JSON
+                .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
             // Don't add to total_json_output and don't output anything
+            return Ok(());
+        }
+
+        // Handle Dictionary type with neuro-symbolic approach
+        if kind == PromptType::Dictionary {
+            // Parse stats and frequency data
+            let stats_records = parse_stats_csv(&analysis_results.stats)?;
+            let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
+
+            // Generate code-based dictionary entries
+            let code_entries = generate_code_based_dictionary(
+                &stats_records,
+                &frequency_records,
+                args.flag_enum_threshold,
+            )?;
+
+            // Parse LLM response to get Label and Description
+            let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
+            let llm_labels_descriptions =
+                parse_llm_dictionary_response(&completion_response.response, &field_names)
+                    .unwrap_or_default();
+
+            // Combine code-generated and LLM-generated fields
+            let combined_entries =
+                combine_dictionary_entries(code_entries, &llm_labels_descriptions);
+
+            // Format output
+            if is_json_output(args)? || is_jsonl_output(args)? {
+                let mut dictionary_json = format_dictionary_json(&combined_entries);
+                // Replace attribution placeholder in JSON
+                if let Some(attribution) = dictionary_json.get_mut("attribution")
+                    && let Some(attr_str) = attribution.as_str()
+                {
+                    *attribution = json!(replace_attribution_placeholder(
+                        attr_str, args, model, base_url
+                    ));
+                }
+                total_json_output[kind.to_string()] = json!({
+                    "response": dictionary_json,
+                    "reasoning": completion_response.reasoning,
+                    "token_usage": completion_response.token_usage,
+                });
+                DATA_DICTIONARY_JSON
+                    .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+            } else {
+                // Markdown output
+                let mut markdown_output = format_dictionary_markdown(&combined_entries);
+                // Replace attribution placeholder in markdown
+                markdown_output =
+                    replace_attribution_placeholder(&markdown_output, args, model, base_url);
+                let formatted_output = format!(
+                    "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
+                    kind,
+                    markdown_output,
+                    completion_response.reasoning,
+                    completion_response.token_usage
+                );
+
+                // Store in DATA_DICTIONARY_JSON for use by other prompts
+                let dictionary_json = format_dictionary_json(&combined_entries);
+                DATA_DICTIONARY_JSON
+                    .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+
+                // Write output
+                if let Some(output) = &args.flag_output {
+                    fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(output)?
+                        .write_all(formatted_output.as_bytes())?;
+                } else {
+                    println!("{formatted_output}");
+                }
+            }
             return Ok(());
         }
 
@@ -1645,11 +2273,15 @@ fn run_inference_options(
             ),
             Some(start_time.elapsed()),
         );
+        let prompt_file = get_prompt_file(args)?;
         process_output(
             PromptType::Dictionary,
             &data_dict,
             &mut total_json_output,
             args,
+            analysis_results,
+            &model,
+            &prompt_file.base_url,
         )?;
     }
 
@@ -1680,11 +2312,15 @@ fn run_inference_options(
             .as_str(),
             Some(start_time.elapsed()),
         );
+        let prompt_file = get_prompt_file(args)?;
         process_output(
             PromptType::Description,
             &completion_response,
             &mut total_json_output,
             args,
+            analysis_results,
+            &model,
+            &prompt_file.base_url,
         )?;
     }
 
@@ -1727,11 +2363,15 @@ fn run_inference_options(
             ),
             Some(start_time.elapsed()),
         );
+        let prompt_file = get_prompt_file(args)?;
         process_output(
             PromptType::Tags,
             &completion_response,
             &mut total_json_output,
             args,
+            analysis_results,
+            &model,
+            &prompt_file.base_url,
         )?;
     }
 
@@ -1774,11 +2414,15 @@ fn run_inference_options(
                 None,
             );
         }
+        let prompt_file = get_prompt_file(args)?;
         process_output(
             PromptType::Prompt,
             &completion_response,
             &mut total_json_output,
             args,
+            analysis_results,
+            &model,
+            &prompt_file.base_url,
         )?;
     }
 

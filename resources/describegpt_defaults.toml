@@ -43,28 +43,25 @@ For Dataset fields with all unique values (i.e. cardinality is equal to the numb
 """
 
 dictionary_prompt = """
-Here are the columns for each field in a Data Dictionary:
+Generate Labels and Descriptions for each field in the Dataset based on the Summary Statistics and Frequency Distribution provided below.
 
-- Name: `field` from Summary Statistics.
-- Type: `type` from Summary Statistics.
-- Label: a human-friendly label for this field
-- Description: a full description for this field (can be multiple sentences).
-- Cardinality: `cardinality` from Summary Statistics.
-- Enumeration: If `cardinality` > {TOP_N}, leave empty. Otherwise, if none of the corresponding unique values in the Frequency Distribution
-  have `rank` = 0, enumerate unique values for this field from the Frequency Distribution.
-- Null Count: `nullcount` from Summary Statistics.
-- Examples: At least 5 top values for this field based on the Frequency Distribution, in `count` descending order.
-  Include the Frequency Distribution `count` in parentheses after each value.
-  Set to "<ALL_UNIQUE>" if the field has Frequency Distribution `percentage` = 100.
+For each field, provide:
+- Label: a human-friendly label for this field (e.g., "Unique Key", "Created Date", "Agency Name")
+- Description: a full description for this field (can be multiple sentences)
 
-Generate a Data Dictionary as aforementioned {JSON_ADD} for ALL fields in the Dataset, where each field has 
-Name,Type,Label,Description,Cardinality,Enumeration,Null Count,Examples (so eight columns in total)
-based on the Summary Statistics and Frequency Distribution.
-Always use the exact values from the Summary Statistics and Frequency Distribution data, never approximate them.
+Return the results in JSON format where each field name is a key, and the value is an object with "label" and "description" properties:
+{{
+  "field_name_1": {{
+    "label": "Human-friendly label",
+    "description": "Full description of the field"
+  }},
+  "field_name_2": {{
+    "label": "Another label",
+    "description": "Another description"
+  }}
+}}
 
-Add an Attribution with the placeholder "{GENERATED_BY_SIGNATURE}". If generating JSON format,
-add the Attribution as a separate key at the top level of the JSON object, after the Data Dictionary, otherwise add it
-at the bottom of the Data Dictionary in Markdown format.
+Generate Labels and Descriptions for ALL fields in the Dataset. Use the Summary Statistics and Frequency Distribution to understand the context and meaning of each field.
 
 Let's think step by step, correcting yourself as needed.
 

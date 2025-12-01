@@ -905,9 +905,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // remove comments from the SQL script
         // we only support single-line comments in SQL scripts
-        // i.e. comments that start with "--" and end at the end of the line
-        // so the regex is performant and simple
-        let comment_regex = Regex::new(r"^--.*$")?;
+        // i.e. comments that start with "--" (optionally preceded by whitespace) and end at the end
+        // of the line so the regex is performant and simple
+        let comment_regex = Regex::new(r"^\s*--.*$")?;
         let sql_script = comment_regex.replace_all(&sql_script, "");
         sql_script
             .split(';')

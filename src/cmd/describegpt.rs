@@ -996,7 +996,7 @@ fn generate_code_based_dictionary(
         // Generate examples
         let examples = if field_frequencies
             .iter()
-            .any(|f| (f.percentage - 100.0).abs() < f64::EPSILON * 100.0)
+            .any(|f| (f.percentage - 100.0).abs() < 0.0001)
         {
             "<ALL_UNIQUE>".to_string()
         } else {

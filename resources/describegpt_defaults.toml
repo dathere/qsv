@@ -187,11 +187,9 @@ polars_sql_guidance = """
 - Only use SQL functions that are supported by Polars SQL.
   Refer to https://github.com/pola-rs/polars/blob/e2818b3db9be5ec6b9abcc873bc4d2ab92861861/crates/polars-sql/src/functions.rs#L37-L755
   Note that we have the "rank" and "list_eval" polars features enabled.
-- `datepart`'s syntax is `date_part('part', date_column)` where part is one of: "year", "month", "week", "day", "hour", "minute", "second",
-  "millisecond", "microsecond", "nanosecond", "epoch", "doy", "dow", "week", "timezone", "time"
-- Always cast columns to date/datetime type before doing date operations
-- Do not use IN (subquery), SIMILAR TO and CROSS JOIN in the generated SQL query
-- Only use comments with the `--` prefix. Comments can only start on a new line. No inline comments
+- For date operations, use REGEXP_LIKE as Polars SQL does not have many date functions
+- Do not use SIMILAR TO and CROSS JOIN in the generated SQL query
+- Only use comments with the `--` prefix. Comments can only start on a new line.
 - Do not use comments using the `/*` and `*/` syntax, as Polars SQL does not support it
 """
 

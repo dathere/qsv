@@ -1,15 +1,14 @@
 static USAGE: &str = r#"
-Infer a Data Dictionary, Description & Tags about a Dataset using any OpenAI API-compatible
-Large Language Model (LLM).
+Create a Data Dictionary and/or infer Description & Tags about a Dataset using an
+OpenAI API-compatible Large Language Model (LLM).
 
-It infers these extended metadata by compiling Summary Statistics & a Frequency Distribution
-of the Dataset, and then prompting the LLM with detailed, configurable prompts with these
-extended context.
+It does this by compiling Summary Statistics & a Frequency Distribution of the Dataset,
+and then prompting the LLM with detailed, configurable prompts with these extended context.
 
 You can also use the --prompt option to ask a natural language question about the Dataset.
 
 If the question cannot be answered using the Dataset's Summary Statistics & Frequency Distribution,
-it will auto-infer a Data Dictionary & provide it to the LLM as additional context to create a
+it will first create a Data Dictionary & provide it to the LLM as additional context to create a
 SQL query that DETERMINISTICALLY answers the natural language question ("SQL RAG" mode).
 
 SQL RAG MODE:
@@ -99,13 +98,16 @@ Usage:
 
 describegpt options:
                            DATA ANALYSIS/INFERENCING OPTIONS:
-    --dictionary           Infer a Data Dictionary. For each field, prints an inferred type,
-                           a human-readable label and a description.
-    --description          Infer a general Description of the dataset.
-    --tags                 Infer Tags that categorize the dataset. Useful
-                           for grouping datasets and filtering.
+    --dictionary           Create a Data Dictionary using a hybrid neuro-symbolic pipeline - i.e. the Data Dictionary
+                           is primarily deterministically populated using Summary Statistics and Frequency Distribution data,
+                           and only the human-friendly Label and Description are populated by the LLM using the same
+                           statistical context.
+    --description          Infer a general Description of the dataset based on detailed statistical context.
+    --tags                 Infer Tags that categorize the dataset based on detailed statistical context.
+                           Useful for grouping datasets and filtering.
     --num-tags <n>         The maximum number of tags to infer when the --tags option is used.
-                           Maximum allowed value is 50. [default: 10]
+                           Maximum allowed value is 50.
+                           [default: 10]
     --tag-vocab <file>     The file containing the tag vocabulary to use for inferring tags.
                            If no tag vocabulary file is provided, the model will use free-form tags.
                            The tag vocabulary is a text file with one lowercase tag per line, using _ to separate words,
@@ -163,12 +165,10 @@ describegpt options:
                            The default for Jan is https://localhost:1337/v1.
                            The default for LM Studio is http://localhost:1234/v1.
                            The base URL will be the base URL of the prompt file.
-                           If the QSV_LLM_BASE_URL environment variable is set, it will be
-                           used instead.
+                           If the QSV_LLM_BASE_URL environment variable is set, it'll be used instead.
                            [default: https://api.openai.com/v1]
     -m, --model <model>    The model to use for inferencing.
-                           If the QSV_LLM_MODEL environment variable is set, it will be
-                           used instead.
+                           If the QSV_LLM_MODEL environment variable is set, it'll be used instead.
                            [default: openai/gpt-oss-20b]
     --addl-props <json>    Additional model properties to pass to the LLM chat/completion API.
                            Various models support different properties beyond the standard ones.

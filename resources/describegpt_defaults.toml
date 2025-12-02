@@ -15,7 +15,7 @@ jsonl = false
 # {DICTIONARY}
 # {JSON_ADD} - if --json or --jsonl is set
 # {INPUT_TABLE_NAME}
-# {GENERATED_BY_SIGNATURE} - replaced with model name and current timestamp
+# {GENERATED_BY_SIGNATURE} - replaced with Attribution metadata and warning
 # {DUCKDB_VERSION} - only up to the minor version - e.g "1.3"
 # {TOP_N} - The enum threshold for the frequency command
 # {NUM_TAGS} - The maximum number of tags to infer when the --tags option is used
@@ -132,7 +132,7 @@ Frequency Distribution (CSV):
 prompt = "What is this dataset about?"
 
 custom_prompt_guidance = """
-We need to answer the User's Prompt above. Let's think step by step, correcting yourself as needed.
+We need to answer the User's Prompt above.
 
 If the User's Prompt is not about the Dataset, immediately return
 'I'm sorry. I'm afraid I can only answer questions about the Dataset.'
@@ -150,6 +150,8 @@ END SQL Query Generation Guidelines
 - Add "-- {GENERATED_BY_SIGNATURE}" at the top of the query
 
 Return the SQL query as a SQL code block preceded by a newline.
+
+Let's think step by step, correcting yourself as needed.
 
 ---
 
@@ -185,9 +187,9 @@ polars_sql_guidance = """
 - Use {INPUT_TABLE_NAME} as the placeholder for the table name to query
 - Column names with embedded spaces and special characters are case-sensitive and should be enclosed in double quotes
 - Only use SQL functions that are supported by Polars SQL.
-  Refer to https://github.com/pola-rs/polars/blob/e2818b3db9be5ec6b9abcc873bc4d2ab92861861/crates/polars-sql/src/functions.rs#L37-L755
+  Refer to https://github.com/pola-rs/polars/blob/8035d57cafdb086e74a602bd89cc6a25389450bb/crates/polars-sql/src/functions.rs#L37-L1040
   Note that we have the "rank" and "list_eval" polars features enabled.
-- For date operations, use REGEXP_LIKE as Polars SQL does not have many date functions
+- For date operations, use REGEXP_LIKE as Polars SQL does not have many date functions apart from `date_part` and `strftime`
 - Do not use SIMILAR TO and CROSS JOIN in the generated SQL query
 - Only use comments with the `--` prefix. Comments can only start on a new line.
 - Do not use comments using the `/*` and `*/` syntax, as Polars SQL does not support it
@@ -529,7 +531,6 @@ GROUP BY category;
 - Include LIMIT for large result sets
 - Add comments explaining the query logic
 - Use appropriate aggregation functions (COUNT, SUM, AVG, MIN, MAX, kurtosis, skewness)
-- Leverage Polars-specific functions like `date_part` and `array_*`
 - Use CASE statements for conditional logic and pivoting
 - Leverage window functions for ranking and running totals
 - Take advantage of Polars' optimized array operations

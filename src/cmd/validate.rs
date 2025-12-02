@@ -1280,7 +1280,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             email_options = email_options.without_display_text();
                         }
                         if args.flag_email_min_subdomains > 0 {
-                            email_options = email_options.with_minimum_sub_domains(args.flag_email_min_subdomains as usize);
+                            email_options = email_options.with_minimum_sub_domains(args.flag_email_min_subdomains);
                         }
                         if !args.flag_email_domain_literal {
                             email_options = email_options.without_domain_literal();

@@ -331,6 +331,9 @@ geozero = { git = "https://github.com/georust/geozero", rev = "572cfc2", optiona
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }
 
+# use upstream of jsonschema with unreleased email validation features
+jsonschema = { git = "https://github.com/Stranger6667/jsonschema", rev = "9748dc1" }
+
 # use upstream of mimalloc with unreleased fixes
 mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "0a32a38", optional = true }
 

@@ -2593,8 +2593,8 @@ fn validate_json_schema_rejects_multiple_files() {
 }
 
 #[test]
-fn validate_with_email_format_strict() {
-    let wrk = Workdir::new("validate_with_email_format_strict").flexible(true);
+fn validate_with_email_format_strict_default() {
+    let wrk = Workdir::new("validate_with_email_format_strict_default").flexible(true);
 
     // Create test data with valid and invalid email addresses
     wrk.create(
@@ -2607,6 +2607,10 @@ fn validate_with_email_format_strict() {
             // Technically valid email if "domain" is a local host
             svec!["4", "Alice Brown", "missing@domain"],
             svec!["5", "Charlie Davis", "@nodomain.com"], // Invalid email
+            // Display text (invalid by default)
+            svec!["6", "David Evans", "David Evans <devans@example.com>"],
+            svec!["7", "Eve Green", "eve@[127.0.0.1]"], // Domain literal (invalid by default)
+            svec!["8", "Frank Hall", "frank@sub.example.local"], // Valid email
         ],
     );
 
@@ -2646,6 +2650,7 @@ fn validate_with_email_format_strict() {
         svec!["1", "John Doe", "user@example.com"],
         svec!["2", "Jane Smith", "admin@company.co.uk"],
         svec!["4", "Alice Brown", "missing@domain"],
+        svec!["8", "Frank Hall", "frank@sub.example.local"],
     ];
     assert_eq!(valid_records, expected_valid);
 
@@ -2654,6 +2659,135 @@ fn validate_with_email_format_strict() {
     let expected_invalid = vec![
         svec!["3", "Bob Wilson", "not-an-email"],
         svec!["5", "Charlie Davis", "@nodomain.com"],
+        svec!["6", "David Evans", "David Evans <devans@example.com>"],
+        svec!["7", "Eve Green", "eve@[127.0.0.1]"],
+    ];
+    assert_eq!(invalid_records, expected_invalid);
+}
+
+#[test]
+fn validate_with_email_format_strict_email_options() {
+    let wrk = Workdir::new("validate_with_email_format_strict_email_options").flexible(true);
+
+    // Create test data with valid and invalid email addresses
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "email"],
+            svec!["1", "John Doe", "user@example.com"],
+            svec!["2", "Jane Smith", "admin@company.co.uk"],
+            svec!["3", "Bob Wilson", "not-an-email"],
+            svec!["4", "Alice Brown", "missing@domain"],
+            svec!["5", "Charlie Davis", "@nodomain.com"],
+            svec!["6", "David Evans", "David Evans <devans@example.com>"],
+            svec!["7", "Eve Green", "eve@[127.0.0.1]"],
+            svec!["8", "Frank Hall", "frank@sub.example.local"],
+            svec![
+                "9",
+                "George Hall",
+                "Georgy Dark <george@thedark.website.net>"
+            ],
+        ],
+    );
+
+    // Create schema with email format constraint
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "email": { 
+                    "type": "string",
+                    "format": "email"
+                }
+            }
+        }"#,
+    );
+
+    // Run validation WITH email options
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--email-display-text")
+        .arg("--email-required-tld")
+        .arg("--email-domain-literal")
+        .arg("data.csv")
+        .arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check that format validation errors are present
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(validation_errors.contains("is not a \"email\""));
+
+    // Check valid records - should contain only valid emails
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["1", "John Doe", "user@example.com"],
+        svec!["2", "Jane Smith", "admin@company.co.uk"],
+        svec!["6", "David Evans", "David Evans <devans@example.com>"],
+        svec!["7", "Eve Green", "eve@[127.0.0.1]"],
+        svec!["8", "Frank Hall", "frank@sub.example.local"],
+        svec![
+            "9",
+            "George Hall",
+            "Georgy Dark <george@thedark.website.net>"
+        ],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records - should contain invalid emails
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![
+        svec!["3", "Bob Wilson", "not-an-email"],
+        svec!["4", "Alice Brown", "missing@domain"],
+        svec!["5", "Charlie Davis", "@nodomain.com"],
+    ];
+    assert_eq!(invalid_records, expected_invalid);
+
+    // Run validation WITH email options and minimum subdomains
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--email-display-text")
+        .arg("--email-required-tld")
+        .args(["--email-min-subdomains", "3"])
+        .arg("data.csv")
+        .arg("schema.json");
+    wrk.output(&mut cmd);
+
+    wrk.assert_err(&mut cmd);
+
+    // Check that format validation errors are present
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(validation_errors.contains("is not a \"email\""));
+
+    // Check valid records - should contain only valid emails
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let expected_valid = vec![
+        svec!["2", "Jane Smith", "admin@company.co.uk"],
+        svec!["8", "Frank Hall", "frank@sub.example.local"],
+        svec![
+            "9",
+            "George Hall",
+            "Georgy Dark <george@thedark.website.net>"
+        ],
+    ];
+    assert_eq!(valid_records, expected_valid);
+
+    // Check invalid records - should contain invalid emails
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let expected_invalid = vec![
+        svec!["1", "John Doe", "user@example.com"],
+        svec!["3", "Bob Wilson", "not-an-email"],
+        svec!["4", "Alice Brown", "missing@domain"],
+        svec!["5", "Charlie Davis", "@nodomain.com"],
+        svec!["6", "David Evans", "David Evans <devans@example.com>"],
+        svec!["7", "Eve Green", "eve@[127.0.0.1]"],
     ];
     assert_eq!(invalid_records, expected_invalid);
 }

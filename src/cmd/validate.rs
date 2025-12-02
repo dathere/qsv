@@ -242,6 +242,19 @@ Validate options:
                                If the QSV_CKAN_TOKEN envvar is set, it will be used instead.
                                Not available on qsvlite.
 
+                                EMAIL VALIDATION OPTIONS:
+    --email-required-tld        Require the email to have a valid Top-Level Domain (TLD)
+                                (e.g. .com, .org, .net, etc.).
+                                e.g. "john.doe@example" is VALID if this option is NOT set.
+    --email-display-text        Allow display text in emails.
+                                e.g. "John Doe <john.doe@example.com>" is INVALID if this option is NOT set.
+    --email-min-subdomains <n>  Minimum number of subdomains required in the email.
+                                e.g. "jdoe@example.com" is INVALID if this option is set to 3,
+                                but "jdoe@sub.example.com" is VALID.
+                                [default: 2]
+    --email-domain-literal      Allow domain literals in emails.
+                                e.g. "john.doe@[127.0.0.1]" is VALID if this option is set.
+
 Common options:
     -h, --help                 Display this message
     -n, --no-headers           When set, the first row will not be interpreted
@@ -276,7 +289,7 @@ use indicatif::HumanCount;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use jsonschema::{
-    Keyword, PatternOptions, ValidationError, Validator,
+    EmailOptions, Keyword, PatternOptions, ValidationError, Validator,
     paths::{LazyLocation, Location},
 };
 use log::debug;
@@ -358,6 +371,10 @@ struct Args {
     flag_cache_dir:            String,
     flag_ckan_api:             String,
     flag_ckan_token:           Option<String>,
+    flag_email_required_tld:   bool,
+    flag_email_display_text:   bool,
+    flag_email_min_subdomains: usize,
+    flag_email_domain_literal: bool,
 }
 
 enum JSONtypes {
@@ -1253,6 +1270,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         // compile JSON Schema
                         let mut validator_options = Validator::options()
                             .should_validate_formats(!args.flag_no_format_validation);
+
+                        // build email options
+                        let mut email_options = EmailOptions::default();
+                        if args.flag_email_required_tld {
+                            email_options = email_options.with_required_tld();
+                        }
+                        if !args.flag_email_display_text {
+                            email_options = email_options.without_display_text();
+                        }
+                        if args.flag_email_min_subdomains > 0 {
+                            email_options = email_options.with_minimum_sub_domains(args.flag_email_min_subdomains as usize);
+                        }
+                        if !args.flag_email_domain_literal {
+                            email_options = email_options.without_domain_literal();
+                        }
+                        validator_options = validator_options.with_email_options(email_options);
 
                         // Add custom validators based on pre-checked flags
                         if has_currency_format {

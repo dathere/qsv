@@ -2608,7 +2608,7 @@ fn validate_with_email_format_strict_default() {
             svec!["4", "Alice Brown", "missing@domain"],
             svec!["5", "Charlie Davis", "@nodomain.com"], // Invalid email
             svec!["6", "David Evans", "David Evans <devans@example.com>"], // Display text (invalid by default)
-            svec!["7", "Eve Green", "eve@[127.0.0.1]"],   // Valid email
+            svec!["7", "Eve Green", "eve@[127.0.0.1]"],   // Domain literal (invalid by default)
             svec!["8", "Frank Hall", "frank@sub.example.local"], // Valid email
         ],
     );

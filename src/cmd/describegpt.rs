@@ -12,7 +12,7 @@ it will first create a Data Dictionary & provide it to the LLM as additional con
 SQL query that DETERMINISTICALLY answers the natural language question ("SQL RAG" mode).
 
 SQL RAG MODE:
-Two SQL dialects are currently supported - DuckDB (recommended) & Polars. If the
+Two SQL dialects are currently supported - DuckDB (highly recommended) & Polars. If the
 QSV_DESCRIBEGPT_DB_ENGINE environment variable is set to the absolute path of the DuckDB binary,
 DuckDB will be used to answer the question. Otherwise, if the "polars" feature is enabled,
 Polars SQL will be used.
@@ -28,7 +28,17 @@ When using DuckDB, all loaded DuckDB extensions will be sent as additional conte
 it know what functions (even UDFs!) it can use in the SQL queries it generates. If you want a
 specific function or technique to be used in the SQL query, mention it in the prompt.
 
+DuckDB Model Context Protocol (MCP) support:
+If the DuckDB MCP extension is installed (https://duckdb.org/community_extensions/extensions/duckdb_mcp),
+describegpt will automatically use it to validate the draft SQL query against a 1000 row sample of the
+input file before running it against the entire file.
+
+Supported models & LLM providers:
 OpenAI's open-weights gpt-oss-20b model was used during development & is recommended for most use cases.
+The following additional models have been tested and are supported:
+ - OpenAI's gpt-oss-120b model
+ - 
+
 
 NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
 
@@ -99,7 +109,7 @@ Usage:
 describegpt options:
                            DATA ANALYSIS/INFERENCING OPTIONS:
     --dictionary           Create a Data Dictionary using a hybrid neuro-symbolic pipeline - i.e. the Data Dictionary
-                           is primarily deterministically populated using Summary Statistics and Frequency Distribution data,
+                           is deterministically populated using Summary Statistics and Frequency Distribution data,
                            and only the human-friendly Label and Description are populated by the LLM using the same
                            statistical context.
     --description          Infer a general Description of the dataset based on detailed statistical context.
@@ -322,8 +332,9 @@ Verify output results before using them."#;
 
 const INPUT_TABLE_NAME: &str = "{INPUT_TABLE_NAME}";
 
-// Global variable to store DuckDB binary path
 static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
+static SHOULD_USE_DUCKDB: OnceLock<bool> = OnceLock::new();
+static SAMPLE_FILE: OnceLock<String> = OnceLock::new();
 
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
 
@@ -502,9 +513,12 @@ fn print_status(msg: &str, elapsed: Option<std::time::Duration>) {
 
 // Check if DuckDB should be used based on environment variable
 fn should_use_duckdb() -> bool {
-    env::var(QSV_DESCRIBEGPT_DB_ENGINE_ENV)
-        .map(|val| val.to_lowercase().contains("duckdb"))
-        .unwrap_or(false)
+    let should_use_duckdb = SHOULD_USE_DUCKDB.get_or_init(|| {
+        env::var(QSV_DESCRIBEGPT_DB_ENGINE_ENV)
+            .map(|val| val.to_lowercase().contains("duckdb"))
+            .unwrap_or(false)
+    });
+    *should_use_duckdb
 }
 
 // Get DuckDB binary path from environment variable
@@ -1390,12 +1404,23 @@ fn get_prompt(
                 .join(".");
             log::debug!("DuckDB minor version: {duckdb_version}");
 
+            // check if the duckdb_mcp extension is installed
+            let duckdb_mcp_installed = valid_extensions.contains("duckdb_mcp");
+            // if so, add additional guidance to the prompt to use the duckdb_mcp extension
+            let mut duckdb_sql_guidance = prompt_file.duckdb_sql_guidance.trim_end().to_string();
+
+            if duckdb_mcp_installed {
+                duckdb_sql_guidance.push_str(
+                    "\n- Before returning the SQL query, use the duckdb_mcp extension to validate \
+                     the SQL query against the sample data at {SAMPLE_FILE}",
+                );
+            }
+
             // Generate prompt for DuckDB SQL
             prompt = format!(
                 "{before_guidelines}{sql_guidelines_start}{duckdb_sql_guidance}\n- Only use \
                  functions from the following Loaded DuckDB extensions: \
                  {valid_extensions}\n{after_guidelines}",
-                duckdb_sql_guidance = prompt_file.duckdb_sql_guidance.trim_end(),
             );
 
             if args.flag_fewshot_examples {
@@ -1468,6 +1493,10 @@ fn get_prompt(
         .replace("{DELIMITER}", &delimiter.to_string())
         .replace("{DUCKDB_VERSION}", &duckdb_version)
         .replace("{TOP_N}", &args.flag_enum_threshold.to_string())
+        .replace(
+            "{SAMPLE_FILE}",
+            SAMPLE_FILE.get().map_or("", |s| s.as_str()),
+        )
         .replace(
             "{DICTIONARY}",
             DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),
@@ -1613,7 +1642,7 @@ fn get_completion(
     // ensure each line of the Attribution begins with '--' so its treated as a SQL comment
     let (prompt_info, att_prefix) = if let Some(prompt_info) = &args.flag_prompt {
         let wrapped_prompt = textwrap::fill(
-            &prompt_info,
+            prompt_info,
             textwrap::Options::new(75).subsequent_indent("--         "),
         );
         (
@@ -1650,10 +1679,10 @@ fn get_completion(
             },
             prompt_file_ver = prompt_file.version,
             ts = chrono::Utc::now().to_rfc3339(),
-            extra_separator = if !att_prefix.is_empty() {
-                format!("-- {}\n--", ATTRIBUTION_BORDER)
-            } else {
+            extra_separator = if att_prefix.is_empty() {
                 String::new()
+            } else {
+                format!("-- {ATTRIBUTION_BORDER}\n--")
             }
         ),
     );
@@ -3251,6 +3280,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
+    // get a 1000 row sample of the input_path file
+    let sample_file = tempfile::Builder::new().suffix(".csv").tempfile()?;
+    run_qsv_cmd(
+        "slice",
+        &[
+            "--len",
+            "1000",
+            "--output",
+            &sample_file.path().display().to_string(),
+        ],
+        &input_path,
+        "Getting sample data...",
+    )?;
+    // save path to SAMPLE_FILE OnceLock
+    SAMPLE_FILE.set(sample_file.path().display().to_string())?;
+
     // Initialize the global qsv path
     QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
 
@@ -3287,6 +3332,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     print_status("Analyzed data.", Some(analysis_start.elapsed()));
 
     print_status("\nInteracting with LLM...", None);
+
     // Run inference options
     run_inference_options(&input_path, &args, &api_key, &cache_type, &analysis_results)?;
 

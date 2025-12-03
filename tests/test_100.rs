@@ -10,4 +10,5 @@ mod lesson_0;
 mod lesson_1;
 mod lesson_2;
 mod lesson_3;
+#[cfg(feature = "polars")]
 mod lesson_4;

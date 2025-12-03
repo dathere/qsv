@@ -35,10 +35,8 @@ input file before running it against the entire file.
 
 Supported models & LLM providers:
 OpenAI's open-weights gpt-oss-20b model was used during development & is recommended for most use cases.
-The following additional models have been tested and are supported:
- - OpenAI's gpt-oss-120b model
- - 
-
+It was also tested with OpenAI, TogetherAI, OpenRouter and Google Gemini cloud providers.
+Local LLMs tested include Ollama, Jan and LM Studio.
 
 NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
 
@@ -3295,6 +3293,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     )?;
     // save path to SAMPLE_FILE OnceLock
     SAMPLE_FILE.set(sample_file.path().display().to_string())?;
+    // keep the sample file now that we successfully stored the path in the OnceLock
+    // we'll delete it later in the cleanup process
+    sample_file.keep()?;
 
     // Initialize the global qsv path
     QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
@@ -3352,6 +3353,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .flush()
             .map_err(|e| CliError::Other(format!("Error flushing Analysis DiskCache: {e}")))?;
     }
+
+    // delete the sample file
+    if let Some(sample_file_path) = SAMPLE_FILE.get() {
+        fs::remove_file(sample_file_path)?;
+    }
+
     Ok(())
 }
 

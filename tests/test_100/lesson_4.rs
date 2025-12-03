@@ -4,7 +4,7 @@
 use crate::workdir::Workdir;
 
 #[test]
-#[cfg(not(feature = "datapusher_plus"))]
+#[cfg(feature = "polars")]
 fn lesson_4_task_1() {
     let wrk = Workdir::new("lesson_4_task_1");
     let buses_csv_file = wrk.load_test_file("buses.csv");
@@ -24,7 +24,7 @@ fn lesson_4_task_1() {
 }
 
 #[test]
-#[cfg(not(feature = "datapusher_plus"))]
+#[cfg(feature = "polars")]
 fn lesson_4_task_2() {
     let wrk = Workdir::new("lesson_4_task_2");
     let buses_csv_file = wrk.load_test_file("buses.csv");
@@ -41,7 +41,7 @@ fn lesson_4_task_2() {
 }
 
 #[test]
-#[cfg(not(feature = "datapusher_plus"))]
+#[cfg(feature = "polars")]
 fn lesson_4_task_3() {
     use std::process;
 
@@ -83,7 +83,7 @@ fn lesson_4_task_3() {
 }
 
 #[test]
-#[cfg(not(feature = "datapusher_plus"))]
+#[cfg(feature = "polars")]
 fn lesson_4_task_4() {
     let wrk = Workdir::new("lesson_4_task_4");
     let buses_csv_file = wrk.load_test_file("buses.csv");
@@ -100,7 +100,7 @@ fn lesson_4_task_4() {
 }
 
 #[test]
-#[cfg(not(feature = "datapusher_plus"))]
+#[cfg(feature = "polars")]
 fn lesson_4_task_5() {
     let wrk = Workdir::new("lesson_4_task_5");
     let buses_csv_file = wrk.load_test_file("buses.csv");
@@ -118,7 +118,7 @@ fn lesson_4_task_5() {
 }
 
 #[test]
-#[cfg(not(feature = "datapusher_plus"))]
+#[cfg(feature = "polars")]
 fn lesson_4_task_6() {
     let wrk = Workdir::new("lesson_4_task_6");
     let buses_csv_file = wrk.load_test_file("buses.csv");

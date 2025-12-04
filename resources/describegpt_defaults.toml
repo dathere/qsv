@@ -1,7 +1,7 @@
 name = "qsv Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "qsv team"
-version = "6.0.0"
+version = "6.1.0"
 tokens = 10000
 base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
@@ -20,6 +20,8 @@ jsonl = false
 # {TOP_N} - The enum threshold for the frequency command
 # {NUM_TAGS} - The maximum number of tags to infer when the --tags option is used
 # {TAG_VOCAB} - The tag vocabulary text file (one tag per line with description after colon)
+# {SAMPLE_FILE} - The temporary file containing a 1000 row random sample of the input CSV file.
+#                 Only present if --prompt is set.
 
 system_prompt = """
 You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.
@@ -174,8 +176,9 @@ duckdb_sql_guidance = """
 - The input csv has headers and uses {DELIMITER} as the delimiter
 - Column names with spaces and special characters are case-sensitive and should be enclosed in double quotes
 - Only use the `read_csv_auto` table function to read the input CSV
+- Always explicitly type cast columns to the appropriate type using the `CAST` function before using them in calculations.
 - Use the placeholder {INPUT_TABLE_NAME} for the input csv in the `read_csv_auto` table function call
-- Remember that the date format specifier is the second parameter for the date functions `strftime()` and `strptime()`
+- Remember that the date format specifier is the second parameter for the date functions `strftime` and `strptime`
 - Remember that the date format specifier for seconds is `%S`, NOT `%s`
 """
 
@@ -186,12 +189,13 @@ polars_sql_guidance = """
 - Use the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary data to generate the SQL query
 - Use {INPUT_TABLE_NAME} as the placeholder for the table name to query
 - Column names with embedded spaces and special characters are case-sensitive and should be enclosed in double quotes
-- Only use SQL functions that are supported by Polars SQL.
-  Refer to https://github.com/pola-rs/polars/blob/8035d57cafdb086e74a602bd89cc6a25389450bb/crates/polars-sql/src/functions.rs#L37-L1040
-  Note that we have the "rank" and "list_eval" polars features enabled.
+- Only use SQL functions supported by Polars SQL. Supported functions are listed here - 
+  https://github.com/pola-rs/polars/blob/45819db8865b9665e9dfab5b3a54752c8be9d599/crates/polars-sql/src/functions.rs#L773-L890
+- Always prefix aliases with the "alias_" prefix.
+- Always explicitly cast columns to the appropriate type as per the Data Dictionary using the `CAST` function before using them in calculations.
 - For date operations, use REGEXP_LIKE as Polars SQL does not have many date functions apart from `date_part` and `strftime`
 - Do not use SIMILAR TO and CROSS JOIN in the generated SQL query
-- Only use comments with the `--` prefix. Comments can only start on a new line.
+- Only use comments with the `--` prefix.
 - Do not use comments using the `/*` and `*/` syntax, as Polars SQL does not support it
 """
 

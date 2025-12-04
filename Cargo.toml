@@ -291,10 +291,8 @@ actix-web = { version = "4.12", default-features = false, features = [
     "compress-brotli",
     "compress-gzip",
 ] }
-newline-converter = "0.3"
-
-[target.'cfg(not(windows))'.dev-dependencies]
 assert-json-diff = "2.0"
+newline-converter = "0.3"
 
 # disable these dev dependencies for testing the `to` command
 # as they are expensive and slow down the build/CI tests

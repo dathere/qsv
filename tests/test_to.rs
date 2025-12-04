@@ -1,4 +1,3 @@
-#![cfg(target_family = "unix")] // skip test on Windows as it causes a panic when compiling assert_json
 use std::{fs::File, path::Path};
 
 use assert_json_diff::assert_json_eq;

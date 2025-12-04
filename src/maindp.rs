@@ -47,10 +47,6 @@ use crate::{
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-#[cfg(feature = "tikv-jemallocator")]
-#[global_allocator]
-static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
-
 static COMMAND_LIST: &str = r#"
     applydp     Apply series of transformations to a column
     count       Count records

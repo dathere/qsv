@@ -20,6 +20,7 @@ jsonl = false
 # {TOP_N} - The enum threshold for the frequency command
 # {NUM_TAGS} - The maximum number of tags to infer when the --tags option is used
 # {TAG_VOCAB} - The tag vocabulary text file (one tag per line with description after colon)
+# {SAMPLE_FILE} - The temporary file containing a 1000 row random sample of the input CSV file
 
 system_prompt = """
 You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.

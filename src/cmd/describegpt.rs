@@ -30,8 +30,8 @@ specific function or technique to be used in the SQL query, mention it in the pr
 
 DuckDB Model Context Protocol (MCP) support:
 If the DuckDB MCP extension is installed (https://duckdb.org/community_extensions/extensions/duckdb_mcp),
-describegpt will automatically use it to validate the draft SQL query against a 1000 row sample of the
-input file before running it against the entire file.
+describegpt will automatically use it to validate the draft SQL query against a 1000 row random sample
+of the input file before running it against the entire file.
 
 Supported models & LLM providers:
 OpenAI's open-weights gpt-oss-20b model was used during development & is recommended for most use cases.
@@ -1410,7 +1410,7 @@ fn get_prompt(
             if duckdb_mcp_installed {
                 duckdb_sql_guidance.push_str(
                     "\n- Before returning the SQL query, use the duckdb_mcp extension to validate \
-                     the SQL query against the sample data at {SAMPLE_FILE}",
+                     the SQL query against the random sample data at {SAMPLE_FILE}",
                 );
             }
 
@@ -3278,12 +3278,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    // get a 1000 row sample of the input_path file
+    // get a 1000 row random sample of the input file
     let sample_file = tempfile::Builder::new().suffix(".csv").tempfile()?;
     run_qsv_cmd(
-        "slice",
+        "sample",
         &[
-            "--len",
             "1000",
             "--output",
             &sample_file.path().display().to_string(),
@@ -3295,7 +3294,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     SAMPLE_FILE.set(sample_file.path().display().to_string())?;
     // keep the sample file now that we successfully stored the path in the OnceLock
     // we'll delete it later in the cleanup process
-    sample_file.keep()?;
+    let _ = sample_file.keep();
 
     // Initialize the global qsv path
     QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
@@ -3354,9 +3353,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .map_err(|e| CliError::Other(format!("Error flushing Analysis DiskCache: {e}")))?;
     }
 
-    // delete the sample file
+    // cleanup the sample file
     if let Some(sample_file_path) = SAMPLE_FILE.get() {
-        fs::remove_file(sample_file_path)?;
+        // ignore failure to remove the file
+        let _ = fs::remove_file(sample_file_path);
     }
 
     Ok(())

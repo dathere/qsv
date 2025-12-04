@@ -3287,9 +3287,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             &input_path,
             "Getting sample data...",
         )?;
+        // we need the sample file to persist so we can use it later during
+        // --prompt processing. We have cleanup code at the end to remove it.
         let _ = sample_file.keep();
         SAMPLE_FILE.set(sample_file_path)?;
     } else {
+        // the sample file is only needed if --prompt is set, so we close it and
+        // set the SAMPLE_FILE global to an empty string.
+        sample_file.close()?;
         SAMPLE_FILE.set(String::new())?;
     }
 

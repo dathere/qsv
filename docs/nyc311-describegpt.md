@@ -1,3 +1,10 @@
+Generated using the command (against a Local LLM (openai/gpt-oss-20b) on LM Studio):
+
+```bash
+$ QSV_LLM_BASE_URL=http://localhost:1234/v1 qsv describegpt NYC_311_SR_2010-2020-sample-1M.csv --all \
+     --output nyc311-describegpt.md
+```
+---
 # Dictionary
 | Name | Type | Label | Description | Min | Max | Cardinality | Enumeration | Null Count | Examples |
 |------|------|-------|-------------|-----|-----|-------------|-------------|------------|----------|

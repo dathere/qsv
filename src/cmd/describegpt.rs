@@ -3277,7 +3277,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // get a 1000 row random sample of the input file
-    //only do this if --prompt is set
+    // only do this if --prompt is set
     let sample_file = tempfile::Builder::new().suffix(".csv").tempfile()?;
     let sample_file_path = sample_file.path().display().to_string();
     if args.flag_prompt.is_some() {

@@ -331,7 +331,6 @@ Verify output results before using them."#;
 const INPUT_TABLE_NAME: &str = "{INPUT_TABLE_NAME}";
 
 static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
-static SHOULD_USE_DUCKDB: OnceLock<bool> = OnceLock::new();
 static SAMPLE_FILE: OnceLock<String> = OnceLock::new();
 
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
@@ -511,12 +510,9 @@ fn print_status(msg: &str, elapsed: Option<std::time::Duration>) {
 
 // Check if DuckDB should be used based on environment variable
 fn should_use_duckdb() -> bool {
-    let should_use_duckdb = SHOULD_USE_DUCKDB.get_or_init(|| {
-        env::var(QSV_DESCRIBEGPT_DB_ENGINE_ENV)
-            .map(|val| val.to_lowercase().contains("duckdb"))
-            .unwrap_or(false)
-    });
-    *should_use_duckdb
+    env::var(QSV_DESCRIBEGPT_DB_ENGINE_ENV)
+        .map(|val| val.to_lowercase().contains("duckdb"))
+        .unwrap_or(false)
 }
 
 // Get DuckDB binary path from environment variable
@@ -3279,22 +3275,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // get a 1000 row random sample of the input file
+    //only do this if --prompt is set
     let sample_file = tempfile::Builder::new().suffix(".csv").tempfile()?;
-    run_qsv_cmd(
-        "sample",
-        &[
-            "1000",
-            "--output",
-            &sample_file.path().display().to_string(),
-        ],
-        &input_path,
-        "Getting sample data...",
-    )?;
-    // save path to SAMPLE_FILE OnceLock
-    SAMPLE_FILE.set(sample_file.path().display().to_string())?;
-    // keep the sample file now that we successfully stored the path in the OnceLock
-    // we'll delete it later in the cleanup process
-    let _ = sample_file.keep();
+    let sample_file_path = sample_file.path().display().to_string();
+    if args.flag_prompt.is_some() {
+        run_qsv_cmd(
+            "sample",
+            &["1000", "--output", &sample_file_path],
+            &input_path,
+            "Getting sample data...",
+        )?;
+        let _ = sample_file.keep();
+        SAMPLE_FILE.set(sample_file_path)?;
+    } else {
+        SAMPLE_FILE.set(String::new())?;
+    }
 
     // Initialize the global qsv path
     QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
@@ -3355,8 +3350,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // cleanup the sample file
     if let Some(sample_file_path) = SAMPLE_FILE.get() {
-        // ignore failure to remove the file
-        let _ = fs::remove_file(sample_file_path);
+        if !sample_file_path.is_empty() {
+            // ignore failure to remove the file
+            let _ = fs::remove_file(sample_file_path);
+        }
     }
 
     Ok(())

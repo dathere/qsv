@@ -1255,6 +1255,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 let has_currency_format = s.contains(r#""format": "currency""#);
                 let has_dynamic_enum = s.contains("dynamicEnum");
                 let has_unique_combined = s.contains("uniqueCombinedWith");
+                let has_email_format = s.contains(r#""format": "email""#);
 
                 // parse JSON string - use platform-appropriate JSON deserialization
                 #[cfg(target_endian = "big")]
@@ -1271,23 +1272,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         let mut validator_options = Validator::options()
                             .should_validate_formats(!args.flag_no_format_validation);
 
-                        // build email options
-                        let mut email_options = EmailOptions::default();
-                        if args.flag_email_required_tld {
-                            email_options = email_options.with_required_tld();
-                        }
-                        if !args.flag_email_display_text {
-                            email_options = email_options.without_display_text();
-                        }
-                        if args.flag_email_min_subdomains > 2 {
-                            email_options = email_options.with_minimum_sub_domains(args.flag_email_min_subdomains);
-                        }
-                        if !args.flag_email_domain_literal {
-                            email_options = email_options.without_domain_literal();
-                        }
-                        validator_options = validator_options.with_email_options(email_options);
-
                         // Add custom validators based on pre-checked flags
+                        if has_email_format {
+                            let mut email_options = EmailOptions::default();
+                            if args.flag_email_required_tld {
+                                email_options = email_options.with_required_tld();
+                            }
+                            if !args.flag_email_display_text {
+                                email_options = email_options.without_display_text();
+                            }
+                            if args.flag_email_min_subdomains > 2 {
+                                email_options = email_options.with_minimum_sub_domains(args.flag_email_min_subdomains);
+                            }
+                            if !args.flag_email_domain_literal {
+                                email_options = email_options.without_domain_literal();
+                            }
+                            validator_options = validator_options.with_email_options(email_options);
+                        }
+
                         if has_currency_format {
                             validator_options = validator_options.with_format("currency", currency_format_checker);
                         }

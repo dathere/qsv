@@ -1406,7 +1406,9 @@ fn get_prompt(
             if duckdb_mcp_installed {
                 duckdb_sql_guidance.push_str(
                     "\n- Before returning the SQL query, use the duckdb_mcp extension to validate \
-                     the SQL query against the random sample data at {SAMPLE_FILE}",
+                     the SQL query against the random sample data at \"{SAMPLE_FILE}\". If the \
+                     SQL query is invalid, return an error message, try again, and if it still \
+                     fails, return an error message.",
                 );
             }
 

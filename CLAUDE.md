@@ -164,7 +164,7 @@ cargo t test_count -F feature_capable,polars
 
 ### Memory Management
 
-- Default allocator: **mimalloc** (can use jemalloc or standard with feature flags)
+- Default allocator: **mimalloc** (can use standard with feature flags)
 - OOM prevention: Two modes controlled by `QSV_MEMORY_CHECK` environment variable
   - NORMAL: checks if file size < TOTAL memory - 20% headroom
   - CONSERVATIVE: checks if file size < AVAILABLE memory - 20% headroom

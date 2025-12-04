@@ -464,7 +464,7 @@ See [Luau vs Python](docs/INTERPRETERS.md) for more info.
 Another "interpreter" included with qsv is [MiniJinja](https://docs.rs/minijinja/latest/minijinja/), which is used in the `template` and `fetchpost` commands.
 
 ## Memory Management
-qsv supports three memory allocators - mimalloc (default), jemalloc and the standard allocator.<br>See [Memory Allocator](docs/PERFORMANCE.md#memory-allocator) for more info.
+qsv supports two memory allocators - mimalloc (default) and the standard allocator.<br>See [Memory Allocator](docs/PERFORMANCE.md#memory-allocator) for more info.
 
 It also has Out-of-Memory prevention, with two modes - NORMAL (default) & CONSERVATIVE.<br>See [Out-of-Memory Prevention](docs/PERFORMANCE.md#out-of-memory-oom-prevention) for more info.
 
@@ -542,9 +542,9 @@ cargo t luau -F feature_capable,luau
 # that have "count" in the testname - e.g. test_geocode_countryinfo
 cargo t test_count -F feature_capable,luau,polars
 
-# to test using an alternate allocator
-# other than the default mimalloc allocator
-cargo t --no-default-features -F all_features,jemallocator
+# to test using the standard allocator
+# instead of the default mimalloc allocator
+cargo t --no-default-features -F all_features
 ```
 
 ## License

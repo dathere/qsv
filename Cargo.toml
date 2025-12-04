@@ -267,7 +267,6 @@ strum_macros = "0.27"
 sysinfo = "0.37"
 tempfile = "3.23"
 thousands = { version = "0.2", optional = true }
-tikv-jemallocator = { version = "0.6", optional = true }
 textwrap = "0.16"
 threadpool = "1.8"
 titlecase = { version = "3", optional = true }

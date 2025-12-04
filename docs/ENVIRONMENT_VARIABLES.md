@@ -69,7 +69,7 @@ Several dependencies also have environment variables that influence qsv's perfor
   * `POLARS_BACKTRACE_IN_ERR` - if set to 1, includes backtrace in polars-related error messages.
   
 > ℹ️ **NOTE:** To get a list of all active qsv-relevant environment variables, run `qsv --envlist`.
-Relevant env vars are defined as anything that starts with `QSV_`, `MIMALLOC_`, `MALLOC_CONF` & the proxy variables listed above.
+Relevant env vars are defined as anything that starts with `QSV_`, `MIMALLOC_` & the proxy variables listed above.
 
 ## .env File Support
 qsv supports the use of `.env` files to set environment variables. The `.env` file is a simple text file that contains key-value pairs, one per line. 

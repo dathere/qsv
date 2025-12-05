@@ -583,3 +583,120 @@ Co,Aspen
 "
     );
 }
+
+#[test]
+fn partition_stdin_pipeline() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("partition_stdin_pipeline");
+
+    // Create test data with multiple unique values to trigger batching
+    let data = vec![
+        svec!["state", "city"],
+        svec!["NY", "Manhattan"],
+        svec!["CA", "San Francisco"],
+        svec!["TX", "Dallas"],
+        svec!["FL", "Miami"],
+        svec!["WA", "Seattle"],
+        svec!["IL", "Chicago"],
+        svec!["PA", "Philadelphia"],
+        svec!["NY", "Buffalo"],
+        svec!["CA", "Los Angeles"],
+        svec!["TX", "Houston"],
+    ];
+
+    // Create a temporary file with the CSV data
+    wrk.create("stdin_data.csv", data);
+
+    // Run the partition command with stdin input and --limit to trigger process_in_batches
+    let mut cmd = wrk.command("partition");
+    cmd.args(["--limit", "3"]).arg("state").arg(&wrk.path("."));
+
+    // Set up stdin for the command (no input file argument = implicit stdin)
+    let stdin_data = wrk.read_to_string("stdin_data.csv").unwrap();
+    cmd.stdin(std::process::Stdio::piped());
+
+    // Run the command
+    let mut child = cmd.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    std::thread::spawn(move || {
+        stdin.write_all(stdin_data.as_bytes()).unwrap();
+    });
+
+    // Wait for the command to complete
+    let status = child.wait().unwrap();
+    assert!(
+        status.success(),
+        "Partition should succeed with stdin input"
+    );
+
+    // Verify that partition files were created correctly
+    assert!(wrk.path("NY.csv").exists());
+    assert!(wrk.path("CA.csv").exists());
+    assert!(wrk.path("TX.csv").exists());
+    assert!(wrk.path("FL.csv").exists());
+    assert!(wrk.path("WA.csv").exists());
+    assert!(wrk.path("IL.csv").exists());
+    assert!(wrk.path("PA.csv").exists());
+
+    // Verify the content of partition files
+    part_eq!(
+        wrk,
+        "NY.csv",
+        "\
+state,city
+NY,Manhattan
+NY,Buffalo
+"
+    );
+    part_eq!(
+        wrk,
+        "CA.csv",
+        "\
+state,city
+CA,San Francisco
+CA,Los Angeles
+"
+    );
+    part_eq!(
+        wrk,
+        "TX.csv",
+        "\
+state,city
+TX,Dallas
+TX,Houston
+"
+    );
+    part_eq!(
+        wrk,
+        "FL.csv",
+        "\
+state,city
+FL,Miami
+"
+    );
+    part_eq!(
+        wrk,
+        "WA.csv",
+        "\
+state,city
+WA,Seattle
+"
+    );
+    part_eq!(
+        wrk,
+        "IL.csv",
+        "\
+state,city
+IL,Chicago
+"
+    );
+    part_eq!(
+        wrk,
+        "PA.csv",
+        "\
+state,city
+PA,Philadelphia
+"
+    );
+}

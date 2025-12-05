@@ -102,8 +102,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
     // if no input file is provided, use stdin and save to a temp file
-    let mut temp_file = tempfile::Builder::new().suffix(".csv").tempfile()?;
-    let cleanup_temp_file = if args.arg_input.is_none() {
+    if args.arg_input.is_none() {
+        // Get or initialize temp directory that persists until program exit
+        let temp_dir =
+            crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep());
+
+        // Create a temporary file with .csv extension to store stdin input
+        let mut temp_file = tempfile::Builder::new()
+            .suffix(".csv")
+            .tempfile_in(temp_dir)?;
         io::copy(&mut io::stdin(), &mut temp_file)?;
 
         // Get path as string, unwrap is safe as temp files are always valid UTF-8
@@ -116,10 +123,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .map_err(|e| format!("Failed to keep temporary stdin file: {e}"))?;
 
         args.arg_input = Some(temp_path);
-        true
-    } else {
-        false
-    };
+    }
 
     fs::create_dir_all(&args.arg_outdir)?;
 
@@ -127,13 +131,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // so would involve more complicated inter-thread communication, with
     // multiple readers and writers, and some way of passing buffers
     // between them.
-    let result = args.sequential_partition();
-
-    // silently cleanup the temp file if it was created
-    if cleanup_temp_file && let Some(input_path) = args.arg_input {
-        let _ = fs::remove_file(input_path);
-    }
-    result
+    args.sequential_partition()
 }
 
 impl Args {

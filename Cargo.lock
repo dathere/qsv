@@ -1859,7 +1859,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.14.0"
-source = "git+https://github.com/YS-L/csvlens?rev=05aaece#05aaece6e56072da31b7402abe8b47ff39769fc8"
+source = "git+https://github.com/YS-L/csvlens?rev=67d92b7#67d92b7ce1905bbbc085ab09a6033b40a2b02c89"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
@@ -2907,9 +2907,9 @@ dependencies = [
 
 [[package]]
 name = "get-size-derive2"
-version = "0.7.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff47daa61505c85af126e9dd64af6a342a33dc0cccfe1be74ceadc7d352e6efd"
+checksum = "ab21d7bd2c625f2064f04ce54bcb88bc57c45724cde45cba326d784e22d3f71a"
 dependencies = [
  "attribute-derive",
  "quote",
@@ -2918,9 +2918,9 @@ dependencies = [
 
 [[package]]
 name = "get-size2"
-version = "0.7.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac7bb8710e1f09672102be7ddf39f764d8440ae74a9f4e30aaa4820dcdffa4af"
+checksum = "879272b0de109e2b67b39fcfe3d25fdbba96ac07e44a254f5a0b4d7ff55340cb"
 dependencies = [
  "get-size-derive2",
 ]

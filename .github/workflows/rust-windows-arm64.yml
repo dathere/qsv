@@ -36,6 +36,7 @@ jobs:
       run: |
         mkdir DLLs   
     - name: Run tests
-      # env:
+      env:
+          RUSTFLAGS: -C debuginfo=0
       #   RUSTFLAGS: -C target-cpu=native
-      run: cargo test --verbose --locked --features=apply,fetch,foreach,luau,python,feature_capable,ui
+      run: cargo test --verbose --locked --features=apply,fetch,foreach,luau,python,polars,feature_capable,ui

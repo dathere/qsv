@@ -1398,6 +1398,9 @@ fn stats_zero_cv() {
             "variance",
             "cv",
             "nullcount",
+            "n_negative",
+            "n_zero",
+            "n_positive",
             "max_precision",
             "sparsity",
             "qsv__value"
@@ -1427,6 +1430,9 @@ fn stats_zero_cv() {
             "2",
             "47.1405",
             "0",
+            "0",
+            "0",
+            "5",
             "",
             "0",
             ""
@@ -1456,6 +1462,9 @@ fn stats_zero_cv() {
             "50",
             "",
             "0",
+            "2",
+            "1",
+            "2",
             "",
             "0",
             ""
@@ -1486,16 +1495,22 @@ fn stats_zero_cv() {
             "",
             "0",
             "2",
+            "1",
+            "2",
+            "2",
             "0",
             ""
         ],
         svec![
             "col4", "Integer", "", "935", "-900", "1000", "1900", "Unsorted", "-0.5", "", "", "",
-            "", "", "", "", "187", "304.3603", "", "", "680.5703", "463176", "363.9414", "0", "",
-            "0", ""
+            "", "", "", "", "187", "304.3603", "", "", "680.5703", "463176", "363.9414", "0", "1",
+            "1", "3", "", "0", ""
         ],
         svec![
             "qsv__rowcount",
+            "",
+            "",
+            "",
             "",
             "",
             "",
@@ -1550,10 +1565,16 @@ fn stats_zero_cv() {
             "",
             "",
             "",
+            "",
+            "",
+            "",
             "4"
         ],
         svec![
             "qsv__filesize_bytes",
+            "",
+            "",
+            "",
             "",
             "",
             "",
@@ -1608,7 +1629,10 @@ fn stats_zero_cv() {
             "",
             "",
             "",
-            "32a9388a98537b1ace6c7a5f24931d87440a0615829df5d2eb540cc6a8e5e737"
+            "",
+            "",
+            "",
+            "e710e39fee131dfec40c956e1c7acd9c290fdd1e54538ba7f7cd1a1487604cb7"
         ],
     ];
     assert_eq!(got, expected);
@@ -1640,14 +1664,14 @@ fn stats_output_tab_delimited() {
     wrk.assert_success(&mut cmd);
 
     let got = std::fs::read_to_string(out_file).unwrap();
-    let expected = r#"field	type	is_ascii	sum	min	max	range	sort_order	sortiness	min_length	max_length	sum_length	avg_length	stddev_length	variance_length	cv_length	mean	sem	geometric_mean	harmonic_mean	stddev	variance	cv	nullcount	max_precision	sparsity	qsv__value
-col1	Integer		15	1	5	4	Ascending	1								3	0.6325	2.6052	2.1898	1.4142	2	47.1405	0		0	
-col2	Integer		10644	0	4321	4321	Descending	-1								2128.8	685.6979	0		1533.267	2350907.76	72.0249	0		0	
-col3	String	true		01	10		Ascending	1	2	2	10	2	0	0	0								0		0	
-qsv__rowcount																										5
-qsv__columncount																										3
-qsv__filesize_bytes																										62
-qsv__fingerprint_hash																										f28f94eebfa8309f84f646e80a3dc1ab50c6bcde2fe377f99ee52ac255811a78
+    let expected = r#"field	type	is_ascii	sum	min	max	range	sort_order	sortiness	min_length	max_length	sum_length	avg_length	stddev_length	variance_length	cv_length	mean	sem	geometric_mean	harmonic_mean	stddev	variance	cv	nullcount	n_negative	n_zero	n_positive	max_precision	sparsity	qsv__value
+col1	Integer		15	1	5	4	Ascending	1								3	0.6325	2.6052	2.1898	1.4142	2	47.1405	0	0	0	5		0	
+col2	Integer		10644	0	4321	4321	Descending	-1								2128.8	685.6979	0		1533.267	2350907.76	72.0249	0	0	1	4		0	
+col3	String	true		01	10		Ascending	1	2	2	10	2	0	0	0								0					0	
+qsv__rowcount																													5
+qsv__columncount																													3
+qsv__filesize_bytes																													62
+qsv__fingerprint_hash																													e31c3350e0b0bfed571dd7df649eef11f47cb07d3e3e11890f07da6bfbd6dd62
 "#;
     assert_eq!(got, expected);
 }
@@ -1678,14 +1702,14 @@ fn stats_output_ssv_delimited() {
     wrk.assert_success(&mut cmd);
 
     let got = std::fs::read_to_string(out_file).unwrap();
-    let expected = r#"field;type;is_ascii;sum;min;max;range;sort_order;sortiness;min_length;max_length;sum_length;avg_length;stddev_length;variance_length;cv_length;mean;sem;geometric_mean;harmonic_mean;stddev;variance;cv;nullcount;max_precision;sparsity;qsv__value
-col1;Integer;;15;1;5;4;Ascending;1;;;;;;;;3;0.6325;2.6052;2.1898;1.4142;2;47.1405;0;;0;
-col2;Integer;;10644;0;4321;4321;Descending;-1;;;;;;;;2128.8;685.6979;0;;1533.267;2350907.76;72.0249;0;;0;
-col3;String;true;;01;10;;Ascending;1;2;2;10;2;0;0;0;;;;;;;;0;;0;
-qsv__rowcount;;;;;;;;;;;;;;;;;;;;;;;;;;5
-qsv__columncount;;;;;;;;;;;;;;;;;;;;;;;;;;3
-qsv__filesize_bytes;;;;;;;;;;;;;;;;;;;;;;;;;;62
-qsv__fingerprint_hash;;;;;;;;;;;;;;;;;;;;;;;;;;f28f94eebfa8309f84f646e80a3dc1ab50c6bcde2fe377f99ee52ac255811a78
+    let expected = r#"field;type;is_ascii;sum;min;max;range;sort_order;sortiness;min_length;max_length;sum_length;avg_length;stddev_length;variance_length;cv_length;mean;sem;geometric_mean;harmonic_mean;stddev;variance;cv;nullcount;n_negative;n_zero;n_positive;max_precision;sparsity;qsv__value
+col1;Integer;;15;1;5;4;Ascending;1;;;;;;;;3;0.6325;2.6052;2.1898;1.4142;2;47.1405;0;0;0;5;;0;
+col2;Integer;;10644;0;4321;4321;Descending;-1;;;;;;;;2128.8;685.6979;0;;1533.267;2350907.76;72.0249;0;0;1;4;;0;
+col3;String;true;;01;10;;Ascending;1;2;2;10;2;0;0;0;;;;;;;;0;;;;;0;
+qsv__rowcount;;;;;;;;;;;;;;;;;;;;;;;;;;;;;5
+qsv__columncount;;;;;;;;;;;;;;;;;;;;;;;;;;;;;3
+qsv__filesize_bytes;;;;;;;;;;;;;;;;;;;;;;;;;;;;;62
+qsv__fingerprint_hash;;;;;;;;;;;;;;;;;;;;;;;;;;;;;e31c3350e0b0bfed571dd7df649eef11f47cb07d3e3e11890f07da6bfbd6dd62
 "#;
     assert_eq!(got, expected);
 }
@@ -1719,14 +1743,14 @@ fn stats_output_csvsz_delimited() {
     cmd.arg("decompress").arg(out_file.clone());
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = r#"field,type,is_ascii,sum,min,max,range,sort_order,sortiness,min_length,max_length,sum_length,avg_length,stddev_length,variance_length,cv_length,mean,sem,geometric_mean,harmonic_mean,stddev,variance,cv,nullcount,max_precision,sparsity,qsv__value
-col1,Integer,,15,1,5,4,Ascending,1,,,,,,,,3,0.6325,2.6052,2.1898,1.4142,2,47.1405,0,,0,
-col2,Integer,,10644,0,4321,4321,Descending,-1,,,,,,,,2128.8,685.6979,0,,1533.267,2350907.76,72.0249,0,,0,
-col3,String,true,,01,10,,Ascending,1,2,2,10,2,0,0,0,,,,,,,,0,,0,
-qsv__rowcount,,,,,,,,,,,,,,,,,,,,,,,,,,5
-qsv__columncount,,,,,,,,,,,,,,,,,,,,,,,,,,3
-qsv__filesize_bytes,,,,,,,,,,,,,,,,,,,,,,,,,,62
-qsv__fingerprint_hash,,,,,,,,,,,,,,,,,,,,,,,,,,f28f94eebfa8309f84f646e80a3dc1ab50c6bcde2fe377f99ee52ac255811a78"#;
+    let expected = r#"field,type,is_ascii,sum,min,max,range,sort_order,sortiness,min_length,max_length,sum_length,avg_length,stddev_length,variance_length,cv_length,mean,sem,geometric_mean,harmonic_mean,stddev,variance,cv,nullcount,n_negative,n_zero,n_positive,max_precision,sparsity,qsv__value
+col1,Integer,,15,1,5,4,Ascending,1,,,,,,,,3,0.6325,2.6052,2.1898,1.4142,2,47.1405,0,0,0,5,,0,
+col2,Integer,,10644,0,4321,4321,Descending,-1,,,,,,,,2128.8,685.6979,0,,1533.267,2350907.76,72.0249,0,0,1,4,,0,
+col3,String,true,,01,10,,Ascending,1,2,2,10,2,0,0,0,,,,,,,,0,,,,,0,
+qsv__rowcount,,,,,,,,,,,,,,,,,,,,,,,,,,,,,5
+qsv__columncount,,,,,,,,,,,,,,,,,,,,,,,,,,,,,3
+qsv__filesize_bytes,,,,,,,,,,,,,,,,,,,,,,,,,,,,,62
+qsv__fingerprint_hash,,,,,,,,,,,,,,,,,,,,,,,,,,,,,e31c3350e0b0bfed571dd7df649eef11f47cb07d3e3e11890f07da6bfbd6dd62"#;
     assert_eq!(got, expected);
 }
 
@@ -1807,62 +1831,12 @@ fn stats_vis_whitespace() {
     // Create expected output with visualized whitespace using the exact markers
     #[rustfmt::skip]
     let expected = vec![
-        svec![
-            "field",
-            "type",
-            "is_ascii",
-            "sum",
-            "min",
-            "max",
-            "range",
-            "sort_order",
-            "sortiness",
-            "min_length",
-            "max_length",
-            "sum_length",
-            "avg_length",
-            "stddev_length",
-            "variance_length",
-            "cv_length",
-            "mean",
-            "sem",
-            "geometric_mean",
-            "harmonic_mean",
-            "stddev",
-            "variance",
-            "cv",
-            "nullcount",
-            "max_precision",
-            "sparsity",
-            "mad",
-            "lower_outer_fence",
-            "lower_inner_fence",
-            "q1",
-            "q2_median",
-            "q3",
-            "iqr",
-            "upper_inner_fence",
-            "upper_outer_fence",
-            "skewness",
-            "cardinality",
-            "uniqueness_ratio",
-            "mode",
-            "mode_count",
-            "mode_occurrences",
-            "antimode",
-            "antimode_count",
-            "antimode_occurrences",
-            "percentiles",
-            "qsv__value"
-        ],
-        svec!["col1", "String", "false", "", "no_whitespace", "z obscure whitespace 《⋮》 《␌》 《→》 《␤》 《␎》 《␏》 《␊》 《␍》 are also visible", "", "Unsorted", "0.3333", "6", "62", "152", "21.7143", "22.883", "523.6327", "1.0538", "", "", "", "", "", "", "", "0", "", "0", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "value《¶》", "1", "2", "no_whitespace|the spaces in this field are visible as normal spaces|value《→》|value《⏎》|z obscure whitespa...", "5", "1", "", ""],
-        svec!["col2", "String", "true", "", "《→》value", "also_none", "", "Unsorted", "0.2", "0", "9", "37", "5.2857", "2.5475", "6.4898", "0.482", "", "", "", "", "", "", "", "1", "", "0.1429", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "《¶》value", "1", "2", "NULL|《→》value|《⏎》value|    |also_none", "5", "1", "", ""], 
-        svec!["col3", "String", "true", "", "《→》value《→》", "the trailing spaces are left alone   ", "", "Unsorted", "0.3333", "5", "37", "80", "11.4286", "10.5269", "110.8163", "0.9211", "", "", "", "", "", "", "", "0", "", "0", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "《¶》value《¶》", "1", "2", "《→》value《→》|《⏎》value《⏎》|          |clean|the trailing spaces are left alone   ", "5", "1", "", ""], 
-        svec!["qsv__rowcount", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "7"], 
-        svec!["qsv__columncount", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "3"], 
-        svec!["qsv__filesize_bytes", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "323"], 
-        svec!["qsv__fingerprint_hash", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "9a24941e109da95271af72c0681d0e479c732b6b35810696ccda4718310da696"]
-    ];
+        svec!["field", "type", "is_ascii", "sum", "min", "max", "range", "sort_order", "sortiness", "min_length", "max_length", "sum_length", "avg_length", "stddev_length", "variance_length", "cv_length", "mean", "sem", "geometric_mean", "harmonic_mean", "stddev", "variance", "cv", "nullcount", "n_negative", "n_zero", "n_positive", "max_precision", "sparsity", "mad", "lower_outer_fence", "lower_inner_fence", "q1", "q2_median", "q3", "iqr", "upper_inner_fence", "upper_outer_fence", "skewness", "cardinality", "uniqueness_ratio", "mode", "mode_count", "mode_occurrences", "antimode", "antimode_count", "antimode_occurrences", "percentiles", "qsv__value"], 
+        svec!["col1", "String", "false", "", "no_whitespace", "z obscure whitespace 《⋮》 《␌》 《→》 《␤》 《␎》 《␏》 《␊》 《␍》 are also visible", "", "Unsorted", "0.3333", "6", "62", "152", "21.7143", "22.883", "523.6327", "1.0538", "", "", "", "", "", "", "", "0", "", "", "", "", "0", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "value《¶》", "1", "2", "no_whitespace|the spaces in this field are visible as normal spaces|value《→》|value《⏎》|z obscure whitespa...", "5", "1", "", ""], 
+        svec!["col2", "String", "true", "", "《→》value", "also_none", "", "Unsorted", "0.2", "0", "9", "37", "5.2857", "2.5475", "6.4898", "0.482", "", "", "", "", "", "", "", "1", "", "", "", "", "0.1429", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "《¶》value", "1", "2", "NULL|《→》value|《⏎》value|    |also_none", "5", "1", "", ""], 
+        svec!["col3", "String", "true", "", "《→》value《→》", "the trailing spaces are left alone   ", "", "Unsorted", "0.3333", "5", "37", "80", "11.4286", "10.5269", "110.8163", "0.9211", "", "", "", "", "", "", "", "0", "", "", "", "", "0", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "《¶》value《¶》", "1", "2", "《→》value《→》|《⏎》value《⏎》|          |clean|the trailing spaces are left alone   ", "5", "1", "", ""], 
+        svec!["qsv__rowcount", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "7"], svec!["qsv__columncount", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "3"], 
+        svec!["qsv__filesize_bytes", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "323"], svec!["qsv__fingerprint_hash", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "04b6264caa1763c923b7fd9826a023b29135e96c33921b89a95b554fcbefccfa"]];
     //
     assert_eq!(got, expected);
 }
@@ -1922,6 +1896,9 @@ fn stats_percentiles() {
             "variance",
             "cv",
             "nullcount",
+            "n_negative",
+            "n_zero",
+            "n_positive",
             "max_precision",
             "sparsity",
             "percentiles",
@@ -1951,6 +1928,9 @@ fn stats_percentiles() {
             "8.25",
             "52.2233",
             "0",
+            "0",
+            "0",
+            "10",
             "",
             "0",
             "1|3|5|8|9",
@@ -2020,6 +2000,9 @@ fn stats_percentiles_floats() {
             "variance",
             "cv",
             "nullcount",
+            "n_negative",
+            "n_zero",
+            "n_positive",
             "max_precision",
             "sparsity",
             "percentiles",
@@ -2049,6 +2032,9 @@ fn stats_percentiles_floats() {
             "18.6667",
             "54.0062",
             "0",
+            "0",
+            "0",
+            "15",
             "",
             "0",
             "2|4|8|12|14"
@@ -2110,6 +2096,9 @@ fn stats_percentiles_with_dates() {
             "variance",
             "cv",
             "nullcount",
+            "n_negative",
+            "n_zero",
+            "n_positive",
             "max_precision",
             "sparsity",
             "percentiles",
@@ -2139,6 +2128,9 @@ fn stats_percentiles_with_dates() {
             "1824.24",
             "0.2331",
             "0",
+            "",
+            "",
+            "",
             "",
             "0",
             "2020-02-01|2020-03-01|2020-04-01",
@@ -2198,6 +2190,9 @@ fn stats_percentiles_with_nulls() {
             "variance",
             "cv",
             "nullcount",
+            "n_negative",
+            "n_zero",
+            "n_positive",
             "max_precision",
             "sparsity",
             "percentiles",
@@ -2227,6 +2222,9 @@ fn stats_percentiles_with_nulls() {
             "2.6667",
             "54.4331",
             "2",
+            "0",
+            "0",
+            "3",
             "",
             "0.4",
             "1|3|5",
@@ -2286,13 +2284,16 @@ fn stats_percentiles_mixed_types() {
             "variance",
             "cv",
             "nullcount",
+            "n_negative",
+            "n_zero",
+            "n_positive",
             "max_precision",
             "sparsity",
             "percentiles",
         ],
         svec![
             "mixed", "String", "true", "", "3", "abc", "", "Unsorted", "0", "1", "3", "7", "1.4",
-            "0.9428", "0.8889", "0.6734", "", "", "", "", "", "", "", "0", "", "0", "",
+            "0.9428", "0.8889", "0.6734", "", "", "", "", "", "", "", "0", "", "", "", "", "0", "",
         ],
     ];
 
@@ -2349,6 +2350,9 @@ fn stats_percentiles_edge_cases() {
             "variance",
             "cv",
             "nullcount",
+            "n_negative",
+            "n_zero",
+            "n_positive",
             "max_precision",
             "sparsity",
             "percentiles",
@@ -2378,6 +2382,9 @@ fn stats_percentiles_edge_cases() {
             "559999199999.6",
             "374.1655",
             "0",
+            "1",
+            "0",
+            "4",
             "4",
             "0",
             "-999999|0|0|999999|1000000"
@@ -2442,6 +2449,9 @@ fn stats_percentiles_custom_list() {
             "variance",
             "cv",
             "nullcount",
+            "n_negative",
+            "n_zero",
+            "n_positive",
             "max_precision",
             "sparsity",
             "percentiles",
@@ -2471,6 +2481,9 @@ fn stats_percentiles_custom_list() {
             "8.25",
             "52.2233",
             "0",
+            "0",
+            "0",
+            "10",
             "",
             "0",
             "1|1|4|7|10|10",
@@ -2520,13 +2533,16 @@ fn stats_percentiles_single_value() {
             "variance",
             "cv",
             "nullcount",
+            "n_negative",
+            "n_zero",
+            "n_positive",
             "max_precision",
             "sparsity",
             "percentiles",
         ],
         svec![
             "n", "Integer", "", "42", "42", "42", "0", "Unsorted", "0", "", "", "", "", "", "", "",
-            "42", "0", "42", "42", "0", "0", "0", "0", "", "0", "42|42|42",
+            "42", "0", "42", "42", "0", "0", "0", "0", "0", "0", "1", "", "0", "42|42|42",
         ],
     ];
 
@@ -2751,6 +2767,9 @@ fn stats_issue_2668_semicolon_separator() {
             "variance",
             "cv",
             "nullcount",
+            "n_negative",
+            "n_zero",
+            "n_positive",
             "max_precision",
             "sparsity"
         ],
@@ -2779,6 +2798,9 @@ fn stats_issue_2668_semicolon_separator() {
             "",
             "",
             "0",
+            "",
+            "",
+            "",
             "",
             "0"
         ],

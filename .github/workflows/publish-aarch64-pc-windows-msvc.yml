@@ -39,7 +39,7 @@ jobs:
             target: aarch64-pc-windows-msvc
             architecture: aarch64
             use-cross: false
-            addl-build-args: --features=apply,fetch,foreach,luau,polars,self_update,ui
+            addl-build-args: --features=apply,fetch,foreach,luau,self_update,ui
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:

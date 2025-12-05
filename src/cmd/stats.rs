@@ -605,7 +605,7 @@ const MS_IN_DAY_INT: i64 = 86_400_000;
 const DAY_DECIMAL_PLACES: u32 = 5;
 
 // maximum number of output columns
-const MAX_STAT_COLUMNS: usize = 44;
+const MAX_STAT_COLUMNS: usize = 47;
 
 // the first N columns are fingerprint hash columns
 const FINGERPRINT_HASH_COLUMNS: usize = 26;

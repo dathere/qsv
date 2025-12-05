@@ -500,6 +500,9 @@ pub struct StatsData {
     pub variance:             Option<f64>,
     pub cv:                   Option<f64>,
     pub nullcount:            u64,
+    pub n_negative:           Option<u64>,
+    pub n_zero:               Option<u64>,
+    pub n_positive:           Option<u64>,
     pub max_precision:        Option<u32>,
     pub sparsity:             Option<f64>,
     pub mad:                  Option<f64>,
@@ -557,6 +560,9 @@ pub static STATSDATA_TYPES_MAP: phf::Map<&'static str, JsonTypes> = phf_map! {
     "variance" => JsonTypes::Float,
     "cv" => JsonTypes::Float,
     "nullcount" => JsonTypes::Int,
+    "n_negative" => JsonTypes::Int,
+    "n_zero" => JsonTypes::Int,
+    "n_positive" => JsonTypes::Int,
     "max_precision" => JsonTypes::Int,
     "sparsity" => JsonTypes::Float,
     "mad" => JsonTypes::Float,
@@ -599,7 +605,7 @@ const MS_IN_DAY_INT: i64 = 86_400_000;
 const DAY_DECIMAL_PLACES: u32 = 5;
 
 // maximum number of output columns
-const MAX_STAT_COLUMNS: usize = 44;
+const MAX_STAT_COLUMNS: usize = 47;
 
 // the first N columns are fingerprint hash columns
 const FINGERPRINT_HASH_COLUMNS: usize = 26;
@@ -1942,6 +1948,9 @@ impl Args {
             "variance",
             "cv",
             "nullcount",
+            "n_negative",
+            "n_zero",
+            "n_positive",
             "max_precision",
             "sparsity",
         ]);
@@ -3017,6 +3026,24 @@ impl Stats {
 
         // nullcount
         record.push_field(itoa::Buffer::new().format(self.nullcount));
+
+        // n_negative, n_zero, n_positive
+        if typ == TInteger || typ == TFloat {
+            if let Some(ref v) = self.online {
+                let (n_negative, n_zero, n_positive) = v.n_counts();
+                record.push_field(itoa::Buffer::new().format(n_negative));
+                record.push_field(itoa::Buffer::new().format(n_zero));
+                record.push_field(itoa::Buffer::new().format(n_positive));
+            } else {
+                for _ in 0..3 {
+                    record.push_field(EMPTY_STR);
+                }
+            }
+        } else {
+            for _ in 0..3 {
+                record.push_field(EMPTY_STR);
+            }
+        }
 
         // max precision
         if typ == TFloat {

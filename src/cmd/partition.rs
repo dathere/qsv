@@ -100,13 +100,40 @@ struct Args {
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // if no input file is provided, use stdin and save to a temp file
+    let mut temp_file = tempfile::Builder::new().suffix(".csv").tempfile()?;
+    let cleanup_temp_file = if args.arg_input.is_none() {
+        io::copy(&mut io::stdin(), &mut temp_file)?;
+
+        // Get path as string, unwrap is safe as temp files are always valid UTF-8
+        let temp_path = temp_file.path().to_str().unwrap().to_string();
+
+        // Keep temp file from being deleted when it goes out of scope
+        // it will be deleted when the program exits when TEMP_FILE_DIR is deleted
+        temp_file
+            .keep()
+            .map_err(|e| format!("Failed to keep temporary stdin file: {e}"))?;
+
+        args.arg_input = Some(temp_path);
+        true
+    } else {
+        false
+    };
+
     fs::create_dir_all(&args.arg_outdir)?;
 
     // It would be nice to support efficient parallel partitions, but doing
     // so would involve more complicated inter-thread communication, with
     // multiple readers and writers, and some way of passing buffers
     // between them.
-    args.sequential_partition()
+    let result = args.sequential_partition();
+
+    // silently cleanup the temp file if it was created
+    if cleanup_temp_file && let Some(input_path) = args.arg_input {
+        let _ = fs::remove_file(input_path);
+    }
+    result
 }
 
 impl Args {

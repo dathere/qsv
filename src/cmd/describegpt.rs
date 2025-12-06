@@ -198,7 +198,7 @@ describegpt options:
                            Try to follow the syntax here -
                            https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
 
-    --json                 Return results in JSON format.
+    --format <format>      Output format: markdown (default), tsv, or json.
     --jsonl                Return results in JSON Lines format.
 
                              CACHING OPTIONS:
@@ -260,6 +260,13 @@ enum PromptType {
     Tags,
     Prompt,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputFormat {
+    Markdown,
+    Tsv,
+    Json,
+}
 #[derive(Debug, Deserialize)]
 struct Args {
     arg_input:             Option<String>,
@@ -284,7 +291,7 @@ struct Args {
     flag_max_tokens:       u32,
     flag_timeout:          u16,
     flag_user_agent:       Option<String>,
-    flag_json:             bool,
+    flag_format:           Option<String>,
     flag_jsonl:            bool,
     flag_no_cache:         bool,
     flag_disk_cache_dir:   Option<String>,
@@ -1291,6 +1298,123 @@ fn format_dictionary_json(entries: &[DictionaryEntry], args: &Args) -> serde_jso
     })
 }
 
+/// Format dictionary entries as TSV
+fn format_dictionary_tsv(entries: &[DictionaryEntry]) -> String {
+    use std::fmt::Write;
+
+    let mut output = String::with_capacity(1024);
+    // TSV header
+    output.push_str(
+        "Name\tType\tLabel\tDescription\tMin\tMax\tCardinality\tEnumeration\tNull Count\tExamples\n",
+    );
+
+    for entry in entries {
+        // Escape tabs and newlines in TSV cells
+        let name = entry.name.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+        let r#type = entry.r#type.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+        let label = entry.label.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+        let description = entry.description.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+        let min = entry.min.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+        let max = entry.max.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+        let enumeration = entry.enumeration.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+        let examples = entry.examples.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+
+        let _ = writeln!(
+            output,
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            name,
+            r#type,
+            label,
+            description,
+            min,
+            max,
+            HumanCount(entry.cardinality),
+            enumeration,
+            HumanCount(entry.null_count),
+            examples
+        );
+    }
+
+    output
+}
+
+/// Format token usage and reasoning as comment lines for TSV
+fn format_token_usage_comments(reasoning: &str, token_usage: &TokenUsage) -> String {
+    format!(
+        "# REASONING\n# {}\n# TOKEN USAGE\n# prompt: {}\n# completion: {}\n# total: {}\n",
+        reasoning.replace('\n', "\n# "),
+        token_usage.prompt,
+        token_usage.completion,
+        token_usage.total
+    )
+}
+
+/// Format tags as TSV (single row with columns: tag, reasoning, token_usage fields)
+fn format_tags_tsv(tags_json: &serde_json::Value, reasoning: &str, token_usage: &TokenUsage) -> String {
+    // Extract tags from JSON - tags might be an array or an object with a tags field
+    let tags_vec = if let Some(tags_array) = tags_json.as_array() {
+        tags_array.iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<&str>>()
+    } else if let Some(obj) = tags_json.as_object() {
+        if let Some(tags_array) = obj.get("tags").and_then(|v| v.as_array()) {
+            tags_array.iter()
+                .filter_map(|v| v.as_str())
+                .collect::<Vec<&str>>()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    let tags_str = tags_vec.join(", ");
+    // Escape tabs and newlines
+    let tags_escaped = tags_str.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+    let reasoning_escaped = reasoning.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+
+    format!(
+        "tags\treasoning\ttoken_usage_prompt\ttoken_usage_completion\ttoken_usage_total\n{}\t{}\t{}\t{}\t{}\n",
+        tags_escaped,
+        reasoning_escaped,
+        token_usage.prompt,
+        token_usage.completion,
+        token_usage.total
+    )
+}
+
+/// Format description as TSV (single row with columns: response, reasoning, token_usage fields)
+fn format_description_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) -> String {
+    // Escape tabs and newlines
+    let response_escaped = response.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+    let reasoning_escaped = reasoning.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+
+    format!(
+        "response\treasoning\ttoken_usage_prompt\ttoken_usage_completion\ttoken_usage_total\n{}\t{}\t{}\t{}\t{}\n",
+        response_escaped,
+        reasoning_escaped,
+        token_usage.prompt,
+        token_usage.completion,
+        token_usage.total
+    )
+}
+
+/// Format prompt as TSV (single row with columns: response, reasoning, token_usage fields)
+fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) -> String {
+    // Escape tabs and newlines
+    let response_escaped = response.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+    let reasoning_escaped = reasoning.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+
+    format!(
+        "response\treasoning\ttoken_usage_prompt\ttoken_usage_completion\ttoken_usage_total\n{}\t{}\t{}\t{}\t{}\n",
+        response_escaped,
+        reasoning_escaped,
+        token_usage.prompt,
+        token_usage.completion,
+        token_usage.total
+    )
+}
+
 /// Generates a prompt for a given prompt type based on either a custom prompt file or default
 /// prompts.
 ///
@@ -1499,7 +1623,7 @@ fn get_prompt(
         )
         .replace(
             "{JSON_ADD}",
-            if prompt_file.json || prompt_file.jsonl || args.flag_json || args.flag_jsonl {
+            if prompt_file.json || prompt_file.jsonl || (get_output_format(args).unwrap_or(OutputFormat::Markdown) == OutputFormat::Json) || is_jsonl_output(args).unwrap_or(false) {
                 " (in valid, pretty-printed JSON format, ensuring string values are properly \
                  escaped)"
             } else {
@@ -1923,27 +2047,48 @@ fn get_redis_analysis(
     Ok(Return::new(perform_analysis(args, input_path)?))
 }
 
-// Check if JSON output is expected
-fn is_json_output(args: &Args) -> CliResult<bool> {
+// Get output format (markdown is default)
+fn get_output_format(args: &Args) -> CliResult<OutputFormat> {
     // Command-line flags take precedence over prompt file settings
-    if args.flag_json {
-        return Ok(true);
+    if let Some(format_str) = &args.flag_format {
+        match format_str.to_lowercase().as_str() {
+            "markdown" | "md" => Ok(OutputFormat::Markdown),
+            "tsv" => Ok(OutputFormat::Tsv),
+            "json" => Ok(OutputFormat::Json),
+            _ => fail_incorrectusage_clierror!(
+                "Invalid format '{}'. Must be one of: markdown, tsv, json",
+                format_str
+            ),
+        }
+    } else if args.flag_jsonl {
+        // JSONL takes precedence over format
+        Ok(OutputFormat::Json)
+    } else {
+        // If no command-line flags, check prompt file
+        let prompt_file = get_prompt_file(args)?;
+        if prompt_file.json {
+            Ok(OutputFormat::Json)
+        } else {
+            Ok(OutputFormat::Markdown)
+        }
     }
-    if args.flag_jsonl {
-        return Ok(false);
-    }
-    // If no command-line flags, check prompt file
-    let prompt_file = get_prompt_file(args)?;
-    Ok(prompt_file.json)
 }
+
+// Check if JSON output is expected (for backward compatibility with JSONL logic)
+fn is_json_output(args: &Args) -> CliResult<bool> {
+    Ok(get_output_format(args)? == OutputFormat::Json && !is_jsonl_output(args)?)
+}
+
+// Check if TSV output is expected
+fn is_tsv_output(args: &Args) -> CliResult<bool> {
+    Ok(get_output_format(args)? == OutputFormat::Tsv)
+}
+
 // Check if JSONL output is expected
 fn is_jsonl_output(args: &Args) -> CliResult<bool> {
     // Command-line flags take precedence over prompt file settings
     if args.flag_jsonl {
         return Ok(true);
-    }
-    if args.flag_json {
-        return Ok(false);
     }
     // If no command-line flags, check prompt file
     let prompt_file = get_prompt_file(args)?;
@@ -2167,6 +2312,30 @@ fn run_inference_options(
                 });
                 DATA_DICTIONARY_JSON
                     .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+            } else if is_tsv_output(args)? {
+                // TSV output
+                let mut tsv_output = format_dictionary_tsv(&combined_entries);
+                // Add comment lines for token usage and reasoning after the last TSV record
+                tsv_output.push_str(&format_token_usage_comments(
+                    &completion_response.reasoning,
+                    &completion_response.token_usage,
+                ));
+
+                // Store in DATA_DICTIONARY_JSON for use by other prompts
+                let dictionary_json = format_dictionary_json(&combined_entries, args);
+                DATA_DICTIONARY_JSON
+                    .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+
+                // Write output
+                if let Some(output) = &args.flag_output {
+                    fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(output)?
+                        .write_all(tsv_output.as_bytes())?;
+                } else {
+                    print!("{tsv_output}");
+                }
             } else {
                 // Markdown output
                 let mut markdown_output = format_dictionary_markdown(&combined_entries);
@@ -2259,6 +2428,51 @@ fn run_inference_options(
                     serde_json::to_string_pretty(&total_json_output["dictionary"]["response"])
                         .unwrap()
                 });
+            }
+        }
+        // Process TSV output
+        else if is_tsv_output(args)? && !is_sql_response {
+            let tsv_output = if kind == PromptType::Description {
+                format_description_tsv(
+                    &completion_response.response,
+                    &completion_response.reasoning,
+                    &completion_response.token_usage,
+                )
+            } else if kind == PromptType::Prompt {
+                format_prompt_tsv(
+                    &completion_response.response,
+                    &completion_response.reasoning,
+                    &completion_response.token_usage,
+                )
+            } else if kind == PromptType::Tags {
+                // Extract tags JSON from response
+                let tags_json = match extract_json_from_output(&completion_response.response) {
+                    Ok(json_value) => json_value,
+                    Err(_) => json!({"tags": []}),
+                };
+                format_tags_tsv(
+                    &tags_json,
+                    &completion_response.reasoning,
+                    &completion_response.token_usage,
+                )
+            } else {
+                // Should not happen, but fallback to description format
+                format_description_tsv(
+                    &completion_response.response,
+                    &completion_response.reasoning,
+                    &completion_response.token_usage,
+                )
+            };
+
+            // Write output
+            if let Some(output) = &args.flag_output {
+                fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(output)?
+                    .write_all(tsv_output.as_bytes())?;
+            } else {
+                print!("{tsv_output}");
             }
         }
         // Process plaintext output
@@ -2978,10 +3192,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Initialize the global quiet flag
     QUIET_FLAG.store(args.flag_quiet, Ordering::Relaxed);
 
-    // If both --json and --jsonl flags are specified, print error message.
-    if is_json_output(&args)? && is_jsonl_output(&args)? {
+    // If both --format json and --jsonl flags are specified, print error message.
+    if get_output_format(&args)? == OutputFormat::Json && is_jsonl_output(&args)? {
         return fail_incorrectusage_clierror!(
-            "--json and --jsonl options cannot be specified together."
+            "--format json and --jsonl options cannot be specified together."
         );
     }
 

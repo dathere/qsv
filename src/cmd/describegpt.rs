@@ -28,11 +28,6 @@ When using DuckDB, all loaded DuckDB extensions will be sent as additional conte
 it know what functions (even UDFs!) it can use in the SQL queries it generates. If you want a
 specific function or technique to be used in the SQL query, mention it in the prompt.
 
-DuckDB Model Context Protocol (MCP) support:
-If the DuckDB MCP extension is installed (https://duckdb.org/community_extensions/extensions/duckdb_mcp),
-describegpt will automatically use it to validate the draft SQL query against a 1000 row random sample
-of the input file before running it against the entire file.
-
 Supported models & LLM providers:
 OpenAI's open-weights gpt-oss-20b model was used during development & is recommended for most use cases.
 It was also tested with OpenAI, TogetherAI, OpenRouter and Google Gemini cloud providers.
@@ -338,7 +333,6 @@ Verify output results before using them."#;
 const INPUT_TABLE_NAME: &str = "{INPUT_TABLE_NAME}";
 
 static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
-static SAMPLE_FILE: OnceLock<String> = OnceLock::new();
 
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
 
@@ -410,6 +404,7 @@ struct FrequencyRecord {
     rank:       f64,
 }
 
+// environment variables
 static QSV_REDIS_CONNSTR_ENV: &str = "QSV_DG_REDIS_CONNSTR";
 static QSV_REDIS_MAX_POOL_SIZE_ENV: &str = "QSV_REDIS_MAX_POOL_SIZE";
 static QSV_REDIS_TTL_SECS_ENV: &str = "QSV_REDIS_TTL_SECS";
@@ -1305,19 +1300,52 @@ fn format_dictionary_tsv(entries: &[DictionaryEntry]) -> String {
     let mut output = String::with_capacity(1024);
     // TSV header
     output.push_str(
-        "Name\tType\tLabel\tDescription\tMin\tMax\tCardinality\tEnumeration\tNull Count\tExamples\n",
+        "Name\tType\tLabel\tDescription\tMin\tMax\tCardinality\tEnumeration\tNull \
+         Count\tExamples\n",
     );
 
     for entry in entries {
         // Escape tabs and newlines in TSV cells
-        let name = entry.name.replace('\t', " ").replace('\n', " ").replace('\r', " ");
-        let r#type = entry.r#type.replace('\t', " ").replace('\n', " ").replace('\r', " ");
-        let label = entry.label.replace('\t', " ").replace('\n', " ").replace('\r', " ");
-        let description = entry.description.replace('\t', " ").replace('\n', " ").replace('\r', " ");
-        let min = entry.min.replace('\t', " ").replace('\n', " ").replace('\r', " ");
-        let max = entry.max.replace('\t', " ").replace('\n', " ").replace('\r', " ");
-        let enumeration = entry.enumeration.replace('\t', " ").replace('\n', " ").replace('\r', " ");
-        let examples = entry.examples.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+        let name = entry
+            .name
+            .replace('\t', " ")
+            .replace('\n', " ")
+            .replace('\r', " ");
+        let r#type = entry
+            .r#type
+            .replace('\t', " ")
+            .replace('\n', " ")
+            .replace('\r', " ");
+        let label = entry
+            .label
+            .replace('\t', " ")
+            .replace('\n', " ")
+            .replace('\r', " ");
+        let description = entry
+            .description
+            .replace('\t', " ")
+            .replace('\n', " ")
+            .replace('\r', " ");
+        let min = entry
+            .min
+            .replace('\t', " ")
+            .replace('\n', " ")
+            .replace('\r', " ");
+        let max = entry
+            .max
+            .replace('\t', " ")
+            .replace('\n', " ")
+            .replace('\r', " ");
+        let enumeration = entry
+            .enumeration
+            .replace('\t', " ")
+            .replace('\n', " ")
+            .replace('\r', " ");
+        let examples = entry
+            .examples
+            .replace('\t', " ")
+            .replace('\n', " ")
+            .replace('\r', " ");
 
         let _ = writeln!(
             output,
@@ -1350,15 +1378,21 @@ fn format_token_usage_comments(reasoning: &str, token_usage: &TokenUsage) -> Str
 }
 
 /// Format tags as TSV (single row with columns: tag, reasoning, token_usage fields)
-fn format_tags_tsv(tags_json: &serde_json::Value, reasoning: &str, token_usage: &TokenUsage) -> String {
+fn format_tags_tsv(
+    tags_json: &serde_json::Value,
+    reasoning: &str,
+    token_usage: &TokenUsage,
+) -> String {
     // Extract tags from JSON - tags might be an array or an object with a tags field
     let tags_vec = if let Some(tags_array) = tags_json.as_array() {
-        tags_array.iter()
+        tags_array
+            .iter()
             .filter_map(|v| v.as_str())
             .collect::<Vec<&str>>()
     } else if let Some(obj) = tags_json.as_object() {
         if let Some(tags_array) = obj.get("tags").and_then(|v| v.as_array()) {
-            tags_array.iter()
+            tags_array
+                .iter()
                 .filter_map(|v| v.as_str())
                 .collect::<Vec<&str>>()
         } else {
@@ -1370,11 +1404,18 @@ fn format_tags_tsv(tags_json: &serde_json::Value, reasoning: &str, token_usage: 
 
     let tags_str = tags_vec.join(", ");
     // Escape tabs and newlines
-    let tags_escaped = tags_str.replace('\t', " ").replace('\n', " ").replace('\r', " ");
-    let reasoning_escaped = reasoning.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+    let tags_escaped = tags_str
+        .replace('\t', " ")
+        .replace('\n', " ")
+        .replace('\r', " ");
+    let reasoning_escaped = reasoning
+        .replace('\t', " ")
+        .replace('\n', " ")
+        .replace('\r', " ");
 
     format!(
-        "tags\treasoning\ttoken_usage_prompt\ttoken_usage_completion\ttoken_usage_total\n{}\t{}\t{}\t{}\t{}\n",
+        "tags\treasoning\ttoken_usage_prompt\ttoken_usage_completion\ttoken_usage_total\n{}\t{}\\
+         t{}\t{}\t{}\n",
         tags_escaped,
         reasoning_escaped,
         token_usage.prompt,
@@ -1386,11 +1427,18 @@ fn format_tags_tsv(tags_json: &serde_json::Value, reasoning: &str, token_usage: 
 /// Format description as TSV (single row with columns: response, reasoning, token_usage fields)
 fn format_description_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) -> String {
     // Escape tabs and newlines
-    let response_escaped = response.replace('\t', " ").replace('\n', " ").replace('\r', " ");
-    let reasoning_escaped = reasoning.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+    let response_escaped = response
+        .replace('\t', " ")
+        .replace('\n', " ")
+        .replace('\r', " ");
+    let reasoning_escaped = reasoning
+        .replace('\t', " ")
+        .replace('\n', " ")
+        .replace('\r', " ");
 
     format!(
-        "response\treasoning\ttoken_usage_prompt\ttoken_usage_completion\ttoken_usage_total\n{}\t{}\t{}\t{}\t{}\n",
+        "response\treasoning\ttoken_usage_prompt\ttoken_usage_completion\ttoken_usage_total\n{}\\
+         t{}\t{}\t{}\t{}\n",
         response_escaped,
         reasoning_escaped,
         token_usage.prompt,
@@ -1402,11 +1450,18 @@ fn format_description_tsv(response: &str, reasoning: &str, token_usage: &TokenUs
 /// Format prompt as TSV (single row with columns: response, reasoning, token_usage fields)
 fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) -> String {
     // Escape tabs and newlines
-    let response_escaped = response.replace('\t', " ").replace('\n', " ").replace('\r', " ");
-    let reasoning_escaped = reasoning.replace('\t', " ").replace('\n', " ").replace('\r', " ");
+    let response_escaped = response
+        .replace('\t', " ")
+        .replace('\n', " ")
+        .replace('\r', " ");
+    let reasoning_escaped = reasoning
+        .replace('\t', " ")
+        .replace('\n', " ")
+        .replace('\r', " ");
 
     format!(
-        "response\treasoning\ttoken_usage_prompt\ttoken_usage_completion\ttoken_usage_total\n{}\t{}\t{}\t{}\t{}\n",
+        "response\treasoning\ttoken_usage_prompt\ttoken_usage_completion\ttoken_usage_total\n{}\\
+         t{}\t{}\t{}\t{}\n",
         response_escaped,
         reasoning_escaped,
         token_usage.prompt,
@@ -1522,19 +1577,7 @@ fn get_prompt(
                 .join(".");
             log::debug!("DuckDB minor version: {duckdb_version}");
 
-            // check if the duckdb_mcp extension is installed
-            let duckdb_mcp_installed = valid_extensions.contains("duckdb_mcp");
-            // if so, add additional guidance to the prompt to use the duckdb_mcp extension
-            let mut duckdb_sql_guidance = prompt_file.duckdb_sql_guidance.trim_end().to_string();
-
-            if duckdb_mcp_installed {
-                duckdb_sql_guidance.push_str(
-                    "\n- Before returning the SQL query, use the duckdb_mcp extension to validate \
-                     the SQL query against the random sample data at \"{SAMPLE_FILE}\". If the \
-                     SQL query is invalid, correct it and validate again. If validation still \
-                     fails after correction, return an error message explaining the issue.",
-                );
-            }
+            let duckdb_sql_guidance = prompt_file.duckdb_sql_guidance.trim_end().to_string();
 
             // Generate prompt for DuckDB SQL
             prompt = format!(
@@ -1614,16 +1657,16 @@ fn get_prompt(
         .replace("{DUCKDB_VERSION}", &duckdb_version)
         .replace("{TOP_N}", &args.flag_enum_threshold.to_string())
         .replace(
-            "{SAMPLE_FILE}",
-            SAMPLE_FILE.get().map_or("", |s| s.as_str()),
-        )
-        .replace(
             "{DICTIONARY}",
             DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),
         )
         .replace(
             "{JSON_ADD}",
-            if prompt_file.json || prompt_file.jsonl || (get_output_format(args).unwrap_or(OutputFormat::Markdown) == OutputFormat::Json) || is_jsonl_output(args).unwrap_or(false) {
+            if prompt_file.json
+                || prompt_file.jsonl
+                || (get_output_format(args).unwrap_or(OutputFormat::Markdown) == OutputFormat::Json)
+                || is_jsonl_output(args).unwrap_or(false)
+            {
                 " (in valid, pretty-printed JSON format, ensuring string values are properly \
                  escaped)"
             } else {
@@ -2084,6 +2127,32 @@ fn is_tsv_output(args: &Args) -> CliResult<bool> {
     Ok(get_output_format(args)? == OutputFormat::Tsv)
 }
 
+// Generate TSV output file path for a given PromptKind
+// Extracts filestem from base output path and appends .{kind}.tsv
+fn get_tsv_output_path(base_output: &str, kind: PromptType) -> String {
+    let path = Path::new(base_output);
+    let filestem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_else(|| {
+            // If no file stem, use the whole path as base
+            base_output
+        });
+
+    // Get parent directory if it exists
+    let parent = path.parent();
+    let kind_str = kind.to_string().to_lowercase();
+
+    if let Some(parent_path) = parent {
+        parent_path
+            .join(format!("{filestem}.{kind_str}.tsv"))
+            .to_string_lossy()
+            .to_string()
+    } else {
+        format!("{filestem}.{kind_str}.tsv")
+    }
+}
+
 // Check if JSONL output is expected
 fn is_jsonl_output(args: &Args) -> CliResult<bool> {
     // Command-line flags take precedence over prompt file settings
@@ -2326,14 +2395,12 @@ fn run_inference_options(
                 DATA_DICTIONARY_JSON
                     .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
 
-                // Write output
+                // Write output to separate file per kind
                 if let Some(output) = &args.flag_output {
-                    fs::OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(output)?
-                        .write_all(tsv_output.as_bytes())?;
+                    let tsv_path = get_tsv_output_path(output, kind);
+                    fs::write(&tsv_path, tsv_output.as_bytes())?;
                 } else {
+                    // This should not happen due to validation, but handle gracefully
                     print!("{tsv_output}");
                 }
             } else {
@@ -2456,7 +2523,8 @@ fn run_inference_options(
                     &completion_response.token_usage,
                 )
             } else {
-                // Should not happen, but fallback to description format
+                // Should not happen for TSV (Dictionary is handled separately above)
+                // Fallback to description format
                 format_description_tsv(
                     &completion_response.response,
                     &completion_response.reasoning,
@@ -2464,14 +2532,12 @@ fn run_inference_options(
                 )
             };
 
-            // Write output
+            // Write output to separate file per kind
             if let Some(output) = &args.flag_output {
-                fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(output)?
-                    .write_all(tsv_output.as_bytes())?;
+                let tsv_path = get_tsv_output_path(output, kind);
+                fs::write(&tsv_path, tsv_output.as_bytes())?;
             } else {
+                // This should not happen due to validation, but handle gracefully
                 print!("{tsv_output}");
             }
         }
@@ -3192,10 +3258,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Initialize the global quiet flag
     QUIET_FLAG.store(args.flag_quiet, Ordering::Relaxed);
 
+    // Initialize the global qsv path
+    QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
+
     // If both --format json and --jsonl flags are specified, print error message.
     if get_output_format(&args)? == OutputFormat::Json && is_jsonl_output(&args)? {
         return fail_incorrectusage_clierror!(
             "--format json and --jsonl options cannot be specified together."
+        );
+    }
+
+    // If --format tsv is used, require --output option
+    if is_tsv_output(&args)? && args.flag_output.is_none() {
+        return fail_incorrectusage_clierror!(
+            "--format tsv requires the --output option to be specified."
         );
     }
 
@@ -3488,32 +3564,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!(
             "--all option cannot be specified with other inference flags."
         );
+    } else if args.flag_prompt.is_some()
+        && (args.flag_dictionary || args.flag_description || args.flag_tags)
+    {
+        return fail_incorrectusage_clierror!(
+            "--prompt cannot be specified together with --dictionary, --description, or --tags."
+        );
     }
-
-    // get a 1000 row random sample of the input file
-    // only do this if --prompt is set
-    let sample_file = tempfile::Builder::new().suffix(".csv").tempfile()?;
-    let sample_file_path = sample_file.path().display().to_string();
-    if args.flag_prompt.is_some() {
-        run_qsv_cmd(
-            "sample",
-            &["1000", "--output", &sample_file_path],
-            &input_path,
-            "Getting sample data...",
-        )?;
-        // we need the sample file to persist so we can use it later during
-        // --prompt processing. We have cleanup code at the end to remove it.
-        let _ = sample_file.keep();
-        SAMPLE_FILE.set(sample_file_path)?;
-    } else {
-        // the sample file is only needed if --prompt is set, so we close it and
-        // set the SAMPLE_FILE global to an empty string.
-        sample_file.close()?;
-        SAMPLE_FILE.set(String::new())?;
-    }
-
-    // Initialize the global qsv path
-    QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
 
     // Calculate BLAKE3 hash of the input file early for cache key generation
     print_status(&format!("Calculating BLAKE3 hash of {input_path}..."), None);
@@ -3567,14 +3624,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .connection()
             .flush()
             .map_err(|e| CliError::Other(format!("Error flushing Analysis DiskCache: {e}")))?;
-    }
-
-    // cleanup the sample file
-    if let Some(sample_file_path) = SAMPLE_FILE.get()
-        && !sample_file_path.is_empty()
-    {
-        // ignore failure to remove the file
-        let _ = fs::remove_file(sample_file_path);
     }
 
     Ok(())

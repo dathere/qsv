@@ -199,3 +199,87 @@ fn snappy_automatic_compression() {
 
     wrk.assert_success(&mut cmd);
 }
+
+#[test]
+fn snappy_plain_csv_with_sz_extension_fallback() {
+    // Test that a plain CSV file incorrectly named with .sz extension
+    // falls back gracefully instead of throwing "corrupt input" error
+    let wrk = Workdir::new("snappy_plain_csv_fallback");
+
+    // Create a plain CSV file
+    let thedata = vec![
+        svec!["Col1", "Col2"],
+        svec!["1", "value1"],
+        svec!["2", "value2"],
+    ];
+    wrk.create("plain.csv", thedata.clone());
+
+    // Rename it to have .sz extension (simulating the bug scenario)
+    let plain_path = wrk.path("plain.csv");
+    let misnamed_path = wrk.path("plain.csv.sz");
+    std::fs::copy(&plain_path, &misnamed_path).unwrap();
+
+    // Try to read it - should fall back to reading as plain CSV
+    // This tests the fix for issue #2157
+    let mut cmd = wrk.command("count");
+    cmd.arg("plain.csv.sz");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "2"); // Should count 2 data rows (excluding header)
+}
+
+#[test]
+fn snappy_case_insensitive_extension() {
+    // Test that snappy detection works with case-insensitive extensions
+    let wrk = Workdir::new("snappy_case_insensitive");
+
+    let thedata = vec![svec!["Col1", "Col2"], svec!["1", "value1"]];
+    wrk.create("test.csv", thedata.clone());
+
+    // Compress to uppercase .SZ
+    let out_file = wrk.path("test.csv.SZ").to_string_lossy().to_string();
+    let mut cmd = wrk.command("snappy");
+    cmd.arg("compress")
+        .arg("test.csv")
+        .args(["--output", &out_file]);
+
+    wrk.assert_success(&mut cmd);
+
+    // Should be able to read it
+    let mut cmd = wrk.command("count");
+    cmd.arg("test.csv.SZ");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "1");
+}
+
+#[test]
+fn snappy_validation_prevents_corrupt_error() {
+    // Test that validation prevents "corrupt input" errors
+    // when a plain file is incorrectly detected as snappy
+    let wrk = Workdir::new("snappy_validation_test");
+
+    // Create a plain CSV file
+    let csv_content = "name,age\nAlice,30\nBob,25\n";
+    wrk.create_from_string("data.csv", csv_content);
+
+    // Copy it with .sz extension (simulating temp file naming bug)
+    let csv_path = wrk.path("data.csv");
+    let sz_path = wrk.path("data.csv.sz");
+    std::fs::copy(&csv_path, &sz_path).unwrap();
+
+    // Should read successfully without "corrupt input" error
+    let mut cmd = wrk.command("slice");
+    cmd.args(["--len", "1"]).arg("data.csv.sz");
+
+    wrk.assert_success(&mut cmd);
+
+    // Verify we got the data (should be first row after header)
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["name", "age"], svec!["Alice", "30"]];
+    assert_eq!(got, expected);
+}

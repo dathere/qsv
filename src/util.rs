@@ -24,7 +24,7 @@ use docopt::Docopt;
 use filetime::FileTime;
 use human_panic::setup_panic;
 use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget, ProgressStyle};
-use log::{info, log_enabled};
+use log::{info, log_enabled, warn};
 #[cfg(feature = "polars")]
 use polars::prelude::Schema;
 use reqwest::Client;
@@ -1896,7 +1896,7 @@ pub fn get_envvar_flag(key: &str) -> bool {
 }
 
 /// Validates if a file is actually a Snappy-compressed file before attempting decompression
-fn is_valid_snappy_file(path: &PathBuf) -> Result<bool, CliError> {
+pub fn is_valid_snappy_file(path: &PathBuf) -> Result<bool, CliError> {
     let mut file = std::fs::File::open(path)?;
     let mut reader = BufReader::new(&mut file);
 
@@ -1919,18 +1919,66 @@ fn is_valid_snappy_file(path: &PathBuf) -> Result<bool, CliError> {
     }
 }
 
+/// Decompresses a Snappy-compressed file to a temporary directory.
+///
+/// # Arguments
+///
+/// * `path` - Path to the file with `.sz` extension that should be decompressed
+/// * `tmpdir` - Temporary directory where the decompressed file will be placed
+///
+/// # Returns
+///
+/// Returns the path to the decompressed file in the temporary directory as a `String`.
+///
+/// # Fallback Behavior
+///
+/// If a file has a `.sz` extension but is not actually a valid Snappy-compressed file,
+/// this function falls back gracefully by copying the file to the temp directory as a
+/// plain file (without the `.sz` extension). This prevents "corrupt input" errors when
+/// plain CSV files are incorrectly detected as snappy-compressed (e.g., due to temp file
+/// naming bugs or extension detection issues).
+///
+/// This fallback is necessary because this function is used by commands that require
+/// file-based access (like `slice`, `lens`, `describegpt`, `tojsonl`, `joinp`, `sniff`)
+/// which use `process_input()` to decompress files before creating a `Config`. Since
+/// `process_input()` strips the `.sz` extension from the temp file path, `Config::io_reader()`
+/// never sees the extension and cannot handle the fallback. Therefore, the validation and
+/// fallback must happen here in `decompress_snappy_file()`.
+///
+/// Commands that use streaming (like `count`, `stats`, `frequency`) use `Config::io_reader()`
+/// directly, which also has validation and fallback logic. Both code paths need their own
+/// validation because they serve different purposes (file-based vs streaming access).
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The file cannot be opened
+/// - File validation fails (though this now falls back to plain file handling)
+/// - The file cannot be copied to the temp directory (fallback case)
+/// - Decompression fails for valid snappy files
 pub fn decompress_snappy_file(
     path: &PathBuf,
     tmpdir: &tempfile::TempDir,
 ) -> Result<String, CliError> {
     // First, validate that this is actually a Snappy file
     if !is_valid_snappy_file(path)? {
-        return fail_clierror!(
-            r#"File '{}' has an .sz extension but is not a valid Snappy-compressed file.
-This might be a temporary file or incorrectly named file.
-Consider renaming the file or using a different input."#,
+        // File has .sz extension but is not a valid Snappy file.
+        // Fall back gracefully by copying it to temp directory as a plain file.
+        // This prevents "corrupt input" errors when plain CSV files are incorrectly
+        // detected as snappy (e.g., due to temp file naming bugs).
+        warn!(
+            "File {} has .sz extension but is not a valid Snappy file. Treating as plain file.",
             path.display()
         );
+
+        // Copy the file to temp directory with original name (without .sz)
+        let file_stem = Path::new(&path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("plain_file");
+        let fallback_filepath = tmpdir.path().join(file_stem);
+        std::fs::copy(path, &fallback_filepath)?;
+        return Ok(format!("{}", fallback_filepath.display()));
     }
 
     // Proceed with decompression since we've validated the file

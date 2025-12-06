@@ -2826,3 +2826,69 @@ fn apply_crc32() {
 
     assert_eq!(got, expected);
 }
+
+#[test]
+fn apply_empty_selection_with_new_column() {
+    use std::{io::Write, process};
+
+    let wrk = Workdir::new("apply_empty_selection");
+    wrk.create("data.csv", vec![svec!["id"], svec!["1"]]);
+
+    // Simulate the exact scenario from the issue:
+    // echo id | qsv select missing | qsv apply calcconv --formatstr '{added}+{removed}'
+    // --new-column ttl First, run qsv select missing (which fails because "missing" doesn't
+    // exist)
+    let mut select_cmd = process::Command::new(wrk.qsv_bin());
+    select_cmd.args(vec!["select", "missing", "data.csv"]);
+    let select_output = wrk.output(&mut select_cmd);
+    // select will fail, but may still output something to stdout (empty CSV or headers)
+    let select_stdout = String::from_utf8(select_output.stdout).unwrap();
+
+    // Now pipe that output to qsv apply calcconv
+    let mut apply_cmd = process::Command::new(wrk.qsv_bin());
+    apply_cmd
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::piped())
+        .args(vec![
+            "apply",
+            "calcconv",
+            "--formatstr",
+            "{added}+{removed}",
+            "--new-column",
+            "ttl",
+        ]);
+
+    let mut apply_child = apply_cmd.spawn().unwrap();
+    let mut apply_stdin = apply_child.stdin.take().unwrap();
+    let select_stdout_clone = select_stdout.clone();
+    std::thread::spawn(move || {
+        apply_stdin
+            .write_all(select_stdout_clone.as_bytes())
+            .unwrap();
+    });
+
+    let apply_output = apply_child.wait_with_output().unwrap();
+    let got_stderr = String::from_utf8_lossy(&apply_output.stderr);
+    let expected = "usage error: No columns selected. Column selection is empty.\n";
+    assert_eq!(got_stderr, expected);
+    assert!(!apply_output.status.success());
+}
+
+#[test]
+fn apply_empty_selection_without_new_column() {
+    let wrk = Workdir::new("apply_empty_selection_no_new_col");
+    wrk.create("data.csv", vec![svec!["id"], svec!["1"]]);
+    // Test the same scenario without --new-column flag
+    let mut cmd = wrk.command("apply");
+    cmd.arg("operations")
+        .arg("upper")
+        .arg("!id")
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+
+    let got: String = wrk.output_stderr(&mut cmd);
+    let expected = "usage error: No columns selected. Column selection is empty.\n";
+    assert_eq!(got, expected);
+}

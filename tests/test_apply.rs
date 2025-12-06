@@ -2828,14 +2828,15 @@ fn apply_crc32() {
 }
 
 #[test]
-fn apply_empty_selection_with_new_column() {
+fn apply_empty_selection_with_new_column_3164() {
     use std::{io::Write, process};
 
     let wrk = Workdir::new("apply_empty_selection");
     wrk.create("data.csv", vec![svec!["id"], svec!["1"]]);
 
-    // Simulate the exact scenario from the issue:
-    // echo id | qsv select missing | qsv apply calcconv --formatstr '{added}+{removed}' --new-column ttl
+    // Simulate the exact scenario from issue #3164:
+    // echo id | qsv select missing | \
+    // qsv apply calcconv --formatstr '{added}+{removed}' --new-column ttl
     // First, run qsv select missing (which fails because "missing" doesn't exist)
     let mut select_cmd = process::Command::new(wrk.qsv_bin());
     select_cmd.args(vec!["select", "missing", "data.csv"]);

@@ -996,6 +996,10 @@ mod tests {
         assert!(!is_snappy_extension(Path::new("file.gz")));
         assert!(!is_snappy_extension(Path::new("file")));
         assert!(!is_snappy_extension(Path::new("file.sz.backup")));
+        // Test that extensions ending with "sz" but not exactly "sz" don't trigger detection
+        assert!(!is_snappy_extension(Path::new("file.esz")));
+        assert!(!is_snappy_extension(Path::new("file.KYpPcb8esz")));
+        assert!(!is_snappy_extension(Path::new("data.esz")));
     }
 
     #[test]

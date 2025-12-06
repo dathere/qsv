@@ -271,7 +271,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let headers = rdr.byte_headers()?.clone();
     let sel = rconfig.selection(&headers)?;
-    // safety: we just checked that sel is not empty in the previous line
+    if sel.is_empty() {
+        return fail_incorrectusage_clierror!("No columns selected. Column selection is empty.");
+    }
+    // safety: we just checked that sel is not empty above
     let column_index = *sel.iter().next().unwrap();
 
     let mut headers = rdr.headers()?.clone();

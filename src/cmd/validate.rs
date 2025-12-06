@@ -1256,8 +1256,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 let has_dynamic_enum = s.contains("dynamicEnum");
                 let has_unique_combined = s.contains("uniqueCombinedWith");
                 let has_email_format = s.contains(r#""format": "email""#);
-                debug!("Custom formats/keywords: currency: {}, dynamicEnum: {}, uniqueCombinedWith: {}, email: {}", 
-                    has_currency_format, has_dynamic_enum, has_unique_combined, has_email_format);
+                debug!("Custom formats/keywords: currency: {has_currency_format}, dynamicEnum: {has_dynamic_enum}");
+                debug!("uniqueCombinedWith: {has_unique_combined}, email: {has_email_format}");
 
                 // parse JSON string - use platform-appropriate JSON deserialization
                 #[cfg(target_endian = "big")]

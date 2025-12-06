@@ -3356,11 +3356,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // cleanup the sample file
-    if let Some(sample_file_path) = SAMPLE_FILE.get() {
-        if !sample_file_path.is_empty() {
-            // ignore failure to remove the file
-            let _ = fs::remove_file(sample_file_path);
-        }
+    if let Some(sample_file_path) = SAMPLE_FILE.get()
+        && !sample_file_path.is_empty()
+    {
+        // ignore failure to remove the file
+        let _ = fs::remove_file(sample_file_path);
     }
 
     Ok(())

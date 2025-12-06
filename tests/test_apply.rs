@@ -2835,9 +2835,8 @@ fn apply_empty_selection_with_new_column() {
     wrk.create("data.csv", vec![svec!["id"], svec!["1"]]);
 
     // Simulate the exact scenario from the issue:
-    // echo id | qsv select missing | qsv apply calcconv --formatstr '{added}+{removed}'
-    // --new-column ttl First, run qsv select missing (which fails because "missing" doesn't
-    // exist)
+    // echo id | qsv select missing | qsv apply calcconv --formatstr '{added}+{removed}' --new-column ttl
+    // First, run qsv select missing (which fails because "missing" doesn't exist)
     let mut select_cmd = process::Command::new(wrk.qsv_bin());
     select_cmd.args(vec!["select", "missing", "data.csv"]);
     let select_output = wrk.output(&mut select_cmd);

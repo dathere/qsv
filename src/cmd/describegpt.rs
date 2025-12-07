@@ -341,6 +341,7 @@ struct TokenUsage {
     prompt:     u64,
     completion: u64,
     total:      u64,
+    elapsed:    u64,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
@@ -1336,15 +1337,18 @@ fn format_dictionary_tsv(entries: &[DictionaryEntry]) -> String {
 /// Format token usage and reasoning as comment lines for TSV
 fn format_token_usage_comments(reasoning: &str, token_usage: &TokenUsage) -> String {
     format!(
-        "# REASONING\n# {}\n# TOKEN USAGE\n# prompt: {}\n# completion: {}\n# total: {}\n",
+        "# REASONING\n# {}\n# TOKEN USAGE\n# prompt: {}\n# completion: {}\n# total: {}\n# \
+         elapsed: {} ms\n",
         reasoning.replace('\n', "\n# "),
         token_usage.prompt,
         token_usage.completion,
-        token_usage.total
+        token_usage.total,
+        token_usage.elapsed
     )
 }
 
 /// Format tags as TSV (single row with columns: tag, reasoning, token_usage fields)
+#[rustfmt::skip]
 fn format_tags_tsv(
     tags_json: &serde_json::Value,
     reasoning: &str,
@@ -1375,47 +1379,49 @@ fn format_tags_tsv(
     let reasoning_escaped = reasoning.replace(['\t', '\n', '\r'], " ");
 
     format!(
-        "tags\treasoning\ttoken_usage_prompt\ttoken_usage_completion\ttoken_usage_total\n{}\t{}\\
-         t{}\t{}\t{}\n",
+        "tags\treasoning\ttoken_prompt\ttoken_completion\ttoken_total\telapsed\n{}\t{}\t{}\t{}\t{}\t{}\n",
         tags_escaped,
         reasoning_escaped,
         token_usage.prompt,
         token_usage.completion,
-        token_usage.total
+        token_usage.total,
+        token_usage.elapsed
     )
 }
 
 /// Format description as TSV (single row with columns: response, reasoning, token_usage fields)
+#[rustfmt::skip]
 fn format_description_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) -> String {
     // Escape tabs and newlines
     let response_escaped = response.replace(['\t', '\n', '\r'], " ");
     let reasoning_escaped = reasoning.replace(['\t', '\n', '\r'], " ");
 
     format!(
-        "response\treasoning\ttoken_usage_prompt\ttoken_usage_completion\ttoken_usage_total\n{}\\
-         t{}\t{}\t{}\t{}\n",
+        "response\treasoning\ttoken_prompt\ttoken_completion\ttoken_total\telapsed\n{}\t{}\t{}\t{}\t{}\t{}\n",
         response_escaped,
         reasoning_escaped,
         token_usage.prompt,
         token_usage.completion,
-        token_usage.total
+        token_usage.total,
+        token_usage.elapsed
     )
 }
 
 /// Format prompt as TSV (single row with columns: response, reasoning, token_usage fields)
+#[rustfmt::skip]
 fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) -> String {
     // Escape tabs and newlines
     let response_escaped = response.replace(['\t', '\n', '\r'], " ");
     let reasoning_escaped = reasoning.replace(['\t', '\n', '\r'], " ");
 
     format!(
-        "response\treasoning\ttoken_usage_prompt\ttoken_usage_completion\ttoken_usage_total\n{}\\
-         t{}\t{}\t{}\t{}\n",
+        "response\treasoning\ttoken_prompt\ttoken_completion\ttoken_total\telapsed\n{}\t{}\t{}\t{}\t{}\t{}\n",
         response_escaped,
         reasoning_escaped,
         token_usage.prompt,
         token_usage.completion,
-        token_usage.total
+        token_usage.total,
+        token_usage.elapsed
     )
 }
 
@@ -1702,6 +1708,7 @@ fn get_completion(
 
     // Get response from POST request to chat completions endpoint
     let completions_endpoint = "/chat/completions";
+    let start_time = Instant::now();
     let response = send_request(
         client,
         Some(api_key),
@@ -1740,10 +1747,12 @@ fn get_completion(
     let Some(usage) = response_json["usage"].as_object() else {
         return fail_clierror!("Invalid response: missing or malformed usage");
     };
+    let elapsed_ms = start_time.elapsed().as_millis() as u64;
     let token_usage = TokenUsage {
         prompt:     usage["prompt_tokens"].as_u64().unwrap_or(0),
         completion: usage["completion_tokens"].as_u64().unwrap_or(0),
         total:      usage["total_tokens"].as_u64().unwrap_or(0),
+        elapsed:    elapsed_ms,
     };
 
     // if flag_prompt is set, add Prompt to the Attribution and

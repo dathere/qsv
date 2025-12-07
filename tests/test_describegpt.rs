@@ -708,7 +708,7 @@ fn describegpt_nonexistent_prompt_file() {
     wrk.assert_err(&mut cmd);
 }
 
-// Test error: invalid prompt file JSON
+// Test error: invalid prompt file TOML
 #[test]
 fn describegpt_invalid_prompt_file_toml() {
     let wrk = Workdir::new("describegpt");

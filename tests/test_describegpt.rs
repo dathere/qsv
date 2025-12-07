@@ -724,7 +724,7 @@ fn describegpt_invalid_prompt_file_toml() {
         ],
     );
 
-    // Create an invalid JSON prompt file
+    // Create an invalid TOML prompt file
     wrk.create_from_string("invalid.toml", "This is not valid JSON");
 
     // Run the command with invalid prompt file

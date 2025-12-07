@@ -218,7 +218,8 @@ describegpt options:
 Common options:
     -h, --help             Display this message
     -o, --output <file>    Write output to <file> instead of stdout. If --format is set to TSV,
-                           the output file will automatically use the `.tsv` extension.
+                           separate files will be created for each prompt type with the pattern
+                           {filestem}.{kind}.tsv (e.g., output.dictionary.tsv, output.tags.tsv).
     -q, --quiet            Do not print status messages to stderr.
 "#;
 

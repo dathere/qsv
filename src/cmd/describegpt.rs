@@ -1611,7 +1611,7 @@ fn get_prompt(
         )
         .replace(
             "{JSON_ADD}",
-            if prompt_file.json || (get_output_format(args)? == OutputFormat::Json) {
+            if get_output_format(args)? == OutputFormat::Json {
                 " (in valid, pretty-printed JSON format, ensuring string values are properly \
                  escaped)"
             } else {

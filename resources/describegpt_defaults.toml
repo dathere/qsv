@@ -1,13 +1,12 @@
 name = "qsv Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "qsv team"
-version = "6.1.0"
+version = "6.2.0"
 tokens = 10000
 base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
 timeout = 300
 json = false
-jsonl = false
 
 ### NOTE: The following VARIABLES are automatically replaced by the qsv describegpt command in the prompts below:
 # {STATS}
@@ -176,10 +175,8 @@ duckdb_sql_guidance = """
 - The input csv has headers and uses {DELIMITER} as the delimiter
 - Column names with spaces and special characters are case-sensitive and should be enclosed in double quotes
 - Only use the `read_csv_auto` table function to read the input CSV
-- Always explicitly type cast columns to the appropriate type using the `CAST` function before using them in calculations.
+- Always explicitly cast columns to the appropriate type as per the Data Dictionary using the `CAST` function before using them in calculations.
 - Use the placeholder {INPUT_TABLE_NAME} for the input csv in the `read_csv_auto` table function call
-- Remember that the date format specifier is the second parameter for the date functions `strftime` and `strptime`
-- Remember that the date format specifier for seconds is `%S`, NOT `%s`
 """
 
 ### Polars SQL "One-Shot" Query Generation Guidelines

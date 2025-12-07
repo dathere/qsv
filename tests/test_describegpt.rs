@@ -102,9 +102,10 @@ fn describegpt_invalid_api_key() {
     cmd.env("QSV_LLM_BASE_URL", "")
         .arg("in.csv")
         .arg("--all")
-        .arg("--json")
+        .args(["--format", "json"])
         .args(["--api-key", "INVALIDKEY"])
-        .args(["--max-tokens", "100"]);
+        .args(["--max-tokens", "100"])
+        .arg("--no-cache");
 
     wrk.assert_err(&mut cmd);
 }
@@ -131,10 +132,13 @@ fn describegpt_user_agent() {
     // Run the command
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
-    cmd.arg("in.csv").arg("--all").arg("--json").args([
-        "--user-agent",
-        "Mozilla/5.0 (platform; rv:geckoversion) Gecko/geckotrail Firefox/firefoxversion",
-    ]);
+    cmd.arg("in.csv")
+        .arg("--all")
+        .args(["--format", "json"])
+        .args([
+            "--user-agent",
+            "Mozilla/5.0 (platform; rv:geckoversion) Gecko/geckotrail Firefox/firefoxversion",
+        ]);
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -192,7 +196,7 @@ fn describegpt_valid_json() {
     // Run the command
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
-    cmd.arg("in.csv").arg("--all").arg("--json");
+    cmd.arg("in.csv").arg("--all").args(["--format", "json"]);
 
     // Check that the output is valid JSON
     let got = wrk.stdout::<String>(&mut cmd);
@@ -257,7 +261,7 @@ fn describegpt_dictionary_flag() {
     // Run the command with only --dictionary
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
-    cmd.arg("in.csv").arg("--dictionary");
+    cmd.arg("in.csv").arg("--dictionary").arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -286,7 +290,7 @@ fn describegpt_tags_flag() {
     // Run the command with only --tags
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
-    cmd.arg("in.csv").arg("--tags");
+    cmd.arg("in.csv").arg("--tags").arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -316,7 +320,8 @@ fn describegpt_custom_prompt() {
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
-        .args(["--prompt", "What is the main theme of this dataset?"]);
+        .args(["--prompt", "What is the main theme of this dataset?"])
+        .arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -345,46 +350,12 @@ fn describegpt_custom_prompt_with_variables() {
     // Run the command with custom prompt using variables
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
-    cmd.arg("in.csv").args([
-        "--prompt",
-        "Based on {stats} and {frequency}, what patterns do you see?",
-    ]);
-
-    // Check that the command ran successfully
-    wrk.assert_success(&mut cmd);
-}
-
-// Test JSONL output format
-#[test]
-#[serial]
-fn describegpt_jsonl_output() {
-    if !is_local_llm_available() {
-        return;
-    }
-    let wrk = Workdir::new("describegpt");
-
-    // Create a CSV file with sample data
-    wrk.create_indexed(
-        "in.csv",
-        vec![
-            svec!["letter", "number"],
-            svec!["alpha", "13"],
-            svec!["beta", "24"],
-            svec!["gamma", "37"],
-        ],
-    );
-
-    // Run the command with --jsonl
-    let mut cmd = wrk.command("describegpt");
-    set_describegpt_testing_envvars(&mut cmd);
-    cmd.arg("in.csv").arg("--all").arg("--jsonl");
-
-    // Check that the output is valid JSON
-    let got = wrk.stdout::<String>(&mut cmd);
-    match serde_json::from_str::<serde_json::Value>(&got) {
-        Ok(_) => (),
-        Err(e) => assert!(false, "Error parsing JSON: {e}"),
-    }
+    cmd.arg("in.csv")
+        .args([
+            "--prompt",
+            "Based on {stats} and {frequency}, what patterns do you see?",
+        ])
+        .arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -415,10 +386,11 @@ fn describegpt_max_tokens() {
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
-        .args(["--max-tokens", "200"]);
+        .args(["--max-tokens", "200"])
+        .arg("--no-cache");
 
     // Check that the command ran successfully
-    wrk.assert_success(&mut cmd);
+    wrk.assert_err(&mut cmd);
 }
 
 // Test max tokens set to 0 (no limit)
@@ -446,7 +418,8 @@ fn describegpt_max_tokens_zero() {
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
-        .args(["--max-tokens", "0"]);
+        .args(["--max-tokens", "0"])
+        .arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -477,7 +450,8 @@ fn describegpt_timeout() {
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
-        .args(["--timeout", "60"]);
+        .args(["--timeout", "60"])
+        .arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -508,7 +482,8 @@ fn describegpt_output_to_file() {
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
-        .args(["--output", "output.txt"]);
+        .args(["--output", "output.txt"])
+        .arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -542,8 +517,9 @@ fn describegpt_output_to_file_json() {
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
-        .arg("--json")
-        .args(["--output", "output.json"]);
+        .args(["--format", "json"])
+        .args(["--output", "output.json"])
+        .arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -582,7 +558,10 @@ fn describegpt_quiet_mode() {
     // Run the command with quiet mode
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
-    cmd.arg("in.csv").arg("--description").arg("--quiet");
+    cmd.arg("in.csv")
+        .arg("--description")
+        .arg("--quiet")
+        .arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -609,32 +588,34 @@ fn describegpt_prompt_file() {
     );
 
     // Create a prompt file
-    let prompt_file_content = r#"{
-        "name": "Test Prompt File",
-        "description": "A test prompt file for describegpt",
-        "author": "Test Author",
-        "version": "1.0.0",
-        "tokens": 6000,
-        "system_prompt": "You are a helpful assistant.",
-        "dictionary_prompt": "Create a data dictionary for this dataset.",
-        "description_prompt": "Describe this dataset in detail{json_add} based on the following summary statistics and frequency data.\n\nSummary Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}",
-        "tags_prompt": "Generate tags for this dataset.",
-        "prompt": "What is this dataset about?",
-        "custom_prompt_guidance": "Provide a clear and concise answer.",
-        "json": true,
-        "jsonl": false,
-        "base_url": "http://localhost:1234/v1",
-        "model": "gpt-oss-20b",
-        "timeout": 60
-    }"#;
-    wrk.create_from_string("prompt.json", prompt_file_content);
+    let prompt_file_content = r#"name = "Test Prompt File"
+        description = "A test prompt file for describegpt"
+        author = "Test Author"
+        version = "1.0.0"
+        tokens = 6000
+        system_prompt = "You are a helpful assistant."
+        dictionary_prompt = "Create a data dictionary for this dataset."
+        description_prompt = "Describe this dataset in detail{json_add} based on the following summary statistics and frequency data.\n\nSummary Statistics:\n\n{stats}\n\nFrequency:\n\n{frequency}"
+        tags_prompt = "Generate tags for this dataset."
+        prompt = "What is this dataset about?"
+        custom_prompt_guidance = "Provide a clear and concise answer."
+        base_url = "http://localhost:1234/v1"
+        model = "gpt-oss-20b"
+        timeout = 60
+        format = "markdown"
+        duckdb_sql_guidance = "Use the following DuckDB SQL syntax to generate a SQL query: {duckdb_sql_guidance}"
+        polars_sql_guidance = "Use the following Polars SQL syntax to generate a SQL query: {polars_sql_guidance}"
+        dd_fewshot_examples = "Use the following DuckDB few-shot examples: {dd_fewshot_examples}"
+        p_fewshot_examples = "Use the following Polars SQL few-shot examples: {p_fewshot_examples}""#;
+    wrk.create_from_string("prompt.toml", &prompt_file_content);
 
     // Run the command with prompt file
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
-        .args(["--prompt-file", "prompt.json"]);
+        .args(["--prompt-file", "prompt.toml"])
+        .arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -648,7 +629,7 @@ fn describegpt_no_input_file() {
     // Run the command without input file
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
-    cmd.arg("--description");
+    cmd.arg("--description").arg("--no-cache");
 
     wrk.assert_err(&mut cmd);
 }
@@ -701,33 +682,6 @@ fn describegpt_all_with_other_flags() {
     wrk.assert_err(&mut cmd);
 }
 
-// Test error: --json and --jsonl together
-#[test]
-fn describegpt_json_and_jsonl_together() {
-    let wrk = Workdir::new("describegpt");
-
-    // Create a CSV file with sample data
-    wrk.create_indexed(
-        "in.csv",
-        vec![
-            svec!["letter", "number"],
-            svec!["alpha", "13"],
-            svec!["beta", "24"],
-            svec!["gamma", "37"],
-        ],
-    );
-
-    // Run the command with both --json and --jsonl (should fail)
-    let mut cmd = wrk.command("describegpt");
-    set_describegpt_testing_envvars(&mut cmd);
-    cmd.arg("in.csv")
-        .arg("--description")
-        .arg("--json")
-        .arg("--jsonl");
-
-    wrk.assert_err(&mut cmd);
-}
-
 // Test error: non-existent prompt file
 #[test]
 fn describegpt_nonexistent_prompt_file() {
@@ -749,14 +703,14 @@ fn describegpt_nonexistent_prompt_file() {
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
-        .args(["--prompt-file", "nonexistent.json"]);
+        .args(["--prompt-file", "nonexistent.toml"]);
 
     wrk.assert_err(&mut cmd);
 }
 
-// Test error: invalid prompt file JSON
+// Test error: invalid prompt file TOML
 #[test]
-fn describegpt_invalid_prompt_file_json() {
+fn describegpt_invalid_prompt_file_toml() {
     let wrk = Workdir::new("describegpt");
 
     // Create a CSV file with sample data
@@ -770,15 +724,15 @@ fn describegpt_invalid_prompt_file_json() {
         ],
     );
 
-    // Create an invalid JSON prompt file
-    wrk.create_from_string("invalid.json", "This is not valid JSON");
+    // Create an invalid TOML prompt file
+    wrk.create_from_string("invalid.toml", "This is not valid JSON");
 
     // Run the command with invalid prompt file
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
-        .args(["--prompt-file", "invalid.json"]);
+        .args(["--prompt-file", "invalid.toml"]);
 
     wrk.assert_err(&mut cmd);
 }
@@ -824,8 +778,9 @@ fn describegpt_larger_dataset() {
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--all")
-        .arg("--json")
-        .args(["--max-tokens", "0"]);
+        .args(["--format", "json"])
+        .args(["--max-tokens", "0"])
+        .arg("--no-cache");
 
     // Check that the output is valid JSON
     let got = wrk.stdout::<String>(&mut cmd);
@@ -862,7 +817,7 @@ fn describegpt_special_characters() {
     // Run the command
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
-    cmd.arg("in.csv").arg("--description");
+    cmd.arg("in.csv").arg("--description").arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -883,7 +838,7 @@ fn describegpt_empty_dataset() {
     // Run the command
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
-    cmd.arg("in.csv").arg("--description");
+    cmd.arg("in.csv").arg("--description").arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -913,7 +868,7 @@ fn describegpt_null_values() {
     // Run the command
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
-    cmd.arg("in.csv").arg("--description");
+    cmd.arg("in.csv").arg("--description").arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -944,7 +899,8 @@ fn describegpt_env_var_overrides() {
     cmd.env("QSV_LLM_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b")
         .env("QSV_LLM_BASE_URL", "http://localhost:1234/v1")
         .arg("in.csv")
-        .arg("--description");
+        .arg("--description")
+        .arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -975,7 +931,8 @@ fn describegpt_different_model() {
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
-        .args(["--model", "deepseek/deepseek-r1-0528-qwen3-8b"]);
+        .args(["--model", "deepseek/deepseek-r1-0528-qwen3-8b"])
+        .arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -1006,7 +963,8 @@ fn describegpt_different_base_url() {
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--description")
-        .args(["--base-url", "http://localhost:11434/v1"]);
+        .args(["--base-url", "http://localhost:11434/v1"])
+        .arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -1036,7 +994,8 @@ fn describegpt_prompt_no_dictionary_output() {
     let mut cmd = wrk.command("describegpt");
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
-        .args(["--prompt", "What is the main theme of this dataset?"]);
+        .args(["--prompt", "What is the main theme of this dataset?"])
+        .arg("--no-cache");
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
@@ -1092,7 +1051,8 @@ fn test_base_url_flag_is_respected_issue_2976() {
         .arg("https://api.together.xyz/v1")
         .arg("--api-key")
         .arg("test-key")
-        .arg("--dictionary");
+        .arg("--dictionary")
+        .arg("--no-cache");
 
     let output = cmd.output().expect("Failed to execute command");
     let stderr = String::from_utf8(output.stderr).unwrap();

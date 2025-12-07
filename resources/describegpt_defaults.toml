@@ -1,12 +1,12 @@
 name = "qsv Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "qsv team"
-version = "6.2.0"
+version = "6.2.1"
 tokens = 10000
 base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
 timeout = 300
-json = false
+format = "markdown"
 
 ### NOTE: The following VARIABLES are automatically replaced by the qsv describegpt command in the prompts below:
 # {STATS}

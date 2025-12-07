@@ -311,7 +311,7 @@ struct PromptFile {
     description_prompt:     String,
     tags_prompt:            String,
     prompt:                 String,
-    json:                   bool,
+    format:                 String,
     base_url:               String,
     model:                  String,
     timeout:                u32,
@@ -2051,10 +2051,14 @@ fn get_output_format(args: &Args) -> CliResult<OutputFormat> {
     } else {
         // If no command-line flags, check prompt file
         let prompt_file = get_prompt_file(args)?;
-        if prompt_file.json {
-            Ok(OutputFormat::Json)
-        } else {
-            Ok(OutputFormat::Markdown)
+        match prompt_file.format.to_lowercase().as_str() {
+            "markdown" | "md" => Ok(OutputFormat::Markdown),
+            "tsv" => Ok(OutputFormat::Tsv),
+            "json" => Ok(OutputFormat::Json),
+            _ => fail_incorrectusage_clierror!(
+                "Invalid format '{}'. Must be one of: markdown, tsv, json",
+                prompt_file.format
+            ),
         }
     }
 }

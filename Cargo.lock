@@ -5836,7 +5836,7 @@ dependencies = [
 
 [[package]]
 name = "qsv"
-version = "11.0.0"
+version = "11.0.1"
 dependencies = [
  "actix-governor",
  "actix-web",
@@ -6937,7 +6937,7 @@ dependencies = [
 [[package]]
 name = "self_update"
 version = "0.42.0"
-source = "git+https://github.com/jaemk/self_update?rev=9ec008b#9ec008b4d66627d578966231cfd87a87bf4c7083"
+source = "git+https://github.com/jqnatividad/self_update?branch=bump-deps-july2025#6fec18798a1787b23828d6f9f4cf2f67ffe248c6"
 dependencies = [
  "http 1.4.0",
  "indicatif",

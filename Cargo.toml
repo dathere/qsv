@@ -1,6 +1,6 @@
 [package]
 name          = "qsv"
-version       = "11.0.0"                                                                    #:version
+version       = "11.0.1"                                                                    #:version
 authors       = ["Joel Natividad <joel@datHere.com>"]
 description   = "A Blazing-Fast Data-wrangling toolkit."
 documentation = "https://github.com/dathere/qsv#qsv-ultra-fast-csv-data-wrangling-toolkit"
@@ -336,9 +336,9 @@ jsonschema = { git = "https://github.com/Stranger6667/jsonschema", rev = "9748dc
 # use upstream of mimalloc with unreleased fixes
 mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "0a32a38", optional = true }
 
-# use upstream of self_update with unreleased fixes and dependencies
-self_update = { git = "https://github.com/jaemk/self_update", rev = "9ec008b", optional = true }
-
+# use our patched fork of self_update with bumped dependencies
+# the latest upstream has replaced reqwest which breaks our build
+self_update = { git = "https://github.com/jqnatividad/self_update", branch = "bump-deps-july2025", optional = true }
 # use our patched fork of sled to get rid of unmaintained instant
 sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }
 

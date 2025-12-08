@@ -91,7 +91,7 @@ lens options:
                                    NOTE: This option only applies to stdin input.
   
 
-  -P. --prompt <prompt>            Set a custom prompt in the status bar. Normally paired w/ --echo-column:
+  -P, --prompt <prompt>            Set a custom prompt in the status bar. Normally paired w/ --echo-column:
                                      qsv lens --prompt 'Select City:' --echo-column 'City'
                                    Supports ANSI escape codes for colored or styled text. When using
                                    escape codes, ensure it's properly escaped. For example, in bash/zsh,

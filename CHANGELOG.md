@@ -132,7 +132,7 @@ Enhanced CSV viewing capabilities with csvlens integration:
 ## New Contributors
 * @Copilot made their first contribution in https://github.com/dathere/qsv/pull/3162
 
-**Full Changelog**: https://github.com/dathere/qsv/compare/10.0.0...11.0.1
+**Full Changelog**: https://github.com/dathere/qsv/compare/10.0.0...11.0.2
 
 ## [10.0.0] - 2025-11-23
 

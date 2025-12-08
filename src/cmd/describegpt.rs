@@ -101,7 +101,7 @@ Usage:
 
 describegpt options:
                            DATA ANALYSIS/INFERENCING OPTIONS:
-    --dictionary           Create a Data Dictionary using a hybrid neuro-symbolic pipeline - i.e. the Data Dictionary
+    --dictionary           Create a Data Dictionary using a hybrid "neuro-procedural" pipeline - i.e. the Dictionary
                            is deterministically populated using Summary Statistics and Frequency Distribution data,
                            and only the human-friendly Label and Description are populated by the LLM using the same
                            statistical context.
@@ -396,7 +396,7 @@ struct AnalysisResults {
     delimiter: char,
 }
 
-// Data structures for neuro-symbolic dictionary generation
+// Data structures for neuro-procedural dictionary generation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DictionaryEntry {
     name:        String,
@@ -2384,7 +2384,7 @@ fn run_inference_options(
 
         let output_format = get_output_format(args)?;
 
-        // Handle Dictionary type with neuro-symbolic approach
+        // Handle Dictionary type with neuro-procedural approach
         if kind == PromptType::Dictionary {
             // Parse stats and frequency data
             let stats_records = parse_stats_csv(&analysis_results.stats)?;

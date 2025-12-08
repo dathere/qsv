@@ -10,7 +10,7 @@ Note that this command uses LLMs for inferencing and is therefore prone to inacc
 
 `describegpt` provides several options to infer different types of metadata about your dataset:
 
-- `--dictionary` - Creates a Data Dictionary using a hybrid neuro-symbolic pipeline. The Data Dictionary is deterministically populated using Summary Statistics and Frequency Distribution data, and only the human-friendly Label and Description are populated by the LLM using the same statistical context.
+- `--dictionary` - Creates a Data Dictionary using a hybrid "neuro-procedural" pipeline. The Data Dictionary is deterministically populated using Summary Statistics and Frequency Distribution data, and only the human-friendly Label and Description are populated by the LLM using the same statistical context.
 
 - `--description` - Infers a general Description of the dataset based on detailed statistical context.
 

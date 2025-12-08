@@ -206,24 +206,24 @@ describegpt options:
                            https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
 
                            CACHING OPTIONS:
-    --no-cache               Disable default disk cache.
-    --disk-cache-dir <dir>   The directory <dir> to store the disk cache. Note that if the directory
-                               does not exist, it will be created. If the directory exists, it will be used as is,
-                               and will not be flushed. This option allows you to maintain several disk caches
-                               for different describegpt jobs (e.g. one for a data portal, another for internal
-                               data exchange, etc.)
-                               [default: ~/.qsv/cache/describegpt]
-    --redis-cache            Use Redis instead of the default disk cache to cache LLM completions.
-                               It connects to "redis://127.0.0.1:6379/3" by default, with a connection pool
-                               size of 20, with a TTL of 28 days, and cache hits NOT refreshing an existing
-                               cached value's TTL.
-                               This option automatically disables the disk cache.
-    --fresh                  Send a fresh request to the LLM API, refreshing a cached response if it exists.
-                               When a --prompt SQL query fails, you can also use this option to request the
-                               LLM to generate a new SQL query.
-    --forget                 Remove a cached response if it exists and then exit.
-    --flush-cache            Flush the current cache entries on startup.
-                               WARNING: This operation is irreversible.
+    --no-cache             Disable default disk cache.
+   --disk-cache-dir <dir>  The directory <dir> to store the disk cache. Note that if the directory
+                           does not exist, it will be created. If the directory exists, it will be used as is,
+                           and will not be flushed. This option allows you to maintain several disk caches
+                           for different describegpt jobs (e.g. one for a data portal, another for internal
+                           data exchange, etc.)
+                           [default: ~/.qsv/cache/describegpt]
+    --redis-cache          Use Redis instead of the default disk cache to cache LLM completions.
+                           It connects to "redis://127.0.0.1:6379/3" by default, with a connection pool
+                           size of 20, with a TTL of 28 days, and cache hits NOT refreshing an existing
+                           cached value's TTL.
+                           This option automatically disables the disk cache.
+    --fresh                Send a fresh request to the LLM API, refreshing a cached response if it exists.
+                           When a --prompt SQL query fails, you can also use this option to request the
+                           LLM to generate a new SQL query.
+    --forget               Remove a cached response if it exists and then exit.
+    --flush-cache          Flush the current cache entries on startup.
+                           WARNING: This operation is irreversible.
 
 Common options:
     -h, --help             Display this message
@@ -3517,8 +3517,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             } else {
                 args.flag_ckan_token.clone()
             })
-            // safety: This OnceLock is being set unconditionally with a valid value before any concurrent access,
-            // so unwrap is safe here.
+            // safety: This OnceLock is being set unconditionally with a valid value before any
+            // concurrent access, so unwrap is safe here.
             .unwrap();
     }
 

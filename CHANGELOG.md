@@ -15,12 +15,14 @@ All in preparation for at-scale, secure, interactive, "zero-copy" "Data Steward-
 
 ## 🌟 Major Features
 
-### `stats` & `frequency` Command Enhancements
+### `stats` & `frequency`
  - **Larger than Memory Files**: `stats` & `frequency` can now handle arbitrarily large files, even when "advanced" statistics are enabled with its new dynamic parallel chunk sizing algorithm!
  - **N Counts**: Added "n_counts" (`n_negative`, `n_zero` and `n_positive`) columns to `stats` output for more detailed count information for numeric fields.
 
-### `describegpt` Command Enhancements
+### `describegpt`
 The `describegpt` command has received substantial improvements for AI-powered metadata inferencing:
+
+- **"Neuro-Procedural" Data Dictionaries**: combines deterministically computed statistics and frequency distribution data with AI-inferred Human-Friendly Labels and Descriptions to compile an [expanded Data Dictionary](https://github.com/dathere/qsv/blob/master/docs/nyc311-describegpt.md) (not quite ["neuro-symbolic"](https://en.wikipedia.org/wiki/Neuro-symbolic_AI) (YET!))
 
 - **Format Option**: Replaced `--json` flag with `--format` option for more flexible output formatting
   - Supports multiple output formats - Markdown (default), TSV and JSON
@@ -28,7 +30,7 @@ The `describegpt` command has received substantial improvements for AI-powered m
   
 - **Controlled Tag Vocabulary**: New tag vocabulary system for consistent categorization
   - `--tag-vocab` option to specify controlled vocabulary
-  - Lookup support for tag vocabularies - retrieve a tag vocabulary from a local or remote CSV using `http://`, `https://`, `dathere://` and `ckan://` URL schemes.
+  - Lookup support for tag vocabularies - retrieve a tag vocabulary from a local or remote CSV<br>using `http://`, `https://`, `dathere://` and `ckan://` URL schemes.
   
 - **Enhanced Boolean Inference**: `--infer-boolean` is now enabled by default for better data type detection
 
@@ -36,24 +38,24 @@ The `describegpt` command has received substantial improvements for AI-powered m
 
 - **Improved Prompt Templates**: Updated default description prompt with PII/PHI alerts and better attribution metadata
 
-### `schema` & `validate` Command Improvements
+### `schema` & `validate`
 Enhanced JSON Schema inference and validation capabilities:
 
-- **Strict Formats**: New `--strict-formats` option for stricter JSON Schema format validation, enforcing JSON Schema format constraints for email, hostname and IP address (IPV4 and IPV6) formats.
+- **Strict Formats**: New `--strict-formats` option for stricter JSON Schema format validation,<br>enforcing JSON Schema format constraints for email, hostname & IP address (IPV4/IPV6) formats.
   
 - **Output Option**: New `--output` option for specifying schema output destination
   - Polars schema now uses consistent naming conventions across commands
   - Updated `joinp`, `pivotp`, and `sqlp` commands to use new `.pschema.json` naming convention
 
-- **Configurable Email Validation**: `validate` has numerous options to tweak email validation - taking advantage of `schema`'s email format constraint inferencing.
+- **Configurable Email Validation**: `validate` has numerous options to tweak email validation<br>- taking advantage of `schema`'s email format constraint inferencing.
 
-### `sample` Command time-series sampling
+### `sample` time-series sampling
 A new `--timeseries` sampling method with grouping (hourly, daily, weekly),
 adaptive sampling (prefer business hours or weekends) with various aggregation (mean, sum, min, max)
 within each interval with configurable starting points (first, last or random).
 
-### `lens` Command Features
-Enhanced CSV viewing capabilities with csvlens integration:
+### `lens` "real-time" Features
+Enhanced CSV viewing capabilities with [csvlens](https://github.com/YS-L/csvlens) integration:
 
 - **Auto-Reload**: New `--auto-reload` option to automatically reload file when it changes
   - Useful for monitoring live data files
@@ -66,7 +68,7 @@ Enhanced CSV viewing capabilities with csvlens integration:
 ### Breaking Changes
 - `describegpt`: `--json` flag replaced with `--format` option
 - `describegpt`: `--jsonl` option removed
-- `schema`, `joinp`, `pivotp`, `sqlp`: Updated Polars schema naming conventions (existing workflows should work but output format may differ slightly)
+- `schema`, `joinp`, `pivotp`, `sqlp`: Updated Polars schema naming conventions<br>(existing workflows should work but output format may differ slightly)
 
 ---
 

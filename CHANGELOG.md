@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
-## [11.0.1] - 2025-12-08
+## [11.0.2] - 2025-12-08
 
-qsv 11.0.1 brings significant enhancements to larger-than-memory data processing, AI-powered metadata inferencing, JSON Schema inferencing & validation, and data viewing capabilities, along with important bug fixes and performance improvements.
+qsv 11.0.2 brings significant enhancements to larger-than-memory data processing, AI-powered metadata inferencing, JSON Schema inferencing & validation, and data viewing capabilities, along with important bug fixes and performance improvements.
 
 All in preparation for at-scale, secure, interactive, "zero-copy" "Data Steward-in-the-Loop" FAIRification on the desktop in qsv pro.
 

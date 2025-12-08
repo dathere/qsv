@@ -3517,6 +3517,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             } else {
                 args.flag_ckan_token.clone()
             })
+            // safety: This OnceLock is being set unconditionally with a valid value before any concurrent access,
+            // so unwrap is safe here.
             .unwrap();
     }
 

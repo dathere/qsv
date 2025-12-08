@@ -7,17 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
-## [11.0.0] - 2025-12-07
+## [11.0.1] - 2025-12-08
 
-qsv 11.0.0 brings significant enhancements to larger-than-memory data processing, AI-powered metadata inferencing, schema validation, and data viewing capabilities, along with important bug fixes and performance improvements.
+qsv 11.0.1 brings significant enhancements to larger-than-memory data processing, AI-powered metadata inferencing, JSON Schema inferencing & validation, and data viewing capabilities, along with important bug fixes and performance improvements.
 
-All in preparation for at-scale, interactive, "Data Steward-in-the-Loop" FAIRification in qsv pro.
+All in preparation for at-scale, secure, interactive, "zero-copy" "Data Steward-in-the-Loop" FAIRification on the desktop in qsv pro.
 
 ## 🌟 Major Features
 
 ### `stats` & `frequency` Command Enhancements
  - **Larger than Memory Files**: `stats` & `frequency` can now handle arbitrarily large files, even when "advanced" statistics are enabled with its new dynamic parallel chunk sizing algorithm!
- - **N Counts**: Added `n_counts` (`n_negative`, `n_zero` and `n_positive`) columns to `stats` output for more detailed count information for numeric fields
+ - **N Counts**: Added "n_counts" (`n_negative`, `n_zero` and `n_positive`) columns to `stats` output for more detailed count information for numeric fields.
 
 ### `describegpt` Command Enhancements
 The `describegpt` command has received substantial improvements for AI-powered metadata inferencing:
@@ -34,10 +34,10 @@ The `describegpt` command has received substantial improvements for AI-powered m
 
 - **Performance Metrics**: Added elapsed time tracking to monitor processing duration
 
-- **Improved Prompts**: Updated default description prompt with PII/PHI alerts and better attribution metadata
+- **Improved Prompt Templates**: Updated default description prompt with PII/PHI alerts and better attribution metadata
 
 ### `schema` & `validate` Command Improvements
-Enhanced schema inference and validation capabilities:
+Enhanced JSON Schema inference and validation capabilities:
 
 - **Strict Formats**: New `--strict-formats` option for stricter JSON Schema format validation, enforcing JSON Schema format constraints for email, hostname and IP address (IPV4 and IPV6) formats.
   
@@ -97,7 +97,6 @@ Enhanced CSV viewing capabilities with csvlens integration:
 * refactor: `frequency` & `stats` - parallel chunk sizing - allow forcing of cpu based chunking https://github.com/dathere/qsv/pull/3138
 * Align partition stdin handling with split/stats pattern by @Copilot in https://github.com/dathere/qsv/pull/3162
 * deps: use latest polars upstream with new SQL fixes and features (https://github.com/pola-rs/polars/commit/e1be17f2ccb9dee0d570c6126b54c0e44ae7131d)
-* deps: latest self_update upstream
 * build(deps): bump actions/setup-python from 6.0.0 to 6.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3120
 * build(deps): bump actix-web from 4.12.0 to 4.12.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3127
 * build(deps): bump flate2 from 1.1.5 to 1.1.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3159
@@ -133,7 +132,7 @@ Enhanced CSV viewing capabilities with csvlens integration:
 ## New Contributors
 * @Copilot made their first contribution in https://github.com/dathere/qsv/pull/3162
 
-**Full Changelog**: https://github.com/dathere/qsv/compare/10.0.0...11.0.0
+**Full Changelog**: https://github.com/dathere/qsv/compare/10.0.0...11.0.1
 
 ## [10.0.0] - 2025-11-23
 

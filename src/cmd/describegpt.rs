@@ -108,25 +108,37 @@ describegpt options:
     --description          Infer a general Description of the dataset based on detailed statistical context.
     --tags                 Infer Tags that categorize the dataset based on detailed statistical context.
                            Useful for grouping datasets and filtering.
+    -A, --all              Shortcut for --dictionary --description --tags.
+
+                           TAG OPTIONS:
     --num-tags <n>         The maximum number of tags to infer when the --tags option is used.
                            Maximum allowed value is 50.
                            [default: 10]
-    --tag-vocab <file>     The file containing the tag vocabulary to use for inferring tags.
+    --tag-vocab <file>     The CSV file containing the tag vocabulary to use for inferring tags.
                            If no tag vocabulary file is provided, the model will use free-form tags.
-                           The tag vocabulary is a text file with one lowercase tag per line, using _ to separate words,
-                           with an accompanying description separated by a colon. e.g.
-                                public_infrastructure: Public infrastructure such as roads, bridges, parks, etc.
-                                noise_issues: Noise complaints such as loud music, construction noise, etc.
-                                heating_and_hot_water: Heating and hot water complaints such as no heat, no hot water, etc.
-                                parking: Parking complaints such as parking in a no parking zone, abandoned vehicles, etc.
-                                street_condition: Street condition complaints such as potholes, broken sidewalks, etc.
-                                open_data: Open data complaints such as open data portal, open data API, data quality issues, etc.
-    -A, --all              Shortcut for --dictionary --description --tags.
+                           Supports local files, remote URLs (http/https), CKAN resources (ckan://),
+                           and dathere:// scheme. Remote resources are cached locally.
+                           The CSV file must have two columns with headers: first column is the tag,
+                           second column is the description. Note that qsvlite only supports local files.
+    --cache-dir <dir>      The directory to use for caching downloaded tag vocabulary resources.
+                           If the directory does not exist, qsv will attempt to create it.
+                           If the QSV_CACHE_DIR envvar is set, it will be used instead.
+                           [default: ~/.qsv-cache]
+    --ckan-api <url>       The URL of the CKAN API to use for downloading tag vocabulary resources
+                           with the "ckan://" scheme.
+                           If the QSV_CKAN_API envvar is set, it will be used instead.
+                           [default: https://data.dathere.com/api/3/action]
+    --ckan-token <token>   The CKAN API token to use. Only required if downloading private resources.
+                           If the QSV_CKAN_TOKEN envvar is set, it will be used instead.
+
+                           STATS/FREQUENCY OPTIONS:
     --stats-options <arg>  Options for the stats command used to generate summary statistics.
                            [default: --infer-dates --infer-boolean --cardinality --force --stats-jsonl]
     --enum-threshold <n>   The threshold for compiling Enumerations with the frequency command
                            before bucketing other unique values into the "Other" category.
                            [default: 10]
+
+                           DICTIONARY OPTIONS:
     --num-examples <n>     The number of Example values to include in the dictionary.
                            [default: 5]
     --truncate-str <n>     The maximum length of an Example value in the dictionary.
@@ -192,31 +204,31 @@ describegpt options:
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
                            Try to follow the syntax here -
                            https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
-    --format <format>      Output format: markdown, tsv, or json.
-                           [default: markdown]
 
-                             CACHING OPTIONS:
-    --no-cache               Disable default disk cache.
-    --disk-cache-dir <dir>   The directory <dir> to store the disk cache. Note that if the directory
-                             does not exist, it will be created. If the directory exists, it will be used as is,
-                             and will not be flushed. This option allows you to maintain several disk caches
-                             for different describegpt jobs (e.g. one for a data portal, another for internal
-                             data exchange, etc.)
-                             [default: ~/.qsv/cache/describegpt]
-    --redis-cache            Use Redis instead of the default disk cache to cache LLM completions.
-                             It connects to "redis://127.0.0.1:6379/3" by default, with a connection pool
-                             size of 20, with a TTL of 28 days, and cache hits NOT refreshing an existing
-                             cached value's TTL.
-                             This option automatically disables the disk cache.
-    --fresh                  Send a fresh request to the LLM API, refreshing a cached response if it exists.
-                             When a --prompt SQL query fails, you can also use this option to request the
-                             LLM to generate a new SQL query.
-    --forget                 Remove a cached response if it exists and then exit.
-    --flush-cache            Flush the current cache entries on startup.
-                             WARNING: This operation is irreversible.
+                           CACHING OPTIONS:
+  --no-cache               Disable default disk cache.
+  --disk-cache-dir <dir>   The directory <dir> to store the disk cache. Note that if the directory
+                           does not exist, it will be created. If the directory exists, it will be used as is,
+                           and will not be flushed. This option allows you to maintain several disk caches
+                           for different describegpt jobs (e.g. one for a data portal, another for internal
+                           data exchange, etc.)
+                           [default: ~/.qsv/cache/describegpt]
+  --redis-cache            Use Redis instead of the default disk cache to cache LLM completions.
+                           It connects to "redis://127.0.0.1:6379/3" by default, with a connection pool
+                           size of 20, with a TTL of 28 days, and cache hits NOT refreshing an existing
+                           cached value's TTL.
+                           This option automatically disables the disk cache.
+  --fresh                  Send a fresh request to the LLM API, refreshing a cached response if it exists.
+                           When a --prompt SQL query fails, you can also use this option to request the
+                           LLM to generate a new SQL query.
+  --forget                 Remove a cached response if it exists and then exit.
+  --flush-cache            Flush the current cache entries on startup.
+                           WARNING: This operation is irreversible.
 
 Common options:
     -h, --help             Display this message
+    --format <format>      Output format: markdown, tsv, or json.
+                           [default: markdown]
     -o, --output <file>    Write output to <file> instead of stdout. If --format is set to TSV,
                            separate files will be created for each prompt type with the pattern
                            {filestem}.{kind}.tsv (e.g., output.dictionary.tsv, output.tags.tsv).
@@ -247,6 +259,8 @@ use strum_macros::{Display, EnumString};
 use toml;
 
 use crate::{CliError, CliResult, config::Config, regex_oncelock, util, util::process_input};
+#[cfg(feature = "feature_capable")]
+use crate::{lookup, lookup::LookupTableOptions};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
@@ -269,9 +283,15 @@ struct Args {
     flag_dictionary:       bool,
     flag_description:      bool,
     flag_tags:             bool,
+    flag_all:              bool,
     flag_num_tags:         u16,
     flag_tag_vocab:        Option<String>,
-    flag_all:              bool,
+    #[allow(dead_code)]
+    flag_cache_dir:        String,
+    #[allow(dead_code)]
+    flag_ckan_api:         String,
+    #[allow(dead_code)]
+    flag_ckan_token:       Option<String>,
     flag_stats_options:    String,
     flag_enum_threshold:   usize,
     flag_num_examples:     u16,
@@ -287,13 +307,13 @@ struct Args {
     flag_max_tokens:       u32,
     flag_timeout:          u16,
     flag_user_agent:       Option<String>,
-    flag_format:           Option<String>,
     flag_no_cache:         bool,
     flag_disk_cache_dir:   Option<String>,
     flag_redis_cache:      bool,
     flag_fresh:            bool,
     flag_forget:           bool,
     flag_flush_cache:      bool,
+    flag_format:           Option<String>,
     flag_output:           Option<String>,
     flag_quiet:            bool,
 }
@@ -334,6 +354,13 @@ const INPUT_TABLE_NAME: &str = "{INPUT_TABLE_NAME}";
 static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
 
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
+
+#[cfg(feature = "feature_capable")]
+static TAG_VOCAB_CACHE_DIR: OnceLock<String> = OnceLock::new();
+#[cfg(feature = "feature_capable")]
+static TAG_VOCAB_CKAN_API: OnceLock<String> = OnceLock::new();
+#[cfg(feature = "feature_capable")]
+static TAG_VOCAB_CKAN_TOKEN: OnceLock<Option<String>> = OnceLock::new();
 
 #[allow(dead_code)]
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
@@ -1565,26 +1592,112 @@ fn get_prompt(
     }
 
     let tag_vocab = if prompt_type == PromptType::Tags
-        && let Some(ref tag_vocab) = args.flag_tag_vocab
+        && let Some(ref tag_vocab_uri) = args.flag_tag_vocab
     {
-        // check if the tag vocabulary file exists
-        if fs::metadata(tag_vocab).map_or(true, |m| !m.is_file()) {
-            return fail_incorrectusage_clierror!(
-                "Tag vocabulary file does not exist or is not a file: {tag_vocab}"
-            );
+        // Load tag vocabulary CSV using lookup support (handles local files, remote URLs, CKAN,
+        // dathere://)
+        let tag_vocab_filepath = {
+            #[cfg(feature = "feature_capable")]
+            {
+                if tag_vocab_uri.to_lowercase().starts_with("http")
+                    || tag_vocab_uri.starts_with("ckan://")
+                    || tag_vocab_uri.starts_with("dathere://")
+                {
+                    // Use lookup to download/cache remote CSV resources
+                    let cache_dir = TAG_VOCAB_CACHE_DIR.get().ok_or_else(|| {
+                        CliError::Other(
+                            "Tag vocabulary cache directory not initialized".to_string(),
+                        )
+                    })?;
+                    let lookup_opts = LookupTableOptions {
+                        name:           "tag_vocab".to_string(),
+                        uri:            tag_vocab_uri.clone(),
+                        cache_dir:      cache_dir.clone(),
+                        cache_age_secs: 3600, // Default 1 hour cache
+                        delimiter:      None,
+                        ckan_api_url:   TAG_VOCAB_CKAN_API.get().cloned(),
+                        ckan_token:     TAG_VOCAB_CKAN_TOKEN
+                            .get()
+                            .and_then(std::clone::Clone::clone),
+                        timeout_secs:   args.flag_timeout,
+                    };
+                    let lookup_result = lookup::load_lookup_table(&lookup_opts).map_err(|e| {
+                        CliError::Other(format!(
+                            "Failed to load tag vocabulary from {tag_vocab_uri}: {e}",
+                        ))
+                    })?;
+                    lookup_result.filepath
+                } else {
+                    // Local file - check if it exists
+                    if fs::metadata(tag_vocab_uri).map_or(true, |m| !m.is_file()) {
+                        return fail_incorrectusage_clierror!(
+                            "Tag vocabulary file does not exist or is not a file: {tag_vocab_uri}"
+                        );
+                    }
+                    tag_vocab_uri.clone()
+                }
+            }
+            #[cfg(not(feature = "feature_capable"))]
+            {
+                // Lite build: only support local files
+                if tag_vocab_uri.to_lowercase().starts_with("http")
+                    || tag_vocab_uri.starts_with("ckan://")
+                    || tag_vocab_uri.starts_with("dathere://")
+                {
+                    return fail_incorrectusage_clierror!(
+                        "Remote tag vocabulary URLs are not supported in qsvlite. Please use a \
+                         local CSV file."
+                    );
+                }
+                // Local file - check if it exists
+                if fs::metadata(tag_vocab_uri).map_or(true, |m| !m.is_file()) {
+                    return fail_incorrectusage_clierror!(
+                        "Tag vocabulary file does not exist or is not a file: {tag_vocab_uri}"
+                    );
+                }
+                tag_vocab_uri.clone()
+            }
+        };
+
+        // Parse CSV format: skip header, use first column as tag, second column as description
+        let conf = Config::new(Some(tag_vocab_filepath).as_ref()).no_headers(false);
+        let mut rdr = conf
+            .reader()
+            .map_err(|e| CliError::Other(format!("Failed to read tag vocabulary CSV: {e}")))?;
+
+        let mut formatted_lines = Vec::new();
+        for result in rdr.records() {
+            let record = result.map_err(|e| {
+                CliError::Other(format!("Failed to parse tag vocabulary CSV record: {e}"))
+            })?;
+
+            if record.len() < 2 {
+                return fail_incorrectusage_clierror!(
+                    "Tag vocabulary CSV must have at least 2 columns (tag and description)"
+                );
+            }
+
+            let tag = record.get(0).unwrap_or("").trim();
+            let description = record.get(1).unwrap_or("").trim();
+
+            if !tag.is_empty() {
+                formatted_lines.push(format!("{tag}: {description}"));
+            }
         }
-        let tag_vocab_content = fs::read_to_string(tag_vocab)?;
-        // Validate that the file is not empty or only whitespace
-        if tag_vocab_content.trim().is_empty() {
-            return fail_incorrectusage_clierror!("Tag vocabulary file is empty");
+
+        if formatted_lines.is_empty() {
+            return fail_incorrectusage_clierror!("Tag vocabulary CSV file contains no valid tags");
         }
+
+        let tag_vocab_formatted = formatted_lines.join("\n");
+
         // we use double curly braces to escape the variables in the format string
         // otherwise, the format! macro will try to interpolate the variables into the string
         format!(
             "Limit your choices to only {{NUM_TAGS}} unique Tags{{JSON_ADD}} in the following Tag \
              Vocabulary, in order of relevance, based on the Summary Statistics and Frequency \
              Distribution about the Dataset provided further \
-             below:\n\n{tag_vocab_content}\n\nEach Tag in the Tag Vocabulary is separated by a \
+             below:\n\n{tag_vocab_formatted}\n\nEach Tag in the Tag Vocabulary is separated by a \
              colon from its corresponding Description. Take the Description into account to guide \
              your Tag choices.\n\nWhen listing the chosen Tags, only use the Tag, not the \
              Description nor the colon."
@@ -2640,9 +2753,9 @@ fn run_inference_options(
         };
         messages = get_messages(&prompt, &system_prompt, dictionary_context);
         let start_time = Instant::now();
-        if let Some(ref tag_vocab) = args.flag_tag_vocab {
+        if let Some(ref tag_vocab_uri) = args.flag_tag_vocab {
             print_status(
-                &format!("  Inferring Tags with Tag Vocabulary ({tag_vocab})...",),
+                &format!("  Inferring Tags with Tag Vocabulary ({tag_vocab_uri})...",),
                 None,
             );
         } else {
@@ -3383,6 +3496,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         },
     };
     log::info!("Cache Type: {cache_type:?}");
+
+    // Initialize tag vocabulary cache directory and CKAN settings if tag vocabulary is used
+    #[cfg(feature = "feature_capable")]
+    if args.flag_tag_vocab.is_some() {
+        let qsv_cache_dir = lookup::set_qsv_cache_dir(&args.flag_cache_dir)?;
+        TAG_VOCAB_CACHE_DIR.set(qsv_cache_dir)?;
+
+        // Check the QSV_CKAN_API environment variable
+        TAG_VOCAB_CKAN_API.set(if let Ok(api) = std::env::var("QSV_CKAN_API") {
+            api
+        } else {
+            args.flag_ckan_api.clone()
+        })?;
+
+        // Check the QSV_CKAN_TOKEN environment variable
+        TAG_VOCAB_CKAN_TOKEN
+            .set(if let Ok(token) = std::env::var("QSV_CKAN_TOKEN") {
+                Some(token)
+            } else {
+                args.flag_ckan_token.clone()
+            })
+            .unwrap();
+    }
 
     // Check if QSV_LLM_BASE_URL is set
     if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {

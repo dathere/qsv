@@ -1859,7 +1859,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.14.0"
-source = "git+https://github.com/YS-L/csvlens?rev=67d92b7#67d92b7ce1905bbbc085ab09a6033b40a2b02c89"
+source = "git+https://github.com/YS-L/csvlens?rev=b407076#b407076d804551119c79d180159ce91a2fb6c808"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
@@ -1867,6 +1867,7 @@ dependencies = [
  "arrow",
  "crossterm 0.28.1",
  "csv",
+ "csv-core",
  "qsv-sniffer",
  "ratatui",
  "regex",

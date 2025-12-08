@@ -799,7 +799,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // percentile_list special values
-    // deciles and quintiles are automatically expanded to the default percentile list
+    // deciles and quintiles are automatically expanded to their corresponding percentile lists
     // case-insensitive comparison is used to check for these special values
     if args.flag_percentile_list.to_lowercase() == "deciles" {
         args.flag_percentile_list = "10,20,30,40,50,60,70,80,90".to_string();

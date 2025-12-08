@@ -35,6 +35,7 @@ The CSV file must have two columns with headers:
 - Second column: tag description
 
 Example CSV format:
+
 ```csv
 tag,description
 alphabetical_data,Data containing letters or alphabetical characters
@@ -71,26 +72,31 @@ The CKAN API token to use. Only required if downloading private CKAN resources. 
 ### Examples
 
 Using tag vocabulary with a local CSV file:
+
 ```bash
 qsv describegpt data.csv --tags --tag-vocab tags.csv
 ```
 
 Using tag vocabulary with a remote URL:
+
 ```bash
 qsv describegpt data.csv --tags --tag-vocab https://example.com/tags.csv
 ```
 
 Using tag vocabulary with CKAN resources:
+
 ```bash
 qsv describegpt data.csv --tags --tag-vocab ckan://dataset-id/resource-id --ckan-api https://data.example.com/api/3/action
 ```
 
 Using tag vocabulary with a custom cache directory:
+
 ```bash
 qsv describegpt data.csv --tags --tag-vocab https://example.com/tags.csv --cache-dir /tmp/qsv-cache
 ```
 
 Limiting the number of tags inferred:
+
 ```bash
 qsv describegpt data.csv --tags --tag-vocab tags.csv --num-tags 5
 ```

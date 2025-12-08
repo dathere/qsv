@@ -6,6 +6,101 @@
 
 Note that this command uses LLMs for inferencing and is therefore prone to inaccurate information being produced. Verify output results before using them.
 
+## Basic Inference Options
+
+`describegpt` provides several options to infer different types of metadata about your dataset:
+
+- `--dictionary` - Creates a Data Dictionary using a hybrid neuro-symbolic pipeline. The Data Dictionary is deterministically populated using Summary Statistics and Frequency Distribution data, and only the human-friendly Label and Description are populated by the LLM using the same statistical context.
+
+- `--description` - Infers a general Description of the dataset based on detailed statistical context.
+
+- `--tags` - Infers Tags that categorize the dataset based on detailed statistical context. Useful for grouping datasets and filtering.
+
+- `-A, --all` - Shortcut for `--dictionary --description --tags`. Generates all three types of metadata in a single run.
+
+## Tag Options
+
+When using the `--tags` option, you can control how tags are inferred:
+
+### `--num-tags <n>`
+
+The maximum number of tags to infer when the `--tags` option is used. The value must be between 1 and 50. The default is 10.
+
+### `--tag-vocab <file>`
+
+The CSV file containing the tag vocabulary to use for inferring tags. If no tag vocabulary file is provided, the model will use free-form tags.
+
+The CSV file must have two columns with headers:
+- First column: tag name
+- Second column: tag description
+
+Example CSV format:
+
+```csv
+tag,description
+alphabetical_data,Data containing letters or alphabetical characters
+numerical_data,Data containing numbers or numerical values
+test_data,Sample or test data used for demonstration
+```
+
+The tag vocabulary supports multiple sources:
+- **Local files**: Provide a path to a local CSV file
+- **Remote URLs**: HTTP/HTTPS URLs pointing to CSV files (e.g., `https://example.com/tags.csv`)
+- **CKAN resources**: Use the `ckan://` scheme to reference CKAN dataset resources (e.g., `ckan://dataset-id/resource-id`)
+- **dathere:// scheme**: Reference GitHub raw content using the `dathere://` scheme
+
+Remote resources (HTTP/HTTPS, CKAN, and dathere://) are automatically cached locally to avoid repeated downloads. The cache TTL is 1 hour by default.
+
+**Note**: `qsvlite` only supports local files. Remote URLs, CKAN resources, and dathere:// schemes are not available in `qsvlite`.
+
+### `--cache-dir <dir>`
+
+The directory to use for caching downloaded tag vocabulary resources. If the directory does not exist, qsv will attempt to create it. The default is `~/.qsv-cache`.
+
+If the `QSV_CACHE_DIR` environment variable is set, it will be used instead of this option.
+
+### `--ckan-api <url>`
+
+The URL of the CKAN API to use for downloading tag vocabulary resources with the `ckan://` scheme. The default is `https://data.dathere.com/api/3/action`.
+
+If the `QSV_CKAN_API` environment variable is set, it will be used instead of this option.
+
+### `--ckan-token <token>`
+
+The CKAN API token to use. Only required if downloading private CKAN resources. If the `QSV_CKAN_TOKEN` environment variable is set, it will be used instead of this option.
+
+### Examples
+
+Using tag vocabulary with a local CSV file:
+
+```bash
+qsv describegpt data.csv --tags --tag-vocab tags.csv
+```
+
+Using tag vocabulary with a remote URL:
+
+```bash
+qsv describegpt data.csv --tags --tag-vocab https://example.com/tags.csv
+```
+
+Using tag vocabulary with CKAN resources:
+
+```bash
+qsv describegpt data.csv --tags --tag-vocab ckan://dataset-id/resource-id --ckan-api https://data.example.com/api/3/action
+```
+
+Using tag vocabulary with a custom cache directory:
+
+```bash
+qsv describegpt data.csv --tags --tag-vocab https://example.com/tags.csv --cache-dir /tmp/qsv-cache
+```
+
+Limiting the number of tags inferred:
+
+```bash
+qsv describegpt data.csv --tags --tag-vocab tags.csv --num-tags 5
+```
+
 ## QSV_LLM_APIKEY
 
 When working with a cloud-based LLM, `describegpt` requires an API key. You can set this key using the `QSV_LLM_APIKEY` environment variable. Check [/docs/ENVIRONMENT_VARIABLES.md](/docs/ENVIRONMENT_VARIABLES.md) for more info.

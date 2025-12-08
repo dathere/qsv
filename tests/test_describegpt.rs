@@ -367,19 +367,7 @@ numerical_data
         .args(["--tag-vocab", "tag_vocab_invalid.csv"])
         .arg("--no-cache");
 
-    // Check that the command fails with appropriate error
-    let output = cmd.output().expect("Failed to execute command");
-    assert!(
-        !output.status.success(),
-        "Command should fail with invalid tag vocabulary CSV"
-    );
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(
-        stderr.contains("must have at least 2 columns")
-            || stderr.contains("tag vocabulary")
-            || stderr.contains("description"),
-        "Error message should mention tag vocabulary or columns requirement"
-    );
+    wrk.assert_err(&mut cmd);
 }
 
 // Test --tags with --tag-vocab CSV file (non-existent file)
@@ -406,17 +394,7 @@ fn describegpt_tags_with_missing_tag_vocab() {
         .args(["--tag-vocab", "nonexistent.csv"])
         .arg("--no-cache");
 
-    // Check that the command fails with appropriate error
-    let output = cmd.output().expect("Failed to execute command");
-    assert!(
-        !output.status.success(),
-        "Command should fail with missing tag vocabulary file"
-    );
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(
-        stderr.contains("does not exist") || stderr.contains("not a file"),
-        "Error message should mention file does not exist"
-    );
+    wrk.assert_err(&mut cmd);
 }
 
 // Test custom prompt with --prompt

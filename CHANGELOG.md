@@ -6,48 +6,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## What's Changed
+
+## [11.0.0] - 2025-12-07
+
+qsv 11.0.0 brings significant enhancements to larger-than-memory data processing, AI-powered metadata inferencing, schema validation, and data viewing capabilities, along with important bug fixes and performance improvements.
+
+All in preparation for at-scale, interactive, "Data Steward-in-the-Loop" FAIRification in qsv pro.
+
+## 🌟 Major Features
+
+### `stats` & `frequency` Command Enhancements
+ - **Larger than Memory Files**: `stats` & `frequency` can now handle arbitrarily large files, even when "advanced" statistics are enabled with its new dynamic parallel chunk sizing algorithm!
+ - **N Counts**: Added `n_counts` (`n_negative`, `n_zero` and `n_positive`) columns to `stats` output for more detailed count information for numeric fields
+
+### `describegpt` Command Enhancements
+The `describegpt` command has received substantial improvements for AI-powered metadata inferencing:
+
+- **Format Option**: Replaced `--json` flag with `--format` option for more flexible output formatting
+  - Supports multiple output formats - Markdown (default), TSV and JSON
+  - Removed `--jsonl` option for cleaner API
+  
+- **Controlled Tag Vocabulary**: New tag vocabulary system for consistent categorization
+  - `--tag-vocab` option to specify controlled vocabulary
+  - Lookup support for tag vocabularies - retrieve a tag vocabulary from a local or remote CSV using `http://`, `https://`, `dathere://` and `ckan://` URL schemes.
+  
+- **Enhanced Boolean Inference**: `--infer-boolean` is now enabled by default for better data type detection
+
+- **Performance Metrics**: Added elapsed time tracking to monitor processing duration
+
+- **Improved Prompts**: Updated default description prompt with PII/PHI alerts and better attribution metadata
+
+### `schema` & `validate` Command Improvements
+Enhanced schema inference and validation capabilities:
+
+- **Strict Formats**: New `--strict-formats` option for stricter JSON Schema format validation, enforcing JSON Schema format constraints for email, hostname and IP address (IPV4 and IPV6) formats.
+  
+- **Output Option**: New `--output` option for specifying schema output destination
+  - Polars schema now uses consistent naming conventions across commands
+  - Updated `joinp`, `pivotp`, and `sqlp` commands to use new `.pschema.json` naming convention
+
+- **Configurable Email Validation**: `validate` has numerous options to tweak email validation - taking advantage of `schema`'s email format constraint inferencing.
+
+### `lens` Command Features
+Enhanced CSV viewing capabilities with csvlens integration:
+
+- **Auto-Reload**: New `--auto-reload` option to automatically reload file when it changes
+  - Useful for monitoring live data files
+  
+- **Streaming stdin**: New `--streaming-stdin` option for real-time data viewing
+  - Supports viewing data as it's being piped in
+  
+- **Row Marking**: Updated csvlens dependency with row marking feature
+
+### Breaking Changes
+- `describegpt`: `--json` flag replaced with `--format` option
+- `describegpt`: `--jsonl` option removed
+- `schema`, `joinp`, `pivotp`, `sqlp`: Updated Polars schema naming conventions (existing workflows should work but output format may differ slightly)
+
+---
+
+## Added
+* Created [Event Logo Archive](https://github.com/dathere/qsv/tree/master/docs/images/event-logos) with AI-generated seasonal/version logos
+* `describegpt`: add controlled vocabulary support for tags https://github.com/dathere/qsv/pull/3122
+* `describegpt`: add elapsed time https://github.com/dathere/qsv/pull/3168
+* `describegpt`: add lookup support https://github.com/dathere/qsv/pull/3170
+* `excel`: add `--cell` option https://github.com/dathere/qsv/pull/3133
+* `frequency`: add dynamic parallel chunk sizing https://github.com/dathere/qsv/pull/3135
+* `lens`: add `--auto-reload` option https://github.com/dathere/qsv/pull/3128
+* `lens`: add `--streaming-stdin` option https://github.com/dathere/qsv/pull/3171
+* `sample`: add timeseries sampling options https://github.com/dathere/qsv/pull/3130
+* `schema`: infer addl JSON Schema predefined formats - email, ipv4, ipv6, hostname https://github.com/dathere/qsv/pull/3125
+* `schema`: add `--output` option and standardize Polars Schema file name https://github.com/dathere/qsv/pull/3126
+* `stats`: dynamic parallel chunk sizing with indexed files https://github.com/dathere/qsv/pull/3134
+* `stats`: add n_negative, n_zero, n_positive count columns https://github.com/dathere/qsv/pull/3157
+* `validate:` add email validation options https://github.com/dathere/qsv/pull/3148
+* `tests`: add tests for https://100.dathere.com/lessons/4 by @rzmk in https://github.com/dathere/qsv/pull/3151
+* Added Claude AI guidance for contributors
+* Enhanced `--version` output with more comprehensive system metadata
+
+## Changed
+* refactor: `describegpt` improve tags inferencing with Tag Vocabulary https://github.com/dathere/qsv/pull/3139
+* feat: `describegpt` - major refactor https://github.com/dathere/qsv/pull/3143
+* feat: `describegpt` improved Polars SQL processing https://github.com/dathere/qsv/pull/3147
+* feat: `describegpt` replace `--json` option with  `--format` option supporting 3 formats - markdown, json and TSV; remove `--jsonl` option https://github.com/dathere/qsv/pull/3167
+* refactor: `frequency` & `stats` - parallel chunk sizing - allow forcing of cpu based chunking https://github.com/dathere/qsv/pull/3138
+* Align partition stdin handling with split/stats pattern by @Copilot in https://github.com/dathere/qsv/pull/3162
+* deps: use latest polars upstream with new SQL fixes and features (https://github.com/pola-rs/polars/commit/e1be17f2ccb9dee0d570c6126b54c0e44ae7131d)
+* deps: latest self_update upstream
 * build(deps): bump actions/setup-python from 6.0.0 to 6.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3120
-* build(deps): bump rfd from 0.15.4 to 0.16.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3121
-* feat: `describegpt` add controlled vocabulary support for tags by @jqnatividad in https://github.com/dathere/qsv/pull/3122
-* feat: `schema` infer addl JSONschema predefined formats - email, ipv4, ipv6, hostname by @jqnatividad in https://github.com/dathere/qsv/pull/3125
-* feat: `schema` add `--output` option and standardize Polars Schema file name by @jqnatividad in https://github.com/dathere/qsv/pull/3126
 * build(deps): bump actix-web from 4.12.0 to 4.12.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3127
-* feat: `lens` add `--auto-reload` option by @jqnatividad in https://github.com/dathere/qsv/pull/3128
+* build(deps): bump flate2 from 1.1.5 to 1.1.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3159
 * build(deps): bump jsonschema from 0.37.1 to 0.37.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3129
-* feat: `sample` add timeseries sampling options by @jqnatividad in https://github.com/dathere/qsv/pull/3130
 * build(deps): bump jsonschema from 0.37.2 to 0.37.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3131
-* feat: `excel` add `--cell` option by @jqnatividad in https://github.com/dathere/qsv/pull/3133
-* `stats`: dynamic parallel chunk sizing with indexed files by @jqnatividad in https://github.com/dathere/qsv/pull/3134
-* feat: `frequency` also now does dynamic parallel chunk sizing by @jqnatividad in https://github.com/dathere/qsv/pull/3135
-* build(deps): bump qsv-stats from 0.40.0 to 0.41.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3136
-* build(deps): bump pyo3 from 0.27.1 to 0.27.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3137
-* refactor: parallel chunk sizing - allow forcing of cpu based chunking by @jqnatividad in https://github.com/dathere/qsv/pull/3138
-* refactor: `describegpt` improve tags inferencing with Tag Vocabulary by @jqnatividad in https://github.com/dathere/qsv/pull/3139
 * build(deps): bump jsonschema from 0.37.3 to 0.37.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3140
+* build(deps): bump log from 0.4.28 to 0.4.29 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3150
 * build(deps): bump minijinja from 2.12.0 to 2.13.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3142
 * build(deps): bump minijinja-contrib from 2.12.0 to 2.13.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3141
-* feat: `describegpt` - major refactor by @jqnatividad in https://github.com/dathere/qsv/pull/3143
-* build(deps): bump uuid from 1.18.1 to 1.19.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3146
-* feat: `describegpt` improved Polars SQL processing by @jqnatividad in https://github.com/dathere/qsv/pull/3147
-* `feat`: `validate` add email validation options by @jqnatividad in https://github.com/dathere/qsv/pull/3148
-* build(deps): bump log from 0.4.28 to 0.4.29 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3150
-* `tests`: add tests for https://100.dathere.com/lessons/4 by @rzmk in https://github.com/dathere/qsv/pull/3151
-* feat: `describegpt` add DuckDB mcp_server support by @jqnatividad in https://github.com/dathere/qsv/pull/3152
-* chore: remove jemalloc support by @jqnatividad in https://github.com/dathere/qsv/pull/3153
+* build(deps): bump pyo3 from 0.27.1 to 0.27.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3137
+* build(deps): bump qsv-stats from 0.40.0 to 0.41.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3136
 * build(deps): bump qsv-stats from 0.41.0 to 0.42.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3156
-* feat: `stats` add n_negative, n_zero, n_positive count columns by @jqnatividad in https://github.com/dathere/qsv/pull/3157
-* build(deps): bump flate2 from 1.1.5 to 1.1.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3159
-* Align partition stdin handling with split/stats pattern by @Copilot in https://github.com/dathere/qsv/pull/3162
-* fix: `partition` add proper stdin handling regression introduced when `--limit` option was added by @jqnatividad in https://github.com/dathere/qsv/pull/3161
-* Fix broken layout of environment variable documentation by @tmtmtmtm in https://github.com/dathere/qsv/pull/3163
-* fix: `apply` panic on empty selection by @jqnatividad in https://github.com/dathere/qsv/pull/3165
-* fix: more robust snappy and file extension detection by @jqnatividad in https://github.com/dathere/qsv/pull/3166
-* feat: `describegpt` replace `--json` option with  `--format` option supporting 3 formats - markdown, json and TSV; remove `--jsonl` option by @jqnatividad in https://github.com/dathere/qsv/pull/3167
-* feat: `describegpt` add elapsed time by @jqnatividad in https://github.com/dathere/qsv/pull/3168
 * build(deps): bump qsv-stats from 0.42.0 to 0.43.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3169
-* feat: `describegpt` add lookup support by @jqnatividad in https://github.com/dathere/qsv/pull/3170
-* feat: `lens` add `--streaming-stdin` option by @jqnatividad in https://github.com/dathere/qsv/pull/3171
+* build(deps): bump rfd from 0.15.4 to 0.16.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3121
+* build(deps): bump uuid from 1.18.1 to 1.19.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3146
+* Improved qsvpy build process for Apple Silicon
+* Updated GitHub Actions workflows for better reliability
+* bumped several indirect dependencies
+* applied select clippy & Codacy suggestions
+* Improved dependency version management
+* Better feature flag handling
+
+## Fixed
+* fix: `apply` panic on empty selection https://github.com/dathere/qsv/pull/3165
+* fix: more robust snappy and file extension detection https://github.com/dathere/qsv/pull/3166
+* fix: `partition` add proper stdin handling regression introduced when `--limit` option was added https://github.com/dathere/qsv/pull/3161
+* Fix broken layout of environment variable documentation by @tmtmtmtm in https://github.com/dathere/qsv/pull/3163
+
+## Removed
+* `describegpt`: remove `--jsonl` option https://github.com/dathere/qsv/pull/3167
+* chore: remove jemalloc support https://github.com/dathere/qsv/pull/3153
 
 ## New Contributors
 * @Copilot made their first contribution in https://github.com/dathere/qsv/pull/3162

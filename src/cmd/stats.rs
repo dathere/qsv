@@ -211,6 +211,8 @@ stats options:
                               Multiple percentiles are separated by the QSV_STATS_SEPARATOR
                               environment variable. If not set, the default separator is "|".
                               It is ignored if --percentiles is not set.
+                              Special values "deciles" and "quintiles" are automatically expanded
+                              to "10,20,30,40,50,60,70,80,90" and "20,40,60,80" respectively.
                               [default: 5,10,40,60,90,95]
 
     --round <decimal_places>  Round statistics to <decimal_places>. Rounding is done following
@@ -794,6 +796,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_median = false;
         args.flag_quartiles = false;
         args.flag_mad = false;
+    }
+
+    // percentile_list special values
+    // deciles and quintiles are automatically expanded to their corresponding percentile lists
+    // case-insensitive comparison is used to check for these special values
+    if args.flag_percentile_list.to_lowercase() == "deciles" {
+        args.flag_percentile_list = "10,20,30,40,50,60,70,80,90".to_string();
+    } else if args.flag_percentile_list.to_lowercase() == "quintiles" {
+        args.flag_percentile_list = "20,40,60,80".to_string();
     }
 
     // inferring boolean requires inferring cardinality

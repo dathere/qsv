@@ -2550,6 +2550,451 @@ fn stats_percentiles_single_value() {
 }
 
 #[test]
+fn stats_percentiles_deciles_lowercase() {
+    let wrk = Workdir::new("stats_percentiles_deciles_lowercase");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["n"],
+            svec!["4"],
+            svec!["8"],
+            svec!["1"],
+            svec!["5"],
+            svec!["3"],
+            svec!["6"],
+            svec!["7"],
+            svec!["9"],
+            svec!["2"],
+            svec!["10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("deciles");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(got.len() > 0);
+
+    // Find the percentiles column value
+    let headers = &got[0];
+    let percentiles_idx = headers
+        .iter()
+        .position(|h| h == "percentiles")
+        .expect("percentiles column should exist");
+    let percentiles_value = &got[1][percentiles_idx];
+
+    // Deciles should expand to: 10,20,30,40,50,60,70,80,90 (i.e., the 10th, 20th, ..., 90th percentiles; 9 values)
+    // Verify we have 9 percentile values separated by |
+    let percentile_count = percentiles_value.matches('|').count() + 1;
+    assert_eq!(
+        percentile_count, 9,
+        "Deciles should produce 9 percentile values"
+    );
+    // Verify the values are reasonable (should contain values from the dataset)
+    assert!(
+        percentiles_value.contains("1"),
+        "Should contain first value"
+    );
+    assert!(percentiles_value.contains("9"), "Should contain last value");
+}
+
+#[test]
+fn stats_percentiles_deciles_uppercase() {
+    let wrk = Workdir::new("stats_percentiles_deciles_uppercase");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["n"],
+            svec!["1"],
+            svec!["2"],
+            svec!["3"],
+            svec!["4"],
+            svec!["5"],
+            svec!["6"],
+            svec!["7"],
+            svec!["8"],
+            svec!["9"],
+            svec!["10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("DECILES");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(got.len() > 0);
+
+    let headers = &got[0];
+    let percentiles_idx = headers
+        .iter()
+        .position(|h| h == "percentiles")
+        .expect("percentiles column should exist");
+    let percentiles_value = &got[1][percentiles_idx];
+
+    // Should work the same as lowercase - verify structure
+    let percentile_count = percentiles_value.matches('|').count() + 1;
+    assert_eq!(
+        percentile_count, 9,
+        "Deciles should produce 9 percentile values"
+    );
+}
+
+#[test]
+fn stats_percentiles_deciles_mixed_case() {
+    let wrk = Workdir::new("stats_percentiles_deciles_mixed_case");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["n"],
+            svec!["1"],
+            svec!["2"],
+            svec!["3"],
+            svec!["4"],
+            svec!["5"],
+            svec!["6"],
+            svec!["7"],
+            svec!["8"],
+            svec!["9"],
+            svec!["10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("DeCiLeS");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(got.len() > 0);
+
+    let headers = &got[0];
+    let percentiles_idx = headers
+        .iter()
+        .position(|h| h == "percentiles")
+        .expect("percentiles column should exist");
+    let percentiles_value = &got[1][percentiles_idx];
+
+    // Should work the same as lowercase (case-insensitive) - verify structure
+    let percentile_count = percentiles_value.matches('|').count() + 1;
+    assert_eq!(
+        percentile_count, 9,
+        "Deciles should produce 9 percentile values"
+    );
+}
+
+#[test]
+fn stats_percentiles_quintiles_lowercase() {
+    let wrk = Workdir::new("stats_percentiles_quintiles_lowercase");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["n"],
+            svec!["1"],
+            svec!["2"],
+            svec!["3"],
+            svec!["4"],
+            svec!["5"],
+            svec!["6"],
+            svec!["7"],
+            svec!["8"],
+            svec!["9"],
+            svec!["10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("quintiles");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(got.len() > 0);
+
+    let headers = &got[0];
+    let percentiles_idx = headers
+        .iter()
+        .position(|h| h == "percentiles")
+        .expect("percentiles column should exist");
+    let percentiles_value = &got[1][percentiles_idx];
+
+    // Quintiles should expand to: 20,40,60,80 (4 values)
+    // Verify we have 4 percentile values separated by |
+    let percentile_count = percentiles_value.matches('|').count() + 1;
+    assert_eq!(
+        percentile_count, 4,
+        "Quintiles should produce 4 percentile values"
+    );
+    // Verify the values are reasonable
+    assert!(
+        percentiles_value.contains("2") || percentiles_value.contains("4"),
+        "Should contain reasonable values"
+    );
+}
+
+#[test]
+fn stats_percentiles_quintiles_uppercase() {
+    let wrk = Workdir::new("stats_percentiles_quintiles_uppercase");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["n"],
+            svec!["1"],
+            svec!["2"],
+            svec!["3"],
+            svec!["4"],
+            svec!["5"],
+            svec!["6"],
+            svec!["7"],
+            svec!["8"],
+            svec!["9"],
+            svec!["10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("QUINTILES");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(got.len() > 0);
+
+    let headers = &got[0];
+    let percentiles_idx = headers
+        .iter()
+        .position(|h| h == "percentiles")
+        .expect("percentiles column should exist");
+    let percentiles_value = &got[1][percentiles_idx];
+
+    // Should work the same as lowercase - verify structure
+    let percentile_count = percentiles_value.matches('|').count() + 1;
+    assert_eq!(
+        percentile_count, 4,
+        "Quintiles should produce 4 percentile values"
+    );
+}
+
+#[test]
+fn stats_percentiles_quintiles_mixed_case() {
+    let wrk = Workdir::new("stats_percentiles_quintiles_mixed_case");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["n"],
+            svec!["1"],
+            svec!["2"],
+            svec!["3"],
+            svec!["4"],
+            svec!["5"],
+            svec!["6"],
+            svec!["7"],
+            svec!["8"],
+            svec!["9"],
+            svec!["10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("QuInTiLeS");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(got.len() > 0);
+
+    let headers = &got[0];
+    let percentiles_idx = headers
+        .iter()
+        .position(|h| h == "percentiles")
+        .expect("percentiles column should exist");
+    let percentiles_value = &got[1][percentiles_idx];
+
+    // Should work the same as lowercase (case-insensitive) - verify structure
+    let percentile_count = percentiles_value.matches('|').count() + 1;
+    assert_eq!(
+        percentile_count, 4,
+        "Quintiles should produce 4 percentile values"
+    );
+}
+
+#[test]
+fn stats_percentiles_deciles_with_more_values() {
+    let wrk = Workdir::new("stats_percentiles_deciles_more_values");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["n"],
+            svec!["1"],
+            svec!["2"],
+            svec!["3"],
+            svec!["4"],
+            svec!["5"],
+            svec!["6"],
+            svec!["7"],
+            svec!["8"],
+            svec!["9"],
+            svec!["10"],
+            svec!["11"],
+            svec!["12"],
+            svec!["13"],
+            svec!["14"],
+            svec!["15"],
+            svec!["16"],
+            svec!["17"],
+            svec!["18"],
+            svec!["19"],
+            svec!["20"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("deciles");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(got.len() > 0);
+
+    let headers = &got[0];
+    let percentiles_idx = headers
+        .iter()
+        .position(|h| h == "percentiles")
+        .expect("percentiles column should exist");
+    let percentiles_value = &got[1][percentiles_idx];
+
+    // Deciles: 10,20,30,40,50,60,70,80,90 (9 values)
+    // Verify we have 9 percentile values
+    let percentile_count = percentiles_value.matches('|').count() + 1;
+    assert_eq!(
+        percentile_count, 9,
+        "Deciles should produce 9 percentile values"
+    );
+    // Verify values are from the dataset range
+    assert!(
+        percentiles_value.contains("2") || percentiles_value.contains("1"),
+        "Should contain values from dataset"
+    );
+    assert!(
+        percentiles_value.contains("20")
+            || percentiles_value.contains("18")
+            || percentiles_value.contains("19"),
+        "Should contain values near end of dataset"
+    );
+}
+
+#[test]
+fn stats_percentiles_quintiles_with_more_values() {
+    let wrk = Workdir::new("stats_percentiles_quintiles_more_values");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["n"],
+            svec!["1"],
+            svec!["2"],
+            svec!["3"],
+            svec!["4"],
+            svec!["5"],
+            svec!["6"],
+            svec!["7"],
+            svec!["8"],
+            svec!["9"],
+            svec!["10"],
+            svec!["11"],
+            svec!["12"],
+            svec!["13"],
+            svec!["14"],
+            svec!["15"],
+            svec!["16"],
+            svec!["17"],
+            svec!["18"],
+            svec!["19"],
+            svec!["20"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("quintiles");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(got.len() > 0);
+
+    let headers = &got[0];
+    let percentiles_idx = headers
+        .iter()
+        .position(|h| h == "percentiles")
+        .expect("percentiles column should exist");
+    let percentiles_value = &got[1][percentiles_idx];
+
+    // Quintiles: 20,40,60,80 (4 values)
+    // Verify we have 4 percentile values
+    let percentile_count = percentiles_value.matches('|').count() + 1;
+    assert_eq!(
+        percentile_count, 4,
+        "Quintiles should produce 4 percentile values"
+    );
+    // Verify values are from the dataset range
+    assert!(
+        percentiles_value.contains("4") || percentiles_value.contains("8"),
+        "Should contain reasonable values"
+    );
+}
+
+#[test]
+fn stats_percentiles_regular_list_still_works() {
+    let wrk = Workdir::new("stats_percentiles_regular_list");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["n"],
+            svec!["1"],
+            svec!["2"],
+            svec!["3"],
+            svec!["4"],
+            svec!["5"],
+            svec!["6"],
+            svec!["7"],
+            svec!["8"],
+            svec!["9"],
+            svec!["10"],
+        ],
+    );
+
+    // Regular percentile list should still work (not a special value)
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("25,50,75");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(got.len() > 0);
+
+    let headers = &got[0];
+    let percentiles_idx = headers
+        .iter()
+        .position(|h| h == "percentiles")
+        .expect("percentiles column should exist");
+    let percentiles_value = &got[1][percentiles_idx];
+
+    // Regular list should work: 25,50,75 -> 3|5|8
+    assert_eq!(percentiles_value, "3|5|8");
+}
+
+#[test]
 fn stats_infer_boolean_prefix_pattern() {
     let wrk = Workdir::new("stats_infer_boolean_prefix_pattern");
     let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");

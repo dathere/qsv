@@ -296,6 +296,129 @@ fn describegpt_tags_flag() {
     wrk.assert_success(&mut cmd);
 }
 
+// Test --tags with --tag-vocab CSV file
+#[test]
+#[serial]
+fn describegpt_tags_with_tag_vocab() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt");
+
+    // Create a CSV file with sample data
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+            svec!["gamma", "37"],
+        ],
+    );
+
+    // Create a tag vocabulary CSV file with headers
+    let tag_vocab_content = r#"tag,description
+alphabetical_data,Data containing letters or alphabetical characters
+numerical_data,Data containing numbers or numerical values
+test_data,Sample or test data used for demonstration
+"#;
+    wrk.create_from_string("tag_vocab.csv", tag_vocab_content);
+
+    // Run the command with --tags and --tag-vocab
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--tags")
+        .args(["--tag-vocab", "tag_vocab.csv"])
+        .arg("--no-cache");
+
+    // Check that the command ran successfully
+    wrk.assert_success(&mut cmd);
+}
+
+// Test --tags with --tag-vocab CSV file (invalid CSV - missing description column)
+#[test]
+#[serial]
+fn describegpt_tags_with_invalid_tag_vocab() {
+    let wrk = Workdir::new("describegpt");
+
+    // Create a CSV file with sample data
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    // Create an invalid tag vocabulary CSV file (only one column)
+    let tag_vocab_content = r#"tag
+alphabetical_data
+numerical_data
+"#;
+    wrk.create_from_string("tag_vocab_invalid.csv", tag_vocab_content);
+
+    // Run the command with --tags and --tag-vocab
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--tags")
+        .args(["--tag-vocab", "tag_vocab_invalid.csv"])
+        .arg("--no-cache");
+
+    // Check that the command fails with appropriate error
+    let output = cmd.output().expect("Failed to execute command");
+    assert!(
+        !output.status.success(),
+        "Command should fail with invalid tag vocabulary CSV"
+    );
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("must have at least 2 columns")
+            || stderr.contains("tag vocabulary")
+            || stderr.contains("description"),
+        "Error message should mention tag vocabulary or columns requirement"
+    );
+}
+
+// Test --tags with --tag-vocab CSV file (non-existent file)
+#[test]
+#[serial]
+fn describegpt_tags_with_missing_tag_vocab() {
+    let wrk = Workdir::new("describegpt");
+
+    // Create a CSV file with sample data
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    // Run the command with --tags and --tag-vocab pointing to non-existent file
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--tags")
+        .args(["--tag-vocab", "nonexistent.csv"])
+        .arg("--no-cache");
+
+    // Check that the command fails with appropriate error
+    let output = cmd.output().expect("Failed to execute command");
+    assert!(
+        !output.status.success(),
+        "Command should fail with missing tag vocabulary file"
+    );
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("does not exist") || stderr.contains("not a file"),
+        "Error message should mention file does not exist"
+    );
+}
+
 // Test custom prompt with --prompt
 #[test]
 #[serial]

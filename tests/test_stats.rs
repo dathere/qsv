@@ -2586,7 +2586,7 @@ fn stats_percentiles_deciles_lowercase() {
         .expect("percentiles column should exist");
     let percentiles_value = &got[1][percentiles_idx];
 
-    // Deciles should expand to: 1,2,3,4,5,6,7,8,9 (9 values)
+    // Deciles should expand to: 10,20,30,40,50,60,70,80,90 (i.e., the 10th, 20th, ..., 90th percentiles; 9 values)
     // Verify we have 9 percentile values separated by |
     let percentile_count = percentiles_value.matches('|').count() + 1;
     assert_eq!(

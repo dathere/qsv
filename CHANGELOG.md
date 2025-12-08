@@ -47,6 +47,11 @@ Enhanced schema inference and validation capabilities:
 
 - **Configurable Email Validation**: `validate` has numerous options to tweak email validation - taking advantage of `schema`'s email format constraint inferencing.
 
+### `sample` Command time-series sampling
+A new `--timeseries` sampling method with grouping (hourly, daily, weekly),
+adaptive sampling (prefer business hours or weekends) with various aggregation (mean, sum, min, max)
+within each interval with configurable starting points (first, last or random).
+
 ### `lens` Command Features
 Enhanced CSV viewing capabilities with csvlens integration:
 

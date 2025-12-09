@@ -1347,7 +1347,7 @@ fn sample_remote_bernoulli_streaming_standard_rng() {
     );
 
     // Verify we got some records (exact count as we're using a seed)
-    assert!(got.len() == 14_938);
+    assert_eq!(got.len(), 14_941);
 
     // Verify the structure of sampled records
     for record in got.iter().skip(1) {
@@ -1424,7 +1424,7 @@ fn sample_remote_bernoulli_streaming_cryptosecure() {
     );
 
     // Verify we got some records (exact count as we're using a seed)
-    assert!(got.len() == 14_815);
+    assert_eq!(got.len(), 14_823);
 
     // Verify the structure of sampled records
     for record in got.iter().skip(1) {

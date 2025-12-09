@@ -2153,12 +2153,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "doc-comment"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "780955b8b195a21ab8e4ac6b60dd1dbdcec1dc6c51c0617964b08c81785e12c9"
-
-[[package]]
 name = "document-features"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3680,16 +3674,15 @@ dependencies = [
 
 [[package]]
 name = "kiddo"
-version = "5.2.2"
+version = "5.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fc5459a4b132bf81ba0384127e03abb116610da569c4b77db8ab7f629489c71"
+checksum = "7722b5b12a2b83342ea1d2c6215915118f4dd5aaed6cab2bf4ce581838275d3c"
 dependencies = [
  "aligned-vec",
  "array-init",
  "az",
  "cmov",
  "divrem",
- "doc-comment",
  "generator",
  "num-traits",
  "ordered-float 5.1.0",
@@ -7157,9 +7150,9 @@ dependencies = [
 
 [[package]]
 name = "simd-adler32"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
+checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
 
 [[package]]
 name = "simd-json"

@@ -419,7 +419,7 @@ struct DictionaryEntry {
     cardinality: u64,
     enumeration: String, // Empty string if not enumerable, otherwise values on separate lines
     null_count:  u64,
-    addl_cols:   IndexMap<String, String>, // Additional columns from stats (preserves order)
+    addl_cols:   IndexMap<String, String>, // Addl columns from stats (preserves order)
     examples:    String,                   // Format: "val1 [cnt1], ... or "<ALL_UNIQUE>"
 }
 
@@ -430,9 +430,9 @@ struct StatsRecord {
     r#type:      String,
     cardinality: u64,
     nullcount:   u64,
-    min:         String,                  // Empty string if not available
-    max:         String,                  // Empty string if not available
-    addl_cols:   HashMap<String, String>, // Additional columns from stats CSV
+    min:         String,                   // Empty string if not available
+    max:         String,                   // Empty string if not available
+    addl_cols:   IndexMap<String, String>, // Addl columns from stats CSV (preserves order)
 }
 
 #[derive(Debug, Clone)]
@@ -923,12 +923,15 @@ fn parse_stats_csv(stats_csv: &str) -> CliResult<(Vec<StatsRecord>, Vec<String>)
             .map(std::string::ToString::to_string)
             .unwrap_or_default();
 
-        // Collect additional columns
-        let mut addl_cols = HashMap::new();
+        // Collect additional columns, preserving CSV order
+        // Ensure all cols are present (w/ empty string if missing) to maintain consistent order
+        let mut addl_cols = IndexMap::new();
         for (idx, col_name) in &addl_col_indices {
-            if let Some(value) = record.get(*idx) {
-                addl_cols.insert(col_name.clone(), value.to_string());
-            }
+            let value = record
+                .get(*idx)
+                .map(std::string::ToString::to_string)
+                .unwrap_or_default();
+            addl_cols.insert(col_name.clone(), value);
         }
 
         records.push(StatsRecord {
@@ -1728,8 +1731,8 @@ fn get_prompt(
     let tag_vocab = if prompt_type == PromptType::Tags
         && let Some(ref tag_vocab_uri) = args.flag_tag_vocab
     {
-        // Load tag vocabulary CSV using lookup support (handles local files, remote URLs, CKAN,
-        // dathere://)
+        // Load tag vocabulary CSV using lookup support
+        // (handles local files, remote URLs, ckan:// and dathere:// schemes)
         let tag_vocab_filepath = {
             #[cfg(feature = "feature_capable")]
             {

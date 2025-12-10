@@ -417,12 +417,10 @@ struct DictionaryEntry {
     min:         String, // Empty string if not available
     max:         String, // Empty string if not available
     cardinality: u64,
-    enumeration: String, /* Empty string if not enumerable, otherwise values on
-                          * separate lines */
+    enumeration: String, // Empty string if not enumerable, otherwise values on separate lines
     null_count:  u64,
     addl_cols:   IndexMap<String, String>, // Additional columns from stats (preserves order)
-    examples:    String,                   /* Format: "value1 [count1], value2
-                                            * [count2], ..." or "<ALL_UNIQUE>" */
+    examples:    String,                   // Format: "val1 [cnt1], ... or "<ALL_UNIQUE>"
 }
 
 // Helper structs for parsing CSV data

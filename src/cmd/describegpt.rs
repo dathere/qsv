@@ -116,7 +116,7 @@ describegpt options:
                            The columns must be present in the Summary Statistics.
                            If the columns are not present in the Summary Statistics or already in the dictionary,
                            they will be ignored. "everything" can be used to add all available columns.
-                           [default: sort_order, sortiness, mean, stddev, variance, cv, mads]
+                           [default: sort_order, sortiness, mean, median, mad, stddev, variance, cv]
 
                            TAG OPTIONS:
     --num-tags <n>         The maximum number of tags to infer when the --tags option is used.
@@ -141,7 +141,7 @@ describegpt options:
 
                            STATS/FREQUENCY OPTIONS:
     --stats-options <arg>  Options for the stats command used to generate summary statistics.
-                           [default: --infer-dates --infer-boolean --cardinality --force --stats-jsonl]
+                           [default: --infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl]
     --enum-threshold <n>   The threshold for compiling Enumerations with the frequency command
                            before bucketing other unique values into the "Other" category.
                            [default: 10]
@@ -3433,10 +3433,11 @@ fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String
         "sort_order",
         "sortiness",
         "mean",
+        "median",
+        "mad",
         "stddev",
         "variance",
         "cv",
-        "mad",
     ];
 
     // Only add additional columns if --addl-cols flag is set
@@ -3445,7 +3446,7 @@ fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String
     }
 
     // Standard columns that should never be included as additional columns
-    let standard_cols: std::collections::HashSet<&str> =
+    let std_cols: std::collections::HashSet<&str> =
         ["field", "type", "cardinality", "nullcount", "min", "max"]
             .iter()
             .copied()
@@ -3458,7 +3459,7 @@ fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String
             // IndexSet preserves insertion order, so we can iterate directly
             avail_cols
                 .iter()
-                .filter(|col| !standard_cols.contains(col.as_str()))
+                .filter(|col| !std_cols.contains(col.as_str()))
                 .cloned()
                 .collect::<Vec<String>>()
         } else {
@@ -3481,7 +3482,7 @@ fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String
     // and are not standard columns, preserving order
     cols_to_include
         .into_iter()
-        .filter(|col| avail_cols.contains(col) && !standard_cols.contains(col.as_str()))
+        .filter(|col| avail_cols.contains(col) && !std_cols.contains(col.as_str()))
         .collect()
 }
 

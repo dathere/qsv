@@ -1378,7 +1378,14 @@ fn format_dictionary_markdown(entries: &[DictionaryEntry]) -> String {
             let value = entry
                 .addl_cols
                 .get(col_name)
-                .map(|v| v.replace('|', "\\|").replace('\n', "<br>"))
+                .map(|v| {
+                    if col_name == "percentiles" {
+                        // Replace | with <br> for readability in percentiles
+                        v.replace(['|', '\n'], "<br>")
+                    } else {
+                        v.replace('|', "\\|").replace('\n', "<br>")
+                    }
+                })
                 .unwrap_or_default();
             let _ = write!(output, " | {value}");
         }
@@ -1413,14 +1420,15 @@ fn format_dictionary_json(entries: &[DictionaryEntry], args: &Args) -> serde_jso
             // Add additional columns to the JSON object
             if let Some(obj) = entry_obj.as_object_mut() {
                 for (key, value) in &e.addl_cols {
-                    obj.insert(
-                        key.clone(),
-                        if value.is_empty() {
-                            serde_json::Value::Null
-                        } else {
-                            serde_json::Value::String(value.clone())
-                        },
-                    );
+                    let json_value = if value.is_empty() {
+                        serde_json::Value::Null
+                    } else if key == "percentiles" {
+                        // Replace | with \n for readability in percentiles
+                        serde_json::Value::String(value.replace('|', "\n"))
+                    } else {
+                        serde_json::Value::String(value.clone())
+                    };
+                    obj.insert(key.clone(), json_value);
                 }
                 // Add examples at the end
                 obj.insert("examples".to_string(), json!(e.examples));
@@ -1486,7 +1494,15 @@ fn format_dictionary_tsv(entries: &[DictionaryEntry]) -> String {
             let value = entry
                 .addl_cols
                 .get(col_name)
-                .map(|v| v.replace(['\t', '\n', '\r'], " "))
+                .map(|v| {
+                    if col_name == "percentiles" {
+                        // Replace | with \n for readability in percentiles, then escape
+                        // tabs/newlines
+                        v.replace('|', "\n").replace(['\t', '\r'], " ")
+                    } else {
+                        v.replace(['\t', '\n', '\r'], " ")
+                    }
+                })
                 .unwrap_or_default();
             let _ = write!(output, "\t{value}");
         }

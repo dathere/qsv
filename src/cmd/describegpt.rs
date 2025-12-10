@@ -110,6 +110,14 @@ describegpt options:
                            Useful for grouping datasets and filtering.
     -A, --all              Shortcut for --dictionary --description --tags.
 
+                           DICTIONARY OPTIONS:
+    --addl-cols            Add additional columns to the dictionary from the Summary Statistics.
+  --addl-cols-list <list>  A comma-separated list of additional columns to add to the dictionary.
+                           The columns must be present in the Summary Statistics.
+                           If the columns are not present in the Summary Statistics or already in the dictionary,
+                           they will be ignored. "everything" can be used to add all available columns.
+                           [default: sort_order, sortiness, mean, stddev, variance, cv, mads]
+
                            TAG OPTIONS:
     --num-tags <n>         The maximum number of tags to infer when the --tags option is used.
                            Maximum allowed value is 50.
@@ -251,6 +259,7 @@ use std::{
 use cached::{
     DiskCache, IOCached, RedisCache, Return, proc_macro::io_cached, stores::DiskCacheBuilder,
 };
+use indexmap::{IndexMap, IndexSet};
 use indicatif::HumanCount;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -316,6 +325,8 @@ struct Args {
     flag_format:           Option<String>,
     flag_output:           Option<String>,
     flag_quiet:            bool,
+    flag_addl_cols:        bool,
+    flag_addl_cols_list:   Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -406,9 +417,12 @@ struct DictionaryEntry {
     min:         String, // Empty string if not available
     max:         String, // Empty string if not available
     cardinality: u64,
-    enumeration: String, // Empty string if not enumerable, otherwise values on separate lines
+    enumeration: String, /* Empty string if not enumerable, otherwise values on
+                          * separate lines */
     null_count:  u64,
-    examples:    String, // Format: "value1 [count1], value2 [count2], ..." or "<ALL_UNIQUE>"
+    addl_cols:   IndexMap<String, String>, // Additional columns from stats (preserves order)
+    examples:    String,                   /* Format: "value1 [count1], value2
+                                            * [count2], ..." or "<ALL_UNIQUE>" */
 }
 
 // Helper structs for parsing CSV data
@@ -418,8 +432,9 @@ struct StatsRecord {
     r#type:      String,
     cardinality: u64,
     nullcount:   u64,
-    min:         String, // Empty string if not available
-    max:         String, // Empty string if not available
+    min:         String,                  // Empty string if not available
+    max:         String,                  // Empty string if not available
+    addl_cols:   HashMap<String, String>, // Additional columns from stats CSV
 }
 
 #[derive(Debug, Clone)]
@@ -828,14 +843,22 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
 }
 
 /// Parse stats CSV into structured records
-fn parse_stats_csv(stats_csv: &str) -> CliResult<Vec<StatsRecord>> {
+/// Returns the records and the ordered list of additional column names (in CSV order)
+fn parse_stats_csv(stats_csv: &str) -> CliResult<(Vec<StatsRecord>, Vec<String>)> {
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(true)
         .from_reader(stats_csv.as_bytes());
 
     let headers = rdr.headers()?.clone();
 
-    // Find column indices
+    // Standard column names that we handle explicitly
+    let std_cols: std::collections::HashSet<&str> =
+        ["field", "type", "cardinality", "nullcount", "min", "max"]
+            .iter()
+            .copied()
+            .collect();
+
+    // Find column indices for standard columns
     let field_idx = headers
         .iter()
         .position(|h| h == "field")
@@ -853,6 +876,19 @@ fn parse_stats_csv(stats_csv: &str) -> CliResult<Vec<StatsRecord>> {
         .ok_or_else(|| CliError::Other("Stats CSV missing 'nullcount' column".to_string()))?;
     let min_idx = headers.iter().position(|h| h == "min");
     let max_idx = headers.iter().position(|h| h == "max");
+
+    // Collect indices of additional (non-standard) columns
+    let addl_col_indices: Vec<(usize, String)> = headers
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, header)| {
+            if std_cols.contains(header) {
+                None
+            } else {
+                Some((idx, header.to_string()))
+            }
+        })
+        .collect();
 
     let mut records = Vec::new();
 
@@ -889,6 +925,14 @@ fn parse_stats_csv(stats_csv: &str) -> CliResult<Vec<StatsRecord>> {
             .map(std::string::ToString::to_string)
             .unwrap_or_default();
 
+        // Collect additional columns
+        let mut addl_cols = HashMap::new();
+        for (idx, col_name) in &addl_col_indices {
+            if let Some(value) = record.get(*idx) {
+                addl_cols.insert(col_name.clone(), value.to_string());
+            }
+        }
+
         records.push(StatsRecord {
             field,
             r#type,
@@ -896,10 +940,15 @@ fn parse_stats_csv(stats_csv: &str) -> CliResult<Vec<StatsRecord>> {
             nullcount,
             min,
             max,
+            addl_cols,
         });
     }
 
-    Ok(records)
+    // Extract ordered column names (preserving CSV order)
+    let ordered_col_names: Vec<String> =
+        addl_col_indices.into_iter().map(|(_, name)| name).collect();
+
+    Ok((records, ordered_col_names))
 }
 
 /// Parse frequency CSV into structured records
@@ -989,6 +1038,7 @@ fn generate_code_based_dictionary(
     enum_threshold: usize,
     num_examples: u16,
     truncate_str: usize,
+    addl_cols: &[String],
 ) -> CliResult<Vec<DictionaryEntry>> {
     // Group frequency records by field
     let mut frequency_by_field: HashMap<String, Vec<&FrequencyRecord>> = HashMap::new();
@@ -1059,6 +1109,14 @@ fn generate_code_based_dictionary(
             top_n.join("\n")
         };
 
+        // Collect additional columns for this entry, preserving order
+        let mut entry_addl_cols = IndexMap::new();
+        for col_name in addl_cols {
+            if let Some(value) = stats_record.addl_cols.get(col_name) {
+                entry_addl_cols.insert(col_name.clone(), value.clone());
+            }
+        }
+
         dictionary_entries.push(DictionaryEntry {
             name: stats_record.field.clone(),
             r#type: stats_record.r#type.clone(),
@@ -1069,6 +1127,7 @@ fn generate_code_based_dictionary(
             cardinality: stats_record.cardinality,
             enumeration,
             null_count: stats_record.nullcount,
+            addl_cols: entry_addl_cols,
             examples,
         });
     }
@@ -1193,6 +1252,7 @@ fn replace_attribution_placeholder(text: &str, args: &Args, model: &str, base_ur
 
     let attribution = format!(
         r#"Generated by {qsv_variant} v{qsv_version} describegpt
+Command line: {command_line}
 Prompt file: {prompt_file_kind} v{prompt_file_ver}
 Model: {model}
 LLM API URL: {base_url}
@@ -1201,22 +1261,50 @@ Timestamp: {ts}
 WARNING: Label and Description generated by an LLM and may contain inaccuracies. Verify before using!"#,
         qsv_variant = util::CARGO_BIN_NAME,
         qsv_version = util::CARGO_PKG_VERSION,
+        command_line = std::env::args().collect::<Vec<_>>().join(" "),
         ts = chrono::Utc::now().to_rfc3339(),
     );
 
     text.replace("{GENERATED_BY_SIGNATURE}", &attribution)
 }
 
+/// Extract ordered additional column names from entries
+/// Returns columns in the order they appear in IndexMap (preserves insertion order)
+fn extract_ordered_addl_cols(entries: &[DictionaryEntry]) -> Vec<String> {
+    // Get the ordered column names from the first entry (all entries should have the same order)
+    // IndexMap preserves insertion order, so we can iterate over keys directly
+    entries
+        .first()
+        .map(|e| e.addl_cols.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
 /// Format dictionary entries as markdown table
 fn format_dictionary_markdown(entries: &[DictionaryEntry]) -> String {
     use std::fmt::Write;
 
+    // Determine which additional columns are present (preserving order)
+    let addl_col_names = extract_ordered_addl_cols(entries);
+
     let mut output = String::with_capacity(1024); //from("# Data Dictionary\n");
+
+    // Build header row
     output.push_str(
-        "| Name | Type | Label | Description | Min | Max | Cardinality | Enumeration | Null Count \
-         | Examples |\n",
+        "| Name | Type | Label | Description | Min | Max | Cardinality | Enumeration | Null Count",
     );
-    output.push_str("|------|------|-------|-------------|-----|-----|-------------|-------------|------------|----------|\n");
+    for col_name in &addl_col_names {
+        let _ = write!(output, " | {col_name}");
+    }
+    output.push_str(" | Examples |\n");
+
+    // Build separator row
+    output.push_str(
+        "|------|------|-------|-------------|-----|-----|-------------|-------------|------------",
+    );
+    for _ in &addl_col_names {
+        output.push_str("|----------");
+    }
+    output.push_str("|----------|\n");
 
     for entry in entries {
         // Escape pipe characters in markdown table cells
@@ -1269,9 +1357,10 @@ fn format_dictionary_markdown(entries: &[DictionaryEntry]) -> String {
                 .join("<br>")
         };
 
-        let _ = writeln!(
+        // Build row with additional columns
+        let _ = write!(
             output,
-            "| **{}** | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            "| **{}** | {} | {} | {} | {} | {} | {} | {} | {}",
             name,
             r#type,
             label,
@@ -1280,9 +1369,21 @@ fn format_dictionary_markdown(entries: &[DictionaryEntry]) -> String {
             max,
             HumanCount(entry.cardinality),
             enumeration_display,
-            HumanCount(entry.null_count),
-            examples_display
+            HumanCount(entry.null_count)
         );
+
+        // Add additional columns
+        for col_name in &addl_col_names {
+            let value = entry
+                .addl_cols
+                .get(col_name)
+                .map(|v| v.replace('|', "\\|").replace('\n', "<br>"))
+                .unwrap_or_default();
+            let _ = write!(output, " | {value}");
+        }
+
+        // Add Examples column
+        let _ = writeln!(output, " | {examples_display} |");
     }
 
     // Add attribution at the bottom
@@ -1296,7 +1397,7 @@ fn format_dictionary_json(entries: &[DictionaryEntry], args: &Args) -> serde_jso
     let entries_json: Vec<serde_json::Value> = entries
         .iter()
         .map(|e| {
-            json!({
+            let mut entry_obj = json!({
                 "name": e.name,
                 "type": e.r#type,
                 "label": e.label,
@@ -1306,8 +1407,25 @@ fn format_dictionary_json(entries: &[DictionaryEntry], args: &Args) -> serde_jso
                 "cardinality": e.cardinality,
                 "enumeration": if e.enumeration.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(e.enumeration.clone()) },
                 "null_count": e.null_count,
-                "examples": e.examples,
-            })
+            });
+
+            // Add additional columns to the JSON object
+            if let Some(obj) = entry_obj.as_object_mut() {
+                for (key, value) in &e.addl_cols {
+                    obj.insert(
+                        key.clone(),
+                        if value.is_empty() {
+                            serde_json::Value::Null
+                        } else {
+                            serde_json::Value::String(value.clone())
+                        },
+                    );
+                }
+                // Add examples at the end
+                obj.insert("examples".to_string(), json!(e.examples));
+            }
+
+            entry_obj
         })
         .collect();
 
@@ -1324,12 +1442,17 @@ fn format_dictionary_json(entries: &[DictionaryEntry], args: &Args) -> serde_jso
 fn format_dictionary_tsv(entries: &[DictionaryEntry]) -> String {
     use std::fmt::Write;
 
+    // Determine which additional columns are present (preserving order)
+    let addl_col_names = extract_ordered_addl_cols(entries);
+
     let mut output = String::with_capacity(1024);
     // TSV header
-    output.push_str(
-        "Name\tType\tLabel\tDescription\tMin\tMax\tCardinality\tEnumeration\tNull \
-         Count\tExamples\n",
-    );
+    output
+        .push_str("Name\tType\tLabel\tDescription\tMin\tMax\tCardinality\tEnumeration\tNull Count");
+    for col_name in &addl_col_names {
+        let _ = write!(output, "\t{col_name}");
+    }
+    output.push_str("\tExamples\n");
 
     for entry in entries {
         // Escape tabs and newlines in TSV cells
@@ -1342,9 +1465,10 @@ fn format_dictionary_tsv(entries: &[DictionaryEntry]) -> String {
         let enumeration = entry.enumeration.replace(['\t', '\n', '\r'], " ");
         let examples = entry.examples.replace(['\t', '\n', '\r'], " ");
 
-        let _ = writeln!(
+        // Build row with additional columns
+        let _ = write!(
             output,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             name,
             r#type,
             label,
@@ -1353,9 +1477,21 @@ fn format_dictionary_tsv(entries: &[DictionaryEntry]) -> String {
             max,
             HumanCount(entry.cardinality),
             enumeration,
-            HumanCount(entry.null_count),
-            examples
+            HumanCount(entry.null_count)
         );
+
+        // Add additional columns
+        for col_name in &addl_col_names {
+            let value = entry
+                .addl_cols
+                .get(col_name)
+                .map(|v| v.replace(['\t', '\n', '\r'], " "))
+                .unwrap_or_default();
+            let _ = write!(output, "\t{value}");
+        }
+
+        // Add Examples column
+        let _ = writeln!(output, "\t{examples}");
     }
 
     output
@@ -1893,6 +2029,7 @@ fn get_completion(
         &format!(
             r#"{prompt_info}
 {att_prefix}Generated by {qsv_variant} v{qsv_version} describegpt
+{att_prefix}Command line: {command_line}
 {att_prefix}Prompt file: {prompt_file_kind} v{prompt_file_ver}
 {att_prefix}Model: {model}
 {att_prefix}LLM API URL: {base_url}
@@ -1902,6 +2039,7 @@ fn get_completion(
 {extra_separator}"#,
             qsv_variant = util::CARGO_BIN_NAME,
             qsv_version = util::CARGO_PKG_VERSION,
+            command_line = std::env::args().collect::<Vec<_>>().join(" "),
             prompt_file_kind = if let Some(prompt_file) = args.flag_prompt_file.as_ref() {
                 format!("Custom (file: {prompt_file})")
             } else {
@@ -2349,14 +2487,21 @@ fn run_inference_options(
         if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
             // Still store the dictionary in DATA_DICTIONARY_JSON for context, but don't output it
             // For --prompt mode, we still need to generate the full dictionary for context
-            let stats_records = parse_stats_csv(&analysis_results.stats)?;
+            let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
             let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
+
+            // Determine which additional columns to include
+            // Build IndexSet from ordered_column_names to preserve CSV order
+            let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
+            let addl_cols = determine_addl_cols(args, &avail_cols);
+
             let code_entries = generate_code_based_dictionary(
                 &stats_records,
                 &frequency_records,
                 args.flag_enum_threshold,
                 args.flag_num_examples,
                 args.flag_truncate_str,
+                &addl_cols,
             )?;
 
             let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
@@ -2387,8 +2532,13 @@ fn run_inference_options(
         // Handle Dictionary type with neuro-procedural approach
         if kind == PromptType::Dictionary {
             // Parse stats and frequency data
-            let stats_records = parse_stats_csv(&analysis_results.stats)?;
+            let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
             let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
+
+            // Determine which additional columns to include
+            // Build IndexSet from ordered_column_names to preserve CSV order
+            let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
+            let addl_cols = determine_addl_cols(args, &avail_cols);
 
             // Generate code-based dictionary entries
             let code_entries = generate_code_based_dictionary(
@@ -2397,6 +2547,7 @@ fn run_inference_options(
                 args.flag_enum_threshold,
                 args.flag_num_examples,
                 args.flag_truncate_str,
+                &addl_cols,
             )?;
 
             // Parse LLM response to get Label and Description
@@ -3269,6 +3420,68 @@ fn handle_sql_error(
         return fail_clierror!("Failed to copy SQL query to {sql_results_path:?}: {e}");
     }
     fail_clierror!("{error_msg}")
+}
+
+/// Determine which additional columns to include based on args
+/// Returns a vector of column names in the order they should appear
+/// Only adds columns when --addl-cols flag is set
+/// available_columns: IndexSet of all additional columns (preserves CSV order)
+fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String> {
+    // Default list of additional columns
+    const DEFAULT_COLUMNS: &[&str] = &[
+        "sort_order",
+        "sortiness",
+        "mean",
+        "stddev",
+        "variance",
+        "cv",
+        "mad",
+    ];
+
+    // Only add additional columns if --addl-cols flag is set
+    if !args.flag_addl_cols {
+        return Vec::new();
+    }
+
+    // Standard columns that should never be included as additional columns
+    let standard_cols: std::collections::HashSet<&str> =
+        ["field", "type", "cardinality", "nullcount", "min", "max"]
+            .iter()
+            .copied()
+            .collect();
+
+    let cols_to_include = if let Some(list_str) = &args.flag_addl_cols_list {
+        // Parse comma-separated list
+        if list_str.trim().eq_ignore_ascii_case("everything") {
+            // Include all available columns except standard ones, preserving CSV order
+            // IndexSet preserves insertion order, so we can iterate directly
+            avail_cols
+                .iter()
+                .filter(|col| !standard_cols.contains(col.as_str()))
+                .cloned()
+                .collect::<Vec<String>>()
+        } else {
+            // Parse comma-separated list
+            list_str
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        }
+    } else {
+        // Use default list when --addl-cols is set but --addl-cols-list is not provided
+        DEFAULT_COLUMNS
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect()
+    };
+
+    // Filter to only include columns that exist in available_columns
+    // and are not standard columns, preserving order
+    cols_to_include
+        .into_iter()
+        .filter(|col| avail_cols.contains(col) && !standard_cols.contains(col.as_str()))
+        .collect()
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {

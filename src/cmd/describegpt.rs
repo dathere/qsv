@@ -111,6 +111,12 @@ describegpt options:
     -A, --all              Shortcut for --dictionary --description --tags.
 
                            DICTIONARY OPTIONS:
+    --num-examples <n>     The number of Example values to include in the dictionary.
+                           [default: 5]
+    --truncate-str <n>     The maximum length of an Example value in the dictionary.
+                           An ellipsis is appended to the truncated value.
+                           If zero, no truncation is performed.
+                           [default: 25]
     --addl-cols            Add additional columns to the dictionary from the Summary Statistics.
   --addl-cols-list <list>  A comma-separated list of additional columns to add to the dictionary.
                            The columns must be present in the Summary Statistics.
@@ -145,14 +151,6 @@ describegpt options:
     --enum-threshold <n>   The threshold for compiling Enumerations with the frequency command
                            before bucketing other unique values into the "Other" category.
                            [default: 10]
-
-                           DICTIONARY OPTIONS:
-    --num-examples <n>     The number of Example values to include in the dictionary.
-                           [default: 5]
-    --truncate-str <n>     The maximum length of an Example value in the dictionary.
-                           An ellipsis is appended to the truncated value.
-                           If zero, no truncation is performed.
-                           [default: 25]
 
                            CUSTOM PROMPT OPTIONS:
     -p, --prompt <prompt>  Custom prompt to answer questions about the dataset.
@@ -1496,9 +1494,9 @@ fn format_dictionary_tsv(entries: &[DictionaryEntry]) -> String {
                 .get(col_name)
                 .map(|v| {
                     if col_name == "percentiles" {
-                        // Replace | with \n for readability in percentiles, then escape
-                        // tabs/newlines
-                        v.replace('|', "\n").replace(['\t', '\r'], " ")
+                        // Replace | and newlines with "; " for readability in percentiles
+                        // then escape tabs and carriage returns
+                        v.replace(['|', '\n'], "; ").replace(['\t', '\r'], " ")
                     } else {
                         v.replace(['\t', '\n', '\r'], " ")
                     }
@@ -3494,8 +3492,8 @@ fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String
             .collect()
     };
 
-    // Filter to only include columns that exist in available_columns
-    // and are not standard columns, preserving order
+    // Filter to only include columns that exist in avail_cols and are not std cols,
+    // preserving user-specified order for custom lists, CSV order for "everything"
     cols_to_include
         .into_iter()
         .filter(|col| avail_cols.contains(col) && !std_cols.contains(col.as_str()))

@@ -13,27 +13,34 @@ Compute summary statistics & infers data types for each column in a CSV.
 
 Summary stats include sum, min/max/range, sort order/sortiness, min/max/sum/avg/stddev/variance/cv length,
 mean, standard error of the mean (SEM), geometric mean, harmonic mean, stddev, variance, coefficient of
-variation (CV), nullcount, max_precision, sparsity, Median Absolute Deviation (MAD), quartiles,
-interquartile range (IQR), lower/upper fences, skewness, median, cardinality/uniqueness ratio,
-mode/s & "antimode/s" & percentiles.
+variation (CV), nullcount, n_negative, n_zero, n_positive, max_precision, sparsity,
+Median Absolute Deviation (MAD), quartiles, lower/upper inner/outer fences, skewness, median,
+cardinality/uniqueness ratio, mode/s & "antimode/s" & percentiles.
 
 Note that some stats require loading the entire file into memory, so they must be enabled explicitly.
 
 By default, the following "streaming" statistics are reported for *every* column:
   sum, min/max/range values, sort order/"sortiness", min/max/sum/avg/stddev/variance/cv length, mean, sem,
-  geometric_mean, harmonic_mean,stddev, variance, cv, nullcount, max_precision & sparsity.
+  geometric_mean, harmonic_mean,stddev, variance, cv, nullcount, n_negative, n_zero, n_positive,
+  max_precision & sparsity.
 
 The default set of statistics corresponds to ones that can be computed efficiently on a stream of data
 (i.e., constant memory) and works with arbitrarily large CSVs.
 
-The following additional "non-streaming" statistics require loading the entire file into memory:
+The following additional "non-streaming, advanced" statistics require loading the entire file into memory:
 cardinality/uniqueness ratio, modes/antimodes, median, MAD, quartiles and its related measures
 (q1, q2, q3, IQR, lower/upper fences & skewness) and percentiles.
 
-When computing "non-streaming" statistics, an Out-Of-Memory (OOM) heuristic check is done.
-If the file is larger than the available memory minus a headroom buffer of 20% (which can be
-adjusted using the QSV_FREEMEMORY_HEADROOM_PCT environment variable), processing will be
-preemptively prevented.
+When computing "non-streaming" statistics, a memory-aware chunking algorithm is used to dynamically
+calculate chunk size based on available memory & record sampling. This SHOULD help process arbitrarily
+large "real-world" files by creating smaller chunks that fit in available memory.
+However, there is still a chance that the command will run out of memory if the cardinality of
+several columns is very high.
+
+Chunk size is dynamically calculated based on the number of logical CPUs detected.
+You can override this behavior by setting the QSV_STATS_CHUNK_MEMORY_MB environment variable
+(set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk,
+or -1 for CPU-based chunking (1 chunk = records/number of CPUs)).
 
 "Antimode" is the least frequently occurring non-zero value and is the opposite of mode.
 It returns "*ALL" if all the values are unique, and only returns a preview of the first
@@ -62,12 +69,6 @@ https://github.com/dathere/qsv-dateparser?tab=readme-ov-file#accepted-date-forma
 Computing statistics on a large file can be made MUCH faster if you create an index for it
 first with 'qsv index' to enable multithreading. With an index, the file is split into chunks
 and each chunk is processed in parallel.
-For non-streaming statistics (median, quartiles, modes, cardinality), memory-aware chunking is
-automatically enabled, dynamically calculating chunk size based on available memory & record sampling.
-For streaming statistics, chunk size is based on the number of logical CPUs detected.
-You can override this behavior by setting the QSV_STATS_CHUNK_MEMORY_MB environment variable
-(set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk,
-or -1 for CPU-based chunking (1 chunk = records/number of CPUs)), or by setting the --jobs option.
 
 As stats is a central command in qsv, and can be expensive to compute, `stats` caches results
 in <FILESTEM>.stats.csv & if the --stats-json option is used, <FILESTEM>.stats.csv.data.jsonl

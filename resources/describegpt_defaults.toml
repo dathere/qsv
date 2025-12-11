@@ -1,7 +1,7 @@
 name = "qsv Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "qsv team"
-version = "6.2.1"
+version = "6.2.2"
 tokens = 10000
 base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
@@ -12,13 +12,13 @@ format = "markdown"
 # {STATS}
 # {FREQUENCY}
 # {DICTIONARY}
-# {JSON_ADD} - if --json or --jsonl is set
+# {JSON_ADD} - if --json set
 # {INPUT_TABLE_NAME}
 # {GENERATED_BY_SIGNATURE} - replaced with Attribution metadata and warning
 # {DUCKDB_VERSION} - only up to the minor version - e.g "1.3"
 # {TOP_N} - The enum threshold for the frequency command
 # {NUM_TAGS} - The maximum number of tags to infer when the --tags option is used
-# {TAG_VOCAB} - The tag vocabulary text file (one tag per line with description after colon)
+# {TAG_VOCAB} - The tag vocabulary file
 # {SAMPLE_FILE} - The temporary file containing a 1000 row random sample of the input CSV file.
 #                 Only present if --prompt is set.
 

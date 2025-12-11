@@ -10,8 +10,10 @@ authors:
     website: 'https://dathere.com'
   - given-names: Joel
     family-names: Natividad
-    email: joel@dathere.com
-    affiliation: datHere
+    orcid: "https://orcid.org/0009-0002-8734-2099"
+  - given-names: Mueez
+    family-names: Khan
+    orcid: "https://orcid.org/0009-0005-0246-3441"
   - name: "The qsv project"
 identifiers:
   - type: doi
@@ -20,11 +22,13 @@ repository-code: 'https://github.com/dathere/qsv'
 url: 'https://qsv.dathere.com'
 abstract: >-
   Fast data wrangling command-line tool primarily for
-  spreadsheet data.
+  tabular data.
 keywords:
   - data wrangling
-  - spreadsheet
-  - rust
+  - FAIRification
+  - tabular data
+  - metadata
+  - statistics
 license:
   - Unlicense
   - MIT

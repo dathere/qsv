@@ -32,6 +32,10 @@ rowcount == cardinality), eliminating the need to maintain an in-memory hashmap 
 This allows `frequency` to handle larger-than-memory datasets with the added benefit of also
 making it faster when working with datasets with ID columns.
 
+That's why for MAXIMUM PERFORMANCE, it's HIGHLY RECOMMENDED to create an index (`qsv index data.csv`)
+and pre-populate the stats cache (`qsv stats data.csv --cardinality --stats-jsonl`)
+BEFORE running `frequency`.
+
 MEMORY-AWARE CHUNKING:
 When working with large datasets, memory-aware chunking is automatically enabled to handle
 files larger than available memory. Chunk size is dynamically calculated based on available
@@ -92,16 +96,16 @@ frequency options:
                             in a column >= threshold, the limits will be applied.
                             Set to '0' to disable the threshold and always apply limits.
                             [default: 0]
--r, --rank-strategy <arg>   The strategy to use when there are ties in the frequency table.
+-r, --rank-strategy <arg>   The strategy to use when there are count-tied values in the frequency table.
                             See https://en.wikipedia.org/wiki/Ranking for more info.
                             Valid values are:
-                            - "dense": Assigns consecutive integers regardless of ties,
-                              incrementing by 1 for each new count value (AKA "1223" ranking).
-                            - "min": Tied items receive the minimum rank position (AKA "1224" ranking).
-                            - "max": Tied items receive the maximum rank position (AKA "1334" ranking).
-                            - "ordinal": The next rank is the current rank plus 1 (AKA "1234" ranking).
-                            - "average": Tied items receive the average of their ordinal positions
-                              (AKA "1 2.5 2.5 4" ranking).
+                              - dense: Assigns consecutive integers regardless of ties,
+                                incrementing by 1 for each new count value (AKA "1223" ranking).
+                              - min: Tied items receive the minimum rank position (AKA "1224" ranking).
+                              - max: Tied items receive the maximum rank position (AKA "1334" ranking).
+                              - ordinal: The next rank is the current rank plus 1 (AKA "1234" ranking).
+                              - average: Tied items receive the average of their ordinal positions
+                                (AKA "1 2.5 2.5 4" ranking).
                             Note that tied values with the same rank are sorted alphabetically.
                             [default: dense]
     --pct-dec-places <arg>  The number of decimal places to round the percentage to.
@@ -138,9 +142,9 @@ frequency options:
 
                             JSON OUTPUT OPTIONS:
     --json                  Output frequency table as nested JSON instead of CSV.
-                            The JSON output includes row count, field count & each field's
-                            data type, cardinality, null count, sparsity, uniqueness_ratio
-                            and its stats.
+                            The JSON output also includes additional metadata:
+                            row count, field count & data type, cardinality, null count, sparsity,
+                            uniqueness_ratio & some additional stats based on the stats cache.
     --pretty-json           Same as --json but pretty prints the JSON output.
     --no-stats              When using the JSON output mode, do not include stats.
 

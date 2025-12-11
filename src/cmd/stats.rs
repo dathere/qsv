@@ -808,6 +808,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_percentile_list = "20,40,60,80".to_string();
     }
 
+    // validate percentile list
+    let percentile_list = args.flag_percentile_list.split(',').collect::<Vec<&str>>();
+    for p in percentile_list {
+        if fast_float2::parse::<f64, &[u8]>(p.trim().as_bytes()).is_err() {
+            return fail_incorrectusage_clierror!(
+                "Invalid percentile list: {}: {}",
+                args.flag_percentile_list,
+                p
+            );
+        }
+    }
+
     // inferring boolean requires inferring cardinality
     if args.flag_infer_boolean {
         if !args.flag_cardinality {
@@ -3222,29 +3234,39 @@ impl Stats {
         if let Some(v) = self.unsorted_stats.as_mut() {
             match typ {
                 TInteger | TFloat | TDate | TDateTime => {
-                    let percentile_list = self
+                    // Parse percentile list, preserving both original labels and u8 values
+                    let (percentile_labels, percentile_list): (Vec<String>, Vec<u8>) = self
                         .which
                         .percentile_list
                         .split(',')
-                        .filter_map(|p: &str| fast_float2::parse(p).ok())
-                        .map(|p: f64| p as u8)
-                        .collect::<Vec<_>>();
+                        .filter_map(|p: &str| {
+                            fast_float2::parse(p.trim())
+                                .ok()
+                                .map(|p_val: f64| (p.trim().to_string(), p_val as u8))
+                        })
+                        .unzip();
 
                     if let Some(percentile_values) = v.custom_percentiles(&percentile_list) {
                         let formatted_values = if typ == TDateTime || typ == TDate {
-                            percentile_values
+                            percentile_labels
                                 .iter()
-                                .map(|p| {
+                                .zip(percentile_values.iter())
+                                .map(|(label, p)| {
                                     // Explicitly cast f64 to i64 for timestamp conversion
                                     #[allow(clippy::cast_possible_truncation)]
                                     let ts = p.round() as i64;
-                                    timestamp_ms_to_rfc3339(ts, typ)
+                                    let formatted_value = timestamp_ms_to_rfc3339(ts, typ);
+                                    format!("{label}: {formatted_value}")
                                 })
                                 .collect::<Vec<_>>()
                         } else {
-                            percentile_values
+                            percentile_labels
                                 .iter()
-                                .map(|p| util::round_num(*p, round_places))
+                                .zip(percentile_values.iter())
+                                .map(|(label, p)| {
+                                    let formatted_value = util::round_num(*p, round_places);
+                                    format!("{label}: {formatted_value}")
+                                })
                                 .collect::<Vec<_>>()
                         };
                         record.push_field(&formatted_values.join(stats_separator));

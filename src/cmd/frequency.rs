@@ -713,7 +713,8 @@ impl Args {
                 rust_decimal::RoundingStrategy::MidpointAwayFromZero,
             )
             .normalize();
-        if final_pct_decimal.fract().to_string().len() > abs_dec_places as usize {
+        // Optimize: Check scale directly instead of converting to string for length check
+        if final_pct_decimal.scale() > abs_dec_places {
             final_pct_decimal
                 .round_dp_with_strategy(abs_dec_places, RoundingStrategy::MidpointAwayFromZero)
                 .normalize()
@@ -815,7 +816,8 @@ impl Args {
                 for (count, mut group) in count_groups {
                     group.sort_unstable();
 
-                    for byte_string in &group {
+                    // Iterate by value to move instead of clone
+                    for byte_string in group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;
                         pct_sum += pct;
@@ -823,7 +825,7 @@ impl Args {
                         if byte_string.is_empty() {
                             counts_final.push((null_val.clone(), count, pct, current_rank));
                         } else {
-                            counts_final.push((byte_string.clone(), count, pct, current_rank));
+                            counts_final.push((byte_string, count, pct, current_rank));
                         }
                     }
                     current_rank += 1.0;
@@ -836,7 +838,8 @@ impl Args {
                     group.sort_unstable();
                     let group_len = group.len();
 
-                    for byte_string in &group {
+                    // Iterate by value to move instead of clone
+                    for byte_string in group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;
                         pct_sum += pct;
@@ -844,7 +847,7 @@ impl Args {
                         if byte_string.is_empty() {
                             counts_final.push((null_val.clone(), count, pct, current_rank));
                         } else {
-                            counts_final.push((byte_string.clone(), count, pct, current_rank));
+                            counts_final.push((byte_string, count, pct, current_rank));
                         }
                     }
                     current_rank += group_len as f64;
@@ -858,7 +861,8 @@ impl Args {
                     let group_len = group.len();
                     let max_rank = current_rank + group_len as f64 - 1.0;
 
-                    for byte_string in &group {
+                    // Iterate by value to move instead of clone
+                    for byte_string in group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;
                         pct_sum += pct;
@@ -866,7 +870,7 @@ impl Args {
                         if byte_string.is_empty() {
                             counts_final.push((null_val.clone(), count, pct, max_rank));
                         } else {
-                            counts_final.push((byte_string.clone(), count, pct, max_rank));
+                            counts_final.push((byte_string, count, pct, max_rank));
                         }
                     }
                     current_rank += group_len as f64;
@@ -878,7 +882,8 @@ impl Args {
                 for (count, mut group) in count_groups {
                     group.sort_unstable();
 
-                    for byte_string in &group {
+                    // Iterate by value to move instead of clone
+                    for byte_string in group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;
                         pct_sum += pct;
@@ -886,7 +891,7 @@ impl Args {
                         if byte_string.is_empty() {
                             counts_final.push((null_val.clone(), count, pct, current_rank));
                         } else {
-                            counts_final.push((byte_string.clone(), count, pct, current_rank));
+                            counts_final.push((byte_string, count, pct, current_rank));
                         }
                         current_rank += 1.0;
                     }
@@ -900,7 +905,8 @@ impl Args {
                     let group_len = group.len();
                     let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
 
-                    for byte_string in &group {
+                    // Iterate by value to move instead of clone
+                    for byte_string in group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;
                         pct_sum += pct;
@@ -908,7 +914,7 @@ impl Args {
                         if byte_string.is_empty() {
                             counts_final.push((null_val.clone(), count, pct, avg_rank));
                         } else {
-                            counts_final.push((byte_string.clone(), count, pct, avg_rank));
+                            counts_final.push((byte_string, count, pct, avg_rank));
                         }
                     }
                     current_rank += group_len as f64;

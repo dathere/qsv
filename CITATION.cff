@@ -25,7 +25,9 @@ keywords:
   - data wrangling
   - spreadsheet
   - rust
-license: Unlicense
+license:
+  - Unlicense
+  - MIT
 commit: 1b160d0903e808f0cf335b69c97bc3b6dfd20256
 version: 11.0.2
 date-released: '2025-12-08'

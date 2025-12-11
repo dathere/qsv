@@ -3023,6 +3023,22 @@ fn stats_percentiles_regular_list_still_works() {
 }
 
 #[test]
+fn stats_percentiles_invalid_list() {
+    let wrk = Workdir::new("stats_percentiles_invalid_list");
+    wrk.create(
+        "data.csv",
+        vec![svec!["n"], svec!["1"], svec!["2"], svec!["3"]],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("10,twenty,30,40,50,60,70,80,90,100");
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
 fn stats_infer_boolean_prefix_pattern() {
     let wrk = Workdir::new("stats_infer_boolean_prefix_pattern");
     let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");

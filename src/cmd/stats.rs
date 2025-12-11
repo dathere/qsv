@@ -808,6 +808,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_percentile_list = "20,40,60,80".to_string();
     }
 
+    // validate percentile list
+    let percentile_list = args.flag_percentile_list.split(',').collect::<Vec<&str>>();
+    for p in percentile_list {
+        if fast_float2::parse::<f64, &[u8]>(p.trim().as_bytes()).is_err() {
+            return fail_incorrectusage_clierror!(
+                "Invalid percentile list: {}: {}",
+                args.flag_percentile_list,
+                p
+            );
+        }
+    }
+
     // inferring boolean requires inferring cardinality
     if args.flag_infer_boolean {
         if !args.flag_cardinality {

@@ -291,6 +291,7 @@ use polars::{
     prelude::*,
     sql::SQLContext,
 };
+use polars_parquet::write::{GzipLevel, ZstdLevel};
 use regex::Regex;
 use serde::Deserialize;
 

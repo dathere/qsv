@@ -225,10 +225,7 @@ rand = "0.9"
 rand_hc = "0.4"
 rand_xoshiro = "0.7"
 rayon = "1.11"
-redis = { version = "0.32", features = [
-    "ahash",
-    "tcp_nodelay",
-], default-features = false }
+redis = { version = "1", features = ["ahash"], default-features = false }
 regex = "1"
 reqwest = { version = "0.12", features = [
     "blocking",
@@ -317,8 +314,8 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }
 
-# use latest upstream now that our PR is merged, but we're still awaiting a new release
-cached = { git = "https://github.com/jaemk/cached", rev = "0b6a255" }
+# use fork with updated redis 1.0 dependency & client-side caching features
+cached = { git = "https://github.com/nihohit/cached", branch = "client-side-caching" }
 
 # Use latest upstream with row marking feature & fixes. Our PR has been merged but awaiting a new release
 csvlens = { git = "https://github.com/YS-L/csvlens", rev = "0948880", optional = true }

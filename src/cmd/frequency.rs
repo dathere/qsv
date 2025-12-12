@@ -37,13 +37,13 @@ and pre-populate the stats cache (`qsv stats data.csv --cardinality --stats-json
 BEFORE running `frequency`.
 
 MEMORY-AWARE CHUNKING:
-When working with large datasets, memory-aware chunking is automatically enabled. Chunk size
-is dynamically calculated based on available memory and record sampling.
+When working with large datasets, memory-aware chunking is automatically enabled to handle
+files larger than available memory. Chunk size is dynamically calculated based on available
+memory and record sampling.
+
 You can override this behavior by setting the QSV_FREQ_CHUNK_MEMORY_MB environment variable.
 (set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk,
 or -1 for CPU-based chunking (1 chunk = num records/number of CPUs)), or by setting the --jobs option.
-When QSV_FREQ_CHUNK_MEMORY_MB is set to a value that cannot be parsed as u64 (e.g., -1 or
-any invalid/non-positive value), use CPU-based chunking.
 
 NOTE: "Complete" Frequency Tables:
 
@@ -142,11 +142,11 @@ frequency options:
 
                             JSON OUTPUT OPTIONS:
     --json                  Output frequency table as nested JSON instead of CSV.
-                            The JSON output includes additional metadata: row count, field count,
-                            data type, cardinality, null count, sparsity, uniqueness_ratio and
-                            17 additional stats (e.g. sum, min, max, range, sort_order, mean, sem, etc.).
+                            The JSON output also includes additional metadata:
+                            row count, field count & data type, cardinality, null count, sparsity,
+                            uniqueness_ratio & some additional stats based on the stats cache.
     --pretty-json           Same as --json but pretty prints the JSON output.
-    --no-stats              When using the JSON output mode, do not include the additional stats.
+    --no-stats              When using the JSON output mode, do not include stats.
 
 Common options:
     -h, --help             Display this message
@@ -726,52 +726,12 @@ impl Args {
 
     #[inline]
     fn counts(&self, ftab: &FTable) -> Vec<(ByteString, u64, f64, f64)> {
-        // Get cardinality to decide whether to use optimized top_n/bottom_n
-        let cardinality = ftab.len();
-        let abs_limit = self.flag_limit.unsigned_abs();
-
-        // Determine if we should use top_n/bottom_n optimization:
-        // - Only when limit > 0 (positive limit)
-        // - When limit is significantly smaller than cardinality (avoid when limit >=
-        //   cardinality/4)
-        // - Skip for very small cardinalities (< 1000) where parallel sort overhead is minimal
-        // - Skip when limit_threshold would prevent applying limits anyway
-        let use_optimization = self.flag_limit > 0
-            && cardinality > 1000
-            && abs_limit > 0
-            && abs_limit < cardinality.saturating_div(4)
-            && (self.flag_lmt_threshold == 0 || self.flag_lmt_threshold >= cardinality);
-
-        let (mut counts, total_count) = if use_optimization {
-            // Use optimized top_n/bottom_n instead of sorting everything
-            let counts = if self.flag_asc {
-                // Get least frequent items (ascending order)
-                ftab.bottom_n(abs_limit)
-            } else {
-                // Get most frequent items (descending order)
-                ftab.top_n(abs_limit)
-            };
-
-            // top_n/bottom_n return Vec<(&Vec<u8>, u64)> which matches par_frequent return type
-            // The BinaryHeap in top_n/bottom_n should already sort ties alphabetically since
-            // tuples compare lexicographically, matching par_frequent behavior
-            // However, we need to ensure the ordering is correct:
-            // - top_n returns descending (most frequent first) - matches par_frequent(false)
-            // - bottom_n returns ascending (least frequent first) - matches par_frequent(true)
-            // Both already have alphabetical tie-breaking built in via tuple comparison
-
-            let total_count = ftab.total_count();
-            (counts, total_count)
+        let (mut counts, total_count) = if self.flag_asc {
+            // parallel sort in ascending order - least frequent values first
+            ftab.par_frequent(true)
         } else {
-            // Use par_frequent for full sort (when limit is 0, negative, or large relative to
-            // cardinality)
-            if self.flag_asc {
-                // parallel sort in ascending order - least frequent values first
-                ftab.par_frequent(true)
-            } else {
-                // parallel sort in descending order - most frequent values first
-                ftab.par_frequent(false)
-            }
+            // parallel sort in descending order - most frequent values first
+            ftab.par_frequent(false)
         };
 
         // check if we need to apply limits
@@ -779,26 +739,14 @@ impl Args {
         if self.flag_lmt_threshold == 0 || self.flag_lmt_threshold >= unique_counts_len {
             // check if the column has all unique values
             // i.e., counts vec has a count of 1, indicating all unique values
-            // Note: When using optimization, we only have a subset, so we can only check
-            // if the visible items suggest all unique. For full par_frequent, we have all items.
-            let all_unique = if use_optimization {
-                // With optimization, we can't reliably determine if ALL values are unique
-                // from just the top N. Check if the last/first item has count 1 as a heuristic.
-                // If it does, it might be all unique, but we can't be certain.
-                // For safety, we'll be conservative and only treat as all_unique if
-                // we got all items (limit >= cardinality), which shouldn't happen with
-                // optimization.
-                false // Conservative: assume not all unique when using optimization
+            let all_unique = counts[if self.flag_asc {
+                unique_counts_len - 1
             } else {
-                // With full par_frequent, we can check reliably
-                counts[if self.flag_asc {
-                    unique_counts_len - 1
-                } else {
-                    0
-                }]
-                .1 == 1
-            };
+                0
+            }]
+            .1 == 1;
 
+            let abs_limit = self.flag_limit.unsigned_abs();
             let unique_limited = if all_unique
                 && self.flag_limit > 0
                 && self.flag_unq_limit != abs_limit
@@ -811,17 +759,13 @@ impl Args {
             };
 
             // check if we need to limit the number of values
-            // Note: When using optimization, we already have the limited set, so skip truncation
-            if !use_optimization {
-                if self.flag_limit > 0 {
-                    counts.truncate(abs_limit);
-                } else if self.flag_limit < 0 && !unique_limited {
-                    // if limit < 0, only return values with an occurrence count >= abs value of
-                    // limit Only do this if we haven't already unique limited
-                    // the values
-                    let count_limit = abs_limit as u64;
-                    counts.retain(|(_, count)| *count >= count_limit);
-                }
+            if self.flag_limit > 0 {
+                counts.truncate(abs_limit);
+            } else if self.flag_limit < 0 && !unique_limited {
+                // if limit < 0, only return values with an occurrence count >= abs value of limit
+                // Only do this if we haven't already unique limited the values
+                let count_limit = abs_limit as u64;
+                counts.retain(|(_, count)| *count >= count_limit);
             }
         }
 
@@ -870,9 +814,6 @@ impl Args {
                 // Dense ranking (1223)
                 // Rank increments by 1 for each distinct count value
                 for (count, mut group) in count_groups {
-                    // sort the group alphabetically
-                    // since tied values are typically only a few, it's
-                    // not worth the overhead of a parallel sort
                     group.sort_unstable();
 
                     // Iterate by value to move instead of clone

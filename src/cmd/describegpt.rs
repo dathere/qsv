@@ -210,6 +210,11 @@ describegpt options:
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
                            Try to follow the syntax here -
                            https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
+  --export-prompt <file>   Export the default prompts to the specified file that
+                           can be used with the --prompt-file option.
+                           The file will be saved with a .toml extension.
+                           If the file already exists, it will be overwritten.
+                           It will exit after exporting the prompts.
 
                            CACHING OPTIONS:
     --no-cache             Disable default disk cache.
@@ -314,6 +319,7 @@ struct Args {
     flag_max_tokens:       u32,
     flag_timeout:          u16,
     flag_user_agent:       Option<String>,
+    flag_export_prompt:    Option<String>,
     flag_no_cache:         bool,
     flag_disk_cache_dir:   Option<String>,
     flag_redis_cache:      bool,
@@ -749,6 +755,11 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
     fail_clierror!("Invalid model: {given_model}\n  Valid models: {models_list}")
 }
 
+/// Returns the default prompt file content as a string.
+fn get_default_prompt_file_content() -> &'static str {
+    include_str!("../../resources/describegpt_defaults.toml")
+}
+
 /// Retrieves or initializes a prompt file configuration from either a provided file or defaults.
 ///
 /// # Arguments
@@ -786,7 +797,7 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
             &fs::read_to_string(prompt_file)?
         } else {
             // If no prompt file is provided, use the default prompt file
-            include_str!("../../resources/describegpt_defaults.toml")
+            get_default_prompt_file_content()
         };
 
         // Try to parse prompt file as TOML
@@ -3516,6 +3527,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Initialize the global qsv path
     QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
+
+    // If --export-prompt is set, export the default prompts and exit
+    if let Some(file_path) = &args.flag_export_prompt {
+        let default_prompts = get_default_prompt_file_content();
+
+        // Ensure the file path has a .toml extension
+        let output_path = Path::new(file_path);
+        let output_path = if output_path.extension().and_then(|ext| ext.to_str()) == Some("toml") {
+            output_path.to_path_buf()
+        } else {
+            output_path.with_extension("toml")
+        };
+
+        // Write the default prompts to the file
+        fs::write(&output_path, default_prompts)?;
+
+        print_status(
+            &format!("Exported default prompts to: {}", output_path.display()),
+            None,
+        );
+
+        return Ok(());
+    }
 
     // If --format tsv is used, require --output option
     if get_output_format(&args)? == OutputFormat::Tsv && args.flag_output.is_none() {

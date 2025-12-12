@@ -37,9 +37,8 @@ and pre-populate the stats cache (`qsv stats data.csv --cardinality --stats-json
 BEFORE running `frequency`.
 
 MEMORY-AWARE CHUNKING:
-When working with large datasets, memory-aware chunking is automatically enabled to handle
-files larger than available memory. Chunk size is dynamically calculated based on available
-memory and record sampling.
+When working with large datasets, memory-aware chunking is automatically enabled. Chunk size
+is dynamically calculated based on available memory and record sampling.
 
 You can override this behavior by setting the QSV_FREQ_CHUNK_MEMORY_MB environment variable.
 (set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk,
@@ -142,11 +141,11 @@ frequency options:
 
                             JSON OUTPUT OPTIONS:
     --json                  Output frequency table as nested JSON instead of CSV.
-                            The JSON output also includes additional metadata:
-                            row count, field count & data type, cardinality, null count, sparsity,
-                            uniqueness_ratio & some additional stats based on the stats cache.
+                            The JSON output includes additional metadata: row count, field count,
+                            data type, cardinality, null count, sparsity, uniqueness_ratio and
+                            17 additional stats (e.g. sum, min, max, range, sort_order, mean, sem, etc.).
     --pretty-json           Same as --json but pretty prints the JSON output.
-    --no-stats              When using the JSON output mode, do not include stats.
+    --no-stats              When using the JSON output mode, do not include the additional stats.
 
 Common options:
     -h, --help             Display this message
@@ -814,6 +813,9 @@ impl Args {
                 // Dense ranking (1223)
                 // Rank increments by 1 for each distinct count value
                 for (count, mut group) in count_groups {
+                    // sort the group alphabetically
+                    // since tied values are typically only a few, it's
+                    // not worth the overhead of a parallel sort
                     group.sort_unstable();
 
                     // Iterate by value to move instead of clone
@@ -838,7 +840,6 @@ impl Args {
                     group.sort_unstable();
                     let group_len = group.len();
 
-                    // Iterate by value to move instead of clone
                     for byte_string in group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;
@@ -861,7 +862,6 @@ impl Args {
                     let group_len = group.len();
                     let max_rank = current_rank + group_len as f64 - 1.0;
 
-                    // Iterate by value to move instead of clone
                     for byte_string in group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;
@@ -882,7 +882,6 @@ impl Args {
                 for (count, mut group) in count_groups {
                     group.sort_unstable();
 
-                    // Iterate by value to move instead of clone
                     for byte_string in group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;
@@ -905,7 +904,6 @@ impl Args {
                     let group_len = group.len();
                     let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
 
-                    // Iterate by value to move instead of clone
                     for byte_string in group {
                         count_sum += count;
                         pct = count as f64 * pct_factor;

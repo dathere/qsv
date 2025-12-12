@@ -1870,17 +1870,20 @@ fn get_prompt(
         )
     } else {
         // Add language instruction if provided
-        let language = if let Some(lang) = &args.flag_language {
-            lang
-        } else {
-            "English"
-        };
-        format!(
-            "Choose no more than {{NUM_TAGS}} {language}-language Tags{{JSON_ADD}} about the \
-             contents of the Dataset in descending order of importance (lowercase only and use _ \
-             to separate words) based on the Summary Statistics and Frequency Distribution about \
-             the Dataset provided below. Do not use field names in the tags."
+        "Choose no more than {{NUM_TAGS}} {{language}} Tags{{JSON_ADD}} about the contents of the \
+         Dataset in descending order of importance (lowercase only and use _ to separate words) \
+         based on the Summary Statistics and Frequency Distribution about the Dataset provided \
+         below. Do not use field names in the tags."
+            .to_string()
+    };
+
+    let (language, language_emphasis) = if let Some(lang) = &args.flag_language {
+        (
+            lang.to_string(),
+            format!(" Make sure your response is in this language: {lang}."),
         )
+    } else {
+        (String::new(), String::new())
     };
 
     // Replace variable data in prompt
@@ -1907,14 +1910,9 @@ fn get_prompt(
             } else {
                 " (in Markdown format)"
             },
-        );
-
-    // Add language instruction if provided
-    let prompt = if let Some(lang) = &args.flag_language {
-        format!("Respond only in this language: {lang}.\n\n{prompt}")
-    } else {
-        prompt
-    };
+        )
+        .replace("{LANGUAGE}", &language)
+        .replace("{LANGUAGE_EMPHASIS}", &language_emphasis);
 
     // Return prompt
     Ok((prompt, prompt_file.system_prompt.clone()))

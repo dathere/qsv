@@ -191,6 +191,9 @@ describegpt options:
     -m, --model <model>    The model to use for inferencing.
                            If the QSV_LLM_MODEL environment variable is set, it'll be used instead.
                            [default: openai/gpt-oss-20b]
+    --language <lang>      The output language. If not set, the model's default language is used.
+                           This is a function of the model and is not guaranteed to be supported
+                           by all models.
     --addl-props <json>    Additional model properties to pass to the LLM chat/completion API.
                            Various models support different properties beyond the standard ones.
                            For instance, gpt-oss-20b supports the "reasoning_effort" property.
@@ -314,6 +317,7 @@ struct Args {
     flag_fewshot_examples: bool,
     flag_base_url:         Option<String>,
     flag_model:            Option<String>,
+    flag_language:         Option<String>,
     flag_addl_props:       Option<String>,
     flag_api_key:          Option<String>,
     flag_max_tokens:       u32,
@@ -1865,13 +1869,18 @@ fn get_prompt(
              Description nor the colon."
         )
     } else {
-        // we don't use double curly braces to escape the variables in the format string
-        // because we're not using the format! macro here
-        "Choose no more than {NUM_TAGS} most thematic Tags{JSON_ADD} about the contents of the \
-         Dataset in descending order of importance (lowercase only and use _ to separate words) \
-         based on the Summary Statistics and Frequency Distribution about the Dataset provided \
-         below. Do not use field names in the tags."
-            .to_string()
+        // Add language instruction if provided
+        let language = if let Some(lang) = &args.flag_language {
+            lang
+        } else {
+            "English"
+        };
+        format!(
+            "Choose no more than {{NUM_TAGS}} {language}-language Tags{{JSON_ADD}} about the \
+             contents of the Dataset in descending order of importance (lowercase only and use _ \
+             to separate words) based on the Summary Statistics and Frequency Distribution about \
+             the Dataset provided below. Do not use field names in the tags."
+        )
     };
 
     // Replace variable data in prompt
@@ -1899,6 +1908,13 @@ fn get_prompt(
                 " (in Markdown format)"
             },
         );
+
+    // Add language instruction if provided
+    let prompt = if let Some(lang) = &args.flag_language {
+        format!("Respond only in this language: {lang}.\n\n{prompt}")
+    } else {
+        prompt
+    };
 
     // Return prompt
     Ok((prompt, prompt_file.system_prompt.clone()))
@@ -2107,10 +2123,11 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
 
     format!(
         "{file_hash};{prompt_file:?};{prompt_content:?};{max_tokens};{addl_props:?};\
-         {actual_model};{kind};{validity_flag}",
+         {actual_model};{kind};{validity_flag};{language:?}",
         prompt_file = args.flag_prompt_file,
         max_tokens = args.flag_max_tokens,
         addl_props = args.flag_addl_props,
+        language = args.flag_language,
     )
 }
 
@@ -3355,7 +3372,7 @@ fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
             let prompt_content_for_key = args.flag_prompt.as_ref();
 
             format!(
-                "{:?}{:?}{:?}{:?}{:?}{:?}{}{}",
+                "{:?}{:?}{:?}{:?}{:?}{:?}{}{}{:?}",
                 args.arg_input,
                 args.flag_prompt_file,
                 prompt_content_for_key,
@@ -3363,7 +3380,8 @@ fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
                 args.flag_addl_props,
                 &prompt_file.model,
                 kind,
-                file_hash
+                file_hash,
+                args.flag_language
             )
         };
 
@@ -3636,7 +3654,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         // For prompt kind, we need to remove cache entries with any validity flag
                         // Get the base key without validity flag
                         let base_key = format!(
-                            "{:?}{:?}{:?}{:?}{:?}{:?}{}{}",
+                            "{:?}{:?}{:?}{:?}{:?}{:?}{}{}{:?}",
                             args.arg_input,
                             args.flag_prompt_file,
                             args.flag_prompt,
@@ -3644,7 +3662,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             args.flag_addl_props,
                             prompt_file.model,
                             kind,
-                            FILE_HASH.get().unwrap_or(&String::new())
+                            FILE_HASH.get().unwrap_or(&String::new()),
+                            args.flag_language
                         );
 
                         let removed = try_remove_prompt_cache_entries(&base_key);

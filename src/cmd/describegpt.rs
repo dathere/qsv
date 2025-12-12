@@ -756,7 +756,7 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
 }
 
 /// Returns the default prompt file content as a string.
-fn get_default_prompt_file_content() -> &'static str {
+const fn get_default_prompt_file_content() -> &'static str {
     include_str!("../../resources/describegpt_defaults.toml")
 }
 

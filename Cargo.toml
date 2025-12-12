@@ -126,7 +126,7 @@ futures-util = "0.3"
 gender_guesser = { version = "0.2", optional = true }
 geosuggest-core = { version = "0.8", features = ["geoip2"], optional = true }
 geosuggest-utils = { version = "0.8", optional = true }
-geozero = { version = "0.14.0", features = [
+geozero = { version = "0.15", features = [
     "with-csv",
     "with-shp",
 ], optional = true }
@@ -324,9 +324,6 @@ csvlens = { git = "https://github.com/YS-L/csvlens", rev = "0948880", optional =
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88", optional = true }
-
-# use upstream geozero with unreleased fixes
-geozero = { git = "https://github.com/georust/geozero", rev = "572cfc2", optional = true }
 
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }

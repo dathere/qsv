@@ -2868,8 +2868,9 @@ dependencies = [
 
 [[package]]
 name = "geozero"
-version = "0.14.0"
-source = "git+https://github.com/georust/geozero?rev=572cfc2#572cfc20fed8742004a0ca0da1b12852ddd0f227"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db5eda63aa99ac06160fd53328ed75c34f14e3196d3f56a3649e247ed796e54b"
 dependencies = [
  "byteorder",
  "csv",

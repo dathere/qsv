@@ -316,8 +316,8 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # use fork with updated redis 1.0 dependency & client-side caching features
 cached = { git = "https://github.com/nihohit/cached", branch = "client-side-caching" }
 
-# Use latest upstream with row marking feature & fixes. Our PR has been merged but awaiting a new release
-csvlens = { git = "https://github.com/YS-L/csvlens", rev = "0948880", optional = true }
+# Use our patched fork of csvlens with clap cargo behind cli feature until our PR is merged
+csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "gate-clap_cargo-behind-cli-feature", optional = true }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88", optional = true }

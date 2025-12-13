@@ -167,11 +167,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 indicatif::HumanBytes(compressed_bytes),
                 indicatif::HumanBytes(input_bytes),
                 compression_ratio,
-                indicatif::HumanBytes(
-                    input_bytes
-                        .checked_sub(compressed_bytes)
-                        .unwrap_or_default()
-                ),
+                indicatif::HumanBytes(input_bytes.saturating_sub(compressed_bytes)),
                 (1.0 - (compressed_bytes as f64 / input_bytes as f64)) * 100.0
             );
         }
@@ -204,11 +200,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 indicatif::HumanBytes(input_bytes),
                 indicatif::HumanBytes(decompressed_bytes),
                 compression_ratio,
-                indicatif::HumanBytes(
-                    decompressed_bytes
-                        .checked_sub(input_bytes)
-                        .unwrap_or_default()
-                ),
+                indicatif::HumanBytes(decompressed_bytes.saturating_sub(input_bytes)),
                 (1.0 - (input_bytes as f64 / decompressed_bytes as f64)) * 100.0
             );
         }

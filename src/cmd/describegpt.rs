@@ -1825,48 +1825,50 @@ fn get_prompt(
             }
         };
 
-        // Parse CSV format: skip header, use first column as tag, second column as description
-        let conf = Config::new(Some(tag_vocab_filepath).as_ref()).no_headers(false);
+        // Validate tag vocabulary CSV file
+        let conf = Config::new(Some(tag_vocab_filepath.clone()).as_ref()).no_headers(false);
         let mut rdr = conf
             .reader()
             .map_err(|e| CliError::Other(format!("Failed to read tag vocabulary CSV: {e}")))?;
 
-        let mut formatted_lines = Vec::new();
-        for result in rdr.records() {
-            let record = result.map_err(|e| {
+        // validate that the tag vocabulary CSV file has at least 2 columns and have the expected
+        // column names
+        let headers = rdr.headers()?.clone();
+        if headers.len() != 2
+            || headers.get(0).unwrap_or("").trim() != "tag"
+            || headers.get(1).unwrap_or("").trim() != "description"
+        {
+            return fail_incorrectusage_clierror!(
+                "Tag vocabulary CSV must have exactly 2 columns (tag and description)"
+            );
+        }
+
+        // scan the tag vocabulary CSV file to see if each record is valid
+        for rec_iter in rdr.records() {
+            let record = rec_iter.map_err(|e| {
                 CliError::Other(format!("Failed to parse tag vocabulary CSV record: {e}"))
             })?;
-
             if record.len() < 2 {
                 return fail_incorrectusage_clierror!(
                     "Tag vocabulary CSV must have at least 2 columns (tag and description)"
                 );
             }
-
-            let tag = record.get(0).unwrap_or("").trim();
-            let description = record.get(1).unwrap_or("").trim();
-
-            if !tag.is_empty() {
-                formatted_lines.push(format!("{tag}: {description}"));
-            }
         }
+        // close the reader
+        drop(rdr);
 
-        if formatted_lines.is_empty() {
-            return fail_incorrectusage_clierror!("Tag vocabulary CSV file contains no valid tags");
-        }
-
-        let tag_vocab_formatted = formatted_lines.join("\n");
+        // and just load the tag vocabulary CSV file into a string
+        let tag_vocab_content = fs::read_to_string(tag_vocab_filepath)
+            .map_err(|e| CliError::Other(format!("Failed to read tag vocabulary CSV file: {e}")))?;
 
         // we use double curly braces to escape the variables in the format string
         // otherwise, the format! macro will try to interpolate the variables into the string
         format!(
             "Limit your choices to only {{NUM_TAGS}} unique Tags{{JSON_ADD}} in the following Tag \
              Vocabulary, in order of relevance, based on the Summary Statistics and Frequency \
-             Distribution about the Dataset provided further \
-             below:\n\n{tag_vocab_formatted}\n\nEach Tag in the Tag Vocabulary is separated by a \
-             colon from its corresponding Description. Take the Description into account to guide \
-             your Tag choices.\n\nWhen listing the chosen Tags, only use the Tag, not the \
-             Description nor the colon."
+             Distribution about the Dataset provided further below.\n\nThe Tag Vocabulary is a \
+             CSV with 2 columns: Tag and Description. Take the Description into account to guide \
+             your Tag choices.\n\nTag Vocabulary (CSV):\n{tag_vocab_content}\n"
         )
     } else {
         // Add language instruction if provided, and there is no tag vocabulary
@@ -1881,7 +1883,15 @@ fn get_prompt(
     let (language, language_emphasis) = if let Some(lang) = &args.flag_language {
         (
             lang.to_string(),
-            format!(" Make sure your response is in this language: {lang}."),
+            if prompt_type == PromptType::Tags {
+                // super-specific, explicit language guidance for tag generation
+                // when language is set as some models are still prone to generate
+                // tags in their default language
+                format!(" Make sure your tag choices are in this language: {lang}.")
+            } else {
+                // generic language guidance for other prompt types
+                format!(" Make sure your response is in this language: {lang}.")
+            },
         )
     } else {
         (String::new(), String::new())

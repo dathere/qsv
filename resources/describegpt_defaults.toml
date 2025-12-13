@@ -8,20 +8,26 @@ model = "openai/gpt-oss-20b"
 timeout = 300
 format = "markdown"
 
-### NOTE: The following VARIABLES are automatically replaced by the qsv describegpt command in the prompts below:
-# {STATS}
-# {FREQUENCY}
-# {DICTIONARY}
-# {JSON_ADD} - if --json set
-# {INPUT_TABLE_NAME}
+### NOTE: The following VARIABLES are replaced by the describegpt at runtime in the prompts below:
+# {STATS} - summary statistics in CSV format
+# {FREQUENCY} - frequency distribution in CSV format
+# {DICTIONARY} - data dictionary in JSON format
+# {JSON_ADD} - if --json option is set, inserts (note leading space)
+#    ` (in valid, pretty-printed JSON format, ensuring string values are properly escaped)`
+#   otherwise inserts
+#    ` (in Markdown format)`
+# {INPUT_TABLE_NAME} - the name of the input CSV file.
+#    In DuckDB SQL mode, this is replaced with the read_csv_auto function call,
+#     e,g: `read_csv_auto('input.csv')`.
+#    In Polars SQL --prompt mode, this is replaced with the table alias, e.g. `_t_1`.
 # {GENERATED_BY_SIGNATURE} - replaced with Attribution metadata and warning
 # {DUCKDB_VERSION} - only up to the minor version - e.g "1.3"
 # {TOP_N} - The enum threshold for the frequency command
 # {NUM_TAGS} - The maximum number of tags to infer when the --tags option is used
 # {TAG_VOCAB} - The tag vocabulary file
-# {LANGUAGE} - The language to use for the response
+# {LANGUAGE} - The language to use for the response. Has a leading space.
 # {LANGUAGE_EMPHASIS} - A sentence to emphasize the language requirement.
-#                      "Make sure your response is in this language: {LANGUAGE}."
+#                      "Make sure your response is in this language: Spanish."
 # {SAMPLE_FILE} - The temporary file containing a 1000 row random sample of the input CSV file.
 #                 Only present if --prompt is set.
 
@@ -47,7 +53,7 @@ For Dataset fields with all unique values (i.e. cardinality is equal to the numb
 """
 
 dictionary_prompt = """
-Generate {LANGUAGE} Labels and Descriptions for each field in the Dataset based on the Summary Statistics and Frequency Distribution provided below.
+Generate{LANGUAGE} Labels and Descriptions for each field in the Dataset based on the Summary Statistics and Frequency Distribution provided below.
 
 For each field, provide:
 - Label: a human-friendly label for this field (e.g., "Unique Key", "Created Date", "Agency Name")
@@ -65,7 +71,7 @@ Return the results in JSON format where each field name is a key, and the value 
   }}
 }}
 
-Generate {LANGUAGE} Labels and Descriptions for ALL fields in the Dataset. Use the Summary Statistics and Frequency Distribution to understand the context and meaning of each field.
+Generate{LANGUAGE} Labels and Descriptions for ALL fields in the Dataset. Use the Summary Statistics and Frequency Distribution to understand the context and meaning of each field.
 
 {LANGUAGE_EMPHASIS} Let's think step by step, correcting yourself as needed.
 
@@ -81,7 +87,7 @@ Frequency Distribution (CSV):
 """
 
 description_prompt = """
-Generate a {LANGUAGE} Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
+Generate a{LANGUAGE} Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
 
 {LANGUAGE_EMPHASIS} Let's think step by step.
 
@@ -167,7 +173,7 @@ Frequency Distribution (CSV):
 
 {FREQUENCY}
 
-Data Dictionary:
+Data Dictionary (JSON):
 
 {DICTIONARY}"""
 

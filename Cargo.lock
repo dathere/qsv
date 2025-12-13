@@ -1847,7 +1847,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.14.0"
-source = "git+https://github.com/jqnatividad/csvlens?branch=gate-clap_cargo-behind-cli-feature#fb7a9b80f388432106eb82f5c00ca5bb08315314"
+source = "git+https://github.com/YS-L/csvlens?rev=57eeab5#57eeab5047a87d066336a89eb90a78eda9b50261"
 dependencies = [
  "ansi-to-tui",
  "anyhow",

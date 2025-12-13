@@ -191,6 +191,9 @@ describegpt options:
     -m, --model <model>    The model to use for inferencing.
                            If the QSV_LLM_MODEL environment variable is set, it'll be used instead.
                            [default: openai/gpt-oss-20b]
+    --language <lang>      The output language. If not set, the model's default language is used.
+                           This is a function of the model and is not guaranteed to be supported
+                           by all models.
     --addl-props <json>    Additional model properties to pass to the LLM chat/completion API.
                            Various models support different properties beyond the standard ones.
                            For instance, gpt-oss-20b supports the "reasoning_effort" property.
@@ -314,6 +317,7 @@ struct Args {
     flag_fewshot_examples: bool,
     flag_base_url:         Option<String>,
     flag_model:            Option<String>,
+    flag_language:         Option<String>,
     flag_addl_props:       Option<String>,
     flag_api_key:          Option<String>,
     flag_max_tokens:       u32,
@@ -1821,57 +1825,76 @@ fn get_prompt(
             }
         };
 
-        // Parse CSV format: skip header, use first column as tag, second column as description
-        let conf = Config::new(Some(tag_vocab_filepath).as_ref()).no_headers(false);
+        // Validate tag vocabulary CSV file
+        let conf = Config::new(Some(tag_vocab_filepath.clone()).as_ref()).no_headers(false);
         let mut rdr = conf
             .reader()
             .map_err(|e| CliError::Other(format!("Failed to read tag vocabulary CSV: {e}")))?;
 
-        let mut formatted_lines = Vec::new();
-        for result in rdr.records() {
-            let record = result.map_err(|e| {
+        // validate that the tag vocabulary CSV file has at least 2 columns and have the expected
+        // column names
+        let headers = rdr.headers()?.clone();
+        if headers.len() != 2
+            || headers.get(0).unwrap_or("").trim() != "tag"
+            || headers.get(1).unwrap_or("").trim() != "description"
+        {
+            return fail_incorrectusage_clierror!(
+                "Tag vocabulary CSV must have exactly 2 columns (tag and description)"
+            );
+        }
+
+        // scan the tag vocabulary CSV file to see if each record is valid
+        for rec_iter in rdr.records() {
+            let record = rec_iter.map_err(|e| {
                 CliError::Other(format!("Failed to parse tag vocabulary CSV record: {e}"))
             })?;
-
             if record.len() < 2 {
                 return fail_incorrectusage_clierror!(
                     "Tag vocabulary CSV must have at least 2 columns (tag and description)"
                 );
             }
-
-            let tag = record.get(0).unwrap_or("").trim();
-            let description = record.get(1).unwrap_or("").trim();
-
-            if !tag.is_empty() {
-                formatted_lines.push(format!("{tag}: {description}"));
-            }
         }
+        // close the reader
+        drop(rdr);
 
-        if formatted_lines.is_empty() {
-            return fail_incorrectusage_clierror!("Tag vocabulary CSV file contains no valid tags");
-        }
-
-        let tag_vocab_formatted = formatted_lines.join("\n");
+        // and just load the tag vocabulary CSV file into a string
+        let tag_vocab_content = fs::read_to_string(tag_vocab_filepath)
+            .map_err(|e| CliError::Other(format!("Failed to read tag vocabulary CSV file: {e}")))?;
 
         // we use double curly braces to escape the variables in the format string
         // otherwise, the format! macro will try to interpolate the variables into the string
         format!(
             "Limit your choices to only {{NUM_TAGS}} unique Tags{{JSON_ADD}} in the following Tag \
              Vocabulary, in order of relevance, based on the Summary Statistics and Frequency \
-             Distribution about the Dataset provided further \
-             below:\n\n{tag_vocab_formatted}\n\nEach Tag in the Tag Vocabulary is separated by a \
-             colon from its corresponding Description. Take the Description into account to guide \
-             your Tag choices.\n\nWhen listing the chosen Tags, only use the Tag, not the \
-             Description nor the colon."
+             Distribution about the Dataset provided further below.\n\nThe Tag Vocabulary is a \
+             CSV with 2 columns: Tag and Description. Take the Description into account to guide \
+             your Tag choices.\n\nTag Vocabulary (CSV):\n{tag_vocab_content}\n"
         )
     } else {
-        // we don't use double curly braces to escape the variables in the format string
-        // because we're not using the format! macro here
-        "Choose no more than {NUM_TAGS} most thematic Tags{JSON_ADD} about the contents of the \
-         Dataset in descending order of importance (lowercase only and use _ to separate words) \
-         based on the Summary Statistics and Frequency Distribution about the Dataset provided \
-         below. Do not use field names in the tags."
+        // Add language instruction if provided, and there is no tag vocabulary
+        // note that the curly braces are not escaped, as we are not using the format! macro
+        "Choose no more than {NUM_TAGS}{LANGUAGE} Tags{JSON_ADD} about the contents of the Dataset \
+         in descending order of importance (lowercase only and use _ to separate words) based on \
+         the Summary Statistics and Frequency Distribution about the Dataset provided below. Do \
+         not use field names in the tags."
             .to_string()
+    };
+
+    let (language, language_emphasis) = if let Some(lang) = &args.flag_language {
+        (
+            lang.to_string(),
+            if prompt_type == PromptType::Tags {
+                // super-specific, explicit language guidance for tag generation
+                // when language is set as some models are still prone to generate
+                // tags in their default language
+                format!(" Make sure your tag choices are in this language: {lang}.")
+            } else {
+                // generic language guidance for other prompt types
+                format!(" Make sure your response is in this language: {lang}.")
+            },
+        )
+    } else {
+        (String::new(), String::new())
     };
 
     // Replace variable data in prompt
@@ -1898,7 +1921,9 @@ fn get_prompt(
             } else {
                 " (in Markdown format)"
             },
-        );
+        )
+        .replace("{LANGUAGE}", &language)
+        .replace("{LANGUAGE_EMPHASIS}", &language_emphasis);
 
     // Return prompt
     Ok((prompt, prompt_file.system_prompt.clone()))
@@ -2107,10 +2132,11 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
 
     format!(
         "{file_hash};{prompt_file:?};{prompt_content:?};{max_tokens};{addl_props:?};\
-         {actual_model};{kind};{validity_flag}",
+         {actual_model};{kind};{validity_flag};{language:?}",
         prompt_file = args.flag_prompt_file,
         max_tokens = args.flag_max_tokens,
         addl_props = args.flag_addl_props,
+        language = args.flag_language,
     )
 }
 
@@ -3355,7 +3381,7 @@ fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
             let prompt_content_for_key = args.flag_prompt.as_ref();
 
             format!(
-                "{:?}{:?}{:?}{:?}{:?}{:?}{}{}",
+                "{:?}{:?}{:?}{:?}{:?}{:?}{}{}{:?}",
                 args.arg_input,
                 args.flag_prompt_file,
                 prompt_content_for_key,
@@ -3363,7 +3389,8 @@ fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
                 args.flag_addl_props,
                 &prompt_file.model,
                 kind,
-                file_hash
+                file_hash,
+                args.flag_language
             )
         };
 
@@ -3515,6 +3542,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let start_time = Instant::now();
     let mut args: Args = util::get_args(USAGE, argv)?;
 
+    // if language is some, add a leading space to the language
+    // so the generated prompt reads correctly when language is used or not.
+    if let Some(lang) = &args.flag_language {
+        args.flag_language = Some(format!(" {}", lang.trim()));
+    }
+
     // Initialize Redis default connection string to localhost, using database 3 by default
     // when --redis-cache is enabled
     // describegpt uses db 3 by default, fetch uses db 1, and fetchpost uses db 2
@@ -3636,7 +3669,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         // For prompt kind, we need to remove cache entries with any validity flag
                         // Get the base key without validity flag
                         let base_key = format!(
-                            "{:?}{:?}{:?}{:?}{:?}{:?}{}{}",
+                            "{:?}{:?}{:?}{:?}{:?}{:?}{}{}{:?}",
                             args.arg_input,
                             args.flag_prompt_file,
                             args.flag_prompt,
@@ -3644,7 +3677,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             args.flag_addl_props,
                             prompt_file.model,
                             kind,
-                            FILE_HASH.get().unwrap_or(&String::new())
+                            FILE_HASH.get().unwrap_or(&String::new()),
+                            args.flag_language
                         );
 
                         let removed = try_remove_prompt_cache_entries(&base_key);

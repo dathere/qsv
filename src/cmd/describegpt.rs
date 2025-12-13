@@ -1869,11 +1869,12 @@ fn get_prompt(
              Description nor the colon."
         )
     } else {
-        // Add language instruction if provided
-        "Choose no more than {{NUM_TAGS}} {{LANGUAGE}} Tags{{JSON_ADD}} about the contents of the \
-         Dataset in descending order of importance (lowercase only and use _ to separate words) \
-         based on the Summary Statistics and Frequency Distribution about the Dataset provided \
-         below. Do not use field names in the tags."
+        // Add language instruction if provided, and there is no tag vocabulary
+        // note that the curly braces are not escaped, as we are not using the format! macro
+        "Choose no more than {NUM_TAGS}{LANGUAGE} Tags{JSON_ADD} about the contents of the Dataset \
+         in descending order of importance (lowercase only and use _ to separate words) based on \
+         the Summary Statistics and Frequency Distribution about the Dataset provided below. Do \
+         not use field names in the tags."
             .to_string()
     };
 
@@ -1889,7 +1890,7 @@ fn get_prompt(
     // Replace variable data in prompt
     #[allow(clippy::to_string_in_format_args)]
     #[allow(clippy::literal_string_with_formatting_args)]
-    let mut prompt = prompt
+    let prompt = prompt
         .replace("{TAG_VOCAB}", &tag_vocab)
         .replace("{NUM_TAGS}", &args.flag_num_tags.to_string())
         .replace("{STATS}", stats)
@@ -1910,9 +1911,7 @@ fn get_prompt(
             } else {
                 " (in Markdown format)"
             },
-        );
-
-    prompt = prompt
+        )
         .replace("{LANGUAGE}", &language)
         .replace("{LANGUAGE_EMPHASIS}", &language_emphasis);
 

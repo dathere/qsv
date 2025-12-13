@@ -1912,13 +1912,9 @@ fn get_prompt(
             },
         );
 
-    prompt = if args.flag_language.is_some() {
-        prompt
-            .replace("{LANGUAGE}", &language)
-            .replace("{LANGUAGE_EMPHASIS}", &language_emphasis)
-    } else {
-        prompt
-    };
+    prompt = prompt
+        .replace("{LANGUAGE}", &language)
+        .replace("{LANGUAGE_EMPHASIS}", &language_emphasis);
 
     // Return prompt
     Ok((prompt, prompt_file.system_prompt.clone()))

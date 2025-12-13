@@ -8,7 +8,7 @@ model = "openai/gpt-oss-20b"
 timeout = 300
 format = "markdown"
 
-### NOTE: The following VARIABLES are replaced by the describegpt at runtime in the prompts below:
+### NOTE: The following VARIABLES are replaced by describegpt at runtime in the prompts below:
 # {STATS} - summary statistics in CSV format
 # {FREQUENCY} - frequency distribution in CSV format
 # {DICTIONARY} - data dictionary in JSON format

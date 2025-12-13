@@ -439,6 +439,7 @@ impl OutputMode {
                         }
                     };
 
+                    #[allow(clippy::decimal_bitwise_operands)]
                     ParquetWriter::new(&mut w)
                         .with_row_group_size(Some(768 ^ 2))
                         .with_statistics(statistics_options)

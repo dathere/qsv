@@ -290,8 +290,8 @@ use polars::{
     io::avro::{AvroWriter, Compression as AvroCompression},
     prelude::*,
     sql::SQLContext,
+    polars_utils::compression::{GzipLevel, ZstdLevel},
 };
-use polars_parquet::write::{GzipLevel, ZstdLevel};
 use regex::Regex;
 use serde::Deserialize;
 

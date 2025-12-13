@@ -110,7 +110,7 @@ in one 1-8 sentence description.
 After the Description, add a section titled "Notable Characteristics" with a bulleted list of notable
 characteristics of the Dataset (e.g. the central tendency and spread of the data, the distribution shape,
 anomalies, patterns; if there are any outliers, missing values, duplicates, PII/PHI/PCI data; and
-other data quality issues that the User should be aware of).
+other data quality issues that the User should be aware of).{LANGUAGE_EMPHASIS}
 
 Add an Attribution with the placeholder "{GENERATED_BY_SIGNATURE}" at the bottom of the output.
 

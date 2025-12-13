@@ -1,4 +1,4 @@
-Generated using a Local LLM (openai/gpt-oss-20b) on LM Studio 0.3.34 Build 1 running on a Macbook Pro M4 Max 64gb/Tahoe 26.2 using [tag-vocabulary.csv](docs/tag-vocabulary.csv)
+Generated using a Local LLM (openai/gpt-oss-20b) on LM Studio 0.3.34 Build 1 running on a Macbook Pro M4 Max 64gb/Tahoe 26.2 using [tag-vocabulary.csv](tag-vocabulary.csv)
 
 ```bash
 $ QSV_LLM_BASE_URL=http://localhost:1234/v1 qsv describegpt NYC_311_SR_2010-2020-sample-1M.csv --tags \

@@ -18,7 +18,7 @@ format = "markdown"
 #    ` (in Markdown format)`
 # {INPUT_TABLE_NAME} - the name of the input CSV file.
 #    In DuckDB SQL mode, this is replaced with the read_csv_auto function call,
-#     e,g: `read_csv_auto('input.csv')`.
+#     e.g. `read_csv_auto('input.csv')`.
 #    In Polars SQL --prompt mode, this is replaced with the table alias, e.g. `_t_1`.
 # {GENERATED_BY_SIGNATURE} - replaced with Attribution metadata and warning
 # {DUCKDB_VERSION} - only up to the minor version - e.g "1.3"

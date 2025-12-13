@@ -288,9 +288,9 @@ use std::{
 
 use polars::{
     io::avro::{AvroWriter, Compression as AvroCompression},
+    polars_utils::compression::{GzipLevel, ZstdLevel},
     prelude::*,
     sql::SQLContext,
-    polars_utils::compression::{GzipLevel, ZstdLevel},
 };
 use regex::Regex;
 use serde::Deserialize;

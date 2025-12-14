@@ -111,7 +111,7 @@ After the Description, add a section titled "Notable Characteristics" with a bul
 characteristics of the Dataset (e.g. the central tendency and spread of the data, the distribution shape,
 anomalies, patterns; if there are any outliers, missing values, duplicates, PII/PHI/PCI data; and
 other data quality issues that the User should be aware of).
-{% if language %} {{ "Make sure the both Description and Notable Characteristics are in this language: " ~ language }} {% endif %}
+{% if language %} {{ "Make sure both the Description and Notable Characteristics are in this language: " ~ language }} {% endif %}
 
 Add an Attribution with the placeholder "{{ generated_by_signature }}" at the bottom of the output.
 

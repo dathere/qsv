@@ -142,7 +142,7 @@ in descending order of importance (lowercase only and use _ to separate words) b
 Summary Statistics and Frequency Distribution about the Dataset provided below.
 Do not use field names in the tags.
 
-{% if language and not tag_vocab %} Make sure your tags are in this language: {{- language -}} {% endif %}
+{% if language %} Make sure your tags are in this language: {{- language -}} {% endif %}
 {% endif %}
 
 Add an Attribution with the placeholder "{{ generated_by_signature }}" after the Tags. If generating JSON format,

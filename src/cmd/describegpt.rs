@@ -2481,7 +2481,10 @@ fn run_inference_options(
                     },
                     '"' => {
                         result.push(ch);
-                        in_string = !in_string;
+                        // Only toggle in_string if the quote is not escaped
+                        if !escape_next {
+                            in_string = !in_string;
+                        }
                     },
                     '\n' if in_string => {
                         // Escape newlines inside strings

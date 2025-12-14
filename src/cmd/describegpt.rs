@@ -1860,45 +1860,10 @@ fn get_prompt(
         drop(rdr);
 
         // and just load the tag vocabulary CSV file into a string
-        let tag_vocab_content = fs::read_to_string(tag_vocab_filepath)
-            .map_err(|e| CliError::Other(format!("Failed to read tag vocabulary CSV file: {e}")))?;
-
-        // Build tag vocab string using minijinja template syntax
-        // This will be rendered separately before being inserted into the main template
-        // we need to double escape the curly braces to account for the minijinja template syntax
-        // and format! macro
-        format!(
-            "Limit your choices to only {{{{ num_tags }}}} unique Tags{{{{ json_add }}}} in the \
-             following Tag Vocabulary, in order of relevance, based on the Summary Statistics and \
-             Frequency Distribution about the Dataset provided further below.\n\nThe Tag \
-             Vocabulary is a CSV with 2 columns: Tag and Description. Take the Description into \
-             account to guide your Tag choices.\n\nTag Vocabulary (CSV):\n{tag_vocab_content}\n"
-        )
+        fs::read_to_string(tag_vocab_filepath)
+            .map_err(|e| CliError::Other(format!("Failed to read tag vocabulary CSV file: {e}")))?
     } else {
-        // Add language instruction if provided, and there is no tag vocabulary
-        // Use minijinja template syntax
-        "Choose no more than {{ num_tags }}{{ language }} Tags{{ json_add }} about the contents of \
-         the Dataset in descending order of importance (lowercase only and use _ to separate \
-         words) based on the Summary Statistics and Frequency Distribution about the Dataset \
-         provided below. Do not use field names in the tags."
-            .to_string()
-    };
-
-    let (language, language_emphasis) = if let Some(lang) = &args.flag_language {
-        (
-            lang.to_string(),
-            if prompt_type == PromptType::Tags {
-                // super-specific, explicit language guidance for tag generation
-                // when language is set as some models are still prone to generate
-                // tags in their default language
-                format!(" Make sure your tag choices are in this language: {lang}.")
-            } else {
-                // generic language guidance for other prompt types
-                format!(" Make sure your response is in this language: {lang}.")
-            },
-        )
-    } else {
-        (String::new(), String::new())
+        String::new()
     };
 
     // Set up minijinja environment for template rendering
@@ -1911,20 +1876,7 @@ fn get_prompt(
         " (in Markdown format)"
     };
 
-    // First, render tag_vocab if it contains template syntax
-    // (tag_vocab may contain minijinja variables that need to be rendered before
-    // being inserted into the main template)
-    let rendered_tag_vocab = if tag_vocab.contains("{{") {
-        let tag_vocab_ctx = context! {
-            num_tags => args.flag_num_tags,
-            json_add => json_add,
-            language => language.as_str(),
-        };
-        env.render_str(&tag_vocab, &tag_vocab_ctx)
-            .map_err(|e| CliError::Other(format!("Failed to render tag_vocab template: {e}")))?
-    } else {
-        tag_vocab
-    };
+    let language = args.flag_language.as_ref().map_or("", |s| s.as_str());
 
     let ctx = context! {
         stats => stats,
@@ -1934,9 +1886,8 @@ fn get_prompt(
         duckdb_version => duckdb_version.as_str(),
         top_n => args.flag_enum_threshold,
         num_tags => args.flag_num_tags,
-        tag_vocab => rendered_tag_vocab.as_str(),
-        language => language.as_str(),
-        language_emphasis => language_emphasis.as_str(),
+        tag_vocab => tag_vocab,
+        language => language,
         headers => headers,
         delimiter => delimiter.to_string(),
         input_table_name => INPUT_TABLE_NAME,
@@ -2567,50 +2518,57 @@ fn run_inference_options(
         // Pattern 1: JSON wrapped in ```json and ``` blocks (improved regex to handle multiline)
         if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*?)\n```").captures(output)
             && let Some(m) = caps.get(1)
-            && let Some(valid_json) = try_parse_json(m.as_str()) {
-                return Ok(valid_json);
-            }
+            && let Some(valid_json) = try_parse_json(m.as_str())
+        {
+            return Ok(valid_json);
+        }
 
         // Pattern 1b: JSON wrapped in ```json and ``` blocks (greedy match as fallback)
         if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*)\n```").captures(output)
             && let Some(m) = caps.get(1)
-            && let Some(valid_json) = try_parse_json(m.as_str()) {
-                return Ok(valid_json);
-            }
+            && let Some(valid_json) = try_parse_json(m.as_str())
+        {
+            return Ok(valid_json);
+        }
 
         // Pattern 2: JSON wrapped in ``` and ``` blocks (without json specifier)
         if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*?)\n```").captures(output)
             && let Some(m) = caps.get(1)
-            && let Some(valid_json) = try_parse_json(m.as_str()) {
-                return Ok(valid_json);
-            }
+            && let Some(valid_json) = try_parse_json(m.as_str())
+        {
+            return Ok(valid_json);
+        }
 
         // Pattern 2b: JSON wrapped in ``` and ``` blocks (greedy match as fallback)
         if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*)\n```").captures(output)
             && let Some(m) = caps.get(1)
-            && let Some(valid_json) = try_parse_json(m.as_str()) {
-                return Ok(valid_json);
-            }
+            && let Some(valid_json) = try_parse_json(m.as_str())
+        {
+            return Ok(valid_json);
+        }
 
         // Pattern 3: Try to find JSON array or object at the start of the response
         if let Some(caps) = regex_oncelock!(r"(?s)^\s*(\[.*?\]|\{.*?\})").captures(output)
             && let Some(m) = caps.get(1)
-            && let Some(valid_json) = try_parse_json(m.as_str()) {
-                return Ok(valid_json);
-            }
+            && let Some(valid_json) = try_parse_json(m.as_str())
+        {
+            return Ok(valid_json);
+        }
 
         // Pattern 4: Try to find JSON array or object anywhere in the response (non-greedy)
         if let Some(caps) = regex_oncelock!(r"(?s)(\[.*?\]|\{.*?\})").captures(output)
             && let Some(m) = caps.get(1)
-            && let Some(valid_json) = try_parse_json(m.as_str()) {
-                return Ok(valid_json);
-            }
+            && let Some(valid_json) = try_parse_json(m.as_str())
+        {
+            return Ok(valid_json);
+        }
 
         // If no pattern matches, return the entire output (might be raw JSON)
         if (output.trim().starts_with('[') || output.trim().starts_with('{'))
-            && let Some(valid_json) = try_parse_json(output) {
-                return Ok(valid_json);
-            }
+            && let Some(valid_json) = try_parse_json(output)
+        {
+            return Ok(valid_json);
+        }
 
         fail_clierror!(
             "Failed to extract JSON content from LLM response. Output: {}",

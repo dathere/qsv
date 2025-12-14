@@ -158,7 +158,7 @@ create a SQL query that can be used to answer the User's Prompt.
 SQL Query Generation Guidelines:
 
 END SQL Query Generation Guidelines
-- Make sure the generated SQL query is valid and has comments to explain the query
+- Make sure the generated SQL query is valid and has{{ language }} comments to explain the query
 - Add "-- {{ generated_by_signature }}" at the top of the query
 
 Return the SQL query as a SQL code block preceded by a newline.

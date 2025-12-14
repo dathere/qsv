@@ -267,6 +267,7 @@ use cached::{
 };
 use indexmap::{IndexMap, IndexSet};
 use indicatif::HumanCount;
+use minijinja::{Environment, context};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -1619,7 +1620,7 @@ fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) 
 }
 
 /// Generates a prompt for a given prompt type based on either a custom prompt file or default
-/// prompts.
+/// prompts. Uses the minijinja template engine to render prompt templates with variables.
 ///
 /// # Arguments
 ///
@@ -1632,8 +1633,8 @@ fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) 
 /// # Returns
 ///
 /// Returns a tuple containing:
-/// * The generated prompt string
-/// * The system prompt string
+/// * The generated prompt string (rendered from minijinja template)
+/// * The system prompt string (rendered from minijinja template)
 ///
 /// # Errors
 ///
@@ -1641,6 +1642,7 @@ fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) 
 /// * Analysis results are missing when required
 /// * SQL guidelines markers cannot be found in the prompt template
 /// * DuckDB query execution fails when getting extension info
+/// * Minijinja template rendering fails
 fn get_prompt(
     prompt_type: PromptType,
     analysis_results: Option<&AnalysisResults>,
@@ -1858,75 +1860,59 @@ fn get_prompt(
         drop(rdr);
 
         // and just load the tag vocabulary CSV file into a string
-        let tag_vocab_content = fs::read_to_string(tag_vocab_filepath)
-            .map_err(|e| CliError::Other(format!("Failed to read tag vocabulary CSV file: {e}")))?;
-
-        // we use double curly braces to escape the variables in the format string
-        // otherwise, the format! macro will try to interpolate the variables into the string
-        format!(
-            "Limit your choices to only {{NUM_TAGS}} unique Tags{{JSON_ADD}} in the following Tag \
-             Vocabulary, in order of relevance, based on the Summary Statistics and Frequency \
-             Distribution about the Dataset provided further below.\n\nThe Tag Vocabulary is a \
-             CSV with 2 columns: Tag and Description. Take the Description into account to guide \
-             your Tag choices.\n\nTag Vocabulary (CSV):\n{tag_vocab_content}\n"
-        )
+        fs::read_to_string(tag_vocab_filepath)
+            .map_err(|e| CliError::Other(format!("Failed to read tag vocabulary CSV file: {e}")))?
     } else {
-        // Add language instruction if provided, and there is no tag vocabulary
-        // note that the curly braces are not escaped, as we are not using the format! macro
-        "Choose no more than {NUM_TAGS}{LANGUAGE} Tags{JSON_ADD} about the contents of the Dataset \
-         in descending order of importance (lowercase only and use _ to separate words) based on \
-         the Summary Statistics and Frequency Distribution about the Dataset provided below. Do \
-         not use field names in the tags."
-            .to_string()
+        String::new()
     };
 
-    let (language, language_emphasis) = if let Some(lang) = &args.flag_language {
-        (
-            lang.to_string(),
-            if prompt_type == PromptType::Tags {
-                // super-specific, explicit language guidance for tag generation
-                // when language is set as some models are still prone to generate
-                // tags in their default language
-                format!(" Make sure your tag choices are in this language: {lang}.")
-            } else {
-                // generic language guidance for other prompt types
-                format!(" Make sure your response is in this language: {lang}.")
-            },
-        )
+    // Set up minijinja environment for template rendering
+    let env = Environment::new();
+
+    // Build context with all variables needed for template rendering
+    let json_add = if get_output_format(args)? == OutputFormat::Json {
+        " (in valid, pretty-printed JSON format, ensuring string values are properly escaped)"
     } else {
-        (String::new(), String::new())
+        " (in Markdown format)"
     };
 
-    // Replace variable data in prompt
-    #[allow(clippy::to_string_in_format_args)]
-    #[allow(clippy::literal_string_with_formatting_args)]
-    let prompt = prompt
-        .replace("{TAG_VOCAB}", &tag_vocab)
-        .replace("{NUM_TAGS}", &args.flag_num_tags.to_string())
-        .replace("{STATS}", stats)
-        .replace("{FREQUENCY}", frequency)
-        .replace("{HEADERS}", headers)
-        .replace("{DELIMITER}", &delimiter.to_string())
-        .replace("{DUCKDB_VERSION}", &duckdb_version)
-        .replace("{TOP_N}", &args.flag_enum_threshold.to_string())
-        .replace(
-            "{DICTIONARY}",
-            DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),
-        )
-        .replace(
-            "{JSON_ADD}",
-            if get_output_format(args)? == OutputFormat::Json {
-                " (in valid, pretty-printed JSON format, ensuring string values are properly \
-                 escaped)"
-            } else {
-                " (in Markdown format)"
-            },
-        )
-        .replace("{LANGUAGE}", &language)
-        .replace("{LANGUAGE_EMPHASIS}", &language_emphasis);
+    // prepend a space to the language if it is set
+    let language = if let Some(s) = args.flag_language.as_ref()
+        && !s.trim().is_empty()
+    {
+        format!(" {}", s.trim())
+    } else {
+        String::new()
+    };
 
-    // Return prompt
-    Ok((prompt, prompt_file.system_prompt.clone()))
+    let ctx = context! {
+        stats => stats,
+        frequency => frequency,
+        dictionary => DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),
+        json_add => json_add,
+        duckdb_version => duckdb_version.as_str(),
+        top_n => args.flag_enum_threshold,
+        num_tags => args.flag_num_tags,
+        tag_vocab => tag_vocab,
+        language => language,
+        headers => headers,
+        delimiter => delimiter.to_string(),
+        input_table_name => INPUT_TABLE_NAME,
+        generated_by_signature => "{GENERATED_BY_SIGNATURE}",
+    };
+
+    // Render prompt using minijinja
+    let rendered_prompt = env
+        .render_str(&prompt, &ctx)
+        .map_err(|e| CliError::Other(format!("Failed to render prompt template: {e}")))?;
+
+    // Also render system_prompt if it contains template variables
+    let rendered_system_prompt = env
+        .render_str(&prompt_file.system_prompt, &ctx)
+        .map_err(|e| CliError::Other(format!("Failed to render system_prompt template: {e}")))?;
+
+    // Return rendered prompt
+    Ok((rendered_prompt, rendered_system_prompt))
 }
 
 /// Makes a completion request to the LLM API and processes the response.
@@ -2480,18 +2466,93 @@ fn run_inference_options(
             serde_json::from_str::<serde_json::Value>(candidate.trim()).ok()
         }
 
-        // Pattern 1: JSON wrapped in ```json and ``` blocks
-        if let Some(caps) = regex_oncelock!(r"(?s)```json\n(.*?)\n```").captures(output)
+        // Helper function to try to fix common JSON issues, particularly unescaped newlines in
+        // strings
+        fn try_fix_json(json_str: &str) -> String {
+            let mut result = String::with_capacity(json_str.len());
+            let chars = json_str.chars();
+            let mut in_string = false;
+            let mut escape_next = false;
+
+            for ch in chars {
+                if escape_next {
+                    result.push(ch);
+                    escape_next = false;
+                    continue;
+                }
+
+                match ch {
+                    '\\' => {
+                        result.push(ch);
+                        escape_next = true;
+                    },
+                    '"' => {
+                        result.push(ch);
+                        // Only toggle in_string if the quote is not escaped
+                        if !escape_next {
+                            in_string = !in_string;
+                        }
+                    },
+                    '\n' if in_string => {
+                        // Escape newlines inside strings
+                        result.push_str("\\n");
+                    },
+                    '\r' if in_string => {
+                        // Escape carriage returns inside strings
+                        result.push_str("\\r");
+                    },
+                    '\t' if in_string => {
+                        // Escape tabs inside strings
+                        result.push_str("\\t");
+                    },
+                    _ => {
+                        result.push(ch);
+                    },
+                }
+            }
+
+            result
+        }
+
+        // Helper function to try parsing with fallback to fixed version
+        fn try_parse_json(candidate: &str) -> Option<serde_json::Value> {
+            // First try parsing as-is
+            if let Some(json) = validate_json_candidate(candidate) {
+                return Some(json);
+            }
+            // If that fails, try fixing common issues
+            let fixed = try_fix_json(candidate);
+            validate_json_candidate(&fixed)
+        }
+
+        // Pattern 1: JSON wrapped in ```json and ``` blocks (improved regex to handle multiline)
+        if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*?)\n```").captures(output)
             && let Some(m) = caps.get(1)
-            && let Some(valid_json) = validate_json_candidate(m.as_str())
+            && let Some(valid_json) = try_parse_json(m.as_str())
+        {
+            return Ok(valid_json);
+        }
+
+        // Pattern 1b: JSON wrapped in ```json and ``` blocks (greedy match as fallback)
+        if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*)\n```").captures(output)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = try_parse_json(m.as_str())
         {
             return Ok(valid_json);
         }
 
         // Pattern 2: JSON wrapped in ``` and ``` blocks (without json specifier)
-        if let Some(caps) = regex_oncelock!(r"(?s)```\n(.*?)\n```").captures(output)
+        if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*?)\n```").captures(output)
             && let Some(m) = caps.get(1)
-            && let Some(valid_json) = validate_json_candidate(m.as_str())
+            && let Some(valid_json) = try_parse_json(m.as_str())
+        {
+            return Ok(valid_json);
+        }
+
+        // Pattern 2b: JSON wrapped in ``` and ``` blocks (greedy match as fallback)
+        if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*)\n```").captures(output)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = try_parse_json(m.as_str())
         {
             return Ok(valid_json);
         }
@@ -2499,7 +2560,7 @@ fn run_inference_options(
         // Pattern 3: Try to find JSON array or object at the start of the response
         if let Some(caps) = regex_oncelock!(r"(?s)^\s*(\[.*?\]|\{.*?\})").captures(output)
             && let Some(m) = caps.get(1)
-            && let Some(valid_json) = validate_json_candidate(m.as_str())
+            && let Some(valid_json) = try_parse_json(m.as_str())
         {
             return Ok(valid_json);
         }
@@ -2507,14 +2568,14 @@ fn run_inference_options(
         // Pattern 4: Try to find JSON array or object anywhere in the response (non-greedy)
         if let Some(caps) = regex_oncelock!(r"(?s)(\[.*?\]|\{.*?\})").captures(output)
             && let Some(m) = caps.get(1)
-            && let Some(valid_json) = validate_json_candidate(m.as_str())
+            && let Some(valid_json) = try_parse_json(m.as_str())
         {
             return Ok(valid_json);
         }
 
         // If no pattern matches, return the entire output (might be raw JSON)
         if (output.trim().starts_with('[') || output.trim().starts_with('{'))
-            && let Some(valid_json) = validate_json_candidate(output)
+            && let Some(valid_json) = try_parse_json(output)
         {
             return Ok(valid_json);
         }
@@ -2704,24 +2765,22 @@ fn run_inference_options(
                 })
             } else {
                 // For dictionary and tags, try to extract JSON from response, but include reasoning
-                let mut output_value = match extract_json_from_output(&completion_response.response)
+                let mut output_value = if let Ok(json_value) =
+                    extract_json_from_output(&completion_response.response)
                 {
-                    Ok(json_value) => {
-                        // Create a structured object with data and reasoning
-                        json!({
-                            "response": json_value,
-                            "reasoning": completion_response.reasoning,
-                            "token_usage": completion_response.token_usage,
-                        })
-                    },
-                    Err(_) => {
-                        // Fall back to string format with reasoning
-                        json!({
-                            "response": completion_response.response,
-                            "reasoning": completion_response.reasoning,
-                            "token_usage": completion_response.token_usage,
-                        })
-                    },
+                    // Create a structured object with data and reasoning
+                    json!({
+                        "response": json_value,
+                        "reasoning": completion_response.reasoning,
+                        "token_usage": completion_response.token_usage,
+                    })
+                } else {
+                    // Fall back to string format with reasoning
+                    json!({
+                        "response": completion_response.response,
+                        "reasoning": completion_response.reasoning,
+                        "token_usage": completion_response.token_usage,
+                    })
                 };
                 // Add metadata properties for Tags at the top level (always present)
                 if kind == PromptType::Tags

@@ -8,27 +8,27 @@ model = "openai/gpt-oss-20b"
 timeout = 300
 format = "markdown"
 
-### NOTE: The following VARIABLES are replaced by describegpt at runtime in the prompts below:
-# {STATS} - summary statistics in CSV format
-# {FREQUENCY} - frequency distribution in CSV format
-# {DICTIONARY} - data dictionary in JSON format
-# {JSON_ADD} - if --json option is set, inserts (note leading space)
+### NOTE: The following VARIABLES are available in minijinja templates (use {{ variable }} syntax):
+# {{ stats }} - summary statistics in CSV format
+# {{ frequency }} - frequency distribution in CSV format
+# {{ dictionary }} - data dictionary in JSON format
+# {{ json_add }} - if --json option is set, inserts (note leading space)
 #    ` (in valid, pretty-printed JSON format, ensuring string values are properly escaped)`
 #   otherwise inserts
 #    ` (in Markdown format)`
-# {INPUT_TABLE_NAME} - the name of the input CSV file.
+# {{ input_table_name }} - the name of the input CSV file.
 #    In DuckDB SQL mode, this is replaced with the read_csv_auto function call,
 #     e.g. `read_csv_auto('input.csv')`.
 #    In Polars SQL --prompt mode, this is replaced with the table alias, e.g. `_t_1`.
-# {GENERATED_BY_SIGNATURE} - replaced with Attribution metadata and warning
-# {DUCKDB_VERSION} - only up to the minor version - e.g "1.3"
-# {TOP_N} - The enum threshold for the frequency command
-# {NUM_TAGS} - The maximum number of tags to infer when the --tags option is used
-# {TAG_VOCAB} - The tag vocabulary file
-# {LANGUAGE} - The language to use for the response. Has a leading space.
-# {LANGUAGE_EMPHASIS} - A sentence to emphasize the language requirement.
-#                      "Make sure your response is in this language: Spanish."
-# {SAMPLE_FILE} - The temporary file containing a 1000 row random sample of the input CSV file.
+# {{ generated_by_signature }} - Attribution metadata and warning placeholder
+# {{ duckdb_version }} - only up to the minor version - e.g "1.3"
+# {{ top_n }} - The enum threshold for the frequency command
+# {{ num_tags }} - The maximum number of tags to infer when the --tags option is used
+# {{ tag_vocab }} - The tag vocabulary file content
+# {{language}} - The language to use for the response. Empty string if not set. Has leading space if set.
+# {{ headers }} - CSV headers
+# {{ delimiter }} - CSV delimiter character
+# {{ sample_file }} - The temporary file containing a 1000 row random sample of the input CSV file.
 #                 Only present if --prompt is set.
 
 system_prompt = """
@@ -41,8 +41,8 @@ Frequency Distribution to guide your response. They both describe the same Datas
 The provided Summary Statistics is a CSV file. Each record contains statistics for each Dataset field.
 
 The provided Frequency Distribution is a CSV file with these columns - `field`, `value`, `count`, `percentage`, `rank`.
-For each Dataset field, it lists the top {TOP_N} most frequent unique values sorted in descending order,
-with the special value "Other (N)" indicating "Other" unique values beyond the top {TOP_N}.
+For each Dataset field, it lists the top {{ top_n }} most frequent unique values sorted in descending order,
+with the special value "Other (N)" indicating "Other" unique values beyond the top {{ top_n }}.
 The "N" in "Other (N)" indicates the count of "Other" unique values. The "Other" category has a special rank of 0.
 
 The Frequency Distribution's `rank` column is 1-based and is calculated based on the count of the values, with the
@@ -53,53 +53,53 @@ For Dataset fields with all unique values (i.e. cardinality is equal to the numb
 """
 
 dictionary_prompt = """
-Generate{LANGUAGE} Labels and Descriptions for each field in the Dataset based on the Summary Statistics and Frequency Distribution provided below.
+Generate{{ language -}} Labels and Descriptions for each field in the Dataset based on the Summary Statistics and Frequency Distribution provided below.
 
 For each field, provide:
 - Label: a human-friendly label for this field (e.g., "Unique Key", "Created Date", "Agency Name")
 - Description: a full description for this field (can be multiple sentences)
 
 Return the results in JSON format where each field name is a key, and the value is an object with "label" and "description" properties:
-{{
-  "field_name_1": {{
+{% raw %}{
+  "field_name_1": {
     "label": "Human-friendly label",
     "description": "Full description of the field"
-  }},
-  "field_name_2": {{
+  },
+  "field_name_2": {
     "label": "Another label",
     "description": "Another description"
-  }}
-}}
+  }
+}{% endraw %}
 
-Generate{LANGUAGE} Labels and Descriptions for ALL fields in the Dataset. Use the Summary Statistics and Frequency Distribution to understand the context and meaning of each field.
+Generate{{ language -}} Labels and Descriptions for ALL fields in the Dataset. Use the Summary Statistics and Frequency Distribution to understand the context and meaning of each field.
 
-{LANGUAGE_EMPHASIS} Let's think step by step, correcting yourself as needed.
+Let's think step by step, correcting yourself as needed.
 
 ---
 
 Summary Statistics (CSV):
 
-{STATS}
+{{ stats }}
 
 Frequency Distribution (CSV):
 
-{FREQUENCY}
+{{ frequency }}
 """
 
 description_prompt = """
-Generate a{LANGUAGE} Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
+Generate a{{ language -}} Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
 
-{LANGUAGE_EMPHASIS} Let's think step by step.
+Let's think step by step.
 
 ---
 
 Summary Statistics (CSV):
 
-{STATS}
+{{ stats }}
 
 Frequency Distribution (CSV):
 
-{FREQUENCY}
+{{ frequency }}
 
 ---
 
@@ -110,9 +110,10 @@ in one 1-8 sentence description.
 After the Description, add a section titled "Notable Characteristics" with a bulleted list of notable
 characteristics of the Dataset (e.g. the central tendency and spread of the data, the distribution shape,
 anomalies, patterns; if there are any outliers, missing values, duplicates, PII/PHI/PCI data; and
-other data quality issues that the User should be aware of).{LANGUAGE_EMPHASIS}
+other data quality issues that the User should be aware of).
+{% if language %} {{ "Make sure both the Description and Notable Characteristics are in this language: " ~ language }} {% endif %}
 
-Add an Attribution with the placeholder "{GENERATED_BY_SIGNATURE}" at the bottom of the output.
+Add an Attribution with the placeholder "{{ generated_by_signature }}" at the bottom of the output.
 
 The entire output should be in Markdown format.
 """
@@ -121,23 +122,44 @@ tags_prompt = """
 A Tag is a keyword or label that categorizes datasets with other, similar datasets.
 Using the right Tags makes it easier for others to find and use datasets.
 
-{TAG_VOCAB}
+{% if tag_vocab %}
+Limit your choices to only {{ num_tags }} unique Tags{{ json_add }} in the following Tag Vocabulary,
+in order of relevance, based on the Summary Statistics and Frequency Distribution about the Dataset
+provided further below.
 
-Add an Attribution with the placeholder "{GENERATED_BY_SIGNATURE}" after the Tags. If generating JSON format,
+The Tag Vocabulary is a CSV with 2 columns: Tag and Description.
+
+Take the Description into account to guide your Tag choices.
+
+Tag Vocabulary (CSV):
+
+{{ tag_vocab }}
+
+{% else %}
+{# If no tag vocabulary is provided, use the default tag generation prompt #}
+Choose no more than {{ num_tags }} unique Tags{{ json_add }} about the contents of the Dataset
+in descending order of importance (lowercase only and use _ to separate words) based on the
+Summary Statistics and Frequency Distribution about the Dataset provided below.
+Do not use field names in the tags.
+
+{% if language %} Make sure your tags are in this language:{{ language -}} {% endif %}
+{% endif %}
+
+Add an Attribution with the placeholder "{{ generated_by_signature }}" after the Tags. If generating JSON format,
 add the Attribution as a separate key at the top level of the JSON object, after the Tags, otherwise add it
 at the bottom of the Tags in Markdown format.
 
-{LANGUAGE_EMPHASIS} Let's think step by step, correcting yourself as needed.
+Let's think step by step, correcting yourself as needed.
 
 ---
 
 Summary Statistics (CSV):
 
-{STATS}
+{{ stats }}
 
 Frequency Distribution (CSV):
 
-{FREQUENCY}"""
+{{ frequency }}"""
 
 prompt = "What is this dataset about?"
 
@@ -148,7 +170,7 @@ If the User's Prompt is not about the Dataset, immediately return
 'I'm sorry. I'm afraid I can only answer questions about the Dataset.'
 
 If the User's Prompt can be answered by using the Dataset's Summary Statistics and
-Frequency Distribution data below, immediately return the answer. {LANGUAGE_EMPHASIS}
+Frequency Distribution data below, immediately return the answer{% if language %} {{ "in this language: " ~ language }} {% endif %}.
 
 Otherwise, using the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary below,
 create a SQL query that can be used to answer the User's Prompt.
@@ -156,8 +178,8 @@ create a SQL query that can be used to answer the User's Prompt.
 SQL Query Generation Guidelines:
 
 END SQL Query Generation Guidelines
-- Make sure the generated SQL query is valid and has comments to explain the query
-- Add "-- {GENERATED_BY_SIGNATURE}" at the top of the query
+- Make sure the generated SQL query is valid and has{{ language -}} comments to explain the query
+- Add "-- {{ generated_by_signature }}" at the top of the query
 
 Return the SQL query as a SQL code block preceded by a newline.
 
@@ -167,25 +189,25 @@ Let's think step by step, correcting yourself as needed.
 
 Summary Statistics (CSV):
 
-{STATS}
+{{ stats }}
 
 Frequency Distribution (CSV):
 
-{FREQUENCY}
+{{ frequency }}
 
 Data Dictionary (JSON):
 
-{DICTIONARY}"""
+{{ dictionary }}"""
 
 ### DuckDB SQL "One-Shot" Query Generation Guidelines
 ### This list replaces the "END SQL Query Generation Guidelines" marker in custom_prompt_guidance
 duckdb_sql_guidance = """
-- Use DuckDB {DUCKDB_VERSION} syntax
-- The input csv has headers and uses {DELIMITER} as the delimiter
+- Use DuckDB {{ duckdb_version }} syntax
+- The input csv has headers and uses {{ delimiter }} as the delimiter
 - Column names with spaces and special characters are case-sensitive and should be enclosed in double quotes
 - Only use the `read_csv_auto` table function to read the input CSV
 - Always explicitly cast columns to the appropriate type as per the Data Dictionary using the `CAST` function before using them in calculations.
-- Use the placeholder {INPUT_TABLE_NAME} for the input csv in the `read_csv_auto` table function call
+- Use the placeholder {{ input_table_name }} for the input csv in the `read_csv_auto` table function call
 """
 
 ### Polars SQL "One-Shot" Query Generation Guidelines
@@ -193,7 +215,7 @@ duckdb_sql_guidance = """
 polars_sql_guidance = """
 - Use Polars SQL syntax (which is a dialect of PostgreSQL)
 - Use the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary data to generate the SQL query
-- Use {INPUT_TABLE_NAME} as the placeholder for the table name to query
+- Use {{ input_table_name }} as the placeholder for the table name to query
 - Column names with embedded spaces and special characters are case-sensitive and should be enclosed in double quotes
 - Only use SQL functions supported by Polars SQL. Supported functions are listed here - 
   https://github.com/pola-rs/polars/blob/45819db8865b9665e9dfab5b3a54752c8be9d599/crates/polars-sql/src/functions.rs#L773-L890
@@ -215,22 +237,22 @@ Here are examples of common query patterns to follow:
 **User Question:** "What is the kurtosis of a given numerical column?"
 **SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Calculate kurtosis of a given numerical column
 SELECT kurtosis(column_name) as kurtosis_value
-FROM read_csv_auto({INPUT_TABLE_NAME});
+FROM read_csv_auto({{ input_table_name }});
 ```
 
 ### Example 2: Group By with Aggregation
 **User Question:** "Show me the count by category"
 **SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Group records by category and count occurrences
 SELECT 
     category,
     COUNT(*) as count
-FROM read_csv_auto({INPUT_TABLE_NAME})
+FROM read_csv_auto({{ input_table_name }})
 GROUP BY category
 ORDER BY count DESC;
 ```
@@ -239,13 +261,13 @@ ORDER BY count DESC;
 **User Question:** "What are the trends over time?"
 **SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Analyze trends by date, assuming there's a date column
 SELECT 
     DATE(date_column) as date,
     COUNT(*) as daily_count,
     AVG(numeric_column) as avg_value
-FROM read_csv_auto({INPUT_TABLE_NAME})
+FROM read_csv_auto({{ input_table_name }})
 WHERE date_column IS NOT NULL
 GROUP BY DATE(date_column)
 ORDER BY date;
@@ -255,12 +277,12 @@ ORDER BY date;
 **User Question:** "What are the top 10 most frequent values?"
 **SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Find top 10 most frequent values in a column
 SELECT 
     column_name,
     COUNT(*) as frequency
-FROM read_csv_auto({INPUT_TABLE_NAME})
+FROM read_csv_auto({{ input_table_name }})
 WHERE column_name IS NOT NULL
 GROUP BY column_name
 ORDER BY frequency DESC
@@ -271,12 +293,12 @@ LIMIT 10;
 **User Question:** "How many records meet specific criteria?"
 **SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Count records that meet specific conditions
 SELECT 
     COUNT(*) as matching_records,
-    COUNT(*) * 100.0 / (SELECT COUNT(*) FROM read_csv_auto({INPUT_TABLE_NAME})) as percentage
-FROM read_csv_auto({INPUT_TABLE_NAME})
+    COUNT(*) * 100.0 / (SELECT COUNT(*) FROM read_csv_auto({{ input_table_name }})) as percentage
+FROM read_csv_auto({{ input_table_name }})
 WHERE condition1 = 'value1' 
   AND condition2 > 100;
 ```
@@ -284,7 +306,7 @@ WHERE condition1 = 'value1'
 **User Question:** "What's the relationship between two columns?"
 **SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Calculate relationship between two columns
 SELECT corr(column2, column1) as correlation,
        covar_pop(column2, column1) as covariance_population,
@@ -293,20 +315,20 @@ SELECT corr(column2, column1) as correlation,
        regr_intercept(column2, column1) as regression_intercept,
        regr_r2(column2, column1) as regression_r_squared,
        regr_count(column2, column1) as regression_count
-FROM read_csv_auto({INPUT_TABLE_NAME});
+FROM read_csv_auto({{ input_table_name }});
 ```
 
 ### Example 7: Complex Filtering with Subqueries
 **User Question:** "Show records above the average"
 **SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Find records above the average value
 SELECT *
-FROM read_csv_auto({INPUT_TABLE_NAME})
+FROM read_csv_auto({{ input_table_name }})
 WHERE numeric_column > (
     SELECT AVG(numeric_column) 
-    FROM read_csv_auto({INPUT_TABLE_NAME})
+    FROM read_csv_auto({{ input_table_name }})
     WHERE numeric_column IS NOT NULL
 )
 ORDER BY numeric_column DESC;
@@ -316,18 +338,18 @@ ORDER BY numeric_column DESC;
 **User Question:** "Rank the data by some criteria"
 **SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Rank records using window functions
 SELECT 
     *,
     ROW_NUMBER() OVER (ORDER BY numeric_column DESC) as rank,
     RANK() OVER (ORDER BY numeric_column DESC) as rank_with_ties
-FROM read_csv_auto({INPUT_TABLE_NAME})
+FROM read_csv_auto({{ input_table_name }})
 ORDER BY rank;
 ```
 
 ### Best Practices:
-- Always use `read_csv_auto({INPUT_TABLE_NAME})` to read the CSV
+- Always use `read_csv_auto({{ input_table_name }})` to read the CSV
 - Include meaningful column aliases (e.g., `COUNT(*) as total_count`)
 - Add WHERE clauses to filter out NULL values when appropriate
 - Use ORDER BY for meaningful result ordering
@@ -351,22 +373,22 @@ Here are examples of common Polars SQL query patterns to follow:
 **User Question:** "What is the continuous quantile element of a given numerical column?"
 **Polars SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Calculate kurtosis of a given numerical column
 SELECT QUANTILE_CONT(column_name, 0.30) as column_name_q30
-FROM {INPUT_TABLE_NAME};
+FROM {{ input_table_name }};
 ```
 
 ### Example 2: Group By with Aggregation
 **User Question:** "Show me the count by category"
 **Polars SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Group records by category and count occurrences
 SELECT 
     category,
     COUNT(*) as count
-FROM {INPUT_TABLE_NAME}
+FROM {{ input_table_name }}
 GROUP BY category
 ORDER BY count DESC;
 ```
@@ -375,13 +397,13 @@ ORDER BY count DESC;
 **User Question:** "What are the trends over time?"
 **Polars SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Analyze trends by date, assuming there's a date column
 SELECT 
     date_column,
     COUNT(*) as daily_count,
     AVG(numeric_column) as avg_value
-FROM {INPUT_TABLE_NAME}
+FROM {{ input_table_name }}
 WHERE date_column IS NOT NULL
 GROUP BY date_part('day', date_column)
 ORDER BY date_column;
@@ -391,12 +413,12 @@ ORDER BY date_column;
 **User Question:** "What are the top 10 most frequent values?"
 **Polars SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE} 
+-- {{ generated_by_signature }} 
 -- Find top 10 most frequent values in a column
 SELECT 
     column_name,
     COUNT(*) as frequency
-FROM {INPUT_TABLE_NAME}
+FROM {{ input_table_name }}
 WHERE column_name IS NOT NULL
 GROUP BY column_name
 ORDER BY frequency DESC
@@ -407,12 +429,12 @@ LIMIT 10;
 **User Question:** "How many records meet specific criteria?"
 **Polars SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Count records that meet specific conditions
 SELECT 
     COUNT(*) as matching_records,
-    COUNT(*) * 100.0 / (SELECT COUNT(*) FROM {INPUT_TABLE_NAME}) as percentage
-FROM {INPUT_TABLE_NAME}
+    COUNT(*) * 100.0 / (SELECT COUNT(*) FROM {{ input_table_name }}) as percentage
+FROM {{ input_table_name }}
 WHERE condition1 = 'value1' 
   AND condition2 > 100;
 ```
@@ -421,25 +443,25 @@ WHERE condition1 = 'value1'
 **User Question:** "What's the relationship between two columns?"
 **Polars SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Calculate relationship between two columns
 SELECT 
     corr(column1, column2) as pearson_correlation,
     covar(column1, column2) as covariance
-FROM {INPUT_TABLE_NAME};
+FROM {{ input_table_name }};
 ```
 
 ### Example 7: Complex Filtering with Subqueries
 **User Question:** "Show records above the average"
 **Polars SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Find records above the average value
 SELECT *
-FROM {INPUT_TABLE_NAME}
+FROM {{ input_table_name }}
 WHERE numeric_column > (
     SELECT AVG(numeric_column) 
-    FROM {INPUT_TABLE_NAME}
+    FROM {{ input_table_name }}
     WHERE numeric_column IS NOT NULL
 )
 ORDER BY numeric_column DESC;
@@ -449,13 +471,13 @@ ORDER BY numeric_column DESC;
 **User Question:** "Rank the data by some criteria"
 **Polars SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Rank records using window functions
 SELECT 
     *,
     ROW_NUMBER() OVER (ORDER BY numeric_column DESC) as rank,
     RANK() OVER (ORDER BY numeric_column DESC) as rank_with_ties
-FROM {INPUT_TABLE_NAME}
+FROM {{ input_table_name }}
 ORDER BY rank;
 ```
 
@@ -463,7 +485,7 @@ ORDER BY rank;
 **User Question:** "Extract patterns from text columns"
 **Polars SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Extract patterns and analyze string data
 SELECT 
     text_column,
@@ -482,7 +504,7 @@ SELECT
     TRIM(text_column) as trimmed_text,
     LTRIM(text_column) as ltrimmed_text,
     RTRIM(text_column) as rtrimmed_text
-FROM {INPUT_TABLE_NAME}
+FROM {{ input_table_name }}
 WHERE text_column IS NOT NULL;
 ```
 
@@ -490,7 +512,7 @@ WHERE text_column IS NOT NULL;
 **User Question:** "Work with array columns"
 **Polars SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Analyze array column data
 SELECT 
     array_column,
@@ -500,7 +522,7 @@ SELECT
     ARRAY_LENGTH(array_column) as array_length,
     ARRAY_MAX(array_column) as max_value,
     ARRAY_MIN(array_column) as min_value
-FROM {INPUT_TABLE_NAME}
+FROM {{ input_table_name }}
 WHERE array_column IS NOT NULL;
 ```
 
@@ -508,13 +530,13 @@ WHERE array_column IS NOT NULL;
 **User Question:** "Access nested struct fields"
 **Polars SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Extract and analyze nested struct data
 SELECT 
     struct_column.field1 as extracted_field1,
     struct_column.field2 as extracted_field2,
     struct_column.nested.field3 as nested_field3
-FROM {INPUT_TABLE_NAME}
+FROM {{ input_table_name }}
 WHERE struct_column IS NOT NULL;
 ```
 
@@ -522,19 +544,19 @@ WHERE struct_column IS NOT NULL;
 **User Question:** "Create a pivot table"
 **Polars SQL Query:**
 ```sql
--- {GENERATED_BY_SIGNATURE}
+-- {{ generated_by_signature }}
 -- Create a pivot table from the data
 SELECT 
     category,
     SUM(CASE WHEN status = 'active' THEN value ELSE 0 END) as active_sum,
     SUM(CASE WHEN status = 'inactive' THEN value ELSE 0 END) as inactive_sum,
     COUNT(CASE WHEN status = 'active' THEN 1 END) as active_count
-FROM {INPUT_TABLE_NAME}
+FROM {{ input_table_name }}
 GROUP BY category;
 ```
 
 ### Best Practices for Polars SQL:
-- Always use `{INPUT_TABLE_NAME}` as the placeholder for the table name
+- Always use `{{ input_table_name }}` as the placeholder for the table name
 - Include meaningful column aliases (e.g., `COUNT(*) as total_count`)
 - Add WHERE clauses to filter out NULL values when appropriate
 - Use ORDER BY for meaningful result ordering

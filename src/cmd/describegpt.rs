@@ -1911,6 +1911,12 @@ fn get_prompt(
         .render_str(&prompt_file.system_prompt, &ctx)
         .map_err(|e| CliError::Other(format!("Failed to render system_prompt template: {e}")))?;
 
+    if log::log_enabled!(log::Level::Debug) {
+        log::debug!("Prompt Type: {prompt_type}");
+        log::debug!("Rendered system prompt: {rendered_system_prompt}");
+        log::debug!("Rendered prompt: {rendered_prompt}");
+    }
+
     // Return rendered prompt
     Ok((rendered_prompt, rendered_system_prompt))
 }

@@ -2508,44 +2508,109 @@ fn run_inference_options(
             serde_json::from_str::<serde_json::Value>(candidate.trim()).ok()
         }
 
-        // Pattern 1: JSON wrapped in ```json and ``` blocks
-        if let Some(caps) = regex_oncelock!(r"(?s)```json\n(.*?)\n```").captures(output)
-            && let Some(m) = caps.get(1)
-            && let Some(valid_json) = validate_json_candidate(m.as_str())
-        {
-            return Ok(valid_json);
+        // Helper function to try to fix common JSON issues, particularly unescaped newlines in
+        // strings
+        fn try_fix_json(json_str: &str) -> String {
+            let mut result = String::with_capacity(json_str.len());
+            let chars = json_str.chars().peekable();
+            let mut in_string = false;
+            let mut escape_next = false;
+
+            for ch in chars {
+                if escape_next {
+                    result.push(ch);
+                    escape_next = false;
+                    continue;
+                }
+
+                match ch {
+                    '\\' => {
+                        result.push(ch);
+                        escape_next = true;
+                    },
+                    '"' => {
+                        result.push(ch);
+                        in_string = !in_string;
+                    },
+                    '\n' if in_string => {
+                        // Escape newlines inside strings
+                        result.push_str("\\n");
+                    },
+                    '\r' if in_string => {
+                        // Escape carriage returns inside strings
+                        result.push_str("\\r");
+                    },
+                    '\t' if in_string => {
+                        // Escape tabs inside strings
+                        result.push_str("\\t");
+                    },
+                    _ => {
+                        result.push(ch);
+                    },
+                }
+            }
+
+            result
         }
 
-        // Pattern 2: JSON wrapped in ``` and ``` blocks (without json specifier)
-        if let Some(caps) = regex_oncelock!(r"(?s)```\n(.*?)\n```").captures(output)
-            && let Some(m) = caps.get(1)
-            && let Some(valid_json) = validate_json_candidate(m.as_str())
-        {
-            return Ok(valid_json);
+        // Helper function to try parsing with fallback to fixed version
+        fn try_parse_json(candidate: &str) -> Option<serde_json::Value> {
+            // First try parsing as-is
+            if let Some(json) = validate_json_candidate(candidate) {
+                return Some(json);
+            }
+            // If that fails, try fixing common issues
+            let fixed = try_fix_json(candidate);
+            validate_json_candidate(&fixed)
         }
+
+        // Pattern 1: JSON wrapped in ```json and ``` blocks (improved regex to handle multiline)
+        if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*?)\n```").captures(output)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = try_parse_json(m.as_str()) {
+                return Ok(valid_json);
+            }
+
+        // Pattern 1b: JSON wrapped in ```json and ``` blocks (greedy match as fallback)
+        if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*)\n```").captures(output)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = try_parse_json(m.as_str()) {
+                return Ok(valid_json);
+            }
+
+        // Pattern 2: JSON wrapped in ``` and ``` blocks (without json specifier)
+        if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*?)\n```").captures(output)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = try_parse_json(m.as_str()) {
+                return Ok(valid_json);
+            }
+
+        // Pattern 2b: JSON wrapped in ``` and ``` blocks (greedy match as fallback)
+        if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*)\n```").captures(output)
+            && let Some(m) = caps.get(1)
+            && let Some(valid_json) = try_parse_json(m.as_str()) {
+                return Ok(valid_json);
+            }
 
         // Pattern 3: Try to find JSON array or object at the start of the response
         if let Some(caps) = regex_oncelock!(r"(?s)^\s*(\[.*?\]|\{.*?\})").captures(output)
             && let Some(m) = caps.get(1)
-            && let Some(valid_json) = validate_json_candidate(m.as_str())
-        {
-            return Ok(valid_json);
-        }
+            && let Some(valid_json) = try_parse_json(m.as_str()) {
+                return Ok(valid_json);
+            }
 
         // Pattern 4: Try to find JSON array or object anywhere in the response (non-greedy)
         if let Some(caps) = regex_oncelock!(r"(?s)(\[.*?\]|\{.*?\})").captures(output)
             && let Some(m) = caps.get(1)
-            && let Some(valid_json) = validate_json_candidate(m.as_str())
-        {
-            return Ok(valid_json);
-        }
+            && let Some(valid_json) = try_parse_json(m.as_str()) {
+                return Ok(valid_json);
+            }
 
         // If no pattern matches, return the entire output (might be raw JSON)
         if (output.trim().starts_with('[') || output.trim().starts_with('{'))
-            && let Some(valid_json) = validate_json_candidate(output)
-        {
-            return Ok(valid_json);
-        }
+            && let Some(valid_json) = try_parse_json(output) {
+                return Ok(valid_json);
+            }
 
         fail_clierror!(
             "Failed to extract JSON content from LLM response. Output: {}",
@@ -2732,24 +2797,22 @@ fn run_inference_options(
                 })
             } else {
                 // For dictionary and tags, try to extract JSON from response, but include reasoning
-                let mut output_value = match extract_json_from_output(&completion_response.response)
+                let mut output_value = if let Ok(json_value) =
+                    extract_json_from_output(&completion_response.response)
                 {
-                    Ok(json_value) => {
-                        // Create a structured object with data and reasoning
-                        json!({
-                            "response": json_value,
-                            "reasoning": completion_response.reasoning,
-                            "token_usage": completion_response.token_usage,
-                        })
-                    },
-                    Err(_) => {
-                        // Fall back to string format with reasoning
-                        json!({
-                            "response": completion_response.response,
-                            "reasoning": completion_response.reasoning,
-                            "token_usage": completion_response.token_usage,
-                        })
-                    },
+                    // Create a structured object with data and reasoning
+                    json!({
+                        "response": json_value,
+                        "reasoning": completion_response.reasoning,
+                        "token_usage": completion_response.token_usage,
+                    })
+                } else {
+                    // Fall back to string format with reasoning
+                    json!({
+                        "response": completion_response.response,
+                        "reasoning": completion_response.reasoning,
+                        "token_usage": completion_response.token_usage,
+                    })
                 };
                 // Add metadata properties for Tags at the top level (always present)
                 if kind == PromptType::Tags

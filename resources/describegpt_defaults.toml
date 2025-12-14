@@ -25,7 +25,7 @@ format = "markdown"
 # {{ top_n }} - The enum threshold for the frequency command
 # {{ num_tags }} - The maximum number of tags to infer when the --tags option is used
 # {{ tag_vocab }} - The tag vocabulary file content
-# {{- language -}} - The language to use for the response. Contains the language string without leading/trailing spaces; templates should handle spacing explicitly.
+# {{language}} - The language to use for the response. Empty string if not set. Has leading space if set.
 # {{ headers }} - CSV headers
 # {{ delimiter }} - CSV delimiter character
 # {{ sample_file }} - The temporary file containing a 1000 row random sample of the input CSV file.
@@ -53,7 +53,7 @@ For Dataset fields with all unique values (i.e. cardinality is equal to the numb
 """
 
 dictionary_prompt = """
-Generate{{- language -}} Labels and Descriptions for each field in the Dataset based on the Summary Statistics and Frequency Distribution provided below.
+Generate{{ language -}} Labels and Descriptions for each field in the Dataset based on the Summary Statistics and Frequency Distribution provided below.
 
 For each field, provide:
 - Label: a human-friendly label for this field (e.g., "Unique Key", "Created Date", "Agency Name")
@@ -71,7 +71,7 @@ Return the results in JSON format where each field name is a key, and the value 
   }
 }{% endraw %}
 
-Generate{{- language -}} Labels and Descriptions for ALL fields in the Dataset. Use the Summary Statistics and Frequency Distribution to understand the context and meaning of each field.
+Generate{{ language -}} Labels and Descriptions for ALL fields in the Dataset. Use the Summary Statistics and Frequency Distribution to understand the context and meaning of each field.
 
 Let's think step by step, correcting yourself as needed.
 
@@ -87,7 +87,7 @@ Frequency Distribution (CSV):
 """
 
 description_prompt = """
-Generate a{{- language -}} Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
+Generate a{{ language -}} Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
 
 Let's think step by step.
 
@@ -142,7 +142,7 @@ in descending order of importance (lowercase only and use _ to separate words) b
 Summary Statistics and Frequency Distribution about the Dataset provided below.
 Do not use field names in the tags.
 
-{% if language %} Make sure your tags are in this language: {{- language -}} {% endif %}
+{% if language %} Make sure your tags are in this language:{{ language -}} {% endif %}
 {% endif %}
 
 Add an Attribution with the placeholder "{{ generated_by_signature }}" after the Tags. If generating JSON format,
@@ -178,7 +178,7 @@ create a SQL query that can be used to answer the User's Prompt.
 SQL Query Generation Guidelines:
 
 END SQL Query Generation Guidelines
-- Make sure the generated SQL query is valid and has{{- language -}} comments to explain the query
+- Make sure the generated SQL query is valid and has{{ language -}} comments to explain the query
 - Add "-- {{ generated_by_signature }}" at the top of the query
 
 Return the SQL query as a SQL code block preceded by a newline.

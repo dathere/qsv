@@ -1876,7 +1876,14 @@ fn get_prompt(
         " (in Markdown format)"
     };
 
-    let language = args.flag_language.as_ref().map_or("", |s| s.as_str());
+    // prepend a space to the language if it is set
+    let language = if let Some(s) = args.flag_language.as_ref()
+        && !s.trim().is_empty()
+    {
+        format!(" {}", s.trim())
+    } else {
+        String::new()
+    };
 
     let ctx = context! {
         stats => stats,

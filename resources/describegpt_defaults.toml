@@ -25,7 +25,7 @@ format = "markdown"
 # {{ top_n }} - The enum threshold for the frequency command
 # {{ num_tags }} - The maximum number of tags to infer when the --tags option is used
 # {{ tag_vocab }} - The tag vocabulary file content
-# {{- language -}} - The language to use for the response. Has a leading space.
+# {{- language -}} - The language to use for the response. Contains the language string without leading/trailing spaces; templates should handle spacing explicitly.
 # {{ headers }} - CSV headers
 # {{ delimiter }} - CSV delimiter character
 # {{ sample_file }} - The temporary file containing a 1000 row random sample of the input CSV file.

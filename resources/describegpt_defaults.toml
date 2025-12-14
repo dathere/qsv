@@ -1,8 +1,8 @@
 name = "qsv Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "qsv team"
-version = "6.3.0"
-tokens = 10000
+version = "7.0.0"
+tokens = 20000
 base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
 timeout = 300
@@ -136,7 +136,7 @@ Tag Vocabulary (CSV):
 {{ tag_vocab }}
 
 {% else %}
-{# If no tag vocabulary is provided, use the default tag generation prompt #}
+{# NOTE: If no tag vocabulary is provided, use the default tag generation prompt #}
 Choose no more than {{ num_tags }} unique Tags{{ json_add }} about the contents of the Dataset
 in descending order of importance (lowercase only and use _ to separate words) based on the
 Summary Statistics and Frequency Distribution about the Dataset provided below.
@@ -175,6 +175,7 @@ Frequency Distribution data below, immediately return the answer{% if language %
 Otherwise, using the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary below,
 create a SQL query that can be used to answer the User's Prompt.
 
+{# IMPORTANT: make sure the following three lines are not modified, as the DB-specific guidance is injected dynamically here#}
 SQL Query Generation Guidelines:
 
 END SQL Query Generation Guidelines

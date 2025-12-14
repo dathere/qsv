@@ -2463,7 +2463,7 @@ fn run_inference_options(
         // strings
         fn try_fix_json(json_str: &str) -> String {
             let mut result = String::with_capacity(json_str.len());
-            let chars = json_str.chars().peekable();
+            let chars = json_str.chars();
             let mut in_string = false;
             let mut escape_next = false;
 

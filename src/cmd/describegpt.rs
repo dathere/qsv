@@ -267,6 +267,7 @@ use cached::{
 };
 use indexmap::{IndexMap, IndexSet};
 use indicatif::HumanCount;
+use minijinja::{Environment, context};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -1619,7 +1620,7 @@ fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) 
 }
 
 /// Generates a prompt for a given prompt type based on either a custom prompt file or default
-/// prompts.
+/// prompts. Uses the minijinja template engine to render prompt templates with variables.
 ///
 /// # Arguments
 ///
@@ -1632,8 +1633,8 @@ fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) 
 /// # Returns
 ///
 /// Returns a tuple containing:
-/// * The generated prompt string
-/// * The system prompt string
+/// * The generated prompt string (rendered from minijinja template)
+/// * The system prompt string (rendered from minijinja template)
 ///
 /// # Errors
 ///
@@ -1641,6 +1642,7 @@ fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) 
 /// * Analysis results are missing when required
 /// * SQL guidelines markers cannot be found in the prompt template
 /// * DuckDB query execution fails when getting extension info
+/// * Minijinja template rendering fails
 fn get_prompt(
     prompt_type: PromptType,
     analysis_results: Option<&AnalysisResults>,
@@ -1861,22 +1863,24 @@ fn get_prompt(
         let tag_vocab_content = fs::read_to_string(tag_vocab_filepath)
             .map_err(|e| CliError::Other(format!("Failed to read tag vocabulary CSV file: {e}")))?;
 
-        // we use double curly braces to escape the variables in the format string
-        // otherwise, the format! macro will try to interpolate the variables into the string
+        // Build tag vocab string using minijinja template syntax
+        // This will be rendered separately before being inserted into the main template
+        // we need to double escape the curly braces to account for the minijinja template syntax
+        // and format! macro
         format!(
-            "Limit your choices to only {{NUM_TAGS}} unique Tags{{JSON_ADD}} in the following Tag \
-             Vocabulary, in order of relevance, based on the Summary Statistics and Frequency \
-             Distribution about the Dataset provided further below.\n\nThe Tag Vocabulary is a \
-             CSV with 2 columns: Tag and Description. Take the Description into account to guide \
-             your Tag choices.\n\nTag Vocabulary (CSV):\n{tag_vocab_content}\n"
+            "Limit your choices to only {{{{ num_tags }}}} unique Tags{{{{ json_add }}}} in the \
+             following Tag Vocabulary, in order of relevance, based on the Summary Statistics and \
+             Frequency Distribution about the Dataset provided further below.\n\nThe Tag \
+             Vocabulary is a CSV with 2 columns: Tag and Description. Take the Description into \
+             account to guide your Tag choices.\n\nTag Vocabulary (CSV):\n{tag_vocab_content}\n"
         )
     } else {
         // Add language instruction if provided, and there is no tag vocabulary
-        // note that the curly braces are not escaped, as we are not using the format! macro
-        "Choose no more than {NUM_TAGS}{LANGUAGE} Tags{JSON_ADD} about the contents of the Dataset \
-         in descending order of importance (lowercase only and use _ to separate words) based on \
-         the Summary Statistics and Frequency Distribution about the Dataset provided below. Do \
-         not use field names in the tags."
+        // Use minijinja template syntax
+        "Choose no more than {{ num_tags }}{{ language }} Tags{{ json_add }} about the contents of \
+         the Dataset in descending order of importance (lowercase only and use _ to separate \
+         words) based on the Summary Statistics and Frequency Distribution about the Dataset \
+         provided below. Do not use field names in the tags."
             .to_string()
     };
 
@@ -1897,36 +1901,60 @@ fn get_prompt(
         (String::new(), String::new())
     };
 
-    // Replace variable data in prompt
-    #[allow(clippy::to_string_in_format_args)]
-    #[allow(clippy::literal_string_with_formatting_args)]
-    let prompt = prompt
-        .replace("{TAG_VOCAB}", &tag_vocab)
-        .replace("{NUM_TAGS}", &args.flag_num_tags.to_string())
-        .replace("{STATS}", stats)
-        .replace("{FREQUENCY}", frequency)
-        .replace("{HEADERS}", headers)
-        .replace("{DELIMITER}", &delimiter.to_string())
-        .replace("{DUCKDB_VERSION}", &duckdb_version)
-        .replace("{TOP_N}", &args.flag_enum_threshold.to_string())
-        .replace(
-            "{DICTIONARY}",
-            DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),
-        )
-        .replace(
-            "{JSON_ADD}",
-            if get_output_format(args)? == OutputFormat::Json {
-                " (in valid, pretty-printed JSON format, ensuring string values are properly \
-                 escaped)"
-            } else {
-                " (in Markdown format)"
-            },
-        )
-        .replace("{LANGUAGE}", &language)
-        .replace("{LANGUAGE_EMPHASIS}", &language_emphasis);
+    // Set up minijinja environment for template rendering
+    let env = Environment::new();
 
-    // Return prompt
-    Ok((prompt, prompt_file.system_prompt.clone()))
+    // Build context with all variables needed for template rendering
+    let json_add = if get_output_format(args)? == OutputFormat::Json {
+        " (in valid, pretty-printed JSON format, ensuring string values are properly escaped)"
+    } else {
+        " (in Markdown format)"
+    };
+
+    // First, render tag_vocab if it contains template syntax
+    // (tag_vocab may contain minijinja variables that need to be rendered before
+    // being inserted into the main template)
+    let rendered_tag_vocab = if tag_vocab.contains("{{") {
+        let tag_vocab_ctx = context! {
+            num_tags => args.flag_num_tags,
+            json_add => json_add,
+            language => language.as_str(),
+        };
+        env.render_str(&tag_vocab, &tag_vocab_ctx)
+            .map_err(|e| CliError::Other(format!("Failed to render tag_vocab template: {e}")))?
+    } else {
+        tag_vocab
+    };
+
+    let ctx = context! {
+        stats => stats,
+        frequency => frequency,
+        dictionary => DATA_DICTIONARY_JSON.get().map_or("", |s| s.as_str()),
+        json_add => json_add,
+        duckdb_version => duckdb_version.as_str(),
+        top_n => args.flag_enum_threshold,
+        num_tags => args.flag_num_tags,
+        tag_vocab => rendered_tag_vocab.as_str(),
+        language => language.as_str(),
+        language_emphasis => language_emphasis.as_str(),
+        headers => headers,
+        delimiter => delimiter.to_string(),
+        input_table_name => INPUT_TABLE_NAME,
+        generated_by_signature => "{GENERATED_BY_SIGNATURE}",
+    };
+
+    // Render prompt using minijinja
+    let rendered_prompt = env
+        .render_str(&prompt, &ctx)
+        .map_err(|e| CliError::Other(format!("Failed to render prompt template: {e}")))?;
+
+    // Also render system_prompt if it contains template variables
+    let rendered_system_prompt = env
+        .render_str(&prompt_file.system_prompt, &ctx)
+        .unwrap_or_else(|_| prompt_file.system_prompt.clone());
+
+    // Return rendered prompt
+    Ok((rendered_prompt, rendered_system_prompt))
 }
 
 /// Makes a completion request to the LLM API and processes the response.

@@ -1902,7 +1902,7 @@ fn get_prompt(
     // Also render system_prompt if it contains template variables
     let rendered_system_prompt = env
         .render_str(&prompt_file.system_prompt, &ctx)
-        .unwrap_or_else(|_| prompt_file.system_prompt.clone());
+        .map_err(|e| CliError::Other(format!("Failed to render system_prompt template: {e}")))?;
 
     // Return rendered prompt
     Ok((rendered_prompt, rendered_system_prompt))

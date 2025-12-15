@@ -141,14 +141,13 @@ Tag Vocabulary (CSV):
 
 {{ tag_vocab }}
 
-{% else %}
-{# NOTE: If no tag vocabulary is provided, use the default tag generation prompt #}
+{% else %}{# NOTE: If no tag vocabulary is provided, use the default tag generation prompt #}
 Choose no more than {{ num_tags }} unique Tags{{ json_add }} about the contents of the Dataset
 in descending order of importance (lowercase only and use _ to separate words) based on the
 Summary Statistics and Frequency Distribution about the Dataset provided below.
 Do not use field names in the tags.
 
-{% if language %} Make sure your tags are in this language: {{ language|trim|title }} {% endif %}
+{% if language %} Make sure your tag choices are in this language: {{ language|trim|title }} {% endif %}
 {% endif %}
 
 Add an Attribution with the placeholder "{{ generated_by_signature }}" after the Tags. If generating JSON format,
@@ -173,7 +172,7 @@ custom_prompt_guidance = """
 We need to answer the User's Prompt above.
 
 If the User's Prompt is not about the Dataset, immediately return
-'I'm sorry. I'm afraid I can only answer questions about the Dataset.'
+'I'm sorry. I'm afraid I can only answer questions about the Dataset.'{% if language %} in this language: {{ language|trim|title }}{% endif %}
 
 If the User's Prompt can be answered by using the Dataset's Summary Statistics and
 Frequency Distribution data below, immediately return the answer{% if language %} in this language: {{ language|trim|title }}{% endif %}.

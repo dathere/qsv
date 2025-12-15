@@ -1,17 +1,26 @@
 static USAGE: &str = r#"
-Create a Data Dictionary and/or infer Description & Tags about a Dataset using an
-OpenAI API-compatible Large Language Model (LLM).
+Create a "neuro-procedural" Data Dictionary and/or infer Description & Tags about a Dataset
+using an OpenAI API-compatible Large Language Model (LLM).
 
 It does this by compiling Summary Statistics & a Frequency Distribution of the Dataset,
-and then prompting the LLM with detailed, configurable prompts with these extended context.
+and then prompting the LLM with detailed, configurable, minijinja-templated prompts with
+these extended statistical context.
 
+The Data Dictionary is "neuro-procedural" as it uses a hybrid approach. It's primarily populated
+deterministically using Summary Statistics & Frequency Distribution data, and only the human-friendly
+Label & Description are populated by the "neural network" LLM using the same statistical context.
+
+CHAT MODE:
 You can also use the --prompt option to ask a natural language question about the Dataset.
 
+If the question can be answered by solely using the Dataset's Summary Statistics and
+Frequency Distribution data, the LLM will return the answer directly.
+
+CHAT SQL RETRIEVAL-AUGMENTED GENERATION (RAG) SUB-MODE:
 If the question cannot be answered using the Dataset's Summary Statistics & Frequency Distribution,
 it will first create a Data Dictionary & provide it to the LLM as additional context to create a
-SQL query that DETERMINISTICALLY answers the natural language question ("SQL RAG" mode).
+SQL query that DETERMINISTICALLY answers the natural language question.
 
-SQL RAG MODE:
 Two SQL dialects are currently supported - DuckDB (highly recommended) & Polars. If the
 QSV_DESCRIBEGPT_DB_ENGINE environment variable is set to the absolute path of the DuckDB binary,
 DuckDB will be used to answer the question. Otherwise, if the "polars" feature is enabled,
@@ -28,7 +37,7 @@ When using DuckDB, all loaded DuckDB extensions will be sent as additional conte
 it know what functions (even UDFs!) it can use in the SQL queries it generates. If you want a
 specific function or technique to be used in the SQL query, mention it in the prompt.
 
-Supported models & LLM providers:
+SUPPORTED MODELS & LLM PROVIDERS:
 OpenAI's open-weights gpt-oss-20b model was used during development & is recommended for most use cases.
 It was also tested with OpenAI, TogetherAI, OpenRouter and Google Gemini cloud providers.
 Local LLMs tested include Ollama, Jan and LM Studio.
@@ -106,6 +115,7 @@ describegpt options:
                            and only the human-friendly Label and Description are populated by the LLM using the same
                            statistical context.
     --description          Infer a general Description of the dataset based on detailed statistical context.
+                           An Attribution signature is embedded in the Description.
     --tags                 Infer Tags that categorize the dataset based on detailed statistical context.
                            Useful for grouping datasets and filtering.
     -A, --all              Shortcut for --dictionary --description --tags.
@@ -118,10 +128,11 @@ describegpt options:
                            If zero, no truncation is performed.
                            [default: 25]
     --addl-cols            Add additional columns to the dictionary from the Summary Statistics.
-  --addl-cols-list <list>  A comma-separated list of additional columns to add to the dictionary.
+  --addl-cols-list <list>  A comma-separated list of additional stats columns to add to the dictionary.
                            The columns must be present in the Summary Statistics.
                            If the columns are not present in the Summary Statistics or already in the dictionary,
-                           they will be ignored. "everything" can be used to add all available columns.
+                           they will be ignored. "everything" can be used to add all available statscolumns.
+                           You can adjust the available columns with --stats-options.
                            [default: sort_order, sortiness, mean, median, mad, stddev, variance, cv]
 
                            TAG OPTIONS:
@@ -169,8 +180,9 @@ describegpt options:
                            If the SQL query executes successfully, the results will be saved with a
                            ".csv" extension. Otherwise, it will be saved with a ".sql" extension so
                            the user can inspect why it failed and modify it.
-    --prompt-file <file>   The TOML file containing prompts to use for inferencing.
-                           If no prompt file is provided, default prompts will be used.
+    --prompt-file <file>   The configurable TOML file containing prompts to use for inferencing.
+                           If no file is provided, default prompts will be used.
+                           The prompt file uses the minijinja template engine (https://docs.rs/minijinja)
                            See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml
     --fewshot-examples     By default, few-shot examples are NOT included in the LLM prompt when
                            generating SQL queries. When this option is set, few-shot examples in the default

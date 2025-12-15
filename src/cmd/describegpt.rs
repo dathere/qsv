@@ -1877,15 +1877,6 @@ fn get_prompt(
         " (in Markdown format)"
     };
 
-    // prepend a space to the language if it is set
-    let language = if let Some(s) = args.flag_language.as_ref()
-        && !s.trim().is_empty()
-    {
-        format!(" {}", s.trim())
-    } else {
-        String::new()
-    };
-
     let ctx = context! {
         stats => stats,
         frequency => frequency,
@@ -1895,7 +1886,7 @@ fn get_prompt(
         top_n => args.flag_enum_threshold,
         num_tags => args.flag_num_tags,
         tag_vocab => tag_vocab,
-        language => language,
+        language => args.flag_language.as_ref().map_or("", |s| s.trim().as_str()),
         headers => headers,
         delimiter => delimiter.to_string(),
         input_table_name => INPUT_TABLE_NAME,
@@ -3607,12 +3598,6 @@ fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let start_time = Instant::now();
     let mut args: Args = util::get_args(USAGE, argv)?;
-
-    // if language is some, add a leading space to the language
-    // so the generated prompt reads correctly when language is used or not.
-    if let Some(lang) = &args.flag_language {
-        args.flag_language = Some(format!(" {}", lang.trim()));
-    }
 
     // Initialize Redis default connection string to localhost, using database 3 by default
     // when --redis-cache is enabled

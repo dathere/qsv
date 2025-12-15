@@ -53,7 +53,7 @@ For Dataset fields with all unique values (i.e. cardinality is equal to the numb
 """
 
 dictionary_prompt = """
-Generate{{ language }} Labels and Descriptions for each field in the Dataset based on the Summary Statistics and Frequency Distribution provided below.
+Generate{% if language %} {{ language|trim|title }}{% endif %} Labels and Descriptions for each field in the Dataset based on the Summary Statistics and Frequency Distribution provided below.
 
 {% set headers_list = headers|split(",")|list %}
 The Dataset has {{ headers_list|length }} field{{ headers_list|length | pluralize }}:
@@ -77,7 +77,7 @@ Return the results in JSON format where each field name is a key, and the value 
   }
 }{% endraw %}
 
-Generate{{ language }} Labels and Descriptions for ALL fields in the Dataset. Use the Summary Statistics and Frequency Distribution to understand the context and meaning of each field.
+Generate{% if language %} {{ language|trim|title }}{% endif %} Labels and Descriptions for ALL fields in the Dataset. Use the Summary Statistics and Frequency Distribution to understand the context and meaning of each field.
 
 Let's think step by step, correcting yourself as needed.
 
@@ -93,7 +93,7 @@ Frequency Distribution (CSV):
 """
 
 description_prompt = """
-Generate a{{ language }} Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
+Generate a{% if language %} {{ language|trim|title }}{% endif %} Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
 
 Let's think step by step.
 
@@ -117,7 +117,7 @@ After the Description, add a section titled "Notable Characteristics" with a bul
 characteristics of the Dataset (e.g. the central tendency and spread of the data, the distribution shape,
 anomalies, patterns; if there are any outliers, missing values, duplicates, PII/PHI/PCI data; and
 other data quality issues that the User should be aware of).
-{% if language %} {{ "Make sure both the Description and Notable Characteristics are in this language: " ~ language }} {% endif %}
+{% if language %} Make sure both the Description and Notable Characteristics are in this language: {{ language|trim|title }}{% endif %}
 
 Add an Attribution with the placeholder "{{ generated_by_signature }}" at the bottom of the output.
 
@@ -148,7 +148,7 @@ in descending order of importance (lowercase only and use _ to separate words) b
 Summary Statistics and Frequency Distribution about the Dataset provided below.
 Do not use field names in the tags.
 
-{% if language %} Make sure your tags are in this language:{{ language }} {% endif %}
+{% if language %} Make sure your tags are in this language: {{ language|trim|title }} {% endif %}
 {% endif %}
 
 Add an Attribution with the placeholder "{{ generated_by_signature }}" after the Tags. If generating JSON format,
@@ -176,7 +176,7 @@ If the User's Prompt is not about the Dataset, immediately return
 'I'm sorry. I'm afraid I can only answer questions about the Dataset.'
 
 If the User's Prompt can be answered by using the Dataset's Summary Statistics and
-Frequency Distribution data below, immediately return the answer{% if language %} {{ "in this language: " ~ language }} {% endif %}.
+Frequency Distribution data below, immediately return the answer{% if language %} in this language: {{ language|trim|title }}{% endif %}.
 
 Otherwise, using the Dataset's Summary Statistics, Frequency Distribution and Data Dictionary below,
 create a SQL query that can be used to answer the User's Prompt.
@@ -185,7 +185,7 @@ create a SQL query that can be used to answer the User's Prompt.
 SQL Query Generation Guidelines:
 
 END SQL Query Generation Guidelines
-- Make sure the generated SQL query is valid and has{{ language }} comments to explain the query
+- Make sure the generated SQL query is valid and has{% if language %} {{ language|trim|title }}{% endif %} comments to explain the query
 - Add "-- {{ generated_by_signature }}" at the top of the query
 
 Return the SQL query as a SQL code block preceded by a newline.

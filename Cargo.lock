@@ -1847,7 +1847,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.14.0"
-source = "git+https://github.com/YS-L/csvlens?rev=57eeab5#57eeab5047a87d066336a89eb90a78eda9b50261"
+source = "git+https://github.com/YS-L/csvlens?rev=75d1c55#75d1c55a8a032f0fe02d2b17da494dc47d6f0747"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
@@ -4676,9 +4676,9 @@ dependencies = [
 
 [[package]]
 name = "os_info"
-version = "3.13.0"
+version = "3.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c39b5918402d564846d5aba164c09a66cc88d232179dfd3e3c619a25a268392"
+checksum = "e4022a17595a00d6a369236fdae483f0de7f0a339960a53118b818238e132224"
 dependencies = [
  "android_system_properties",
  "log",

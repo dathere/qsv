@@ -317,7 +317,7 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 cached = { git = "https://github.com/nihohit/cached", branch = "client-side-caching" }
 
 # use latest upstream now that our PR has been merged
-csvlens = { git = "https://github.com/YS-L/csvlens", rev = "57eeab5", optional = true }
+csvlens = { git = "https://github.com/YS-L/csvlens", rev = "75d1c55", optional = true }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88", optional = true }

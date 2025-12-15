@@ -1867,7 +1867,8 @@ fn get_prompt(
     };
 
     // Set up minijinja environment for template rendering
-    let env = Environment::new();
+    let mut env = Environment::new();
+    minijinja_contrib::add_to_environment(&mut env);
 
     // Build context with all variables needed for template rendering
     let json_add = if get_output_format(args)? == OutputFormat::Json {

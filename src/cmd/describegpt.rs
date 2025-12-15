@@ -1886,7 +1886,7 @@ fn get_prompt(
         top_n => args.flag_enum_threshold,
         num_tags => args.flag_num_tags,
         tag_vocab => tag_vocab,
-        language => args.flag_language.as_ref().map_or("", |s| s.trim().as_str()),
+        language => args.flag_language.as_ref().map_or("", |s| s.as_str()),
         headers => headers,
         delimiter => delimiter.to_string(),
         input_table_name => INPUT_TABLE_NAME,

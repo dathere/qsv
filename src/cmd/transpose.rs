@@ -88,8 +88,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
 impl Args {
     fn wide_to_long(&self) -> CliResult<()> {
-        let mut rdr = Config::new((self).arg_input.as_ref())
-            .delimiter((self).flag_delimiter)
+        let mut rdr = Config::new(self.arg_input.as_ref())
+            .delimiter(self.flag_delimiter)
             .no_headers(false)
             .reader()?;
         let mut wtr = self.wconfig().writer()?;

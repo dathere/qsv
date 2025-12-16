@@ -123,3 +123,52 @@ fn transpose_long_format_all_empty() {
     wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
+
+#[test]
+fn transpose_long_format_single_column() {
+    let wrk = Workdir::new("transpose_long_format_single_column");
+
+    // Create CSV with only one column (field column, no attributes)
+    let wide_format = vec![svec!["field"], svec!["name"], svec!["age"]];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.arg("--long").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Should only have headers, no attribute columns to process
+    let expected = vec![svec!["field", "attribute", "value"]];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_multipass_mutually_exclusive() {
+    let wrk = Workdir::new("transpose_long_multipass_mutually_exclusive");
+
+    // Create a test CSV file
+    let wide_format = vec![
+        svec!["field", "type", "value"],
+        svec!["name", "String", "Alice"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    // Test that --long and --multipass are mutually exclusive
+    let mut cmd = wrk.command("transpose");
+    cmd.arg("--long").arg("--multipass").arg("in.csv");
+
+    // Should fail with an error
+    wrk.assert_err(&mut cmd);
+
+    // Verify the error message mentions mutual exclusivity
+    let stderr: String = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("mutually exclusive") || stderr.contains("mutually-exclusive"),
+        "Expected error message about mutual exclusivity, got: {}",
+        stderr
+    );
+}

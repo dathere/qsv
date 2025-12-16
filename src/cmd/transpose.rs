@@ -107,12 +107,10 @@ impl Args {
         header_record.push_field(b"value");
         wtr.write_byte_record(&header_record)?;
 
-        // Read all records
-        let records = rdr.byte_records().collect::<Result<Vec<_>, _>>()?;
-
-        // Process each record
+        // Process each record in a streaming fashion to avoid loading all records into memory
         let mut output_record = ByteRecord::with_capacity(256, 3);
-        for record in records {
+        for result in rdr.byte_records() {
+            let record = result?;
             if record.is_empty() {
                 continue;
             }

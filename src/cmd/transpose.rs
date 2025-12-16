@@ -1,10 +1,6 @@
 static USAGE: &str = r#"
 Transpose the rows/columns of CSV data.
 
-Note that by default this reads all of the CSV data into memory,
-and will automatically go into multipass mode if the CSV is larger
-than memory.
-
 Usage:
     qsv transpose [options] [<input>]
     qsv transpose --help
@@ -16,15 +12,22 @@ transpose options:
                            the number of rows.
                            Note that in general it is faster to
                            process the transpose in memory.
-    --long                 Convert wide-format CSV to long format.
-                           The first column is treated as the "field"
-                           identifier, and remaining columns are treated
-                           as "attributes". Output format is three columns:
+                           Useful for really big datasets as the default
+                           is to read the entire dataset into memory.
+    --long <selection>     Convert wide-format CSV to "long" format.
+                           Output format is three columns:
                            field, attribute, value. Empty values are skipped.
-                           Useful for converting stats output and other
-                           wide-format CSVs to long format for easier
-                           processing, database storage, or FAIR metadata
-                           specifications. Mutually exclusive with --multipass.
+                           Mutually exclusive with --multipass.
+                           
+                           The <selection> argument is REQUIRED, it specifies which column(s)
+                           to use as the "field" identifier using the same selection
+                           syntax as 'qsv select':
+                           - Column names: --long varname or --long "column name"
+                           - Column indices (1-based): --long 5 or --long 2,3
+                           - Ranges: --long 1-4 or --long 3-
+                           - Regex patterns: --long /^prefix/
+                           - Comma-separated: --long var1,var2 or --long 1,3,5
+                           Multiple field columns are concatenated with | separator.
 
 Common options:
     -h, --help             Display this message
@@ -43,8 +46,9 @@ use memmap2::MmapOptions;
 use serde::Deserialize;
 
 use crate::{
-    CliResult,
+    CliError, CliResult,
     config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
+    select::SelectColumns,
     util,
 };
 
@@ -55,7 +59,7 @@ struct Args {
     flag_output:    Option<String>,
     flag_delimiter: Option<Delimiter>,
     flag_multipass: bool,
-    flag_long:      bool,
+    flag_long:      Option<String>,
     flag_memcheck:  bool,
 }
 
@@ -63,13 +67,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
     // --long and --multipass are mutually exclusive
-    if args.flag_long && args.flag_multipass {
+    if args.flag_long.is_some() && args.flag_multipass {
         return fail_incorrectusage_clierror!(
             "The --long and --multipass options are mutually exclusive."
         );
     }
 
-    if args.flag_long {
+    if args.flag_long.is_some() {
         return args.wide_to_long();
     }
 
@@ -94,11 +98,40 @@ impl Args {
             .reader()?;
         let mut wtr = self.wconfig().writer()?;
 
-        // Read headers - first column is "field", rest are "attributes"
+        // Read headers
         let headers = rdr.byte_headers()?.clone();
         if headers.is_empty() {
             return fail_incorrectusage_clierror!("CSV file must have at least one column.");
         }
+
+        // Determine which columns to use as field columns
+        let field_column_indices: Vec<usize> = if let Some(ref selection_str) = self.flag_long {
+            if selection_str.trim().is_empty() {
+                // Empty string defaults to first column
+                vec![0]
+            } else {
+                // Parse the selection string using SelectColumns
+                let select_cols = SelectColumns::parse(selection_str)
+                    .map_err(|e| CliError::Other(format!("Invalid column selection: {e}")))?;
+                let selection = select_cols
+                    .selection(&headers, true)
+                    .map_err(|e| CliError::Other(format!("Column selection error: {e}")))?;
+                if selection.is_empty() {
+                    return fail_incorrectusage_clierror!(
+                        "Column selection resulted in no columns. At least one field column is \
+                         required."
+                    );
+                }
+                selection.iter().copied().collect()
+            }
+        } else {
+            // No selection specified, default to first column
+            vec![0]
+        };
+
+        // Create a set of field column indices for efficient lookup
+        let field_column_set: std::collections::HashSet<usize> =
+            field_column_indices.iter().copied().collect();
 
         // Write output headers
         let mut header_record = ByteRecord::with_capacity(64, 3);
@@ -115,17 +148,41 @@ impl Args {
                 continue;
             }
 
-            // First column is the field identifier
-            let field = &record[0];
+            // Build the field value (concatenated if multiple columns)
+            let field_bytes: Vec<u8> = if field_column_indices.len() == 1 {
+                // Single field column - use directly
+                let idx = field_column_indices[0];
+                if idx < record.len() {
+                    record[idx].to_vec()
+                } else {
+                    Vec::new()
+                }
+            } else {
+                // Multiple field columns - concatenate with | separator
+                let mut concatenated = Vec::new();
+                for (i, &idx) in field_column_indices.iter().enumerate() {
+                    if i > 0 {
+                        concatenated.push(b'|');
+                    }
+                    if idx < record.len() {
+                        concatenated.extend_from_slice(&record[idx]);
+                    }
+                }
+                concatenated
+            };
 
-            // Iterate through remaining columns (attributes)
-            for (i, attribute_header) in headers.iter().enumerate().skip(1) {
+            // Iterate through all columns, skipping field columns
+            for (i, attribute_header) in headers.iter().enumerate() {
+                // Skip if this is a field column
+                if field_column_set.contains(&i) {
+                    continue;
+                }
                 if i < record.len() {
                     let value = &record[i];
                     // Skip empty values
                     if !value.is_empty() {
                         output_record.clear();
-                        output_record.push_field(field);
+                        output_record.push_field(&field_bytes);
                         output_record.push_field(attribute_header);
                         output_record.push_field(value);
                         wtr.write_byte_record(&output_record)?;

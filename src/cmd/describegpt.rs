@@ -110,10 +110,10 @@ Usage:
 
 describegpt options:
                            DATA ANALYSIS/INFERENCING OPTIONS:
-    --dictionary           Create a Data Dictionary using a hybrid "neuro-procedural" pipeline - i.e. the Dictionary
-                           is deterministically populated using Summary Statistics and Frequency Distribution data,
-                           and only the human-friendly Label and Description are populated by the LLM using the same
-                           statistical context.
+    --dictionary           Create a Data Dictionary using a hybrid "neuro-procedural" pipeline - i.e.
+                           the Dictionary is populated deterministically using Summary Statistics and
+                           Frequency Distribution data, and only the human-friendly Label and Description
+                           are populated by the LLM using the same statistical context.
     --description          Infer a general Description of the dataset based on detailed statistical context.
                            An Attribution signature is embedded in the Description.
     --tags                 Infer Tags that categorize the dataset based on detailed statistical context.
@@ -130,8 +130,9 @@ describegpt options:
     --addl-cols            Add additional columns to the dictionary from the Summary Statistics.
   --addl-cols-list <list>  A comma-separated list of additional stats columns to add to the dictionary.
                            The columns must be present in the Summary Statistics.
-                           If the columns are not present in the Summary Statistics or already in the dictionary,
-                           they will be ignored. "everything" can be used to add all available statscolumns.
+                           If the columns are not present in the Summary Statistics or already in the
+                           dictionary, they will be ignored.
+                           "everything" can be used to add all available statistics columns.
                            You can adjust the available columns with --stats-options.
                            [default: sort_order, sortiness, mean, median, mad, stddev, variance, cv]
 
@@ -203,9 +204,19 @@ describegpt options:
     -m, --model <model>    The model to use for inferencing.
                            If the QSV_LLM_MODEL environment variable is set, it'll be used instead.
                            [default: openai/gpt-oss-20b]
-    --language <lang>      The output language. If not set, the model's default language is used.
-                           This is a function of the model and is not guaranteed to be supported
-                           by all models.
+    --language <lang>      The output language/dialect to use for the response. (e.g., "Spanish", "French",
+                           "Hindi", "Mandarin", "Taglish", "Pig Latin", "Valley Girl", "Pirate",
+                           "Shakespearean English", etc.)
+    
+                           CHAT MODE (--prompt) BEHAVIOR:
+                           When --prompt is used and --language is not set, automatically detects
+                           the language of the prompt with an 80% confidence threshold.
+                           If the threshold is met, it will specify the detected language in its response.
+                           If set to a float (0.0 to 1.0), specifies the detection confidence threshold.
+                           If set to a string, specifies the language/dialect to use for the response.
+                           Note that LLMs often detect the language independently, but will often respond
+                           in the model's default language. This option is here to ensure responses are
+                           in the detected language of the prompt.
     --addl-props <json>    Additional model properties to pass to the LLM chat/completion API.
                            Various models support different properties beyond the standard ones.
                            For instance, gpt-oss-20b supports the "reasoning_effort" property.
@@ -285,6 +296,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use strum_macros::{Display, EnumString};
 use toml;
+#[cfg(feature = "whatlang")]
+use whatlang::detect;
 
 use crate::{CliError, CliResult, config::Config, regex_oncelock, util, util::process_input};
 #[cfg(feature = "feature_capable")]
@@ -297,6 +310,12 @@ enum PromptType {
     Description,
     Tags,
     Prompt,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AttributionFormat {
+    Markdown,
+    SqlComment,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -364,6 +383,7 @@ struct PromptFile {
     tags_prompt:            String,
     prompt:                 String,
     format:                 String,
+    language:               String,
     base_url:               String,
     model:                  String,
     timeout:                u32,
@@ -382,6 +402,10 @@ Note that this command uses LLMs for inferencing and is therefore prone to inacc
 Verify output results before using them."#;
 
 const INPUT_TABLE_NAME: &str = "{INPUT_TABLE_NAME}";
+
+const DEFAULT_LANGDETECTION_THRESHOLD: f64 = 0.8; // 80% default confidence threshold
+static DETECTED_LANGUAGE: OnceLock<String> = OnceLock::new();
+static DETECTED_LANGUAGE_CONFIDENCE: OnceLock<f64> = OnceLock::new();
 
 static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
 
@@ -568,6 +592,55 @@ fn print_status(msg: &str, elapsed: Option<std::time::Duration>) {
         } else {
             eprintln!("{msg}");
         }
+    }
+}
+
+/// Detect language from prompt text using whatlang
+/// Returns the detected language name if confidence >= threshold, otherwise None
+/// Default threshold is 0.8 (80%)
+#[cfg(feature = "whatlang")]
+fn detect_language_from_prompt(prompt: &str, threshold: f64) -> Option<String> {
+    let lang_info = detect(prompt);
+    if let Some(lang_info) = lang_info {
+        let detected_lang = lang_info.lang().eng_name();
+        let lang_confidence = lang_info.confidence();
+
+        // safety: these all have valid values, so it's safe to unwrap
+        DETECTED_LANGUAGE.set(detected_lang.to_string()).unwrap();
+        DETECTED_LANGUAGE_CONFIDENCE.set(lang_confidence).unwrap();
+
+        if lang_confidence >= threshold {
+            Some(detected_lang.to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+/// Parse the --language option: if it's autodetect, a threshold, or an explicit language
+/// Returns (is_autodetect, threshold, explicit_language)
+/// - is_autodetect: true if language should be auto-detected
+/// - threshold: confidence threshold for autodetect (0.0-1.0)
+/// - explicit_language: Some(language) if an explicit language was specified, None otherwise
+fn parse_language_option(language: Option<&String>) -> (bool, f64, Option<String>) {
+    if let Some(lang) = language {
+        // Try to parse as a number (threshold)
+        if let Ok(threshold_float) = lang.parse::<f64>() {
+            // Float 0.0-1.0
+            if (0.0..=1.0).contains(&threshold_float) {
+                (true, threshold_float, None)
+            } else {
+                // Invalid float, treat as explicit language
+                (false, DEFAULT_LANGDETECTION_THRESHOLD, Some(lang.clone()))
+            }
+        } else {
+            // Not a number, treat as explicit language string
+            (false, DEFAULT_LANGDETECTION_THRESHOLD, Some(lang.clone()))
+        }
+    } else {
+        (true, DEFAULT_LANGDETECTION_THRESHOLD, None)
     }
 }
 
@@ -1262,30 +1335,122 @@ fn combine_dictionary_entries(
 }
 
 /// Replace {GENERATED_BY_SIGNATURE} placeholder with actual attribution
-fn replace_attribution_placeholder(text: &str, args: &Args, model: &str, base_url: &str) -> String {
+fn replace_attribution_placeholder(
+    text: &str,
+    args: &Args,
+    model: &str,
+    base_url: &str,
+    format: AttributionFormat,
+    prompt_type: PromptType,
+) -> String {
+    const ATTRIBUTION_BORDER: &str =
+        "===============================================================================";
+
     let prompt_file = get_prompt_file(args).ok();
-    let prompt_file_kind = if args.flag_prompt_file.is_some() {
-        if let Some(prompt_file_path) = args.flag_prompt_file.as_ref() {
-            format!("Custom (file: {prompt_file_path})")
+    let (prompt_file_kind, prompt_file_ver, prompt_file_lang) =
+        if let Some(prompt_file) = prompt_file {
+            let prompt_file_kind = if let Some(prompt_file_path) = args.flag_prompt_file.as_ref() {
+                format!("Custom (file: {prompt_file_path})")
+            } else {
+                "Default".to_string()
+            };
+            (
+                prompt_file_kind,
+                prompt_file.version.clone(),
+                prompt_file.language.clone(),
+            )
         } else {
-            "Default".to_string()
+            ("Default".to_string(), "unknown".to_string(), String::new())
+        };
+
+    // detected language with confidence if available, otherwise use model default
+    let detected_lang = DETECTED_LANGUAGE
+        .get()
+        .map_or_else(|| prompt_file_lang.clone(), String::to_string);
+    let detected_confidence = DETECTED_LANGUAGE_CONFIDENCE.get().copied().unwrap_or(0.0);
+
+    // Compute the display language string for attribution.
+    //
+    // - For PromptType::Prompt:
+    //      * If the detected language matches the language specified in the prompt file, simply use
+    //        the prompt file's language.
+    //      * If the detected language differs from the prompt file's language, display the detected
+    //        language with the confidence score as a percentage (one decimal). e.g., "Spanish
+    //        (85.0%)"
+    //      This exposes to the user both the auto-detected language and how confident describegpt
+    // is in detection.
+    //
+    // - For other prompt types (Dictionary, Description, Tags), just use the prompt file's
+    //   language.
+    //
+    // This enables clearer reporting in attribution blocks and helps users quickly determine
+    // which language/dialect is being used in LLM responses and what confidence describegpt had
+    // in the detection case.
+    let lang_display = if prompt_type == PromptType::Prompt {
+        if detected_lang == prompt_file_lang {
+            prompt_file_lang
+        } else {
+            format!("{detected_lang} ({:.1}%)", detected_confidence * 100.0)
         }
     } else {
-        "Default".to_string()
+        prompt_file_lang
     };
-    let prompt_file_ver = prompt_file
-        .as_ref()
-        .map_or_else(|| "unknown".to_string(), |pf| pf.version.clone());
+
+    // Custom warning message based on PromptType
+    let warning_message = match prompt_type {
+        PromptType::Dictionary => {
+            "WARNING: Label and Description generated by an LLM and may contain inaccuracies. \
+             Verify before using!"
+        },
+        PromptType::Description => {
+            "WARNING: Description generated by an LLM and may contain inaccuracies. Verify before \
+             using!"
+        },
+        PromptType::Tags => {
+            "WARNING: Tags generated by an LLM and may contain inaccuracies. Verify before using!"
+        },
+        PromptType::Prompt => {
+            "WARNING: Generated by an LLM and may contain inaccuracies. Verify before using!"
+        },
+    };
+
+    // Handle prompt info wrapping for SQL comment format
+    let (prompt_info, att_prefix, extra_separator) = if format == AttributionFormat::SqlComment
+        && let Some(prompt) = &args.flag_prompt
+    {
+        let wrapped_prompt = textwrap::fill(
+            prompt,
+            textwrap::Options::new(75).subsequent_indent("--         "),
+        );
+        (
+            format!(
+                r#"{ATTRIBUTION_BORDER}
+-- Prompt: {wrapped_prompt}
+--"#
+            ),
+            "-- ",
+            format!("-- {ATTRIBUTION_BORDER}\n--"),
+        )
+    } else {
+        (String::new(), "", String::new())
+    };
 
     let attribution = format!(
-        r#"Generated by {qsv_variant} v{qsv_version} describegpt
-Command line: {command_line}
-Prompt file: {prompt_file_kind} v{prompt_file_ver}
-Model: {model}
-LLM API URL: {base_url}
-Timestamp: {ts}
-
-WARNING: Label and Description generated by an LLM and may contain inaccuracies. Verify before using!"#,
+        r#"{prompt_info_display}{att_prefix}Generated by {qsv_variant} v{qsv_version} describegpt
+{att_prefix}Command line: {command_line}
+{att_prefix}Prompt file: {prompt_file_kind} v{prompt_file_ver}
+{att_prefix}Model: {model}
+{att_prefix}LLM API URL: {base_url}
+{att_prefix}Language: {lang_display}
+{att_prefix}Timestamp: {ts}
+{att_prefix}
+{att_prefix}{warning_message}
+{extra_separator}"#,
+        prompt_info_display = if prompt_info.is_empty() {
+            String::new()
+        } else {
+            format!("{prompt_info}\n")
+        },
         qsv_variant = util::CARGO_BIN_NAME,
         qsv_version = util::CARGO_PKG_VERSION,
         command_line = std::env::args().collect::<Vec<_>>().join(" "),
@@ -1965,10 +2130,8 @@ fn get_completion(
     model: &str,
     api_key: &str,
     messages: &serde_json::Value,
+    kind: PromptType,
 ) -> CliResult<CompletionResponse> {
-    const ATTRIBUTION_BORDER: &str =
-        "===============================================================================";
-
     let prompt_file = get_prompt_file(args)?;
 
     let base_url = prompt_file.base_url.clone();
@@ -2051,56 +2214,16 @@ fn get_completion(
         elapsed:    elapsed_ms,
     };
 
-    // if flag_prompt is set, add Prompt to the Attribution and
-    // ensure each line of the Attribution begins with '--' so its treated as a SQL comment
-    let (prompt_info, att_prefix) = if let Some(prompt_info) = &args.flag_prompt {
-        let wrapped_prompt = textwrap::fill(
-            prompt_info,
-            textwrap::Options::new(75).subsequent_indent("--         "),
-        );
-        (
-            format!(
-                r#"{ATTRIBUTION_BORDER}
--- Prompt: {wrapped_prompt}
---"#
-            ),
-            "-- ",
-        )
+    // Determine format based on prompt type and flag_prompt
+    let format = if kind == PromptType::Prompt && args.flag_prompt.is_some() {
+        AttributionFormat::SqlComment
     } else {
-        (String::new(), "")
+        AttributionFormat::Markdown
     };
 
-    // Add Attribution metadata
-    let completion = completion.replace(
-        "{GENERATED_BY_SIGNATURE}",
-        &format!(
-            r#"{prompt_info}
-{att_prefix}Generated by {qsv_variant} v{qsv_version} describegpt
-{att_prefix}Command line: {command_line}
-{att_prefix}Prompt file: {prompt_file_kind} v{prompt_file_ver}
-{att_prefix}Model: {model}
-{att_prefix}LLM API URL: {base_url}
-{att_prefix}Timestamp: {ts}
-{att_prefix}
-{att_prefix}WARNING: Generated by an LLM and may contain inaccuracies. Verify before using!
-{extra_separator}"#,
-            qsv_variant = util::CARGO_BIN_NAME,
-            qsv_version = util::CARGO_PKG_VERSION,
-            command_line = std::env::args().collect::<Vec<_>>().join(" "),
-            prompt_file_kind = if let Some(prompt_file) = args.flag_prompt_file.as_ref() {
-                format!("Custom (file: {prompt_file})")
-            } else {
-                "Default".to_string()
-            },
-            prompt_file_ver = prompt_file.version,
-            ts = chrono::Utc::now().to_rfc3339(),
-            extra_separator = if att_prefix.is_empty() {
-                String::new()
-            } else {
-                format!("-- {ATTRIBUTION_BORDER}\n--")
-            }
-        ),
-    );
+    // Replace attribution placeholder using unified function
+    let completion =
+        replace_attribution_placeholder(completion, args, model, &base_url, format, kind);
 
     Ok(CompletionResponse {
         response: completion,
@@ -2239,7 +2362,7 @@ fn get_diskcache_completion(
     messages: &serde_json::Value,
 ) -> CliResult<Return<CompletionResponse>> {
     Ok(Return::new(get_completion(
-        args, client, model, api_key, messages,
+        args, client, model, api_key, messages, kind,
     )?))
 }
 
@@ -2276,7 +2399,7 @@ fn get_redis_completion(
     messages: &serde_json::Value,
 ) -> CliResult<Return<CompletionResponse>> {
     Ok(Return::new(get_completion(
-        args, client, model, api_key, messages,
+        args, client, model, api_key, messages, kind,
     )?))
 }
 
@@ -2421,7 +2544,7 @@ fn get_cached_completion(
         },
         CacheType::Fresh => {
             // Make fresh API call and manually update cache
-            let fresh_result = get_completion(args, client, model, api_key, messages)?;
+            let fresh_result = get_completion(args, client, model, api_key, messages, kind)?;
             // Manually update the appropriate cache with the fresh result
             if args.flag_redis_cache {
                 let _ = get_redis_completion(args, client, model, api_key, kind, messages);
@@ -2430,7 +2553,7 @@ fn get_cached_completion(
             }
             Ok(fresh_result)
         },
-        CacheType::None => get_completion(args, client, model, api_key, messages),
+        CacheType::None => get_completion(args, client, model, api_key, messages, kind),
     }
 }
 
@@ -2640,7 +2763,12 @@ fn run_inference_options(
                 && let Some(attr_str) = attribution.as_str()
             {
                 *attribution = json!(replace_attribution_placeholder(
-                    attr_str, args, model, base_url
+                    attr_str,
+                    args,
+                    model,
+                    base_url,
+                    AttributionFormat::Markdown,
+                    PromptType::Dictionary
                 ));
             }
 
@@ -2691,7 +2819,12 @@ fn run_inference_options(
                     && let Some(attr_str) = attribution.as_str()
                 {
                     *attribution = json!(replace_attribution_placeholder(
-                        attr_str, args, model, base_url
+                        attr_str,
+                        args,
+                        model,
+                        base_url,
+                        AttributionFormat::Markdown,
+                        PromptType::Dictionary
                     ));
                 }
                 total_json_output[kind.to_string()] = json!({
@@ -2727,8 +2860,14 @@ fn run_inference_options(
                 // Markdown output
                 let mut markdown_output = format_dictionary_markdown(&combined_entries);
                 // Replace attribution placeholder in markdown
-                markdown_output =
-                    replace_attribution_placeholder(&markdown_output, args, model, base_url);
+                markdown_output = replace_attribution_placeholder(
+                    &markdown_output,
+                    args,
+                    model,
+                    base_url,
+                    AttributionFormat::Markdown,
+                    PromptType::Dictionary,
+                );
                 let formatted_output = format!(
                     "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
                     kind,
@@ -3662,6 +3801,49 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let prompt_file = prompt.strip_prefix(util::FILE_PATH_PREFIX).unwrap();
         let prompt_content = fs::read_to_string(prompt_file)?;
         args.flag_prompt = Some(prompt_content);
+    }
+
+    // Auto-detect language from prompt if --prompt is used and --language indicates autodetect
+    if args.flag_prompt.is_some() {
+        let (is_autodetect, threshold, explicit_language) =
+            parse_language_option(args.flag_language.as_ref());
+
+        if is_autodetect {
+            #[cfg(feature = "whatlang")]
+            {
+                if let Some(prompt_text) = &args.flag_prompt {
+                    if let Some(detected_lang) = detect_language_from_prompt(prompt_text, threshold)
+                    {
+                        args.flag_language = Some(detected_lang);
+                        if log::log_enabled!(log::Level::Debug) {
+                            log::debug!(
+                                "Auto-detected language from prompt: {}",
+                                args.flag_language.as_ref().unwrap()
+                            );
+                        }
+                    } else {
+                        // Detection failed or confidence below threshold, clear language to use
+                        // model default
+                        args.flag_language = None;
+                        if log::log_enabled!(log::Level::Debug) {
+                            log::debug!(
+                                "Language detection failed or confidence below threshold \
+                                 ({:.1}%), using model default",
+                                threshold * 100.0
+                            );
+                        }
+                    }
+                }
+            }
+            #[cfg(not(feature = "whatlang"))]
+            {
+                // whatlang feature not available, clear language to use model default
+                args.flag_language = None;
+            }
+        } else if let Some(explicit_lang) = explicit_language {
+            // Explicit language specified, use it as-is
+            args.flag_language = Some(explicit_lang);
+        }
     }
 
     // Initialize cache variables unconditionally

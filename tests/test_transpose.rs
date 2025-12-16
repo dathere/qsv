@@ -42,3 +42,133 @@ fn prop_transpose_multipass() {
     }
     qcheck(p as fn(CsvData) -> bool);
 }
+
+#[test]
+fn transpose_long_format() {
+    let wrk = Workdir::new("transpose_long_format");
+
+    // Create a wide-format CSV similar to stats output
+    let wide_format = vec![
+        svec!["field", "type", "is_ascii", "sum", "min", "max"],
+        svec!["name", "String", "true", "", "Alice", "John"],
+        svec!["age", "Integer", "", "104", "6", "53"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.arg("--long").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Expected long format: field, attribute, value
+    // Empty values should be skipped
+    let expected = vec![
+        svec!["field", "attribute", "value"],
+        svec!["name", "type", "String"],
+        svec!["name", "is_ascii", "true"],
+        svec!["name", "min", "Alice"],
+        svec!["name", "max", "John"],
+        svec!["age", "type", "Integer"],
+        svec!["age", "sum", "104"],
+        svec!["age", "min", "6"],
+        svec!["age", "max", "53"],
+    ];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_format_empty_csv() {
+    let wrk = Workdir::new("transpose_long_format_empty_csv");
+
+    // Create CSV with only headers
+    let wide_format = vec![svec!["field", "type", "is_ascii"]];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.arg("--long").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Should only have headers, no data rows
+    let expected = vec![svec!["field", "attribute", "value"]];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_format_all_empty() {
+    let wrk = Workdir::new("transpose_long_format_all_empty");
+
+    // Create CSV where all attribute values are empty
+    let wide_format = vec![
+        svec!["field", "type", "sum", "min"],
+        svec!["name", "", "", ""],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.arg("--long").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Should only have headers, all values were empty and skipped
+    let expected = vec![svec!["field", "attribute", "value"]];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_format_single_column() {
+    let wrk = Workdir::new("transpose_long_format_single_column");
+
+    // Create CSV with only one column (field column, no attributes)
+    let wide_format = vec![svec!["field"], svec!["name"], svec!["age"]];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.arg("--long").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Should only have headers, no attribute columns to process
+    let expected = vec![svec!["field", "attribute", "value"]];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_multipass_mutually_exclusive() {
+    let wrk = Workdir::new("transpose_long_multipass_mutually_exclusive");
+
+    // Create a test CSV file
+    let wide_format = vec![
+        svec!["field", "type", "value"],
+        svec!["name", "String", "Alice"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    // Test that --long and --multipass are mutually exclusive
+    let mut cmd = wrk.command("transpose");
+    cmd.arg("--long").arg("--multipass").arg("in.csv");
+
+    // Should fail with an error
+    wrk.assert_err(&mut cmd);
+
+    // Verify the error message mentions mutual exclusivity
+    let stderr: String = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("mutually exclusive") || stderr.contains("mutually-exclusive"),
+        "Expected error message about mutual exclusivity, got: {}",
+        stderr
+    );
+}

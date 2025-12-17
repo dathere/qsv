@@ -57,7 +57,7 @@ fn transpose_long_format() {
     wrk.create("in.csv", wide_format);
 
     let mut cmd = wrk.command("transpose");
-    cmd.arg("--long").arg("in.csv");
+    cmd.args(["--long", "1"]).arg("in.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -89,7 +89,7 @@ fn transpose_long_format_empty_csv() {
     wrk.create("in.csv", wide_format);
 
     let mut cmd = wrk.command("transpose");
-    cmd.arg("--long").arg("in.csv");
+    cmd.args(["--long", "1"]).arg("in.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -113,7 +113,7 @@ fn transpose_long_format_all_empty() {
     wrk.create("in.csv", wide_format);
 
     let mut cmd = wrk.command("transpose");
-    cmd.arg("--long").arg("in.csv");
+    cmd.args(["--long", "1"]).arg("in.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -134,7 +134,7 @@ fn transpose_long_format_single_column() {
     wrk.create("in.csv", wide_format);
 
     let mut cmd = wrk.command("transpose");
-    cmd.arg("--long").arg("in.csv");
+    cmd.args(["--long", "1"]).arg("in.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -159,7 +159,7 @@ fn transpose_long_multipass_mutually_exclusive() {
 
     // Test that --long and --multipass are mutually exclusive
     let mut cmd = wrk.command("transpose");
-    cmd.arg("--long").arg("--multipass").arg("in.csv");
+    cmd.args(["--long", "1"]).arg("--multipass").arg("in.csv");
 
     // Should fail with an error
     wrk.assert_err(&mut cmd);
@@ -171,4 +171,352 @@ fn transpose_long_multipass_mutually_exclusive() {
         "Expected error message about mutual exclusivity, got: {}",
         stderr
     );
+}
+
+#[test]
+fn transpose_long_format_by_name() {
+    let wrk = Workdir::new("transpose_long_format_by_name");
+
+    // Create a wide-format CSV with a named field column
+    let wide_format = vec![
+        svec!["id", "field", "type", "value"],
+        svec!["1", "name", "String", "Alice"],
+        svec!["2", "age", "Integer", "25"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", "field"]).arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    let expected = vec![
+        svec!["field", "attribute", "value"],
+        svec!["name", "id", "1"],
+        svec!["name", "type", "String"],
+        svec!["name", "value", "Alice"],
+        svec!["age", "id", "2"],
+        svec!["age", "type", "Integer"],
+        svec!["age", "value", "25"],
+    ];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_format_by_index() {
+    let wrk = Workdir::new("transpose_long_format_by_index");
+
+    // Create a wide-format CSV
+    let wide_format = vec![
+        svec!["id", "field", "type", "value"],
+        svec!["1", "name", "String", "Alice"],
+        svec!["2", "age", "Integer", "25"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", "2"]).arg("in.csv"); // Select second column (1-based index)
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Expected: second column (field) selected as field column
+    let expected = vec![
+        svec!["field", "attribute", "value"],
+        svec!["name", "id", "1"],
+        svec!["name", "type", "String"],
+        svec!["name", "value", "Alice"],
+        svec!["age", "id", "2"],
+        svec!["age", "type", "Integer"],
+        svec!["age", "value", "25"],
+    ];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_format_by_range() {
+    let wrk = Workdir::new("transpose_long_format_by_range");
+
+    // Create a wide-format CSV
+    let wide_format = vec![
+        svec!["id", "category", "field", "type", "value"],
+        svec!["1", "person", "name", "String", "Alice"],
+        svec!["2", "person", "age", "Integer", "25"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", "2-3"]).arg("in.csv"); // Select columns 2-3 as field columns
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Expected: columns 2-3 (category, field) concatenated with | separator
+    let expected = vec![
+        svec!["field", "attribute", "value"],
+        svec!["person|name", "id", "1"],
+        svec!["person|name", "type", "String"],
+        svec!["person|name", "value", "Alice"],
+        svec!["person|age", "id", "2"],
+        svec!["person|age", "type", "Integer"],
+        svec!["person|age", "value", "25"],
+    ];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_format_by_range_to_end() {
+    let wrk = Workdir::new("transpose_long_format_by_range_to_end");
+
+    // Create a wide-format CSV
+    let wide_format = vec![
+        svec!["id", "category", "field", "type"],
+        svec!["1", "person", "name", "String"],
+        svec!["2", "person", "age", "Integer"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", "2-"]).arg("in.csv"); // Select from column 2 to end
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Expected: columns 2-4 (category, field, type) concatenated with | separator
+    let expected = vec![
+        svec!["field", "attribute", "value"],
+        svec!["person|name|String", "id", "1"],
+        svec!["person|age|Integer", "id", "2"],
+    ];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_format_by_regex() {
+    let wrk = Workdir::new("transpose_long_format_by_regex");
+
+    // Create a wide-format CSV with columns matching a pattern
+    let wide_format = vec![
+        svec!["id", "field_name", "field_type", "value"],
+        svec!["1", "name", "String", "Alice"],
+        svec!["2", "age", "Integer", "25"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", "/^field/"]).arg("in.csv"); // Select columns starting with "field"
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Expected: field_name and field_type concatenated with | separator
+    let expected = vec![
+        svec!["field", "attribute", "value"],
+        svec!["name|String", "id", "1"],
+        svec!["name|String", "value", "Alice"],
+        svec!["age|Integer", "id", "2"],
+        svec!["age|Integer", "value", "25"],
+    ];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_format_multiple_fields_by_name() {
+    let wrk = Workdir::new("transpose_long_format_multiple_fields_by_name");
+
+    // Create a wide-format CSV
+    let wide_format = vec![
+        svec!["id", "category", "field", "type", "value"],
+        svec!["1", "person", "name", "String", "Alice"],
+        svec!["2", "person", "age", "Integer", "25"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", "category,field"]).arg("in.csv"); // Select multiple columns by name
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Expected: category and field concatenated with | separator
+    let expected = vec![
+        svec!["field", "attribute", "value"],
+        svec!["person|name", "id", "1"],
+        svec!["person|name", "type", "String"],
+        svec!["person|name", "value", "Alice"],
+        svec!["person|age", "id", "2"],
+        svec!["person|age", "type", "Integer"],
+        svec!["person|age", "value", "25"],
+    ];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_format_multiple_fields_by_index() {
+    let wrk = Workdir::new("transpose_long_format_multiple_fields_by_index");
+
+    // Create a wide-format CSV
+    let wide_format = vec![
+        svec!["id", "category", "field", "type", "value"],
+        svec!["1", "person", "name", "String", "Alice"],
+        svec!["2", "person", "age", "Integer", "25"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", "2,3"]).arg("in.csv"); // Select multiple columns by index
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Expected: columns 2 and 3 (category, field) concatenated with | separator
+    let expected = vec![
+        svec!["field", "attribute", "value"],
+        svec!["person|name", "id", "1"],
+        svec!["person|name", "type", "String"],
+        svec!["person|name", "value", "Alice"],
+        svec!["person|age", "id", "2"],
+        svec!["person|age", "type", "Integer"],
+        svec!["person|age", "value", "25"],
+    ];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_format_invalid_column() {
+    let wrk = Workdir::new("transpose_long_format_invalid_column");
+
+    // Create a test CSV file
+    let wide_format = vec![
+        svec!["field", "type", "value"],
+        svec!["name", "String", "Alice"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    // Test that invalid column name fails
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", "nonexistent"]).arg("in.csv");
+
+    // Should fail with an error
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn transpose_long_format_invalid_regex() {
+    let wrk = Workdir::new("transpose_long_format_invalid_regex");
+
+    // Create a test CSV file
+    let wide_format = vec![
+        svec!["field", "type", "value"],
+        svec!["name", "String", "Alice"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    // Test that invalid regex pattern fails
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", "/[invalid/"]).arg("in.csv"); // Invalid regex: unclosed character class
+
+    // Should fail with an error
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn transpose_long_format_no_columns_selected() {
+    let wrk = Workdir::new("transpose_long_format_no_columns_selected");
+
+    // Create a test CSV file
+    let wide_format = vec![
+        svec!["field", "type", "value"],
+        svec!["name", "String", "Alice"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    // Test that regex matching no columns fails
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", "/^nonexistent/"]).arg("in.csv"); // Regex that matches nothing
+
+    // Should fail with an error
+    wrk.assert_err(&mut cmd);
+
+    // Verify the error message mentions no columns selected
+    let stderr: String = wrk.output_stderr(&mut cmd);
+    let expected = "Column selection error: Selector regex '^nonexistent' does not match any \
+                    columns in the CSV header.\n";
+    assert_eq!(stderr, expected);
+}
+
+#[test]
+fn transpose_long_format_all_columns_as_fields() {
+    let wrk = Workdir::new("transpose_long_format_all_columns_as_fields");
+
+    // Create a wide-format CSV
+    let wide_format = vec![
+        svec!["field", "type", "value"],
+        svec!["name", "String", "Alice"],
+        svec!["age", "Integer", "25"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", "1-3"]).arg("in.csv"); // Select all columns as fields
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Expected: only headers, no attribute columns to process
+    let expected = vec![svec!["field", "attribute", "value"]];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_format_quoted_column_name() {
+    let wrk = Workdir::new("transpose_long_format_quoted_column_name");
+
+    // Create a wide-format CSV with column name containing spaces
+    let wide_format = vec![
+        svec!["id", "field name", "type", "value"],
+        svec!["1", "name", "String", "Alice"],
+        svec!["2", "age", "Integer", "25"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", r#""field name""#]).arg("in.csv"); // Select quoted column name with space
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Expected: "field name" column selected as field column
+    let expected = vec![
+        svec!["field", "attribute", "value"],
+        svec!["name", "id", "1"],
+        svec!["name", "type", "String"],
+        svec!["name", "value", "Alice"],
+        svec!["age", "id", "2"],
+        svec!["age", "type", "Integer"],
+        svec!["age", "value", "25"],
+    ];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
 }

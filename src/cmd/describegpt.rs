@@ -18,8 +18,9 @@ Frequency Distribution data, the LLM will return the answer directly.
 
 CHAT SQL RETRIEVAL-AUGMENTED GENERATION (RAG) SUB-MODE:
 If the question cannot be answered using the Dataset's Summary Statistics & Frequency Distribution,
-it will first create a Data Dictionary & provide it to the LLM as additional context to create a
-SQL query that DETERMINISTICALLY answers the natural language question.
+it will first create a Data Dictionary and a small random sample (default: 100 rows) of the Dataset
+and provide it to the LLM as additional context to help it generate a SQL query that DETERMINISTICALLY
+answers the natural language question.
 
 Two SQL dialects are currently supported - DuckDB (highly recommended) & Polars. If the
 QSV_DESCRIBEGPT_DB_ENGINE environment variable is set to the absolute path of the DuckDB binary,
@@ -185,6 +186,9 @@ describegpt options:
                            If no file is provided, default prompts will be used.
                            The prompt file uses the Mini Jinja template engine (https://docs.rs/minijinja)
                            See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml
+    --sample-size <n>      The number of rows to randomly sample from the input file for the sample data.
+                           Uses the INDEXED sampling method with the qsv sample command.
+                           [default: 100]
     --fewshot-examples     By default, few-shot examples are NOT included in the LLM prompt when
                            generating SQL queries. When this option is set, few-shot examples in the default
                            prompt file are included.
@@ -208,7 +212,7 @@ describegpt options:
                            "Hindi", "Mandarin", "Taglish", "Pig Latin", "Valley Girl", "Pirate",
                            "Shakespearean English", etc.)
     
-                           CHAT MODE (--prompt) BEHAVIOR:
+                           CHAT MODE (--prompt) LANGUAGE DETECTION BEHAVIOR:
                            When --prompt is used and --language is not set, automatically detects
                            the language of the prompt with an 80% confidence threshold.
                            If the threshold is met, it will specify the detected language in its response.
@@ -346,6 +350,7 @@ struct Args {
     flag_prompt:           Option<String>,
     flag_sql_results:      Option<String>,
     flag_prompt_file:      Option<String>,
+    flag_sample_size:      u16,
     flag_fewshot_examples: bool,
     flag_base_url:         Option<String>,
     flag_model:            Option<String>,
@@ -2071,6 +2076,7 @@ fn get_prompt(
         delimiter => delimiter.to_string(),
         input_table_name => INPUT_TABLE_NAME,
         sample_file => SAMPLE_FILE.get().map_or("", |s| s.as_str()),
+        sample_size => args.flag_sample_size.to_string(),
         generated_by_signature => "{GENERATED_BY_SIGNATURE}",
     };
 
@@ -3428,8 +3434,7 @@ fn run_inference_options(
                         cache_type,
                         sql_query_file.path(),
                         sql_results_path,
-                        // "Polars SQL query execution failed. Failed SQL query saved to output
-                        // file",
+                        // "Polars SQL query failed. Failed SQL query saved to output file",
                         &stderr,
                     );
                 }
@@ -3532,8 +3537,10 @@ fn run_duckdb_query(
         if let Err(e) = fs::write(&output_path, sql_query) {
             return fail_clierror!("Failed to write SQL query to {output_path:?}: {e}");
         }
+        let stderr_str =
+            simdutf8::basic::from_utf8(&output.stderr).unwrap_or("<unable to parse stderr>");
         return fail_clierror!(
-            "DuckDB SQL query execution failed:\n{output:?}\nFailed SQL query saved to \
+            "DuckDB SQL query execution failed:\n{stderr_str}\nFailed SQL query saved to \
              {output_path:?}"
         );
     }
@@ -3800,18 +3807,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    // If --prompt option is used and it starts with "file:" prefix,
-    // read the prompt from the file specified.
-    if let Some(prompt) = &args.flag_prompt
-        && prompt.starts_with(util::FILE_PATH_PREFIX)
-    {
-        let prompt_file = prompt.strip_prefix(util::FILE_PATH_PREFIX).unwrap();
-        let prompt_content = fs::read_to_string(prompt_file)?;
-        args.flag_prompt = Some(prompt_content);
-    }
+    // --prompt specific parameter validation
+    if let Some(mut prompt) = args.flag_prompt.take() {
+        // Check if prompt is a file path and read its contents if so
+        if prompt.starts_with(util::FILE_PATH_PREFIX) {
+            let prompt_file = prompt.strip_prefix(util::FILE_PATH_PREFIX).unwrap();
+            prompt = fs::read_to_string(prompt_file)?;
+        }
+        args.flag_prompt = Some(prompt);
 
-    // Auto-detect language from prompt if --prompt is used and --language indicates autodetect
-    if args.flag_prompt.is_some() {
+        // Now handle language auto-detection or explicit setting if necessary
         let (is_autodetect, threshold, explicit_language) =
             parse_language_option(args.flag_language.as_ref());
 
@@ -3850,6 +3855,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         } else if let Some(explicit_lang) = explicit_language {
             // Explicit language specified, use it as-is
             args.flag_language = Some(explicit_lang);
+        }
+
+        // now validate sample size
+        if args.flag_sample_size < 10 {
+            return fail_incorrectusage_clierror!("--sample-size must be at least 10.");
         }
     }
 
@@ -4197,7 +4207,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     };
 
-    // get a 1000 row random sample of the input file
+    // get a random sample of the input file
     // only do this if --prompt is set
     let sample_file = tempfile::Builder::new()
         .prefix("qsv_sample_")
@@ -4205,11 +4215,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .tempfile()?;
     let sample_file_path = sample_file.path().display().to_string();
     if args.flag_prompt.is_some() {
+        let sample_size = args.flag_sample_size.to_string();
         run_qsv_cmd(
             "sample",
-            &["1000", "--output", &sample_file_path],
+            &[&sample_size, "--output", &sample_file_path],
             &input_path,
-            "Getting sample data...",
+            &format!("Getting {sample_size} row sample data..."),
         )?;
         let _ = sample_file.keep();
         SAMPLE_FILE.set(sample_file_path)?;
@@ -4242,11 +4253,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // cleanup the sample file
-    if let Some(sample_file_path) = SAMPLE_FILE.get() {
-        if !sample_file_path.is_empty() {
-            // ignore failure to remove the file
-            let _ = fs::remove_file(sample_file_path);
-        }
+    if let Some(sample_file_path) = SAMPLE_FILE.get()
+        && !sample_file_path.is_empty()
+    {
+        // ignore failure to remove the file
+        let _ = fs::remove_file(sample_file_path);
     }
 
     Ok(())

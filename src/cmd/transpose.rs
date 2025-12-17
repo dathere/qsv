@@ -6,9 +6,8 @@ Usage:
     qsv transpose --help
 
 transpose options:
-    -m, --multipass        Process the transpose by making multiple
-                           passes over the dataset. Useful for really
-                           big datasets. Consumes memory relative to
+    -m, --multipass        Process the transpose by making multiple passes
+                           over the dataset. Consumes memory relative to
                            the number of rows.
                            Note that in general it is faster to
                            process the transpose in memory.
@@ -19,15 +18,20 @@ transpose options:
                            field, attribute, value. Empty values are skipped.
                            Mutually exclusive with --multipass.
                            
-                           The <selection> argument is REQUIRED, it specifies which column(s)
-                           to use as the "field" identifier using the same selection
-                           syntax as 'qsv select':
+                           The <selection> argument is REQUIRED when using --long,
+                           it specifies which column(s) to use as the "field" identifier.
+                           It uses the same selection syntax as 'qsv select':
                            - Column names: --long varname or --long "column name"
                            - Column indices (1-based): --long 5 or --long 2,3
                            - Ranges: --long 1-4 or --long 3-
                            - Regex patterns: --long /^prefix/
                            - Comma-separated: --long var1,var2 or --long 1,3,5
                            Multiple field columns are concatenated with | separator.
+                           
+                           e.g. file.csv with columns "name", "type", "age", --long "name,age"
+                           will use the "name|age" as the "field" identifier,
+                           and the second column "type" as the "attribute",
+                           and the third column "age" as the "value".
 
 Common options:
     -h, --help             Display this message
@@ -36,7 +40,7 @@ Common options:
                            Must be a single character. (default: ,)
     --memcheck             Check if there is enough memory to load the entire
                            CSV into memory using CONSERVATIVE heuristics.
-                           Ignored when --multipass option is enabled.
+                           Ignored when --multipass or --long option is enabled.
 "#;
 
 use std::{fs::File, str};
@@ -106,26 +110,21 @@ impl Args {
 
         // Determine which columns to use as field columns
         let field_column_indices: Vec<usize> = if let Some(ref selection_str) = self.flag_long {
-            if selection_str.trim().is_empty() {
-                // Empty string defaults to first column
-                vec![0]
-            } else {
-                // Parse the selection string using SelectColumns
-                let select_cols = SelectColumns::parse(selection_str)
-                    .map_err(|e| CliError::Other(format!("Invalid column selection: {e}")))?;
-                let selection = select_cols
-                    .selection(&headers, true)
-                    .map_err(|e| CliError::Other(format!("Column selection error: {e}")))?;
-                if selection.is_empty() {
-                    return fail_incorrectusage_clierror!(
-                        "Column selection resulted in no columns. At least one field column is \
-                         required."
-                    );
-                }
-                selection.iter().copied().collect()
+            let select_cols = SelectColumns::parse(selection_str)
+                .map_err(|e| CliError::Other(format!("Invalid column selection: {e}")))?;
+            let selection = select_cols
+                .selection(&headers, true)
+                .map_err(|e| CliError::Other(format!("Column selection error: {e}")))?;
+            if selection.is_empty() {
+                return fail_incorrectusage_clierror!(
+                    "Column selection resulted in no columns. At least one field column is \
+                     required."
+                );
             }
+            selection.iter().copied().collect()
         } else {
             // No selection specified, default to first column
+            // this should be unreachable as the selection arg is required
             vec![0]
         };
 

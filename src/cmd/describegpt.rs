@@ -3,7 +3,7 @@ Create a "neuro-procedural" Data Dictionary and/or infer Description & Tags abou
 using an OpenAI API-compatible Large Language Model (LLM).
 
 It does this by compiling Summary Statistics & a Frequency Distribution of the Dataset,
-and then prompting the LLM with detailed, configurable, minijinja-templated prompts with
+and then prompting the LLM with detailed, configurable, Mini Jinja-templated prompts with
 these extended statistical context.
 
 The Data Dictionary is "neuro-procedural" as it uses a hybrid approach. It's primarily populated
@@ -183,7 +183,7 @@ describegpt options:
                            the user can inspect why it failed and modify it.
     --prompt-file <file>   The configurable TOML file containing prompts to use for inferencing.
                            If no file is provided, default prompts will be used.
-                           The prompt file uses the minijinja template engine (https://docs.rs/minijinja)
+                           The prompt file uses the Mini Jinja template engine (https://docs.rs/minijinja)
                            See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml
     --fewshot-examples     By default, few-shot examples are NOT included in the LLM prompt when
                            generating SQL queries. When this option is set, few-shot examples in the default
@@ -408,6 +408,7 @@ static DETECTED_LANGUAGE: OnceLock<String> = OnceLock::new();
 static DETECTED_LANGUAGE_CONFIDENCE: OnceLock<f64> = OnceLock::new();
 
 static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
+static SAMPLE_FILE: OnceLock<String> = OnceLock::new();
 
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
 
@@ -1797,7 +1798,7 @@ fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) 
 }
 
 /// Generates a prompt for a given prompt type based on either a custom prompt file or default
-/// prompts. Uses the minijinja template engine to render prompt templates with variables.
+/// prompts. Uses the Mini Jinja template engine to render prompt templates with variables.
 ///
 /// # Arguments
 ///
@@ -1810,8 +1811,8 @@ fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) 
 /// # Returns
 ///
 /// Returns a tuple containing:
-/// * The generated prompt string (rendered from minijinja template)
-/// * The system prompt string (rendered from minijinja template)
+/// * The generated prompt string (rendered from Mini Jinja template)
+/// * The system prompt string (rendered from Mini Jinja template)
 ///
 /// # Errors
 ///
@@ -1819,7 +1820,7 @@ fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) 
 /// * Analysis results are missing when required
 /// * SQL guidelines markers cannot be found in the prompt template
 /// * DuckDB query execution fails when getting extension info
-/// * Minijinja template rendering fails
+/// * Mini Jinja template rendering fails
 fn get_prompt(
     prompt_type: PromptType,
     analysis_results: Option<&AnalysisResults>,
@@ -2043,8 +2044,10 @@ fn get_prompt(
         String::new()
     };
 
-    // Set up minijinja environment for template rendering
+    // Set up Mini Jinja environment for template rendering
     let mut env = Environment::new();
+
+    // add all the Mini Jinja contrib filters to the environment
     minijinja_contrib::add_to_environment(&mut env);
 
     // Build context with all variables needed for template rendering
@@ -2067,10 +2070,11 @@ fn get_prompt(
         headers => headers,
         delimiter => delimiter.to_string(),
         input_table_name => INPUT_TABLE_NAME,
+        sample_file => SAMPLE_FILE.get().map_or("", |s| s.as_str()),
         generated_by_signature => "{GENERATED_BY_SIGNATURE}",
     };
 
-    // Render prompt using minijinja
+    // Render prompt using Mini Jinja
     let rendered_prompt = env
         .render_str(&prompt, &ctx)
         .map_err(|e| CliError::Other(format!("Failed to render prompt template: {e}")))?;
@@ -3012,7 +3016,7 @@ fn run_inference_options(
                         READ_CSV_AUTO_REGEX
                             .replace_all(
                                 &formatted_output,
-                                format!("read_csv_auto('{escaped_path}')"),
+                                format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
                             )
                             .into_owned()
                     } else {
@@ -3323,14 +3327,17 @@ fn run_inference_options(
             if READ_CSV_AUTO_REGEX.is_match(&sql_query) {
                 // DuckDB with read_csv_auto so replace with quoted path
                 sql_query = READ_CSV_AUTO_REGEX
-                    .replace_all(&sql_query, format!("read_csv_auto('{escaped_path}')"))
+                    .replace_all(
+                        &sql_query,
+                        format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
+                    )
                     .into_owned();
             } else {
                 // if READ_CSV_AUTO_REGEX doesn't match, add fallback to replace {INPUT_TABLE_NAME}
                 // with read_csv_auto function call
                 sql_query = sql_query.replace(
                     INPUT_TABLE_NAME,
-                    &format!("read_csv_auto('{escaped_path}')"),
+                    &format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
                 );
             }
             log::debug!("DuckDB SQL query:\n{sql_query}");
@@ -4189,6 +4196,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             results
         }
     };
+
+    // get a 1000 row random sample of the input file
+    // only do this if --prompt is set
+    let sample_file = tempfile::Builder::new()
+        .prefix("qsv_sample_")
+        .suffix(".csv")
+        .tempfile()?;
+    let sample_file_path = sample_file.path().display().to_string();
+    if args.flag_prompt.is_some() {
+        run_qsv_cmd(
+            "sample",
+            &["1000", "--output", &sample_file_path],
+            &input_path,
+            "Getting sample data...",
+        )?;
+        let _ = sample_file.keep();
+        SAMPLE_FILE.set(sample_file_path)?;
+    } else {
+        SAMPLE_FILE.set(String::new())?;
+    }
+
     print_status("Analyzed data.", Some(analysis_start.elapsed()));
 
     print_status("\nInteracting with LLM...", None);
@@ -4211,6 +4239,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .connection()
             .flush()
             .map_err(|e| CliError::Other(format!("Error flushing Analysis DiskCache: {e}")))?;
+    }
+
+    // cleanup the sample file
+    if let Some(sample_file_path) = SAMPLE_FILE.get() {
+        if !sample_file_path.is_empty() {
+            // ignore failure to remove the file
+            let _ = fs::remove_file(sample_file_path);
+        }
     }
 
     Ok(())

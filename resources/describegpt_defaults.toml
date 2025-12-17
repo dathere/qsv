@@ -7,9 +7,12 @@ base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
 timeout = 300
 format = "markdown"
-language = "" # responses will be in this language, or model default if not set
+# responses will be in this language/dialect, or model default if not set
+# Can be set to "traditional" languages like Spanish, German,French, Hindi, Mandarin, etc.
+# Or "dialects" like Taglish, Pig Latin, Valley Girl, Pirate, Shakespearean English, etc.
+language = ""
 
-### NOTE: The following VARIABLES are available in minijinja templates (use {{ variable }} syntax):
+### NOTE: The following VARIABLES are available in Mini Jinja templates (use {{ variable }} syntax):
 # {{ stats }} - summary statistics in CSV format
 # {{ frequency }} - frequency distribution in CSV format
 # {{ dictionary }} - data dictionary in JSON format
@@ -26,7 +29,7 @@ language = "" # responses will be in this language, or model default if not set
 # {{ top_n }} - The enum threshold for the frequency command
 # {{ num_tags }} - The maximum number of tags to infer when the --tags option is used
 # {{ tag_vocab }} - The tag vocabulary file content
-# {{language}} - The language to use for the response. Empty string if not set. Has leading space if set.
+# {{ language }} - The language to use for the response. Empty string if not set. Has leading space if set.
 # {{ headers }} - CSV headers
 # {{ delimiter }} - CSV delimiter character
 # {{ sample_file }} - The temporary file containing a 1000 row random sample of the input CSV file.
@@ -54,7 +57,7 @@ For Dataset fields with all unique values (i.e. cardinality is equal to the numb
 """
 
 dictionary_prompt = """
-Generate{% if language %} {{ language|trim|title }}{% endif %} Labels and Descriptions for each field in the Dataset based on the Summary Statistics and Frequency Distribution provided below.
+Generate{% if language %} {{ language|trim|title }}{% endif %} Labels and Descriptions for ALL fields in the Dataset. Use the Summary Statistics and Frequency Distribution to understand the context and meaning of each field.
 
 {% set headers_list = headers|split(",")|list %}
 The Dataset has {{ headers_list|length }} field{{ headers_list|length | pluralize }}:
@@ -77,8 +80,6 @@ Return the results in JSON format where each field name is a key, and the value 
     "description": "Another description"
   }
 }{% endraw %}
-
-Generate{% if language %} {{ language|trim|title }}{% endif %} Labels and Descriptions for ALL fields in the Dataset. Use the Summary Statistics and Frequency Distribution to understand the context and meaning of each field.
 
 Let's think step by step, correcting yourself as needed.
 

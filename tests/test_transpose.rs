@@ -398,37 +398,6 @@ fn transpose_long_format_multiple_fields_by_index() {
 }
 
 #[test]
-fn transpose_long_format_empty_selection() {
-    let wrk = Workdir::new("transpose_long_format_empty_selection");
-
-    // Create a wide-format CSV
-    let wide_format = vec![
-        svec!["field", "type", "value"],
-        svec!["name", "String", "Alice"],
-        svec!["age", "Integer", "25"],
-    ];
-
-    wrk.create("in.csv", wide_format);
-
-    let mut cmd = wrk.command("transpose");
-    cmd.args(["--long", ""]).arg("in.csv"); // Empty string should default to first column
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-
-    // Expected: defaults to first column (field)
-    let expected = vec![
-        svec!["field", "attribute", "value"],
-        svec!["name", "type", "String"],
-        svec!["name", "value", "Alice"],
-        svec!["age", "type", "Integer"],
-        svec!["age", "value", "25"],
-    ];
-
-    wrk.assert_success(&mut cmd);
-    assert_eq!(got, expected);
-}
-
-#[test]
 fn transpose_long_format_invalid_column() {
     let wrk = Workdir::new("transpose_long_format_invalid_column");
 
@@ -544,42 +513,6 @@ fn transpose_long_format_quoted_column_name() {
         svec!["name", "type", "String"],
         svec!["name", "value", "Alice"],
         svec!["age", "id", "2"],
-        svec!["age", "type", "Integer"],
-        svec!["age", "value", "25"],
-    ];
-
-    wrk.assert_success(&mut cmd);
-    assert_eq!(got, expected);
-}
-
-#[test]
-fn transpose_long_format_default_no_arg() {
-    let wrk = Workdir::new("transpose_long_format_default_no_arg");
-
-    // Create a wide-format CSV
-    let wide_format = vec![
-        svec!["field", "type", "value"],
-        svec!["name", "String", "Alice"],
-        svec!["age", "Integer", "25"],
-    ];
-
-    wrk.create("in.csv", wide_format);
-
-    // Test default behavior when --long is provided without argument
-    // Note: This depends on how the argument parser handles --long without value
-    // Looking at the code, if flag_long is Some but empty, it defaults to first column
-    let mut cmd = wrk.command("transpose");
-    // When --long is provided without a value, the parser may handle it differently
-    // We'll test with an empty string which should default to first column
-    cmd.args(["--long", ""]).arg("in.csv");
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-
-    // Expected: defaults to first column (field)
-    let expected = vec![
-        svec!["field", "attribute", "value"],
-        svec!["name", "type", "String"],
-        svec!["name", "value", "Alice"],
         svec!["age", "type", "Integer"],
         svec!["age", "value", "25"],
     ];

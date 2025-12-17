@@ -3537,8 +3537,8 @@ fn run_duckdb_query(
         if let Err(e) = fs::write(&output_path, sql_query) {
             return fail_clierror!("Failed to write SQL query to {output_path:?}: {e}");
         }
-        let stderr_str = simdutf8::basic::from_utf8(&output.stderr)
-            .unwrap_or_else(|_| "<unable to parse stderr>");
+        let stderr_str =
+            simdutf8::basic::from_utf8(&output.stderr).unwrap_or("<unable to parse stderr>");
         return fail_clierror!(
             "DuckDB SQL query execution failed:\n{stderr_str}\nFailed SQL query saved to \
              {output_path:?}"
@@ -3807,18 +3807,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    // If --prompt option is used and it starts with "file:" prefix,
-    // read the prompt from the file specified.
-    if let Some(prompt) = &args.flag_prompt
-        && prompt.starts_with(util::FILE_PATH_PREFIX)
-    {
-        let prompt_file = prompt.strip_prefix(util::FILE_PATH_PREFIX).unwrap();
-        let prompt_content = fs::read_to_string(prompt_file)?;
-        args.flag_prompt = Some(prompt_content);
-    }
+    // --prompt specific parameter validation
+    if let Some(mut prompt) = args.flag_prompt.take() {
+        // Check if prompt is a file path and read its contents if so
+        if prompt.starts_with(util::FILE_PATH_PREFIX) {
+            let prompt_file = prompt.strip_prefix(util::FILE_PATH_PREFIX).unwrap();
+            prompt = fs::read_to_string(prompt_file)?;
+        }
+        args.flag_prompt = Some(prompt);
 
-    // Auto-detect language from prompt if --prompt is used and --language indicates autodetect
-    if args.flag_prompt.is_some() {
+        // Now handle language auto-detection or explicit setting if necessary
         let (is_autodetect, threshold, explicit_language) =
             parse_language_option(args.flag_language.as_ref());
 
@@ -3857,6 +3855,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         } else if let Some(explicit_lang) = explicit_language {
             // Explicit language specified, use it as-is
             args.flag_language = Some(explicit_lang);
+        }
+
+        // now validate sample size
+        if args.flag_sample_size < 10 {
+            return fail_incorrectusage_clierror!("--sample-size must be at least 10.");
         }
     }
 
@@ -4250,11 +4253,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // cleanup the sample file
-    if let Some(sample_file_path) = SAMPLE_FILE.get() {
-        if !sample_file_path.is_empty() {
-            // ignore failure to remove the file
-            let _ = fs::remove_file(sample_file_path);
-        }
+    if let Some(sample_file_path) = SAMPLE_FILE.get()
+        && !sample_file_path.is_empty()
+    {
+        // ignore failure to remove the file
+        let _ = fs::remove_file(sample_file_path);
     }
 
     Ok(())

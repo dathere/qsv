@@ -34,7 +34,7 @@ language = ""
 # {{ delimiter }} - CSV delimiter character
 # {{ sample_file }} - The temporary file containing a random sample of the input CSV file.
 #                     Only present if --prompt is set.
-# {{ sample_size }} - The number of rows to in the random sample.
+# {{ sample_size }} - The number of rows in the random sample.
 
 system_prompt = """
 You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.

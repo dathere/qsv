@@ -130,7 +130,7 @@ fn calculate_pivot_metadata(
     args: &Args,
     on_cols: &[String],
     value_cols: Option<&Vec<String>>,
-) -> CliResult<Option<PivotMetadata>> {
+) -> Option<PivotMetadata> {
     // Get stats records
     let schema_args = util::SchemaArgs {
         flag_enum_threshold:  0,
@@ -158,7 +158,7 @@ fn calculate_pivot_metadata(
     });
 
     if csv_stats.is_empty() {
-        return Ok(None);
+        return None;
     }
 
     // Get cardinalities for pivot columns
@@ -183,10 +183,10 @@ fn calculate_pivot_metadata(
     };
     let estimated_columns = total_new_columns.saturating_mul(value_cols_count);
 
-    Ok(Some(PivotMetadata {
+    Some(PivotMetadata {
         estimated_columns,
         on_col_cardinalities,
-    }))
+    })
 }
 
 /// Validate pivot operation using metadata
@@ -644,7 +644,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_validate {
         // Validate the operation - need to collect to get metadata
         let df_for_validation = lf.clone().collect()?;
-        if let Some(metadata) = calculate_pivot_metadata(&args, &on_cols, Some(&actual_value_cols))?
+        if let Some(metadata) = calculate_pivot_metadata(&args, &on_cols, Some(&actual_value_cols))
         {
             validate_pivot_operation(&metadata)?;
         }

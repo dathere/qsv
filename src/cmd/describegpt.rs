@@ -1139,7 +1139,7 @@ fn generate_code_based_dictionary(
     num_examples: u16,
     truncate_str: usize,
     addl_cols: &[String],
-) -> CliResult<Vec<DictionaryEntry>> {
+) -> Vec<DictionaryEntry> {
     // Group frequency records by field
     let mut frequency_by_field: HashMap<String, Vec<&FrequencyRecord>> = HashMap::new();
     for freq_record in frequency_records {
@@ -1232,7 +1232,7 @@ fn generate_code_based_dictionary(
         });
     }
 
-    Ok(dictionary_entries)
+    dictionary_entries
 }
 
 /// Parse LLM JSON response to extract Label and Description for each field
@@ -2748,7 +2748,7 @@ fn run_inference_options(
                 args.flag_num_examples,
                 args.flag_truncate_str,
                 &addl_cols,
-            )?;
+            );
 
             let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
             let llm_labels_descriptions =
@@ -2799,7 +2799,7 @@ fn run_inference_options(
                 args.flag_num_examples,
                 args.flag_truncate_str,
                 &addl_cols,
-            )?;
+            );
 
             // Parse LLM response to get Label and Description
             let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();

@@ -1620,31 +1620,31 @@ fn do_weighted_sampling<T: Rng + ?Sized>(
 }
 
 // Aggregation helper functions for time-series sampling
-fn aggregate_numeric_values(values: &[f64], func: AggregationFunction) -> CliResult<f64> {
+fn aggregate_numeric_values(values: &[f64], func: AggregationFunction) -> f64 {
     if values.is_empty() {
-        return Ok(0.0);
+        return 0.0;
     }
 
     #[allow(clippy::cast_precision_loss)]
     match func {
-        AggregationFunction::First => Ok(*values.first().unwrap_or(&0.0)),
-        AggregationFunction::Last => Ok(*values.last().unwrap_or(&0.0)),
+        AggregationFunction::First => *values.first().unwrap_or(&0.0),
+        AggregationFunction::Last => *values.last().unwrap_or(&0.0),
         AggregationFunction::Mean => {
             let sum: f64 = values.iter().sum();
-            Ok(sum / values.len() as f64)
+            sum / values.len() as f64
         },
-        AggregationFunction::Sum => Ok(values.iter().sum()),
-        AggregationFunction::Count => Ok(values.len() as f64),
-        AggregationFunction::Min => Ok(values.iter().copied().fold(f64::INFINITY, f64::min)),
-        AggregationFunction::Max => Ok(values.iter().copied().fold(f64::NEG_INFINITY, f64::max)),
+        AggregationFunction::Sum => values.iter().sum(),
+        AggregationFunction::Count => values.len() as f64,
+        AggregationFunction::Min => values.iter().copied().fold(f64::INFINITY, f64::min),
+        AggregationFunction::Max => values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
         AggregationFunction::Median => {
             let mut sorted = values.to_vec();
             sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let mid = sorted.len() / 2;
             if sorted.len().is_multiple_of(2) {
-                Ok(f64::midpoint(sorted[mid - 1], sorted[mid]))
+                f64::midpoint(sorted[mid - 1], sorted[mid])
             } else {
-                Ok(sorted[mid])
+                sorted[mid]
             }
         },
     }
@@ -1683,7 +1683,7 @@ fn aggregate_records(
 
         if all_numeric && !numeric_values.is_empty() {
             // Aggregate numeric values
-            let aggregated = aggregate_numeric_values(&numeric_values, func)?;
+            let aggregated = aggregate_numeric_values(&numeric_values, func);
             result_fields.push(aggregated.to_string().into_bytes());
         } else {
             // For non-numeric columns, use first or last based on function

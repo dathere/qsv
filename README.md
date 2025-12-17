@@ -111,7 +111,7 @@
 👆: has powerful column selector support. See [`select`](https://github.com/dathere/qsv/blob/master/src/cmd/select.rs#L2) for syntax.  
 🪄: "automagical" commands that uses stats and/or frequency tables to work "smarter" & "faster".  
 📚: has lookup table support, enabling runtime "lookups" against local or remote reference CSVs.  
-🌎: has geospatial capabilities.
+🌎: has geospatial capabilities.  
 ⛩️: uses [Mini Jinja](https://docs.rs/minijinja/latest/minijinja/) template engine
 
 [^1]: see [`validate_index` benchmark](https://qsv.dathere.com/benchmarks)

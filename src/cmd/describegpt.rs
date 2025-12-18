@@ -218,7 +218,7 @@ describegpt options:
                            [default: openai/gpt-oss-20b]
     --language <lang>      The output language/dialect to use for the response. (e.g., "Spanish", "French",
                            "Hindi", "Mandarin", "Italian", "Castilian", "Taglish", "Pig Latin", "Valley Girl",
-                           "Pirate", "Shakespearean English", "Chavacano", etc.)
+                           "Pirate", "Shakespearean English", "Chavacano", "Gen Z", "Yoda", "Elvish", etc.)
     
                              CHAT MODE (--prompt) LANGUAGE DETECTION BEHAVIOR:
                              When --prompt is used and --language is not set, automatically detects
@@ -2679,10 +2679,7 @@ fn run_inference_options(
             }
 
             // Add SQL results if available (for refinement context)
-            if is_refinement
-                && session.sql_results.is_some()
-                && let Some(ref results) = session.sql_results
-            {
+            if is_refinement && let Some(ref results) = session.sql_results {
                 messages.push(json!({
                         "role": "assistant",
                         "content": format!("Here are the first 10 rows from the last successful SQL query execution:\n\n```csv\n{results}\n```")
@@ -3355,7 +3352,6 @@ fn run_inference_options(
             // If not first message, check relevance and apply sliding window
             if !state.messages.is_empty() {
                 if let Some(ref baseline_sql) = state.baseline_sql {
-                    let user_prompt = args.flag_prompt.as_ref().unwrap();
                     if !check_message_relevance(user_prompt, baseline_sql, args, &client, api_key)?
                     {
                         return fail_clierror!(
@@ -4259,7 +4255,6 @@ fn generate_summary(
     );
 
     for msg in old_messages {
-        // summary_prompt.push_str(&format!("{}: {}\n\n", msg.role, msg.content));
         let _ = write!(summary_prompt, "{}: {}\n\n", msg.role, msg.content);
     }
 

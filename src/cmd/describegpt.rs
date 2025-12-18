@@ -217,18 +217,18 @@ describegpt options:
                            If the QSV_LLM_MODEL environment variable is set, it'll be used instead.
                            [default: openai/gpt-oss-20b]
     --language <lang>      The output language/dialect to use for the response. (e.g., "Spanish", "French",
-                           "Hindi", "Mandarin", "Taglish", "Pig Latin", "Valley Girl", "Pirate",
-                           "Shakespearean English", etc.)
+                           "Hindi", "Mandarin", "Italian", "Castilian", "Taglish", "Pig Latin", "Valley Girl",
+                           "Pirate", "Shakespearean English", "Chavacano", etc.)
     
-                           CHAT MODE (--prompt) LANGUAGE DETECTION BEHAVIOR:
-                           When --prompt is used and --language is not set, automatically detects
-                           the language of the prompt with an 80% confidence threshold.
-                           If the threshold is met, it will specify the detected language in its response.
-                           If set to a float (0.0 to 1.0), specifies the detection confidence threshold.
-                           If set to a string, specifies the language/dialect to use for the response.
-                           Note that LLMs often detect the language independently, but will often respond
-                           in the model's default language. This option is here to ensure responses are
-                           in the detected language of the prompt.
+                             CHAT MODE (--prompt) LANGUAGE DETECTION BEHAVIOR:
+                             When --prompt is used and --language is not set, automatically detects
+                             the language of the prompt with an 80% confidence threshold.
+                             If the threshold is met, it will specify the detected language in its response.
+                             If set to a float (0.0 to 1.0), specifies the detection confidence threshold.
+                             If set to a string, specifies the language/dialect to use for the response.
+                             Note that LLMs often detect the language independently, but will often respond
+                             in the model's default language. This option is here to ensure responses are
+                             in the detected language of the prompt.
     --addl-props <json>    Additional model properties to pass to the LLM chat/completion API.
                            Various models support different properties beyond the standard ones.
                            For instance, gpt-oss-20b supports the "reasoning_effort" property.
@@ -3246,11 +3246,8 @@ fn run_inference_options(
 
     // Generate description output
     if args.flag_description || args.flag_all {
-        (prompt, system_prompt) = if args.flag_dictionary {
-            get_prompt(PromptType::Description, None, args)?
-        } else {
-            get_prompt(PromptType::Description, Some(analysis_results), args)?
-        };
+        (prompt, system_prompt) =
+            get_prompt(PromptType::Description, Some(analysis_results), args)?;
         messages = get_messages(&prompt, &system_prompt, &data_dict.response, None);
         let start_time = Instant::now();
         print_status("  Inferring Description...", None);
@@ -3285,11 +3282,7 @@ fn run_inference_options(
 
     // Generate tags output
     if args.flag_tags || args.flag_all {
-        (prompt, system_prompt) = if args.flag_dictionary {
-            get_prompt(PromptType::Tags, None, args)?
-        } else {
-            get_prompt(PromptType::Tags, Some(analysis_results), args)?
-        };
+        (prompt, system_prompt) = get_prompt(PromptType::Tags, Some(analysis_results), args)?;
         // Only include dictionary context if dictionary was actually generated
         let dictionary_context = if args.flag_dictionary || args.flag_all {
             &data_dict.response

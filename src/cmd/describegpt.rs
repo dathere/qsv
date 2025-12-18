@@ -139,7 +139,7 @@ describegpt options:
                            "everything" can be used to add all 45 "available" statistics columns.
                            You can adjust the available columns with --stats-options.
                            "everything!" automatically sets --stats-options to compute "all" 51 supported stats.
-                           The 6 addl cols are the mode/s & antimode/s stats with each having counts & occurences.
+                           The 6 addl cols are the mode/s & antimode/s stats with each having counts & occurrences.
                            [default: sort_order, sortiness, mean, median, mad, stddev, variance, cv]
 
                            TAG OPTIONS:

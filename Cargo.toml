@@ -323,10 +323,10 @@ csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }
 
 # use upstream of jsonschema with unreleased email validation features now that our PR is merged
-jsonschema = { git = "https://github.com/Stranger6667/jsonschema", rev = "9748dc1" }
+jsonschema = { git = "https://github.com/Stranger6667/jsonschema", rev = "de9416b" }
 
 # use upstream of mimalloc with unreleased fixes
-mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "0a32a38", optional = true }
+mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "7daf67f", optional = true }
 
 # use our patched fork of self_update with bumped dependencies at older revision
 # the latest upstream has replaced reqwest which breaks our build

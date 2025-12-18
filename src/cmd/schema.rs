@@ -241,7 +241,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // create final JSON object for output
     let schema = json!({
-        "$schema": "https://json-schema.org/draft-07/schema",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": format!("JSON Schema for {input_filename}"),
         "description": format!("Inferred JSON Schema with `qsv {}`", argv[1..].join(" ")),
         "type": "object",

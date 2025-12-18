@@ -3351,14 +3351,13 @@ fn run_inference_options(
 
             // If not first message, check relevance and apply sliding window
             if !state.messages.is_empty() {
-                if let Some(ref baseline_sql) = state.baseline_sql {
-                    if !check_message_relevance(user_prompt, baseline_sql, args, &client, api_key)?
-                    {
-                        return fail_clierror!(
-                            "The current message does not appear to be related to refining the \
-                             baseline SQL query. Please start a new session for unrelated queries."
-                        );
-                    }
+                if let Some(ref baseline_sql) = state.baseline_sql
+                    && !check_message_relevance(user_prompt, baseline_sql, args, &client, api_key)?
+                {
+                    return fail_clierror!(
+                        "The current message does not appear to be related to refining the \
+                         baseline SQL query. Please start a new session for unrelated queries."
+                    );
                 }
 
                 // Apply sliding window

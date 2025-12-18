@@ -386,8 +386,8 @@ struct Args {
 
 #[derive(Debug, Clone)]
 struct SessionMessage {
-    role: String,
-    content: String,
+    role:      String,
+    content:   String,
     #[allow(dead_code)]
     timestamp: String,
 }
@@ -395,10 +395,10 @@ struct SessionMessage {
 #[derive(Debug, Clone)]
 struct SessionState {
     baseline_sql: Option<String>,
-    messages: Vec<SessionMessage>,
-    sql_results: Option<String>,
-    sql_errors: Vec<String>,
-    summary: Option<String>,
+    messages:     Vec<SessionMessage>,
+    sql_results:  Option<String>,
+    sql_errors:   Vec<String>,
+    summary:      Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2610,10 +2610,10 @@ fn run_inference_options(
         session_state: Option<&SessionState>,
     ) -> serde_json::Value {
         let mut messages: Vec<serde_json::Value> = Vec::new();
-        
+
         // Start with system prompt
         messages.push(json!({"role": "system", "content": system_prompt}));
-        
+
         // Add dictionary completion if present
         if !dictionary_completion.is_empty() {
             messages.push(json!({
@@ -2621,7 +2621,7 @@ fn run_inference_options(
                 "content": format!("The following is the Data Dictionary for the Dataset:\n\n{dictionary_completion}")
             }));
         }
-        
+
         // Add session context if present
         if let Some(session) = session_state {
             // Add summary if present
@@ -2631,59 +2631,63 @@ fn run_inference_options(
                     "content": format!("Previous conversation summary:\n\n{summary}")
                 }));
             }
-            
+
             let is_refinement = !session.messages.is_empty();
-            
+
             // Add baseline SQL if this is a refinement request
             if is_refinement {
                 let mut baseline_sql_used = false;
-                if let Some(ref baseline_sql) = session.baseline_sql {
-                    if !baseline_sql.trim().is_empty() {
-                        messages.push(json!({
+                if let Some(ref baseline_sql) = session.baseline_sql
+                    && !baseline_sql.trim().is_empty()
+                {
+                    messages.push(json!({
                             "role": "assistant",
                             "content": format!("The baseline SQL query we are refining is:\n\n```sql\n{baseline_sql}\n```\n\nIMPORTANT: You must refine and modify this existing SQL query based on the user's request. Do NOT create a completely new query. Modify the baseline query to incorporate the requested changes.")
                         }));
-                        baseline_sql_used = true;
-                    }
+                    baseline_sql_used = true;
                 }
-                
-                // If no baseline SQL in state but we have messages, try to extract it from the last assistant message
-                if !baseline_sql_used {
-                    if let Some(last_msg) = session.messages.iter().rev().find(|m| m.role == "assistant") {
-                        if let Some(sql) = regex_oncelock!(r"(?s)```sql\s*\n(.*?)\n\s*```")
-                            .captures(&last_msg.content)
-                            .and_then(|caps| caps.get(1).map(|m| m.as_str().trim().to_string()))
-                        {
-                            if !sql.is_empty() {
-                                messages.push(json!({
+
+                // If no baseline SQL in state but we have messages, try to extract it from the last
+                // assistant message
+                if !baseline_sql_used
+                    && let Some(last_msg) = session
+                        .messages
+                        .iter()
+                        .rev()
+                        .find(|m| m.role == "assistant")
+                    && let Some(sql) = regex_oncelock!(r"(?s)```sql\s*\n(.*?)\n\s*```")
+                        .captures(&last_msg.content)
+                        .and_then(|caps| caps.get(1).map(|m| m.as_str().trim().to_string()))
+                    && !sql.is_empty()
+                {
+                    messages.push(json!({
                                     "role": "assistant",
                                     "content": format!("The baseline SQL query we are refining is:\n\n```sql\n{sql}\n```\n\nIMPORTANT: You must refine and modify this existing SQL query based on the user's request. Do NOT create a completely new query. Modify the baseline query to incorporate the requested changes.")
                                 }));
-                            }
-                        }
-                    }
                 }
             }
-            
-            // Add recent messages (within sliding window) - but skip the last assistant message if it's the baseline
-            // We want to show the conversation history but emphasize refinement
+
+            // Add recent messages (within sliding window) - but skip the last assistant message if
+            // it's the baseline We want to show the conversation history but emphasize
+            // refinement
             for msg in &session.messages {
                 messages.push(json!({
                     "role": msg.role,
                     "content": msg.content
                 }));
             }
-            
+
             // Add SQL results if available (for refinement context)
-            if is_refinement && session.sql_results.is_some() {
-                if let Some(ref results) = session.sql_results {
-                    messages.push(json!({
+            if is_refinement
+                && session.sql_results.is_some()
+                && let Some(ref results) = session.sql_results
+            {
+                messages.push(json!({
                         "role": "assistant",
                         "content": format!("Here are the first 10 rows from the last successful SQL query execution:\n\n```csv\n{results}\n```")
                     }));
-                }
             }
-            
+
             // Add SQL errors if any (for refinement context)
             if is_refinement && !session.sql_errors.is_empty() {
                 let errors_text = session.sql_errors.join("\n");
@@ -2692,10 +2696,15 @@ fn run_inference_options(
                     "content": format!("Previous SQL execution errors encountered:\n\n{errors_text}")
                 }));
             }
-            
+
             // Modify the prompt to emphasize refinement
             if is_refinement {
-                let refined_prompt = format!("User request: {}\n\nPlease refine the baseline SQL query above to address this request. Return the complete refined SQL query that modifies the baseline query.", prompt);
+                let refined_prompt = format!(
+                    "User request: {}\n\nPlease refine the baseline SQL query above to address \
+                     this request. Return the complete refined SQL query that modifies the \
+                     baseline query.",
+                    prompt
+                );
                 messages.push(json!({"role": "user", "content": refined_prompt}));
             } else {
                 messages.push(json!({"role": "user", "content": prompt}));
@@ -2704,7 +2713,7 @@ fn run_inference_options(
             // No session, just add the prompt
             messages.push(json!({"role": "user", "content": prompt}));
         }
-        
+
         json!(messages)
     }
     // Format output by replacing escape characters & adding two newlines
@@ -3328,43 +3337,55 @@ fn run_inference_options(
     // Generate custom prompt output
     let mut has_sql_query = false;
     let mut session_state: Option<SessionState> = None;
-    
+
     // Normalize session path once if provided
-    let normalized_session_path: Option<String> = args.flag_session.as_ref()
+    let normalized_session_path: Option<String> = args
+        .flag_session
+        .as_ref()
         .map(|p| normalize_session_path(p));
-    
+
     if args.flag_prompt.is_some() {
         // Handle session if --session is provided
         if let Some(ref normalized_path) = normalized_session_path {
             let session_path = Path::new(normalized_path);
-            
+
             // Set default session length if not provided
-            let session_len = if args.flag_session_len == 0 { 10 } else { args.flag_session_len };
-            
+            let session_len = if args.flag_session_len == 0 {
+                10
+            } else {
+                args.flag_session_len
+            };
+
             session_state = Some(load_session(session_path)?);
-            let mut state = session_state.as_mut().unwrap();
-            
+            let state = session_state.as_mut().unwrap();
+
             // If not first message, check relevance and apply sliding window
             if !state.messages.is_empty() {
                 if let Some(ref baseline_sql) = state.baseline_sql {
                     let user_prompt = args.flag_prompt.as_ref().unwrap();
-                    if !check_message_relevance(user_prompt, baseline_sql, args, &client, api_key)? {
+                    if !check_message_relevance(user_prompt, baseline_sql, args, &client, api_key)?
+                    {
                         return fail_clierror!(
-                            "The current message does not appear to be related to refining the baseline SQL query. \
-                             Please start a new session for unrelated queries."
+                            "The current message does not appear to be related to refining the \
+                             baseline SQL query. Please start a new session for unrelated queries."
                         );
                     }
                 }
-                
+
                 // Apply sliding window
-                apply_sliding_window(&mut state, session_len, args, &client, api_key)?;
+                apply_sliding_window(state, session_len, args, &client, api_key)?;
             }
         }
-        
+
         (prompt, system_prompt) = get_prompt(PromptType::Prompt, Some(analysis_results), args)?;
         let start_time = Instant::now();
         print_status("  Answering Custom Prompt...", None);
-        messages = get_messages(&prompt, &system_prompt, &data_dict.response, session_state.as_ref());
+        messages = get_messages(
+            &prompt,
+            &system_prompt,
+            &data_dict.response,
+            session_state.as_ref(),
+        );
         completion_response = get_cached_completion(
             args,
             &client,
@@ -3397,28 +3418,28 @@ fn run_inference_options(
                 None,
             );
         }
-        
+
         // Update session state with new messages
         if let Some(ref mut state) = session_state {
             // Add user message
             let user_prompt = args.flag_prompt.as_ref().unwrap();
             state.messages.push(SessionMessage {
-                role: "user".to_string(),
-                content: user_prompt.clone(),
+                role:      "user".to_string(),
+                content:   user_prompt.clone(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
             });
-            
+
             // Add assistant response
             state.messages.push(SessionMessage {
-                role: "assistant".to_string(),
-                content: completion_response.response.clone(),
+                role:      "assistant".to_string(),
+                content:   completion_response.response.clone(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
             });
-            
+
             // Note: We don't save here to avoid overwriting the session file multiple times
             // The session will be saved after SQL execution (if any) or at the end of the function
         }
-        
+
         let prompt_file = get_prompt_file(args)?;
         process_output(
             PromptType::Prompt,
@@ -3525,7 +3546,9 @@ fn run_inference_options(
                         if stderr.to_ascii_lowercase().contains(" error:") {
                             // Track error in session if present
                             if let Some(ref mut state) = session_state {
-                                state.sql_errors.push(format!("DuckDB SQL query execution failed: {stderr}"));
+                                state
+                                    .sql_errors
+                                    .push(format!("DuckDB SQL query execution failed: {stderr}"));
                                 if let Some(ref normalized_path) = normalized_session_path {
                                     let _ = save_session(Path::new(normalized_path), state);
                                 }
@@ -3542,7 +3565,9 @@ fn run_inference_options(
                     Err(e) => {
                         // Track error in session if present
                         if let Some(ref mut state) = session_state {
-                            state.sql_errors.push(format!("DuckDB SQL query execution failed: {}", e));
+                            state
+                                .sql_errors
+                                .push(format!("DuckDB SQL query execution failed: {}", e));
                             if let Some(ref normalized_path) = normalized_session_path {
                                 let _ = save_session(Path::new(normalized_path), state);
                             }
@@ -3558,13 +3583,13 @@ fn run_inference_options(
             // Track successful execution in session
             if let Some(ref mut state) = session_state {
                 let results_path = Path::new(sql_results).with_extension("csv");
-                if results_path.exists() {
-                    if let Ok(sample) = extract_sql_sample(&results_path) {
-                        state.sql_results = Some(sample);
-                        state.sql_errors.clear(); // Clear errors on success
-                    }
+                if results_path.exists()
+                    && let Ok(sample) = extract_sql_sample(&results_path)
+                {
+                    state.sql_results = Some(sample);
+                    state.sql_errors.clear(); // Clear errors on success
                 }
-                
+
                 // Extract and store baseline SQL only after successful execution
                 // This ensures baseline SQL is only set when the query executes successfully
                 if state.baseline_sql.is_none() {
@@ -3583,7 +3608,8 @@ fn run_inference_options(
                 sql_query = sql_query.replace(INPUT_TABLE_NAME, "_t_1");
                 log::debug!("SQL query:\n{sql_query}");
 
-                // Clone sql_query before moving it into fs::write, so we can use it later for baseline SQL
+                // Clone sql_query before moving it into fs::write, so we can use it later for
+                // baseline SQL
                 let sql_query_for_baseline = sql_query.clone();
 
                 // save sql query to a temporary file with a .sql extension
@@ -3609,7 +3635,9 @@ fn run_inference_options(
                         if stderr.to_ascii_lowercase().contains("error:") {
                             // Track error in session if present
                             if let Some(ref mut state) = session_state {
-                                state.sql_errors.push(format!("Polars SQL query error detected: {stderr}"));
+                                state
+                                    .sql_errors
+                                    .push(format!("Polars SQL query error detected: {stderr}"));
                                 if let Some(ref normalized_path) = normalized_session_path {
                                     let _ = save_session(Path::new(normalized_path), state);
                                 }
@@ -3626,7 +3654,7 @@ fn run_inference_options(
                         // set the sql_results file to have a .csv extension
                         let csv_path = sql_results_path.with_extension("csv");
                         let _ = fs::rename(sql_results_path, &csv_path);
-                        
+
                         // Track successful execution in session
                         if let Some(ref mut state) = session_state {
                             if csv_path.exists() {
@@ -3635,20 +3663,23 @@ fn run_inference_options(
                                     state.sql_errors.clear(); // Clear errors on success
                                 }
                             }
-                            
+
                             // Extract and store baseline SQL only after successful execution
-                            // This ensures baseline SQL is only set when the query executes successfully
+                            // This ensures baseline SQL is only set when the query executes
+                            // successfully
                             if state.baseline_sql.is_none() {
                                 state.baseline_sql = Some(sql_query_for_baseline.clone());
                             }
                         }
-                        
+
                         (stdout, stderr)
                     },
                     Err(e) => {
                         // Track error in session if present
                         if let Some(ref mut state) = session_state {
-                            state.sql_errors.push(format!("Polars SQL query execution failed: {}", e));
+                            state
+                                .sql_errors
+                                .push(format!("Polars SQL query execution failed: {}", e));
                             if let Some(ref normalized_path) = normalized_session_path {
                                 let _ = save_session(Path::new(normalized_path), state);
                             }
@@ -3716,10 +3747,10 @@ fn run_inference_options(
     }
 
     // Save session if it exists
-    if let Some(ref state) = session_state {
-        if let Some(ref normalized_path) = normalized_session_path {
-            save_session(Path::new(normalized_path), state)?;
-        }
+    if let Some(ref state) = session_state
+        && let Some(ref normalized_path) = normalized_session_path
+    {
+        save_session(Path::new(normalized_path), state)?;
     }
 
     Ok(())
@@ -3949,10 +3980,10 @@ fn handle_sql_error(
 /// Normalize session path to always have .md extension
 fn normalize_session_path(session_path: &str) -> String {
     let path = Path::new(session_path);
-    if let Some(ext) = path.extension() {
-        if ext == "md" {
-            return session_path.to_string();
-        }
+    if let Some(ext) = path.extension()
+        && ext == "md"
+    {
+        return session_path.to_string();
     }
     // If no extension or wrong extension, ensure .md extension
     // Use with_extension which replaces existing extension or adds if none exists
@@ -3964,20 +3995,20 @@ fn load_session(session_path: &Path) -> CliResult<SessionState> {
     if !session_path.exists() {
         return Ok(SessionState {
             baseline_sql: None,
-            messages: Vec::new(),
-            sql_results: None,
-            sql_errors: Vec::new(),
-            summary: None,
+            messages:     Vec::new(),
+            sql_results:  None,
+            sql_errors:   Vec::new(),
+            summary:      None,
         });
     }
 
     let content = fs::read_to_string(session_path)?;
     let mut state = SessionState {
         baseline_sql: None,
-        messages: Vec::new(),
-        sql_results: None,
-        sql_errors: Vec::new(),
-        summary: None,
+        messages:     Vec::new(),
+        sql_results:  None,
+        sql_errors:   Vec::new(),
+        summary:      None,
     };
 
     let lines: Vec<&str> = content.lines().collect();
@@ -3987,7 +4018,7 @@ fn load_session(session_path: &Path) -> CliResult<SessionState> {
 
     while i < lines.len() {
         let line = lines[i].trim();
-        
+
         if line.starts_with("# Session:") {
             // Skip header
         } else if line == "## Baseline SQL Query" {
@@ -4015,32 +4046,35 @@ fn load_session(session_path: &Path) -> CliResult<SessionState> {
             while i < lines.len() {
                 let msg_line = lines[i];
                 let msg_line_trimmed = msg_line.trim();
-                
+
                 // Check if we've hit the next section header (## at start of line, not indented)
                 // Only break if we're not inside a code block
-                if !in_code_block && msg_line_trimmed.starts_with("##") && !msg_line_trimmed.starts_with("###") {
+                if !in_code_block
+                    && msg_line_trimmed.starts_with("##")
+                    && !msg_line_trimmed.starts_with("###")
+                {
                     // Save the current message before breaking
                     if !current_content.is_empty() && !current_role.is_empty() {
                         state.messages.push(SessionMessage {
-                            role: current_role.clone(),
-                            content: current_content.trim().to_string(),
+                            role:      current_role.clone(),
+                            content:   current_content.trim().to_string(),
                             timestamp: chrono::Utc::now().to_rfc3339(),
                         });
                     }
                     break;
                 }
-                
+
                 // Track code blocks to avoid breaking on ## inside them
                 if msg_line_trimmed.starts_with("```") {
                     in_code_block = !in_code_block;
                 }
-                
+
                 if msg_line_trimmed.starts_with("### Message") {
                     // New message - save previous if exists
                     if !current_content.is_empty() && !current_role.is_empty() {
                         state.messages.push(SessionMessage {
-                            role: current_role.clone(),
-                            content: current_content.trim().to_string(),
+                            role:      current_role.clone(),
+                            content:   current_content.trim().to_string(),
                             timestamp: chrono::Utc::now().to_rfc3339(),
                         });
                     }
@@ -4057,8 +4091,9 @@ fn load_session(session_path: &Path) -> CliResult<SessionState> {
                     current_content.clear();
                     in_content_section = true;
                 } else if in_content_section {
-                    // We're in the content section - add everything (including empty lines and code blocks)
-                    // Always add a newline before adding content (except for the very first line)
+                    // We're in the content section - add everything (including empty lines and code
+                    // blocks) Always add a newline before adding content
+                    // (except for the very first line)
                     if !current_content.is_empty() {
                         current_content.push('\n');
                     }
@@ -4070,8 +4105,8 @@ fn load_session(session_path: &Path) -> CliResult<SessionState> {
             // Add last message if we didn't break on a section header
             if !current_content.is_empty() && !current_role.is_empty() {
                 state.messages.push(SessionMessage {
-                    role: current_role.clone(),
-                    content: current_content.trim().to_string(),
+                    role:      current_role.clone(),
+                    content:   current_content.trim().to_string(),
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 });
             }
@@ -4134,7 +4169,13 @@ fn save_session(session_path: &Path, state: &SessionState) -> CliResult<()> {
     }
 
     let mut content = String::new();
-    content.push_str(&format!("# Session: {}\n\n", session_path.file_name().unwrap_or_default().to_string_lossy()));
+    content.push_str(&format!(
+        "# Session: {}\n\n",
+        session_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+    ));
 
     // Baseline SQL Query
     if let Some(ref sql) = state.baseline_sql {
@@ -4183,18 +4224,18 @@ fn save_session(session_path: &Path, state: &SessionState) -> CliResult<()> {
 /// Extract first 10 rows from a CSV file
 fn extract_sql_sample(csv_path: &Path) -> CliResult<String> {
     use std::io::{BufRead, BufReader};
-    
+
     let file = fs::File::open(csv_path)?;
     let reader = BufReader::new(file);
     let mut lines = reader.lines();
     let mut result = String::new();
-    
+
     // Read header
     if let Some(Ok(header)) = lines.next() {
         result.push_str(&header);
         result.push('\n');
     }
-    
+
     // Read up to 10 data rows
     for _ in 0..10 {
         if let Some(Ok(line)) = lines.next() {
@@ -4204,7 +4245,7 @@ fn extract_sql_sample(csv_path: &Path) -> CliResult<String> {
             break;
         }
     }
-    
+
     Ok(result.trim().to_string())
 }
 
@@ -4215,20 +4256,25 @@ fn generate_summary(
     client: &Client,
     api_key: &str,
 ) -> CliResult<String> {
-    let mut summary_prompt = String::from("Please provide a concise summary of the following conversation history. Focus on the key SQL query refinements, user requests, and assistant responses:\n\n");
-    
+    let mut summary_prompt = String::from(
+        "Please provide a concise summary of the following conversation history. Focus on the key \
+         SQL query refinements, user requests, and assistant responses:\n\n",
+    );
+
     for msg in old_messages {
         summary_prompt.push_str(&format!("{}: {}\n\n", msg.role, msg.content));
     }
-    
-    summary_prompt.push_str("\nProvide a brief summary that captures the essence of this conversation:");
-    
-    let system_prompt = "You are a helpful assistant that summarizes conversation history for SQL query refinement sessions.";
+
+    summary_prompt
+        .push_str("\nProvide a brief summary that captures the essence of this conversation:");
+
+    let system_prompt = "You are a helpful assistant that summarizes conversation history for SQL \
+                         query refinement sessions.";
     let messages = json!([
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": summary_prompt}
     ]);
-    
+
     let model = check_model(client, Some(api_key), args)?;
     let completion = get_completion(args, client, &model, api_key, &messages, PromptType::Prompt)?;
     Ok(completion.response)
@@ -4245,20 +4291,20 @@ fn apply_sliding_window(
     if state.messages.len() <= max_len {
         return Ok(());
     }
-    
+
     let num_to_summarize = state.messages.len() - max_len;
     let old_messages: Vec<SessionMessage> = state.messages.drain(..num_to_summarize).collect();
-    
+
     // Generate summary of old messages
     let summary = generate_summary(&old_messages, args, client, api_key)?;
-    
+
     // Combine with existing summary if present
     if let Some(ref existing_summary) = state.summary {
         state.summary = Some(format!("{}\n\n{}", existing_summary, summary));
     } else {
         state.summary = Some(summary);
     }
-    
+
     Ok(())
 }
 
@@ -4272,38 +4318,62 @@ fn check_message_relevance(
 ) -> CliResult<bool> {
     // Heuristic check: Look for SQL-related keywords
     let sql_keywords = [
-        "sql", "query", "select", "where", "join", "group", "order", "filter",
-        "refine", "modify", "change", "update", "fix", "correct", "improve",
-        "add", "remove", "include", "exclude", "sort", "aggregate", "count",
+        "sql",
+        "query",
+        "select",
+        "where",
+        "join",
+        "group",
+        "order",
+        "filter",
+        "refine",
+        "modify",
+        "change",
+        "update",
+        "fix",
+        "correct",
+        "improve",
+        "add",
+        "remove",
+        "include",
+        "exclude",
+        "sort",
+        "aggregate",
+        "count",
     ];
-    
+
     let prompt_lower = prompt.to_lowercase();
     let has_sql_keywords = sql_keywords.iter().any(|kw| prompt_lower.contains(kw));
-    
+
     // Also check if prompt references previous query/results
-    let has_references = prompt_lower.contains("previous") || prompt_lower.contains("last") 
-        || prompt_lower.contains("above") || prompt_lower.contains("before");
-    
+    let has_references = prompt_lower.contains("previous")
+        || prompt_lower.contains("last")
+        || prompt_lower.contains("above")
+        || prompt_lower.contains("before");
+
     if has_sql_keywords || has_references {
         return Ok(true);
     }
-    
+
     // LLM check: Ask LLM if message is related to refining the SQL query
     let relevance_prompt = format!(
-        "The user has been working on refining a SQL query. The baseline SQL query is:\n\n```sql\n{}\n```\n\nUser's new message: \"{}\"\n\nIs this message related to refining, modifying, or improving the SQL query above? Answer with only 'yes' or 'no'.",
+        "The user has been working on refining a SQL query. The baseline SQL query \
+         is:\n\n```sql\n{}\n```\n\nUser's new message: \"{}\"\n\nIs this message related to \
+         refining, modifying, or improving the SQL query above? Answer with only 'yes' or 'no'.",
         baseline_sql, prompt
     );
-    
-    let system_prompt = "You are a helpful assistant that determines if user messages are related to SQL query refinement.";
+
+    let system_prompt = "You are a helpful assistant that determines if user messages are related \
+                         to SQL query refinement.";
     let messages = json!([
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": relevance_prompt}
     ]);
-    
+
     let model = check_model(client, Some(api_key), args)?;
     let completion = get_completion(args, client, &model, api_key, &messages, PromptType::Prompt)?;
     let response_lower = completion.response.to_lowercase().trim().to_string();
-    
+
     Ok(response_lower.contains("yes") || response_lower == "y")
 }
 

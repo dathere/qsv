@@ -2636,16 +2636,17 @@ fn run_inference_options(
 
             // Add baseline SQL if this is a refinement request
             if is_refinement {
-                let mut baseline_sql_used = false;
-                if let Some(ref baseline_sql) = session.baseline_sql
+                let baseline_sql_used = if let Some(ref baseline_sql) = session.baseline_sql
                     && !baseline_sql.trim().is_empty()
                 {
                     messages.push(json!({
                             "role": "assistant",
                             "content": format!("The baseline SQL query we are refining is:\n\n```sql\n{baseline_sql}\n```\n\nIMPORTANT: You must refine and modify this existing SQL query based on the user's request. Do NOT create a completely new query. Modify the baseline query to incorporate the requested changes.")
                         }));
-                    baseline_sql_used = true;
-                }
+                    true
+                } else {
+                    false
+                };
 
                 // If no baseline SQL in state but we have messages, try to extract it from the last
                 // assistant message
@@ -2668,8 +2669,8 @@ fn run_inference_options(
             }
 
             // Add recent messages (within sliding window) - but skip the last assistant message if
-            // it's the baseline We want to show the conversation history but emphasize
-            // refinement
+            // it's the baseline
+            // We want to show the conversation history but emphasize refinement
             for msg in &session.messages {
                 messages.push(json!({
                     "role": msg.role,
@@ -2700,10 +2701,9 @@ fn run_inference_options(
             // Modify the prompt to emphasize refinement
             if is_refinement {
                 let refined_prompt = format!(
-                    "User request: {}\n\nPlease refine the baseline SQL query above to address \
-                     this request. Return the complete refined SQL query that modifies the \
-                     baseline query.",
-                    prompt
+                    "User request: {prompt}\n\nPlease refine the baseline SQL query above to \
+                     address this request. Return the complete refined SQL query that modifies \
+                     the baseline query."
                 );
                 messages.push(json!({"role": "user", "content": refined_prompt}));
             } else {
@@ -2733,8 +2733,8 @@ fn run_inference_options(
             serde_json::from_str::<serde_json::Value>(candidate.trim()).ok()
         }
 
-        // Helper function to try to fix common JSON issues, particularly unescaped newlines in
-        // strings
+        // Helper function to try to fix common JSON issues,
+        // particularly unescaped newlines in strings
         fn try_fix_json(json_str: &str) -> String {
             let mut result = String::with_capacity(json_str.len());
             let chars = json_str.chars();
@@ -3344,7 +3344,7 @@ fn run_inference_options(
         .as_ref()
         .map(|p| normalize_session_path(p));
 
-    if args.flag_prompt.is_some() {
+    if let Some(ref user_prompt) = args.flag_prompt {
         // Handle session if --session is provided
         if let Some(ref normalized_path) = normalized_session_path {
             let session_path = Path::new(normalized_path);
@@ -3422,7 +3422,6 @@ fn run_inference_options(
         // Update session state with new messages
         if let Some(ref mut state) = session_state {
             // Add user message
-            let user_prompt = args.flag_prompt.as_ref().unwrap();
             state.messages.push(SessionMessage {
                 role:      "user".to_string(),
                 content:   user_prompt.clone(),
@@ -3567,7 +3566,7 @@ fn run_inference_options(
                         if let Some(ref mut state) = session_state {
                             state
                                 .sql_errors
-                                .push(format!("DuckDB SQL query execution failed: {}", e));
+                                .push(format!("DuckDB SQL query execution failed: {e}"));
                             if let Some(ref normalized_path) = normalized_session_path {
                                 let _ = save_session(Path::new(normalized_path), state);
                             }
@@ -3593,7 +3592,7 @@ fn run_inference_options(
                 // Extract and store baseline SQL only after successful execution
                 // This ensures baseline SQL is only set when the query executes successfully
                 if state.baseline_sql.is_none() {
-                    state.baseline_sql = Some(sql_query.clone());
+                    state.baseline_sql = Some(sql_query);
                 }
             }
 
@@ -3657,18 +3656,18 @@ fn run_inference_options(
 
                         // Track successful execution in session
                         if let Some(ref mut state) = session_state {
-                            if csv_path.exists() {
-                                if let Ok(sample) = extract_sql_sample(&csv_path) {
-                                    state.sql_results = Some(sample);
-                                    state.sql_errors.clear(); // Clear errors on success
-                                }
+                            if csv_path.exists()
+                                && let Ok(sample) = extract_sql_sample(&csv_path)
+                            {
+                                state.sql_results = Some(sample);
+                                state.sql_errors.clear(); // Clear errors on success
                             }
 
                             // Extract and store baseline SQL only after successful execution
                             // This ensures baseline SQL is only set when the query executes
                             // successfully
                             if state.baseline_sql.is_none() {
-                                state.baseline_sql = Some(sql_query_for_baseline.clone());
+                                state.baseline_sql = Some(sql_query_for_baseline);
                             }
                         }
 
@@ -3679,7 +3678,7 @@ fn run_inference_options(
                         if let Some(ref mut state) = session_state {
                             state
                                 .sql_errors
-                                .push(format!("Polars SQL query execution failed: {}", e));
+                                .push(format!("Polars SQL query execution failed: {e}"));
                             if let Some(ref normalized_path) = normalized_session_path {
                                 let _ = save_session(Path::new(normalized_path), state);
                             }
@@ -4163,19 +4162,22 @@ fn load_session(session_path: &Path) -> CliResult<SessionState> {
 
 /// Save session state to a markdown file
 fn save_session(session_path: &Path, state: &SessionState) -> CliResult<()> {
+    use std::fmt::Write as _; // import without risk of name clashing
+
     // Ensure parent directory exists
     if let Some(parent) = session_path.parent() {
         fs::create_dir_all(parent)?;
     }
 
     let mut content = String::new();
-    content.push_str(&format!(
+    let _ = write!(
+        content,
         "# Session: {}\n\n",
         session_path
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
-    ));
+    );
 
     // Baseline SQL Query
     if let Some(ref sql) = state.baseline_sql {
@@ -4188,9 +4190,9 @@ fn save_session(session_path: &Path, state: &SessionState) -> CliResult<()> {
     // Conversation History
     content.push_str("## Conversation History\n\n");
     for (idx, msg) in state.messages.iter().enumerate() {
-        content.push_str(&format!("### Message {}\n\n", idx + 1));
-        content.push_str(&format!("**Role:** {}\n\n", msg.role));
-        content.push_str(&format!("**Content:**\n\n{}\n\n", msg.content));
+        let _ = write!(content, "### Message {}\n\n", idx + 1);
+        let _ = write!(content, "**Role:** {}\n\n", msg.role);
+        let _ = write!(content, "**Content:**\n\n{}\n\n", msg.content);
     }
 
     // SQL Results
@@ -4205,7 +4207,7 @@ fn save_session(session_path: &Path, state: &SessionState) -> CliResult<()> {
     if !state.sql_errors.is_empty() {
         content.push_str("## SQL Errors\n\n");
         for error in &state.sql_errors {
-            content.push_str(&format!("- {}\n", error));
+            let _ = writeln!(content, "- {error}");
         }
         content.push('\n');
     }
@@ -4256,13 +4258,16 @@ fn generate_summary(
     client: &Client,
     api_key: &str,
 ) -> CliResult<String> {
+    use std::fmt::Write as _; // import without risk of name clashing
+
     let mut summary_prompt = String::from(
         "Please provide a concise summary of the following conversation history. Focus on the key \
          SQL query refinements, user requests, and assistant responses:\n\n",
     );
 
     for msg in old_messages {
-        summary_prompt.push_str(&format!("{}: {}\n\n", msg.role, msg.content));
+        // summary_prompt.push_str(&format!("{}: {}\n\n", msg.role, msg.content));
+        let _ = write!(summary_prompt, "{}: {}\n\n", msg.role, msg.content);
     }
 
     summary_prompt
@@ -4300,7 +4305,7 @@ fn apply_sliding_window(
 
     // Combine with existing summary if present
     if let Some(ref existing_summary) = state.summary {
-        state.summary = Some(format!("{}\n\n{}", existing_summary, summary));
+        state.summary = Some(format!("{existing_summary}\n\n{summary}"));
     } else {
         state.summary = Some(summary);
     }
@@ -4358,9 +4363,9 @@ fn check_message_relevance(
     // LLM check: Ask LLM if message is related to refining the SQL query
     let relevance_prompt = format!(
         "The user has been working on refining a SQL query. The baseline SQL query \
-         is:\n\n```sql\n{}\n```\n\nUser's new message: \"{}\"\n\nIs this message related to \
-         refining, modifying, or improving the SQL query above? Answer with only 'yes' or 'no'.",
-        baseline_sql, prompt
+         is:\n\n```sql\n{baseline_sql}\n```\n\nUser's new message: \"{prompt}\"\n\nIs this \
+         message related to refining, modifying, or improving the SQL query above? Answer with \
+         only 'yes' or 'no'."
     );
 
     let system_prompt = "You are a helpful assistant that determines if user messages are related \
@@ -4497,6 +4502,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_prompt = Some(prompt);
 
         // Now handle language auto-detection or explicit setting if necessary
+        #[allow(unused)] // whatlang threshold is not used in qsvlite
         let (is_autodetect, threshold, explicit_language) =
             parse_language_option(args.flag_language.as_ref());
 

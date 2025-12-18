@@ -39,7 +39,8 @@ it know what functions (even UDFs!) it can use in the SQL queries it generates. 
 specific function or technique to be used in the SQL query, mention it in the prompt.
 
 SUPPORTED MODELS & LLM PROVIDERS:
-OpenAI's open-weights gpt-oss-20b model was used during development & is recommended for most use cases.
+OpenAI's open-weights gpt-oss model (both 20b and 120b variants) was used during development &
+is recommended for most use cases.
 It was also tested with OpenAI, TogetherAI, OpenRouter and Google Gemini cloud providers.
 Local LLMs tested include Ollama, Jan and LM Studio.
 
@@ -133,8 +134,12 @@ describegpt options:
                            The columns must be present in the Summary Statistics.
                            If the columns are not present in the Summary Statistics or already in the
                            dictionary, they will be ignored.
-                           "everything" can be used to add all available statistics columns.
+                           CONVENIENCE VALUES:
+                           These values are case-insensitive and automatically set the --addl-cols option to true.
+                           "everything" can be used to add all 45 "available" statistics columns.
                            You can adjust the available columns with --stats-options.
+                           "everything!" automatically sets --stats-options to compute "all" 51 supported stats.
+                           The 6 addl cols are the mode/s & antimode/s stats with each having counts & occurences.
                            [default: sort_order, sortiness, mean, median, mad, stddev, variance, cv]
 
                            TAG OPTIONS:
@@ -217,8 +222,8 @@ describegpt options:
                            If the QSV_LLM_MODEL environment variable is set, it'll be used instead.
                            [default: openai/gpt-oss-20b]
     --language <lang>      The output language/dialect to use for the response. (e.g., "Spanish", "French",
-                           "Hindi", "Mandarin", "Italian", "Castilian", "Taglish", "Pig Latin", "Valley Girl",
-                           "Pirate", "Shakespearean English", "Chavacano", "Gen Z", "Yoda", "Elvish", etc.)
+                           "Hindi", "Mandarin", "Italian", "Castilian", "Franglais", "Taglish", "Pig Latin",
+                           "Valley Girl", "Pirate", "Shakespearean English", "Chavacano", "Gen Z", "Yoda", etc.)
     
                              CHAT MODE (--prompt) LANGUAGE DETECTION BEHAVIOR:
                              When --prompt is used and --language is not set, automatically detects
@@ -4400,7 +4405,8 @@ fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String
 
     let cols_to_include = if let Some(list_str) = &args.flag_addl_cols_list {
         // Parse comma-separated list
-        if list_str.trim().eq_ignore_ascii_case("everything") {
+        if list_str.trim().to_lowercase().starts_with("everything") {
+            // note that we use starts_with("everything") to match "everything" and "everything!"
             // Include all available columns except standard ones, preserving CSV order
             // IndexSet preserves insertion order, so we can iterate directly
             avail_cols
@@ -4795,6 +4801,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Check if num_tags is between 1 and 50
     if args.flag_num_tags < 1 || args.flag_num_tags > 50 {
         return fail_incorrectusage_clierror!("The --num-tags option must be between 1 and 50.");
+    }
+
+    // Check if addl-cols-list is set to "everything" or "everything!"
+    if let Some(list_str) = &args.flag_addl_cols_list {
+        // as a convenience, if addl-cols-list starts with "everything", set addl-cols to true
+        if list_str.trim().to_lowercase().starts_with("everything") {
+            args.flag_addl_cols = true;
+        }
+
+        // further, if addl-cols-list is set to "everything!" (exclamation point)
+        // set stats-options to use --everything to force stats to compute "all" supported stats
+        if list_str.trim().eq_ignore_ascii_case("everything!") {
+            args.flag_stats_options =
+                "--infer-dates --infer-boolean --everything --force --stats-jsonl".to_string();
+        }
     }
 
     // Check if user gives arg_input

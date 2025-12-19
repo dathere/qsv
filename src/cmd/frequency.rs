@@ -145,7 +145,10 @@ frequency options:
                             data type, cardinality, null count, sparsity, uniqueness_ratio and
                             17 additional stats (e.g. sum, min, max, range, sort_order, mean, sem, etc.).
     --pretty-json           Same as --json but pretty prints the JSON output.
-    --no-stats              When using the JSON output mode, do not include the additional stats.
+    --toon                  Output frequency table and select stats in TOON format instead of CSV.
+                            TOON is a compact, human-readable encoding of the JSON data model for LLM prompts.
+                            See https://toonformat.dev/ for more info.
+    --no-stats              When using the JSON or TOON output mode, do not include the additional stats.
 
 Common options:
     -h, --help             Display this message
@@ -170,6 +173,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use stats::{Frequencies, merge_all};
 use threadpool::ThreadPool;
+use toon_format::{EncodeOptions, encode};
 
 use crate::{
     CliResult,
@@ -233,6 +237,7 @@ pub struct Args {
     pub flag_vis_whitespace:  bool,
     pub flag_json:            bool,
     pub flag_pretty_json:     bool,
+    pub flag_toon:            bool,
     pub flag_no_stats:        bool,
 }
 
@@ -478,7 +483,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // if stdin and args.flag_json is true, save stdin to tempfile
     // so we can derive stats
     let mut stdin_temp_file;
-    let is_json = args.flag_json || args.flag_pretty_json;
+    let is_json = args.flag_json || args.flag_pretty_json || args.flag_toon;
     if is_stdin && is_json {
         let temp_dir = std::env::temp_dir();
         stdin_temp_file = tempfile::Builder::new()
@@ -1189,7 +1194,7 @@ impl Args {
             flag_memcheck:        false,
             flag_output:          None,
         };
-        let is_json = self.flag_json || self.flag_pretty_json;
+        let is_json = self.flag_json || self.flag_pretty_json || self.flag_toon;
         // initialize the stats records hashmap
         let mut stats_records_hashmap = if is_json {
             HashMap::with_capacity(headers.len())
@@ -1405,22 +1410,55 @@ impl Args {
             fields,
             rank_strategy: self.flag_rank_strategy,
         };
-        let mut json_output = if self.flag_pretty_json {
-            // pretty, with more whitespace
-            serde_json::to_string_pretty(&output)?
-        } else {
-            // still pretty, but more compact and faster
-            simd_json::to_string_pretty(&output)?
-        };
 
-        // remove all empty stats properties from the JSON output using regex
-        let re = regex::Regex::new(r#""stats": \[\],\n\s*"#).unwrap();
-        json_output = re.replace_all(&json_output, "").to_string();
+        if self.flag_toon {
+            // TOON output - encode the JSON structure to TOON format
+            // First serialize to JSON Value, then remove empty stats, then encode to TOON
+            let mut json_value = serde_json::to_value(&output)?;
 
-        if let Some(output_path) = &self.flag_output {
-            std::fs::write(output_path, json_output)?;
+            // Remove empty stats arrays from each field (same as JSON output)
+            if let Some(fields) = json_value.get_mut("fields").and_then(|f| f.as_array_mut()) {
+                for field in fields {
+                    if let Some(field_obj) = field.as_object_mut() {
+                        // Remove empty stats
+                        if let Some(stats) = field_obj.get("stats")
+                            && let Some(stats_array) = stats.as_array()
+                            && stats_array.is_empty()
+                        {
+                            field_obj.remove("stats");
+                        }
+                    }
+                }
+            }
+
+            let opts = EncodeOptions::new();
+            let toon_output = encode(&json_value, &opts)
+                .map_err(|e| crate::CliError::Other(format!("Failed to encode to TOON: {e}")))?;
+            if let Some(output_path) = &self.flag_output {
+                std::fs::write(output_path, toon_output)?;
+            } else {
+                println!("{toon_output}");
+            }
         } else {
-            println!("{json_output}");
+            // JSON output
+            let mut json_output = if self.flag_pretty_json {
+                // pretty, with more whitespace
+                serde_json::to_string_pretty(&output)?
+            } else {
+                // still pretty, but more compact and faster
+                simd_json::to_string_pretty(&output)?
+            };
+
+            // remove all empty stats properties from the JSON output using regex
+            // safety: regex pattern is a valid static string
+            let re = regex::Regex::new(r#""stats": \[\],\n\s*"#).unwrap();
+            json_output = re.replace_all(&json_output, "").to_string();
+
+            if let Some(output_path) = &self.flag_output {
+                std::fs::write(output_path, json_output)?;
+            } else {
+                println!("{json_output}");
+            }
         }
 
         Ok(())

@@ -616,6 +616,7 @@ fn get_unique_values(
         flag_json:            false,
         flag_pretty_json:     false,
         flag_no_stats:        false,
+        flag_toon:            false,
     };
 
     let curr_mode = std::env::var("QSV_STATSCACHE_MODE");

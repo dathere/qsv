@@ -49,7 +49,7 @@
 | [flatten](/src/cmd/flatten.rs#L2) | A flattened view of CSV records. Useful for viewing one record at a time.<br />e.g. `qsv slice -i 5 data.csv \| qsv flatten`. |
 | [fmt](/src/cmd/fmt.rs#L2) | Reformat a CSV with different delimiters, record terminators or quoting rules. (Supports ASCII delimited data.)  |
 | [foreach](/src/cmd/foreach.rs#L2)✨<br>📇 | Execute a shell command once per record in a given CSV file. |
-| [frequency](/src/cmd/frequency.rs#L2)<br>📇😣🏎️👆🪄 | Build [frequency distribution tables](https://en.wikipedia.org/wiki/Frequency_(statistics)) of each column. Uses multithreading to go faster if an index is present (Examples: [CSV](https://github.com/dathere/qsv/blob/master/scripts/nyc311-1m.freqs.csv) [JSON](https://github.com/dathere/qsv/blob/master/scripts/nyc311-1m.freqs.json)). |
+| [frequency](/src/cmd/frequency.rs#L2)<br>📇😣🏎️👆🪄 | Build [frequency distribution tables](https://en.wikipedia.org/wiki/Frequency_(statistics)) of each column. Uses multithreading to go faster if an index is present (Examples: [CSV](scripts/nyc311-1m.freqs.csv) [JSON](scripts/nyc311-1m.freqs.json) [TOON](scripts/nyc311-1m.freqs.toon)). |
 | [geocode](/src/cmd/geocode.rs#L2)✨<br>📇🧠🌐🚀🔣👆🌎 | Geocodes a location against an updatable local copy of the [Geonames](https://www.geonames.org/) cities & the [Maxmind GeoLite2](https://www.maxmind.com/en/geolite-free-ip-geolocation-data) databases. With caching and multi-threading, it geocodes up to 360,000 records/sec! |
 | [geoconvert](/src/cmd/geoconvert.rs#L2)✨<br>🌎 | Convert between various spatial formats and CSV/SVG including GeoJSON, SHP, and more. |
 | [headers](/src/cmd/headers.rs#L2)<br>🗄️ | Show the headers of a CSV. Or show the intersection of all headers between many CSV files. |
@@ -353,8 +353,7 @@ The `excel`, `safenames`, `sniff`, `sortcheck` & `validate` commands produce JSO
 
 The `schema` command produces a [JSON Schema Validation (Draft 7)](https://json-schema.org/draft/2020-12/json-schema-validation.html) file with the ".schema.json" file extension, which can be used with the `validate` command to validate other CSV files with an identical schema.
 
-The `describegpt` command's output `--format` can be set to `markdown`, `json`, `tsv` or [TOON](https://toonformat.dev).
-TOON is a compact, human-readable encoding of the JSON data model for LLM prompts.
+The `describegpt` and `frequency` commands also both produce [TOON](https://toonformat.dev) files. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts.
 
 The `excel` command recognizes Excel & Open Document Spreadsheet(ODS) files (`.xls`, `.xlsx`, `.xlsm`, `.xlsb` & `.ods` files).
 

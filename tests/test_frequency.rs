@@ -4,6 +4,7 @@ use foldhash::{HashMap, HashMapExt};
 use serde::Deserialize;
 use serde_json::Value;
 use stats::Frequencies;
+use toon_format;
 
 use crate::{Csv, CsvData, qcheck_sized, workdir::Workdir};
 
@@ -1134,6 +1135,168 @@ fn frequency_json_vis_whitespace() {
     assert_eq!(field["field"], "header");
     assert_eq!(field["cardinality"], 3);
     let freqs = field["frequencies"].as_array().unwrap();
+    let expected = vec![
+        ("value", 4, 66.66667),
+        ("(NULL)", 1, 16.66667),
+        ("no_whitespace", 1, 16.66667),
+    ];
+    for (i, (val, count, pct)) in expected.iter().enumerate() {
+        assert_eq!(freqs[i]["value"], *val);
+        assert_eq!(freqs[i]["count"], *count);
+        assert!((freqs[i]["percentage"].as_f64().unwrap() - *pct).abs() < 1e-5);
+    }
+}
+
+#[test]
+fn frequency_toon() {
+    let (wrk, mut cmd) = setup("frequency_toon");
+    cmd.args(["--limit", "0"])
+        .args(["--select", "h2"])
+        .arg("--toon");
+    let got: String = wrk.stdout(&mut cmd);
+    let expected =
+        "input: in.csv\ndescription: \"Generated with `qsv frequency in.csv --limit 0 --select h2 \
+         --toon`\"\nrowcount: 7\nfieldcount: 1\nfields[1]:\n  - field: h2\n    type: String\n    \
+         cardinality: 4\n    nullcount: 0\n    sparsity: 0\n    uniqueness_ratio: 0.5714\n    \
+         stats[10]{name,value}:\n    min,Y\n    max,z\n    sort_order,Unsorted\n    \
+         min_length,1\n    max_length,1\n    sum_length,7\n    avg_length,1\n    \
+         stddev_length,0\n    variance_length,0\n    cv_length,0\n    \
+         frequencies[4]{value,count,percentage,rank}:\n    z,3,42.85714,1\n    y,2,28.57143,2\n    \
+         Y,1,14.28571,3\n    x,1,14.28571,3\nrank_strategy: dense"
+            .to_string();
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_toon_no_headers() {
+    let (wrk, mut cmd) = setup("frequency_toon_no_headers");
+    cmd.args(["--limit", "0"])
+        .args(["--select", "1"])
+        .arg("--no-headers")
+        .arg("--toon");
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = "input: in.csv\ndescription: \"Generated with `qsv frequency in.csv --limit 0 \
+                    --select 1 --no-headers --toon`\"\nrowcount: 8\nfieldcount: 1\nfields[1]:\n  \
+                    - field: \"1\"\n    type: \"\"\n    cardinality: 5\n    nullcount: 0\n    \
+                    sparsity: 0\n    uniqueness_ratio: 0.625\n    \
+                    frequencies[5]{value,count,percentage,rank}:\n    a,4,50,1\n    \
+                    (NULL),1,12.5,2\n    (NULL),1,12.5,2\n    b,1,12.5,2\n    \
+                    h1,1,12.5,2\nrank_strategy: dense"
+        .to_string();
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_toon_ignore_case() {
+    let (wrk, mut cmd) = setup("frequency_toon_ignore_case");
+    cmd.arg("--ignore-case")
+        .args(["--limit", "0"])
+        .args(["--select", "h2"])
+        .arg("--toon");
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = "input: in.csv\ndescription: \"Generated with `qsv frequency in.csv \
+                    --ignore-case --limit 0 --select h2 --toon`\"\nrowcount: 7\nfieldcount: \
+                    1\nfields[1]:\n  - field: h2\n    type: String\n    cardinality: 3\n    \
+                    nullcount: 0\n    sparsity: 0\n    uniqueness_ratio: 0.4286\n    \
+                    stats[10]{name,value}:\n    min,Y\n    max,z\n    sort_order,Unsorted\n    \
+                    min_length,1\n    max_length,1\n    sum_length,7\n    avg_length,1\n    \
+                    stddev_length,0\n    variance_length,0\n    cv_length,0\n    \
+                    frequencies[3]{value,count,percentage,rank}:\n    y,3,42.85714,1\n    \
+                    z,3,42.85714,1\n    x,1,14.28571,2\nrank_strategy: dense"
+        .to_string();
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_toon_limit() {
+    let (wrk, mut cmd) = setup("frequency_toon_limit");
+    cmd.args(["--limit", "1"]).arg("--toon");
+    let got: String = wrk.stdout(&mut cmd);
+    let expected =
+        "input: in.csv\ndescription: \"Generated with `qsv frequency in.csv --limit 1 \
+         --toon`\"\nrowcount: 7\nfieldcount: 2\nfields[2]:\n  - field: h1\n    type: String\n    \
+         cardinality: 4\n    nullcount: 1\n    sparsity: 0.1429\n    uniqueness_ratio: 0.5714\n    \
+         stats[10]{name,value}:\n    min,(NULL)\n    max,b\n    sort_order,Unsorted\n    \
+         min_length,0\n    max_length,6\n    sum_length,11\n    avg_length,1.5714\n    \
+         stddev_length,1.8406\n    variance_length,3.3878\n    cv_length,1.1713\n    \
+         frequencies[2]{value,count,percentage,rank}:\n    a,4,57.14286,1\n    Other \
+         (3),3,42.85714,0\n  - field: h2\n    type: String\n    cardinality: 4\n    nullcount: \
+         0\n    sparsity: 0\n    uniqueness_ratio: 0.5714\n    stats[10]{name,value}:\n    \
+         min,Y\n    max,z\n    sort_order,Unsorted\n    min_length,1\n    max_length,1\n    \
+         sum_length,7\n    avg_length,1\n    stddev_length,0\n    variance_length,0\n    \
+         cv_length,0\n    frequencies[2]{value,count,percentage,rank}:\n    z,3,42.85714,1\n    \
+         Other (3),4,57.14286,0\nrank_strategy: dense"
+            .to_string();
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_toon_all_unique() {
+    let wrk = Workdir::new("frequency_toon_all_unique");
+    let testdata = wrk.load_test_file("boston311-100.csv");
+    let mut cmd = wrk.command("frequency");
+    cmd.args(["--select", "1"])
+        .arg(testdata.clone())
+        .arg("--toon");
+    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = "rowcount: 100\nfieldcount: 1\nfields[1]:\n  - field: case_enquiry_id\n    \
+                    type: Integer\n    cardinality: 100\n    nullcount: 0\n    sparsity: 0\n    \
+                    uniqueness_ratio: 1\n    stats[10]{name,value}:\n    sum,10100411645180\n    \
+                    min,101004113298\n    max,101004155594\n    range,42296\n    \
+                    sort_order,Unsorted\n    mean,101004116451.8\n    sem,790.552\n    \
+                    stddev,7905.5202\n    variance,62497248.9352\n    cv,0\n    \
+                    frequencies[1]{value,count,percentage,rank}:\n    \
+                    <ALL_UNIQUE>,100,100,0\nrank_strategy: dense";
+    assert!(got.ends_with(expected));
+}
+
+#[test]
+fn frequency_toon_vis_whitespace() {
+    let wrk = Workdir::new("frequency_toon_vis_whitespace");
+    let rows = vec![
+        svec!["header"],
+        svec!["value\t"],
+        svec!["\tvalue"],
+        svec!["value "],
+        svec![" value"],
+        svec!["      "],
+        svec!["no_whitespace"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_STATSCACHE_MODE", "none")
+        .arg("in.csv")
+        .args(["--limit", "0"])
+        .arg("--vis-whitespace")
+        .arg("--toon");
+    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout(&mut cmd);
+    let v: Value = toon_format::decode(
+        &got,
+        &toon_format::DecodeOptions {
+            strict: false,
+            ..Default::default()
+        },
+    )
+    .unwrap_or_else(|e| {
+        panic!(
+            "Failed to decode TOON output: {e}. Output: {}",
+            &got[..got.len().min(500)]
+        )
+    });
+    assert!(v["input"].as_str().unwrap().ends_with("in.csv"));
+    assert_eq!(v["rowcount"], 6);
+    assert_eq!(v["fieldcount"], 1);
+    let fields = v["fields"].as_array().expect("fields should be an array");
+    assert_eq!(fields.len(), 1);
+    let field = &fields[0];
+    assert_eq!(field["field"], "header");
+    assert_eq!(field["cardinality"], 3);
+    let freqs = field["frequencies"].as_array().expect(&format!(
+        "frequencies should be an array. Field keys: {:?}",
+        field.as_object().map(|o| o.keys().collect::<Vec<_>>())
+    ));
     let expected = vec![
         ("value", 4, 66.66667),
         ("(NULL)", 1, 16.66667),

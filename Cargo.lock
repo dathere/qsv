@@ -7569,9 +7569,9 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "target-lexicon"
-version = "0.13.3"
+version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df7f62577c25e07834649fc3b39fafdc597c0a3527dc1c60129201ccfcbaa50c"
+checksum = "b1dd07eb858a2067e2f3c7155d54e929265c264e6f37efe3ee7a8d1b5a1dd0ba"
 
 [[package]]
 name = "tempfile"
@@ -7911,7 +7911,7 @@ checksum = "ab16f14aed21ee8bfd8ec22513f7287cd4a91aa92e44edfe2c17ddd004e92607"
 [[package]]
 name = "toon-format"
 version = "0.4.0"
-source = "git+https://github.com/jqnatividad/toon-rust?branch=39-gate-cli-deps-behind-cli-feature#3b4bbba939889d0d81861f48a7fdb23a010db74b"
+source = "git+https://github.com/jqnatividad/toon-rust?branch=39-gate-cli-deps-behind-cli-feature#dd5e923c057a82a44f4a456418986344c5ced5d5"
 dependencies = [
  "indexmap",
  "serde",

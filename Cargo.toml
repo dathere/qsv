@@ -257,7 +257,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 serde_urlencoded = { version = "0.7", optional = true }
 simdutf8 = "0.1"
 toml = "0.9"
-toon-format = "0.4"
+toon-format = { version = "0.4", default-features = false }
 sled = { version = "0.34", optional = true }
 smallvec = "1"
 snap = "1"

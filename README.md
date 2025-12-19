@@ -353,8 +353,7 @@ The `excel`, `safenames`, `sniff`, `sortcheck` & `validate` commands produce JSO
 
 The `schema` command produces a [JSON Schema Validation (Draft 7)](https://json-schema.org/draft/2020-12/json-schema-validation.html) file with the ".schema.json" file extension, which can be used with the `validate` command to validate other CSV files with an identical schema.
 
-The `describegpt` and `frequency` commands produce [TOON](https://toonformat.dev) files.
-TOON is a compact, human-readable encoding of the JSON data model for LLM prompts.
+The `describegpt` and `frequency` commands also both produce [TOON](https://toonformat.dev) files. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts.
 
 The `excel` command recognizes Excel & Open Document Spreadsheet(ODS) files (`.xls`, `.xlsx`, `.xlsm`, `.xlsb` & `.ods` files).
 

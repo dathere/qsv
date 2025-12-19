@@ -5935,6 +5935,7 @@ dependencies = [
  "titlecase",
  "tokio",
  "toml",
+ "toon-format",
  "url",
  "uuid",
  "whatlang",
@@ -7906,6 +7907,17 @@ name = "toml_writer"
 version = "1.0.6+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab16f14aed21ee8bfd8ec22513f7287cd4a91aa92e44edfe2c17ddd004e92607"
+
+[[package]]
+name = "toon-format"
+version = "0.4.0"
+source = "git+https://github.com/jqnatividad/toon-rust?branch=39-gate-cli-deps-behind-cli-feature#3b4bbba939889d0d81861f48a7fdb23a010db74b"
+dependencies = [
+ "indexmap",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+]
 
 [[package]]
 name = "tower"

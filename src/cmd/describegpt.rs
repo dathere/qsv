@@ -281,8 +281,10 @@ describegpt options:
 
 Common options:
     -h, --help             Display this message
-    --format <format>      Output format: markdown, tsv, or json.
-                           [default: markdown]
+    --format <format>      Output format: Markdown, TSV, JSON, or TOON.
+                           TOON is a compact, human-readable encoding of the JSON data model for LLM prompts.
+                           See https://toonformat.dev/ for more info.
+                           [default: Markdown]
     -o, --output <file>    Write output to <file> instead of stdout. If --format is set to TSV,
                            separate files will be created for each prompt type with the pattern
                            {filestem}.{kind}.tsv (e.g., output.dictionary.tsv, output.tags.tsv).
@@ -313,6 +315,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use strum_macros::{Display, EnumString};
 use toml;
+use toon_format::{EncodeOptions, encode};
 #[cfg(feature = "whatlang")]
 use whatlang::detect;
 
@@ -340,6 +343,7 @@ enum OutputFormat {
     Markdown,
     Tsv,
     Json,
+    Toon,
 }
 #[derive(Debug, Deserialize)]
 struct Args {
@@ -2090,6 +2094,8 @@ fn get_prompt(
     // Build context with all variables needed for template rendering
     let json_add = if get_output_format(args)? == OutputFormat::Json {
         " (in valid, pretty-printed JSON format, ensuring string values are properly escaped)"
+    } else if get_output_format(args)? == OutputFormat::Toon {
+        " (in TOON format)"
     } else {
         " (in Markdown format)"
     };
@@ -2516,8 +2522,9 @@ fn get_output_format(args: &Args) -> CliResult<OutputFormat> {
             "markdown" | "md" => Ok(OutputFormat::Markdown),
             "tsv" => Ok(OutputFormat::Tsv),
             "json" => Ok(OutputFormat::Json),
+            "toon" => Ok(OutputFormat::Toon),
             _ => fail_incorrectusage_clierror!(
-                "Invalid format '{}'. Must be one of: markdown, tsv, json",
+                "Invalid format '{}'. Must be one of: Markdown, TSV, JSON, TOON",
                 format_str
             ),
         }
@@ -2528,8 +2535,9 @@ fn get_output_format(args: &Args) -> CliResult<OutputFormat> {
             "markdown" | "md" => Ok(OutputFormat::Markdown),
             "tsv" => Ok(OutputFormat::Tsv),
             "json" => Ok(OutputFormat::Json),
+            "toon" => Ok(OutputFormat::Toon),
             _ => fail_incorrectusage_clierror!(
-                "Invalid format '{}'. Must be one of: markdown, tsv, json",
+                "Invalid format '{}'. Must be one of: Markdown, TSV, JSON, TOON",
                 prompt_file.format
             ),
         }
@@ -2992,6 +3000,29 @@ fn run_inference_options(
                     // This should not happen due to validation, but handle gracefully
                     print!("{tsv_output}");
                 }
+            } else if output_format == OutputFormat::Toon {
+                // TOON output - accumulate in total_json_output like JSON format
+                let mut dictionary_json = format_dictionary_json(&combined_entries, args);
+                // Replace attribution placeholder in JSON (same as JSON format)
+                if let Some(attribution) = dictionary_json.get_mut("attribution")
+                    && let Some(attr_str) = attribution.as_str()
+                {
+                    *attribution = json!(replace_attribution_placeholder(
+                        attr_str,
+                        args,
+                        model,
+                        base_url,
+                        AttributionFormat::Markdown,
+                        PromptType::Dictionary
+                    ));
+                }
+                total_json_output[kind.to_string()] = json!({
+                    "response": dictionary_json,
+                    "reasoning": completion_response.reasoning,
+                    "token_usage": completion_response.token_usage,
+                });
+                DATA_DICTIONARY_JSON
+                    .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
             } else {
                 // Markdown output
                 let mut markdown_output = format_dictionary_markdown(&combined_entries);
@@ -3133,6 +3164,86 @@ fn run_inference_options(
                 // This should not happen due to validation, but handle gracefully
                 print!("{tsv_output}");
             }
+        }
+        // Process TOON output - accumulate in total_json_output like JSON format
+        else if output_format == OutputFormat::Toon && !is_sql_response {
+            total_json_output[kind.to_string()] = if kind == PromptType::Description
+                || kind == PromptType::Prompt
+            {
+                // For description and prompt, create an object
+                // with both response, reasoning, and token usage
+                json!({
+                    "response": completion_response.response,
+                    "reasoning": completion_response.reasoning,
+                    "token_usage": completion_response.token_usage,
+                })
+            } else {
+                // For tags, try to extract JSON from response, but include reasoning
+                let mut response_value = completion_response.response.clone();
+                let mut attribution_value = serde_json::Value::Null;
+
+                // For Tags, extract attribution from response if embedded
+                if kind == PromptType::Tags {
+                    // Look for attribution pattern: "Generated by..." or "{GENERATED_BY_SIGNATURE}"
+                    if let Some(attr_start) = response_value.find("Generated by") {
+                        // Extract attribution and remove from response
+                        let attribution_text = response_value[attr_start..].trim().to_string();
+                        response_value = response_value[..attr_start].trim().to_string();
+                        attribution_value = json!(attribution_text);
+                    } else if response_value.contains("{GENERATED_BY_SIGNATURE}") {
+                        // Replace placeholder with actual attribution
+                        let attribution_text = replace_attribution_placeholder(
+                            "{GENERATED_BY_SIGNATURE}",
+                            args,
+                            model,
+                            base_url,
+                            AttributionFormat::Markdown,
+                            PromptType::Tags,
+                        );
+                        response_value = response_value
+                            .replace("{GENERATED_BY_SIGNATURE}", "")
+                            .trim()
+                            .to_string();
+                        attribution_value = json!(attribution_text);
+                    }
+                }
+
+                let mut output_value =
+                    if let Ok(json_value) = extract_json_from_output(&response_value) {
+                        // Create a structured object with data and reasoning
+                        json!({
+                            "response": json_value,
+                            "reasoning": completion_response.reasoning,
+                            "token_usage": completion_response.token_usage,
+                        })
+                    } else {
+                        // Fall back to string format with reasoning
+                        json!({
+                            "response": response_value,
+                            "reasoning": completion_response.reasoning,
+                            "token_usage": completion_response.token_usage,
+                        })
+                    };
+                // Add metadata properties for Tags at the top level (always present)
+                if kind == PromptType::Tags
+                    && let Some(obj) = output_value.as_object_mut()
+                {
+                    obj.insert("num_tags".to_string(), json!(args.flag_num_tags));
+                    obj.insert(
+                        "tag_vocab".to_string(),
+                        match &args.flag_tag_vocab {
+                            Some(path) => json!(path.as_str()),
+                            None => serde_json::Value::Null,
+                        },
+                    );
+                    // Add attribution as separate top-level key
+                    if attribution_value != serde_json::Value::Null {
+                        obj.insert("attribution".to_string(), attribution_value);
+                    }
+                }
+
+                output_value
+            };
         }
         // Process plaintext output
         else {
@@ -3726,8 +3837,9 @@ fn run_inference_options(
         }
     }
 
-    // Expecting JSON output
-    if get_output_format(args)? == OutputFormat::Json {
+    // Expecting JSON or TOON output
+    let output_format = get_output_format(args)?;
+    if output_format == OutputFormat::Json {
         // Format & print JSON output
         let json_output = &simd_json::to_string_pretty(&total_json_output)?;
         // Write to file if --output is used, or overwrite if already exists
@@ -3735,6 +3847,17 @@ fn run_inference_options(
             fs::write(output_file_path, json_output)?;
         } else {
             println!("{json_output}");
+        }
+    } else if output_format == OutputFormat::Toon {
+        // Format & print TOON output - encode the entire accumulated JSON structure
+        let opts = EncodeOptions::new();
+        let toon_output = encode(&total_json_output, &opts)
+            .map_err(|e| CliError::Other(format!("Failed to encode to TOON: {e}")))?;
+        // Write to file if --output is used, or overwrite if already exists
+        if let Some(output_file_path) = &args.flag_output {
+            fs::write(output_file_path, toon_output)?;
+        } else {
+            println!("{toon_output}");
         }
     }
 

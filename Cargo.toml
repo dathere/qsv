@@ -257,6 +257,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 serde_urlencoded = { version = "0.7", optional = true }
 simdutf8 = "0.1"
 toml = "0.9"
+toon-format = "0.4"
 sled = { version = "0.34", optional = true }
 smallvec = "1"
 snap = "1"
@@ -334,6 +335,9 @@ self_update = { git = "https://github.com/jaemk/self_update", rev = "62b93c6", o
 
 # use our patched fork of sled to get rid of unmaintained instant
 sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }
+
+# use our patched fork of toon-format to gate cli deps behind cli feature until our PR is merged
+toon-format = { git = "https://github.com/jqnatividad/toon-rust", branch = "39-gate-cli-deps-behind-cli-feature" }
 
 # Polars has a much higher release tempo for its Python bindings compared
 # to its underlying Rust library. See https://github.com/pola-rs/polars/releases

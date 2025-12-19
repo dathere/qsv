@@ -1154,16 +1154,35 @@ fn frequency_toon() {
         .args(["--select", "h2"])
         .arg("--toon");
     let got: String = wrk.stdout(&mut cmd);
-    let expected =
-        "input: in.csv\ndescription: \"Generated with `qsv frequency in.csv --limit 0 --select h2 \
-         --toon`\"\nrowcount: 7\nfieldcount: 1\nfields[1]:\n  - field: h2\n    type: String\n    \
-         cardinality: 4\n    nullcount: 0\n    sparsity: 0\n    uniqueness_ratio: 0.5714\n    \
-         stats[10]{name,value}:\n    min,Y\n    max,z\n    sort_order,Unsorted\n    \
-         min_length,1\n    max_length,1\n    sum_length,7\n    avg_length,1\n    \
-         stddev_length,0\n    variance_length,0\n    cv_length,0\n    \
-         frequencies[4]{value,count,percentage,rank}:\n    z,3,42.85714,1\n    y,2,28.57143,2\n    \
-         Y,1,14.28571,3\n    x,1,14.28571,3\nrank_strategy: dense"
-            .to_string();
+    let expected = r#"input: in.csv
+description: "Generated with `qsv frequency in.csv --limit 0 --select h2 --toon`"
+rowcount: 7
+fieldcount: 1
+fields[1]:
+  - field: h2
+    type: String
+    cardinality: 4
+    nullcount: 0
+    sparsity: 0
+    uniqueness_ratio: 0.5714
+    stats[10]{name,value}:
+    min,Y
+    max,z
+    sort_order,Unsorted
+    min_length,1
+    max_length,1
+    sum_length,7
+    avg_length,1
+    stddev_length,0
+    variance_length,0
+    cv_length,0
+    frequencies[4]{value,count,percentage,rank}:
+    z,3,42.85714,1
+    y,2,28.57143,2
+    Y,1,14.28571,3
+    x,1,14.28571,3
+rank_strategy: dense"#
+        .to_string();
     assert_eq!(got, expected);
 }
 
@@ -1175,13 +1194,24 @@ fn frequency_toon_no_headers() {
         .arg("--no-headers")
         .arg("--toon");
     let got: String = wrk.stdout(&mut cmd);
-    let expected = "input: in.csv\ndescription: \"Generated with `qsv frequency in.csv --limit 0 \
-                    --select 1 --no-headers --toon`\"\nrowcount: 8\nfieldcount: 1\nfields[1]:\n  \
-                    - field: \"1\"\n    type: \"\"\n    cardinality: 5\n    nullcount: 0\n    \
-                    sparsity: 0\n    uniqueness_ratio: 0.625\n    \
-                    frequencies[5]{value,count,percentage,rank}:\n    a,4,50,1\n    \
-                    (NULL),1,12.5,2\n    (NULL),1,12.5,2\n    b,1,12.5,2\n    \
-                    h1,1,12.5,2\nrank_strategy: dense"
+    let expected = r#"input: in.csv
+description: "Generated with `qsv frequency in.csv --limit 0 --select 1 --no-headers --toon`"
+rowcount: 8
+fieldcount: 1
+fields[1]:
+  - field: "1"
+    type: ""
+    cardinality: 5
+    nullcount: 0
+    sparsity: 0
+    uniqueness_ratio: 0.625
+    frequencies[5]{value,count,percentage,rank}:
+    a,4,50,1
+    (NULL),1,12.5,2
+    (NULL),1,12.5,2
+    b,1,12.5,2
+    h1,1,12.5,2
+rank_strategy: dense"#
         .to_string();
     assert_eq!(got, expected);
 }
@@ -1194,15 +1224,33 @@ fn frequency_toon_ignore_case() {
         .args(["--select", "h2"])
         .arg("--toon");
     let got: String = wrk.stdout(&mut cmd);
-    let expected = "input: in.csv\ndescription: \"Generated with `qsv frequency in.csv \
-                    --ignore-case --limit 0 --select h2 --toon`\"\nrowcount: 7\nfieldcount: \
-                    1\nfields[1]:\n  - field: h2\n    type: String\n    cardinality: 3\n    \
-                    nullcount: 0\n    sparsity: 0\n    uniqueness_ratio: 0.4286\n    \
-                    stats[10]{name,value}:\n    min,Y\n    max,z\n    sort_order,Unsorted\n    \
-                    min_length,1\n    max_length,1\n    sum_length,7\n    avg_length,1\n    \
-                    stddev_length,0\n    variance_length,0\n    cv_length,0\n    \
-                    frequencies[3]{value,count,percentage,rank}:\n    y,3,42.85714,1\n    \
-                    z,3,42.85714,1\n    x,1,14.28571,2\nrank_strategy: dense"
+    let expected = r#"input: in.csv
+description: "Generated with `qsv frequency in.csv --ignore-case --limit 0 --select h2 --toon`"
+rowcount: 7
+fieldcount: 1
+fields[1]:
+  - field: h2
+    type: String
+    cardinality: 3
+    nullcount: 0
+    sparsity: 0
+    uniqueness_ratio: 0.4286
+    stats[10]{name,value}:
+    min,Y
+    max,z
+    sort_order,Unsorted
+    min_length,1
+    max_length,1
+    sum_length,7
+    avg_length,1
+    stddev_length,0
+    variance_length,0
+    cv_length,0
+    frequencies[3]{value,count,percentage,rank}:
+    y,3,42.85714,1
+    z,3,42.85714,1
+    x,1,14.28571,2
+rank_strategy: dense"#
         .to_string();
     assert_eq!(got, expected);
 }
@@ -1212,21 +1260,53 @@ fn frequency_toon_limit() {
     let (wrk, mut cmd) = setup("frequency_toon_limit");
     cmd.args(["--limit", "1"]).arg("--toon");
     let got: String = wrk.stdout(&mut cmd);
-    let expected =
-        "input: in.csv\ndescription: \"Generated with `qsv frequency in.csv --limit 1 \
-         --toon`\"\nrowcount: 7\nfieldcount: 2\nfields[2]:\n  - field: h1\n    type: String\n    \
-         cardinality: 4\n    nullcount: 1\n    sparsity: 0.1429\n    uniqueness_ratio: 0.5714\n    \
-         stats[10]{name,value}:\n    min,(NULL)\n    max,b\n    sort_order,Unsorted\n    \
-         min_length,0\n    max_length,6\n    sum_length,11\n    avg_length,1.5714\n    \
-         stddev_length,1.8406\n    variance_length,3.3878\n    cv_length,1.1713\n    \
-         frequencies[2]{value,count,percentage,rank}:\n    a,4,57.14286,1\n    Other \
-         (3),3,42.85714,0\n  - field: h2\n    type: String\n    cardinality: 4\n    nullcount: \
-         0\n    sparsity: 0\n    uniqueness_ratio: 0.5714\n    stats[10]{name,value}:\n    \
-         min,Y\n    max,z\n    sort_order,Unsorted\n    min_length,1\n    max_length,1\n    \
-         sum_length,7\n    avg_length,1\n    stddev_length,0\n    variance_length,0\n    \
-         cv_length,0\n    frequencies[2]{value,count,percentage,rank}:\n    z,3,42.85714,1\n    \
-         Other (3),4,57.14286,0\nrank_strategy: dense"
-            .to_string();
+    let expected = r#"input: in.csv
+description: "Generated with `qsv frequency in.csv --limit 1 --toon`"
+rowcount: 7
+fieldcount: 2
+fields[2]:
+  - field: h1
+    type: String
+    cardinality: 4
+    nullcount: 1
+    sparsity: 0.1429
+    uniqueness_ratio: 0.5714
+    stats[10]{name,value}:
+    min,(NULL)
+    max,b
+    sort_order,Unsorted
+    min_length,0
+    max_length,6
+    sum_length,11
+    avg_length,1.5714
+    stddev_length,1.8406
+    variance_length,3.3878
+    cv_length,1.1713
+    frequencies[2]{value,count,percentage,rank}:
+    a,4,57.14286,1
+    Other (3),3,42.85714,0
+  - field: h2
+    type: String
+    cardinality: 4
+    nullcount: 0
+    sparsity: 0
+    uniqueness_ratio: 0.5714
+    stats[10]{name,value}:
+    min,Y
+    max,z
+    sort_order,Unsorted
+    min_length,1
+    max_length,1
+    sum_length,7
+    avg_length,1
+    stddev_length,0
+    variance_length,0
+    cv_length,0
+    frequencies[2]{value,count,percentage,rank}:
+    z,3,42.85714,1
+    Other (3),4,57.14286,0
+rank_strategy: dense"#
+        .to_string();
     assert_eq!(got, expected);
 }
 
@@ -1240,14 +1320,29 @@ fn frequency_toon_all_unique() {
         .arg("--toon");
     wrk.assert_success(&mut cmd);
     let got: String = wrk.stdout(&mut cmd);
-    let expected = "rowcount: 100\nfieldcount: 1\nfields[1]:\n  - field: case_enquiry_id\n    \
-                    type: Integer\n    cardinality: 100\n    nullcount: 0\n    sparsity: 0\n    \
-                    uniqueness_ratio: 1\n    stats[10]{name,value}:\n    sum,10100411645180\n    \
-                    min,101004113298\n    max,101004155594\n    range,42296\n    \
-                    sort_order,Unsorted\n    mean,101004116451.8\n    sem,790.552\n    \
-                    stddev,7905.5202\n    variance,62497248.9352\n    cv,0\n    \
-                    frequencies[1]{value,count,percentage,rank}:\n    \
-                    <ALL_UNIQUE>,100,100,0\nrank_strategy: dense";
+    let expected = r#"rowcount: 100
+fieldcount: 1
+fields[1]:
+  - field: case_enquiry_id
+    type: Integer
+    cardinality: 100
+    nullcount: 0
+    sparsity: 0
+    uniqueness_ratio: 1
+    stats[10]{name,value}:
+    sum,10100411645180
+    min,101004113298
+    max,101004155594
+    range,42296
+    sort_order,Unsorted
+    mean,101004116451.8
+    sem,790.552
+    stddev,7905.5202
+    variance,62497248.9352
+    cv,0
+    frequencies[1]{value,count,percentage,rank}:
+    <ALL_UNIQUE>,100,100,0
+rank_strategy: dense"#;
     assert!(got.ends_with(expected));
 }
 

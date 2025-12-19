@@ -3857,7 +3857,7 @@ fn run_inference_options(
         if let Some(output_file_path) = &args.flag_output {
             fs::write(output_file_path, toon_output)?;
         } else {
-            print!("{toon_output}");
+            println!("{toon_output}");
         }
     }
 

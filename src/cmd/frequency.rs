@@ -1450,6 +1450,7 @@ impl Args {
             };
 
             // remove all empty stats properties from the JSON output using regex
+            // safety: regex pattern is a valid static string
             let re = regex::Regex::new(r#""stats": \[\],\n\s*"#).unwrap();
             json_output = re.replace_all(&json_output, "").to_string();
 

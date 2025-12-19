@@ -3,7 +3,7 @@ Generate JSON Schema or Polars Schema (with the `--polars` option) from CSV data
 
 JSON Schema Validation:
 =======================
-This command derives a JSON Schema Validation (Draft 7) file from CSV data,
+This command derives a JSON Schema Validation (Draft 2020-12) file from CSV data,
 including validation rules based on data type and input data domain/range.
 https://json-schema.org/draft/2020-12/json-schema-validation.html
 
@@ -286,7 +286,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(())
 }
 
-/// Builds JSON MAP object that corresponds to the "properties" object of JSON Schema (Draft 7
+/// Builds JSON MAP object that corresponds to the "properties" object of JSON Schema (Draft
 /// 2020-12) by looking at CSV value stats Supported JSON Schema validation vocabularies:
 ///  * type
 ///    - "null", "boolean", "number", "integer", or "string", with built-in support for date/datetime

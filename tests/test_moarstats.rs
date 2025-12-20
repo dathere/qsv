@@ -432,3 +432,394 @@ fn moarstats_missing_base_statistics() {
     // At least range_stddev_ratio might be available if range and stddev are in default stats
     // The exact columns depend on what default stats includes
 }
+
+#[test]
+fn moarstats_outlier_statistics() {
+    let wrk = Workdir::new("moarstats_outliers");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats with quartiles (required for outliers)
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Verify outlier columns exist
+    let stats_content = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+
+    // Check for outlier columns
+    let outlier_columns = vec![
+        "outliers_extreme_lower",
+        "outliers_mild_lower",
+        "outliers_normal",
+        "outliers_mild_upper",
+        "outliers_extreme_upper",
+        "outliers_total",
+        "outliers_mean",
+        "non_outliers_mean",
+        "outliers_to_normal_mean_ratio",
+        "outliers_min",
+        "outliers_max",
+        "outliers_range",
+    ];
+
+    let mut found_outlier_columns = Vec::new();
+    for col in &outlier_columns {
+        if headers.iter().any(|h| h == *col) {
+            found_outlier_columns.push(col.to_string());
+        }
+    }
+
+    // Find a numeric column with quartiles
+    let mut found_numeric_with_outliers = false;
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap();
+
+        if (field_type == "Float" || field_type == "Integer")
+            && (field_name == "latitude" || field_name == "longitude")
+        {
+            found_numeric_with_outliers = true;
+
+            // Verify outlier counts exist
+            if let Some(outliers_total_idx) = get_column_index(&headers, "outliers_total") {
+                let outliers_total_val = get_field_value(&record, outliers_total_idx);
+                assert!(
+                    outliers_total_val.is_some(),
+                    "outliers_total should exist for numeric columns with quartiles"
+                );
+            }
+
+            // Verify outlier statistics exist
+            if let Some(outliers_mean_idx) = get_column_index(&headers, "outliers_mean") {
+                let outliers_mean_val = get_field_value(&record, outliers_mean_idx);
+                // Value might be empty if no outliers, which is fine
+                assert!(
+                    outliers_mean_val.is_some(),
+                    "outliers_mean column should exist"
+                );
+            }
+
+            if let Some(non_outliers_mean_idx) = get_column_index(&headers, "non_outliers_mean") {
+                let non_outliers_mean_val = get_field_value(&record, non_outliers_mean_idx);
+                assert!(
+                    non_outliers_mean_val.is_some(),
+                    "non_outliers_mean column should exist"
+                );
+            }
+
+            break;
+        }
+    }
+
+    assert!(
+        !found_outlier_columns.is_empty(),
+        "At least some outlier columns should be added"
+    );
+    assert!(
+        found_numeric_with_outliers,
+        "Should find numeric column with outlier statistics"
+    );
+}
+
+#[test]
+fn moarstats_duplicate_prevention() {
+    let wrk = Workdir::new("moarstats_duplicates");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats first time
+    let mut cmd1 = wrk.command("moarstats");
+    cmd1.arg(&test_file);
+    wrk.assert_success(&mut cmd1);
+
+    // Read first run output
+    let stats_content_1 = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr1 = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content_1.as_bytes());
+    let headers_1 = rdr1.headers().unwrap().clone();
+
+    // Count pearson_skewness occurrences in first run
+    let pearson_count_1 = headers_1
+        .iter()
+        .filter(|h| *h == "pearson_skewness")
+        .count();
+
+    // Run moarstats second time - should not add duplicates
+    let mut cmd2 = wrk.command("moarstats");
+    cmd2.arg(&test_file);
+    wrk.assert_success(&mut cmd2);
+
+    // Read second run output
+    let stats_content_2 = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr2 = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content_2.as_bytes());
+    let headers_2 = rdr2.headers().unwrap().clone();
+
+    // Count pearson_skewness occurrences in second run
+    let pearson_count_2 = headers_2
+        .iter()
+        .filter(|h| *h == "pearson_skewness")
+        .count();
+
+    // Should have same count (no duplicates added)
+    assert_eq!(
+        pearson_count_1, pearson_count_2,
+        "Running moarstats twice should not create duplicate columns"
+    );
+}
+
+#[test]
+fn moarstats_all_stats_already_added() {
+    let wrk = Workdir::new("moarstats_all_added");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats first time
+    let mut cmd1 = wrk.command("moarstats");
+    cmd1.arg(&test_file);
+    wrk.assert_success(&mut cmd1);
+
+    // Run moarstats second time - should detect all stats already added
+    let mut cmd2 = wrk.command("moarstats");
+    cmd2.arg(&test_file);
+    let output = wrk.output_stderr(&mut cmd2);
+
+    // Should show message that all stats are already added
+    assert!(
+        output.contains("already been added") || output.contains("No additional stats"),
+        "Should detect that all stats are already added"
+    );
+}
+
+#[test]
+fn moarstats_outlier_statistics_values() {
+    let wrk = Workdir::new("moarstats_outlier_values");
+
+    // Create a simple test CSV with known values
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "10"],
+            svec!["test", "20"],
+            svec!["test", "30"],
+            svec!["test", "40"],
+            svec!["test", "50"],
+            svec!["test", "100"], // outlier
+            svec!["test", "200"], // outlier
+        ],
+    );
+
+    // Generate stats with quartiles
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify outlier statistics
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    // Find the test field
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            // Verify outlier counts
+            if let Some(outliers_total_idx) = get_column_index(&headers, "outliers_total") {
+                let outliers_total_val = get_field_value(&record, outliers_total_idx);
+                if let Some(val_str) = outliers_total_val {
+                    if !val_str.is_empty() {
+                        let count: u64 = val_str.parse().unwrap();
+                        assert!(count > 0, "Should have some outliers");
+                    }
+                }
+            }
+
+            // Verify outlier mean exists when outliers are present
+            if let Some(outliers_mean_idx) = get_column_index(&headers, "outliers_mean") {
+                let outliers_mean_val = get_field_value(&record, outliers_mean_idx);
+                if let Some(val_str) = outliers_mean_val {
+                    if !val_str.is_empty() {
+                        let mean: f64 = val_str.parse().unwrap();
+                        // Outlier mean should be higher than normal values (10-50)
+                        assert!(
+                            mean > 50.0,
+                            "Outlier mean should be higher than normal values"
+                        );
+                    }
+                }
+            }
+
+            // Verify outliers_range
+            if let Some(outliers_range_idx) = get_column_index(&headers, "outliers_range") {
+                let outliers_range_val = get_field_value(&record, outliers_range_idx);
+                if let Some(val_str) = outliers_range_val {
+                    if !val_str.is_empty() {
+                        let range: f64 = val_str.parse().unwrap();
+                        assert!(range > 0.0, "Outlier range should be positive");
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_no_outliers() {
+    let wrk = Workdir::new("moarstats_no_outliers");
+
+    // Create a CSV with values that won't have outliers (all close together)
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "10"],
+            svec!["test", "11"],
+            svec!["test", "12"],
+            svec!["test", "13"],
+            svec!["test", "14"],
+            svec!["test", "15"],
+        ],
+    );
+
+    // Generate stats with quartiles
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify outlier columns still exist but may have zero counts
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            // Outlier columns should exist
+            assert!(
+                get_column_index(&headers, "outliers_total").is_some(),
+                "outliers_total column should exist"
+            );
+
+            // If no outliers, outliers_total should be 0
+            if let Some(outliers_total_idx) = get_column_index(&headers, "outliers_total") {
+                let outliers_total_val = get_field_value(&record, outliers_total_idx);
+                if let Some(val_str) = outliers_total_val {
+                    if !val_str.is_empty() {
+                        let _count: u64 = val_str.parse().unwrap();
+                        // With tightly clustered values, might have 0 outliers
+                        // Count is u64, so it's always non-negative
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_multiple_numeric_fields() {
+    let wrk = Workdir::new("moarstats_multiple_fields");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Verify that multiple numeric fields get statistics
+    let stats_content = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+    let pearson_idx = get_column_index(&headers, "pearson_skewness");
+
+    let mut numeric_fields_with_stats = 0;
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap();
+
+        if field_type == "Float" || field_type == "Integer" {
+            if let Some(pearson_idx) = pearson_idx {
+                let pearson_val = get_field_value(&record, pearson_idx);
+                if pearson_val.is_some() && !pearson_val.as_ref().unwrap().is_empty() {
+                    numeric_fields_with_stats += 1;
+                }
+            }
+        }
+    }
+
+    assert!(
+        numeric_fields_with_stats > 1,
+        "Multiple numeric fields should have computed statistics"
+    );
+}

@@ -187,7 +187,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Check if stats CSV exists, if not, run stats command
     if !stats_csv_path.exists() {
         eprintln!("Stats CSV file not found: {}", stats_csv_path.display());
-        eprintln!("Running stats command to generate baseline stats...");
 
         // Parse stats options
         let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();

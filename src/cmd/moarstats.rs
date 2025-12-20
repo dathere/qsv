@@ -141,11 +141,10 @@ fn compute_range_stddev_ratio(range: Option<f64>, stddev: Option<f64>) -> Option
 
 /// Compute Quartile Coefficient of Dispersion: (Q3 - Q1) / (Q3 + Q1)
 fn compute_quartile_coefficient_dispersion(q1: Option<f64>, q3: Option<f64>) -> Option<f64> {
-    if let (Some(q1_val), Some(q3_val)) = (q1, q3) {
+    if let (Some(q1_val), Some	q3_val)) = (q1, q3) {
         let sum = q3_val + q1_val;
-        // Only compute if both Q1 and Q3 are positive (as in typical quartile stats)
-        // and their sum is > 0
-        if q1_val > 0.0 && q3_val > 0.0 && sum > 0.0 {
+        // Only compute if the denominator is non-zero to avoid division by zero.
+        if sum != 0.0 {
             Some((q3_val - q1_val) / sum)
         } else {
             None

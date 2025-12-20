@@ -1,5 +1,5 @@
 static USAGE: &str = r#"
-Add additional statistics to an existing stats CSV file.
+Add 11 additional statistics and 12 outlier metadata to an existing stats CSV file.
 
 The `moarstats` command extends an existing stats CSV file (created by the `stats` command)
 by computing "moar" statistics that can be derived from existing stats columns.
@@ -11,41 +11,43 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following additional statistics:
-- Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
-  Measures asymmetry of the distribution.
-  Positive values indicate right skew, negative values indicate left skew.
-- Range to Standard Deviation Ratio: range / stddev
-  Normalizes the spread of data.
-  Higher values indicate more extreme outliers relative to the variability.
-- Quartile Coefficient of Dispersion: (Q3 - Q1) / (Q3 + Q1)
-  Measures relative variability using quartiles.
-  Useful for comparing dispersion across different scales.
-- Bowley's Skewness Coefficient: ((Q3 - Q2) - (Q2 - Q1)) / (Q3 - Q1)
-  Robust measure of skewness using quartiles.
-  Values range from -1 (left skew) to +1 (right skew).
-- Z-Score of Mode: (mode - mean) / stddev
-  Indicates how typical the mode is relative to the distribution.
-  Values near 0 suggest the mode is near the mean.
-- Relative Standard Error: sem / mean
-  Measures precision of the mean estimate relative to its magnitude.
-  Lower values indicate more reliable estimates.
-- Z-Score of Min: (min - mean) / stddev
-  Shows how extreme the minimum value is.
-  Large negative values indicate outliers or heavy left tail.
-- Z-Score of Max: (max - mean) / stddev
-  Shows how extreme the maximum value is.
-  Large positive values indicate outliers or heavy right tail.
-- Median-to-Mean Ratio: median / mean
-  Indicates skewness direction.
-  Ratio < 1 suggests right skew, > 1 suggests left skew, = 1 suggests symmetry.
-- IQR-to-Range Ratio: iqr / range
-  Measures concentration of data.
-  Higher values (closer to 1) indicate more data concentrated in the middle 50%.
-- MAD-to-StdDev Ratio: mad / stddev
-  Compares robust vs non-robust spread measures.
-  Higher values suggest presence of outliers affecting stddev.
-- Outlier Counts (requires --quartiles or --everything in stats):
+Currently computes the following 11 additional statistics:
+ 1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
+    Measures asymmetry of the distribution.
+    Positive values indicate right skew, negative values indicate left skew.
+ 2. Range to Standard Deviation Ratio: range / stddev
+    Normalizes the spread of data.
+    Higher values indicate more extreme outliers relative to the variability.
+ 3. Quartile Coefficient of Dispersion: (Q3 - Q1) / (Q3 + Q1)
+    Measures relative variability using quartiles.
+    Useful for comparing dispersion across different scales.
+ 4. Bowley's Skewness Coefficient: ((Q3 - Q2) - (Q2 - Q1)) / (Q3 - Q1)
+    Robust measure of skewness using quartiles.
+    Values range from -1 (left skew) to +1 (right skew).
+ 5. Z-Score of Mode: (mode - mean) / stddev
+    Indicates how typical the mode is relative to the distribution.
+    Values near 0 suggest the mode is near the mean.
+ 6. Relative Standard Error: sem / mean
+    Measures precision of the mean estimate relative to its magnitude.
+    Lower values indicate more reliable estimates.
+ 7. Z-Score of Min: (min - mean) / stddev
+    Shows how extreme the minimum value is.
+    Large negative values indicate outliers or heavy left tail.
+ 8. Z-Score of Max: (max - mean) / stddev
+    Shows how extreme the maximum value is.
+    Large positive values indicate outliers or heavy right tail.
+ 9. Median-to-Mean Ratio: median / mean
+    Indicates skewness direction.
+    Ratio < 1 suggests right skew, > 1 suggests left skew, = 1 suggests symmetry.
+10. IQR-to-Range Ratio: iqr / range
+    Measures concentration of data.
+    Higher values (closer to 1) indicate more data concentrated in the middle 50%.
+11. MAD-to-StdDev Ratio: mad / stddev
+    Compares robust vs non-robust spread measures.
+    Higher values suggest presence of outliers affecting stddev.
+
+In addition, it computes the following 12 outlier statistics.
+(requires --quartiles or --everything in stats):
   - outliers_extreme_lower: Count of values below the lower outer fence
   - outliers_mild_lower: Count of values between lower outer and inner fences
   - outliers_normal: Count of values between inner fences (non-outliers)
@@ -58,12 +60,14 @@ Currently computes the following additional statistics:
   - outliers_min: Minimum value among outliers
   - outliers_max: Maximum value among outliers
   - outliers_range: Range of outlier values (max - min)
-  These statistics require reading the original CSV file and comparing each value against
-  the fence thresholds. Fences are computed using the IQR method: inner fences at
-  Q1/Q3 ± 1.5*IQR, outer fences at Q1/Q3 ± 3.0*IQR.
+
+  These ourlier statistics require reading the original CSV file and comparing each
+  value against the fence thresholds.
+  Fences are computed using the IQR method:
+    inner fences at Q1/Q3 ± 1.5*IQR, outer fences at Q1/Q3 ± 3.0*IQR.
 
 These statistics are only computed for numeric and date/datetime columns where the required
-base statistics are available. Outlier counts additionally require that quartiles (and thus
+base statistics are available. Outlier statistics additionally require that quartiles (and thus
 fences) were computed when generating the stats CSV.
 
 Examples:

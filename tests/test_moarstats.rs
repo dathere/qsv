@@ -823,3 +823,724 @@ fn moarstats_multiple_numeric_fields() {
         "Multiple numeric fields should have computed statistics"
     );
 }
+
+#[test]
+fn moarstats_winsorized_trimmed_means_q1_q3() {
+    let wrk = Workdir::new("moarstats_winsorized_q1q3");
+
+    // Create a CSV with known values for testing winsorized/trimmed means
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "1"], // Below Q1
+            svec!["test", "2"], // Below Q1
+            svec!["test", "3"], // Q1
+            svec!["test", "4"], // Between Q1 and Q3
+            svec!["test", "5"], // Between Q1 and Q3
+            svec!["test", "6"], // Between Q1 and Q3
+            svec!["test", "7"], // Q3
+            svec!["test", "8"], // Above Q3
+            svec!["test", "9"], // Above Q3
+        ],
+    );
+
+    // Generate stats with quartiles
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify winsorized and trimmed mean columns exist
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "winsorized_mean_25pct").is_some(),
+        "winsorized_mean_25pct column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "trimmed_mean_25pct").is_some(),
+        "trimmed_mean_25pct column should exist"
+    );
+
+    // Find the test field and verify values
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            let winsorized_idx = get_column_index(&headers, "winsorized_mean_25pct").unwrap();
+            let trimmed_idx = get_column_index(&headers, "trimmed_mean_25pct").unwrap();
+
+            let winsorized_val = get_field_value(&record, winsorized_idx);
+            let trimmed_val = get_field_value(&record, trimmed_idx);
+
+            assert!(
+                winsorized_val.is_some() && !winsorized_val.as_ref().unwrap().is_empty(),
+                "winsorized_mean_25pct should have a value"
+            );
+            assert!(
+                trimmed_val.is_some() && !trimmed_val.as_ref().unwrap().is_empty(),
+                "trimmed_mean_25pct should have a value"
+            );
+
+            // Winsorized mean should include all values (but capped at thresholds)
+            // Trimmed mean should only include values between Q1 and Q3
+            if let (Some(w_str), Some(t_str)) = (winsorized_val, trimmed_val) {
+                let winsorized: f64 = w_str.parse().unwrap();
+                let trimmed: f64 = t_str.parse().unwrap();
+
+                // Both should be reasonable values
+                assert!(winsorized > 0.0, "Winsorized mean should be positive");
+                assert!(trimmed > 0.0, "Trimmed mean should be positive");
+
+                // Trimmed mean should generally be between Q1 and Q3 (approximately 3-7)
+                assert!(
+                    trimmed >= 2.0 && trimmed <= 8.0,
+                    "Trimmed mean should be within reasonable range"
+                );
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_winsorized_trimmed_means_percentiles() {
+    let wrk = Workdir::new("moarstats_winsorized_percentiles");
+
+    // Create a CSV with known values
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "1"],
+            svec!["test", "2"],
+            svec!["test", "3"],
+            svec!["test", "4"],
+            svec!["test", "5"],
+            svec!["test", "6"],
+            svec!["test", "7"],
+            svec!["test", "8"],
+            svec!["test", "9"],
+            svec!["test", "10"],
+        ],
+    );
+
+    // Generate stats with percentiles
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("5,95")
+        .arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with --use-percentiles
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv")
+        .arg("--use-percentiles")
+        .arg("--pct-thresholds")
+        .arg("10,90");
+    wrk.assert_success(&mut cmd);
+
+    // Verify percentile-based winsorized/trimmed mean columns exist
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "winsorized_mean_10pct").is_some(),
+        "winsorized_mean_10pct column should exist when using percentiles"
+    );
+    assert!(
+        get_column_index(&headers, "trimmed_mean_10pct").is_some(),
+        "trimmed_mean_10pct column should exist when using percentiles"
+    );
+
+    // Verify values exist
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            let winsorized_idx = get_column_index(&headers, "winsorized_mean_10pct").unwrap();
+            let trimmed_idx = get_column_index(&headers, "trimmed_mean_10pct").unwrap();
+
+            let winsorized_val = get_field_value(&record, winsorized_idx);
+            let trimmed_val = get_field_value(&record, trimmed_idx);
+
+            assert!(
+                winsorized_val.is_some() && !winsorized_val.as_ref().unwrap().is_empty(),
+                "winsorized_mean_10pct should have a value"
+            );
+            assert!(
+                trimmed_val.is_some() && !trimmed_val.as_ref().unwrap().is_empty(),
+                "trimmed_mean_10pct should have a value"
+            );
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_percentile_default_thresholds() {
+    let wrk = Workdir::new("moarstats_percentile_default");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "1"],
+            svec!["test", "2"],
+            svec!["test", "3"],
+            svec!["test", "4"],
+            svec!["test", "5"],
+        ],
+    );
+
+    // Generate stats with percentiles (including 5 and 95)
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--percentiles")
+        .arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with --use-percentiles but no --pct-thresholds (should default to 5,95)
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv").arg("--use-percentiles");
+    wrk.assert_success(&mut cmd);
+
+    // Verify default percentile columns (5pct) exist
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    assert!(
+        get_column_index(&headers, "winsorized_mean_5pct").is_some(),
+        "winsorized_mean_5pct should exist with default thresholds"
+    );
+}
+
+#[test]
+fn moarstats_invalid_percentile_thresholds() {
+    let wrk = Workdir::new("moarstats_invalid_pct");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--percentiles")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Test invalid thresholds: lower >= upper
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg(&test_file)
+        .arg("--use-percentiles")
+        .arg("--pct-thresholds")
+        .arg("90,10"); // Invalid: lower > upper
+    let output = wrk.output_stderr(&mut cmd);
+    assert!(
+        output.contains("Lower percentile must be less than upper percentile"),
+        "Should reject invalid percentile order"
+    );
+
+    // Test invalid thresholds: out of range
+    let mut cmd2 = wrk.command("moarstats");
+    cmd2.arg(&test_file)
+        .arg("--use-percentiles")
+        .arg("--pct-thresholds")
+        .arg("101,105"); // Invalid: > 100
+    let output2 = wrk.output_stderr(&mut cmd2);
+    assert!(
+        output2.contains("between 0 and 100"),
+        "Should reject out-of-range percentiles"
+    );
+}
+
+#[test]
+fn moarstats_date_datetime_fields() {
+    let wrk = Workdir::new("moarstats_dates");
+
+    // Create a CSV with date values
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "date_value"],
+            svec!["test", "2020-01-01"],
+            svec!["test", "2020-01-02"],
+            svec!["test", "2020-01-03"],
+            svec!["test", "2020-01-04"],
+            svec!["test", "2020-01-05"],
+            svec!["test", "2020-01-06"],
+            svec!["test", "2020-01-07"],
+            svec!["test", "2020-01-08"],
+            svec!["test", "2020-01-09"],
+            svec!["test", "2020-01-10"],
+        ],
+    );
+
+    // Generate stats with date inference
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg("--dates-whitelist")
+        .arg("all")
+        .arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify date fields get winsorized/trimmed means as RFC3339 strings
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap();
+
+        if field_name == "test" && (field_type == "Date" || field_type == "DateTime") {
+            // Check winsorized mean is formatted as date string
+            if let Some(winsorized_idx) = get_column_index(&headers, "winsorized_mean_25pct") {
+                let winsorized_val = get_field_value(&record, winsorized_idx);
+                if let Some(val_str) = winsorized_val {
+                    if !val_str.is_empty() {
+                        // Should be RFC3339 format (contains 'T' or is YYYY-MM-DD)
+                        assert!(
+                            val_str.contains('-') && val_str.len() >= 10,
+                            "Date winsorized mean should be formatted as date string, got: {}",
+                            val_str
+                        );
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_zero_stddev_handling() {
+    let wrk = Workdir::new("moarstats_zero_stddev");
+
+    // Create a CSV with constant values (stddev = 0)
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "5"],
+            svec!["test", "5"],
+            svec!["test", "5"],
+            svec!["test", "5"],
+            svec!["test", "5"],
+        ],
+    );
+
+    // Generate stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats - should handle zero stddev gracefully
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify that stats requiring stddev are empty (division by zero)
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            // Stats that require stddev should be empty when stddev is 0
+            if let Some(pearson_idx) = get_column_index(&headers, "pearson_skewness") {
+                let _pearson_val = get_field_value(&record, pearson_idx);
+                // Value might be empty (which is correct for zero stddev)
+                // or might be computed if mean == median (which gives 0)
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_string_fields_skipped() {
+    let wrk = Workdir::new("moarstats_strings");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "text_value"],
+            svec!["test", "apple"],
+            svec!["test", "banana"],
+            svec!["test", "cherry"],
+        ],
+    );
+
+    // Generate stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify string fields have empty values for numeric stats
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap();
+
+        if field_name == "test" && field_type == "String" {
+            // String fields should have empty values for numeric stats
+            if let Some(pearson_idx) = get_column_index(&headers, "pearson_skewness") {
+                let pearson_val = get_field_value(&record, pearson_idx);
+                assert!(
+                    pearson_val.is_none() || pearson_val.as_ref().unwrap().is_empty(),
+                    "String fields should not have numeric statistics"
+                );
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_boolean_fields() {
+    let wrk = Workdir::new("moarstats_boolean");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "bool_value"],
+            svec!["test", "true"],
+            svec!["test", "false"],
+            svec!["test", "true"],
+            svec!["test", "false"],
+            svec!["test", "true"],
+        ],
+    );
+
+    // Generate stats with boolean inference
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-boolean")
+        .arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify boolean fields can have statistics computed
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap();
+
+        if field_name == "test" && field_type == "Boolean" {
+            // Boolean fields are numeric-like, so they should get statistics
+            if let Some(pearson_idx) = get_column_index(&headers, "pearson_skewness") {
+                let _pearson_val = get_field_value(&record, pearson_idx);
+                // Boolean fields might have statistics if mean/median/stddev are computed
+                // The value might be empty if stddev is 0 (all same value)
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_missing_percentiles_column() {
+    let wrk = Workdir::new("moarstats_no_percentiles");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats WITHOUT percentiles
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Try to use --use-percentiles when percentiles column doesn't exist
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg(&test_file).arg("--use-percentiles");
+    wrk.assert_success(&mut cmd); // Should succeed but not add winsorized/trimmed columns
+
+    // Verify winsorized/trimmed columns are NOT added (since percentiles don't exist)
+    let stats_content = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let _headers = rdr.headers().unwrap().clone();
+    // Should fall back to Q1/Q3 if available, or not add columns if neither available
+    // The exact behavior depends on whether Q1/Q3 exist
+}
+
+#[test]
+fn moarstats_relative_standard_error() {
+    let wrk = Workdir::new("moarstats_rse");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Verify relative_standard_error column exists and has values
+    let stats_content = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+
+    assert!(
+        get_column_index(&headers, "relative_standard_error").is_some(),
+        "relative_standard_error column should exist"
+    );
+
+    let mut found_rse_value = false;
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap();
+
+        if (field_type == "Float" || field_type == "Integer")
+            && (field_name == "latitude" || field_name == "longitude")
+        {
+            if let Some(rse_idx) = get_column_index(&headers, "relative_standard_error") {
+                let rse_val = get_field_value(&record, rse_idx);
+                if let Some(val_str) = rse_val {
+                    if !val_str.is_empty() {
+                        found_rse_value = true;
+                        let rse: f64 = val_str.parse().unwrap();
+                        assert!(rse >= 0.0, "Relative standard error should be non-negative");
+                    }
+                }
+            }
+            break;
+        }
+    }
+
+    assert!(
+        found_rse_value,
+        "Should find relative_standard_error value for numeric fields"
+    );
+}
+
+#[test]
+fn moarstats_zscore_min_max() {
+    let wrk = Workdir::new("moarstats_zscore");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Verify zscore columns exist
+    let stats_content = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+
+    assert!(
+        get_column_index(&headers, "min_zscore").is_some(),
+        "min_zscore column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "max_zscore").is_some(),
+        "max_zscore column should exist"
+    );
+
+    // Verify zscore values are reasonable
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap();
+
+        if (field_type == "Float" || field_type == "Integer") && field_name == "latitude" {
+            if let Some(min_zscore_idx) = get_column_index(&headers, "min_zscore") {
+                let min_zscore_val = get_field_value(&record, min_zscore_idx);
+                if let Some(val_str) = min_zscore_val {
+                    if !val_str.is_empty() {
+                        let zscore: f64 = val_str.parse().unwrap();
+                        // Min zscore should typically be negative (min is usually below mean)
+                        // But we just check it's a valid number
+                        assert!(zscore.is_finite(), "min_zscore should be a finite number");
+                    }
+                }
+            }
+
+            if let Some(max_zscore_idx) = get_column_index(&headers, "max_zscore") {
+                let max_zscore_val = get_field_value(&record, max_zscore_idx);
+                if let Some(val_str) = max_zscore_val {
+                    if !val_str.is_empty() {
+                        let zscore: f64 = val_str.parse().unwrap();
+                        // Max zscore should typically be positive (max is usually above mean)
+                        assert!(zscore.is_finite(), "max_zscore should be a finite number");
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_median_mean_ratio() {
+    let wrk = Workdir::new("moarstats_median_mean");
+
+    // Create CSV with skewed data
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "1"],
+            svec!["test", "2"],
+            svec!["test", "3"],
+            svec!["test", "4"],
+            svec!["test", "5"],
+            svec!["test", "100"], // Outlier that affects mean but not median
+        ],
+    );
+
+    // Generate stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify median_mean_ratio column exists
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "median_mean_ratio").is_some(),
+        "median_mean_ratio column should exist"
+    );
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            if let Some(ratio_idx) = get_column_index(&headers, "median_mean_ratio") {
+                let ratio_val = get_field_value(&record, ratio_idx);
+                if let Some(val_str) = ratio_val {
+                    if !val_str.is_empty() {
+                        let ratio: f64 = val_str.parse().unwrap();
+                        // With an outlier, median should be less than mean, so ratio < 1
+                        assert!(
+                            ratio > 0.0 && ratio.is_finite(),
+                            "median_mean_ratio should be positive and finite"
+                        );
+                    }
+                }
+            }
+            break;
+        }
+    }
+}

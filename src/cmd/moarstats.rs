@@ -359,7 +359,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     None
                 } else {
                     // Handle multiple modes separated by "|" - try first one
-                    let first_mode = s.split('|').next().unwrap_or(s).trim();
+                    // safety: `split` on a non-empty string always yields at least one element,
+                    // so `next` will always return `Some` and `unwrap` will not panic.
+                    let first_mode = s.split('|').next().unwrap().trim();
                     parse_float_opt(first_mode)
                 }
             });

@@ -3516,7 +3516,7 @@ pub fn run_qsv_cmd(
 ) -> CliResult<(String, String)> {
     let start_time = Instant::now();
 
-    // safety: we know that the current_exe() will not fail as qsv is already running
+    // safety: we know that the current_exe() is very unlikely to fail as qsv is already running
     let qsv_path = QSV_PATH.get_or_init(|| current_exe().unwrap().to_string_lossy().to_string());
     let mut cmd = Command::new(qsv_path);
     cmd.arg(command).arg(input_path).args(args);

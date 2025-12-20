@@ -88,7 +88,7 @@ fn compute_pearson_skewness(
     stddev: Option<f64>,
 ) -> Option<f64> {
     if let (Some(mean_val), Some(median_val), Some(stddev_val)) = (mean, median, stddev) {
-        if stddev_val > 0.0 {
+        if stddev_val > f64::EPSILON {
             Some(3.0 * (mean_val - median_val) / stddev_val)
         } else {
             None
@@ -101,7 +101,7 @@ fn compute_pearson_skewness(
 /// Compute Range to Standard Deviation Ratio: range / stddev
 fn compute_range_stddev_ratio(range: Option<f64>, stddev: Option<f64>) -> Option<f64> {
     if let (Some(range_val), Some(stddev_val)) = (range, stddev) {
-        if stddev_val > 0.0 {
+        if stddev_val.abs() > f64::EPSILON {
             Some(range_val / stddev_val)
         } else {
             None
@@ -112,11 +112,22 @@ fn compute_range_stddev_ratio(range: Option<f64>, stddev: Option<f64>) -> Option
 }
 
 /// Compute Quartile Coefficient of Dispersion: (Q3 - Q1) / (Q3 + Q1)
+///
+/// Note: If Q1 or Q3 are negative, especially if both are negative and equal in magnitude,
+/// the denominator (Q3 + Q1) may be zero or near zero, causing the result to be `None`.
+/// Also, the standard formula may not yield meaningful results if Q1 is negative and
+/// Q1 >= Q3 (i.e., quartiles are not in the expected order).
+/// Return None if quartiles are not in a valid order (Q1 < Q3), or denominator is 0.
 fn compute_quartile_coefficient_dispersion(q1: Option<f64>, q3: Option<f64>) -> Option<f64> {
     if let (Some(q1_val), Some(q3_val)) = (q1, q3) {
+        // Check that quartile order is valid (Q1 < Q3)
+        if q1_val >= q3_val {
+            return None;
+        }
         let sum = q3_val + q1_val;
-        // Only compute if the denominator is non-zero to avoid division by zero.
-        if sum == 0.0 {
+        // Only compute if the denominator is effectively non-zero to avoid division by zero and
+        // instability.
+        if sum.abs() <= f64::EPSILON {
             None
         } else {
             Some((q3_val - q1_val) / sum)
@@ -127,11 +138,17 @@ fn compute_quartile_coefficient_dispersion(q1: Option<f64>, q3: Option<f64>) -> 
 }
 
 /// Compute Bowley's Skewness Coefficient: ((Q3 - Q2) - (Q2 - Q1)) / (Q3 - Q1)
+/// Returns None if Q1, Q2, Q3 are not in valid order (Q1 <= Q2 <= Q3), or if any are None.
 fn compute_bowley_skewness(q1: Option<f64>, q2: Option<f64>, q3: Option<f64>) -> Option<f64> {
     if let (Some(q1_val), Some(q2_val), Some(q3_val)) = (q1, q2, q3) {
-        let iqr = q3_val - q1_val;
-        if iqr > 0.0 {
-            Some(((q3_val - q2_val) - (q2_val - q1_val)) / iqr)
+        // Ensure quartiles are in valid order: Q1 <= Q2 <= Q3
+        if q1_val <= q2_val && q2_val <= q3_val {
+            let iqr = q3_val - q1_val;
+            if iqr.abs() > f64::EPSILON {
+                Some(((q3_val - q2_val) - (q2_val - q1_val)) / iqr)
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -143,7 +160,7 @@ fn compute_bowley_skewness(q1: Option<f64>, q2: Option<f64>, q3: Option<f64>) ->
 /// Compute Z-Score of Mode: (mode - mean) / stddev
 fn compute_mode_zscore(mode: Option<f64>, mean: Option<f64>, stddev: Option<f64>) -> Option<f64> {
     if let (Some(mode_val), Some(mean_val), Some(stddev_val)) = (mode, mean, stddev) {
-        if stddev_val > 0.0 {
+        if stddev_val.abs() > f64::EPSILON {
             Some((mode_val - mean_val) / stddev_val)
         } else {
             None

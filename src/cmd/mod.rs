@@ -61,6 +61,7 @@ pub mod jsonl;
 pub mod lens;
 #[cfg(feature = "luau")]
 pub mod luau;
+pub mod moarstats;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod partition;
 #[cfg(all(

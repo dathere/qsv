@@ -569,9 +569,9 @@ fn moarstats_duplicate_prevention() {
         .count();
 
     // Run moarstats second time - should not add duplicates
-    let mut cmd2 = wrk.command("moarstats");
-    cmd2.arg(&test_file);
-    wrk.assert_success(&mut cmd2);
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg(&test_file);
+    wrk.assert_success(&mut cmd);
 
     // Read second run output
     let stats_content_2 = wrk.read_to_string("boston311-100.stats.csv").unwrap();
@@ -612,9 +612,9 @@ fn moarstats_all_stats_already_added() {
     wrk.assert_success(&mut cmd1);
 
     // Run moarstats second time - should detect all stats already added
-    let mut cmd2 = wrk.command("moarstats");
-    cmd2.arg(&test_file);
-    let output = wrk.output_stderr(&mut cmd2);
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg(&test_file);
+    let output = wrk.output_stderr(&mut cmd);
 
     // Should show message that all stats are already added
     assert!(

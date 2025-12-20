@@ -198,17 +198,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // Parse stats options
         let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
-        let (_, stderr) = util::run_qsv_cmd(
+        let _ = util::run_qsv_cmd(
             "stats",
             &stats_args_vec,
             &input_path_str,
             "Running stats command to generate baseline stats...",
         )?;
-
-        if !stderr.is_empty() {
-            return fail_clierror!("Stats command failed: {stderr}");
-        }
-
         if !stats_csv_path.exists() {
             return fail_clierror!(
                 "Stats CSV file was not created: {}",

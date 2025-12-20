@@ -357,9 +357,9 @@ toon-format = { git = "https://github.com/jqnatividad/toon-rust", branch = "39-g
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=py-1.36.1:296f05c
+# QSV_POLARS_REV=py-1.36.1:f6a9da8
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.36.1", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "296f05c", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "f6a9da8", optional = true }
 
 [features]
 default = ["mimalloc"]

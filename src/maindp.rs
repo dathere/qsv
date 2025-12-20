@@ -51,7 +51,7 @@ static COMMAND_LIST: &str = r#"
     applydp     Apply series of transformations to a column
     count       Count records
     datefmt     Format date/datetime strings
-    describegpt Infer extended metadata using a LLM
+    describegpt Infer extended metadata or chat with your data using a LLM
     diff        Find the difference between two CSVs
     dedup       Remove redundant rows
     excel       Exports an Excel sheet to a CSV
@@ -66,6 +66,7 @@ static COMMAND_LIST: &str = r#"
     input       Read CSVs w/ special quoting, skipping, trimming & transcoding rules
     joinp       Join CSV files using the Pola.rs engine 🐻‍❄️
     luau        Execute Luau script on CSV data 👑
+    moarstats   Add "moar" statistics to existing stats CSV
     pivotp      Pivot CSV data 🐻‍❄️
     pseudo      Pseudonymise the values of a column
     rename      Rename the columns of CSV data efficiently
@@ -281,6 +282,7 @@ enum Command {
     #[cfg(feature = "polars")]
     SqlP,
     Stats,
+    Moarstats,
     Template,
     Validate,
 }
@@ -343,6 +345,7 @@ impl Command {
             #[cfg(feature = "polars")]
             Command::SqlP => cmd::sqlp::run(argv),
             Command::Stats => cmd::stats::run(argv),
+            Command::Moarstats => cmd::moarstats::run(argv),
             Command::Template => cmd::template::run(argv),
             Command::Validate => cmd::validate::run(argv),
         }

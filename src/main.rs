@@ -104,7 +104,7 @@ fn main() -> QsvExitCode {
         "    count       Count records
     datefmt     Format date/datetime strings
     dedup       Remove redundant rows
-    describegpt Infer extended metadata using a LLM
+    describegpt Infer extended metadata or chat with your data using a LLM
     diff        Find the difference between two CSVs
     edit        Replace a cell's value specified by row and column
     enum        Add a new column enumerating CSV lines
@@ -161,7 +161,10 @@ fn main() -> QsvExitCode {
     #[cfg(all(feature = "luau", feature = "feature_capable"))]
     enabled_commands.push_str("    luau        Execute Luau script on CSV data\n");
 
-    enabled_commands.push_str("    partition   Partition CSV data based on a column value\n");
+    enabled_commands.push_str(
+        "    moarstats   Add \"moar\" statistics to existing stats CSV
+    partition   Partition CSV data based on a column value\n",
+    );
 
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
     enabled_commands.push_str("    pivotp      Pivots CSV files using the Pola.rs engine\n");
@@ -409,6 +412,7 @@ enum Command {
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
     SqlP,
     Stats,
+    Moarstats,
     Table,
     Template,
     Transpose,
@@ -511,6 +515,7 @@ impl Command {
             #[cfg(all(feature = "polars", feature = "feature_capable"))]
             Command::SqlP => cmd::sqlp::run(argv),
             Command::Stats => cmd::stats::run(argv),
+            Command::Moarstats => cmd::moarstats::run(argv),
             Command::Table => cmd::table::run(argv),
             Command::Template => cmd::template::run(argv),
             Command::Transpose => cmd::transpose::run(argv),

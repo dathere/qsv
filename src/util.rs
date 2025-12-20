@@ -13,9 +13,10 @@ use std::{
     fs::File,
     io::{BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
+    process::Command,
     str,
     sync::OnceLock,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use csv::ByteRecord;
@@ -71,6 +72,8 @@ static ROW_COUNT: OnceLock<Option<u64>> = OnceLock::new();
 
 static JOBS_TO_USE: OnceLock<usize> = OnceLock::new();
 
+pub static QUIET_FLAG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub static FILE_PATH_PREFIX: &str = "file:";
 
 pub type ByteString = Vec<u8>;
@@ -112,6 +115,8 @@ pub struct SchemaArgs {
 pub fn num_cpus() -> usize {
     num_cpus::get()
 }
+
+static QSV_PATH: OnceLock<String> = OnceLock::new();
 
 pub const CARGO_BIN_NAME: &str = env!("CARGO_BIN_NAME");
 pub const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -3487,6 +3492,58 @@ pub fn is_executable(path: &str) -> std::io::Result<bool> {
             "exe" | "bat" | "cmd" | "com"
         )
     }))
+}
+
+/// Print a status message with elapsed time if not in quiet mode
+pub fn print_status(msg: &str, elapsed: Option<std::time::Duration>) {
+    // this checks the QUIET_FLAG atomic boolean if it was set
+    // Otherwise, it defaults to false and prints the message
+    if !QUIET_FLAG.load(std::sync::atomic::Ordering::Relaxed) {
+        if let Some(duration) = elapsed {
+            eprintln!("{msg} (elapsed: {:.2}s)", duration.as_secs_f64());
+        } else {
+            eprintln!("{msg}");
+        }
+    }
+}
+
+// Helper function to run qsv commands with consistent error handling and timing
+pub fn run_qsv_cmd(
+    command: &str,
+    args: &[&str],
+    input_path: &str,
+    status_msg: &str,
+) -> CliResult<(String, String)> {
+    let start_time = Instant::now();
+
+    // safety: we know that the current_exe() is very unlikely to fail as qsv is already running
+    let qsv_path = QSV_PATH.get_or_init(|| current_exe().unwrap().to_string_lossy().to_string());
+    let mut cmd = Command::new(qsv_path);
+    cmd.arg(command).arg(input_path).args(args);
+
+    let output = cmd
+        .output()
+        .map_err(|e| CliError::Other(format!("Error while executing command {command}: {e:?}")))?;
+    log::debug!("qsv command {command} output: {output:?}");
+
+    if !output.status.success() {
+        return fail_clierror!("Command {command} failed: {output:?}");
+    }
+
+    print_status(status_msg, Some(start_time.elapsed()));
+
+    let stdout_str = std::str::from_utf8(&output.stdout).map_err(|e| {
+        CliError::Other(format!(
+            "Unable to parse output of qsv command {command}: {e:?}"
+        ))
+    })?;
+    let stderr_str = std::str::from_utf8(&output.stderr).map_err(|e| {
+        CliError::Other(format!(
+            "Unable to parse stderr of qsv command {command}: {e:?}"
+        ))
+    })?;
+
+    Ok((stdout_str.to_string(), stderr_str.to_string()))
 }
 
 #[cfg(test)]

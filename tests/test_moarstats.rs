@@ -97,10 +97,12 @@ fn moarstats_basic_with_existing_stats() {
             // Check if pearson_skewness column exists and that this row has a value
             if let Some(pearson_idx) = get_column_index(&headers, "pearson_skewness") {
                 let pearson_val = get_field_value(&record, pearson_idx);
-                // When the pearson_skewness column is present for a numeric field, its value should be set
+                // When the pearson_skewness column is present for a numeric field,
+                // its value should be set
                 assert!(
                     pearson_val.is_some(),
-                    "pearson_skewness value should exist for numeric columns when the column is present"
+                    "pearson_skewness value should exist for numeric columns when the column is \
+                     present"
                 );
             }
 

@@ -7911,8 +7911,9 @@ checksum = "ab16f14aed21ee8bfd8ec22513f7287cd4a91aa92e44edfe2c17ddd004e92607"
 
 [[package]]
 name = "toon-format"
-version = "0.4.0"
-source = "git+https://github.com/jqnatividad/toon-rust?branch=39-gate-cli-deps-behind-cli-feature#2f48537c196f3f8ef91cf57d9e587043223acc9c"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "349a10106f2c703fbfbe4a2eef6683af0acca60a0b8334c7a33795231dbf92d5"
 dependencies = [
  "indexmap",
  "serde",

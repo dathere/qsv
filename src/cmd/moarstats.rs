@@ -63,8 +63,6 @@ use serde::Deserialize;
 
 use crate::{CliError, CliResult, util};
 
-static QSV_PATH: OnceLock<String> = OnceLock::new();
-
 #[derive(Debug, Deserialize)]
 struct Args {
     arg_input:          Option<String>,

@@ -173,11 +173,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let start_time = Instant::now();
     let args: Args = util::get_args(USAGE, argv)?;
 
-    // Initialize the global qsv path
-    if QSV_PATH.get().is_none() {
-        QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
-    }
-
     // Check if input file is provided
     let input_path_str = args
         .arg_input

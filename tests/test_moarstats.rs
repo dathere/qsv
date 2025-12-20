@@ -1068,12 +1068,12 @@ fn moarstats_invalid_percentile_thresholds() {
     );
 
     // Test invalid thresholds: out of range
-    let mut cmd2 = wrk.command("moarstats");
-    cmd2.arg(&test_file)
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg(&test_file)
         .arg("--use-percentiles")
         .arg("--pct-thresholds")
         .arg("101,105"); // Invalid: > 100
-    let output2 = wrk.output_stderr(&mut cmd2);
+    let output2 = wrk.output_stderr(&mut cmd);
     assert!(
         output2.contains("between 0 and 100"),
         "Should reject out-of-range percentiles"

@@ -1,5 +1,5 @@
 static USAGE: &str = r#"
-Add 11 additional statistics and 12 outlier metadata to an existing stats CSV file.
+Add 13 additional statistics, 12 outlier metadata, and winsorized/trimmed means to an existing stats CSV file.
 
 The `moarstats` command extends an existing stats CSV file (created by the `stats` command)
 by computing "moar" statistics that can be derived from existing stats columns.
@@ -11,7 +11,7 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 11 additional statistics:
+Currently computes the following 13 additional statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
@@ -45,6 +45,13 @@ Currently computes the following 11 additional statistics:
 11. MAD-to-StdDev Ratio: mad / stddev
     Compares robust vs non-robust spread measures.
     Higher values suggest presence of outliers affecting stddev.
+12. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
+    All values are included in the calculation, but extreme values are capped at thresholds.
+13. Trimmed Mean: Excludes values outside thresholds, then computes mean.
+    Only values within thresholds are included in the calculation.
+    By default, uses Q1 and Q3 as thresholds (25% winsorization/trimming).
+    With --use-percentiles, uses configurable percentiles (e.g., 5th/95th) as thresholds
+    with --pct-thresholds.
 
 In addition, it computes the following 12 outlier statistics.
 (requires --quartiles or --everything in stats):
@@ -68,7 +75,8 @@ In addition, it computes the following 12 outlier statistics.
 
 These statistics are only computed for numeric and date/datetime columns where the required
 base statistics are available. Outlier statistics additionally require that quartiles (and thus
-fences) were computed when generating the stats CSV.
+fences) were computed when generating the stats CSV. Winsorized/trimmed means require either
+quartiles (Q1/Q3) or percentiles to be available.
 
 Examples:
 
@@ -93,6 +101,12 @@ moarstats options:
     --round <n>            Round statistics to <n> decimal places. Rounding follows
                            Midpoint Nearest Even (Bankers Rounding) rule.
                            [default: 4]
+    --use-percentiles      Use percentiles instead of Q1/Q3 for winsorization/trimming.
+                           Requires percentiles to be computed in the stats CSV.
+   --pct-thresholds <arg>  Comma-separated percentile pair (e.g., "10,90") to use
+                           for winsorization/trimming when --use-percentiles is set.
+                           Both values must be between 0 and 100, and lower < upper.
+                           [default: 5,95]
 
 Common options:
     -h, --help             Display this message
@@ -109,10 +123,8 @@ use std::{
 use crossbeam_channel;
 use csv::{ReaderBuilder, WriterBuilder};
 use indexmap::IndexMap;
-#[cfg(feature = "feature_capable")]
 use qsv_dateparser::parse_with_preference;
 use serde::Deserialize;
-#[cfg(feature = "feature_capable")]
 use simdutf8::basic::from_utf8;
 use threadpool::ThreadPool;
 
@@ -120,10 +132,12 @@ use crate::{CliError, CliResult, config::Config, util};
 
 #[derive(Debug, Deserialize)]
 struct Args {
-    arg_input:          Option<String>,
-    flag_stats_options: String,
-    flag_round:         u32,
-    flag_output:        Option<String>,
+    arg_input:            Option<String>,
+    flag_stats_options:   String,
+    flag_round:           u32,
+    flag_output:          Option<String>,
+    flag_use_percentiles: bool,
+    flag_pct_thresholds:  Option<String>,
 }
 
 /// Get the stats CSV file path for a given input CSV path
@@ -307,14 +321,97 @@ fn parse_float_opt_from_bytes(bytes: &[u8]) -> Option<f64> {
     fast_float2::parse::<f64, &[u8]>(bytes).ok()
 }
 
-/// Check if a type is numeric or date/datetime
-fn is_numeric_or_date_type(typ: &str) -> bool {
-    matches!(typ, "Integer" | "Float" | "Date" | "DateTime" | "Boolean")
+/// Parse a percentile value from the percentiles column string
+/// Format: "5: value1|10: value2|..." (separator from QSV_STATS_SEPARATOR env var, default "|")
+/// For Date/DateTime types, values are RFC3339 date strings; for numeric types, they're numbers
+/// Returns the numeric value (in days since epoch for dates) for the specified percentile label, or
+/// None if not found
+fn parse_percentile_value(
+    percentile_str: &str,
+    percentile_label: &str,
+    field_type: FieldType,
+) -> Option<f64> {
+    if percentile_str.is_empty() {
+        return None;
+    }
+
+    // Get the separator (default "|")
+    let separator = std::env::var("QSV_STATS_SEPARATOR").unwrap_or_else(|_| "|".to_string());
+
+    // Split by separator and find matching percentile
+    for entry in percentile_str.split(&separator) {
+        let entry = entry.trim();
+        if let Some(colon_pos) = entry.find(':') {
+            let label = entry[..colon_pos].trim();
+            let value_str = entry[colon_pos + 1..].trim();
+
+            if label == percentile_label {
+                // For Date/DateTime types, parse as date string; for numeric types, parse as float
+                return if field_type.is_date_or_datetime() {
+                    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                    parse_date_to_days(value_str, prefer_dmy)
+                } else {
+                    parse_float_opt(value_str)
+                };
+            }
+        }
+    }
+
+    None
+}
+
+/// Field type enum for efficient comparisons
+/// Matches the FieldType enum from stats.rs but kept local for performance
+#[allow(clippy::enum_variant_names)]
+#[derive(Clone, Copy, PartialEq)]
+enum FieldType {
+    TNull,
+    TString,
+    TFloat,
+    TInteger,
+    TDate,
+    TDateTime,
+    TBoolean,
+}
+
+impl FieldType {
+    /// Convert string representation to FieldType enum
+    /// Returns None if the string doesn't match any known type
+    fn from_str(s: &str) -> Option<FieldType> {
+        match s {
+            "NULL" => Some(FieldType::TNull),
+            "String" => Some(FieldType::TString),
+            "Float" => Some(FieldType::TFloat),
+            "Integer" => Some(FieldType::TInteger),
+            "Date" => Some(FieldType::TDate),
+            "DateTime" => Some(FieldType::TDateTime),
+            "Boolean" => Some(FieldType::TBoolean),
+            _ => None,
+        }
+    }
+
+    /// Check if this type is numeric or date/datetime
+    #[inline]
+    const fn is_numeric_or_date_type(self) -> bool {
+        matches!(
+            self,
+            FieldType::TInteger
+                | FieldType::TFloat
+                | FieldType::TDate
+                | FieldType::TDateTime
+                | FieldType::TBoolean
+        )
+    }
+
+    /// Check if this type is Date or DateTime
+    #[inline]
+    const fn is_date_or_datetime(self) -> bool {
+        matches!(self, FieldType::TDate | FieldType::TDateTime)
+    }
 }
 
 /// Parse a date/datetime value and convert to days since epoch
 /// Returns None if parsing fails or value is empty
-#[cfg(feature = "feature_capable")]
 fn parse_date_to_days(s: &str, prefer_dmy: bool) -> Option<f64> {
     if s.is_empty() {
         return None;
@@ -325,31 +422,57 @@ fn parse_date_to_days(s: &str, prefer_dmy: bool) -> Option<f64> {
         .map(|dt| dt.timestamp_millis() as f64 / 86_400_000.0)
 }
 
-/// Field information needed for outlier counting
+/// Convert days since epoch to RFC3339 formatted date string
+/// For Date types, returns only the date component (YYYY-MM-DD)
+/// For DateTime types, returns full RFC3339 format with time and timezone
+fn days_to_rfc3339(days: f64, field_type: FieldType) -> String {
+    // Convert days to milliseconds
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let timestamp_ms = (days * 86_400_000.0) as i64;
+
+    let date_val = chrono::DateTime::from_timestamp_millis(timestamp_ms)
+        .unwrap_or_default()
+        .to_rfc3339();
+
+    // if type = Date, only return the date component
+    if field_type == FieldType::TDate {
+        return date_val[..10].to_string();
+    }
+    date_val
+}
+
+/// Field information needed for outlier counting and winsorized/trimmed means
 #[derive(Clone)]
 struct OutlierFieldInfo {
-    col_idx:     usize,
-    field_type:  String,
-    lower_outer: f64,
-    lower_inner: f64,
-    upper_inner: f64,
-    upper_outer: f64,
+    col_idx:         usize,
+    field_type:      FieldType, // Use enum for faster comparisons
+    lower_outer:     f64,
+    lower_inner:     f64,
+    upper_inner:     f64,
+    upper_outer:     f64,
+    lower_threshold: f64, // For winsorization/trimming (Q1 or percentile)
+    upper_threshold: f64, // For winsorization/trimming (Q3 or percentile)
 }
 
 /// Statistics tracked during outlier scanning
 #[derive(Clone, Default)]
 struct OutlierStats {
     // Counts: [extreme_lower, mild_lower, normal, mild_upper, extreme_upper, total]
-    counts:       [u64; 6],
+    counts:           [u64; 6],
     // Sums
-    sum_outliers: f64,
-    sum_normal:   f64,
-    sum_all:      f64,
+    sum_outliers:     f64,
+    sum_normal:       f64,
+    sum_all:          f64,
     // Min/Max
-    min_outliers: Option<f64>,
-    max_outliers: Option<f64>,
-    min_normal:   Option<f64>,
-    max_normal:   Option<f64>,
+    min_outliers:     Option<f64>,
+    max_outliers:     Option<f64>,
+    min_normal:       Option<f64>,
+    max_normal:       Option<f64>,
+    // Winsorized and trimmed means
+    winsorized_sum:   f64,
+    winsorized_count: u64,
+    trimmed_sum:      f64,
+    trimmed_count:    u64,
 }
 
 /// Count outliers for a chunk of records and compute statistics
@@ -371,7 +494,6 @@ where
         .map(|k| (k.clone(), OutlierStats::default()))
         .collect();
 
-    #[cfg(feature = "feature_capable")]
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
 
     // Process each record in the chunk
@@ -386,20 +508,12 @@ where
             }
 
             // Parse the value based on field type
-            let numeric_value = if matches!(field_info.field_type.as_str(), "Date" | "DateTime") {
-                #[cfg(feature = "feature_capable")]
-                {
-                    // Convert bytes to string for date parsing
-                    if let Ok(value_str) = from_utf8(value_bytes) {
-                        parse_date_to_days(value_str, prefer_dmy)
-                    } else {
-                        None
-                    }
-                }
-                #[cfg(not(feature = "feature_capable"))]
-                {
-                    // Without dateparser feature, try parsing as float
-                    parse_float_opt_from_bytes(value_bytes)
+            let numeric_value = if field_info.field_type.is_date_or_datetime() {
+                // Convert bytes to string for date parsing
+                if let Ok(value_str) = from_utf8(value_bytes) {
+                    parse_date_to_days(value_str, prefer_dmy)
+                } else {
+                    None
                 }
             } else {
                 parse_float_opt_from_bytes(value_bytes)
@@ -414,6 +528,19 @@ where
 
             // Update sums
             stats.sum_all += val;
+
+            // Compute winsorized and trimmed statistics
+            let winsorized_val = val
+                .max(field_info.lower_threshold)
+                .min(field_info.upper_threshold);
+            stats.winsorized_sum += winsorized_val;
+            stats.winsorized_count += 1;
+
+            // For trimmed mean, only include values within thresholds
+            if val >= field_info.lower_threshold && val <= field_info.upper_threshold {
+                stats.trimmed_sum += val;
+                stats.trimmed_count += 1;
+            }
 
             // Count outliers and track statistics based on fence comparisons
             if val < field_info.lower_outer {
@@ -545,6 +672,11 @@ fn count_all_outliers(
                     total_stats.sum_outliers += stats.sum_outliers;
                     total_stats.sum_normal += stats.sum_normal;
                     total_stats.sum_all += stats.sum_all;
+                    // Aggregate winsorized/trimmed stats
+                    total_stats.winsorized_sum += stats.winsorized_sum;
+                    total_stats.winsorized_count += stats.winsorized_count;
+                    total_stats.trimmed_sum += stats.trimmed_sum;
+                    total_stats.trimmed_count += stats.trimmed_count;
                     // Aggregate min/max
                     if let Some(min) = stats.min_outliers {
                         total_stats.min_outliers =
@@ -592,7 +724,6 @@ fn count_all_outliers_from_reader(
         .map(|k| (k.clone(), OutlierStats::default()))
         .collect();
 
-    #[cfg(feature = "feature_capable")]
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
 
     // Process each record once, checking all fields
@@ -607,16 +738,8 @@ fn count_all_outliers_from_reader(
             }
 
             // Parse the value based on field type
-            let numeric_value = if matches!(field_info.field_type.as_str(), "Date" | "DateTime") {
-                #[cfg(feature = "feature_capable")]
-                {
-                    parse_date_to_days(value_str, prefer_dmy)
-                }
-                #[cfg(not(feature = "feature_capable"))]
-                {
-                    // Without dateparser feature, try parsing as float
-                    parse_float_opt(value_str)
-                }
+            let numeric_value = if field_info.field_type.is_date_or_datetime() {
+                parse_date_to_days(value_str, prefer_dmy)
             } else {
                 parse_float_opt(value_str)
             };
@@ -630,6 +753,19 @@ fn count_all_outliers_from_reader(
 
             // Update sums
             stats.sum_all += val;
+
+            // Compute winsorized and trimmed statistics
+            let winsorized_val = val
+                .max(field_info.lower_threshold)
+                .min(field_info.upper_threshold);
+            stats.winsorized_sum += winsorized_val;
+            stats.winsorized_count += 1;
+
+            // For trimmed mean, only include values within thresholds
+            if val >= field_info.lower_threshold && val <= field_info.upper_threshold {
+                stats.trimmed_sum += val;
+                stats.trimmed_count += 1;
+            }
 
             // Count outliers and track statistics based on fence comparisons
             if val < field_info.lower_outer {
@@ -738,13 +874,57 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let lower_inner_fence_idx = headers.iter().position(|h| h == "lower_inner_fence");
     let upper_inner_fence_idx = headers.iter().position(|h| h == "upper_inner_fence");
     let upper_outer_fence_idx = headers.iter().position(|h| h == "upper_outer_fence");
+    let percentiles_idx = headers.iter().position(|h| h == "percentiles");
+
+    // Parse and validate percentile thresholds if --use-percentiles is set
+    let (lower_percentile, upper_percentile) = if args.flag_use_percentiles {
+        let thresholds_str = args
+            .flag_pct_thresholds
+            .as_ref()
+            .map_or("5,95", std::string::String::as_str);
+
+        let parts: Vec<&str> = thresholds_str.split(',').map(str::trim).collect();
+        if parts.len() != 2 {
+            return fail_clierror!(
+                "Invalid percentile thresholds: {}. Expected format: 'lower,upper' (e.g., '5,95')",
+                thresholds_str
+            );
+        }
+
+        let lower = fast_float2::parse::<f64, &[u8]>(parts[0].as_bytes()).map_err(|_| {
+            CliError::IncorrectUsage(format!("Invalid lower percentile: {}", parts[0]))
+        })?;
+        let upper = fast_float2::parse::<f64, &[u8]>(parts[1].as_bytes()).map_err(|_| {
+            CliError::IncorrectUsage(format!("Invalid upper percentile: {}", parts[1]))
+        })?;
+
+        if !(0.0..=100.0).contains(&lower) || !(0.0..=100.0).contains(&upper) {
+            return fail_clierror!(
+                "Percentile thresholds must be between 0 and 100. Got: {}, {}",
+                lower,
+                upper
+            );
+        }
+
+        if lower >= upper {
+            return fail_clierror!(
+                "Lower percentile must be less than upper percentile. Got: {}, {}",
+                lower,
+                upper
+            );
+        }
+
+        (Some(lower), Some(upper))
+    } else {
+        (None, None)
+    };
 
     // Helper function to check if a column already exists in headers
     let column_exists = |col_name: &str| headers.iter().any(|h| h == col_name);
 
     // Check which new columns we can add (based on available base stats)
     // Skip columns that already exist to avoid duplicates
-    let mut new_columns = Vec::new();
+    let mut new_columns: Vec<String> = Vec::new();
     let mut new_column_indices = IndexMap::new();
 
     if mean_idx.is_some()
@@ -752,17 +932,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && stddev_idx.is_some()
         && !column_exists("pearson_skewness")
     {
-        new_columns.push("pearson_skewness");
+        new_columns.push("pearson_skewness".to_string());
         new_column_indices.insert("pearson_skewness".to_string(), new_columns.len() - 1);
     }
 
     if range_idx.is_some() && stddev_idx.is_some() && !column_exists("range_stddev_ratio") {
-        new_columns.push("range_stddev_ratio");
+        new_columns.push("range_stddev_ratio".to_string());
         new_column_indices.insert("range_stddev_ratio".to_string(), new_columns.len() - 1);
     }
 
     if q1_idx.is_some() && q3_idx.is_some() && !column_exists("quartile_coefficient_dispersion") {
-        new_columns.push("quartile_coefficient_dispersion");
+        new_columns.push("quartile_coefficient_dispersion".to_string());
         new_column_indices.insert(
             "quartile_coefficient_dispersion".to_string(),
             new_columns.len() - 1,
@@ -774,7 +954,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && q3_idx.is_some()
         && !column_exists("bowley_skewness")
     {
-        new_columns.push("bowley_skewness");
+        new_columns.push("bowley_skewness".to_string());
         new_column_indices.insert("bowley_skewness".to_string(), new_columns.len() - 1);
     }
 
@@ -783,12 +963,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && stddev_idx.is_some()
         && !column_exists("mode_zscore")
     {
-        new_columns.push("mode_zscore");
+        new_columns.push("mode_zscore".to_string());
         new_column_indices.insert("mode_zscore".to_string(), new_columns.len() - 1);
     }
 
     if sem_idx.is_some() && mean_idx.is_some() && !column_exists("relative_standard_error") {
-        new_columns.push("relative_standard_error");
+        new_columns.push("relative_standard_error".to_string());
         new_column_indices.insert("relative_standard_error".to_string(), new_columns.len() - 1);
     }
 
@@ -797,7 +977,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && stddev_idx.is_some()
         && !column_exists("min_zscore")
     {
-        new_columns.push("min_zscore");
+        new_columns.push("min_zscore".to_string());
         new_column_indices.insert("min_zscore".to_string(), new_columns.len() - 1);
     }
 
@@ -806,7 +986,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && stddev_idx.is_some()
         && !column_exists("max_zscore")
     {
-        new_columns.push("max_zscore");
+        new_columns.push("max_zscore".to_string());
         new_column_indices.insert("max_zscore".to_string(), new_columns.len() - 1);
     }
 
@@ -814,17 +994,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && mean_idx.is_some()
         && !column_exists("median_mean_ratio")
     {
-        new_columns.push("median_mean_ratio");
+        new_columns.push("median_mean_ratio".to_string());
         new_column_indices.insert("median_mean_ratio".to_string(), new_columns.len() - 1);
     }
 
     if iqr_idx.is_some() && range_idx.is_some() && !column_exists("iqr_range_ratio") {
-        new_columns.push("iqr_range_ratio");
+        new_columns.push("iqr_range_ratio".to_string());
         new_column_indices.insert("iqr_range_ratio".to_string(), new_columns.len() - 1);
     }
 
     if mad_idx.is_some() && stddev_idx.is_some() && !column_exists("mad_stddev_ratio") {
-        new_columns.push("mad_stddev_ratio");
+        new_columns.push("mad_stddev_ratio".to_string());
         new_column_indices.insert("mad_stddev_ratio".to_string(), new_columns.len() - 1);
     }
 
@@ -836,34 +1016,75 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && upper_outer_fence_idx.is_some()
         && !column_exists("outliers_extreme_lower")
     {
-        new_columns.push("outliers_extreme_lower");
+        new_columns.push("outliers_extreme_lower".to_string());
         new_column_indices.insert("outliers_extreme_lower".to_string(), new_columns.len() - 1);
-        new_columns.push("outliers_mild_lower");
+        new_columns.push("outliers_mild_lower".to_string());
         new_column_indices.insert("outliers_mild_lower".to_string(), new_columns.len() - 1);
-        new_columns.push("outliers_normal");
+        new_columns.push("outliers_normal".to_string());
         new_column_indices.insert("outliers_normal".to_string(), new_columns.len() - 1);
-        new_columns.push("outliers_mild_upper");
+        new_columns.push("outliers_mild_upper".to_string());
         new_column_indices.insert("outliers_mild_upper".to_string(), new_columns.len() - 1);
-        new_columns.push("outliers_extreme_upper");
+        new_columns.push("outliers_extreme_upper".to_string());
         new_column_indices.insert("outliers_extreme_upper".to_string(), new_columns.len() - 1);
-        new_columns.push("outliers_total");
+        new_columns.push("outliers_total".to_string());
         new_column_indices.insert("outliers_total".to_string(), new_columns.len() - 1);
         // Additional statistics computed during outlier scanning
-        new_columns.push("outliers_mean");
+        new_columns.push("outliers_mean".to_string());
         new_column_indices.insert("outliers_mean".to_string(), new_columns.len() - 1);
-        new_columns.push("non_outliers_mean");
+        new_columns.push("non_outliers_mean".to_string());
         new_column_indices.insert("non_outliers_mean".to_string(), new_columns.len() - 1);
-        new_columns.push("outliers_to_normal_mean_ratio");
+        new_columns.push("outliers_to_normal_mean_ratio".to_string());
         new_column_indices.insert(
             "outliers_to_normal_mean_ratio".to_string(),
             new_columns.len() - 1,
         );
-        new_columns.push("outliers_min");
+        new_columns.push("outliers_min".to_string());
         new_column_indices.insert("outliers_min".to_string(), new_columns.len() - 1);
-        new_columns.push("outliers_max");
+        new_columns.push("outliers_max".to_string());
         new_column_indices.insert("outliers_max".to_string(), new_columns.len() - 1);
-        new_columns.push("outliers_range");
+        new_columns.push("outliers_range".to_string());
         new_column_indices.insert("outliers_range".to_string(), new_columns.len() - 1);
+    }
+
+    // Add winsorized and trimmed mean columns
+    // Check if we can add winsorized/trimmed means
+    // Need either Q1/Q3 (default) or percentiles (with --use-percentiles)
+    let can_add_winsorized_trimmed = if args.flag_use_percentiles {
+        percentiles_idx.is_some()
+    } else {
+        q1_idx.is_some() && q3_idx.is_some()
+    };
+
+    // Determine column names for winsorized/trimmed means
+    let (winsorized_col_name, trimmed_col_name) = if args.flag_use_percentiles {
+        if let (Some(lower_pct), Some(_upper_pct)) = (lower_percentile, upper_percentile) {
+            let pct_str = if lower_pct.fract() == 0.0 {
+                format!("{}pct", lower_pct as u32)
+            } else {
+                format!("{lower_pct}pct")
+            };
+            (
+                format!("winsorized_mean_{pct_str}"),
+                format!("trimmed_mean_{pct_str}"),
+            )
+        } else {
+            (
+                "winsorized_mean_5pct".to_string(),
+                "trimmed_mean_5pct".to_string(),
+            )
+        }
+    } else {
+        (
+            "winsorized_mean_25pct".to_string(),
+            "trimmed_mean_25pct".to_string(),
+        )
+    };
+
+    if can_add_winsorized_trimmed && !column_exists(winsorized_col_name.as_str()) {
+        new_columns.push(winsorized_col_name.clone());
+        new_column_indices.insert(winsorized_col_name.clone(), new_columns.len() - 1);
+        new_columns.push(trimmed_col_name.clone());
+        new_column_indices.insert(trimmed_col_name.clone(), new_columns.len() - 1);
     }
 
     if new_columns.is_empty() {
@@ -909,24 +1130,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         records.push(record);
     }
 
-    // Collect fields that need outlier counting and count them in a single pass
+    // Collect fields that need outlier counting and/or winsorized/trimmed means
     let mut fields_to_count: HashMap<String, OutlierFieldInfo> = HashMap::new();
     let needs_outlier_counting = new_column_indices.contains_key("outliers_extreme_lower");
+    let needs_winsorized_trimmed = new_column_indices.contains_key(winsorized_col_name.as_str())
+        || new_column_indices.contains_key(trimmed_col_name.as_str());
 
     // First pass: collect field information from stats records
-    if needs_outlier_counting {
+    if needs_outlier_counting || needs_winsorized_trimmed {
         for record in &records {
             let field_name = field_idx.and_then(|idx| record.get(idx)).unwrap_or("");
-            let field_type = record.get(type_idx).unwrap_or("");
+            let field_type_str = record.get(type_idx).unwrap_or("");
 
-            if field_name.is_empty()
-                || field_type.is_empty()
-                || !is_numeric_or_date_type(field_type)
-            {
+            // Convert string to enum for efficient comparisons
+            let Some(field_type) = FieldType::from_str(field_type_str) else {
+                continue;
+            };
+
+            if field_name.is_empty() || !field_type.is_numeric_or_date_type() {
                 continue;
             }
 
-            // Parse fence values
+            // Parse fence values (needed for outlier counting)
             let lower_outer_fence = lower_outer_fence_idx
                 .and_then(|idx| record.get(idx))
                 .and_then(parse_float_opt);
@@ -940,23 +1165,88 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .and_then(|idx| record.get(idx))
                 .and_then(parse_float_opt);
 
-            // All fences must be present
-            if let (Some(lower_outer), Some(lower_inner), Some(upper_inner), Some(upper_outer)) = (
-                lower_outer_fence,
-                lower_inner_fence,
-                upper_inner_fence,
-                upper_outer_fence,
-            ) {
+            // Parse threshold values for winsorization/trimming
+            let (lower_threshold, upper_threshold) = if args.flag_use_percentiles {
+                // Use percentiles
+                if let (Some(percentiles_idx_val), Some(lower_pct), Some(upper_pct)) =
+                    (percentiles_idx, lower_percentile, upper_percentile)
+                {
+                    let percentiles_str = record.get(percentiles_idx_val).unwrap_or("");
+                    let lower_pct_str = if lower_pct.fract() == 0.0 {
+                        format!("{}", lower_pct as u32)
+                    } else {
+                        format!("{lower_pct}")
+                    };
+                    let upper_pct_str = if upper_pct.fract() == 0.0 {
+                        format!("{}", upper_pct as u32)
+                    } else {
+                        format!("{upper_pct}")
+                    };
+
+                    let lower_val =
+                        parse_percentile_value(percentiles_str, &lower_pct_str, field_type);
+                    let upper_val =
+                        parse_percentile_value(percentiles_str, &upper_pct_str, field_type);
+                    (lower_val, upper_val)
+                } else {
+                    (None, None)
+                }
+            } else {
+                // Use Q1/Q3
+                let q1_val = if field_type.is_date_or_datetime() {
+                    q1_idx.and_then(|idx| record.get(idx)).and_then(|s| {
+                        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                        parse_date_to_days(s, prefer_dmy)
+                    })
+                } else {
+                    q1_idx
+                        .and_then(|idx| record.get(idx))
+                        .and_then(parse_float_opt)
+                };
+                let q3_val = if field_type.is_date_or_datetime() {
+                    q3_idx.and_then(|idx| record.get(idx)).and_then(|s| {
+                        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                        parse_date_to_days(s, prefer_dmy)
+                    })
+                } else {
+                    q3_idx
+                        .and_then(|idx| record.get(idx))
+                        .and_then(parse_float_opt)
+                };
+                (q1_val, q3_val)
+            };
+
+            // Determine if we should include this field
+            let include_for_outliers = needs_outlier_counting
+                && lower_outer_fence.is_some()
+                && lower_inner_fence.is_some()
+                && upper_inner_fence.is_some()
+                && upper_outer_fence.is_some();
+
+            let include_for_winsorized_trimmed =
+                needs_winsorized_trimmed && lower_threshold.is_some() && upper_threshold.is_some();
+
+            if include_for_outliers || include_for_winsorized_trimmed {
+                // Use default values for fences if not needed
+                let lower_outer = lower_outer_fence.unwrap_or(0.0);
+                let lower_inner = lower_inner_fence.unwrap_or(0.0);
+                let upper_inner = upper_inner_fence.unwrap_or(0.0);
+                let upper_outer = upper_outer_fence.unwrap_or(0.0);
+                let lower_thresh = lower_threshold.unwrap_or(0.0);
+                let upper_thresh = upper_threshold.unwrap_or(0.0);
+
                 // We'll find the column index when we read the CSV
                 fields_to_count.insert(
                     field_name.to_string(),
                     OutlierFieldInfo {
                         col_idx: 0, // Will be set when we read CSV headers
-                        field_type: field_type.to_string(),
+                        field_type, // Store enum directly
                         lower_outer,
                         lower_inner,
                         upper_inner,
                         upper_outer,
+                        lower_threshold: lower_thresh,
+                        upper_threshold: upper_thresh,
                     },
                 );
             }
@@ -996,7 +1286,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Write headers with new columns appended
     let mut header_record = headers;
     for col in &new_columns {
-        header_record.push_field(col);
+        header_record.push_field(col.as_str());
     }
     wtr.write_record(&header_record)?;
 
@@ -1007,10 +1297,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // Get field name and type (skip dataset stats rows that might not have proper type)
         let field_name = field_idx.and_then(|idx| record.get(idx)).unwrap_or("");
-        let field_type = record.get(type_idx).unwrap_or("");
+        let field_type_str = record.get(type_idx).unwrap_or("");
+
+        // Convert string to enum for efficient comparisons
+        let Some(field_type) = FieldType::from_str(field_type_str) else {
+            // For non-numeric types, append empty strings
+            for _ in &new_columns {
+                output_record.push_field("");
+            }
+            wtr.write_record(&output_record)?;
+            continue;
+        };
 
         // Only compute stats for numeric/date types
-        if !field_type.is_empty() && is_numeric_or_date_type(field_type) {
+        if field_type.is_numeric_or_date_type() {
             // Parse existing stats values
             let mean = mean_idx
                 .and_then(|idx| record.get(idx))
@@ -1215,6 +1515,37 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         let range = max_outliers - min_outliers;
                         new_values[*idx] = util::round_num(range, args.flag_round);
                     }
+                }
+            }
+
+            // Write winsorized and trimmed means
+            if (new_column_indices.contains_key(winsorized_col_name.as_str())
+                || new_column_indices.contains_key(trimmed_col_name.as_str())
+                    && !field_name.is_empty())
+                && let Some(stats) = outlier_counts.get(field_name)
+            {
+                // Winsorized mean
+                if stats.winsorized_count > 0
+                    && let Some(idx) = new_column_indices.get(winsorized_col_name.as_str())
+                {
+                    let winsorized_mean = stats.winsorized_sum / stats.winsorized_count as f64;
+                    new_values[*idx] = if field_type.is_date_or_datetime() {
+                        days_to_rfc3339(winsorized_mean, field_type)
+                    } else {
+                        util::round_num(winsorized_mean, args.flag_round)
+                    };
+                }
+
+                // Trimmed mean
+                if stats.trimmed_count > 0
+                    && let Some(idx) = new_column_indices.get(trimmed_col_name.as_str())
+                {
+                    let trimmed_mean = stats.trimmed_sum / stats.trimmed_count as f64;
+                    new_values[*idx] = if field_type.is_date_or_datetime() {
+                        days_to_rfc3339(trimmed_mean, field_type)
+                    } else {
+                        util::round_num(trimmed_mean, args.flag_round)
+                    };
                 }
             }
 

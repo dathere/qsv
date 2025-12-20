@@ -53,7 +53,6 @@ Common options:
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::OnceLock,
     time::Instant,
 };
 
@@ -117,10 +116,10 @@ fn compute_quartile_coefficient_dispersion(q1: Option<f64>, q3: Option<f64>) -> 
     if let (Some(q1_val), Some(q3_val)) = (q1, q3) {
         let sum = q3_val + q1_val;
         // Only compute if the denominator is non-zero to avoid division by zero.
-        if sum != 0.0 {
-            Some((q3_val - q1_val) / sum)
-        } else {
+        if sum == 0.0 {
             None
+        } else {
+            Some((q3_val - q1_val) / sum)
         }
     } else {
         None

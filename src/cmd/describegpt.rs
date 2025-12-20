@@ -297,10 +297,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::Command,
-    sync::{
-        OnceLock,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::OnceLock,
     time::{Duration, Instant},
 };
 
@@ -319,7 +316,12 @@ use toon_format::{EncodeOptions, encode};
 #[cfg(feature = "whatlang")]
 use whatlang::detect;
 
-use crate::{CliError, CliResult, config::Config, regex_oncelock, util, util::process_input};
+use crate::{
+    CliError, CliResult,
+    config::Config,
+    regex_oncelock, util,
+    util::{QUIET_FLAG, print_status, process_input, run_qsv_cmd},
+};
 #[cfg(feature = "feature_capable")]
 use crate::{lookup, lookup::LookupTableOptions};
 
@@ -619,23 +621,11 @@ impl DiskCacheConfig {
     }
 }
 
-static QUIET_FLAG: AtomicBool = AtomicBool::new(false);
-static QSV_PATH: OnceLock<String> = OnceLock::new();
 static FILE_HASH: OnceLock<String> = OnceLock::new();
 static PROMPT_FILE: OnceLock<PromptFile> = OnceLock::new();
 static PROMPT_VALIDITY_FLAGS: std::sync::LazyLock<
     std::sync::Mutex<std::collections::HashMap<String, String>>,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-
-fn print_status(msg: &str, elapsed: Option<std::time::Duration>) {
-    if !QUIET_FLAG.load(Ordering::Relaxed) {
-        if let Some(duration) = elapsed {
-            eprintln!("{msg} (elapsed: {:.2}s)", duration.as_secs_f64());
-        } else {
-            eprintln!("{msg}");
-        }
-    }
-}
 
 /// Detect language from prompt text using whatlang
 /// Returns the detected language name if confidence >= threshold, otherwise None
@@ -3871,40 +3861,6 @@ fn run_inference_options(
     Ok(())
 }
 
-// Helper function to run qsv commands with consistent error handling and timing
-fn run_qsv_cmd(
-    command: &str,
-    args: &[&str],
-    input_path: &str,
-    status_msg: &str,
-) -> CliResult<(String, String)> {
-    let start_time = Instant::now();
-
-    let qsv_path = QSV_PATH.get().unwrap();
-    let mut cmd = Command::new(qsv_path);
-    cmd.arg(command).arg(input_path).args(args);
-
-    let output = cmd
-        .output()
-        .map_err(|e| CliError::Other(format!("Error while executing command {command}: {e:?}")))?;
-    log::debug!("qsv command {command} output: {output:?}");
-
-    print_status(status_msg, Some(start_time.elapsed()));
-
-    let stdout_str = std::str::from_utf8(&output.stdout).map_err(|e| {
-        CliError::Other(format!(
-            "Unable to parse output of qsv command {command}: {e:?}"
-        ))
-    })?;
-    let stderr_str = std::str::from_utf8(&output.stderr).map_err(|e| {
-        CliError::Other(format!(
-            "Unable to parse stderr of qsv command {command}: {e:?}"
-        ))
-    })?;
-
-    Ok((stdout_str.to_string(), stderr_str.to_string()))
-}
-
 // Helper function to run DuckDB queries
 fn run_duckdb_query(
     sql_query: &str,
@@ -4573,10 +4529,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .unwrap();
 
     // Initialize the global quiet flag
-    QUIET_FLAG.store(args.flag_quiet, Ordering::Relaxed);
-
-    // Initialize the global qsv path
-    QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
+    QUIET_FLAG.store(args.flag_quiet, std::sync::atomic::Ordering::Relaxed);
 
     // If --export-prompt is set, export the default prompts and exit
     if let Some(file_path) = &args.flag_export_prompt {
@@ -5082,11 +5035,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
 // Perform the actual data analysis (stats, frequency, headers)
 fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults> {
-    // Initialize the global qsv path if not already set
-    if QSV_PATH.get().is_none() {
-        QSV_PATH.set(util::current_exe()?.to_string_lossy().to_string())?;
-    }
-
     // check if the input file is indexed, if not, index it for performance
     let config = Config::new(Some(&input_path.to_string()));
     if config.index_files().is_err() {

@@ -88,7 +88,7 @@ fn compute_pearson_skewness(
     stddev: Option<f64>,
 ) -> Option<f64> {
     if let (Some(mean_val), Some(median_val), Some(stddev_val)) = (mean, median, stddev) {
-        if stddev_val > f64::EPSILON {
+        if stddev_val.abs() > f64::EPSILON {
             Some(3.0 * (mean_val - median_val) / stddev_val)
         } else {
             None

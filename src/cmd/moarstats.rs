@@ -53,7 +53,6 @@ Common options:
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
     sync::OnceLock,
     time::Instant,
 };
@@ -72,30 +71,6 @@ struct Args {
     flag_stats_options: String,
     flag_round:         u32,
     flag_output:        Option<String>,
-}
-
-/// Helper function to run qsv commands with consistent error handling
-fn run_qsv_cmd(command: &str, args: &[&str], input_path: &str) -> CliResult<(String, String)> {
-    let qsv_path = QSV_PATH.get().unwrap();
-    let mut cmd = Command::new(qsv_path);
-    cmd.arg(command).arg(input_path).args(args);
-
-    let output = cmd
-        .output()
-        .map_err(|e| CliError::Other(format!("Error while executing command {command}: {e:?}")))?;
-
-    let stdout_str = std::str::from_utf8(&output.stdout).map_err(|e| {
-        CliError::Other(format!(
-            "Unable to parse output of qsv command {command}: {e:?}"
-        ))
-    })?;
-    let stderr_str = std::str::from_utf8(&output.stderr).map_err(|e| {
-        CliError::Other(format!(
-            "Unable to parse stderr of qsv command {command}: {e:?}"
-        ))
-    })?;
-
-    Ok((stdout_str.to_string(), stderr_str.to_string()))
 }
 
 /// Get the stats CSV file path for a given input CSV path
@@ -141,7 +116,7 @@ fn compute_range_stddev_ratio(range: Option<f64>, stddev: Option<f64>) -> Option
 
 /// Compute Quartile Coefficient of Dispersion: (Q3 - Q1) / (Q3 + Q1)
 fn compute_quartile_coefficient_dispersion(q1: Option<f64>, q3: Option<f64>) -> Option<f64> {
-    if let (Some(q1_val), Some	q3_val)) = (q1, q3) {
+    if let (Some(q1_val), Some(q3_val)) = (q1, q3) {
         let sum = q3_val + q1_val;
         // Only compute if the denominator is non-zero to avoid division by zero.
         if sum != 0.0 {
@@ -223,7 +198,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // Parse stats options
         let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
-        let (_, stderr) = run_qsv_cmd("stats", &stats_args_vec, &input_path_str)?;
+        let (_, stderr) = util::run_qsv_cmd(
+            "stats",
+            &stats_args_vec,
+            &input_path_str,
+            "Running stats command to generate baseline stats...",
+        )?;
 
         if !stderr.is_empty() {
             return fail_clierror!("Stats command failed: {stderr}");
@@ -301,7 +281,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "Warning: No additional stats can be computed with the available base statistics."
         );
         eprintln!(
-            "Consider running stats with --everything, or including --quartiles --median --mode in your --stats-options."
+            "Consider running stats with --everything, or including --quartiles --median --mode \
+             in your --stats-options."
         );
         return Ok(());
     }

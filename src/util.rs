@@ -3516,6 +3516,7 @@ pub fn run_qsv_cmd(
 ) -> CliResult<(String, String)> {
     let start_time = Instant::now();
 
+    // safety: we know that the current_exe() will not fail as qsv is already running
     let qsv_path = QSV_PATH.get_or_init(|| current_exe().unwrap().to_string_lossy().to_string());
     let mut cmd = Command::new(qsv_path);
     cmd.arg(command).arg(input_path).args(args);
@@ -3524,6 +3525,10 @@ pub fn run_qsv_cmd(
         .output()
         .map_err(|e| CliError::Other(format!("Error while executing command {command}: {e:?}")))?;
     log::debug!("qsv command {command} output: {output:?}");
+
+    if !output.status.success() {
+        return fail_clierror!("Command {command} failed: {output:?}");
+    }
 
     print_status(status_msg, Some(start_time.elapsed()));
 

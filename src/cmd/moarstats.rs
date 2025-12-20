@@ -1,5 +1,5 @@
 static USAGE: &str = r#"
-Add 13 additional statistics, 12 outlier metadata, and winsorized/trimmed means to an existing stats CSV file.
+Add 13 additional statistics and 12 outlier metadata to an existing stats CSV file.
 
 The `moarstats` command extends an existing stats CSV file (created by the `stats` command)
 by computing "moar" statistics that can be derived from existing stats columns.

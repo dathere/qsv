@@ -301,7 +301,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "Warning: No additional stats can be computed with the available base statistics."
         );
         eprintln!(
-            "Consider running stats with --everything or --quartiles --median --mode options."
+            "Consider running stats with --everything, or including --quartiles --median --mode in your --stats-options."
         );
         return Ok(());
     }

@@ -1520,8 +1520,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // Write winsorized and trimmed means
             if (new_column_indices.contains_key(winsorized_col_name.as_str())
-                || new_column_indices.contains_key(trimmed_col_name.as_str())
-                    && !field_name.is_empty())
+                || new_column_indices.contains_key(trimmed_col_name.as_str()))
+                && !field_name.is_empty()
                 && let Some(stats) = outlier_counts.get(field_name)
             {
                 // Winsorized mean

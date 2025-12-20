@@ -100,9 +100,7 @@ fn run_qsv_cmd(command: &str, args: &[&str], input_path: &str) -> CliResult<(Str
 
 /// Get the stats CSV file path for a given input CSV path
 fn get_stats_csv_path(input_path: &Path) -> CliResult<PathBuf> {
-    let parent = input_path
-        .parent()
-        .ok_or_else(|| CliError::Other("Invalid input path: no parent directory".to_string()))?;
+    let parent = input_path.parent().unwrap_or_else(|| Path::new("."));
     let fstem = input_path
         .file_stem()
         .ok_or_else(|| CliError::Other("Invalid input path: no file name".to_string()))?;
@@ -145,7 +143,9 @@ fn compute_range_stddev_ratio(range: Option<f64>, stddev: Option<f64>) -> Option
 fn compute_quartile_coefficient_dispersion(q1: Option<f64>, q3: Option<f64>) -> Option<f64> {
     if let (Some(q1_val), Some(q3_val)) = (q1, q3) {
         let sum = q3_val + q1_val;
-        if sum > 0.0 {
+        // Only compute if both Q1 and Q3 are positive (as in typical quartile stats)
+        // and their sum is > 0
+        if q1_val > 0.0 && q3_val > 0.0 && sum > 0.0 {
             Some((q3_val - q1_val) / sum)
         } else {
             None
@@ -226,7 +226,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
         let (_, stderr) = run_qsv_cmd("stats", &stats_args_vec, &input_path_str)?;
 
-        if !stderr.is_empty() && stderr.to_ascii_lowercase().contains("error") {
+        if !stderr.is_empty() {
             return fail_clierror!("Stats command failed: {stderr}");
         }
 

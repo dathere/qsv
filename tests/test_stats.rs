@@ -4118,6 +4118,260 @@ fn stats_weighted_percentiles() {
 }
 
 #[test]
+fn stats_weighted_modes() {
+    let wrk = Workdir::new("stats_weighted_modes");
+    // Values: ["a", "b", "a", "c", "b"], Weights: [1, 2, 3, 1, 1]
+    // Weighted frequencies:
+    //   "a": 1 + 3 = 4 (max weight - mode)
+    //   "b": 2 + 1 = 3
+    //   "c": 1 (min weight - antimode)
+    // Mode should be "a" with weight 4
+    // Antimode should be "c" with weight 1
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["a", "1"],
+            svec!["b", "2"],
+            svec!["a", "3"],
+            svec!["c", "1"],
+            svec!["b", "1"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight")
+        .arg("weight")
+        .arg("--mode")
+        .arg("data.csv");
+
+    // Check command succeeds
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+    assert!(
+        got.len() > 1,
+        "Should have at least one data row, got {} rows",
+        got.len()
+    );
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let mode_idx = headers
+        .iter()
+        .position(|h| h == "mode")
+        .expect("Should have mode column");
+    let mode_count_idx = headers
+        .iter()
+        .position(|h| h == "mode_count")
+        .expect("Should have mode_count column");
+    let mode_occurrences_idx = headers
+        .iter()
+        .position(|h| h == "mode_occurrences")
+        .expect("Should have mode_occurrences column");
+    let antimode_idx = headers
+        .iter()
+        .position(|h| h == "antimode")
+        .expect("Should have antimode column");
+    let antimode_count_idx = headers
+        .iter()
+        .position(|h| h == "antimode_count")
+        .expect("Should have antimode_count column");
+    let antimode_occurrences_idx = headers
+        .iter()
+        .position(|h| h == "antimode_occurrences")
+        .expect("Should have antimode_occurrences column");
+
+    let mode_str = &value_row[mode_idx];
+    let mode_count: usize = value_row[mode_count_idx]
+        .parse()
+        .expect("mode_count should be a valid number");
+    let mode_occurrences: u32 = value_row[mode_occurrences_idx]
+        .parse()
+        .expect("mode_occurrences should be a valid number");
+    let antimode_str = &value_row[antimode_idx];
+    let antimode_count: usize = value_row[antimode_count_idx]
+        .parse()
+        .expect("antimode_count should be a valid number");
+    let antimode_occurrences: u32 = value_row[antimode_occurrences_idx]
+        .parse()
+        .expect("antimode_occurrences should be a valid number");
+
+    // Mode should be "a" with weight 4
+    assert_eq!(
+        mode_str, "a",
+        "Expected mode 'a', got '{}'",
+        mode_str
+    );
+    assert_eq!(
+        mode_count, 1,
+        "Expected mode_count 1, got {}",
+        mode_count
+    );
+    assert_eq!(
+        mode_occurrences, 4,
+        "Expected mode_occurrences 4 (weight), got {}",
+        mode_occurrences
+    );
+
+    // Antimode should be "c" with weight 1
+    assert_eq!(
+        antimode_str, "c",
+        "Expected antimode 'c', got '{}'",
+        antimode_str
+    );
+    assert_eq!(
+        antimode_count, 1,
+        "Expected antimode_count 1, got {}",
+        antimode_count
+    );
+    assert_eq!(
+        antimode_occurrences, 1,
+        "Expected antimode_occurrences 1 (weight), got {}",
+        antimode_occurrences
+    );
+}
+
+#[test]
+fn stats_weighted_modes_multiple() {
+    let wrk = Workdir::new("stats_weighted_modes_multiple");
+    // Values: ["x", "y", "x", "z", "y"], Weights: [2, 3, 2, 1, 3]
+    // Weighted frequencies:
+    //   "x": 2 + 2 = 4 (tied for max weight - mode)
+    //   "y": 3 + 3 = 6 (max weight - mode)
+    //   "z": 1 (min weight - antimode)
+    // Modes should be ["x", "y"] or ["y", "x"] with weight 6 (or 4)
+    // Antimode should be "z" with weight 1
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["x", "2"],
+            svec!["y", "3"],
+            svec!["x", "2"],
+            svec!["z", "1"],
+            svec!["y", "3"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight")
+        .arg("weight")
+        .arg("--mode")
+        .arg("data.csv");
+
+    // Check command succeeds
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+    assert!(
+        got.len() > 1,
+        "Should have at least one data row, got {} rows",
+        got.len()
+    );
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let mode_idx = headers
+        .iter()
+        .position(|h| h == "mode")
+        .expect("Should have mode column");
+    let mode_count_idx = headers
+        .iter()
+        .position(|h| h == "mode_count")
+        .expect("Should have mode_count column");
+    let antimode_idx = headers
+        .iter()
+        .position(|h| h == "antimode")
+        .expect("Should have antimode column");
+
+    let mode_str = &value_row[mode_idx];
+    let mode_count: usize = value_row[mode_count_idx]
+        .parse()
+        .expect("mode_count should be a valid number");
+    let antimode_str = &value_row[antimode_idx];
+
+    // Mode should be "y" (or "x" and "y" if both have max weight)
+    // Since "y" has weight 6 and "x" has weight 4, "y" should be the mode
+    // But if there's a tie, both could be modes
+    assert!(
+        mode_str.contains("y"),
+        "Expected mode to contain 'y', got '{}'",
+        mode_str
+    );
+    // Mode count should be at least 1
+    assert!(
+        mode_count >= 1,
+        "Expected mode_count >= 1, got {}",
+        mode_count
+    );
+
+    // Antimode should be "z"
+    assert_eq!(
+        antimode_str, "z",
+        "Expected antimode 'z', got '{}'",
+        antimode_str
+    );
+}
+
+#[test]
+fn stats_weighted_modes_cardinality() {
+    let wrk = Workdir::new("stats_weighted_modes_cardinality");
+    // Test that cardinality works with weighted modes
+    // Values: ["a", "b", "c"], Weights: [1, 2, 3]
+    // Cardinality should be 3 (3 unique values)
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["a", "1"],
+            svec!["b", "2"],
+            svec!["c", "3"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight")
+        .arg("weight")
+        .arg("--cardinality")
+        .arg("--mode")
+        .arg("data.csv");
+
+    // Check command succeeds
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+    assert!(
+        got.len() > 1,
+        "Should have at least one data row, got {} rows",
+        got.len()
+    );
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let cardinality_idx = headers
+        .iter()
+        .position(|h| h == "cardinality")
+        .expect("Should have cardinality column");
+    let cardinality: u64 = value_row[cardinality_idx]
+        .parse()
+        .expect("cardinality should be a valid number");
+
+    // Cardinality should be 3 (3 unique values)
+    assert_eq!(
+        cardinality, 3,
+        "Expected cardinality 3, got {}",
+        cardinality
+    );
+}
+
+#[test]
 fn stats_weighted_missing_weight_column() {
     let wrk = Workdir::new("stats_weighted_missing_weight_column");
     wrk.create("data.csv", vec![svec!["value"], svec!["1"], svec!["2"]]);

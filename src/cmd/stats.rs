@@ -328,6 +328,7 @@ if the CSV is not well-formed. See "safety:" comments in the code for more detai
 */
 
 use std::{
+    collections::HashMap,
     fmt, fs,
     io::{self, BufRead, Seek, Write},
     iter::repeat_n,
@@ -2524,6 +2525,7 @@ struct Stats {
 
     // CACHE LINE 4+: Mode and cardinality computation
     modes: Option<Unsorted<Vec<u8>>>, // 32 bytes - used for mode/cardinality
+    weighted_modes: Option<HashMap<Vec<u8>, f64>>, // Weighted mode/antimode tracking
 
     // CACHE LINE 5+: Sorting-based statistics
     #[allow(clippy::struct_field_names)]
@@ -2861,6 +2863,7 @@ impl Stats {
             (None, None, None, None, None, None);
         let mut weighted_online = None;
         let mut weighted_unsorted_stats = None;
+        let mut weighted_modes = None;
 
         if which.sum {
             sum = Some(TypedSum::default());
@@ -2882,6 +2885,10 @@ impl Stats {
         let record_count = *RECORD_COUNT.get().unwrap_or(&10_000) as usize;
         if which.mode || which.cardinality {
             modes = Some(stats::Unsorted::with_capacity(record_count));
+            if use_weights {
+                // Estimate capacity: assume average cardinality of 10% of records
+                weighted_modes = Some(HashMap::with_capacity((record_count / 10).max(16)));
+            }
         }
         // we use the same Unsorted struct for median, mad, quartiles & percentiles
         if which.quartiles || which.median || which.mad || which.percentiles {
@@ -2899,6 +2906,7 @@ impl Stats {
             sum_stotlen: 0,
             sum,
             modes,
+            weighted_modes,
             unsorted_stats,
             online,
             online_len,
@@ -3008,6 +3016,10 @@ impl Stats {
         // Modes/cardinality less common but still frequent
         if let Some(v) = self.modes.as_mut() {
             v.add(sample.to_vec());
+        }
+        // Weighted modes: accumulate weights per value
+        if let Some(ref mut wm) = self.weighted_modes {
+            *wm.entry(sample.to_vec()).or_insert(0.0) += weight;
         }
 
         if t == TString {
@@ -3232,30 +3244,39 @@ impl Stats {
         // We also need to know the cardinality to --infer-boolean should that be enabled
         let mut cardinality = 0;
         let mut mc_pieces: Vec<String> = Vec::new();
-        match self.modes.as_mut() {
-            None => {
-                if self.which.cardinality {
-                    mc_pieces = vec![EMPTY_STRING; 2];
-                }
-                if self.which.mode {
-                    mc_pieces = vec![EMPTY_STRING; 6];
-                }
-            },
-            Some(v) => {
-                mc_pieces.reserve(8);
-                if self.which.cardinality {
-                    cardinality = v.cardinality(column_sorted, 1);
-                    mc_pieces.push(itoa::Buffer::new().format(cardinality).to_owned());
-                    // uniqueness_ratio = cardinality / record_count
-                    #[allow(clippy::cast_precision_loss)]
-                    mc_pieces.push(util::round_num(
-                        (cardinality as f64) / (record_count as f64),
-                        round_places,
-                    ));
-                }
-                if self.which.mode {
-                    // mode/s & antimode/s
-                    if cardinality == record_count {
+        
+        // Check if we should use weighted modes/antimodes
+        if let Some(ref weighted_modes_map) = self.weighted_modes {
+            // Weighted modes/antimodes computation
+            mc_pieces.reserve(8);
+            
+            if self.which.cardinality {
+                // Cardinality is the number of unique values
+                cardinality = weighted_modes_map.len() as u64;
+                mc_pieces.push(itoa::Buffer::new().format(cardinality).to_owned());
+                // uniqueness_ratio = cardinality / record_count
+                #[allow(clippy::cast_precision_loss)]
+                mc_pieces.push(util::round_num(
+                    (cardinality as f64) / (record_count as f64),
+                    round_places,
+                ));
+            }
+            
+            if self.which.mode {
+                if weighted_modes_map.is_empty() {
+                    // Empty data
+                    mc_pieces.extend_from_slice(&[
+                        EMPTY_STRING,
+                        "0".to_string(),
+                        "0".to_string(),
+                        EMPTY_STRING,
+                        "0".to_string(),
+                        "0".to_string(),
+                    ]);
+                } else {
+                    // Check if all values are unique (cardinality == record_count)
+                    let unique_count = weighted_modes_map.len() as u64;
+                    if unique_count == record_count {
                         // all values unique
                         mc_pieces.extend_from_slice(
                             // modes - short-circuit modes calculation as there is none
@@ -3270,11 +3291,36 @@ impl Stats {
                             ],
                         );
                     } else {
-                        let (
-                            (modes_result, modes_count, mode_occurrences),
-                            (antimodes_result, antimodes_count, antimode_occurrences),
-                        ) = v.modes_antimodes();
-                        // mode/s ============
+                        // Find max and min weights
+                        let max_weight = weighted_modes_map.values().copied().fold(0.0, f64::max);
+                        let min_weight = weighted_modes_map.values().copied().fold(f64::INFINITY, f64::min);
+                        
+                        // Collect modes (values with max weight)
+                        let mut modes_result: Vec<Vec<u8>> = Vec::new();
+                        for (value, &weight) in weighted_modes_map.iter() {
+                            if (weight - max_weight).abs() < 1e-10 {
+                                modes_result.push(value.clone());
+                            }
+                        }
+                        
+                        // Collect antimodes (values with min weight) - limit to 10
+                        let mut antimodes_result: Vec<Vec<u8>> = Vec::new();
+                        let mut antimodes_collected = 0;
+                        for (value, &weight) in weighted_modes_map.iter() {
+                            if (weight - min_weight).abs() < 1e-10 {
+                                if antimodes_collected < MAX_ANTIMODES {
+                                    antimodes_result.push(value.clone());
+                                    antimodes_collected += 1;
+                                }
+                            }
+                        }
+                        
+                        let modes_count = modes_result.len();
+                        let antimodes_count = weighted_modes_map.values()
+                            .filter(|&&w| (w - min_weight).abs() < 1e-10)
+                            .count();
+                        
+                        // Format modes
                         let modes_list = if visualize_ws {
                             modes_result
                                 .iter()
@@ -3286,8 +3332,8 @@ impl Stats {
                                 .map(|c| String::from_utf8_lossy(c))
                                 .join(stats_separator)
                         };
-
-                        // antimode/s ============
+                        
+                        // Format antimodes
                         let antimodes_len = ANTIMODES_LEN.get_or_init(|| {
                             std::env::var("QSV_ANTIMODES_LEN")
                                 .map(|val| {
@@ -3298,33 +3344,40 @@ impl Stats {
                                 })
                                 .unwrap_or(DEFAULT_ANTIMODES_LEN)
                         });
-
+                        
                         let mut antimodes_list = String::with_capacity(*antimodes_len);
-
+                        
                         // We only store the first 10 antimodes
                         // so if antimodes_count > 10, add the "*PREVIEW: " prefix
                         if antimodes_count > MAX_ANTIMODES {
                             antimodes_list.push_str("*PREVIEW: ");
                         }
-
+                        
                         let antimodes_vals = &antimodes_result
                             .iter()
                             .map(|c| String::from_utf8_lossy(c))
                             .join(stats_separator);
-
+                        
                         // if the antimodes result starts with the separator,
                         // it indicates that NULL is the first antimode. Add NULL to the list.
                         if antimodes_vals.starts_with(stats_separator) {
                             antimodes_list.push_str("NULL");
                         }
                         antimodes_list.push_str(antimodes_vals);
-
+                        
                         // and truncate at antimodes_len characters with an ellipsis
                         if antimodes_list.len() > *antimodes_len {
                             util::utf8_truncate(&mut antimodes_list, *antimodes_len + 1);
                             antimodes_list.push_str("...");
                         }
-
+                        
+                        // For weighted modes, mode_occurrences is the max weight (rounded)
+                        // For weighted antimodes, antimode_occurrences is the min weight (rounded)
+                        #[allow(clippy::cast_possible_truncation)]
+                        let mode_occurrences = max_weight.round() as u32;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let antimode_occurrences = min_weight.round() as u32;
+                        
                         mc_pieces.extend_from_slice(&[
                             // mode/s
                             modes_list,
@@ -3341,7 +3394,120 @@ impl Stats {
                         ]);
                     }
                 }
-            },
+            }
+        } else {
+            // Unweighted modes/antimodes computation (existing logic)
+            match self.modes.as_mut() {
+                None => {
+                    if self.which.cardinality {
+                        mc_pieces = vec![EMPTY_STRING; 2];
+                    }
+                    if self.which.mode {
+                        mc_pieces = vec![EMPTY_STRING; 6];
+                    }
+                },
+                Some(v) => {
+                    mc_pieces.reserve(8);
+                    if self.which.cardinality {
+                        cardinality = v.cardinality(column_sorted, 1);
+                        mc_pieces.push(itoa::Buffer::new().format(cardinality).to_owned());
+                        // uniqueness_ratio = cardinality / record_count
+                        #[allow(clippy::cast_precision_loss)]
+                        mc_pieces.push(util::round_num(
+                            (cardinality as f64) / (record_count as f64),
+                            round_places,
+                        ));
+                    }
+                    if self.which.mode {
+                        // mode/s & antimode/s
+                        if cardinality == record_count {
+                            // all values unique
+                            mc_pieces.extend_from_slice(
+                                // modes - short-circuit modes calculation as there is none
+                                &[
+                                    EMPTY_STRING,
+                                    "0".to_string(),
+                                    "0".to_string(),
+                                    // antimodes - instead of returning everything, just say *ALL
+                                    "*ALL".to_string(),
+                                    "0".to_string(),
+                                    "1".to_string(),
+                                ],
+                            );
+                        } else {
+                            let (
+                                (modes_result, modes_count, mode_occurrences),
+                                (antimodes_result, antimodes_count, antimode_occurrences),
+                            ) = v.modes_antimodes();
+                            // mode/s ============
+                            let modes_list = if visualize_ws {
+                                modes_result
+                                    .iter()
+                                    .map(|c| util::visualize_whitespace(&String::from_utf8_lossy(c)))
+                                    .join(stats_separator)
+                            } else {
+                                modes_result
+                                    .iter()
+                                    .map(|c| String::from_utf8_lossy(c))
+                                    .join(stats_separator)
+                            };
+
+                            // antimode/s ============
+                            let antimodes_len = ANTIMODES_LEN.get_or_init(|| {
+                                std::env::var("QSV_ANTIMODES_LEN")
+                                    .map(|val| {
+                                        let parsed = atoi_simd::parse::<usize>(val.as_bytes())
+                                            .unwrap_or(DEFAULT_ANTIMODES_LEN);
+                                        // if 0, disable length limiting
+                                        if parsed == 0 { usize::MAX } else { parsed }
+                                    })
+                                    .unwrap_or(DEFAULT_ANTIMODES_LEN)
+                            });
+
+                            let mut antimodes_list = String::with_capacity(*antimodes_len);
+
+                            // We only store the first 10 antimodes
+                            // so if antimodes_count > 10, add the "*PREVIEW: " prefix
+                            if antimodes_count > MAX_ANTIMODES {
+                                antimodes_list.push_str("*PREVIEW: ");
+                            }
+
+                            let antimodes_vals = &antimodes_result
+                                .iter()
+                                .map(|c| String::from_utf8_lossy(c))
+                                .join(stats_separator);
+
+                            // if the antimodes result starts with the separator,
+                            // it indicates that NULL is the first antimode. Add NULL to the list.
+                            if antimodes_vals.starts_with(stats_separator) {
+                                antimodes_list.push_str("NULL");
+                            }
+                            antimodes_list.push_str(antimodes_vals);
+
+                            // and truncate at antimodes_len characters with an ellipsis
+                            if antimodes_list.len() > *antimodes_len {
+                                util::utf8_truncate(&mut antimodes_list, *antimodes_len + 1);
+                                antimodes_list.push_str("...");
+                            }
+
+                            mc_pieces.extend_from_slice(&[
+                                // mode/s
+                                modes_list,
+                                itoa::Buffer::new().format(modes_count).to_owned(),
+                                itoa::Buffer::new().format(mode_occurrences).to_owned(),
+                                // antimode/s
+                                if visualize_ws {
+                                    util::visualize_whitespace(&antimodes_list)
+                                } else {
+                                    antimodes_list
+                                },
+                                itoa::Buffer::new().format(antimodes_count).to_owned(),
+                                itoa::Buffer::new().format(antimode_occurrences).to_owned(),
+                            ]);
+                        }
+                    }
+                },
+            }
         }
 
         // type
@@ -3904,6 +4070,17 @@ impl Commute for Stats {
             }
         } else if other.weighted_unsorted_stats.is_some() {
             self.weighted_unsorted_stats = other.weighted_unsorted_stats;
+        }
+
+        // Merge weighted modes
+        if let Some(ref mut wm) = self.weighted_modes {
+            if let Some(ref other_wm) = other.weighted_modes {
+                for (value, weight) in other_wm.iter() {
+                    *wm.entry(value.clone()).or_insert(0.0) += weight;
+                }
+            }
+        } else if other.weighted_modes.is_some() {
+            self.weighted_modes = other.weighted_modes;
         }
 
         self.total_weight += other.total_weight;

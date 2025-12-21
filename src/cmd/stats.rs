@@ -2459,10 +2459,14 @@ struct Stats {
     is_ascii:      bool,      // 1 byte - accessed for strings
     max_precision: u16,       // 2 bytes - accessed for floats
 
-    nullcount:   u64, // 8 bytes - frequently updated counter
-    sum_stotlen: u64, // 8 bytes - frequently updated counter
+    // 4 bytes padding (automatic with repr(C) for 8-byte alignment)
 
-    // Configuration flags (accessed once during initialization)
+    // Hot counters - all 8-byte aligned, accessed frequently
+    nullcount:    u64, // 8 bytes - frequently updated counter
+    sum_stotlen:  u64, // 8 bytes - frequently updated counter
+    total_weight: f64, // 8 bytes - frequently updated for weighted stats
+
+    // Configuration flags (accessed once during initialization, cold after init)
     which: WhichStats, // 40 bytes - read-only after initialization
 
     // CACHE LINE 2+: Less frequently accessed but still important
@@ -2487,9 +2491,6 @@ struct Stats {
 
     // CACHE LINE 6+: Min/Max tracking (largest field, least cache-friendly)
     minmax: Option<TypedMinMax>, // 432 bytes - largest field, accessed less frequently
-
-    // Total weight sum for weighted statistics
-    total_weight: f64, // 8 bytes - total weight sum for weighted statistics
 }
 
 /// Weighted online statistics using the weighted Welford's algorithm (West, 1979).
@@ -2966,19 +2967,19 @@ impl Stats {
             typ: FieldType::default(),
             is_ascii: true,
             max_precision: 0,
-            which,
             nullcount: 0,
             sum_stotlen: 0,
+            total_weight: 0.0,
+            which,
             sum,
-            modes,
-            weighted_modes,
-            unsorted_stats,
             online,
             online_len,
             weighted_online,
+            modes,
+            weighted_modes,
+            unsorted_stats,
             weighted_unsorted_stats,
             minmax,
-            total_weight: 0.0,
         }
     }
 

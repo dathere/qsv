@@ -225,6 +225,14 @@ stats options:
                               [default: 4]
     --nulls                   Include NULLs in the population size for computing
                               mean and standard deviation.
+    --weight <column>         Compute weighted statistics using the specified column as weights.
+                              The weight column must be numeric. When specified, all statistics
+                              (mean, stddev, variance, median, quartiles, mode, etc.) will be
+                              computed using weighted algorithms. The weight column is automatically
+                              excluded from statistics computation. Missing or non-numeric weights
+                              default to 1.0. Zero and negative weights are ignored and do not
+                              contribute to the statistics. The output filename will be
+                              <FILESTEM>.stats.weighted.csv to distinguish from unweighted statistics.
 
                               DATE INFERENCING:
     --infer-dates             Infer date/datetime data types. This is an expensive
@@ -315,12 +323,13 @@ https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#stats-cache)
 to make them work smarter & faster.
 
 To safeguard against undefined behavior, `stats` is the most extensively tested command,
-with ~520 tests. It also employs numerous performance optimizations (skip repetitive UTF-8
+with ~625 tests. It also employs numerous performance optimizations (skip repetitive UTF-8
 validation, skip bounds checks, cache results, etc.) that may result in undefined behavior
 if the CSV is not well-formed. See "safety:" comments in the code for more details.
 */
 
 use std::{
+    collections::HashMap,
     fmt, fs,
     io::{self, BufRead, Seek, Write},
     iter::repeat_n,
@@ -334,6 +343,10 @@ use crossbeam_channel;
 use itertools::Itertools;
 use phf::phf_map;
 use qsv_dateparser::parse_with_preference;
+use rayon::{
+    iter::{IntoParallelRefIterator, ParallelIterator},
+    slice::ParallelSliceMut,
+};
 use serde::{Deserialize, Serialize};
 // Use serde_json on big-endian platforms (e.g. s390x) due to simd_json endianness issues
 #[cfg(target_endian = "little")]
@@ -345,7 +358,7 @@ use threadpool::ThreadPool;
 
 use self::FieldType::{TDate, TDateTime, TFloat, TInteger, TNull, TString};
 use crate::{
-    CliResult,
+    CliError, CliResult,
     config::{Config, Delimiter, get_delim_by_extension},
     select::{SelectColumns, Selection},
     util,
@@ -382,6 +395,7 @@ pub struct Args {
     pub flag_memcheck:         bool,
     pub flag_vis_whitespace:   bool,
     pub flag_dataset_stats:    bool,
+    pub flag_weight:           Option<String>,
 }
 
 // this struct is used to serialize/deserialize the stats to
@@ -415,6 +429,7 @@ struct StatsArgs {
     date_generated:       String,
     compute_duration_ms:  u64,
     qsv_version:          String,
+    flag_weight:          String,
 }
 
 #[cfg(target_endian = "little")]
@@ -469,6 +484,10 @@ impl StatsArgs {
                 .to_string(),
             compute_duration_ms:  value["compute_duration_ms"].as_u64().unwrap_or_default(),
             qsv_version:          value["qsv_version"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            flag_weight:          value["flag_weight"]
                 .as_str()
                 .unwrap_or_default()
                 .to_string(),
@@ -877,6 +896,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // so cached stats are automatically invalidated
         // when the qsv version changes
         qsv_version:          env!("CARGO_PKG_VERSION").to_string(),
+        flag_weight:          args.flag_weight.clone().unwrap_or_default(),
     };
 
     // create a temporary file to store the <FILESTEM>.stats.csv file
@@ -992,7 +1012,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if let Some(path) = rconfig.path.clone() {
         //safety: we know the path is a valid PathBuf, so we can use unwrap
         let path_file_stem = path.file_stem().unwrap().to_str().unwrap();
-        let stats_file = stats_path(&path, false)?;
+        let stats_file = stats_path(&path, false, args.flag_weight.is_some())?;
         // check if <FILESTEM>.stats.csv file already exists.
         // If it does, check if it was compiled using the same args.
         // However, if the --force flag is set,
@@ -1348,16 +1368,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else {
         // we didn't compute the stats, re-use the existing stats file
         // safety: we know the path is a valid PathBuf, so we can use unwrap
-        stats_path(rconfig.path.as_ref().unwrap(), false)?
-            .to_str()
-            .unwrap()
-            .to_owned()
+        stats_path(
+            rconfig.path.as_ref().unwrap(),
+            false,
+            args.flag_weight.is_some(),
+        )?
+        .to_str()
+        .unwrap()
+        .to_owned()
     };
 
     if rconfig.is_stdin() {
-        // if we read from stdin, copy the temp stats file to "stdin.stats.csv"
-        // safety: we know the path is a valid PathBuf, so we can use unwrap
-        let mut stats_pathbuf = stats_path(rconfig.path.as_ref().unwrap(), true)?;
+        // if we read from stdin, copy the temp stats file to "stdin.stats.csv" or
+        // "stdin.stats.weighted.csv" safety: we know the path is a valid PathBuf, so we can
+        // use unwrap
+        let mut stats_pathbuf = stats_path(
+            rconfig.path.as_ref().unwrap(),
+            true,
+            args.flag_weight.is_some(),
+        )?;
         fs::copy(currstats_filename.clone(), stats_pathbuf.clone())?;
 
         // save the stats args to "stdin.stats.csv.json"
@@ -1369,9 +1398,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let json_string = simd_json::to_string_pretty(&current_stats_args)?;
         std::fs::write(stats_pathbuf, json_string)?;
     } else if let Some(path) = rconfig.path {
-        // if we read from a file, copy the temp stats file to "<FILESTEM>.stats.csv"
+        // if we read from a file, copy the temp stats file to "<FILESTEM>.stats.csv" or
+        // "<FILESTEM>.stats.weighted.csv"
         let mut stats_pathbuf = path.clone();
-        stats_pathbuf.set_extension("stats.csv");
+        if args.flag_weight.is_some() {
+            stats_pathbuf.set_extension("stats.weighted.csv");
+        } else {
+            stats_pathbuf.set_extension("stats.csv");
+        }
         // safety: we know the path is a valid PathBuf, so we can use unwrap
         if currstats_filename != stats_pathbuf.to_str().unwrap() {
             // if the stats file is not the same as the input file, copy it
@@ -1492,11 +1526,15 @@ impl Args {
     /// * File I/O errors are wrapped in appropriate error types
     fn sequential_stats(&self, whitelist: &str) -> CliResult<(csv::ByteRecord, Vec<Stats>)> {
         let mut rdr = self.rconfig().reader()?;
-        let (headers, sel) = self.sel_headers(&mut rdr)?;
+        let full_headers = rdr.byte_headers()?.clone();
+
+        // Find weight column index and exclude it from selection
+        let (weight_col_idx, sel, headers) =
+            self.process_headers_with_weight_exclusion(&full_headers)?;
 
         init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
 
-        let stats = self.compute(&sel, rdr.byte_records());
+        let stats = self.compute(&sel, rdr.byte_records(), weight_col_idx);
         Ok((headers, stats))
     }
 
@@ -1566,7 +1604,11 @@ impl Args {
         }
 
         let mut rdr = self.rconfig().reader()?;
-        let (headers, sel) = self.sel_headers(&mut rdr)?;
+        let full_headers = rdr.byte_headers()?.clone();
+
+        // Find weight column index and exclude it from selection
+        let (weight_col_idx, sel, headers) =
+            self.process_headers_with_weight_exclusion(&full_headers)?;
 
         init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
 
@@ -1649,6 +1691,7 @@ impl Args {
         let (send, recv) = crossbeam_channel::bounded(nchunks);
         for i in 0..nchunks {
             let (send, args, sel) = (send.clone(), self.clone(), sel.clone());
+            let weight_idx: Option<usize> = weight_col_idx;
             pool.execute(move || {
                 // safety: indexed() is safe as we know we have an index file
                 // and we know it will return an Ok
@@ -1666,7 +1709,8 @@ impl Args {
                 let it = idx.byte_records().take(chunk_size);
                 // safety: this will only return an Error if the channel has been disconnected
                 unsafe {
-                    send.send(args.compute(&sel, it)).unwrap_unchecked();
+                    send.send(args.compute(&sel, it, weight_idx))
+                        .unwrap_unchecked();
                 }
             });
         }
@@ -1775,7 +1819,7 @@ impl Args {
     /// * Bounds checking is avoided where safe
     /// * Iterator errors are handled gracefully
     #[inline]
-    fn compute<I>(&self, sel: &Selection, it: I) -> Vec<Stats>
+    fn compute<I>(&self, sel: &Selection, it: I, weight_col_idx: Option<usize>) -> Vec<Stats>
     where
         I: Iterator<Item = csv::Result<csv::ByteRecord>>,
     {
@@ -1791,17 +1835,31 @@ impl Args {
         let prefer_dmy = self.flag_prefer_dmy;
 
         let mut i;
-        #[allow(unused_assignments)]
-        let mut current_row = csv::ByteRecord::with_capacity(1024, sel_len);
         for row in it {
             i = 0;
+
+            // safety: unwrap the row first
+            let row_result = unsafe { row.unwrap_unchecked() };
+
+            // Extract weight value if weight column is specified
+            let weight = if let Some(widx) = weight_col_idx {
+                if widx < row_result.len() {
+                    fast_float2::parse::<f64, &[u8]>(row_result.get(widx).unwrap_or(b"1.0"))
+                        .unwrap_or(1.0)
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            };
+
             // safety: because we're using iterators and INFER_DATE_FLAGS has the same size,
             // we know we don't need to bounds check
             unsafe {
-                current_row = row.unwrap_unchecked();
-                for field in sel.select(&current_row) {
+                for field in sel.select(&row_result) {
                     stats.get_unchecked_mut(i).add(
                         field,
+                        weight,
                         *infer_date_flags.get_unchecked(i),
                         infer_boolean,
                         prefer_dmy,
@@ -1813,41 +1871,80 @@ impl Args {
         stats
     }
 
-    /// Reads and processes CSV headers with column selection.
+    /// Processes headers and handles weight column exclusion if needed.
     ///
-    /// This function reads the CSV headers from the reader and applies column selection
-    /// based on the configuration. It returns both the selected headers and the selection
-    /// object for use in subsequent processing.
+    /// This function handles the logic for excluding the weight column from statistics
+    /// computation. It finds the weight column index, creates a modified selection that
+    /// excludes it, and returns the selected headers.
     ///
     /// # Arguments
     ///
-    /// * `rdr` - CSV reader with the input data
+    /// * `full_headers` - The full CSV headers as a ByteRecord
     ///
     /// # Returns
     ///
-    /// * `Ok((csv::ByteRecord, Selection))` - Tuple containing selected headers and selection
-    ///   object
-    /// * `Err(CliError)` - If there's an error reading headers or applying selection
+    /// * `Ok((Option<usize>, Selection, csv::ByteRecord))` - Tuple containing:
+    ///   - Weight column index (None if no weight column specified)
+    ///   - Modified selection (excluding weight column if present)
+    ///   - Selected headers (excluding weight column if present)
+    /// * `Err(CliError)` - If weight column is not found or no columns remain after exclusion
     ///
     /// # Process
     ///
-    /// 1. **Header Reading**: Reads byte headers from the CSV reader
-    /// 2. **Selection Creation**: Creates a selection object based on configuration
-    /// 3. **Header Filtering**: Applies the selection to filter headers
-    /// 4. **Return**: Returns both selected headers and selection object
-    ///
-    /// # Performance
-    ///
-    /// * **Inline**: Function is marked as `#[inline]` for performance
-    /// * **Minimal Allocations**: Reuses existing data structures where possible
-    #[inline]
-    fn sel_headers<R: io::Read>(
+    /// 1. **Weight Column Check**: If no weight column is specified, uses normal selection
+    /// 2. **Weight Column Finding**: Finds the weight column index in full headers
+    /// 3. **Selection Modification**: Removes weight column from selection
+    /// 4. **Validation**: Ensures at least one column remains after exclusion
+    /// 5. **Header Filtering**: Applies modified selection to get filtered headers
+    fn process_headers_with_weight_exclusion(
         &self,
-        rdr: &mut csv::Reader<R>,
-    ) -> CliResult<(csv::ByteRecord, Selection)> {
-        let headers = rdr.byte_headers()?.clone();
-        let sel = self.rconfig().selection(&headers)?;
-        Ok((sel.select(&headers).collect(), sel))
+        full_headers: &csv::ByteRecord,
+    ) -> CliResult<(Option<usize>, Selection, csv::ByteRecord)> {
+        if let Some(ref weight_col) = self.flag_weight {
+            // Find weight column index in full headers
+            let weight_idx = full_headers
+                .iter()
+                .position(|h| {
+                    let h_str = String::from_utf8_lossy(h);
+                    h_str.trim().eq_ignore_ascii_case(weight_col.trim())
+                })
+                .ok_or_else(|| {
+                    CliError::Other(format!(
+                        "Weight column '{weight_col}' not found in CSV headers"
+                    ))
+                })?;
+
+            // Create selection excluding weight column
+            let sel = self.rconfig().selection(full_headers)?;
+            // Remove weight column index from selection if present
+            let sel_vec: Vec<usize> = sel
+                .iter()
+                .copied()
+                .filter(|&idx| idx != weight_idx)
+                .collect();
+
+            // Validate that we still have columns after excluding the weight column
+            if sel_vec.is_empty() {
+                return Err(CliError::Other(format!(
+                    "After excluding weight column '{weight_col}', no columns remain for \
+                     statistics computation"
+                )));
+            }
+
+            // safety: We know Selection is a tuple struct with a Vec<usize> field
+            // This is safe because we're creating it with valid indices
+            let modified_sel = unsafe { std::mem::transmute::<Vec<usize>, Selection>(sel_vec) };
+
+            // Get selected headers (excluding weight column)
+            let selected_headers: csv::ByteRecord = modified_sel.select(full_headers).collect();
+
+            Ok((Some(weight_idx), modified_sel, selected_headers))
+        } else {
+            // No weight column specified, use normal selection
+            let sel = self.rconfig().selection(full_headers)?;
+            let headers: csv::ByteRecord = sel.select(full_headers).collect();
+            Ok((None, sel, headers))
+        }
     }
 
     /// Creates a CSV reader configuration based on the current arguments.
@@ -1932,7 +2029,11 @@ impl Args {
     #[inline]
     fn new_stats(&self, record_len: usize) -> Vec<Stats> {
         let mut stats: Vec<Stats> = Vec::with_capacity(record_len);
-        stats.extend(repeat_n(Stats::new(self.which_stats()), record_len));
+        let use_weights = self.flag_weight.is_some();
+        stats.extend(repeat_n(
+            Stats::new(self.which_stats(), use_weights),
+            record_len,
+        ));
         stats
     }
 
@@ -2225,7 +2326,7 @@ fn calculate_memory_aware_chunk_size(
 /// * **Regular Files**: Creates a `.stats.csv` file in the same directory as the input
 /// * **Stdin Input**: Creates a `stdin.stats.csv` file in the current directory
 /// * **Path Validation**: Validates that the input path has a parent directory and filename
-fn stats_path(stats_csv_path: &Path, stdin_flag: bool) -> io::Result<PathBuf> {
+fn stats_path(stats_csv_path: &Path, stdin_flag: bool, weighted: bool) -> io::Result<PathBuf> {
     let parent = stats_csv_path
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid path"))?;
@@ -2234,7 +2335,13 @@ fn stats_path(stats_csv_path: &Path, stdin_flag: bool) -> io::Result<PathBuf> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid file name"))?;
 
     let new_fname = if stdin_flag {
-        "stdin.stats.csv".to_string()
+        if weighted {
+            "stdin.stats.weighted.csv".to_string()
+        } else {
+            "stdin.stats.csv".to_string()
+        }
+    } else if weighted {
+        format!("{}.stats.weighted.csv", fstem.to_string_lossy())
     } else {
         format!("{}.stats.csv", fstem.to_string_lossy())
     };
@@ -2342,6 +2449,7 @@ impl WhichStats {
 }
 
 #[allow(clippy::unsafe_derive_deserialize)]
+#[allow(clippy::struct_field_names)]
 #[repr(C, align(64))] // Align to cache line size for better performance
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 struct Stats {
@@ -2351,32 +2459,403 @@ struct Stats {
     is_ascii:      bool,      // 1 byte - accessed for strings
     max_precision: u16,       // 2 bytes - accessed for floats
 
-    // 4 bytes padding here for alignment
-    nullcount:   u64, // 8 bytes - frequently updated counter
-    sum_stotlen: u64, // 8 bytes - frequently updated counter
+    // 4 bytes padding (automatic with repr(C) for 8-byte alignment)
 
-    // Configuration flags (accessed once during initialization)
-    which: WhichStats, // 10 bytes - read-only after initialization
+    // Hot counters - all 8-byte aligned, accessed frequently
+    nullcount:    u64, // 8 bytes - frequently updated counter
+    sum_stotlen:  u64, // 8 bytes - frequently updated counter
+    total_weight: f64, // 8 bytes - frequently updated for weighted stats
 
-    // 6 bytes padding here to reach 64 bytes (cache line boundary)
+    // Configuration flags (accessed once during initialization, cold after init)
+    which: WhichStats, // 40 bytes - read-only after initialization
 
     // CACHE LINE 2+: Less frequently accessed but still important
     // Large Option types that may be None, grouped by usage pattern
     sum: Option<TypedSum>, // 32 bytes - updated in add() for numeric types
 
     // CACHE LINE 3+: Statistics computation fields
-    online:     Option<OnlineStats>, // 48 bytes - used for mean/variance calculations
-    online_len: Option<OnlineStats>, // 48 bytes - used for string length stats
+    online:          Option<OnlineStats>, // 72 bytes - used for mean/variance calculations
+    online_len:      Option<OnlineStats>, // 72 bytes - used for string length stats
+    weighted_online: Option<WeightedOnlineStats>, // 72 bytes - Weighted online statistics
 
     // CACHE LINE 4+: Mode and cardinality computation
-    modes: Option<Unsorted<Vec<u8>>>, // 32 bytes - used for mode/cardinality
+    modes:          Option<Unsorted<Vec<u8>>>, // 32 bytes - used for mode/cardinality
+    weighted_modes: Option<HashMap<Vec<u8>, f64>>, // 48 bytes - Weighted mode/antimode tracking
 
     // CACHE LINE 5+: Sorting-based statistics
     #[allow(clippy::struct_field_names)]
-    unsorted_stats: Option<Unsorted<f64>>, // 32 bytes - median/quartiles/percentiles
+    unsorted_stats:          Option<Unsorted<f64>>, // 32 bytes - median/quartiles/percentiles
+    weighted_unsorted_stats: Option<Vec<(f64, f64)>>, /* 24 bytes - (value, weight) tuples for
+                                                       * weighted
+                                                       * quantiles */
 
     // CACHE LINE 6+: Min/Max tracking (largest field, least cache-friendly)
     minmax: Option<TypedMinMax>, // 432 bytes - largest field, accessed less frequently
+}
+
+/// Weighted online statistics using the weighted Welford's algorithm (West, 1979).
+///
+/// This struct implements weighted versions of mean, variance, and standard deviation
+/// using an incremental algorithm that processes data in a single pass without storing
+/// all values. The algorithm is numerically stable and suitable for streaming data.
+///
+/// The weighted mean is computed as: mean = Σ(w_i * x_i) / Σ(w_i)
+/// The weighted variance uses the frequency weight definition: variance = S_n / (W_n - 1)
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
+struct WeightedOnlineStats {
+    /// Sum of all weights: W_n = Σ(w_i)
+    sum_weights:              f64,
+    /// Current weighted mean: M_n
+    weighted_mean:            f64,
+    /// Sum of squared differences: S_n = Σ(w_i * (x_i - M_{i-1}) * (x_i - M_i))
+    sum_squared_diffs:        f64,
+    /// Sum of weighted logarithms: Σ(w_i * ln(x_i)) for weighted geometric mean
+    sum_weighted_logs:        f64,
+    /// Sum of weights for positive values (used as denominator for geometric mean)
+    sum_weights_positive:     f64,
+    /// Sum of weighted reciprocals: Σ(w_i / x_i) for weighted harmonic mean
+    sum_weighted_reciprocals: f64,
+    /// Sum of weights for non-zero values (used as denominator for harmonic mean)
+    sum_weights_nonzero:      f64,
+    /// Count of samples (for compatibility with OnlineStats interface)
+    count:                    usize,
+}
+
+impl WeightedOnlineStats {
+    /// Creates a new `WeightedOnlineStats` with all values initialized to zero.
+    const fn new() -> Self {
+        Self {
+            sum_weights:              0.0,
+            weighted_mean:            0.0,
+            sum_squared_diffs:        0.0,
+            sum_weighted_logs:        0.0,
+            sum_weights_positive:     0.0,
+            sum_weighted_reciprocals: 0.0,
+            sum_weights_nonzero:      0.0,
+            count:                    0,
+        }
+    }
+
+    /// Adds a weighted sample to the statistics.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - The sample value
+    /// * `w` - The weight for this sample (must be >= 0)
+    ///
+    /// # Algorithm
+    ///
+    /// Uses the weighted incremental algorithm:
+    /// - W_n = W_{n-1} + w_n
+    /// - M_n = M_{n-1} + (w_n / W_n) * (x_n - M_{n-1})
+    /// - S_n = S_{n-1} + w_n * (x_n - M_{n-1}) * (x_n - M_n)
+    /// - For geometric mean: accumulate w_i * ln(x_i) (only if x_i > 0)
+    /// - For harmonic mean: accumulate w_i / x_i (only if x_i != 0)
+    #[inline]
+    fn add_weighted(&mut self, x: f64, w: f64) {
+        if w <= 0.0 {
+            return;
+        }
+
+        self.count += 1;
+        self.sum_weights += w;
+
+        if self.sum_weights == 0.0 {
+            return;
+        }
+
+        let delta = x - self.weighted_mean;
+        self.weighted_mean += (w / self.sum_weights) * delta;
+        let delta2 = x - self.weighted_mean;
+        self.sum_squared_diffs += w * delta * delta2;
+
+        // Accumulate weighted logs for geometric mean (only if x > 0)
+        if x > 0.0 {
+            self.sum_weighted_logs += w * x.ln();
+            self.sum_weights_positive += w;
+        }
+
+        // Accumulate weighted reciprocals for harmonic mean (only if x != 0)
+        if x != 0.0 {
+            self.sum_weighted_reciprocals += w / x;
+            self.sum_weights_nonzero += w;
+        }
+    }
+
+    /// Returns the weighted mean.
+    #[inline]
+    const fn mean(&self) -> f64 {
+        self.weighted_mean
+    }
+
+    /// Returns the weighted variance using frequency weight definition.
+    ///
+    /// Uses denominator (W_n - 1) for sample variance when weights represent frequency counts.
+    #[inline]
+    fn variance(&self) -> f64 {
+        if self.sum_weights <= 1.0 {
+            return 0.0;
+        }
+        self.sum_squared_diffs / (self.sum_weights - 1.0)
+    }
+
+    /// Returns the weighted standard deviation.
+    #[inline]
+    fn stddev(&self) -> f64 {
+        self.variance().sqrt()
+    }
+
+    /// Returns the weighted geometric mean.
+    ///
+    /// Formula: exp(Σ(w_i * ln(x_i)) / Σ(w_i)) where sums are over positive values only.
+    ///
+    /// Returns NaN if no positive values were encountered or if sum_weights_positive is zero.
+    #[inline]
+    fn geometric_mean(&self) -> f64 {
+        if self.sum_weights_positive <= 0.0 || self.sum_weighted_logs.is_nan() {
+            return f64::NAN;
+        }
+        (self.sum_weighted_logs / self.sum_weights_positive).exp()
+    }
+
+    /// Returns the weighted harmonic mean.
+    ///
+    /// Formula: Σ(w_i) / Σ(w_i / x_i) where sums are over non-zero values only.
+    ///
+    /// Returns NaN if no non-zero values were encountered or if sum_weighted_reciprocals is zero.
+    #[inline]
+    fn harmonic_mean(&self) -> f64 {
+        if self.sum_weights_nonzero <= 0.0 || self.sum_weighted_reciprocals <= 0.0 {
+            return f64::NAN;
+        }
+        self.sum_weights_nonzero / self.sum_weighted_reciprocals
+    }
+
+    /// Returns the number of samples added (for compatibility).
+    #[inline]
+    const fn len(&self) -> usize {
+        self.count
+    }
+
+    /// Merges another `WeightedOnlineStats` into this one.
+    ///
+    /// This is used for parallel processing where statistics from different
+    /// chunks need to be combined.
+    fn merge(&mut self, other: &WeightedOnlineStats) {
+        if other.sum_weights == 0.0 {
+            return;
+        }
+        if self.sum_weights == 0.0 {
+            *self = other.clone();
+            return;
+        }
+
+        let total_weights = self.sum_weights + other.sum_weights;
+        let delta = other.weighted_mean - self.weighted_mean;
+
+        // Update sum of squared differences using parallel merge formula
+        // self.sum_squared_diffs += other.sum_squared_diffs
+        //     + (self.sum_weights * other.sum_weights / total_weights) * delta * delta;
+        // below is the fused multiply-add implementation of the above formula
+        self.sum_squared_diffs += delta.mul_add(
+            delta * (self.sum_weights * other.sum_weights / total_weights),
+            other.sum_squared_diffs,
+        );
+
+        // Update weighted mean
+        // self.weighted_mean = (self.sum_weights * self.weighted_mean
+        //     + other.sum_weights * other.weighted_mean)
+        //     / total_weights;
+        // below is the fused multiply-add implementation of the above formula
+        self.weighted_mean = self
+            .sum_weights
+            .mul_add(self.weighted_mean, other.sum_weights * other.weighted_mean)
+            / total_weights;
+        // Update sum of weighted logs and reciprocals (simple addition)
+        self.sum_weighted_logs += other.sum_weighted_logs;
+        self.sum_weights_positive += other.sum_weights_positive;
+        self.sum_weighted_reciprocals += other.sum_weighted_reciprocals;
+        self.sum_weights_nonzero += other.sum_weights_nonzero;
+        // Update sum of weights and count
+        self.sum_weights = total_weights;
+        self.count += other.count;
+    }
+}
+
+/// Computes weighted quantile from (value, weight) pairs.
+///
+/// # Arguments
+///
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
+/// * `total_weight` - Total sum of all weights
+/// * `percentile` - Percentile to compute (0.0 to 1.0, e.g., 0.5 for median)
+///
+/// # Returns
+///
+/// The value at the specified percentile, computed using the weighted nearest-rank method (no
+/// interpolation).
+fn weighted_quantile(data: &[(f64, f64)], total_weight: f64, percentile: f64) -> Option<f64> {
+    if data.is_empty() || total_weight <= 0.0 {
+        return None;
+    }
+
+    // Data is already sorted by to_record() before calling this function
+    // No need to check or sort again
+
+    let target_weight = percentile * total_weight;
+    let mut cum_weight = 0.0;
+
+    for &(value, weight) in data {
+        cum_weight += weight;
+        // Return the value at which cumulative weight first reaches or exceeds the target
+        // This is the "nearest rank" method for weighted quantiles
+        if cum_weight >= target_weight {
+            return Some(value);
+        }
+    }
+
+    // If we reach here, return the last value
+    data.last().map(|(v, _)| *v)
+}
+
+/// Computes weighted quartiles (Q1, Q2, Q3) from (value, weight) pairs.
+///
+/// # Arguments
+///
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
+/// * `total_weight` - Total sum of all weights
+///
+/// # Returns
+///
+/// Option containing (Q1, Q2, Q3) if data is not empty and total_weight > 0, None otherwise.
+fn weighted_quartiles(data: &[(f64, f64)], total_weight: f64) -> Option<(f64, f64, f64)> {
+    if data.is_empty() || total_weight <= 0.0 {
+        return None;
+    }
+    // Data is already sorted by to_record() before calling this function
+    // No need to check or sort again
+    let thresholds = [
+        0.25_f64 * total_weight,
+        0.5_f64 * total_weight,
+        0.75_f64 * total_weight,
+    ];
+    let mut results: [Option<f64>; 3] = [None, None, None];
+    let mut cumulative_weight = 0.0_f64;
+    let mut t_idx = 0_usize;
+    for (value, weight) in data {
+        cumulative_weight += *weight;
+        // Assign values when cumulative weight first reaches/exceeds each threshold.
+        while t_idx < thresholds.len() && cumulative_weight >= thresholds[t_idx] {
+            if results[t_idx].is_none() {
+                results[t_idx] = Some(*value);
+            }
+            t_idx += 1;
+        }
+        if t_idx >= thresholds.len() {
+            break;
+        }
+    }
+    if let (Some(q1), Some(q2), Some(q3)) = results.into() {
+        Some((q1, q2, q3))
+    } else {
+        None
+    }
+}
+
+/// Computes weighted median from (value, weight) pairs.
+///
+/// # Arguments
+///
+/// * `data` - Vector of (value, weight) tuples
+/// * `total_weight` - Total sum of all weights
+///
+/// # Returns
+///
+/// The weighted median value if data is not empty, None otherwise.
+fn weighted_median(data: &[(f64, f64)], total_weight: f64) -> Option<f64> {
+    weighted_quantile(data, total_weight, 0.5)
+}
+
+/// Computes weighted Median Absolute Deviation (MAD) from (value, weight) pairs.
+///
+/// # Arguments
+///
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
+/// * `total_weight` - Total sum of all weights
+/// * `median` - The weighted median value
+///
+/// # Returns
+///
+/// The weighted MAD value if data is not empty, None otherwise.
+fn weighted_mad(data: &[(f64, f64)], total_weight: f64, median: f64) -> Option<f64> {
+    if data.is_empty() || total_weight <= 0.0 {
+        return None;
+    }
+
+    // Calculate absolute deviations from the median
+    let mut abs_deviations: Vec<(f64, f64)> = data
+        .par_iter()
+        .map(|&(value, weight)| ((value - median).abs(), weight))
+        .collect();
+
+    // Sort abs_deviations by absolute deviation value (new data, needs sorting)
+    abs_deviations
+        .par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Calculate weighted median of absolute deviations
+    weighted_median(&abs_deviations, total_weight)
+}
+
+/// Computes weighted percentiles from (value, weight) pairs.
+///
+/// # Arguments
+///
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
+/// * `total_weight` - Total sum of all weights
+/// * `percentile_list` - List of percentiles to compute (as u8 values, e.g., 5, 10, 90, 95)
+///
+/// # Returns
+///
+/// Vector of percentile values in the same order as percentile_list, or None if data is empty
+fn weighted_percentiles(
+    data: &[(f64, f64)],
+    total_weight: f64,
+    percentile_list: &[u8],
+) -> Option<Vec<f64>> {
+    if data.is_empty() || total_weight <= 0.0 {
+        return None;
+    }
+
+    // Data is already sorted by to_record() before calling this function
+    // No need to check or sort again
+
+    // Precompute target cumulative weights for each percentile, keeping original index
+    let mut targets: Vec<(f64, usize)> = percentile_list
+        .iter()
+        .enumerate()
+        .map(|(idx, &p)| {
+            let percentile_f64 = p as f64 / 100.0;
+            let target_cum_weight = percentile_f64 * total_weight;
+            (target_cum_weight, idx)
+        })
+        .collect();
+    targets.par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut results = vec![0.0; percentile_list.len()];
+    let mut cum_weight = 0.0;
+    let mut target_idx = 0;
+    for &(value, weight) in data {
+        cum_weight += weight;
+        while target_idx < targets.len() && cum_weight >= targets[target_idx].0 {
+            let original_idx = targets[target_idx].1;
+            results[original_idx] = value;
+            target_idx += 1;
+        }
+        if target_idx == targets.len() {
+            break;
+        }
+    }
+
+    Some(results)
 }
 
 /// Converts a timestamp in milliseconds to RFC3339 format.
@@ -2442,9 +2921,13 @@ impl Stats {
     /// * **Efficient Allocation**: Only allocates memory for enabled statistics
     /// * **Cache-Friendly**: Field layout optimized for CPU cache lines
     /// * **Pre-allocation**: Uses record count to pre-allocate appropriate memory sizes
-    fn new(which: WhichStats) -> Stats {
+    fn new(which: WhichStats, use_weights: bool) -> Stats {
         let (mut sum, mut minmax, mut online, mut online_len, mut modes, mut unsorted_stats) =
             (None, None, None, None, None, None);
+        let mut weighted_online = None;
+        let mut weighted_unsorted_stats = None;
+        let mut weighted_modes = None;
+
         if which.sum {
             sum = Some(TypedSum::default());
         }
@@ -2454,6 +2937,9 @@ impl Stats {
         if which.dist {
             online = Some(stats::OnlineStats::default());
             online_len = Some(stats::OnlineStats::default());
+            if use_weights {
+                weighted_online = Some(WeightedOnlineStats::new());
+            }
         }
 
         // preallocate memory for the unsorted stats structs
@@ -2462,23 +2948,34 @@ impl Stats {
         let record_count = *RECORD_COUNT.get().unwrap_or(&10_000) as usize;
         if which.mode || which.cardinality {
             modes = Some(stats::Unsorted::with_capacity(record_count));
+            if use_weights {
+                // Estimate capacity: assume average cardinality of 10% of records
+                weighted_modes = Some(HashMap::with_capacity((record_count / 10).max(16)));
+            }
         }
         // we use the same Unsorted struct for median, mad, quartiles & percentiles
         if which.quartiles || which.median || which.mad || which.percentiles {
             unsorted_stats = Some(stats::Unsorted::with_capacity(record_count));
+            if use_weights {
+                weighted_unsorted_stats = Some(Vec::with_capacity(record_count));
+            }
         }
         Stats {
             typ: FieldType::default(),
             is_ascii: true,
             max_precision: 0,
-            which,
             nullcount: 0,
             sum_stotlen: 0,
+            total_weight: 0.0,
+            which,
             sum,
-            modes,
-            unsorted_stats,
             online,
             online_len,
+            weighted_online,
+            modes,
+            weighted_modes,
+            unsorted_stats,
+            weighted_unsorted_stats,
             minmax,
         }
     }
@@ -2493,6 +2990,7 @@ impl Stats {
     /// # Arguments
     ///
     /// * `sample` - The field value as bytes to process
+    /// * `weight` - The weight for this sample (defaults to 1.0 when not using weights)
     /// * `infer_dates` - Whether to attempt date inference for this field
     /// * `infer_boolean` - Whether to attempt boolean inference for this field
     /// * `prefer_dmy` - Whether to prefer day/month/year date format over month/day/year
@@ -2528,7 +3026,14 @@ impl Stats {
     /// * Bounds checking is avoided where safe
     #[allow(clippy::inline_always)]
     #[inline(always)]
-    fn add(&mut self, sample: &[u8], infer_dates: bool, infer_boolean: bool, prefer_dmy: bool) {
+    fn add(
+        &mut self,
+        sample: &[u8],
+        weight: f64,
+        infer_dates: bool,
+        infer_boolean: bool,
+        prefer_dmy: bool,
+    ) {
         let (sample_type, int_val, float_val) =
             FieldType::from_sample(infer_dates, prefer_dmy, sample, self.typ);
         self.typ.merge(sample_type);
@@ -2543,6 +3048,11 @@ impl Stats {
         }
 
         let t = self.typ;
+
+        // Update total weight for weighted statistics
+        if weight > 0.0 {
+            self.total_weight += weight;
+        }
 
         // Process the frequently used Option-based statistics first
         // These are commonly enabled, so check them in order of likelihood
@@ -2569,6 +3079,10 @@ impl Stats {
         // Modes/cardinality less common but still frequent
         if let Some(v) = self.modes.as_mut() {
             v.add(sample.to_vec());
+        }
+        // Weighted modes: accumulate weights per value
+        if let Some(ref mut wm) = self.weighted_modes {
+            *wm.entry(sample.to_vec()).or_insert(0.0) += weight;
         }
 
         if t == TString {
@@ -2607,18 +3121,36 @@ impl Stats {
                 if let Some(v) = self.unsorted_stats.as_mut() {
                     v.add(float_val);
                 }
+                if let Some(v) = self.weighted_unsorted_stats.as_mut() {
+                    // Only store valid weights to avoid filtering later
+                    if weight > 0.0 {
+                        v.push((float_val, weight));
+                    }
+                }
                 // safety: online is always enabled
                 unsafe {
                     self.online.as_mut().unwrap_unchecked().add_f64(float_val);
+                }
+                if let Some(ref mut wos) = self.weighted_online {
+                    wos.add_weighted(float_val, weight);
                 }
             },
             TFloat => {
                 if let Some(v) = self.unsorted_stats.as_mut() {
                     v.add(float_val);
                 }
+                if let Some(v) = self.weighted_unsorted_stats.as_mut() {
+                    // Only store valid weights to avoid filtering later
+                    if weight > 0.0 {
+                        v.push((float_val, weight));
+                    }
+                }
                 // safety: online is always enabled
                 unsafe {
                     self.online.as_mut().unwrap_unchecked().add_f64(float_val);
+                }
+                if let Some(ref mut wos) = self.weighted_online {
+                    wos.add_weighted(float_val, weight);
                 }
 
                 // precision calculation
@@ -2648,9 +3180,18 @@ impl Stats {
                 if let Some(v) = self.unsorted_stats.as_mut() {
                     v.add(timestamp);
                 }
+                if let Some(v) = self.weighted_unsorted_stats.as_mut() {
+                    // Only store valid weights to avoid filtering later
+                    if weight > 0.0 {
+                        v.push((timestamp, weight));
+                    }
+                }
                 // safety: online is always enabled
                 unsafe {
                     self.online.as_mut().unwrap_unchecked().add_f64(timestamp);
+                }
+                if let Some(ref mut wos) = self.weighted_online {
+                    wos.add_weighted(timestamp, weight);
                 }
             },
             _ => {},
@@ -2775,30 +3316,39 @@ impl Stats {
         // We also need to know the cardinality to --infer-boolean should that be enabled
         let mut cardinality = 0;
         let mut mc_pieces: Vec<String> = Vec::new();
-        match self.modes.as_mut() {
-            None => {
-                if self.which.cardinality {
-                    mc_pieces = vec![EMPTY_STRING; 2];
-                }
-                if self.which.mode {
-                    mc_pieces = vec![EMPTY_STRING; 6];
-                }
-            },
-            Some(v) => {
-                mc_pieces.reserve(8);
-                if self.which.cardinality {
-                    cardinality = v.cardinality(column_sorted, 1);
-                    mc_pieces.push(itoa::Buffer::new().format(cardinality).to_owned());
-                    // uniqueness_ratio = cardinality / record_count
-                    #[allow(clippy::cast_precision_loss)]
-                    mc_pieces.push(util::round_num(
-                        (cardinality as f64) / (record_count as f64),
-                        round_places,
-                    ));
-                }
-                if self.which.mode {
-                    // mode/s & antimode/s
-                    if cardinality == record_count {
+
+        // Check if we should use weighted modes/antimodes
+        if let Some(ref weighted_modes_map) = self.weighted_modes {
+            // Weighted modes/antimodes computation
+            mc_pieces.reserve(8);
+
+            if self.which.cardinality {
+                // Cardinality is the number of unique values
+                cardinality = weighted_modes_map.len() as u64;
+                mc_pieces.push(itoa::Buffer::new().format(cardinality).to_owned());
+                // uniqueness_ratio = cardinality / record_count
+                #[allow(clippy::cast_precision_loss)]
+                mc_pieces.push(util::round_num(
+                    (cardinality as f64) / (record_count as f64),
+                    round_places,
+                ));
+            }
+
+            if self.which.mode {
+                if weighted_modes_map.is_empty() {
+                    // Empty data
+                    mc_pieces.extend_from_slice(&[
+                        EMPTY_STRING,
+                        "0".to_string(),
+                        "0".to_string(),
+                        EMPTY_STRING,
+                        "0".to_string(),
+                        "0".to_string(),
+                    ]);
+                } else {
+                    // Check if all values are unique (cardinality == record_count)
+                    let unique_count = weighted_modes_map.len() as u64;
+                    if unique_count == record_count {
                         // all values unique
                         mc_pieces.extend_from_slice(
                             // modes - short-circuit modes calculation as there is none
@@ -2813,11 +3363,43 @@ impl Stats {
                             ],
                         );
                     } else {
-                        let (
-                            (modes_result, modes_count, mode_occurrences),
-                            (antimodes_result, antimodes_count, antimode_occurrences),
-                        ) = v.modes_antimodes();
-                        // mode/s ============
+                        // Find max and min weights
+                        let max_weight = weighted_modes_map.values().copied().fold(0.0, f64::max);
+                        let min_weight = weighted_modes_map
+                            .values()
+                            .copied()
+                            .fold(f64::INFINITY, f64::min);
+
+                        // Collect modes (values with max weight) in deterministic order
+                        let mut modes_keys: Vec<&Vec<u8>> = weighted_modes_map
+                            .iter()
+                            .filter(|&(_, &weight)| (weight - max_weight).abs() < 1e-10)
+                            .map(|(value, _)| value)
+                            .collect();
+                        modes_keys.par_sort_unstable();
+                        let modes_result: Vec<Vec<u8>> = modes_keys.into_iter().cloned().collect();
+                        // Collect antimodes (values with min weight) in deterministic order
+                        // limit to 10
+                        let mut antimodes_keys: Vec<&Vec<u8>> = weighted_modes_map
+                            .iter()
+                            .filter(|&(_, &weight)| (weight - min_weight).abs() < 1e-10)
+                            .map(|(value, _)| value)
+                            .collect();
+                        antimodes_keys.par_sort_unstable();
+                        let antimodes_result: Vec<Vec<u8>> = antimodes_keys
+                            .into_iter()
+                            .take(MAX_ANTIMODES)
+                            .cloned()
+                            .collect();
+
+                        let modes_count = modes_result.len();
+                        // we only display MAX_ANTIMODES, but we actually count all antimodes
+                        let antimodes_count = weighted_modes_map
+                            .values()
+                            .filter(|&&w| (w - min_weight).abs() < 1e-10)
+                            .count();
+
+                        // Format modes
                         let modes_list = if visualize_ws {
                             modes_result
                                 .iter()
@@ -2830,7 +3412,7 @@ impl Stats {
                                 .join(stats_separator)
                         };
 
-                        // antimode/s ============
+                        // Format antimodes
                         let antimodes_len = ANTIMODES_LEN.get_or_init(|| {
                             std::env::var("QSV_ANTIMODES_LEN")
                                 .map(|val| {
@@ -2868,6 +3450,13 @@ impl Stats {
                             antimodes_list.push_str("...");
                         }
 
+                        // For weighted modes, mode_occurrences is the max weight (rounded)
+                        // For weighted antimodes, antimode_occurrences is the min weight (rounded)
+                        #[allow(clippy::cast_possible_truncation)]
+                        let mode_occurrences = max_weight.round() as u32;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let antimode_occurrences = min_weight.round() as u32;
+
                         mc_pieces.extend_from_slice(&[
                             // mode/s
                             modes_list,
@@ -2884,7 +3473,122 @@ impl Stats {
                         ]);
                     }
                 }
-            },
+            }
+        } else {
+            // Unweighted modes/antimodes computation (existing logic)
+            match self.modes.as_mut() {
+                None => {
+                    if self.which.cardinality {
+                        mc_pieces = vec![EMPTY_STRING; 2];
+                    }
+                    if self.which.mode {
+                        mc_pieces = vec![EMPTY_STRING; 6];
+                    }
+                },
+                Some(v) => {
+                    mc_pieces.reserve(8);
+                    if self.which.cardinality {
+                        cardinality = v.cardinality(column_sorted, 1);
+                        mc_pieces.push(itoa::Buffer::new().format(cardinality).to_owned());
+                        // uniqueness_ratio = cardinality / record_count
+                        #[allow(clippy::cast_precision_loss)]
+                        mc_pieces.push(util::round_num(
+                            (cardinality as f64) / (record_count as f64),
+                            round_places,
+                        ));
+                    }
+                    if self.which.mode {
+                        // mode/s & antimode/s
+                        if cardinality == record_count {
+                            // all values unique
+                            mc_pieces.extend_from_slice(
+                                // modes - short-circuit modes calculation as there is none
+                                &[
+                                    EMPTY_STRING,
+                                    "0".to_string(),
+                                    "0".to_string(),
+                                    // antimodes - instead of returning everything, just say *ALL
+                                    "*ALL".to_string(),
+                                    "0".to_string(),
+                                    "1".to_string(),
+                                ],
+                            );
+                        } else {
+                            let (
+                                (modes_result, modes_count, mode_occurrences),
+                                (antimodes_result, antimodes_count, antimode_occurrences),
+                            ) = v.modes_antimodes();
+                            // mode/s ============
+                            let modes_list = if visualize_ws {
+                                modes_result
+                                    .iter()
+                                    .map(|c| {
+                                        util::visualize_whitespace(&String::from_utf8_lossy(c))
+                                    })
+                                    .join(stats_separator)
+                            } else {
+                                modes_result
+                                    .iter()
+                                    .map(|c| String::from_utf8_lossy(c))
+                                    .join(stats_separator)
+                            };
+
+                            // antimode/s ============
+                            let antimodes_len = ANTIMODES_LEN.get_or_init(|| {
+                                std::env::var("QSV_ANTIMODES_LEN")
+                                    .map(|val| {
+                                        let parsed = atoi_simd::parse::<usize>(val.as_bytes())
+                                            .unwrap_or(DEFAULT_ANTIMODES_LEN);
+                                        // if 0, disable length limiting
+                                        if parsed == 0 { usize::MAX } else { parsed }
+                                    })
+                                    .unwrap_or(DEFAULT_ANTIMODES_LEN)
+                            });
+
+                            let mut antimodes_list = String::with_capacity(*antimodes_len);
+
+                            // We only store the first 10 antimodes
+                            // so if antimodes_count > 10, add the "*PREVIEW: " prefix
+                            if antimodes_count > MAX_ANTIMODES {
+                                antimodes_list.push_str("*PREVIEW: ");
+                            }
+
+                            let antimodes_vals = &antimodes_result
+                                .iter()
+                                .map(|c| String::from_utf8_lossy(c))
+                                .join(stats_separator);
+
+                            // if the antimodes result starts with the separator,
+                            // it indicates that NULL is the first antimode. Add NULL to the list.
+                            if antimodes_vals.starts_with(stats_separator) {
+                                antimodes_list.push_str("NULL");
+                            }
+                            antimodes_list.push_str(antimodes_vals);
+
+                            // and truncate at antimodes_len characters with an ellipsis
+                            if antimodes_list.len() > *antimodes_len {
+                                util::utf8_truncate(&mut antimodes_list, *antimodes_len + 1);
+                                antimodes_list.push_str("...");
+                            }
+
+                            mc_pieces.extend_from_slice(&[
+                                // mode/s
+                                modes_list,
+                                itoa::Buffer::new().format(modes_count).to_owned(),
+                                itoa::Buffer::new().format(mode_occurrences).to_owned(),
+                                // antimode/s
+                                if visualize_ws {
+                                    util::visualize_whitespace(&antimodes_list)
+                                } else {
+                                    antimodes_list
+                                },
+                                itoa::Buffer::new().format(antimodes_count).to_owned(),
+                                itoa::Buffer::new().format(antimode_occurrences).to_owned(),
+                            ]);
+                        }
+                    }
+                },
+            }
         }
 
         // type
@@ -2990,6 +3694,60 @@ impl Stats {
             for _ in 0..7 {
                 record.push_field(EMPTY_STR);
             }
+        } else if let Some(ref wos) = self.weighted_online {
+            // Use weighted statistics
+            let std_dev = wos.stddev();
+            #[allow(clippy::cast_precision_loss)]
+            let sem = std_dev / (wos.len() as f64).sqrt();
+            let mean = wos.mean();
+            let mean_string = util::round_num(mean, round_places);
+            // if mean is 0, we can't calculate the CV, so we return NaN
+            // we do this as checking for 0.0 floating point values is not reliable
+            // so we do util::round_num() first as that is what is returned to the user
+            // for 0.0 floating point values.
+            let cv = if mean_string == "0" {
+                f64::NAN
+            } else {
+                (std_dev / mean) * 100.0_f64
+            };
+            // Use weighted geometric and harmonic means
+            let geometric_mean = wos.geometric_mean();
+            let harmonic_mean = wos.harmonic_mean();
+            if self.typ == TFloat || self.typ == TInteger {
+                record.push_field(&mean_string);
+                record.push_field(&util::round_num(sem, round_places));
+                record.push_field(&util::round_num(geometric_mean, round_places));
+                record.push_field(&util::round_num(harmonic_mean, round_places));
+                record.push_field(&util::round_num(std_dev, round_places));
+                record.push_field(&util::round_num(wos.variance(), round_places));
+            } else {
+                // by the time we get here, the type is a TDateTime or TDate
+                record.push_field(&timestamp_ms_to_rfc3339(mean as i64, typ));
+                // instead of returning sem, stdev & variance as timestamps, return it in
+                // days as its more human readable and practical for real-world use cases
+                // Round to at least 5 decimal places, so we have millisecond precision
+                record.push_field(&util::round_num(
+                    sem / MS_IN_DAY,
+                    u32::max(round_places, DAY_DECIMAL_PLACES),
+                ));
+                record.push_field(&util::round_num(
+                    geometric_mean / MS_IN_DAY,
+                    u32::max(round_places, DAY_DECIMAL_PLACES),
+                ));
+                record.push_field(&util::round_num(
+                    harmonic_mean / MS_IN_DAY,
+                    u32::max(round_places, DAY_DECIMAL_PLACES),
+                ));
+                record.push_field(&util::round_num(
+                    std_dev / MS_IN_DAY,
+                    u32::max(round_places, DAY_DECIMAL_PLACES),
+                ));
+                record.push_field(&util::round_num(
+                    wos.variance() / (MS_IN_DAY * MS_IN_DAY),
+                    u32::max(round_places, DAY_DECIMAL_PLACES),
+                ));
+            }
+            record.push_field(&util::round_num(cv, round_places));
         } else if let Some(ref v) = self.online {
             let std_dev = v.stddev();
             #[allow(clippy::cast_precision_loss)]
@@ -3087,21 +3845,62 @@ impl Stats {
         // upper_inner_fence, upper_outer_fence, skewness (9 fields)
         // as q2==median, cache and reuse it if the --median or --mad flags are set
         let mut existing_median = None;
-        let mut quartile_pieces: Vec<String> = Vec::new();
-        match self.unsorted_stats.as_mut().and_then(|v| match typ {
-            TInteger | TFloat | TDate | TDateTime => {
-                if self.which.quartiles {
-                    v.quartiles()
-                } else {
+        // Initialize quartile_pieces to ensure consistent field counts
+        let mut quartile_pieces: Vec<String> = if self.which.quartiles {
+            vec![EMPTY_STRING; 9]
+        } else {
+            Vec::new()
+        };
+
+        // Sort weighted data once if it exists
+        // to avoid redundant sorting in multiple weighted functions
+        // Take ownership to sort in-place (no clone needed - Stats object is dropped after
+        // to_record)
+        let sorted_weighted_data: Option<Vec<(f64, f64)>> =
+            if let Some(mut weighted_data) = self.weighted_unsorted_stats.take() {
+                if weighted_data.is_empty() {
                     None
+                } else {
+                    // Sort in-place - no clone needed since we took ownership
+                    weighted_data.par_sort_unstable_by(|a, b| {
+                        a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                    Some(weighted_data)
                 }
-            },
-            _ => None,
-        }) {
+            } else {
+                None
+            };
+
+        // Check if we should use weighted quartiles
+        let quartiles_result = if let Some(weighted_data) = sorted_weighted_data.as_ref() {
+            // Use weighted quartiles
+            match typ {
+                TInteger | TFloat | TDate | TDateTime => {
+                    if self.which.quartiles {
+                        weighted_quartiles(weighted_data, self.total_weight)
+                    } else {
+                        None
+                    }
+                },
+                _ => None,
+            }
+        } else {
+            // Use unweighted quartiles
+            self.unsorted_stats.as_mut().and_then(|v| match typ {
+                TInteger | TFloat | TDate | TDateTime => {
+                    if self.which.quartiles {
+                        v.quartiles()
+                    } else {
+                        None
+                    }
+                },
+                _ => None,
+            })
+        };
+
+        match quartiles_result {
             None => {
-                if self.which.quartiles {
-                    quartile_pieces = vec![EMPTY_STRING; 9];
-                }
+                // quartile_pieces already initialized with empty strings if --quartiles is set
             },
             Some((q1, q2, q3)) => {
                 existing_median = Some(q2);
@@ -3130,6 +3929,8 @@ impl Stats {
                 // which in turn, is the basis of the fused multiply add version below
                 let skewness = (2.0f64.mul_add(-q2, q3) + q1) / iqr;
 
+                // Clear and replace quartile_pieces with actual values
+                quartile_pieces.clear();
                 quartile_pieces.reserve(9);
                 if typ == TDateTime || typ == TDate {
                     // casting from f64 to i64 is OK, per
@@ -3167,55 +3968,85 @@ impl Stats {
         }
 
         // median
-        if let Some(v) = self.unsorted_stats.as_mut().and_then(|v| {
-            if let TNull | TString = typ {
-                None
-            } else if let Some(existing_median) = existing_median {
-                // if we already calculated the q2 (median) in the quartiles, return it
-                if self.which.median {
-                    Some(existing_median)
-                } else {
-                    None
+        // Only add median field if --median is set but --quartiles is NOT set
+        // (when --quartiles is set, median is included as q2_median in quartile fields)
+        // Note: self.which.median is only true when !flag_quartiles, so we don't need to check
+        // !self.which.quartiles
+        if self.which.median {
+            let median_value = if let Some(weighted_data) = sorted_weighted_data.as_ref() {
+                // Use weighted median
+                match typ {
+                    TNull | TString => None,
+                    _ => weighted_median(weighted_data, self.total_weight),
                 }
-            } else if self.which.median {
-                // otherwise, calculate the median
-                v.median()
             } else {
-                None
+                // Use unweighted median
+                self.unsorted_stats.as_mut().and_then(|v| {
+                    if let TNull | TString = typ {
+                        None
+                    } else {
+                        v.median()
+                    }
+                })
+            };
+
+            // Set existing_median for MAD calculation
+            if median_value.is_some() {
+                existing_median = median_value;
             }
-        }) {
-            if typ == TDateTime || typ == TDate {
-                // median rfc3339 timestamp
-                record.push_field(&timestamp_ms_to_rfc3339(v as i64, typ));
+
+            if let Some(v) = median_value {
+                if typ == TDateTime || typ == TDate {
+                    // median rfc3339 timestamp
+                    record.push_field(&timestamp_ms_to_rfc3339(v as i64, typ));
+                } else {
+                    // median as a floating point number
+                    record.push_field(&util::round_num(v, round_places));
+                }
             } else {
-                // median as a floating point number
-                record.push_field(&util::round_num(v, round_places));
+                record.push_field(EMPTY_STR);
             }
-        } else if self.which.median {
-            record.push_field(EMPTY_STR);
         }
 
         // median absolute deviation (MAD)
-        if let Some(v) = self.unsorted_stats.as_mut().and_then(|v| {
-            if let TNull | TString = typ {
-                None
-            } else if self.which.mad {
-                v.mad(existing_median)
+        if self.which.mad {
+            let mad_value = if let Some(weighted_data) = sorted_weighted_data.as_ref() {
+                // Use weighted MAD
+                match typ {
+                    TNull | TString => None,
+                    _ => {
+                        // Get the weighted median for MAD calculation
+                        existing_median
+                            .or_else(|| weighted_median(weighted_data, self.total_weight))
+                            .and_then(|weighted_median_val| {
+                                weighted_mad(weighted_data, self.total_weight, weighted_median_val)
+                            })
+                    },
+                }
             } else {
-                None
-            }
-        }) {
-            if typ == TDateTime || typ == TDate {
-                // like stddev, return MAD in days when the type is a date or datetime
-                record.push_field(&util::round_num(
-                    v / MS_IN_DAY,
-                    u32::max(round_places, DAY_DECIMAL_PLACES),
-                ));
+                // Use unweighted MAD
+                self.unsorted_stats.as_mut().and_then(|v| {
+                    if let TNull | TString = typ {
+                        None
+                    } else {
+                        v.mad(existing_median)
+                    }
+                })
+            };
+
+            if let Some(v) = mad_value {
+                if typ == TDateTime || typ == TDate {
+                    // like stddev, return MAD in days when the type is a date or datetime
+                    record.push_field(&util::round_num(
+                        v / MS_IN_DAY,
+                        u32::max(round_places, DAY_DECIMAL_PLACES),
+                    ));
+                } else {
+                    record.push_field(&util::round_num(v, round_places));
+                }
             } else {
-                record.push_field(&util::round_num(v, round_places));
+                record.push_field(EMPTY_STR);
             }
-        } else if self.which.mad {
-            record.push_field(EMPTY_STR);
         }
 
         // quartiles
@@ -3231,7 +4062,8 @@ impl Stats {
         }
 
         // Add percentiles after quartiles
-        if let Some(v) = self.unsorted_stats.as_mut() {
+        // Only add percentiles field if which.percentiles is true (matching header generation)
+        if self.which.percentiles {
             match typ {
                 TInteger | TFloat | TDate | TDateTime => {
                     // Parse percentile list, preserving both original labels and u8 values
@@ -3246,11 +4078,22 @@ impl Stats {
                         })
                         .unzip();
 
-                    if let Some(percentile_values) = v.custom_percentiles(&percentile_list) {
+                    let percentile_values =
+                        if let Some(weighted_data) = sorted_weighted_data.as_ref() {
+                            // Use weighted percentiles
+                            weighted_percentiles(weighted_data, self.total_weight, &percentile_list)
+                        } else {
+                            // Use unweighted percentiles
+                            self.unsorted_stats
+                                .as_mut()
+                                .and_then(|v| v.custom_percentiles(&percentile_list))
+                        };
+
+                    if let Some(percentile_vals) = percentile_values {
                         let formatted_values = if typ == TDateTime || typ == TDate {
                             percentile_labels
                                 .iter()
-                                .zip(percentile_values.iter())
+                                .zip(percentile_vals.iter())
                                 .map(|(label, p)| {
                                     // Explicitly cast f64 to i64 for timestamp conversion
                                     #[allow(clippy::cast_possible_truncation)]
@@ -3262,7 +4105,7 @@ impl Stats {
                         } else {
                             percentile_labels
                                 .iter()
-                                .zip(percentile_values.iter())
+                                .zip(percentile_vals.iter())
                                 .map(|(label, p)| {
                                     let formatted_value = util::round_num(*p, round_places);
                                     format!("{label}: {formatted_value}")
@@ -3276,8 +4119,6 @@ impl Stats {
                 },
                 _ => record.push_field(EMPTY_STR),
             }
-        } else if self.which.percentiles {
-            record.push_field(EMPTY_STR);
         }
 
         if dataset_stats {
@@ -3304,6 +4145,36 @@ impl Commute for Stats {
         self.online.merge(other.online);
         self.online_len.merge(other.online_len);
         self.minmax.merge(other.minmax);
+
+        // Merge weighted statistics
+        if let Some(ref mut wos) = self.weighted_online {
+            if let Some(ref other_wos) = other.weighted_online {
+                wos.merge(other_wos);
+            }
+        } else if other.weighted_online.is_some() {
+            self.weighted_online = other.weighted_online;
+        }
+
+        if let Some(ref mut wus) = self.weighted_unsorted_stats {
+            if let Some(ref other_wus) = other.weighted_unsorted_stats {
+                wus.extend_from_slice(other_wus);
+            }
+        } else if other.weighted_unsorted_stats.is_some() {
+            self.weighted_unsorted_stats = other.weighted_unsorted_stats;
+        }
+
+        // Merge weighted modes
+        if let Some(ref mut wm) = self.weighted_modes {
+            if let Some(ref other_wm) = other.weighted_modes {
+                for (value, weight) in other_wm {
+                    *wm.entry(value.clone()).or_insert(0.0) += weight;
+                }
+            }
+        } else if other.weighted_modes.is_some() {
+            self.weighted_modes = other.weighted_modes;
+        }
+
+        self.total_weight += other.total_weight;
     }
 }
 

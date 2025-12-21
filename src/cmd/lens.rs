@@ -87,7 +87,7 @@ lens options:
                                      qsv lens -W w data.csv // wrap at word boundaries
                                    [default: disabled]
   -A, --auto-reload                Automatically reload the data when the file changes.
-  --streaming-stdin                Stream stdin instead of loading the entire input before displaying.
+  --no-streaming-stdin             Disable streaming stdin (load entire input before displaying)
                                    NOTE: This option only applies to stdin input.
   
 
@@ -122,33 +122,33 @@ use crate::{CliError, CliResult, config::Config, util};
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input:            Option<String>,
-    flag_delimiter:       Option<String>,
-    flag_tab_separated:   bool,
-    flag_no_headers:      bool,
-    flag_columns:         Option<String>,
-    flag_filter:          Option<String>,
-    flag_find:            Option<String>,
-    flag_ignore_case:     bool,
-    flag_freeze_columns:  Option<u64>,
-    flag_monochrome:      bool,
-    flag_prompt:          Option<String>,
-    flag_echo_column:     Option<String>,
-    flag_wrap_mode:       String,
-    flag_auto_reload:     bool,
-    flag_debug:           bool,
-    flag_streaming_stdin: bool,
+    arg_input:               Option<String>,
+    flag_delimiter:          Option<String>,
+    flag_tab_separated:      bool,
+    flag_no_headers:         bool,
+    flag_columns:            Option<String>,
+    flag_filter:             Option<String>,
+    flag_find:               Option<String>,
+    flag_ignore_case:        bool,
+    flag_freeze_columns:     Option<u64>,
+    flag_monochrome:         bool,
+    flag_prompt:             Option<String>,
+    flag_echo_column:        Option<String>,
+    flag_wrap_mode:          String,
+    flag_auto_reload:        bool,
+    flag_debug:              bool,
+    flag_no_streaming_stdin: bool,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
-    if args.flag_streaming_stdin && args.arg_input.is_some() {
+    if args.flag_no_streaming_stdin && args.arg_input.is_some() {
         return fail_incorrectusage_clierror!("--streaming-stdin only applies to stdin input.");
     }
 
     let tmpdir = tempfile::tempdir()?;
-    let input = if args.flag_streaming_stdin && args.arg_input.is_none() {
+    let input = if !args.flag_no_streaming_stdin && args.arg_input.is_none() {
         "-".to_string()
     } else {
         // Process input file
@@ -228,7 +228,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         prompt,
         wrap_mode,
         auto_reload: args.flag_auto_reload,
-        no_streaming_stdin: !args.flag_streaming_stdin,
+        no_streaming_stdin: args.flag_no_streaming_stdin,
     };
 
     let out = run_csvlens_with_options(options)

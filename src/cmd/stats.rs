@@ -2863,7 +2863,7 @@ fn weighted_percentiles(
     }
 
     // Sort data by value once, then compute all requested percentiles
-    let mut sorted = data.to_vec();
+    let mut sorted = filtered_data.to_vec();
     sorted.par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     // Precompute target cumulative weights for each percentile, keeping original index
     let mut targets: Vec<(f64, usize)> = percentile_list
@@ -3397,25 +3397,27 @@ impl Stats {
                             .copied()
                             .fold(f64::INFINITY, f64::min);
 
-                        // Collect modes (values with max weight)
-                        let mut modes_result: Vec<Vec<u8>> = Vec::new();
-                        for (value, &weight) in weighted_modes_map {
-                            if (weight - max_weight).abs() < 1e-10 {
-                                modes_result.push(value.clone());
-                            }
-                        }
-
-                        // Collect antimodes (values with min weight) - limit to 10
-                        let mut antimodes_result: Vec<Vec<u8>> = Vec::new();
-                        let mut antimodes_collected = 0;
-                        for (value, &weight) in weighted_modes_map {
-                            if (weight - min_weight).abs() < 1e-10
-                                && antimodes_collected < MAX_ANTIMODES
-                            {
-                                antimodes_result.push(value.clone());
-                                antimodes_collected += 1;
-                            }
-                        }
+                        // Collect modes (values with max weight) in deterministic order
+                        let mut modes_keys: Vec<&Vec<u8>> = weighted_modes_map
+                            .iter()
+                            .filter(|&(_, &weight)| (weight - max_weight).abs() < 1e-10)
+                            .map(|(value, _)| value)
+                            .collect();
+                        modes_keys.par_sort_unstable();
+                        let modes_result: Vec<Vec<u8>> = modes_keys.into_iter().cloned().collect();
+                        // Collect antimodes (values with min weight) in deterministic order - limit
+                        // to 10
+                        let mut antimodes_keys: Vec<&Vec<u8>> = weighted_modes_map
+                            .iter()
+                            .filter(|&(_, &weight)| (weight - min_weight).abs() < 1e-10)
+                            .map(|(value, _)| value)
+                            .collect();
+                        antimodes_keys.par_sort_unstable();
+                        let antimodes_result: Vec<Vec<u8>> = antimodes_keys
+                            .into_iter()
+                            .take(MAX_ANTIMODES)
+                            .cloned()
+                            .collect();
 
                         let modes_count = modes_result.len();
                         let antimodes_count = weighted_modes_map

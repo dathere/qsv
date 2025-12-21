@@ -4689,7 +4689,9 @@ fn stats_weighted_missing_weight_column() {
 #[test]
 fn stats_weighted_invalid_weights_default_to_one() {
     let wrk = Workdir::new("stats_weighted_invalid_weights_default_to_one");
-    // Invalid weights should default to 1.0, so mean should be unweighted mean
+    // Invalid/empty weights default to 1.0, but valid weights are used with their actual values.
+    // With weights [1.0 (defaulted from "invalid"), 2 (valid), 1.0 (defaulted from "")],
+    // weighted mean = (1*1.0 + 2*2 + 3*1.0) / (1.0 + 2 + 1.0) = 8/4 = 2.0
     wrk.create(
         "data.csv",
         vec![
@@ -4710,9 +4712,11 @@ fn stats_weighted_invalid_weights_default_to_one() {
     let mean_idx = headers.iter().position(|h| h == "mean").unwrap();
     let mean_val: f64 = value_row[mean_idx].parse().unwrap();
 
-    // With invalid weights defaulting to 1.0, mean should be (1+2+3)/3 = 2.0
-    // But weight "2" is valid, so it's more complex. Let's just verify it runs without error.
-    assert!(mean_val > 0.0);
+    assert!(
+        (mean_val - 2.0).abs() < 0.01,
+        "Expected mean ~2.0 with weights [1.0, 2, 1.0], got {}",
+        mean_val
+    );
 }
 
 #[test]

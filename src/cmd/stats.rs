@@ -2674,7 +2674,7 @@ impl WeightedOnlineStats {
 ///
 /// # Returns
 ///
-/// The value at the specified percentile, using linear interpolation if needed.
+/// The value at the specified percentile, computed using the weighted nearest-rank method (no interpolation).
 fn weighted_quantile(data: &[(f64, f64)], total_weight: f64, percentile: f64) -> Option<f64> {
     if data.is_empty() || total_weight <= 0.0 {
         return None;

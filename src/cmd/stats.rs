@@ -2698,19 +2698,9 @@ fn weighted_quantile(data: &[(f64, f64)], total_weight: f64, percentile: f64) ->
         return None;
     }
 
-    // Filter out zero and negative weights (they should be ignored)
-    let filtered_data: Vec<(f64, f64)> = data
-        .par_iter()
-        .filter(|(_, w)| *w > 0.0 && w.is_finite())
-        .copied()
-        .collect();
-
-    if filtered_data.is_empty() {
-        return None;
-    }
-
+    // Data should already be filtered at insertion time (only valid weights stored)
     // Clone and sort by value to avoid mutating the original data
-    let mut sorted_data = filtered_data;
+    let mut sorted_data = data.to_vec();
     sorted_data
         .par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -2744,19 +2734,9 @@ fn weighted_quartiles(data: &[(f64, f64)], total_weight: f64) -> Option<(f64, f6
     if data.is_empty() || total_weight <= 0.0 {
         return None;
     }
-    // Filter out zero and negative weights (they should be ignored)
-    let filtered_data: Vec<(f64, f64)> = data
-        .par_iter()
-        .filter(|(_, w)| *w > 0.0 && w.is_finite())
-        .copied()
-        .collect();
-
-    if filtered_data.is_empty() {
-        return None;
-    }
-
+    // Data should already be filtered at insertion time (only valid weights stored)
     // Sort data once by value.
-    let mut sorted: Vec<(f64, f64)> = filtered_data;
+    let mut sorted: Vec<(f64, f64)> = data.to_vec();
     sorted.par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     let thresholds = [
         0.25_f64 * total_weight,
@@ -2816,16 +2796,12 @@ fn weighted_mad(data: &[(f64, f64)], total_weight: f64, median: f64) -> Option<f
         return None;
     }
 
-    // Filter out zero and negative weights, then calculate absolute deviations from the median
+    // Data should already be filtered at insertion time (only valid weights stored)
+    // Calculate absolute deviations from the median
     let abs_deviations: Vec<(f64, f64)> = data
         .par_iter()
-        .filter(|(_, w)| *w > 0.0 && w.is_finite())
         .map(|&(value, weight)| ((value - median).abs(), weight))
         .collect();
-
-    if abs_deviations.is_empty() {
-        return None;
-    }
 
     // Calculate weighted median of absolute deviations
     weighted_median(&abs_deviations, total_weight)
@@ -2851,19 +2827,9 @@ fn weighted_percentiles(
         return None;
     }
 
-    // Filter out zero and negative weights (they should be ignored)
-    let filtered_data: Vec<(f64, f64)> = data
-        .par_iter()
-        .filter(|(_, w)| *w > 0.0 && w.is_finite())
-        .copied()
-        .collect();
-
-    if filtered_data.is_empty() {
-        return None;
-    }
-
+    // Data should already be filtered at insertion time (only valid weights stored)
     // Sort data by value once, then compute all requested percentiles
-    let mut sorted = filtered_data.to_vec();
+    let mut sorted = data.to_vec();
     sorted.par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     // Precompute target cumulative weights for each percentile, keeping original index
     let mut targets: Vec<(f64, usize)> = percentile_list
@@ -3158,7 +3124,10 @@ impl Stats {
                     v.add(float_val);
                 }
                 if let Some(v) = self.weighted_unsorted_stats.as_mut() {
-                    v.push((float_val, weight));
+                    // Only store valid weights (positive and finite) to avoid filtering later
+                    if weight > 0.0 && weight.is_finite() {
+                        v.push((float_val, weight));
+                    }
                 }
                 // safety: online is always enabled
                 unsafe {
@@ -3173,7 +3142,10 @@ impl Stats {
                     v.add(float_val);
                 }
                 if let Some(v) = self.weighted_unsorted_stats.as_mut() {
-                    v.push((float_val, weight));
+                    // Only store valid weights (positive and finite) to avoid filtering later
+                    if weight > 0.0 && weight.is_finite() {
+                        v.push((float_val, weight));
+                    }
                 }
                 // safety: online is always enabled
                 unsafe {
@@ -3211,7 +3183,10 @@ impl Stats {
                     v.add(timestamp);
                 }
                 if let Some(v) = self.weighted_unsorted_stats.as_mut() {
-                    v.push((timestamp, weight));
+                    // Only store valid weights (positive and finite) to avoid filtering later
+                    if weight > 0.0 && weight.is_finite() {
+                        v.push((timestamp, weight));
+                    }
                 }
                 // safety: online is always enabled
                 unsafe {

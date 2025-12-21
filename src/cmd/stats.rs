@@ -3853,26 +3853,25 @@ impl Stats {
 
         // Sort weighted data once if it exists
         // to avoid redundant sorting in multiple weighted functions
+        // Take ownership to sort in-place (no clone needed - Stats object is dropped after
+        // to_record)
         let sorted_weighted_data: Option<Vec<(f64, f64)>> =
-            if let Some(ref weighted_data) = self.weighted_unsorted_stats {
+            if let Some(mut weighted_data) = self.weighted_unsorted_stats.take() {
                 if weighted_data.is_empty() {
                     None
                 } else {
-                    let mut sorted = weighted_data.clone();
-                    sorted.par_sort_unstable_by(|a, b| {
+                    // Sort in-place - no clone needed since we took ownership
+                    weighted_data.par_sort_unstable_by(|a, b| {
                         a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
                     });
-                    Some(sorted)
+                    Some(weighted_data)
                 }
             } else {
                 None
             };
 
         // Check if we should use weighted quartiles
-        let quartiles_result = if let Some(weighted_data) = sorted_weighted_data
-            .as_ref()
-            .or(self.weighted_unsorted_stats.as_ref())
-        {
+        let quartiles_result = if let Some(weighted_data) = sorted_weighted_data.as_ref() {
             // Use weighted quartiles
             match typ {
                 TInteger | TFloat | TDate | TDateTime => {
@@ -3973,10 +3972,7 @@ impl Stats {
         // Note: self.which.median is only true when !flag_quartiles, so we don't need to check
         // !self.which.quartiles
         if self.which.median {
-            let median_value = if let Some(weighted_data) = sorted_weighted_data
-                .as_ref()
-                .or(self.weighted_unsorted_stats.as_ref())
-            {
+            let median_value = if let Some(weighted_data) = sorted_weighted_data.as_ref() {
                 // Use weighted median
                 match typ {
                     TNull | TString => None,
@@ -4013,10 +4009,7 @@ impl Stats {
 
         // median absolute deviation (MAD)
         if self.which.mad {
-            let mad_value = if let Some(weighted_data) = sorted_weighted_data
-                .as_ref()
-                .or(self.weighted_unsorted_stats.as_ref())
-            {
+            let mad_value = if let Some(weighted_data) = sorted_weighted_data.as_ref() {
                 // Use weighted MAD
                 match typ {
                     TNull | TString => None,
@@ -4084,18 +4077,16 @@ impl Stats {
                         })
                         .unzip();
 
-                    let percentile_values = if let Some(weighted_data) = sorted_weighted_data
-                        .as_ref()
-                        .or(self.weighted_unsorted_stats.as_ref())
-                    {
-                        // Use weighted percentiles
-                        weighted_percentiles(weighted_data, self.total_weight, &percentile_list)
-                    } else {
-                        // Use unweighted percentiles
-                        self.unsorted_stats
-                            .as_mut()
-                            .and_then(|v| v.custom_percentiles(&percentile_list))
-                    };
+                    let percentile_values =
+                        if let Some(weighted_data) = sorted_weighted_data.as_ref() {
+                            // Use weighted percentiles
+                            weighted_percentiles(weighted_data, self.total_weight, &percentile_list)
+                        } else {
+                            // Use unweighted percentiles
+                            self.unsorted_stats
+                                .as_mut()
+                                .and_then(|v| v.custom_percentiles(&percentile_list))
+                        };
 
                     if let Some(percentile_vals) = percentile_values {
                         let formatted_values = if typ == TDateTime || typ == TDate {

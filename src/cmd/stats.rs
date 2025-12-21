@@ -229,9 +229,10 @@ stats options:
                               The weight column must be numeric. When specified, all statistics
                               (mean, stddev, variance, median, quartiles, mode, etc.) will be
                               computed using weighted algorithms. The weight column is automatically
-                              excluded from statistics computation. Missing or invalid weights default
-                              to 1.0. The output filename will be <FILESTEM>.stats.weighted.csv to
-                              distinguish from unweighted statistics.
+                              excluded from statistics computation. Missing or non-numeric weights
+                              default to 1.0. Zero and negative weights are ignored and do not
+                              contribute to the statistics. The output filename will be
+                              <FILESTEM>.stats.weighted.csv to distinguish from unweighted statistics.
 
                               DATE INFERENCING:
     --infer-dates             Infer date/datetime data types. This is an expensive
@@ -342,6 +343,10 @@ use crossbeam_channel;
 use itertools::Itertools;
 use phf::phf_map;
 use qsv_dateparser::parse_with_preference;
+use rayon::{
+    iter::{IntoParallelRefIterator, ParallelIterator},
+    slice::ParallelSliceMut,
+};
 use serde::{Deserialize, Serialize};
 // Use serde_json on big-endian platforms (e.g. s390x) due to simd_json endianness issues
 #[cfg(target_endian = "little")]
@@ -1912,14 +1917,11 @@ impl Args {
         let prefer_dmy = self.flag_prefer_dmy;
 
         let mut i;
-        #[allow(unused_assignments)]
-        let mut current_row = csv::ByteRecord::with_capacity(1024, sel_len);
         for row in it {
             i = 0;
 
             // safety: unwrap the row first
             let row_result = unsafe { row.unwrap_unchecked() };
-            current_row = row_result.clone();
 
             // Extract weight value if weight column is specified
             let weight = if let Some(widx) = weight_col_idx {
@@ -1936,7 +1938,7 @@ impl Args {
             // safety: because we're using iterators and INFER_DATE_FLAGS has the same size,
             // we know we don't need to bounds check
             unsafe {
-                for field in sel.select(&current_row) {
+                for field in sel.select(&row_result) {
                     stats.get_unchecked_mut(i).add(
                         field,
                         weight,
@@ -2646,8 +2648,10 @@ impl WeightedOnlineStats {
         // self.sum_squared_diffs += other.sum_squared_diffs
         //     + (self.sum_weights * other.sum_weights / total_weights) * delta * delta;
         // below is the fused multiply-add implementation of the above formula
-        self.sum_squared_diffs = ((self.sum_weights * other.sum_weights / total_weights) * delta)
-            .mul_add(delta, other.sum_squared_diffs);
+        self.sum_squared_diffs += delta.mul_add(
+            delta * (self.sum_weights * other.sum_weights / total_weights),
+            other.sum_squared_diffs,
+        );
 
         // Update weighted mean
         // self.weighted_mean = (self.sum_weights * self.weighted_mean
@@ -2674,15 +2678,28 @@ impl WeightedOnlineStats {
 ///
 /// # Returns
 ///
-/// The value at the specified percentile, computed using the weighted nearest-rank method (no interpolation).
+/// The value at the specified percentile, computed using the weighted nearest-rank method (no
+/// interpolation).
 fn weighted_quantile(data: &[(f64, f64)], total_weight: f64, percentile: f64) -> Option<f64> {
     if data.is_empty() || total_weight <= 0.0 {
         return None;
     }
 
+    // Filter out zero and negative weights (they should be ignored)
+    let filtered_data: Vec<(f64, f64)> = data
+        .par_iter()
+        .filter(|(_, w)| *w > 0.0 && w.is_finite())
+        .copied()
+        .collect();
+
+    if filtered_data.is_empty() {
+        return None;
+    }
+
     // Clone and sort by value to avoid mutating the original data
-    let mut sorted_data = data.to_owned();
-    sorted_data.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut sorted_data = filtered_data;
+    sorted_data
+        .par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let target_weight = percentile * total_weight;
     let mut cum_weight = 0.0;
@@ -2704,23 +2721,56 @@ fn weighted_quantile(data: &[(f64, f64)], total_weight: f64, percentile: f64) ->
 ///
 /// # Arguments
 ///
-/// * `data` - Vector of (value, weight) tuples (will be sorted internally)
+/// * `data` - Vector of (value, weight) tuples
 /// * `total_weight` - Total sum of all weights
 ///
 /// # Returns
 ///
-/// Option containing (Q1, Q2, Q3) if data is not empty, None otherwise.
+/// Option containing (Q1, Q2, Q3) if data is not empty and total_weight > 0, None otherwise.
 fn weighted_quartiles(data: &[(f64, f64)], total_weight: f64) -> Option<(f64, f64, f64)> {
-    if data.is_empty() {
+    if data.is_empty() || total_weight <= 0.0 {
+        return None;
+    }
+    // Filter out zero and negative weights (they should be ignored)
+    let filtered_data: Vec<(f64, f64)> = data
+        .par_iter()
+        .filter(|(_, w)| *w > 0.0 && w.is_finite())
+        .copied()
+        .collect();
+
+    if filtered_data.is_empty() {
         return None;
     }
 
-    // weighted_quantile now clones and sorts internally, so we can call it multiple times
-    let q1 = weighted_quantile(data, total_weight, 0.25)?;
-    let q2 = weighted_quantile(data, total_weight, 0.5)?;
-    let q3 = weighted_quantile(data, total_weight, 0.75)?;
-
-    Some((q1, q2, q3))
+    // Sort data once by value.
+    let mut sorted: Vec<(f64, f64)> = filtered_data;
+    sorted.par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let thresholds = [
+        0.25_f64 * total_weight,
+        0.5_f64 * total_weight,
+        0.75_f64 * total_weight,
+    ];
+    let mut results: [Option<f64>; 3] = [None, None, None];
+    let mut cumulative_weight = 0.0_f64;
+    let mut t_idx = 0_usize;
+    for (value, weight) in &sorted {
+        cumulative_weight += *weight;
+        // Assign values when cumulative weight first reaches/exceeds each threshold.
+        while t_idx < thresholds.len() && cumulative_weight >= thresholds[t_idx] {
+            if results[t_idx].is_none() {
+                results[t_idx] = Some(*value);
+            }
+            t_idx += 1;
+        }
+        if t_idx >= thresholds.len() {
+            break;
+        }
+    }
+    if let (Some(q1), Some(q2), Some(q3)) = (results[0], results[1], results[2]) {
+        Some((q1, q2, q3))
+    } else {
+        None
+    }
 }
 
 /// Computes weighted median from (value, weight) pairs.
@@ -2753,11 +2803,16 @@ fn weighted_mad(data: &[(f64, f64)], total_weight: f64, median: f64) -> Option<f
         return None;
     }
 
-    // Calculate absolute deviations from the median
+    // Filter out zero and negative weights, then calculate absolute deviations from the median
     let abs_deviations: Vec<(f64, f64)> = data
-        .iter()
+        .par_iter()
+        .filter(|(_, w)| *w > 0.0 && w.is_finite())
         .map(|&(value, weight)| ((value - median).abs(), weight))
         .collect();
+
+    if abs_deviations.is_empty() {
+        return None;
+    }
 
     // Calculate weighted median of absolute deviations
     weighted_median(&abs_deviations, total_weight)
@@ -2783,10 +2838,21 @@ fn weighted_percentiles(
         return None;
     }
 
+    // Filter out zero and negative weights (they should be ignored)
+    let filtered_data: Vec<(f64, f64)> = data
+        .par_iter()
+        .filter(|(_, w)| *w > 0.0 && w.is_finite())
+        .copied()
+        .collect();
+
+    if filtered_data.is_empty() {
+        return None;
+    }
+
     let mut results = Vec::with_capacity(percentile_list.len());
     for &percentile in percentile_list {
         let percentile_f64 = percentile as f64 / 100.0;
-        if let Some(value) = weighted_quantile(data, total_weight, percentile_f64) {
+        if let Some(value) = weighted_quantile(&filtered_data, total_weight, percentile_f64) {
             results.push(value);
         } else {
             return None;

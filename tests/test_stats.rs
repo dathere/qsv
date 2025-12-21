@@ -4545,3 +4545,335 @@ fn stats_weighted_vs_unweighted_cache_separation() {
     assert!(wrk.path("data.stats.csv").exists());
     assert!(wrk.path("data.stats.weighted.csv").exists());
 }
+
+#[test]
+fn stats_weighted_all_zero_weights() {
+    let wrk = Workdir::new("stats_weighted_all_zero_weights");
+    // All weights are zero - should handle gracefully
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["1", "0"],
+            svec!["2", "0"],
+            svec!["3", "0"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight").arg("weight").arg("data.csv");
+
+    // Command should succeed even with all zero weights
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+    assert!(
+        got.len() > 1,
+        "Should have at least one data row, got {} rows",
+        got.len()
+    );
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    // With all zero weights, mean/stddev should be empty or zero
+    let mean_idx = headers.iter().position(|h| h == "mean");
+    if let Some(idx) = mean_idx {
+        let mean_str = &value_row[idx];
+        // Mean should be empty or zero when all weights are zero
+        assert!(
+            mean_str.is_empty() || mean_str == "0",
+            "Mean should be empty or zero with all zero weights, got '{}'",
+            mean_str
+        );
+    }
+}
+
+#[test]
+fn stats_weighted_negative_weights() {
+    let wrk = Workdir::new("stats_weighted_negative_weights");
+    // Negative weights should be ignored
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["1", "-1"], // negative weight - should be ignored
+            svec!["2", "2"],  // positive weight - should be used
+            svec!["3", "-5"], // negative weight - should be ignored
+            svec!["4", "1"],  // positive weight - should be used
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight").arg("weight").arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let mean_idx = headers.iter().position(|h| h == "mean").unwrap();
+    let mean_val: f64 = value_row[mean_idx].parse().unwrap();
+
+    // Only values 2 and 4 should contribute (weights 2 and 1)
+    // Weighted mean = (2*2 + 4*1) / (2+1) = 8/3 ≈ 2.67
+    assert!(
+        (mean_val - 2.67).abs() < 0.1,
+        "Expected weighted mean ~2.67 (only positive weights), got {}",
+        mean_val
+    );
+}
+
+#[test]
+fn stats_weighted_mixed_zero_and_nonzero_weights() {
+    let wrk = Workdir::new("stats_weighted_mixed_zero_and_nonzero_weights");
+    // Mix of zero and non-zero weights - only non-zero should contribute
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["10", "0"], // zero weight - should be ignored
+            svec!["20", "2"], // non-zero weight - should be used
+            svec!["30", "0"], // zero weight - should be ignored
+            svec!["40", "3"], // non-zero weight - should be used
+            svec!["50", "0"], // zero weight - should be ignored
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight").arg("weight").arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let mean_idx = headers.iter().position(|h| h == "mean").unwrap();
+    let mean_val: f64 = value_row[mean_idx].parse().unwrap();
+
+    // Only values 20 and 40 should contribute (weights 2 and 3)
+    // Weighted mean = (20*2 + 40*3) / (2+3) = 160/5 = 32.0
+    assert!(
+        (mean_val - 32.0).abs() < 0.1,
+        "Expected weighted mean ~32.0 (only non-zero weights), got {}",
+        mean_val
+    );
+}
+
+#[test]
+fn stats_weighted_nan_weights() {
+    let wrk = Workdir::new("stats_weighted_nan_weights");
+    // NaN weights should be handled (likely defaulted to 1.0 or ignored)
+    // Note: CSV parsing might convert "NaN" to a string, so we test with invalid numeric strings
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["1", "invalid"],    // invalid weight - should default to 1.0
+            svec!["2", "2"],          // valid weight
+            svec!["3", "notanumber"], // invalid weight - should default to 1.0
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight").arg("weight").arg("data.csv");
+
+    // Command should succeed
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let mean_idx = headers.iter().position(|h| h == "mean").unwrap();
+    let mean_val: f64 = value_row[mean_idx].parse().unwrap();
+
+    // Invalid weights default to 1.0, so weights are effectively [1, 2, 1]
+    // Weighted mean = (1*1 + 2*2 + 3*1) / (1+2+1) = 8/4 = 2.0
+    assert!(
+        (mean_val - 2.0).abs() < 0.1,
+        "Expected weighted mean ~2.0 (invalid weights default to 1.0), got {}",
+        mean_val
+    );
+}
+
+#[test]
+fn stats_weighted_infinity_weights() {
+    let wrk = Workdir::new("stats_weighted_infinity_weights");
+    // Very large weights that might cause overflow
+    // Using scientific notation for very large numbers
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["1", "1e100"], // very large weight
+            svec!["2", "1e100"], // very large weight
+            svec!["3", "1"],     // normal weight
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight").arg("weight").arg("data.csv");
+
+    // Command should succeed without overflow
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let mean_idx = headers.iter().position(|h| h == "mean").unwrap();
+    let mean_str = &value_row[mean_idx];
+
+    // With very large weights, the mean should be dominated by values 1 and 2
+    // Weighted mean ≈ (1*1e100 + 2*1e100 + 3*1) / (1e100 + 1e100 + 1) ≈ 1.5
+    // But due to floating point precision, it might be exactly 1.5 or close to it
+    if !mean_str.is_empty() {
+        let mean_val: f64 = mean_str.parse().unwrap();
+        assert!(
+            mean_val >= 1.0 && mean_val <= 2.0,
+            "Mean should be between 1.0 and 2.0 with very large weights, got {}",
+            mean_val
+        );
+    }
+}
+
+#[test]
+fn stats_weighted_zero_weights_with_modes() {
+    let wrk = Workdir::new("stats_weighted_zero_weights_with_modes");
+    // Test modes/antimodes with zero weights
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["a", "0"], // zero weight
+            svec!["b", "2"], // non-zero weight
+            svec!["a", "0"], // zero weight
+            svec!["c", "1"], // non-zero weight
+            svec!["b", "0"], // zero weight
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight")
+        .arg("weight")
+        .arg("--mode")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let mode_idx = headers.iter().position(|h| h == "mode").unwrap();
+    let mode_str = &value_row[mode_idx];
+
+    // Only "b" (weight 2) and "c" (weight 1) should contribute
+    // Mode should be "b" with weight 2
+    assert_eq!(
+        mode_str, "b",
+        "Expected mode 'b' (weight 2), got '{}'",
+        mode_str
+    );
+}
+
+#[test]
+fn stats_weighted_negative_weights_with_quartiles() {
+    let wrk = Workdir::new("stats_weighted_negative_weights_with_quartiles");
+    // Test quartiles with negative weights (should be ignored)
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["1", "-1"], // negative weight - ignored
+            svec!["2", "2"],  // positive weight
+            svec!["3", "-5"], // negative weight - ignored
+            svec!["4", "3"],  // positive weight
+            svec!["5", "1"],  // positive weight
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight")
+        .arg("weight")
+        .arg("--quartiles")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let q2_idx = headers.iter().position(|h| h == "q2_median").unwrap();
+    let q2_str = &value_row[q2_idx];
+
+    // Quartiles should be computed (negative weights are now filtered out)
+    assert!(
+        !q2_str.is_empty(),
+        "Q2 median should not be empty when valid weights exist"
+    );
+
+    let q2_val: f64 = q2_str.parse().expect("Q2 should be a valid number");
+
+    // Only values 2, 4, 5 should contribute (weights 2, 3, 1)
+    // Total weight = 6, median at 50% = 3.0
+    // Cumulative: 2 (weight 2) = 2, 4 (weight 3) = 5, 5 (weight 1) = 6
+    // Median should be 4 (reaches/exceeds 3.0 at value 4)
+    assert!(
+        (q2_val - 4.0).abs() < 0.1,
+        "Expected weighted median ~4.0 (negative weights ignored), got {}",
+        q2_val
+    );
+}
+
+#[test]
+fn stats_weighted_mixed_edge_cases() {
+    let wrk = Workdir::new("stats_weighted_mixed_edge_cases");
+    // Test combination of edge cases: zero, negative, invalid, and valid weights
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["10", "0"],       // zero weight - ignored
+            svec!["20", "-2"],      // negative weight - ignored
+            svec!["30", "invalid"], // invalid weight - defaults to 1.0
+            svec!["40", "3"],       // valid positive weight
+            svec!["50", ""],        // empty weight - defaults to 1.0
+            svec!["60", "2"],       // valid positive weight
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight")
+        .arg("weight")
+        .arg("--mad")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let mean_idx = headers.iter().position(|h| h == "mean").unwrap();
+    let mean_val: f64 = value_row[mean_idx].parse().unwrap();
+
+    // Only values 30, 40, 50, 60 should contribute (weights 1, 3, 1, 2)
+    // Weighted mean = (30*1 + 40*3 + 50*1 + 60*2) / (1+3+1+2) = 320/7 ≈ 45.71
+    assert!(
+        (mean_val - 45.71).abs() < 0.5,
+        "Expected weighted mean ~45.71 (mixed edge cases), got {}",
+        mean_val
+    );
+}

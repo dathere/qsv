@@ -3732,16 +3732,20 @@ fn stats_weighted_mean_simple() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert!(!got.is_empty());
-    
+
     let headers = &got[0];
     let value_row = &got[1];
-    
+
     // Find mean column
     let mean_idx = headers.iter().position(|h| h == "mean").unwrap();
     let mean_val: f64 = value_row[mean_idx].parse().unwrap();
-    
+
     // Weighted mean should be approximately 2.3333
-    assert!((mean_val - 2.3333333333333335).abs() < 0.0001, "Expected weighted mean ~2.333, got {}", mean_val);
+    assert!(
+        (mean_val - 2.3333333333333335).abs() < 0.0001,
+        "Expected weighted mean ~2.333, got {}",
+        mean_val
+    );
 }
 
 #[test]
@@ -3776,7 +3780,11 @@ fn stats_weighted_mean_vs_unweighted() {
     let got_weighted: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let value_row = &got_weighted[1];
     let weighted_mean: f64 = value_row[mean_idx].parse().unwrap();
-    assert!((weighted_mean - 2.75).abs() < 0.0001, "Expected weighted mean ~2.75, got {}", weighted_mean);
+    assert!(
+        (weighted_mean - 2.75).abs() < 0.0001,
+        "Expected weighted mean ~2.75, got {}",
+        weighted_mean
+    );
 }
 
 #[test]
@@ -3795,31 +3803,35 @@ fn stats_weighted_stddev() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--weight").arg("weight").arg("data.csv");
-    
+
     // Check command succeeds
     wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(got.len() > 1, "Should have at least one data row");
-    
+
     let headers = &got[0];
     let value_row = &got[1];
-    
-    let stddev_idx = headers.iter().position(|h| h == "stddev")
+
+    let stddev_idx = headers
+        .iter()
+        .position(|h| h == "stddev")
         .expect("Should have stddev column");
     let stddev_str = &value_row[stddev_idx];
-    
+
     // Check if stddev is empty or NaN
     assert!(!stddev_str.is_empty(), "Stddev should not be empty");
-    let stddev_val: f64 = stddev_str.parse()
-        .expect("Stddev should be a valid number");
-    
+    let stddev_val: f64 = stddev_str.parse().expect("Stddev should be a valid number");
+
     // With equal weights [1, 1, 1], weighted variance uses sample variance (n-1 denominator)
     // Variance = ((1-2)^2 + (2-2)^2 + (3-2)^2) / (3-1) = (1 + 0 + 1) / 2 = 1.0
     // Stddev = sqrt(1.0) = 1.0
-    assert!((stddev_val - 1.0).abs() < 0.01, 
-            "Expected stddev ~1.0 (sample variance with equal weights), got {}", stddev_val);
+    assert!(
+        (stddev_val - 1.0).abs() < 0.01,
+        "Expected stddev ~1.0 (sample variance with equal weights), got {}",
+        stddev_val
+    );
 }
 
 #[test]
@@ -3838,25 +3850,39 @@ fn stats_weighted_median() {
     );
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("--weight").arg("weight").arg("--median").arg("data.csv");
-    
+    cmd.arg("--weight")
+        .arg("weight")
+        .arg("--median")
+        .arg("data.csv");
+
     // Check command succeeds
     wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
-    assert!(got.len() > 1, "Should have at least one data row, got {} rows", got.len());
-    
+    assert!(
+        got.len() > 1,
+        "Should have at least one data row, got {} rows",
+        got.len()
+    );
+
     let headers = &got[0];
     let value_row = &got[1];
-    
-    let median_idx = headers.iter().position(|h| h == "median")
+
+    let median_idx = headers
+        .iter()
+        .position(|h| h == "median")
         .expect("Should have median column");
-    let median_val: f64 = value_row[median_idx].parse()
+    let median_val: f64 = value_row[median_idx]
+        .parse()
         .expect("Median should be a valid number");
-    
+
     // Weighted median should be 2.0
-    assert!((median_val - 2.0).abs() < 0.0001, "Expected weighted median 2.0, got {}", median_val);
+    assert!(
+        (median_val - 2.0).abs() < 0.0001,
+        "Expected weighted median 2.0, got {}",
+        median_val
+    );
 }
 
 #[test]
@@ -3877,57 +3903,78 @@ fn stats_weighted_quartiles() {
     );
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("--weight").arg("weight").arg("--quartiles").arg("data.csv");
-    
+    cmd.arg("--weight")
+        .arg("weight")
+        .arg("--quartiles")
+        .arg("data.csv");
+
     // Check command succeeds
     wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
-    assert!(got.len() > 1, "Should have at least one data row, got {} rows", got.len());
-    
+    assert!(
+        got.len() > 1,
+        "Should have at least one data row, got {} rows",
+        got.len()
+    );
+
     let headers = &got[0];
     let value_row = &got[1];
-    
-    let q1_idx = headers.iter().position(|h| h == "q1")
+
+    let q1_idx = headers
+        .iter()
+        .position(|h| h == "q1")
         .expect("Should have q1 column");
-    let q2_idx = headers.iter().position(|h| h == "q2_median")
+    let q2_idx = headers
+        .iter()
+        .position(|h| h == "q2_median")
         .expect("Should have q2_median column");
-    let q3_idx = headers.iter().position(|h| h == "q3")
+    let q3_idx = headers
+        .iter()
+        .position(|h| h == "q3")
         .expect("Should have q3 column");
-    
-    let q1: f64 = value_row[q1_idx].parse()
+
+    let q1: f64 = value_row[q1_idx]
+        .parse()
         .expect("Q1 should be a valid number");
-    let q2: f64 = value_row[q2_idx].parse()
+    let q2: f64 = value_row[q2_idx]
+        .parse()
         .expect("Q2 should be a valid number");
-    let q3: f64 = value_row[q3_idx].parse()
+    let q3: f64 = value_row[q3_idx]
+        .parse()
         .expect("Q3 should be a valid number");
-    
+
     // Q2 (median) should be 3.0
     assert!((q2 - 3.0).abs() < 0.1, "Expected Q2 ~3.0, got {}", q2);
     // Q1 and Q3 should be reasonable values
-    assert!(q1 < q2 && q2 < q3, "Quartiles should be ordered: Q1={}, Q2={}, Q3={}", q1, q2, q3);
+    assert!(
+        q1 < q2 && q2 < q3,
+        "Quartiles should be ordered: Q1={}, Q2={}, Q3={}",
+        q1,
+        q2,
+        q3
+    );
 }
 
 #[test]
 fn stats_weighted_missing_weight_column() {
     let wrk = Workdir::new("stats_weighted_missing_weight_column");
-    wrk.create(
-        "data.csv",
-        vec![
-            svec!["value"],
-            svec!["1"],
-            svec!["2"],
-        ],
-    );
+    wrk.create("data.csv", vec![svec!["value"], svec!["1"], svec!["2"]]);
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--weight").arg("nonexistent").arg("data.csv");
 
     let output = cmd.output().unwrap();
-    assert!(!output.status.success(), "Should fail when weight column doesn't exist");
+    assert!(
+        !output.status.success(),
+        "Should fail when weight column doesn't exist"
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("not found"), "Error should mention column not found");
+    assert!(
+        stderr.contains("not found"),
+        "Error should mention column not found"
+    );
 }
 
 #[test]
@@ -3950,10 +3997,10 @@ fn stats_weighted_invalid_weights_default_to_one() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let headers = &got[0];
     let value_row = &got[1];
-    
+
     let mean_idx = headers.iter().position(|h| h == "mean").unwrap();
     let mean_val: f64 = value_row[mean_idx].parse().unwrap();
-    
+
     // With invalid weights defaulting to 1.0, mean should be (1+2+3)/3 = 2.0
     // But weight "2" is valid, so it's more complex. Let's just verify it runs without error.
     assert!(mean_val > 0.0);
@@ -3964,35 +4011,39 @@ fn stats_weighted_excludes_weight_column() {
     let wrk = Workdir::new("stats_weighted_excludes_weight_column");
     wrk.create(
         "data.csv",
-        vec![
-            svec!["value", "weight"],
-            svec!["1", "1"],
-            svec!["2", "2"],
-        ],
+        vec![svec!["value", "weight"], svec!["1", "1"], svec!["2", "2"]],
     );
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--weight").arg("weight").arg("data.csv");
-    
+
     // Check command succeeds
     wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(got.len() > 1, "Should have at least one data row");
-    
+
     let headers = &got[0];
-    
+
     // Weight column should not appear in stats output headers (which are stat column names)
-    assert!(!headers.contains(&"weight".to_string()), "Weight column should be excluded from stats");
-    
+    assert!(
+        !headers.contains(&"weight".to_string()),
+        "Weight column should be excluded from stats"
+    );
+
     // Check the "field" column in data rows to ensure "value" is present and "weight" is not
-    let field_idx = headers.iter().position(|h| h == "field")
+    let field_idx = headers
+        .iter()
+        .position(|h| h == "field")
         .expect("Should have 'field' column");
     let mut found_value = false;
     for row in got.iter().skip(1) {
         if let Some(field_val) = row.get(field_idx) {
-            assert_ne!(field_val, "weight", "Weight column should not appear in stats");
+            assert_ne!(
+                field_val, "weight",
+                "Weight column should not appear in stats"
+            );
             if field_val == "value" {
                 found_value = true;
             }
@@ -4004,7 +4055,7 @@ fn stats_weighted_excludes_weight_column() {
 #[test]
 fn stats_weighted_parallel_processing() {
     let wrk = Workdir::new("stats_weighted_parallel_processing");
-    
+
     // Create a larger dataset to test parallel processing
     let mut data = vec![svec!["value", "weight"]];
     for i in 1..=100 {
@@ -4019,14 +4070,17 @@ fn stats_weighted_parallel_processing() {
 
     // Run weighted stats with parallel processing
     let mut cmd = wrk.command("stats");
-    cmd.arg("--weight").arg("weight").arg("--everything").arg("data.csv");
+    cmd.arg("--weight")
+        .arg("weight")
+        .arg("--everything")
+        .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert!(!got.is_empty());
-    
+
     let headers = &got[0];
     let value_row = &got[1];
-    
+
     // Verify weighted statistics are computed
     let mean_idx = headers.iter().position(|h| h == "mean").unwrap();
     let mean_val: f64 = value_row[mean_idx].parse().unwrap();
@@ -4038,11 +4092,7 @@ fn stats_weighted_cache_filename() {
     let wrk = Workdir::new("stats_weighted_cache_filename");
     wrk.create(
         "data.csv",
-        vec![
-            svec!["value", "weight"],
-            svec!["1", "1"],
-            svec!["2", "2"],
-        ],
+        vec![svec!["value", "weight"], svec!["1", "1"], svec!["2", "2"]],
     );
 
     let mut cmd = wrk.command("stats");
@@ -4050,10 +4100,14 @@ fn stats_weighted_cache_filename() {
     wrk.assert_success(&mut cmd);
 
     // Check that weighted cache file is created
-    assert!(wrk.path("data.stats.weighted.csv").exists(), 
-            "Weighted stats cache file should exist");
-    assert!(!wrk.path("data.stats.csv").exists(), 
-            "Unweighted stats cache file should not exist when using --weight");
+    assert!(
+        wrk.path("data.stats.weighted.csv").exists(),
+        "Weighted stats cache file should exist"
+    );
+    assert!(
+        !wrk.path("data.stats.csv").exists(),
+        "Unweighted stats cache file should not exist when using --weight"
+    );
 }
 
 #[test]

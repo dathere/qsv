@@ -389,7 +389,7 @@ pub struct Args {
     pub flag_memcheck:         bool,
     pub flag_vis_whitespace:   bool,
     pub flag_dataset_stats:    bool,
-    pub flag_weight:            Option<String>,
+    pub flag_weight:           Option<String>,
 }
 
 // this struct is used to serialize/deserialize the stats to
@@ -1362,16 +1362,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else {
         // we didn't compute the stats, re-use the existing stats file
         // safety: we know the path is a valid PathBuf, so we can use unwrap
-        stats_path(rconfig.path.as_ref().unwrap(), false, args.flag_weight.is_some())?
-            .to_str()
-            .unwrap()
-            .to_owned()
+        stats_path(
+            rconfig.path.as_ref().unwrap(),
+            false,
+            args.flag_weight.is_some(),
+        )?
+        .to_str()
+        .unwrap()
+        .to_owned()
     };
 
     if rconfig.is_stdin() {
-        // if we read from stdin, copy the temp stats file to "stdin.stats.csv" or "stdin.stats.weighted.csv"
-        // safety: we know the path is a valid PathBuf, so we can use unwrap
-        let mut stats_pathbuf = stats_path(rconfig.path.as_ref().unwrap(), true, args.flag_weight.is_some())?;
+        // if we read from stdin, copy the temp stats file to "stdin.stats.csv" or
+        // "stdin.stats.weighted.csv" safety: we know the path is a valid PathBuf, so we can
+        // use unwrap
+        let mut stats_pathbuf = stats_path(
+            rconfig.path.as_ref().unwrap(),
+            true,
+            args.flag_weight.is_some(),
+        )?;
         fs::copy(currstats_filename.clone(), stats_pathbuf.clone())?;
 
         // save the stats args to "stdin.stats.csv.json"
@@ -1383,7 +1392,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let json_string = simd_json::to_string_pretty(&current_stats_args)?;
         std::fs::write(stats_pathbuf, json_string)?;
     } else if let Some(path) = rconfig.path {
-        // if we read from a file, copy the temp stats file to "<FILESTEM>.stats.csv" or "<FILESTEM>.stats.weighted.csv"
+        // if we read from a file, copy the temp stats file to "<FILESTEM>.stats.csv" or
+        // "<FILESTEM>.stats.weighted.csv"
         let mut stats_pathbuf = path.clone();
         if args.flag_weight.is_some() {
             stats_pathbuf.set_extension("stats.weighted.csv");
@@ -1511,49 +1521,54 @@ impl Args {
     fn sequential_stats(&self, whitelist: &str) -> CliResult<(csv::ByteRecord, Vec<Stats>)> {
         let mut rdr = self.rconfig().reader()?;
         let full_headers = rdr.byte_headers()?.clone();
-        
+
         // Find weight column index and exclude it from selection
         let (weight_col_idx, sel, headers) = if let Some(ref weight_col) = self.flag_weight {
             // Find weight column index in full headers
-            let weight_idx = full_headers.iter()
+            let weight_idx = full_headers
+                .iter()
                 .position(|h| {
                     let h_str = String::from_utf8_lossy(h);
                     h_str.trim().eq_ignore_ascii_case(weight_col.trim())
                 })
                 .ok_or_else(|| {
-                    CliError::Other(format!("Weight column '{}' not found in CSV headers", weight_col))
+                    CliError::Other(format!(
+                        "Weight column '{}' not found in CSV headers",
+                        weight_col
+                    ))
                 })?;
-            
+
             // Create selection excluding weight column
             let sel = self.rconfig().selection(&full_headers)?;
             // Remove weight column index from selection if present
-            let sel_vec: Vec<usize> = sel.iter()
+            let sel_vec: Vec<usize> = sel
+                .iter()
                 .copied()
                 .filter(|&idx| idx != weight_idx)
                 .collect();
-            
+
             // Validate that we still have columns after excluding the weight column
             if sel_vec.is_empty() {
-                return Err(CliError::Other(
-                    format!("After excluding weight column '{}', no columns remain for statistics computation", weight_col)
-                ));
+                return Err(CliError::Other(format!(
+                    "After excluding weight column '{}', no columns remain for statistics \
+                     computation",
+                    weight_col
+                )));
             }
-            
+
             // safety: We know Selection is a tuple struct with a Vec<usize> field
             // This is safe because we're creating it with valid indices
-            let modified_sel = unsafe {
-                std::mem::transmute::<Vec<usize>, Selection>(sel_vec)
-            };
-            
+            let modified_sel = unsafe { std::mem::transmute::<Vec<usize>, Selection>(sel_vec) };
+
             // Get selected headers (excluding weight column)
             let selected_headers: csv::ByteRecord = modified_sel.select(&full_headers).collect();
-            
+
             (Some(weight_idx), modified_sel, selected_headers)
         } else {
             let (headers, sel) = self.sel_headers(&mut rdr)?;
             (None, sel, headers)
         };
-        
+
         init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
 
         let stats = self.compute(&sel, rdr.byte_records(), weight_col_idx);
@@ -1627,43 +1642,48 @@ impl Args {
 
         let mut rdr = self.rconfig().reader()?;
         let full_headers = rdr.byte_headers()?.clone();
-        
+
         // Find weight column index and exclude it from selection
         let (weight_col_idx, sel, headers) = if let Some(ref weight_col) = self.flag_weight {
             // Find weight column index in full headers
-            let weight_idx = full_headers.iter()
+            let weight_idx = full_headers
+                .iter()
                 .position(|h| {
                     let h_str = String::from_utf8_lossy(h);
                     h_str.trim().eq_ignore_ascii_case(weight_col.trim())
                 })
                 .ok_or_else(|| {
-                    CliError::Other(format!("Weight column '{}' not found in CSV headers", weight_col))
+                    CliError::Other(format!(
+                        "Weight column '{}' not found in CSV headers",
+                        weight_col
+                    ))
                 })?;
-            
+
             // Create selection excluding weight column
             let sel = self.rconfig().selection(&full_headers)?;
             // Remove weight column index from selection if present
-            let sel_vec: Vec<usize> = sel.iter()
+            let sel_vec: Vec<usize> = sel
+                .iter()
                 .copied()
                 .filter(|&idx| idx != weight_idx)
                 .collect();
-            
+
             // Validate that we still have columns after excluding the weight column
             if sel_vec.is_empty() {
-                return Err(CliError::Other(
-                    format!("After excluding weight column '{}', no columns remain for statistics computation", weight_col)
-                ));
+                return Err(CliError::Other(format!(
+                    "After excluding weight column '{}', no columns remain for statistics \
+                     computation",
+                    weight_col
+                )));
             }
-            
+
             // safety: We know Selection is a tuple struct with a Vec<usize> field
             // This is safe because we're creating it with valid indices
-            let modified_sel = unsafe {
-                std::mem::transmute::<Vec<usize>, Selection>(sel_vec)
-            };
-            
+            let modified_sel = unsafe { std::mem::transmute::<Vec<usize>, Selection>(sel_vec) };
+
             // Get selected headers (excluding weight column)
             let selected_headers: csv::ByteRecord = modified_sel.select(&full_headers).collect();
-            
+
             (Some(weight_idx), modified_sel, selected_headers)
         } else {
             let (headers, sel) = self.sel_headers(&mut rdr)?;
@@ -1769,7 +1789,8 @@ impl Args {
                 let it = idx.byte_records().take(chunk_size);
                 // safety: this will only return an Error if the channel has been disconnected
                 unsafe {
-                    send.send(args.compute(&sel, it, weight_idx)).unwrap_unchecked();
+                    send.send(args.compute(&sel, it, weight_idx))
+                        .unwrap_unchecked();
                 }
             });
         }
@@ -1898,11 +1919,11 @@ impl Args {
         let mut current_row = csv::ByteRecord::with_capacity(1024, sel_len);
         for row in it {
             i = 0;
-            
+
             // safety: unwrap the row first
             let row_result = unsafe { row.unwrap_unchecked() };
             current_row = row_result.clone();
-            
+
             // Extract weight value if weight column is specified
             let weight = if let Some(widx) = weight_col_idx {
                 if widx < row_result.len() {
@@ -1914,7 +1935,7 @@ impl Args {
             } else {
                 1.0
             };
-            
+
             // safety: because we're using iterators and INFER_DATE_FLAGS has the same size,
             // we know we don't need to bounds check
             unsafe {
@@ -2053,7 +2074,10 @@ impl Args {
     fn new_stats(&self, record_len: usize) -> Vec<Stats> {
         let mut stats: Vec<Stats> = Vec::with_capacity(record_len);
         let use_weights = self.flag_weight.is_some();
-        stats.extend(repeat_n(Stats::new(self.which_stats(), use_weights), record_len));
+        stats.extend(repeat_n(
+            Stats::new(self.which_stats(), use_weights),
+            record_len,
+        ));
         stats
     }
 
@@ -2494,8 +2518,8 @@ struct Stats {
     sum: Option<TypedSum>, // 32 bytes - updated in add() for numeric types
 
     // CACHE LINE 3+: Statistics computation fields
-    online:     Option<OnlineStats>, // 48 bytes - used for mean/variance calculations
-    online_len: Option<OnlineStats>, // 48 bytes - used for string length stats
+    online:          Option<OnlineStats>, // 48 bytes - used for mean/variance calculations
+    online_len:      Option<OnlineStats>, // 48 bytes - used for string length stats
     weighted_online: Option<WeightedOnlineStats>, // Weighted online statistics
 
     // CACHE LINE 4+: Mode and cardinality computation
@@ -2503,12 +2527,13 @@ struct Stats {
 
     // CACHE LINE 5+: Sorting-based statistics
     #[allow(clippy::struct_field_names)]
-    unsorted_stats: Option<Unsorted<f64>>, // 32 bytes - median/quartiles/percentiles
-    weighted_unsorted_stats: Option<Vec<(f64, f64)>>, // (value, weight) tuples for weighted quantiles
+    unsorted_stats:          Option<Unsorted<f64>>, // 32 bytes - median/quartiles/percentiles
+    weighted_unsorted_stats: Option<Vec<(f64, f64)>>, /* (value, weight) tuples for weighted
+                                                       * quantiles */
 
     // CACHE LINE 6+: Min/Max tracking (largest field, least cache-friendly)
     minmax: Option<TypedMinMax>, // 432 bytes - largest field, accessed less frequently
-    
+
     // Total weight sum for weighted statistics
     total_weight: f64,
 }
@@ -2524,23 +2549,23 @@ struct Stats {
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
 struct WeightedOnlineStats {
     /// Sum of all weights: W_n = Σ(w_i)
-    sum_weights: f64,
+    sum_weights:       f64,
     /// Current weighted mean: M_n
-    weighted_mean: f64,
+    weighted_mean:     f64,
     /// Sum of squared differences: S_n = Σ(w_i * (x_i - M_{i-1}) * (x_i - M_i))
     sum_squared_diffs: f64,
     /// Count of samples (for compatibility with OnlineStats interface)
-    count: usize,
+    count:             usize,
 }
 
 impl WeightedOnlineStats {
     /// Creates a new `WeightedOnlineStats` with all values initialized to zero.
     fn new() -> Self {
         Self {
-            sum_weights: 0.0,
-            weighted_mean: 0.0,
+            sum_weights:       0.0,
+            weighted_mean:     0.0,
             sum_squared_diffs: 0.0,
-            count: 0,
+            count:             0,
         }
     }
 
@@ -2620,15 +2645,16 @@ impl WeightedOnlineStats {
 
         let total_weights = self.sum_weights + other.sum_weights;
         let delta = other.weighted_mean - self.weighted_mean;
-        
+
         // Update sum of squared differences using parallel merge formula
         self.sum_squared_diffs += other.sum_squared_diffs
             + (self.sum_weights * other.sum_weights / total_weights) * delta * delta;
-        
+
         // Update weighted mean
-        self.weighted_mean = (self.sum_weights * self.weighted_mean + other.sum_weights * other.weighted_mean)
+        self.weighted_mean = (self.sum_weights * self.weighted_mean
+            + other.sum_weights * other.weighted_mean)
             / total_weights;
-        
+
         // Update sum of weights and count
         self.sum_weights = total_weights;
         self.count += other.count;
@@ -2650,14 +2676,14 @@ fn weighted_quantile(data: &Vec<(f64, f64)>, total_weight: f64, percentile: f64)
     if data.is_empty() || total_weight <= 0.0 {
         return None;
     }
-    
+
     // Clone and sort by value to avoid mutating the original data
     let mut sorted_data = data.clone();
     sorted_data.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    
+
     let target_weight = percentile * total_weight;
     let mut cum_weight = 0.0;
-    
+
     for &(value, weight) in sorted_data.iter() {
         cum_weight += weight;
         // Return the value at which cumulative weight first reaches or exceeds the target
@@ -2666,7 +2692,7 @@ fn weighted_quantile(data: &Vec<(f64, f64)>, total_weight: f64, percentile: f64)
             return Some(value);
         }
     }
-    
+
     // If we reach here, return the last value
     sorted_data.last().map(|(v, _)| *v)
 }
@@ -2685,12 +2711,12 @@ fn weighted_quartiles(data: &Vec<(f64, f64)>, total_weight: f64) -> Option<(f64,
     if data.is_empty() {
         return None;
     }
-    
+
     // weighted_quantile now clones and sorts internally, so we can call it multiple times
     let q1 = weighted_quantile(data, total_weight, 0.25)?;
     let q2 = weighted_quantile(data, total_weight, 0.5)?;
     let q3 = weighted_quantile(data, total_weight, 0.75)?;
-    
+
     Some((q1, q2, q3))
 }
 
@@ -2776,7 +2802,7 @@ impl Stats {
             (None, None, None, None, None, None);
         let mut weighted_online = None;
         let mut weighted_unsorted_stats = None;
-        
+
         if which.sum {
             sum = Some(TypedSum::default());
         }
@@ -2870,7 +2896,14 @@ impl Stats {
     /// * Bounds checking is avoided where safe
     #[allow(clippy::inline_always)]
     #[inline(always)]
-    fn add(&mut self, sample: &[u8], weight: f64, infer_dates: bool, infer_boolean: bool, prefer_dmy: bool) {
+    fn add(
+        &mut self,
+        sample: &[u8],
+        weight: f64,
+        infer_dates: bool,
+        infer_boolean: bool,
+        prefer_dmy: bool,
+    ) {
         let (sample_type, int_val, float_val) =
             FieldType::from_sample(infer_dates, prefer_dmy, sample, self.typ);
         self.typ.merge(sample_type);
@@ -3521,7 +3554,7 @@ impl Stats {
         } else {
             Vec::new()
         };
-        
+
         // Check if we should use weighted quartiles
         let quartiles_result = if let Some(ref weighted_data) = self.weighted_unsorted_stats {
             // Use weighted quartiles
@@ -3548,7 +3581,7 @@ impl Stats {
                 _ => None,
             })
         };
-        
+
         match quartiles_result {
             None => {
                 // quartile_pieces already initialized with empty strings if --quartiles is set
@@ -3621,7 +3654,8 @@ impl Stats {
         // median
         // Only add median field if --median is set but --quartiles is NOT set
         // (when --quartiles is set, median is included as q2_median in quartile fields)
-        // Note: self.which.median is only true when !flag_quartiles, so we don't need to check !self.which.quartiles
+        // Note: self.which.median is only true when !flag_quartiles, so we don't need to check
+        // !self.which.quartiles
         if self.which.median {
             let median_value = if let Some(ref weighted_data) = self.weighted_unsorted_stats {
                 // Use weighted median
@@ -3639,12 +3673,12 @@ impl Stats {
                     }
                 })
             };
-            
+
             // Set existing_median for MAD calculation
             if median_value.is_some() {
                 existing_median = median_value;
             }
-            
+
             if let Some(v) = median_value {
                 if typ == TDateTime || typ == TDate {
                     // median rfc3339 timestamp
@@ -3770,7 +3804,7 @@ impl Commute for Stats {
         self.online.merge(other.online);
         self.online_len.merge(other.online_len);
         self.minmax.merge(other.minmax);
-        
+
         // Merge weighted statistics
         if let Some(ref mut wos) = self.weighted_online {
             if let Some(ref other_wos) = other.weighted_online {
@@ -3779,7 +3813,7 @@ impl Commute for Stats {
         } else if other.weighted_online.is_some() {
             self.weighted_online = other.weighted_online;
         }
-        
+
         if let Some(ref mut wus) = self.weighted_unsorted_stats {
             if let Some(ref other_wus) = other.weighted_unsorted_stats {
                 wus.extend_from_slice(other_wus);
@@ -3787,7 +3821,7 @@ impl Commute for Stats {
         } else if other.weighted_unsorted_stats.is_some() {
             self.weighted_unsorted_stats = other.weighted_unsorted_stats;
         }
-        
+
         self.total_weight += other.total_weight;
     }
 }

@@ -2686,7 +2686,7 @@ impl WeightedOnlineStats {
 ///
 /// # Arguments
 ///
-/// * `data` - Vector of (value, weight) tuples (will be sorted internally)
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
 /// * `total_weight` - Total sum of all weights
 /// * `percentile` - Percentile to compute (0.0 to 1.0, e.g., 0.5 for median)
 ///
@@ -2699,16 +2699,13 @@ fn weighted_quantile(data: &[(f64, f64)], total_weight: f64, percentile: f64) ->
         return None;
     }
 
-    // Data should already be filtered at insertion time (only valid weights stored)
-    // Clone and sort by value to avoid mutating the original data
-    let mut sorted_data = data.to_vec();
-    sorted_data
-        .par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    // Data is already sorted by to_record() before calling this function
+    // No need to check or sort again
 
     let target_weight = percentile * total_weight;
     let mut cum_weight = 0.0;
 
-    for &(value, weight) in &sorted_data {
+    for &(value, weight) in data {
         cum_weight += weight;
         // Return the value at which cumulative weight first reaches or exceeds the target
         // This is the "nearest rank" method for weighted quantiles
@@ -2718,14 +2715,14 @@ fn weighted_quantile(data: &[(f64, f64)], total_weight: f64, percentile: f64) ->
     }
 
     // If we reach here, return the last value
-    sorted_data.last().map(|(v, _)| *v)
+    data.last().map(|(v, _)| *v)
 }
 
 /// Computes weighted quartiles (Q1, Q2, Q3) from (value, weight) pairs.
 ///
 /// # Arguments
 ///
-/// * `data` - Vector of (value, weight) tuples
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
 /// * `total_weight` - Total sum of all weights
 ///
 /// # Returns
@@ -2735,10 +2732,8 @@ fn weighted_quartiles(data: &[(f64, f64)], total_weight: f64) -> Option<(f64, f6
     if data.is_empty() || total_weight <= 0.0 {
         return None;
     }
-    // Data should already be filtered at insertion time (only valid weights stored)
-    // Sort data once by value.
-    let mut sorted: Vec<(f64, f64)> = data.to_vec();
-    sorted.par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    // Data is already sorted by to_record() before calling this function
+    // No need to check or sort again
     let thresholds = [
         0.25_f64 * total_weight,
         0.5_f64 * total_weight,
@@ -2747,7 +2742,7 @@ fn weighted_quartiles(data: &[(f64, f64)], total_weight: f64) -> Option<(f64, f6
     let mut results: [Option<f64>; 3] = [None, None, None];
     let mut cumulative_weight = 0.0_f64;
     let mut t_idx = 0_usize;
-    for (value, weight) in &sorted {
+    for (value, weight) in data {
         cumulative_weight += *weight;
         // Assign values when cumulative weight first reaches/exceeds each threshold.
         while t_idx < thresholds.len() && cumulative_weight >= thresholds[t_idx] {
@@ -2785,7 +2780,7 @@ fn weighted_median(data: &[(f64, f64)], total_weight: f64) -> Option<f64> {
 ///
 /// # Arguments
 ///
-/// * `data` - Vector of (value, weight) tuples
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
 /// * `total_weight` - Total sum of all weights
 /// * `median` - The weighted median value
 ///
@@ -2797,12 +2792,15 @@ fn weighted_mad(data: &[(f64, f64)], total_weight: f64, median: f64) -> Option<f
         return None;
     }
 
-    // Data should already be filtered at insertion time (only valid weights stored)
     // Calculate absolute deviations from the median
-    let abs_deviations: Vec<(f64, f64)> = data
+    let mut abs_deviations: Vec<(f64, f64)> = data
         .par_iter()
         .map(|&(value, weight)| ((value - median).abs(), weight))
         .collect();
+
+    // Sort abs_deviations by absolute deviation value (new data, needs sorting)
+    abs_deviations
+        .par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     // Calculate weighted median of absolute deviations
     weighted_median(&abs_deviations, total_weight)
@@ -2812,7 +2810,7 @@ fn weighted_mad(data: &[(f64, f64)], total_weight: f64, median: f64) -> Option<f
 ///
 /// # Arguments
 ///
-/// * `data` - Vector of (value, weight) tuples
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
 /// * `total_weight` - Total sum of all weights
 /// * `percentile_list` - List of percentiles to compute (as u8 values, e.g., 5, 10, 90, 95)
 ///
@@ -2828,10 +2826,9 @@ fn weighted_percentiles(
         return None;
     }
 
-    // Data should already be filtered at insertion time (only valid weights stored)
-    // Sort data by value once, then compute all requested percentiles
-    let mut sorted = data.to_vec();
-    sorted.par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    // Data is already sorted by to_record() before calling this function
+    // No need to check or sort again
+
     // Precompute target cumulative weights for each percentile, keeping original index
     let mut targets: Vec<(f64, usize)> = percentile_list
         .iter()
@@ -2846,7 +2843,7 @@ fn weighted_percentiles(
     let mut results = vec![0.0; percentile_list.len()];
     let mut cum_weight = 0.0;
     let mut target_idx = 0;
-    for &(value, weight) in &sorted {
+    for &(value, weight) in data {
         cum_weight += weight;
         while target_idx < targets.len() && cum_weight >= targets[target_idx].0 {
             let original_idx = targets[target_idx].1;
@@ -3854,8 +3851,28 @@ impl Stats {
             Vec::new()
         };
 
+        // Sort weighted data once if it exists
+        // to avoid redundant sorting in multiple weighted functions
+        let sorted_weighted_data: Option<Vec<(f64, f64)>> =
+            if let Some(ref weighted_data) = self.weighted_unsorted_stats {
+                if weighted_data.is_empty() {
+                    None
+                } else {
+                    let mut sorted = weighted_data.clone();
+                    sorted.par_sort_unstable_by(|a, b| {
+                        a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                    Some(sorted)
+                }
+            } else {
+                None
+            };
+
         // Check if we should use weighted quartiles
-        let quartiles_result = if let Some(ref weighted_data) = self.weighted_unsorted_stats {
+        let quartiles_result = if let Some(weighted_data) = sorted_weighted_data
+            .as_ref()
+            .or(self.weighted_unsorted_stats.as_ref())
+        {
             // Use weighted quartiles
             match typ {
                 TInteger | TFloat | TDate | TDateTime => {
@@ -3956,7 +3973,10 @@ impl Stats {
         // Note: self.which.median is only true when !flag_quartiles, so we don't need to check
         // !self.which.quartiles
         if self.which.median {
-            let median_value = if let Some(ref weighted_data) = self.weighted_unsorted_stats {
+            let median_value = if let Some(weighted_data) = sorted_weighted_data
+                .as_ref()
+                .or(self.weighted_unsorted_stats.as_ref())
+            {
                 // Use weighted median
                 match typ {
                     TNull | TString => None,
@@ -3993,7 +4013,10 @@ impl Stats {
 
         // median absolute deviation (MAD)
         if self.which.mad {
-            let mad_value = if let Some(ref weighted_data) = self.weighted_unsorted_stats {
+            let mad_value = if let Some(weighted_data) = sorted_weighted_data
+                .as_ref()
+                .or(self.weighted_unsorted_stats.as_ref())
+            {
                 // Use weighted MAD
                 match typ {
                     TNull | TString => None,
@@ -4061,16 +4084,18 @@ impl Stats {
                         })
                         .unzip();
 
-                    let percentile_values =
-                        if let Some(ref weighted_data) = self.weighted_unsorted_stats {
-                            // Use weighted percentiles
-                            weighted_percentiles(weighted_data, self.total_weight, &percentile_list)
-                        } else {
-                            // Use unweighted percentiles
-                            self.unsorted_stats
-                                .as_mut()
-                                .and_then(|v| v.custom_percentiles(&percentile_list))
-                        };
+                    let percentile_values = if let Some(weighted_data) = sorted_weighted_data
+                        .as_ref()
+                        .or(self.weighted_unsorted_stats.as_ref())
+                    {
+                        // Use weighted percentiles
+                        weighted_percentiles(weighted_data, self.total_weight, &percentile_list)
+                    } else {
+                        // Use unweighted percentiles
+                        self.unsorted_stats
+                            .as_mut()
+                            .and_then(|v| v.custom_percentiles(&percentile_list))
+                    };
 
                     if let Some(percentile_vals) = percentile_values {
                         let formatted_values = if typ == TDateTime || typ == TDate {

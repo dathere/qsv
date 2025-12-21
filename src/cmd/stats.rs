@@ -3378,8 +3378,8 @@ impl Stats {
                             .collect();
                         modes_keys.par_sort_unstable();
                         let modes_result: Vec<Vec<u8>> = modes_keys.into_iter().cloned().collect();
-                        // Collect antimodes (values with min weight) in deterministic order - limit
-                        // to 10
+                        // Collect antimodes (values with min weight) in deterministic order
+                        // limit to 10
                         let mut antimodes_keys: Vec<&Vec<u8>> = weighted_modes_map
                             .iter()
                             .filter(|&(_, &weight)| (weight - min_weight).abs() < 1e-10)
@@ -3393,6 +3393,7 @@ impl Stats {
                             .collect();
 
                         let modes_count = modes_result.len();
+                        // we only display MAX_ANTIMODES, but we actually count all antimodes
                         let antimodes_count = weighted_modes_map
                             .values()
                             .filter(|&&w| (w - min_weight).abs() < 1e-10)

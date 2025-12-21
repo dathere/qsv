@@ -23,7 +23,6 @@ fn verify_new_columns_exist(csv_content: &str) -> Vec<String> {
         "pearson_skewness",
         "range_stddev_ratio",
         "quartile_coefficient_dispersion",
-        "bowley_skewness",
         "mode_zscore",
     ];
 
@@ -279,7 +278,6 @@ fn moarstats_verify_computed_values() {
     let pearson_idx = get_column_index(&headers, "pearson_skewness");
     let range_stddev_idx = get_column_index(&headers, "range_stddev_ratio");
     let quartile_coeff_idx = get_column_index(&headers, "quartile_coefficient_dispersion");
-    let bowley_idx = get_column_index(&headers, "bowley_skewness");
     let mode_zscore_idx = get_column_index(&headers, "mode_zscore");
 
     let mut found_latitude = false;
@@ -352,20 +350,6 @@ fn moarstats_verify_computed_values() {
                     );
                 }
             }
-
-            // Check bowley_skewness
-            if let (Some(q1_idx), Some(q3_idx), Some(bowley_idx)) = (q1_idx, q3_idx, bowley_idx) {
-                let q1_val = get_field_value(&record, q1_idx);
-                let q3_val = get_field_value(&record, q3_idx);
-                let q2_val = q2_median_idx
-                    .and_then(|idx| get_field_value(&record, idx))
-                    .or_else(|| median_idx.and_then(|idx| get_field_value(&record, idx)));
-                let bowley_val = get_field_value(&record, bowley_idx);
-
-                if q1_val.is_some() && q2_val.is_some() && q3_val.is_some() {
-                    assert!(bowley_val.is_some(), "bowley_skewness should be computed");
-                }
-            }
         }
 
         // Check for numeric column with mode
@@ -424,7 +408,6 @@ fn moarstats_missing_base_statistics() {
     // (if range and stddev are available in default stats)
     // pearson_skewness requires median which won't be available
     // quartile stats require q1/q3 which won't be available
-    // bowley_skewness requires quartiles which won't be available
     // mode_zscore requires mode which won't be available
 
     // But the command should succeed and add whatever can be computed

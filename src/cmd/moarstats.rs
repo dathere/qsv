@@ -1,5 +1,5 @@
 static USAGE: &str = r#"
-Add 13 additional statistics and 12 outlier metadata to an existing stats CSV file.
+Add 12 additional statistics and 12 outlier metadata to an existing stats CSV file.
 
 The `moarstats` command extends an existing stats CSV file (created by the `stats` command)
 by computing "moar" statistics that can be derived from existing stats columns.
@@ -11,49 +11,51 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 13 additional statistics:
+Currently computes the following 12 additional statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
+    https://en.wikipedia.org/wiki/Skewness#Pearson's_second_skewness_coefficient_(median_skewness)
  2. Range to Standard Deviation Ratio: range / stddev
     Normalizes the spread of data.
     Higher values indicate more extreme outliers relative to the variability.
  3. Quartile Coefficient of Dispersion: (Q3 - Q1) / (Q3 + Q1)
     Measures relative variability using quartiles.
     Useful for comparing dispersion across different scales.
- 4. Bowley's Skewness Coefficient: ((Q3 - Q2) - (Q2 - Q1)) / (Q3 - Q1)
-    Robust measure of skewness using quartiles.
-    Values range from -1 (left skew) to +1 (right skew).
- 5. Z-Score of Mode: (mode - mean) / stddev
+    https://en.wikipedia.org/wiki/Quartile_coefficient_of_dispersion
+ 4. Z-Score of Mode: (mode - mean) / stddev
     Indicates how typical the mode is relative to the distribution.
     Values near 0 suggest the mode is near the mean.
- 6. Relative Standard Error: sem / mean
+ 5. Relative Standard Error: sem / mean
     Measures precision of the mean estimate relative to its magnitude.
     Lower values indicate more reliable estimates.
- 7. Z-Score of Min: (min - mean) / stddev
+ 6. Z-Score of Min: (min - mean) / stddev
     Shows how extreme the minimum value is.
     Large negative values indicate outliers or heavy left tail.
- 8. Z-Score of Max: (max - mean) / stddev
+ 7. Z-Score of Max: (max - mean) / stddev
     Shows how extreme the maximum value is.
     Large positive values indicate outliers or heavy right tail.
- 9. Median-to-Mean Ratio: median / mean
+ 8. Median-to-Mean Ratio: median / mean
     Indicates skewness direction.
     Ratio < 1 suggests right skew, > 1 suggests left skew, = 1 suggests symmetry.
-10. IQR-to-Range Ratio: iqr / range
+ 9. IQR-to-Range Ratio: iqr / range
     Measures concentration of data.
     Higher values (closer to 1) indicate more data concentrated in the middle 50%.
-11. MAD-to-StdDev Ratio: mad / stddev
+10. MAD-to-StdDev Ratio: mad / stddev
     Compares robust vs non-robust spread measures.
     Higher values suggest presence of outliers affecting stddev.
-12. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
+11. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
     All values are included in the calculation, but extreme values are capped at thresholds.
-13. Trimmed Mean: Excludes values outside thresholds, then computes mean.
+    https://en.wikipedia.org/wiki/Winsorized_mean
+12. Trimmed Mean: Excludes values outside thresholds, then computes mean.
     Only values within thresholds are included in the calculation.
+    https://en.wikipedia.org/wiki/Truncated_mean
     By default, uses Q1 and Q3 as thresholds (25% winsorization/trimming).
     With --use-percentiles, uses configurable percentiles (e.g., 5th/95th) as thresholds
     with --pct-thresholds.
 
 In addition, it computes the following 12 outlier statistics.
+https://en.wikipedia.org/wiki/Outlier
 (requires --quartiles or --everything in stats):
   - outliers_extreme_lower: Count of values below the lower outer fence
   - outliers_mild_lower: Count of values between lower outer and inner fences
@@ -68,7 +70,7 @@ In addition, it computes the following 12 outlier statistics.
   - outliers_max: Maximum value among outliers
   - outliers_range: Range of outlier values (max - min)
 
-  These ourlier statistics require reading the original CSV file and comparing each
+  These outlier statistics require reading the original CSV file and comparing each
   value against the fence thresholds.
   Fences are computed using the IQR method:
     inner fences at Q1/Q3 ± 1.5*IQR, outer fences at Q1/Q3 ± 3.0*IQR.
@@ -201,26 +203,6 @@ fn compute_quartile_coefficient_dispersion(q1: Option<f64>, q3: Option<f64>) -> 
             None
         } else {
             Some((q3_val - q1_val) / sum)
-        }
-    } else {
-        None
-    }
-}
-
-/// Compute Bowley's Skewness Coefficient: ((Q3 - Q2) - (Q2 - Q1)) / (Q3 - Q1)
-/// Returns None if Q1, Q2, Q3 are not in valid order (Q1 <= Q2 <= Q3), or if any are None.
-fn compute_bowley_skewness(q1: Option<f64>, q2: Option<f64>, q3: Option<f64>) -> Option<f64> {
-    if let (Some(q1_val), Some(q2_val), Some(q3_val)) = (q1, q2, q3) {
-        // Ensure quartiles are in valid order: Q1 <= Q2 <= Q3
-        if q1_val <= q2_val && q2_val <= q3_val {
-            let iqr = q3_val - q1_val;
-            if iqr.abs() > f64::EPSILON {
-                Some(((q3_val - q2_val) - (q2_val - q1_val)) / iqr)
-            } else {
-                None
-            }
-        } else {
-            None
         }
     } else {
         None
@@ -949,15 +931,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    if q1_idx.is_some()
-        && (q2_median_idx.is_some() || median_idx.is_some())
-        && q3_idx.is_some()
-        && !column_exists("bowley_skewness")
-    {
-        new_columns.push("bowley_skewness".to_string());
-        new_column_indices.insert("bowley_skewness".to_string(), new_columns.len() - 1);
-    }
-
     if mode_idx.is_some()
         && mean_idx.is_some()
         && stddev_idx.is_some()
@@ -1093,7 +1066,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "pearson_skewness",
             "range_stddev_ratio",
             "quartile_coefficient_dispersion",
-            "bowley_skewness",
             "mode_zscore",
             "relative_standard_error",
             "min_zscore",
@@ -1332,14 +1304,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let q1 = q1_idx
                 .and_then(|idx| record.get(idx))
                 .and_then(parse_float_opt);
-            let q2 = q2_median_idx
-                .and_then(|idx| record.get(idx))
-                .and_then(parse_float_opt)
-                .or_else(|| {
-                    median_idx
-                        .and_then(|idx| record.get(idx))
-                        .and_then(parse_float_opt)
-                });
             let q3 = q3_idx
                 .and_then(|idx| record.get(idx))
                 .and_then(parse_float_opt);
@@ -1392,12 +1356,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             if let Some(idx) = new_column_indices.get("quartile_coefficient_dispersion")
                 && let Some(val) = compute_quartile_coefficient_dispersion(q1, q3)
-            {
-                new_values[*idx] = util::round_num(val, args.flag_round);
-            }
-
-            if let Some(idx) = new_column_indices.get("bowley_skewness")
-                && let Some(val) = compute_bowley_skewness(q1, q2, q3)
             {
                 new_values[*idx] = util::round_num(val, args.flag_round);
             }

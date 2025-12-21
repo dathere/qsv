@@ -1529,49 +1529,8 @@ impl Args {
         let full_headers = rdr.byte_headers()?.clone();
 
         // Find weight column index and exclude it from selection
-        let (weight_col_idx, sel, headers) = if let Some(ref weight_col) = self.flag_weight {
-            // Find weight column index in full headers
-            let weight_idx = full_headers
-                .iter()
-                .position(|h| {
-                    let h_str = String::from_utf8_lossy(h);
-                    h_str.trim().eq_ignore_ascii_case(weight_col.trim())
-                })
-                .ok_or_else(|| {
-                    CliError::Other(format!(
-                        "Weight column '{weight_col}' not found in CSV headers"
-                    ))
-                })?;
-
-            // Create selection excluding weight column
-            let sel = self.rconfig().selection(&full_headers)?;
-            // Remove weight column index from selection if present
-            let sel_vec: Vec<usize> = sel
-                .iter()
-                .copied()
-                .filter(|&idx| idx != weight_idx)
-                .collect();
-
-            // Validate that we still have columns after excluding the weight column
-            if sel_vec.is_empty() {
-                return Err(CliError::Other(format!(
-                    "After excluding weight column '{weight_col}', no columns remain for \
-                     statistics computation"
-                )));
-            }
-
-            // safety: We know Selection is a tuple struct with a Vec<usize> field
-            // This is safe because we're creating it with valid indices
-            let modified_sel = unsafe { std::mem::transmute::<Vec<usize>, Selection>(sel_vec) };
-
-            // Get selected headers (excluding weight column)
-            let selected_headers: csv::ByteRecord = modified_sel.select(&full_headers).collect();
-
-            (Some(weight_idx), modified_sel, selected_headers)
-        } else {
-            let (headers, sel) = self.sel_headers(&mut rdr)?;
-            (None, sel, headers)
-        };
+        let (weight_col_idx, sel, headers) =
+            self.process_headers_with_weight_exclusion(&full_headers)?;
 
         init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
 
@@ -1648,49 +1607,8 @@ impl Args {
         let full_headers = rdr.byte_headers()?.clone();
 
         // Find weight column index and exclude it from selection
-        let (weight_col_idx, sel, headers) = if let Some(ref weight_col) = self.flag_weight {
-            // Find weight column index in full headers
-            let weight_idx = full_headers
-                .iter()
-                .position(|h| {
-                    let h_str = String::from_utf8_lossy(h);
-                    h_str.trim().eq_ignore_ascii_case(weight_col.trim())
-                })
-                .ok_or_else(|| {
-                    CliError::Other(format!(
-                        "Weight column '{weight_col}' not found in CSV headers"
-                    ))
-                })?;
-
-            // Create selection excluding weight column
-            let sel = self.rconfig().selection(&full_headers)?;
-            // Remove weight column index from selection if present
-            let sel_vec: Vec<usize> = sel
-                .iter()
-                .copied()
-                .filter(|&idx| idx != weight_idx)
-                .collect();
-
-            // Validate that we still have columns after excluding the weight column
-            if sel_vec.is_empty() {
-                return Err(CliError::Other(format!(
-                    "After excluding weight column '{weight_col}', no columns remain for \
-                     statistics computation"
-                )));
-            }
-
-            // safety: We know Selection is a tuple struct with a Vec<usize> field
-            // This is safe because we're creating it with valid indices
-            let modified_sel = unsafe { std::mem::transmute::<Vec<usize>, Selection>(sel_vec) };
-
-            // Get selected headers (excluding weight column)
-            let selected_headers: csv::ByteRecord = modified_sel.select(&full_headers).collect();
-
-            (Some(weight_idx), modified_sel, selected_headers)
-        } else {
-            let (headers, sel) = self.sel_headers(&mut rdr)?;
-            (None, sel, headers)
-        };
+        let (weight_col_idx, sel, headers) =
+            self.process_headers_with_weight_exclusion(&full_headers)?;
 
         init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
 
@@ -1953,41 +1871,80 @@ impl Args {
         stats
     }
 
-    /// Reads and processes CSV headers with column selection.
+    /// Processes headers and handles weight column exclusion if needed.
     ///
-    /// This function reads the CSV headers from the reader and applies column selection
-    /// based on the configuration. It returns both the selected headers and the selection
-    /// object for use in subsequent processing.
+    /// This function handles the logic for excluding the weight column from statistics
+    /// computation. It finds the weight column index, creates a modified selection that
+    /// excludes it, and returns the selected headers.
     ///
     /// # Arguments
     ///
-    /// * `rdr` - CSV reader with the input data
+    /// * `full_headers` - The full CSV headers as a ByteRecord
     ///
     /// # Returns
     ///
-    /// * `Ok((csv::ByteRecord, Selection))` - Tuple containing selected headers and selection
-    ///   object
-    /// * `Err(CliError)` - If there's an error reading headers or applying selection
+    /// * `Ok((Option<usize>, Selection, csv::ByteRecord))` - Tuple containing:
+    ///   - Weight column index (None if no weight column specified)
+    ///   - Modified selection (excluding weight column if present)
+    ///   - Selected headers (excluding weight column if present)
+    /// * `Err(CliError)` - If weight column is not found or no columns remain after exclusion
     ///
     /// # Process
     ///
-    /// 1. **Header Reading**: Reads byte headers from the CSV reader
-    /// 2. **Selection Creation**: Creates a selection object based on configuration
-    /// 3. **Header Filtering**: Applies the selection to filter headers
-    /// 4. **Return**: Returns both selected headers and selection object
-    ///
-    /// # Performance
-    ///
-    /// * **Inline**: Function is marked as `#[inline]` for performance
-    /// * **Minimal Allocations**: Reuses existing data structures where possible
-    #[inline]
-    fn sel_headers<R: io::Read>(
+    /// 1. **Weight Column Check**: If no weight column is specified, uses normal selection
+    /// 2. **Weight Column Finding**: Finds the weight column index in full headers
+    /// 3. **Selection Modification**: Removes weight column from selection
+    /// 4. **Validation**: Ensures at least one column remains after exclusion
+    /// 5. **Header Filtering**: Applies modified selection to get filtered headers
+    fn process_headers_with_weight_exclusion(
         &self,
-        rdr: &mut csv::Reader<R>,
-    ) -> CliResult<(csv::ByteRecord, Selection)> {
-        let headers = rdr.byte_headers()?.clone();
-        let sel = self.rconfig().selection(&headers)?;
-        Ok((sel.select(&headers).collect(), sel))
+        full_headers: &csv::ByteRecord,
+    ) -> CliResult<(Option<usize>, Selection, csv::ByteRecord)> {
+        if let Some(ref weight_col) = self.flag_weight {
+            // Find weight column index in full headers
+            let weight_idx = full_headers
+                .iter()
+                .position(|h| {
+                    let h_str = String::from_utf8_lossy(h);
+                    h_str.trim().eq_ignore_ascii_case(weight_col.trim())
+                })
+                .ok_or_else(|| {
+                    CliError::Other(format!(
+                        "Weight column '{weight_col}' not found in CSV headers"
+                    ))
+                })?;
+
+            // Create selection excluding weight column
+            let sel = self.rconfig().selection(full_headers)?;
+            // Remove weight column index from selection if present
+            let sel_vec: Vec<usize> = sel
+                .iter()
+                .copied()
+                .filter(|&idx| idx != weight_idx)
+                .collect();
+
+            // Validate that we still have columns after excluding the weight column
+            if sel_vec.is_empty() {
+                return Err(CliError::Other(format!(
+                    "After excluding weight column '{weight_col}', no columns remain for \
+                     statistics computation"
+                )));
+            }
+
+            // safety: We know Selection is a tuple struct with a Vec<usize> field
+            // This is safe because we're creating it with valid indices
+            let modified_sel = unsafe { std::mem::transmute::<Vec<usize>, Selection>(sel_vec) };
+
+            // Get selected headers (excluding weight column)
+            let selected_headers: csv::ByteRecord = modified_sel.select(full_headers).collect();
+
+            Ok((Some(weight_idx), modified_sel, selected_headers))
+        } else {
+            // No weight column specified, use normal selection
+            let sel = self.rconfig().selection(full_headers)?;
+            let headers: csv::ByteRecord = sel.select(full_headers).collect();
+            Ok((None, sel, headers))
+        }
     }
 
     /// Creates a CSV reader configuration based on the current arguments.
@@ -2849,13 +2806,32 @@ fn weighted_percentiles(
         return None;
     }
 
-    let mut results = Vec::with_capacity(percentile_list.len());
-    for &percentile in percentile_list {
-        let percentile_f64 = percentile as f64 / 100.0;
-        if let Some(value) = weighted_quantile(&filtered_data, total_weight, percentile_f64) {
-            results.push(value);
-        } else {
-            return None;
+    // Sort data by value once, then compute all requested percentiles
+    let mut sorted = data.to_vec();
+    sorted.par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    // Precompute target cumulative weights for each percentile, keeping original index
+    let mut targets: Vec<(f64, usize)> = percentile_list
+        .iter()
+        .enumerate()
+        .map(|(idx, &p)| {
+            let percentile_f64 = p as f64 / 100.0;
+            let target_cum_weight = percentile_f64 * total_weight;
+            (target_cum_weight, idx)
+        })
+        .collect();
+    targets.par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut results = vec![0.0; percentile_list.len()];
+    let mut cum_weight = 0.0;
+    let mut target_idx = 0;
+    for &(value, weight) in &sorted {
+        cum_weight += weight;
+        while target_idx < targets.len() && cum_weight >= targets[target_idx].0 {
+            let original_idx = targets[target_idx].1;
+            results[original_idx] = value;
+            target_idx += 1;
+        }
+        if target_idx == targets.len() {
+            break;
         }
     }
 

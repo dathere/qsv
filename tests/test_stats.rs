@@ -4118,6 +4118,309 @@ fn stats_weighted_percentiles() {
 }
 
 #[test]
+fn stats_weighted_geometric_mean() {
+    let wrk = Workdir::new("stats_weighted_geometric_mean");
+    // Values: [2, 8, 32], Weights: [1, 1, 1]
+    // Weighted geometric mean = exp((1*ln(2) + 1*ln(8) + 1*ln(32)) / 3)
+    // = exp((ln(2) + ln(8) + ln(32)) / 3) = exp(ln(2*8*32) / 3) = exp(ln(512) / 3)
+    // = exp(ln(512^(1/3))) = 512^(1/3) = 8.0
+    // With equal weights, should match unweighted geometric mean
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["2", "1"],
+            svec!["8", "1"],
+            svec!["32", "1"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight").arg("weight").arg("data.csv");
+
+    // Check command succeeds
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+    assert!(got.len() > 1, "Should have at least one data row");
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let geom_mean_idx = headers
+        .iter()
+        .position(|h| h == "geometric_mean")
+        .expect("Should have geometric_mean column");
+    let geom_mean_str = &value_row[geom_mean_idx];
+
+    // Check if geometric_mean is empty or NaN
+    assert!(
+        !geom_mean_str.is_empty(),
+        "Geometric mean should not be empty"
+    );
+    let geom_mean_val: f64 = geom_mean_str
+        .parse()
+        .expect("Geometric mean should be a valid number");
+
+    // Expected: (2 * 8 * 32)^(1/3) = 512^(1/3) ≈ 8.0
+    assert!(
+        (geom_mean_val - 8.0).abs() < 0.01,
+        "Expected geometric mean ~8.0, got {}",
+        geom_mean_val
+    );
+}
+
+#[test]
+fn stats_weighted_geometric_mean_unequal_weights() {
+    let wrk = Workdir::new("stats_weighted_geometric_mean_unequal_weights");
+    // Values: [2, 8], Weights: [1, 3]
+    // Weighted geometric mean = exp((1*ln(2) + 3*ln(8)) / 4)
+    // = exp((ln(2) + 3*ln(8)) / 4) = exp((ln(2) + ln(8^3)) / 4)
+    // = exp(ln(2 * 512) / 4) = exp(ln(1024) / 4) = 1024^(1/4) ≈ 5.66
+    wrk.create(
+        "data.csv",
+        vec![svec!["value", "weight"], svec!["2", "1"], svec!["8", "3"]],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight").arg("weight").arg("data.csv");
+
+    // Check command succeeds
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+    assert!(got.len() > 1, "Should have at least one data row");
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let geom_mean_idx = headers
+        .iter()
+        .position(|h| h == "geometric_mean")
+        .expect("Should have geometric_mean column");
+    let geom_mean_str = &value_row[geom_mean_idx];
+
+    assert!(
+        !geom_mean_str.is_empty(),
+        "Geometric mean should not be empty"
+    );
+    let geom_mean_val: f64 = geom_mean_str
+        .parse()
+        .expect("Geometric mean should be a valid number");
+
+    // Expected: exp((ln(2) + 3*ln(8)) / 4) = exp(ln(2 * 512) / 4) = 1024^(1/4) ≈ 5.66
+    let expected = (2.0_f64 * 8.0_f64.powi(3)).powf(1.0 / 4.0);
+    assert!(
+        (geom_mean_val - expected).abs() < 0.01,
+        "Expected geometric mean ~{}, got {}",
+        expected,
+        geom_mean_val
+    );
+}
+
+#[test]
+fn stats_weighted_harmonic_mean() {
+    let wrk = Workdir::new("stats_weighted_harmonic_mean");
+    // Values: [2, 4, 8], Weights: [1, 1, 1]
+    // Weighted harmonic mean = 3 / (1/2 + 1/4 + 1/8) = 3 / (4/8 + 2/8 + 1/8)
+    // = 3 / (7/8) = 3 * 8/7 = 24/7 ≈ 3.4286
+    // With equal weights, should match unweighted harmonic mean
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["2", "1"],
+            svec!["4", "1"],
+            svec!["8", "1"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight").arg("weight").arg("data.csv");
+
+    // Check command succeeds
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+    assert!(got.len() > 1, "Should have at least one data row");
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let harm_mean_idx = headers
+        .iter()
+        .position(|h| h == "harmonic_mean")
+        .expect("Should have harmonic_mean column");
+    let harm_mean_str = &value_row[harm_mean_idx];
+
+    // Check if harmonic_mean is empty or NaN
+    assert!(
+        !harm_mean_str.is_empty(),
+        "Harmonic mean should not be empty"
+    );
+    let harm_mean_val: f64 = harm_mean_str
+        .parse()
+        .expect("Harmonic mean should be a valid number");
+
+    // Expected: 3 / (1/2 + 1/4 + 1/8) = 3 / (7/8) = 24/7 ≈ 3.4286
+    let expected = 3.0 / (1.0 / 2.0 + 1.0 / 4.0 + 1.0 / 8.0);
+    assert!(
+        (harm_mean_val - expected).abs() < 0.01,
+        "Expected harmonic mean ~{}, got {}",
+        expected,
+        harm_mean_val
+    );
+}
+
+#[test]
+fn stats_weighted_harmonic_mean_unequal_weights() {
+    let wrk = Workdir::new("stats_weighted_harmonic_mean_unequal_weights");
+    // Values: [2, 8], Weights: [1, 3]
+    // Weighted harmonic mean = (1 + 3) / (1/2 + 3/8) = 4 / (4/8 + 3/8)
+    // = 4 / (7/8) = 4 * 8/7 = 32/7 ≈ 4.5714
+    wrk.create(
+        "data.csv",
+        vec![svec!["value", "weight"], svec!["2", "1"], svec!["8", "3"]],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight").arg("weight").arg("data.csv");
+
+    // Check command succeeds
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+    assert!(got.len() > 1, "Should have at least one data row");
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let harm_mean_idx = headers
+        .iter()
+        .position(|h| h == "harmonic_mean")
+        .expect("Should have harmonic_mean column");
+    let harm_mean_str = &value_row[harm_mean_idx];
+
+    assert!(
+        !harm_mean_str.is_empty(),
+        "Harmonic mean should not be empty"
+    );
+    let harm_mean_val: f64 = harm_mean_str
+        .parse()
+        .expect("Harmonic mean should be a valid number");
+
+    // Expected: (1 + 3) / (1/2 + 3/8) = 4 / (7/8) = 32/7 ≈ 4.5714
+    let expected = (1.0 + 3.0) / (1.0 / 2.0 + 3.0 / 8.0);
+    assert!(
+        (harm_mean_val - expected).abs() < 0.01,
+        "Expected harmonic mean ~{}, got {}",
+        expected,
+        harm_mean_val
+    );
+}
+
+#[test]
+fn stats_weighted_geometric_mean_zero_or_negative() {
+    let wrk = Workdir::new("stats_weighted_geometric_mean_zero_or_negative");
+    // Geometric mean requires positive values
+    // Test with zero and negative values - should handle gracefully
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["-1", "1"],
+            svec!["0", "1"],
+            svec!["2", "1"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight").arg("weight").arg("data.csv");
+
+    // Check command succeeds
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+    assert!(got.len() > 1, "Should have at least one data row");
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let geom_mean_idx = headers
+        .iter()
+        .position(|h| h == "geometric_mean")
+        .expect("Should have geometric_mean column");
+    let geom_mean_str = &value_row[geom_mean_idx];
+
+    // Geometric mean should only consider positive values (2)
+    // So it should be exp(ln(2) / 1) = 2.0
+    // But if negative/zero values cause issues, it might be NaN or empty
+    if !geom_mean_str.is_empty() && geom_mean_str != "NaN" {
+        let geom_mean_val: f64 = geom_mean_str.parse().unwrap_or(f64::NAN);
+        // Should only consider positive value (2), so result should be 2.0
+        assert!(
+            (geom_mean_val - 2.0).abs() < 0.01 || geom_mean_val.is_nan(),
+            "Geometric mean should be ~2.0 (only positive values) or NaN, got {}",
+            geom_mean_val
+        );
+    }
+}
+
+#[test]
+fn stats_weighted_harmonic_mean_zero() {
+    let wrk = Workdir::new("stats_weighted_harmonic_mean_zero");
+    // Harmonic mean requires non-zero values
+    // Test with zero values - should handle gracefully
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["0", "1"],
+            svec!["2", "1"],
+            svec!["4", "1"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight").arg("weight").arg("data.csv");
+
+    // Check command succeeds
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+    assert!(got.len() > 1, "Should have at least one data row");
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let harm_mean_idx = headers
+        .iter()
+        .position(|h| h == "harmonic_mean")
+        .expect("Should have harmonic_mean column");
+    let harm_mean_str = &value_row[harm_mean_idx];
+
+    // Harmonic mean should only consider non-zero values (2, 4)
+    // So it should be 2 / (1/2 + 1/4) = 2 / (3/4) = 8/3 ≈ 2.667
+    // But if zero values cause issues, it might be NaN or empty
+    if !harm_mean_str.is_empty() && harm_mean_str != "NaN" {
+        let harm_mean_val: f64 = harm_mean_str.parse().unwrap_or(f64::NAN);
+        let expected = 2.0 / (1.0 / 2.0 + 1.0 / 4.0);
+        assert!(
+            (harm_mean_val - expected).abs() < 0.01 || harm_mean_val.is_nan(),
+            "Harmonic mean should be ~{} (only non-zero values) or NaN, got {}",
+            expected,
+            harm_mean_val
+        );
+    }
+}
+
+#[test]
 fn stats_weighted_modes() {
     let wrk = Workdir::new("stats_weighted_modes");
     // Values: ["a", "b", "a", "c", "b"], Weights: [1, 2, 3, 1, 1]

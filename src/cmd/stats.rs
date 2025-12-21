@@ -323,7 +323,7 @@ https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#stats-cache)
 to make them work smarter & faster.
 
 To safeguard against undefined behavior, `stats` is the most extensively tested command,
-with ~520 tests. It also employs numerous performance optimizations (skip repetitive UTF-8
+with ~625 tests. It also employs numerous performance optimizations (skip repetitive UTF-8
 validation, skip bounds checks, cache results, etc.) that may result in undefined behavior
 if the CSV is not well-formed. See "safety:" comments in the code for more details.
 */
@@ -2449,6 +2449,7 @@ impl WhichStats {
 }
 
 #[allow(clippy::unsafe_derive_deserialize)]
+#[allow(clippy::struct_field_names)]
 #[repr(C, align(64))] // Align to cache line size for better performance
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 struct Stats {
@@ -2458,39 +2459,37 @@ struct Stats {
     is_ascii:      bool,      // 1 byte - accessed for strings
     max_precision: u16,       // 2 bytes - accessed for floats
 
-    // 4 bytes padding here for alignment
     nullcount:   u64, // 8 bytes - frequently updated counter
     sum_stotlen: u64, // 8 bytes - frequently updated counter
 
     // Configuration flags (accessed once during initialization)
-    which: WhichStats, // 10 bytes - read-only after initialization
-
-    // 6 bytes padding here to reach 64 bytes (cache line boundary)
+    which: WhichStats, // 40 bytes - read-only after initialization
 
     // CACHE LINE 2+: Less frequently accessed but still important
     // Large Option types that may be None, grouped by usage pattern
     sum: Option<TypedSum>, // 32 bytes - updated in add() for numeric types
 
     // CACHE LINE 3+: Statistics computation fields
-    online:          Option<OnlineStats>, // 48 bytes - used for mean/variance calculations
-    online_len:      Option<OnlineStats>, // 48 bytes - used for string length stats
-    weighted_online: Option<WeightedOnlineStats>, // Weighted online statistics
+    online:          Option<OnlineStats>, // 72 bytes - used for mean/variance calculations
+    online_len:      Option<OnlineStats>, // 72 bytes - used for string length stats
+    weighted_online: Option<WeightedOnlineStats>, // 72 bytes - Weighted online statistics
 
     // CACHE LINE 4+: Mode and cardinality computation
     modes:          Option<Unsorted<Vec<u8>>>, // 32 bytes - used for mode/cardinality
-    weighted_modes: Option<HashMap<Vec<u8>, f64>>, // Weighted mode/antimode tracking
+    weighted_modes: Option<HashMap<Vec<u8>, f64>>, // 48 bytes - Weighted mode/antimode tracking
 
     // CACHE LINE 5+: Sorting-based statistics
     #[allow(clippy::struct_field_names)]
     unsorted_stats:          Option<Unsorted<f64>>, // 32 bytes - median/quartiles/percentiles
-    weighted_unsorted_stats: Option<Vec<(f64, f64)>>, /* (value, weight) tuples for weighted
+    weighted_unsorted_stats: Option<Vec<(f64, f64)>>, /* 24 bytes - (value, weight) tuples for
+                                                       * weighted
                                                        * quantiles */
 
     // CACHE LINE 6+: Min/Max tracking (largest field, least cache-friendly)
     minmax: Option<TypedMinMax>, // 432 bytes - largest field, accessed less frequently
 
     // Total weight sum for weighted statistics
-    total_weight: f64,
+    total_weight: f64, // 8 bytes - total weight sum for weighted statistics
 }
 
 /// Weighted online statistics using the weighted Welford's algorithm (West, 1979).
@@ -2504,23 +2503,35 @@ struct Stats {
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
 struct WeightedOnlineStats {
     /// Sum of all weights: W_n = Σ(w_i)
-    sum_weights:       f64,
+    sum_weights:              f64,
     /// Current weighted mean: M_n
-    weighted_mean:     f64,
+    weighted_mean:            f64,
     /// Sum of squared differences: S_n = Σ(w_i * (x_i - M_{i-1}) * (x_i - M_i))
-    sum_squared_diffs: f64,
+    sum_squared_diffs:        f64,
+    /// Sum of weighted logarithms: Σ(w_i * ln(x_i)) for weighted geometric mean
+    sum_weighted_logs:        f64,
+    /// Sum of weights for positive values (used as denominator for geometric mean)
+    sum_weights_positive:     f64,
+    /// Sum of weighted reciprocals: Σ(w_i / x_i) for weighted harmonic mean
+    sum_weighted_reciprocals: f64,
+    /// Sum of weights for non-zero values (used as denominator for harmonic mean)
+    sum_weights_nonzero:      f64,
     /// Count of samples (for compatibility with OnlineStats interface)
-    count:             usize,
+    count:                    usize,
 }
 
 impl WeightedOnlineStats {
     /// Creates a new `WeightedOnlineStats` with all values initialized to zero.
     const fn new() -> Self {
         Self {
-            sum_weights:       0.0,
-            weighted_mean:     0.0,
-            sum_squared_diffs: 0.0,
-            count:             0,
+            sum_weights:              0.0,
+            weighted_mean:            0.0,
+            sum_squared_diffs:        0.0,
+            sum_weighted_logs:        0.0,
+            sum_weights_positive:     0.0,
+            sum_weighted_reciprocals: 0.0,
+            sum_weights_nonzero:      0.0,
+            count:                    0,
         }
     }
 
@@ -2537,6 +2548,8 @@ impl WeightedOnlineStats {
     /// - W_n = W_{n-1} + w_n
     /// - M_n = M_{n-1} + (w_n / W_n) * (x_n - M_{n-1})
     /// - S_n = S_{n-1} + w_n * (x_n - M_{n-1}) * (x_n - M_n)
+    /// - For geometric mean: accumulate w_i * ln(x_i) (only if x_i > 0)
+    /// - For harmonic mean: accumulate w_i / x_i (only if x_i != 0)
     #[inline]
     fn add_weighted(&mut self, x: f64, w: f64) {
         if w <= 0.0 || !w.is_finite() || !x.is_finite() {
@@ -2554,6 +2567,18 @@ impl WeightedOnlineStats {
         self.weighted_mean += (w / self.sum_weights) * delta;
         let delta2 = x - self.weighted_mean;
         self.sum_squared_diffs += w * delta * delta2;
+
+        // Accumulate weighted logs for geometric mean (only if x > 0)
+        if x > 0.0 {
+            self.sum_weighted_logs += w * x.ln();
+            self.sum_weights_positive += w;
+        }
+
+        // Accumulate weighted reciprocals for harmonic mean (only if x != 0)
+        if x != 0.0 {
+            self.sum_weighted_reciprocals += w / x;
+            self.sum_weights_nonzero += w;
+        }
     }
 
     /// Returns the weighted mean.
@@ -2577,6 +2602,32 @@ impl WeightedOnlineStats {
     #[inline]
     fn stddev(&self) -> f64 {
         self.variance().sqrt()
+    }
+
+    /// Returns the weighted geometric mean.
+    ///
+    /// Formula: exp(Σ(w_i * ln(x_i)) / Σ(w_i)) where sums are over positive values only.
+    ///
+    /// Returns NaN if no positive values were encountered or if sum_weights_positive is zero.
+    #[inline]
+    fn geometric_mean(&self) -> f64 {
+        if self.sum_weights_positive <= 0.0 || self.sum_weighted_logs.is_nan() {
+            return f64::NAN;
+        }
+        (self.sum_weighted_logs / self.sum_weights_positive).exp()
+    }
+
+    /// Returns the weighted harmonic mean.
+    ///
+    /// Formula: Σ(w_i) / Σ(w_i / x_i) where sums are over non-zero values only.
+    ///
+    /// Returns NaN if no non-zero values were encountered or if sum_weighted_reciprocals is zero.
+    #[inline]
+    fn harmonic_mean(&self) -> f64 {
+        if self.sum_weights_nonzero <= 0.0 || self.sum_weighted_reciprocals <= 0.0 {
+            return f64::NAN;
+        }
+        self.sum_weights_nonzero / self.sum_weighted_reciprocals
     }
 
     /// Returns the number of samples added (for compatibility).
@@ -2619,6 +2670,11 @@ impl WeightedOnlineStats {
             .sum_weights
             .mul_add(self.weighted_mean, other.sum_weights * other.weighted_mean)
             / total_weights;
+        // Update sum of weighted logs and reciprocals (simple addition)
+        self.sum_weighted_logs += other.sum_weighted_logs;
+        self.sum_weights_positive += other.sum_weights_positive;
+        self.sum_weighted_reciprocals += other.sum_weighted_reciprocals;
+        self.sum_weights_nonzero += other.sum_weights_nonzero;
         // Update sum of weights and count
         self.sum_weights = total_weights;
         self.count += other.count;
@@ -2723,7 +2779,7 @@ fn weighted_quartiles(data: &[(f64, f64)], total_weight: f64) -> Option<(f64, f6
             break;
         }
     }
-    if let (Some(q1), Some(q2), Some(q3)) = (results[0], results[1], results[2]) {
+    if let (Some(q1), Some(q2), Some(q3)) = results.into() {
         Some((q1, q2, q3))
     } else {
         None
@@ -3678,18 +3734,9 @@ impl Stats {
             } else {
                 (std_dev / mean) * 100.0_f64
             };
-            // Note: geometric_mean and harmonic_mean are not typically weighted
-            // For now, we'll use unweighted versions if available, otherwise use weighted mean
-            let geometric_mean = if let Some(ref v) = self.online {
-                v.geometric_mean()
-            } else {
-                mean // Fallback to weighted mean
-            };
-            let harmonic_mean = if let Some(ref v) = self.online {
-                v.harmonic_mean()
-            } else {
-                mean // Fallback to weighted mean
-            };
+            // Use weighted geometric and harmonic means
+            let geometric_mean = wos.geometric_mean();
+            let harmonic_mean = wos.harmonic_mean();
             if self.typ == TFloat || self.typ == TInteger {
                 record.push_field(&mean_string);
                 record.push_field(&util::round_num(sem, round_places));

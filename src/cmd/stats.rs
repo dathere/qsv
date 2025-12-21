@@ -2734,6 +2734,65 @@ fn weighted_median(data: &Vec<(f64, f64)>, total_weight: f64) -> Option<f64> {
     weighted_quantile(data, total_weight, 0.5)
 }
 
+/// Computes weighted Median Absolute Deviation (MAD) from (value, weight) pairs.
+///
+/// # Arguments
+///
+/// * `data` - Vector of (value, weight) tuples
+/// * `total_weight` - Total sum of all weights
+/// * `median` - The weighted median value
+///
+/// # Returns
+///
+/// The weighted MAD value if data is not empty, None otherwise.
+fn weighted_mad(data: &Vec<(f64, f64)>, total_weight: f64, median: f64) -> Option<f64> {
+    if data.is_empty() || total_weight <= 0.0 {
+        return None;
+    }
+
+    // Calculate absolute deviations from the median
+    let abs_deviations: Vec<(f64, f64)> = data
+        .iter()
+        .map(|&(value, weight)| ((value - median).abs(), weight))
+        .collect();
+
+    // Calculate weighted median of absolute deviations
+    weighted_median(&abs_deviations, total_weight)
+}
+
+/// Computes weighted percentiles from (value, weight) pairs.
+///
+/// # Arguments
+///
+/// * `data` - Vector of (value, weight) tuples
+/// * `total_weight` - Total sum of all weights
+/// * `percentile_list` - List of percentiles to compute (as u8 values, e.g., 5, 10, 90, 95)
+///
+/// # Returns
+///
+/// Vector of percentile values in the same order as percentile_list, or None if data is empty
+fn weighted_percentiles(
+    data: &Vec<(f64, f64)>,
+    total_weight: f64,
+    percentile_list: &[u8],
+) -> Option<Vec<f64>> {
+    if data.is_empty() || total_weight <= 0.0 {
+        return None;
+    }
+
+    let mut results = Vec::with_capacity(percentile_list.len());
+    for &percentile in percentile_list {
+        let percentile_f64 = percentile as f64 / 100.0;
+        if let Some(value) = weighted_quantile(data, total_weight, percentile_f64) {
+            results.push(value);
+        } else {
+            return None;
+        }
+    }
+
+    Some(results)
+}
+
 /// Converts a timestamp in milliseconds to RFC3339 format.
 ///
 /// This function converts a Unix timestamp (in milliseconds) to a human-readable
@@ -3693,26 +3752,44 @@ impl Stats {
         }
 
         // median absolute deviation (MAD)
-        if let Some(v) = self.unsorted_stats.as_mut().and_then(|v| {
-            if let TNull | TString = typ {
-                None
-            } else if self.which.mad {
-                v.mad(existing_median)
+        if self.which.mad {
+            let mad_value = if let Some(ref weighted_data) = self.weighted_unsorted_stats {
+                // Use weighted MAD
+                match typ {
+                    TNull | TString => None,
+                    _ => {
+                        // Get the weighted median for MAD calculation
+                        existing_median
+                            .or_else(|| weighted_median(weighted_data, self.total_weight))
+                            .and_then(|weighted_median_val| {
+                                weighted_mad(weighted_data, self.total_weight, weighted_median_val)
+                            })
+                    },
+                }
             } else {
-                None
-            }
-        }) {
-            if typ == TDateTime || typ == TDate {
-                // like stddev, return MAD in days when the type is a date or datetime
-                record.push_field(&util::round_num(
-                    v / MS_IN_DAY,
-                    u32::max(round_places, DAY_DECIMAL_PLACES),
-                ));
+                // Use unweighted MAD
+                self.unsorted_stats.as_mut().and_then(|v| {
+                    if let TNull | TString = typ {
+                        None
+                    } else {
+                        v.mad(existing_median)
+                    }
+                })
+            };
+
+            if let Some(v) = mad_value {
+                if typ == TDateTime || typ == TDate {
+                    // like stddev, return MAD in days when the type is a date or datetime
+                    record.push_field(&util::round_num(
+                        v / MS_IN_DAY,
+                        u32::max(round_places, DAY_DECIMAL_PLACES),
+                    ));
+                } else {
+                    record.push_field(&util::round_num(v, round_places));
+                }
             } else {
-                record.push_field(&util::round_num(v, round_places));
+                record.push_field(EMPTY_STR);
             }
-        } else if self.which.mad {
-            record.push_field(EMPTY_STR);
         }
 
         // quartiles
@@ -3730,53 +3807,60 @@ impl Stats {
         // Add percentiles after quartiles
         // Only add percentiles field if which.percentiles is true (matching header generation)
         if self.which.percentiles {
-            if let Some(v) = self.unsorted_stats.as_mut() {
-                match typ {
-                    TInteger | TFloat | TDate | TDateTime => {
-                        // Parse percentile list, preserving both original labels and u8 values
-                        let (percentile_labels, percentile_list): (Vec<String>, Vec<u8>) = self
-                            .which
-                            .percentile_list
-                            .split(',')
-                            .filter_map(|p: &str| {
-                                fast_float2::parse(p.trim())
-                                    .ok()
-                                    .map(|p_val: f64| (p.trim().to_string(), p_val as u8))
-                            })
-                            .unzip();
+            match typ {
+                TInteger | TFloat | TDate | TDateTime => {
+                    // Parse percentile list, preserving both original labels and u8 values
+                    let (percentile_labels, percentile_list): (Vec<String>, Vec<u8>) = self
+                        .which
+                        .percentile_list
+                        .split(',')
+                        .filter_map(|p: &str| {
+                            fast_float2::parse(p.trim())
+                                .ok()
+                                .map(|p_val: f64| (p.trim().to_string(), p_val as u8))
+                        })
+                        .unzip();
 
-                        if let Some(percentile_values) = v.custom_percentiles(&percentile_list) {
-                            let formatted_values = if typ == TDateTime || typ == TDate {
-                                percentile_labels
-                                    .iter()
-                                    .zip(percentile_values.iter())
-                                    .map(|(label, p)| {
-                                        // Explicitly cast f64 to i64 for timestamp conversion
-                                        #[allow(clippy::cast_possible_truncation)]
-                                        let ts = p.round() as i64;
-                                        let formatted_value = timestamp_ms_to_rfc3339(ts, typ);
-                                        format!("{label}: {formatted_value}")
-                                    })
-                                    .collect::<Vec<_>>()
-                            } else {
-                                percentile_labels
-                                    .iter()
-                                    .zip(percentile_values.iter())
-                                    .map(|(label, p)| {
-                                        let formatted_value = util::round_num(*p, round_places);
-                                        format!("{label}: {formatted_value}")
-                                    })
-                                    .collect::<Vec<_>>()
-                            };
-                            record.push_field(&formatted_values.join(stats_separator));
+                    let percentile_values =
+                        if let Some(ref weighted_data) = self.weighted_unsorted_stats {
+                            // Use weighted percentiles
+                            weighted_percentiles(weighted_data, self.total_weight, &percentile_list)
                         } else {
-                            record.push_field(EMPTY_STR);
-                        }
-                    },
-                    _ => record.push_field(EMPTY_STR),
-                }
-            } else {
-                record.push_field(EMPTY_STR);
+                            // Use unweighted percentiles
+                            self.unsorted_stats
+                                .as_mut()
+                                .and_then(|v| v.custom_percentiles(&percentile_list))
+                        };
+
+                    if let Some(percentile_vals) = percentile_values {
+                        let formatted_values = if typ == TDateTime || typ == TDate {
+                            percentile_labels
+                                .iter()
+                                .zip(percentile_vals.iter())
+                                .map(|(label, p)| {
+                                    // Explicitly cast f64 to i64 for timestamp conversion
+                                    #[allow(clippy::cast_possible_truncation)]
+                                    let ts = p.round() as i64;
+                                    let formatted_value = timestamp_ms_to_rfc3339(ts, typ);
+                                    format!("{label}: {formatted_value}")
+                                })
+                                .collect::<Vec<_>>()
+                        } else {
+                            percentile_labels
+                                .iter()
+                                .zip(percentile_vals.iter())
+                                .map(|(label, p)| {
+                                    let formatted_value = util::round_num(*p, round_places);
+                                    format!("{label}: {formatted_value}")
+                                })
+                                .collect::<Vec<_>>()
+                        };
+                        record.push_field(&formatted_values.join(stats_separator));
+                    } else {
+                        record.push_field(EMPTY_STR);
+                    }
+                },
+                _ => record.push_field(EMPTY_STR),
             }
         }
 

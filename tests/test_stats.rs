@@ -3958,6 +3958,166 @@ fn stats_weighted_quartiles() {
 }
 
 #[test]
+fn stats_weighted_mad() {
+    let wrk = Workdir::new("stats_weighted_mad");
+    // Values: [1, 2, 3], Weights: [1, 2, 1]
+    // Weighted median = 2.0
+    // Absolute deviations: [|1-2|, |2-2|, |3-2|] = [1, 0, 1] with weights [1, 2, 1]
+    // Weighted MAD = median of [1, 0, 1] with weights [1, 2, 1] = 0.0 (since 0 has weight 2)
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["1", "1"],
+            svec!["2", "2"],
+            svec!["3", "1"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight")
+        .arg("weight")
+        .arg("--mad")
+        .arg("data.csv");
+
+    // Check command succeeds
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+    assert!(
+        got.len() > 1,
+        "Should have at least one data row, got {} rows",
+        got.len()
+    );
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let mad_idx = headers
+        .iter()
+        .position(|h| h == "mad")
+        .expect("Should have mad column");
+    let mad_val: f64 = value_row[mad_idx]
+        .parse()
+        .expect("MAD should be a valid number");
+
+    // Weighted MAD should be 0.0 (median of absolute deviations [1, 0, 1] with weights [1, 2, 1])
+    // Cumulative weights for deviations: [1, 3, 4], median at 50% = 2.0, which corresponds to 0
+    assert!(
+        (mad_val - 0.0).abs() < 0.0001,
+        "Expected weighted MAD ~0.0, got {}",
+        mad_val
+    );
+}
+
+#[test]
+fn stats_weighted_percentiles() {
+    let wrk = Workdir::new("stats_weighted_percentiles");
+    // Values: [1, 2, 3, 4, 5], Weights: [1, 1, 2, 1, 1]
+    // Total weight = 6
+    // 10th percentile: 0.1 * 6 = 0.6 -> value 1 (cumulative weight reaches 1 at value 1)
+    // 50th percentile (median): 0.5 * 6 = 3.0 -> value 3 (cumulative weight reaches 4 at value 3)
+    // 90th percentile: 0.9 * 6 = 5.4 -> value 5 (cumulative weight reaches 6 at value 5)
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["1", "1"],
+            svec!["2", "1"],
+            svec!["3", "2"],
+            svec!["4", "1"],
+            svec!["5", "1"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--weight")
+        .arg("weight")
+        .arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("10,50,90")
+        .arg("data.csv");
+
+    // Check command succeeds
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty(), "Stats output should not be empty");
+    assert!(
+        got.len() > 1,
+        "Should have at least one data row, got {} rows",
+        got.len()
+    );
+
+    let headers = &got[0];
+    let value_row = &got[1];
+
+    let percentiles_idx = headers
+        .iter()
+        .position(|h| h == "percentiles")
+        .expect("Should have percentiles column");
+    let percentiles_str = &value_row[percentiles_idx];
+
+    // Parse percentiles string (format: "10: 1.0|50: 3.0|90: 5.0")
+    let percentile_parts: Vec<&str> = percentiles_str.split('|').collect();
+    assert_eq!(
+        percentile_parts.len(),
+        3,
+        "Should have 3 percentiles, got {}",
+        percentile_parts.len()
+    );
+
+    // Extract values from "10: 1.0" format
+    let p10_val: f64 = percentile_parts[0]
+        .split(':')
+        .nth(1)
+        .expect("Should have value after colon")
+        .trim()
+        .parse()
+        .expect("P10 should be a valid number");
+    let p50_val: f64 = percentile_parts[1]
+        .split(':')
+        .nth(1)
+        .expect("Should have value after colon")
+        .trim()
+        .parse()
+        .expect("P50 should be a valid number");
+    let p90_val: f64 = percentile_parts[2]
+        .split(':')
+        .nth(1)
+        .expect("Should have value after colon")
+        .trim()
+        .parse()
+        .expect("P90 should be a valid number");
+
+    // Verify percentile values
+    assert!(
+        (p10_val - 1.0).abs() < 0.1,
+        "Expected 10th percentile ~1.0, got {}",
+        p10_val
+    );
+    assert!(
+        (p50_val - 3.0).abs() < 0.1,
+        "Expected 50th percentile (median) ~3.0, got {}",
+        p50_val
+    );
+    assert!(
+        (p90_val - 5.0).abs() < 0.1,
+        "Expected 90th percentile ~5.0, got {}",
+        p90_val
+    );
+    // Verify ordering
+    assert!(
+        p10_val <= p50_val && p50_val <= p90_val,
+        "Percentiles should be ordered: P10={}, P50={}, P90={}",
+        p10_val,
+        p50_val,
+        p90_val
+    );
+}
+
+#[test]
 fn stats_weighted_missing_weight_column() {
     let wrk = Workdir::new("stats_weighted_missing_weight_column");
     wrk.create("data.csv", vec![svec!["value"], svec!["1"], svec!["2"]]);

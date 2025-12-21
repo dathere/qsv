@@ -98,7 +98,7 @@ crossbeam-channel = "0.5"
 csv = "1.4"
 csv-diff = "0.1"
 csv-index = "0.1"
-csvlens = { version = "0.14", optional = true, default-features = false, features = [
+csvlens = { version = "0.15", optional = true, default-features = false, features = [
     "clipboard",
 ] }
 csvs_convert = { version = "0.12", default-features = false, features = [
@@ -313,9 +313,6 @@ blake3 = { git = "https://github.com/BLAKE3-team/BLAKE3", rev = "890050c" }
 
 # use fork with updated redis 1.0 dependency & client-side caching features
 cached = { git = "https://github.com/nihohit/cached", branch = "client-side-caching" }
-
-# use latest upstream now that our PR has been merged
-csvlens = { git = "https://github.com/YS-L/csvlens", rev = "75d1c55", optional = true }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88", optional = true }

@@ -733,9 +733,9 @@ dependencies = [
 
 [[package]]
 name = "async-lock"
-version = "3.4.1"
+version = "3.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fd03604047cee9b6ce9de9f70c6cd540a0520c813cbd49bae61f33ab80ed1dc"
+checksum = "290f7f2596bd5b78a9fec8088ccd89180d7f9f55b94b0576823bbbdc72ee8311"
 dependencies = [
  "event-listener",
  "event-listener-strategy",
@@ -1846,8 +1846,9 @@ dependencies = [
 
 [[package]]
 name = "csvlens"
-version = "0.14.0"
-source = "git+https://github.com/YS-L/csvlens?rev=75d1c55#75d1c55a8a032f0fe02d2b17da494dc47d6f0747"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7015dcf5090ff8deac79b237801d60245752abff72ebf9bed3ec788da6c7831"
 dependencies = [
  "ansi-to-tui",
  "anyhow",

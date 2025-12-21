@@ -4200,16 +4200,8 @@ fn stats_weighted_modes() {
         .expect("antimode_occurrences should be a valid number");
 
     // Mode should be "a" with weight 4
-    assert_eq!(
-        mode_str, "a",
-        "Expected mode 'a', got '{}'",
-        mode_str
-    );
-    assert_eq!(
-        mode_count, 1,
-        "Expected mode_count 1, got {}",
-        mode_count
-    );
+    assert_eq!(mode_str, "a", "Expected mode 'a', got '{}'", mode_str);
+    assert_eq!(mode_count, 1, "Expected mode_count 1, got {}", mode_count);
     assert_eq!(
         mode_occurrences, 4,
         "Expected mode_occurrences 4 (weight), got {}",

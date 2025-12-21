@@ -1534,8 +1534,7 @@ impl Args {
                 })
                 .ok_or_else(|| {
                     CliError::Other(format!(
-                        "Weight column '{}' not found in CSV headers",
-                        weight_col
+                        "Weight column '{weight_col}' not found in CSV headers"
                     ))
                 })?;
 
@@ -1551,9 +1550,8 @@ impl Args {
             // Validate that we still have columns after excluding the weight column
             if sel_vec.is_empty() {
                 return Err(CliError::Other(format!(
-                    "After excluding weight column '{}', no columns remain for statistics \
-                     computation",
-                    weight_col
+                    "After excluding weight column '{weight_col}', no columns remain for \
+                     statistics computation"
                 )));
             }
 
@@ -1655,8 +1653,7 @@ impl Args {
                 })
                 .ok_or_else(|| {
                     CliError::Other(format!(
-                        "Weight column '{}' not found in CSV headers",
-                        weight_col
+                        "Weight column '{weight_col}' not found in CSV headers"
                     ))
                 })?;
 
@@ -1672,9 +1669,8 @@ impl Args {
             // Validate that we still have columns after excluding the weight column
             if sel_vec.is_empty() {
                 return Err(CliError::Other(format!(
-                    "After excluding weight column '{}', no columns remain for statistics \
-                     computation",
-                    weight_col
+                    "After excluding weight column '{weight_col}', no columns remain for \
+                     statistics computation"
                 )));
             }
 
@@ -2385,12 +2381,10 @@ fn stats_path(stats_csv_path: &Path, stdin_flag: bool, weighted: bool) -> io::Re
         } else {
             "stdin.stats.csv".to_string()
         }
+    } else if weighted {
+        format!("{}.stats.weighted.csv", fstem.to_string_lossy())
     } else {
-        if weighted {
-            format!("{}.stats.weighted.csv", fstem.to_string_lossy())
-        } else {
-            format!("{}.stats.csv", fstem.to_string_lossy())
-        }
+        format!("{}.stats.csv", fstem.to_string_lossy())
     };
 
     Ok(parent.join(new_fname))
@@ -2524,7 +2518,7 @@ struct Stats {
     weighted_online: Option<WeightedOnlineStats>, // Weighted online statistics
 
     // CACHE LINE 4+: Mode and cardinality computation
-    modes: Option<Unsorted<Vec<u8>>>, // 32 bytes - used for mode/cardinality
+    modes:          Option<Unsorted<Vec<u8>>>, // 32 bytes - used for mode/cardinality
     weighted_modes: Option<HashMap<Vec<u8>, f64>>, // Weighted mode/antimode tracking
 
     // CACHE LINE 5+: Sorting-based statistics
@@ -2562,7 +2556,7 @@ struct WeightedOnlineStats {
 
 impl WeightedOnlineStats {
     /// Creates a new `WeightedOnlineStats` with all values initialized to zero.
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             sum_weights:       0.0,
             weighted_mean:     0.0,
@@ -2605,7 +2599,7 @@ impl WeightedOnlineStats {
 
     /// Returns the weighted mean.
     #[inline]
-    fn mean(&self) -> f64 {
+    const fn mean(&self) -> f64 {
         self.weighted_mean
     }
 
@@ -2628,7 +2622,7 @@ impl WeightedOnlineStats {
 
     /// Returns the number of samples added (for compatibility).
     #[inline]
-    fn len(&self) -> usize {
+    const fn len(&self) -> usize {
         self.count
     }
 
@@ -2649,14 +2643,21 @@ impl WeightedOnlineStats {
         let delta = other.weighted_mean - self.weighted_mean;
 
         // Update sum of squared differences using parallel merge formula
-        self.sum_squared_diffs += other.sum_squared_diffs
-            + (self.sum_weights * other.sum_weights / total_weights) * delta * delta;
+        // self.sum_squared_diffs += other.sum_squared_diffs
+        //     + (self.sum_weights * other.sum_weights / total_weights) * delta * delta;
+        // below is the fused multiply-add implementation of the above formula
+        self.sum_squared_diffs = ((self.sum_weights * other.sum_weights / total_weights) * delta)
+            .mul_add(delta, other.sum_squared_diffs);
 
         // Update weighted mean
-        self.weighted_mean = (self.sum_weights * self.weighted_mean
-            + other.sum_weights * other.weighted_mean)
+        // self.weighted_mean = (self.sum_weights * self.weighted_mean
+        //     + other.sum_weights * other.weighted_mean)
+        //     / total_weights;
+        // below is the fused multiply-add implementation of the above formula
+        self.weighted_mean = self
+            .sum_weights
+            .mul_add(self.weighted_mean, other.sum_weights * other.weighted_mean)
             / total_weights;
-
         // Update sum of weights and count
         self.sum_weights = total_weights;
         self.count += other.count;
@@ -2674,19 +2675,19 @@ impl WeightedOnlineStats {
 /// # Returns
 ///
 /// The value at the specified percentile, using linear interpolation if needed.
-fn weighted_quantile(data: &Vec<(f64, f64)>, total_weight: f64, percentile: f64) -> Option<f64> {
+fn weighted_quantile(data: &[(f64, f64)], total_weight: f64, percentile: f64) -> Option<f64> {
     if data.is_empty() || total_weight <= 0.0 {
         return None;
     }
 
     // Clone and sort by value to avoid mutating the original data
-    let mut sorted_data = data.clone();
+    let mut sorted_data = data.to_owned();
     sorted_data.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let target_weight = percentile * total_weight;
     let mut cum_weight = 0.0;
 
-    for &(value, weight) in sorted_data.iter() {
+    for &(value, weight) in &sorted_data {
         cum_weight += weight;
         // Return the value at which cumulative weight first reaches or exceeds the target
         // This is the "nearest rank" method for weighted quantiles
@@ -2709,7 +2710,7 @@ fn weighted_quantile(data: &Vec<(f64, f64)>, total_weight: f64, percentile: f64)
 /// # Returns
 ///
 /// Option containing (Q1, Q2, Q3) if data is not empty, None otherwise.
-fn weighted_quartiles(data: &Vec<(f64, f64)>, total_weight: f64) -> Option<(f64, f64, f64)> {
+fn weighted_quartiles(data: &[(f64, f64)], total_weight: f64) -> Option<(f64, f64, f64)> {
     if data.is_empty() {
         return None;
     }
@@ -2732,7 +2733,7 @@ fn weighted_quartiles(data: &Vec<(f64, f64)>, total_weight: f64) -> Option<(f64,
 /// # Returns
 ///
 /// The weighted median value if data is not empty, None otherwise.
-fn weighted_median(data: &Vec<(f64, f64)>, total_weight: f64) -> Option<f64> {
+fn weighted_median(data: &[(f64, f64)], total_weight: f64) -> Option<f64> {
     weighted_quantile(data, total_weight, 0.5)
 }
 
@@ -2747,7 +2748,7 @@ fn weighted_median(data: &Vec<(f64, f64)>, total_weight: f64) -> Option<f64> {
 /// # Returns
 ///
 /// The weighted MAD value if data is not empty, None otherwise.
-fn weighted_mad(data: &Vec<(f64, f64)>, total_weight: f64, median: f64) -> Option<f64> {
+fn weighted_mad(data: &[(f64, f64)], total_weight: f64, median: f64) -> Option<f64> {
     if data.is_empty() || total_weight <= 0.0 {
         return None;
     }
@@ -2774,7 +2775,7 @@ fn weighted_mad(data: &Vec<(f64, f64)>, total_weight: f64, median: f64) -> Optio
 ///
 /// Vector of percentile values in the same order as percentile_list, or None if data is empty
 fn weighted_percentiles(
-    data: &Vec<(f64, f64)>,
+    data: &[(f64, f64)],
     total_weight: f64,
     percentile_list: &[u8],
 ) -> Option<Vec<f64>> {
@@ -3244,12 +3245,12 @@ impl Stats {
         // We also need to know the cardinality to --infer-boolean should that be enabled
         let mut cardinality = 0;
         let mut mc_pieces: Vec<String> = Vec::new();
-        
+
         // Check if we should use weighted modes/antimodes
         if let Some(ref weighted_modes_map) = self.weighted_modes {
             // Weighted modes/antimodes computation
             mc_pieces.reserve(8);
-            
+
             if self.which.cardinality {
                 // Cardinality is the number of unique values
                 cardinality = weighted_modes_map.len() as u64;
@@ -3261,7 +3262,7 @@ impl Stats {
                     round_places,
                 ));
             }
-            
+
             if self.which.mode {
                 if weighted_modes_map.is_empty() {
                     // Empty data
@@ -3293,33 +3294,37 @@ impl Stats {
                     } else {
                         // Find max and min weights
                         let max_weight = weighted_modes_map.values().copied().fold(0.0, f64::max);
-                        let min_weight = weighted_modes_map.values().copied().fold(f64::INFINITY, f64::min);
-                        
+                        let min_weight = weighted_modes_map
+                            .values()
+                            .copied()
+                            .fold(f64::INFINITY, f64::min);
+
                         // Collect modes (values with max weight)
                         let mut modes_result: Vec<Vec<u8>> = Vec::new();
-                        for (value, &weight) in weighted_modes_map.iter() {
+                        for (value, &weight) in weighted_modes_map {
                             if (weight - max_weight).abs() < 1e-10 {
                                 modes_result.push(value.clone());
                             }
                         }
-                        
+
                         // Collect antimodes (values with min weight) - limit to 10
                         let mut antimodes_result: Vec<Vec<u8>> = Vec::new();
                         let mut antimodes_collected = 0;
-                        for (value, &weight) in weighted_modes_map.iter() {
-                            if (weight - min_weight).abs() < 1e-10 {
-                                if antimodes_collected < MAX_ANTIMODES {
-                                    antimodes_result.push(value.clone());
-                                    antimodes_collected += 1;
-                                }
+                        for (value, &weight) in weighted_modes_map {
+                            if (weight - min_weight).abs() < 1e-10
+                                && antimodes_collected < MAX_ANTIMODES
+                            {
+                                antimodes_result.push(value.clone());
+                                antimodes_collected += 1;
                             }
                         }
-                        
+
                         let modes_count = modes_result.len();
-                        let antimodes_count = weighted_modes_map.values()
+                        let antimodes_count = weighted_modes_map
+                            .values()
                             .filter(|&&w| (w - min_weight).abs() < 1e-10)
                             .count();
-                        
+
                         // Format modes
                         let modes_list = if visualize_ws {
                             modes_result
@@ -3332,7 +3337,7 @@ impl Stats {
                                 .map(|c| String::from_utf8_lossy(c))
                                 .join(stats_separator)
                         };
-                        
+
                         // Format antimodes
                         let antimodes_len = ANTIMODES_LEN.get_or_init(|| {
                             std::env::var("QSV_ANTIMODES_LEN")
@@ -3344,40 +3349,40 @@ impl Stats {
                                 })
                                 .unwrap_or(DEFAULT_ANTIMODES_LEN)
                         });
-                        
+
                         let mut antimodes_list = String::with_capacity(*antimodes_len);
-                        
+
                         // We only store the first 10 antimodes
                         // so if antimodes_count > 10, add the "*PREVIEW: " prefix
                         if antimodes_count > MAX_ANTIMODES {
                             antimodes_list.push_str("*PREVIEW: ");
                         }
-                        
+
                         let antimodes_vals = &antimodes_result
                             .iter()
                             .map(|c| String::from_utf8_lossy(c))
                             .join(stats_separator);
-                        
+
                         // if the antimodes result starts with the separator,
                         // it indicates that NULL is the first antimode. Add NULL to the list.
                         if antimodes_vals.starts_with(stats_separator) {
                             antimodes_list.push_str("NULL");
                         }
                         antimodes_list.push_str(antimodes_vals);
-                        
+
                         // and truncate at antimodes_len characters with an ellipsis
                         if antimodes_list.len() > *antimodes_len {
                             util::utf8_truncate(&mut antimodes_list, *antimodes_len + 1);
                             antimodes_list.push_str("...");
                         }
-                        
+
                         // For weighted modes, mode_occurrences is the max weight (rounded)
                         // For weighted antimodes, antimode_occurrences is the min weight (rounded)
                         #[allow(clippy::cast_possible_truncation)]
                         let mode_occurrences = max_weight.round() as u32;
                         #[allow(clippy::cast_possible_truncation)]
                         let antimode_occurrences = min_weight.round() as u32;
-                        
+
                         mc_pieces.extend_from_slice(&[
                             // mode/s
                             modes_list,
@@ -3443,7 +3448,9 @@ impl Stats {
                             let modes_list = if visualize_ws {
                                 modes_result
                                     .iter()
-                                    .map(|c| util::visualize_whitespace(&String::from_utf8_lossy(c)))
+                                    .map(|c| {
+                                        util::visualize_whitespace(&String::from_utf8_lossy(c))
+                                    })
                                     .join(stats_separator)
                             } else {
                                 modes_result
@@ -4075,7 +4082,7 @@ impl Commute for Stats {
         // Merge weighted modes
         if let Some(ref mut wm) = self.weighted_modes {
             if let Some(ref other_wm) = other.weighted_modes {
-                for (value, weight) in other_wm.iter() {
+                for (value, weight) in other_wm {
                     *wm.entry(value.clone()).or_insert(0.0) += weight;
                 }
             }

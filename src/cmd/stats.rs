@@ -2553,7 +2553,7 @@ impl WeightedOnlineStats {
     /// - For harmonic mean: accumulate w_i / x_i (only if x_i != 0)
     #[inline]
     fn add_weighted(&mut self, x: f64, w: f64) {
-        if w <= 0.0 || !w.is_finite() || !x.is_finite() {
+        if w <= 0.0 {
             return;
         }
 
@@ -3050,7 +3050,7 @@ impl Stats {
         let t = self.typ;
 
         // Update total weight for weighted statistics
-        if weight > 0.0 && weight.is_finite() {
+        if weight > 0.0 {
             self.total_weight += weight;
         }
 
@@ -3122,8 +3122,8 @@ impl Stats {
                     v.add(float_val);
                 }
                 if let Some(v) = self.weighted_unsorted_stats.as_mut() {
-                    // Only store valid weights (positive and finite) to avoid filtering later
-                    if weight > 0.0 && weight.is_finite() {
+                    // Only store valid weights to avoid filtering later
+                    if weight > 0.0 {
                         v.push((float_val, weight));
                     }
                 }
@@ -3140,8 +3140,8 @@ impl Stats {
                     v.add(float_val);
                 }
                 if let Some(v) = self.weighted_unsorted_stats.as_mut() {
-                    // Only store valid weights (positive and finite) to avoid filtering later
-                    if weight > 0.0 && weight.is_finite() {
+                    // Only store valid weights to avoid filtering later
+                    if weight > 0.0 {
                         v.push((float_val, weight));
                     }
                 }
@@ -3181,8 +3181,8 @@ impl Stats {
                     v.add(timestamp);
                 }
                 if let Some(v) = self.weighted_unsorted_stats.as_mut() {
-                    // Only store valid weights (positive and finite) to avoid filtering later
-                    if weight > 0.0 && weight.is_finite() {
+                    // Only store valid weights to avoid filtering later
+                    if weight > 0.0 {
                         v.push((timestamp, weight));
                     }
                 }

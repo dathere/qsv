@@ -73,13 +73,14 @@ In addition, it computes the following outlier statistics (24 outlier statistics
 https://en.wikipedia.org/wiki/Outlier
 (requires --quartiles or --everything in stats):
 
-Outlier Counts (6 statistics):
+Outlier Counts (7 statistics):
   - outliers_extreme_lower_cnt: Count of values below the lower outer fence
   - outliers_mild_lower_cnt: Count of values between lower outer and inner fences
   - outliers_normal_cnt: Count of values between inner fences (non-outliers)
   - outliers_mild_upper_cnt: Count of values between upper inner and outer fences
   - outliers_extreme_upper_cnt: Count of values above the upper outer fence
   - outliers_total_cnt: Total count of all outliers (sum of extreme and mild outliers)
+  - outliers_percentage: Percentage of values that are outliers
 
 Outlier Descriptive Statistics (6 statistics):
   - outliers_mean: Mean value of outliers
@@ -89,7 +90,7 @@ Outlier Descriptive Statistics (6 statistics):
   - outliers_max: Maximum value among outliers
   - outliers_range: Range of outlier values (max - min)
 
-Outlier Variance/Spread Statistics (8 statistics):
+Outlier Variance/Spread Statistics (7 statistics):
   - outliers_stddev: Standard deviation of outlier values
   - outliers_variance: Variance of outlier values
   - non_outliers_stddev: Standard deviation of non-outlier values
@@ -97,7 +98,6 @@ Outlier Variance/Spread Statistics (8 statistics):
   - outliers_cv: Coefficient of variation for outliers (stddev / mean)
   - non_outliers_cv: Coefficient of variation for non-outliers (stddev / mean)
   - outliers_normal_stddev_ratio: Ratio of outlier stddev to non-outlier stddev
-  - outliers_percentage: Percentage of values that are outliers
 
 Outlier Impact Statistics (2 statistics):
   - outlier_impact: Difference between overall mean and non-outlier mean

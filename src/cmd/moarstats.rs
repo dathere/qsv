@@ -69,7 +69,7 @@ Currently computes the following 14 additional statistics:
     With --use-percentiles, uses configurable percentiles (e.g., 5th/95th) as thresholds
     with --pct-thresholds.
 
-In addition, it computes the following outlier statistics (30+ statistics total).
+In addition, it computes the following outlier statistics (24 outlier statistics total).
 https://en.wikipedia.org/wiki/Outlier
 (requires --quartiles or --everything in stats):
 

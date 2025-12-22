@@ -617,12 +617,13 @@ fn get_unique_values(
         flag_pretty_json:     false,
         flag_no_stats:        false,
         flag_toon:            false,
+        flag_weight:          None,
     };
 
     let curr_mode = std::env::var("QSV_STATSCACHE_MODE");
     // safety: we are in single-threaded code.
     unsafe { std::env::set_var("QSV_STATSCACHE_MODE", "none") };
-    let (headers, ftables) = match freq_args.rconfig().indexed()? {
+    let (headers, ftables, _) = match freq_args.rconfig().indexed()? {
         Some(idx) => freq_args.parallel_ftables(&idx),
         _ => freq_args.sequential_ftables(),
     }?;

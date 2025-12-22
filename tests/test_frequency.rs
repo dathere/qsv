@@ -1793,3 +1793,510 @@ fn frequency_rank_ties_invalid_strategy() {
     assert!(output.contains("Could not match"));
     assert!(output.contains("allowed variants"));
 }
+
+// Weighted frequency tests
+#[test]
+fn frequency_weight_basic() {
+    let wrk = Workdir::new("frequency_weight_basic");
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "2.0"],
+        svec!["a", "3.0"],
+        svec!["b", "1.0"],
+        svec!["b", "1.0"],
+        svec!["c", "5.0"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+
+    wrk.assert_success(&mut cmd);
+
+    // Create a fresh command for reading output since assert_success consumes it
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    // Sort by value for consistent comparison
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    let mut expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "5", "41.66667", "1"],
+        svec!["value", "b", "2", "16.66667", "2"],
+        svec!["value", "c", "5", "41.66667", "1"],
+    ];
+    expected.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_weight_excludes_weight_column() {
+    let wrk = Workdir::new("frequency_weight_excludes_weight_column");
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "2.0"],
+        svec!["a", "3.0"],
+        svec!["b", "1.0"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value,weight"])
+        .args(["--weight", "weight"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    // Should only have "value" column, not "weight" column
+    let value_rows: Vec<_> = got
+        .iter()
+        .filter(|r| r.len() > 0 && r[0] == "value")
+        .collect();
+    assert_eq!(value_rows.len(), 2); // 2 value rows (a and b), header is filtered out
+    // Should not have any "weight" column frequencies
+    let weight_rows: Vec<_> = got
+        .iter()
+        .filter(|r| r.len() > 0 && r[0] == "weight")
+        .collect();
+    assert_eq!(weight_rows.len(), 0);
+}
+
+#[test]
+fn frequency_weight_missing_weights_default_to_one() {
+    let wrk = Workdir::new("frequency_weight_missing_weights_default_to_one");
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "2.0"],
+        svec!["a", ""],        // missing weight
+        svec!["b", "invalid"], // non-numeric weight
+        svec!["b", "3.0"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Sort by value for consistent comparison
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    // "a" should have weight 2.0 + 1.0 (default) = 3.0
+    // "b" should have weight 1.0 (default) + 3.0 = 4.0
+    let mut expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "3", "42.85714", "2"],
+        svec!["value", "b", "4", "57.14286", "1"],
+    ];
+    expected.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_weight_zero_and_negative_ignored() {
+    let wrk = Workdir::new("frequency_weight_zero_and_negative_ignored");
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "2.0"],
+        svec!["a", "0.0"],  // zero weight - should be ignored
+        svec!["b", "-1.0"], // negative weight - should be ignored
+        svec!["b", "3.0"],
+        svec!["c", "1.0"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Sort by value for consistent comparison
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    // "a" should have weight 2.0 (0.0 ignored)
+    // "b" should have weight 3.0 (-1.0 ignored)
+    // "c" should have weight 1.0
+    let mut expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "2", "33.33333", "2"],
+        svec!["value", "b", "3", "50", "1"],
+        svec!["value", "c", "1", "16.66667", "3"],
+    ];
+    expected.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_weight_with_limit() {
+    let wrk = Workdir::new("frequency_weight_with_limit");
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "10.0"],
+        svec!["b", "5.0"],
+        svec!["c", "3.0"],
+        svec!["d", "2.0"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "2"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // For weighted frequencies, even when all values are unique, show individual frequencies
+    // sorted by weight (descending by default), limited to top 2
+    // Sort by value for consistent comparison
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    let mut expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "10", "50", "1"],
+        svec!["value", "b", "5", "25", "2"],
+        svec!["value", "Other (2)", "5", "25", "0"],
+    ];
+    expected.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_weight_with_asc() {
+    let wrk = Workdir::new("frequency_weight_with_asc");
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "10.0"],
+        svec!["b", "5.0"],
+        svec!["c", "3.0"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"])
+        .arg("--asc");
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // For weighted frequencies with --asc, show individual frequencies sorted ascending by weight
+    // Sort by value for consistent comparison
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    let mut expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "10", "55.55556", "3"],
+        svec!["value", "b", "5", "27.77778", "2"],
+        svec!["value", "c", "3", "16.66667", "1"],
+    ];
+    expected.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_weight_with_rank_strategy() {
+    let wrk = Workdir::new("frequency_weight_with_rank_strategy");
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "5.0"],
+        svec!["b", "3.0"],
+        svec!["c", "3.0"],
+        svec!["d", "2.0"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"])
+        .args(["--rank-strategy", "average"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Sort by value for consistent comparison
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    // "a" rank 1, "b" and "c" tied at rank 2.5, "d" rank 4
+    let mut expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "5", "38.46154", "1"],
+        svec!["value", "b", "3", "23.07692", "2.5"],
+        svec!["value", "c", "3", "23.07692", "2.5"],
+        svec!["value", "d", "2", "15.38462", "4"],
+    ];
+    expected.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_weight_json() {
+    let wrk = Workdir::new("frequency_weight_json");
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "2.0"],
+        svec!["a", "3.0"],
+        svec!["b", "1.0"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"])
+        .arg("--json");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let v: Value = serde_json::from_str(&got).unwrap();
+    assert_eq!(v["rowcount"], 3);
+    assert_eq!(v["fieldcount"], 1);
+    let fields = v["fields"].as_array().unwrap();
+    assert_eq!(fields.len(), 1);
+    let field = &fields[0];
+    assert_eq!(field["field"], "value");
+    let freqs = field["frequencies"].as_array().unwrap();
+    // Should have 2 frequencies: "a" with count 5, "b" with count 1
+    assert_eq!(freqs.len(), 2);
+    // Check that counts are weighted (f64 values rounded to u64)
+    let a_freq = freqs.iter().find(|f| f["value"] == "a").unwrap();
+    assert_eq!(a_freq["count"], 5);
+    let b_freq = freqs.iter().find(|f| f["value"] == "b").unwrap();
+    assert_eq!(b_freq["count"], 1);
+}
+
+#[test]
+fn frequency_weight_fractional_weights() {
+    let wrk = Workdir::new("frequency_weight_fractional_weights");
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "1.5"],
+        svec!["a", "2.5"],
+        svec!["b", "0.5"],
+        svec!["b", "0.5"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    // "a" should have weight 1.5 + 2.5 = 4.0 (rounded to 4)
+    // "b" should have weight 0.5 + 0.5 = 1.0 (rounded to 1)
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "4", "80", "1"],
+        svec!["value", "b", "1", "20", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_weight_all_unique() {
+    let wrk = Workdir::new("frequency_weight_all_unique");
+    let rows = vec![
+        svec!["id", "weight"],
+        svec!["1", "2.0"],
+        svec!["2", "3.0"],
+        svec!["3", "1.0"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--select", "id"])
+        .args(["--weight", "weight"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // For weighted frequencies, even when all values are unique, show individual frequencies
+    // sorted by weight (descending by default)
+    // Sort by value for consistent comparison
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    let mut expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["id", "2", "3", "50", "1"],
+        svec!["id", "1", "2", "33.33333", "2"],
+        svec!["id", "3", "1", "16.66667", "3"],
+    ];
+    expected.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_weight_column_not_found() {
+    let wrk = Workdir::new("frequency_weight_column_not_found");
+    let rows = vec![svec!["value", "weight"], svec!["a", "2.0"]];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.args(["--weight", "nonexistent"]);
+
+    let output = wrk.output_stderr(&mut cmd);
+    assert!(output.contains("Weight column 'nonexistent' not found"));
+}
+
+#[test]
+fn frequency_weight_with_ignore_case() {
+    let wrk = Workdir::new("frequency_weight_with_ignore_case");
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["A", "2.0"],
+        svec!["a", "3.0"],
+        svec!["B", "1.0"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"])
+        .arg("--ignore-case");
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Sort by value for consistent comparison
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    // With ignore-case, "A" and "a" should be combined: 2.0 + 3.0 = 5.0
+    let mut expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "5", "83.33333", "1"],
+        svec!["value", "b", "1", "16.66667", "2"],
+    ];
+    expected.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_weight_with_no_nulls() {
+    let wrk = Workdir::new("frequency_weight_with_no_nulls");
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "2.0"],
+        svec!["", "3.0"], // empty value
+        svec!["b", "1.0"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"])
+        .arg("--no-nulls");
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Sort by value for consistent comparison
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    // Empty values should be excluded with --no-nulls
+    let mut expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "a", "2", "66.66667", "1"],
+        svec!["value", "b", "1", "33.33333", "2"],
+    ];
+    expected.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+    assert_eq!(got, expected);
+}

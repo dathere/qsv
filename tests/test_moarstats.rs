@@ -1712,7 +1712,7 @@ fn moarstats_kurtosis_gini_constant_values() {
 
     // Run moarstats
     let mut cmd = wrk.command("moarstats");
-    cmd.arg("test.csv");
+    cmd.arg("test.csv").arg("--advanced");
     wrk.assert_success(&mut cmd);
 
     // Verify columns exist
@@ -1781,7 +1781,7 @@ fn moarstats_kurtosis_gini_unequal_distribution() {
 
     // Run moarstats
     let mut cmd = wrk.command("moarstats");
-    cmd.arg("test.csv");
+    cmd.arg("test.csv").arg("--advanced");
     wrk.assert_success(&mut cmd);
 
     // Verify Gini coefficient reflects inequality
@@ -1857,7 +1857,7 @@ fn moarstats_kurtosis_gini_string_fields_skipped() {
 
     // Run moarstats
     let mut cmd = wrk.command("moarstats");
-    cmd.arg("test.csv");
+    cmd.arg("test.csv").arg("--advanced");
     wrk.assert_success(&mut cmd);
 
     // Verify string fields have empty values for kurtosis/Gini

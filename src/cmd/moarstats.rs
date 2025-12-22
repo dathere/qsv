@@ -1,8 +1,10 @@
 static USAGE: &str = r#"
-Add 14 additional statistics and 30+ outlier/robust statistics to an existing stats CSV file.
+Add dozens of additional statistics, including extended outlier & robust statistics
+to an existing stats CSV file.
 
 The `moarstats` command extends an existing stats CSV file (created by the `stats` command)
-by computing "moar" statistics that can be derived from existing stats columns.
+by computing "moar" (https://www.dictionary.com/culture/slang/moar) statistics that can be
+derived from existing stats columns and by scanning the original CSV file.
 
 It looks for the `<FILESTEM>.stats.csv` file for a given CSV input. If the stats CSV file
 does not exist, it will first run the `stats` command with configurable options to establish
@@ -15,7 +17,7 @@ Currently computes the following 14 additional statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
-    https://en.wikipedia.org/wiki/Skewness#Pearson's_second_skewness_coefficient_(median_skewness)
+    https://en.wikipedia.org/wiki/Skewness
  2. Range to Standard Deviation Ratio: range / stddev
     Normalizes the spread of data.
     Higher values indicate more extreme outliers relative to the variability.
@@ -110,11 +112,13 @@ Outlier Boundary Statistics (2 statistics):
   Fences are computed using the IQR method:
     inner fences at Q1/Q3 ± 1.5*IQR, outer fences at Q1/Q3 ± 3.0*IQR.
 
-These statistics are only computed for numeric and date/datetime columns where the required
-base statistics are available. Outlier statistics additionally require that quartiles (and thus
-fences) were computed when generating the stats CSV. Winsorized/trimmed means require either
-quartiles (Q1/Q3) or percentiles to be available. Kurtosis and Gini coefficient require reading
-the original CSV file to collect all values for computation.
+These statistics are only computed for numeric and date/datetime columns where the
+required base statistics (mean, median, stddev, etc.) are available.
+Outlier statistics additionally require that quartiles (and thus fences) were
+computed when generating the stats CSV.
+Winsorized/trimmed means require either Q1/Q3 or percentiles to be available.
+Kurtosis and Gini coefficient require reading the original CSV file to collect
+all values for computation.
 
 Examples:
 
@@ -132,9 +136,9 @@ Usage:
     qsv moarstats --help
 
 moarstats options:
-    --advanced             Compute Gini coefficient and Kurtosis. These statistics require reading
-                           the original CSV file to collect all values for computation and are
-                           computationally expensive.
+    --advanced             Compute Gini coefficient and Kurtosis. These statistics
+                           require reading the original CSV file to collect all values
+                           for computation and are computationally expensive.
     --stats-options <arg>  Options to pass to the stats command if baseline stats need
                            to be generated. The options are passed as a single string
                            that will be split by whitespace.
@@ -1878,6 +1882,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     None
                 };
 
+                // Compute outliers variance and stddev once for reuse
+                let (variance_outliers, stddev_outliers) = if stats.counts[5] > 1 {
+                    let n = stats.counts[5] as f64;
+                    let variance = (stats.sum_squares_outliers
+                        - (stats.sum_outliers * stats.sum_outliers / n))
+                        / (n - 1.0);
+                    if variance >= 0.0 {
+                        (Some(variance), Some(variance.sqrt()))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                };
+
                 // Compute and write additional statistics
                 if let Some(mean_outliers_val) = mean_outliers {
                     // Mean of outliers
@@ -1890,28 +1909,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     }
 
                     // Variance and stddev of outliers
-                    if stats.counts[5] > 1 {
-                        let variance_outliers = mean_outliers_val.mul_add(
-                            -mean_outliers_val,
-                            stats.sum_squares_outliers / stats.counts[5] as f64,
-                        );
-                        if variance_outliers >= 0.0 {
-                            let stddev_outliers = variance_outliers.sqrt();
-                            if let Some(idx) = new_column_indices.get("outliers_stddev") {
-                                new_values[*idx] =
-                                    util::round_num(stddev_outliers, args.flag_round);
-                            }
-                            if let Some(idx) = new_column_indices.get("outliers_variance") {
-                                new_values[*idx] =
-                                    util::round_num(variance_outliers, args.flag_round);
-                            }
-                            // Coefficient of variation for outliers
-                            if mean_outliers_val.abs() > f64::EPSILON
-                                && let Some(idx) = new_column_indices.get("outliers_cv")
-                            {
-                                let cv = stddev_outliers / mean_outliers_val.abs();
-                                new_values[*idx] = util::round_num(cv, args.flag_round);
-                            }
+                    if let (Some(variance_outliers_val), Some(stddev_outliers_val)) =
+                        (variance_outliers, stddev_outliers)
+                    {
+                        if let Some(idx) = new_column_indices.get("outliers_stddev") {
+                            new_values[*idx] =
+                                util::round_num(stddev_outliers_val, args.flag_round);
+                        }
+                        if let Some(idx) = new_column_indices.get("outliers_variance") {
+                            new_values[*idx] =
+                                util::round_num(variance_outliers_val, args.flag_round);
+                        }
+                        // Coefficient of variation for outliers
+                        if mean_outliers_val.abs() > f64::EPSILON
+                            && let Some(idx) = new_column_indices.get("outliers_cv")
+                        {
+                            let cv = stddev_outliers_val / mean_outliers_val.abs();
+                            new_values[*idx] = util::round_num(cv, args.flag_round);
                         }
                     }
                 }
@@ -1928,10 +1942,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                     // Variance and stddev of non-outliers
                     if stats.counts[2] > 1 {
-                        let variance_normal = mean_normal_val.mul_add(
-                            -mean_normal_val,
-                            stats.sum_squares_normal / stats.counts[2] as f64,
-                        );
+                        let n = stats.counts[2] as f64;
+                        let variance_normal = (stats.sum_squares_normal
+                            - (stats.sum_normal * stats.sum_normal / n))
+                            / (n - 1.0);
                         if variance_normal >= 0.0 {
                             let stddev_normal = variance_normal.sqrt();
                             if let Some(idx) = new_column_indices.get("non_outliers_stddev") {
@@ -1950,23 +1964,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             }
 
                             // Outlier-to-normal spread ratio
-                            if let Some(mean_outliers_val) = mean_outliers
-                                && stats.counts[5] > 1
+                            if let Some(stddev_outliers_val) = stddev_outliers
+                                && stddev_normal.abs() > f64::EPSILON
+                                && let Some(idx) =
+                                    new_column_indices.get("outliers_normal_stddev_ratio")
                             {
-                                let variance_outliers = mean_outliers_val.mul_add(
-                                    -mean_outliers_val,
-                                    stats.sum_squares_outliers / stats.counts[5] as f64,
-                                );
-                                if variance_outliers >= 0.0 {
-                                    let stddev_outliers = variance_outliers.sqrt();
-                                    if stddev_normal.abs() > f64::EPSILON
-                                        && let Some(idx) =
-                                            new_column_indices.get("outliers_normal_stddev_ratio")
-                                    {
-                                        let ratio = stddev_outliers / stddev_normal;
-                                        new_values[*idx] = util::round_num(ratio, args.flag_round);
-                                    }
-                                }
+                                let ratio = stddev_outliers_val / stddev_normal;
+                                new_values[*idx] = util::round_num(ratio, args.flag_round);
                             }
                         }
                     }
@@ -2089,10 +2093,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 if let Some(winsorized_mean_val) = winsorized_mean
                     && stats.winsorized_count > 1
                 {
-                    let winsorized_variance = winsorized_mean_val.mul_add(
-                        -winsorized_mean_val,
-                        stats.sum_squares_winsorized / stats.winsorized_count as f64,
-                    );
+                    let n = stats.winsorized_count as f64;
+                    let winsorized_variance = (stats.sum_squares_winsorized
+                        - (stats.winsorized_sum * stats.winsorized_sum / n))
+                        / (n - 1.0);
                     if winsorized_variance >= 0.0 {
                         let winsorized_stddev = winsorized_variance.sqrt();
                         let winsorized_stddev_name = winsorized_col_name.replace("mean", "stddev");
@@ -2156,10 +2160,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 if let Some(trimmed_mean_val) = trimmed_mean
                     && stats.trimmed_count > 1
                 {
-                    let trimmed_variance = trimmed_mean_val.mul_add(
-                        -trimmed_mean_val,
-                        stats.sum_squares_trimmed / stats.trimmed_count as f64,
-                    );
+                    let n = stats.trimmed_count as f64;
+                    let trimmed_variance = (stats.sum_squares_trimmed
+                        - (stats.trimmed_sum * stats.trimmed_sum / n))
+                        / (n - 1.0);
                     if trimmed_variance >= 0.0 {
                         let trimmed_stddev = trimmed_variance.sqrt();
                         let trimmed_stddev_name = trimmed_col_name.replace("mean", "stddev");

@@ -2339,13 +2339,13 @@ fn frequency_weight_parallel_merge() {
     wrk.assert_success(&mut cmd);
 
     // Read the output
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv")
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
         .args(["--limit", "0"])
         .args(["--select", "value"])
         .args(["--weight", "weight"])
         .args(["--jobs", "4"]);
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
     // Sort by value for consistent comparison
     got.sort_by(|a, b| {
@@ -2703,12 +2703,12 @@ fn frequency_weight_nan_values() {
     wrk.assert_success(&mut cmd);
 
     // Read output - need to create a new command since assert_success consumes it
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv")
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
         .args(["--limit", "0"])
         .args(["--select", "value"])
         .args(["--weight", "weight"]);
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
             std::cmp::Ordering::Equal
@@ -2928,12 +2928,12 @@ fn frequency_weight_mixed_invalid_values() {
     wrk.assert_success(&mut cmd);
 
     // Read output - need to create a new command since assert_success consumes it
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv")
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
         .args(["--limit", "0"])
         .args(["--select", "value"])
         .args(["--weight", "weight"]);
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
             std::cmp::Ordering::Equal

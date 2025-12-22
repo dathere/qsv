@@ -106,6 +106,9 @@ Usage:
     qsv moarstats --help
 
 moarstats options:
+    --advanced             Compute Gini coefficient and Kurtosis. These statistics require reading
+                           the original CSV file to collect all values for computation and are
+                           computationally expensive.
     --stats-options <arg>  Options to pass to the stats command if baseline stats need
                            to be generated. The options are passed as a single string
                            that will be split by whitespace.
@@ -151,6 +154,7 @@ struct Args {
     flag_output:          Option<String>,
     flag_use_percentiles: bool,
     flag_pct_thresholds:  Option<String>,
+    flag_advanced:        bool,
 }
 
 /// Get the stats CSV file path for a given input CSV path
@@ -1119,13 +1123,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Add kurtosis column (requires reading raw data, computed for numeric/date types)
-    if !column_exists("kurtosis") {
+    // Only add if --advanced flag is set
+    if args.flag_advanced && !column_exists("kurtosis") {
         new_columns.push("kurtosis".to_string());
         new_column_indices.insert("kurtosis".to_string(), new_columns.len() - 1);
     }
 
     // Add Gini coefficient column (requires reading raw data, computed for numeric/date types)
-    if !column_exists("gini_coefficient") {
+    // Only add if --advanced flag is set
+    if args.flag_advanced && !column_exists("gini_coefficient") {
         new_columns.push("gini_coefficient".to_string());
         new_column_indices.insert("gini_coefficient".to_string(), new_columns.len() - 1);
     }
@@ -1653,7 +1659,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     // Mean of outliers
                     if let Some(idx) = new_column_indices.get("outliers_mean") {
                         let mean_outliers = stats.sum_outliers / stats.counts[5] as f64;
-                        new_values[*idx] = util::round_num(mean_outliers, args.flag_round);
+                        new_values[*idx] = if field_type.is_date_or_datetime() {
+                            days_to_rfc3339(mean_outliers, field_type)
+                        } else {
+                            util::round_num(mean_outliers, args.flag_round)
+                        };
                     }
                 }
 
@@ -1661,7 +1671,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     // Mean of non-outliers
                     if let Some(idx) = new_column_indices.get("non_outliers_mean") {
                         let mean_normal = stats.sum_normal / stats.counts[2] as f64;
-                        new_values[*idx] = util::round_num(mean_normal, args.flag_round);
+                        new_values[*idx] = if field_type.is_date_or_datetime() {
+                            days_to_rfc3339(mean_normal, field_type)
+                        } else {
+                            util::round_num(mean_normal, args.flag_round)
+                        };
                     }
 
                     // Outlier-to-normal mean ratio
@@ -1681,11 +1695,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 if let Some(min_outliers) = stats.min_outliers
                     && let Some(idx) = new_column_indices.get("outliers_min")
                 {
-                    new_values[*idx] = util::round_num(min_outliers, args.flag_round);
+                    new_values[*idx] = if field_type.is_date_or_datetime() {
+                        days_to_rfc3339(min_outliers, field_type)
+                    } else {
+                        util::round_num(min_outliers, args.flag_round)
+                    };
                 }
                 if let Some(max_outliers) = stats.max_outliers {
                     if let Some(idx) = new_column_indices.get("outliers_max") {
-                        new_values[*idx] = util::round_num(max_outliers, args.flag_round);
+                        new_values[*idx] = if field_type.is_date_or_datetime() {
+                            days_to_rfc3339(max_outliers, field_type)
+                        } else {
+                            util::round_num(max_outliers, args.flag_round)
+                        };
                     }
                     // Range of outliers
                     if let Some(min_outliers) = stats.min_outliers

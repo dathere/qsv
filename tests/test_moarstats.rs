@@ -1527,3 +1527,436 @@ fn moarstats_median_mean_ratio() {
         }
     }
 }
+
+#[test]
+fn moarstats_kurtosis_gini_coefficient() {
+    let wrk = Workdir::new("moarstats_kurtosis_gini");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Verify kurtosis and gini_coefficient columns exist
+    let stats_content = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+
+    assert!(
+        get_column_index(&headers, "kurtosis").is_some(),
+        "kurtosis column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "gini_coefficient").is_some(),
+        "gini_coefficient column should exist"
+    );
+
+    // Verify values are computed for numeric fields
+    let mut found_kurtosis_value = false;
+    let mut found_gini_value = false;
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap();
+
+        if (field_type == "Float" || field_type == "Integer")
+            && (field_name == "latitude" || field_name == "longitude")
+        {
+            // Check kurtosis
+            if let Some(kurtosis_idx) = get_column_index(&headers, "kurtosis") {
+                let kurtosis_val = get_field_value(&record, kurtosis_idx);
+                if let Some(val_str) = kurtosis_val {
+                    if !val_str.is_empty() {
+                        found_kurtosis_value = true;
+                        let kurtosis: f64 = val_str.parse().unwrap();
+                        // Kurtosis can be any finite value (positive, negative, or zero)
+                        assert!(kurtosis.is_finite(), "kurtosis should be a finite number");
+                    }
+                }
+            }
+
+            // Check Gini coefficient
+            if let Some(gini_idx) = get_column_index(&headers, "gini_coefficient") {
+                let gini_val = get_field_value(&record, gini_idx);
+                if let Some(val_str) = gini_val {
+                    if !val_str.is_empty() {
+                        found_gini_value = true;
+                        let gini: f64 = val_str.parse().unwrap();
+                        // Gini coefficient should be between 0 and 1
+                        assert!(
+                            gini >= 0.0 && gini <= 1.0,
+                            "gini_coefficient should be between 0 and 1, got: {}",
+                            gini
+                        );
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+
+    assert!(
+        found_kurtosis_value,
+        "Should find kurtosis value for numeric fields"
+    );
+    assert!(
+        found_gini_value,
+        "Should find gini_coefficient value for numeric fields"
+    );
+}
+
+#[test]
+fn moarstats_kurtosis_gini_insufficient_data() {
+    let wrk = Workdir::new("moarstats_kurtosis_gini_insufficient");
+
+    // Create CSV with only one value (insufficient for kurtosis/Gini)
+    wrk.create(
+        "test.csv",
+        vec![svec!["field", "value"], svec!["test", "5"]],
+    );
+
+    // Generate stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify columns exist but values may be empty
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "kurtosis").is_some(),
+        "kurtosis column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "gini_coefficient").is_some(),
+        "gini_coefficient column should exist"
+    );
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            // With insufficient data, values should be empty
+            if let Some(kurtosis_idx) = get_column_index(&headers, "kurtosis") {
+                let kurtosis_val = get_field_value(&record, kurtosis_idx);
+                // Value should be empty or None for insufficient data
+                assert!(
+                    kurtosis_val.is_none() || kurtosis_val.as_ref().unwrap().is_empty(),
+                    "kurtosis should be empty for insufficient data"
+                );
+            }
+
+            if let Some(gini_idx) = get_column_index(&headers, "gini_coefficient") {
+                let gini_val = get_field_value(&record, gini_idx);
+                // Value should be empty or None for insufficient data
+                assert!(
+                    gini_val.is_none() || gini_val.as_ref().unwrap().is_empty(),
+                    "gini_coefficient should be empty for insufficient data"
+                );
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_kurtosis_gini_constant_values() {
+    let wrk = Workdir::new("moarstats_kurtosis_gini_constant");
+
+    // Create CSV with constant values
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "5"],
+            svec!["test", "5"],
+            svec!["test", "5"],
+            svec!["test", "5"],
+            svec!["test", "5"],
+        ],
+    );
+
+    // Generate stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify columns exist
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            // With constant values, Gini should be 0 (perfect equality)
+            if let Some(gini_idx) = get_column_index(&headers, "gini_coefficient") {
+                let gini_val = get_field_value(&record, gini_idx);
+                if let Some(val_str) = gini_val {
+                    if !val_str.is_empty() {
+                        let gini: f64 = val_str.parse().unwrap();
+                        // Gini should be 0 for constant values (perfect equality)
+                        assert!(
+                            gini.abs() < 0.001,
+                            "gini_coefficient should be approximately 0 for constant values, got: \
+                             {}",
+                            gini
+                        );
+                    }
+                }
+            }
+
+            // Kurtosis might be computed or might be empty depending on implementation
+            if let Some(kurtosis_idx) = get_column_index(&headers, "kurtosis") {
+                let _kurtosis_val = get_field_value(&record, kurtosis_idx);
+                // Value might be empty or computed - both are acceptable
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_kurtosis_gini_unequal_distribution() {
+    let wrk = Workdir::new("moarstats_kurtosis_gini_unequal");
+
+    // Create CSV with highly unequal distribution (high Gini)
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "1"],
+            svec!["test", "1"],
+            svec!["test", "1"],
+            svec!["test", "1"],
+            svec!["test", "100"], // One large value creates inequality
+        ],
+    );
+
+    // Generate stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify Gini coefficient reflects inequality
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            // With unequal distribution, Gini should be > 0
+            if let Some(gini_idx) = get_column_index(&headers, "gini_coefficient") {
+                let gini_val = get_field_value(&record, gini_idx);
+                if let Some(val_str) = gini_val {
+                    if !val_str.is_empty() {
+                        let gini: f64 = val_str.parse().unwrap();
+                        // With one large value, Gini should be significantly > 0
+                        assert!(
+                            gini > 0.1,
+                            "gini_coefficient should be > 0.1 for unequal distribution, got: {}",
+                            gini
+                        );
+                        assert!(
+                            gini <= 1.0,
+                            "gini_coefficient should be <= 1.0, got: {}",
+                            gini
+                        );
+                    }
+                }
+            }
+
+            // Kurtosis should be computed
+            if let Some(kurtosis_idx) = get_column_index(&headers, "kurtosis") {
+                let kurtosis_val = get_field_value(&record, kurtosis_idx);
+                if let Some(val_str) = kurtosis_val {
+                    if !val_str.is_empty() {
+                        let kurtosis: f64 = val_str.parse().unwrap();
+                        // With an outlier, kurtosis might be positive (heavy tails)
+                        assert!(kurtosis.is_finite(), "kurtosis should be finite");
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_kurtosis_gini_string_fields_skipped() {
+    let wrk = Workdir::new("moarstats_kurtosis_gini_strings");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "text_value"],
+            svec!["test", "apple"],
+            svec!["test", "banana"],
+            svec!["test", "cherry"],
+        ],
+    );
+
+    // Generate stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify string fields have empty values for kurtosis/Gini
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap();
+
+        if field_name == "test" && field_type == "String" {
+            // String fields should have empty values for kurtosis/Gini
+            if let Some(kurtosis_idx) = get_column_index(&headers, "kurtosis") {
+                let kurtosis_val = get_field_value(&record, kurtosis_idx);
+                assert!(
+                    kurtosis_val.is_none() || kurtosis_val.as_ref().unwrap().is_empty(),
+                    "String fields should not have kurtosis statistics"
+                );
+            }
+
+            if let Some(gini_idx) = get_column_index(&headers, "gini_coefficient") {
+                let gini_val = get_field_value(&record, gini_idx);
+                assert!(
+                    gini_val.is_none() || gini_val.as_ref().unwrap().is_empty(),
+                    "String fields should not have gini_coefficient statistics"
+                );
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_kurtosis_gini_multiple_numeric_fields() {
+    let wrk = Workdir::new("moarstats_kurtosis_gini_multiple");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Verify that multiple numeric fields get kurtosis/Gini statistics
+    let stats_content = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+    let kurtosis_idx = get_column_index(&headers, "kurtosis");
+    let gini_idx = get_column_index(&headers, "gini_coefficient");
+
+    let mut numeric_fields_with_kurtosis = 0;
+    let mut numeric_fields_with_gini = 0;
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap();
+
+        if field_type == "Float" || field_type == "Integer" {
+            if let Some(kurtosis_idx) = kurtosis_idx {
+                let kurtosis_val = get_field_value(&record, kurtosis_idx);
+                if kurtosis_val.is_some() && !kurtosis_val.as_ref().unwrap().is_empty() {
+                    numeric_fields_with_kurtosis += 1;
+                }
+            }
+
+            if let Some(gini_idx) = gini_idx {
+                let gini_val = get_field_value(&record, gini_idx);
+                if gini_val.is_some() && !gini_val.as_ref().unwrap().is_empty() {
+                    numeric_fields_with_gini += 1;
+                }
+            }
+        }
+    }
+
+    assert!(
+        numeric_fields_with_kurtosis > 1,
+        "Multiple numeric fields should have kurtosis statistics"
+    );
+    assert!(
+        numeric_fields_with_gini > 1,
+        "Multiple numeric fields should have gini_coefficient statistics"
+    );
+}

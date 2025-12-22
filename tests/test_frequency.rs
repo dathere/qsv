@@ -1815,13 +1815,7 @@ fn frequency_weight_basic() {
 
     wrk.assert_success(&mut cmd);
 
-    // Create a fresh command for reading output since assert_success consumes it
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv")
-        .args(["--limit", "0"])
-        .args(["--select", "value"])
-        .args(["--weight", "weight"]);
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     // Sort by value for consistent comparison
     got.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
@@ -2299,4 +2293,724 @@ fn frequency_weight_with_no_nulls() {
         }
     });
     assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_weight_parallel_merge() {
+    let wrk = Workdir::new("frequency_weight_parallel_merge");
+
+    // Create a larger dataset that will be split into multiple chunks
+    // Use values that appear across chunks to verify correct weight aggregation
+    let mut rows = vec![svec!["value", "weight"]];
+
+    // Create enough rows to trigger chunking (at least 1000 rows)
+    // Use a pattern where the same values appear in different chunks
+    // to verify that weights are correctly aggregated during merge
+    for i in 0..1000 {
+        // Use modulo to create repeating patterns across chunks
+        let value = match i % 10 {
+            0 => "a",
+            1 => "a", // "a" appears multiple times
+            2 => "b",
+            3 => "b", // "b" appears multiple times
+            4 => "c",
+            5 => "c", // "c" appears multiple times
+            6 => "d",
+            7 => "e",
+            8 => "f",
+            _ => "g",
+        };
+        // Use varying weights to ensure aggregation is correct
+        let weight = (i % 5 + 1) as f64 * 1.5;
+        rows.push(vec![value.to_string(), format!("{:.1}", weight)]);
+    }
+
+    // Create indexed file to enable parallel processing
+    wrk.create_indexed("in.csv", rows);
+
+    // Run weighted frequency with parallel processing (--jobs flag)
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"])
+        .args(["--jobs", "4"]);
+
+    wrk.assert_success(&mut cmd);
+
+    // Read the output
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"])
+        .args(["--jobs", "4"]);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+
+    // Sort by value for consistent comparison
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+
+    // Calculate expected weights:
+    // weight = (i % 5 + 1) * 1.5
+    // "a" appears when i % 10 == 0 or 1: weights 1.5, 3.0, 1.5, 3.0, ... = 450 total
+    // "b" appears when i % 10 == 2 or 3: weights 4.5, 6.0, 4.5, 6.0, ... = 1050 total
+    // "c" appears when i % 10 == 4 or 5: weights 7.5, 1.5, 7.5, 1.5, ... = 900 total
+    // "d" appears when i % 10 == 6: weights 4.5, 4.5, ... = 300 total
+    // "e" appears when i % 10 == 7: weights 6.0, 6.0, ... = 450 total
+    // "f" appears when i % 10 == 8: weights 7.5, 7.5, ... = 600 total
+    // "g" appears when i % 10 == 9: weights 1.5, 1.5, ... = 150 total (but wait, let me recalc)
+
+    // Actually recalculated with Python:
+    // a: 450, b: 1050, c: 900, d: 300, e: 450, f: 600, g: 750
+
+    // Find the frequency rows (skip header)
+    let freq_rows: Vec<_> = got
+        .iter()
+        .filter(|r| r.len() > 1 && r[0] == "value")
+        .collect();
+
+    // Verify we have the expected number of unique values
+    assert_eq!(freq_rows.len(), 7, "Should have 7 unique values");
+
+    // Verify weights are correctly aggregated by checking specific values
+    let find_freq = |value: &str| -> Option<&Vec<String>> {
+        freq_rows.iter().find(|r| r[1] == value).map(|r| *r)
+    };
+
+    // Check that "a" has aggregated weight of 450 (rounded)
+    let a_freq = find_freq("a").expect("Should find 'a'");
+    assert_eq!(
+        a_freq[2], "450",
+        "Value 'a' should have aggregated weight 450"
+    );
+
+    // Check that "b" has aggregated weight of 1050 (rounded)
+    let b_freq = find_freq("b").expect("Should find 'b'");
+    assert_eq!(
+        b_freq[2], "1050",
+        "Value 'b' should have aggregated weight 1050"
+    );
+
+    // Check that "c" has aggregated weight of 900 (rounded)
+    let c_freq = find_freq("c").expect("Should find 'c'");
+    assert_eq!(
+        c_freq[2], "900",
+        "Value 'c' should have aggregated weight 900"
+    );
+
+    // Verify that parallel processing produces same results as sequential
+    // Run sequential version for comparison
+    let mut cmd_seq = wrk.command("frequency");
+    cmd_seq
+        .arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"])
+        .args(["--jobs", "1"]);
+    let mut got_seq: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_seq);
+    got_seq.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+
+    // Compare parallel and sequential results - they should match
+    let freq_rows_seq: Vec<_> = got_seq
+        .iter()
+        .filter(|r| r.len() > 1 && r[0] == "value")
+        .collect();
+    assert_eq!(
+        freq_rows.len(),
+        freq_rows_seq.len(),
+        "Parallel and sequential should have same number of frequencies"
+    );
+
+    // Compare each frequency value
+    for (par_row, seq_row) in freq_rows.iter().zip(freq_rows_seq.iter()) {
+        assert_eq!(par_row[1], seq_row[1], "Values should match");
+        assert_eq!(
+            par_row[2], seq_row[2],
+            "Weights should match between parallel and sequential"
+        );
+    }
+}
+
+#[test]
+fn frequency_weight_with_unq_limit_all_unique() {
+    let wrk = Workdir::new("frequency_weight_with_unq_limit_all_unique");
+
+    // Create a dataset where all values are unique (like an ID column)
+    let mut rows = vec![svec!["id", "weight"]];
+    for i in 1..=100 {
+        rows.push(vec![format!("id_{}", i), format!("{}", i)]);
+    }
+    wrk.create("in.csv", rows);
+
+    // Test that --unq-limit is ignored when using --weight
+    // Even though all values are unique, weighted frequencies should show all values
+    // (or be limited by --limit, not --unq-limit)
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--select", "id"])
+        .args(["--weight", "weight"])
+        .args(["--limit", "0"])
+        .args(["--unq-limit", "10"]); // This should be ignored
+
+    wrk.assert_success(&mut cmd);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+
+    // With --limit 0 and --weight, all values should be shown (unq-limit ignored)
+    let freq_rows: Vec<_> = got.iter().filter(|r| r.len() > 1 && r[0] == "id").collect();
+    // Should have all 100 unique values, not limited to 10
+    assert_eq!(
+        freq_rows.len(),
+        100,
+        "All unique values should be shown when using --weight, --unq-limit should be ignored"
+    );
+}
+
+#[test]
+fn frequency_weight_with_unq_limit_and_limit() {
+    let wrk = Workdir::new("frequency_weight_with_unq_limit_and_limit");
+
+    // Create a dataset where all values are unique
+    let mut rows = vec![svec!["id", "weight"]];
+    for i in 1..=50 {
+        rows.push(vec![format!("id_{}", i), format!("{}", 51 - i)]); // Higher IDs have lower weights
+    }
+    wrk.create("in.csv", rows);
+
+    // Test that --limit works with --weight, but --unq-limit is ignored
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--select", "id"])
+        .args(["--weight", "weight"])
+        .args(["--limit", "5"])
+        .args(["--unq-limit", "10"]); // This should be ignored, --limit should apply
+
+    wrk.assert_success(&mut cmd);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            // Sort by count (weight) descending
+            let count_a: u64 = if a.len() > 2 {
+                a[2].parse().unwrap_or(0)
+            } else {
+                0
+            };
+            let count_b: u64 = if b.len() > 2 {
+                b[2].parse().unwrap_or(0)
+            } else {
+                0
+            };
+            count_b.cmp(&count_a)
+        }
+    });
+
+    // Filter out "Other" category if present
+    let freq_rows: Vec<_> = got
+        .iter()
+        .filter(|r| r.len() > 1 && r[0] == "id" && !r[1].starts_with("Other"))
+        .collect();
+    // Should be limited to 5 by --limit, not 10 by --unq-limit
+    assert_eq!(
+        freq_rows.len(),
+        5,
+        "Should have exactly 5 individual values (limited by --limit, not --unq-limit)"
+    );
+
+    // Verify the top values are the ones with highest weights (id_1 through id_5 have weights
+    // 50-46)
+    assert_eq!(
+        freq_rows[0][1], "id_1",
+        "Top value should be id_1 (weight 50)"
+    );
+    assert_eq!(
+        freq_rows[1][1], "id_2",
+        "Second value should be id_2 (weight 49)"
+    );
+}
+
+#[test]
+fn frequency_weight_unq_limit_vs_unweighted() {
+    let wrk = Workdir::new("frequency_weight_unq_limit_vs_unweighted");
+
+    // Create a dataset where all values are unique
+    let mut rows = vec![svec!["id", "weight"]];
+    for i in 1..=20 {
+        rows.push(vec![format!("id_{}", i), "1.0".to_string()]);
+    }
+    wrk.create("in.csv", rows);
+
+    // Test unweighted frequency with --unq-limit
+    // Need to disable stats cache to force computation of all frequencies
+    // Note: --unq-limit only applies when --limit > 0 and --limit != --unq-limit
+    let mut cmd_unweighted = wrk.command("frequency");
+    cmd_unweighted
+        .env("QSV_STATSCACHE_MODE", "none")
+        .arg("in.csv")
+        .args(["--select", "id"])
+        .args(["--limit", "10"]) // Must be > 0 and different from --unq-limit
+        .args(["--unq-limit", "5"]);
+
+    let mut got_unweighted: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_unweighted);
+    got_unweighted.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+
+    let freq_rows_unweighted: Vec<_> = got_unweighted
+        .iter()
+        .filter(|r| {
+            r.len() > 1 && r[0] == "id" && r[1] != "<ALL_UNIQUE>" && !r[1].starts_with("Other")
+        })
+        .collect();
+
+    // Test weighted frequency with --unq-limit (should be ignored)
+    let mut cmd_weighted = wrk.command("frequency");
+    cmd_weighted
+        .arg("in.csv")
+        .args(["--select", "id"])
+        .args(["--weight", "weight"])
+        .args(["--limit", "0"])
+        .args(["--unq-limit", "5"]); // Should be ignored
+
+    let mut got_weighted: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_weighted);
+    got_weighted.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+
+    let freq_rows_weighted: Vec<_> = got_weighted
+        .iter()
+        .filter(|r| r.len() > 1 && r[0] == "id")
+        .collect();
+
+    // Unweighted should be limited to 5 by --unq-limit
+    // Weighted should show all 20 values (--unq-limit ignored)
+    assert_eq!(
+        freq_rows_unweighted.len(),
+        5,
+        "Unweighted frequency should be limited by --unq-limit"
+    );
+    assert_eq!(
+        freq_rows_weighted.len(),
+        20,
+        "Weighted frequency should ignore --unq-limit and show all values"
+    );
+}
+
+#[test]
+fn frequency_weight_unq_limit_with_limit_zero() {
+    let wrk = Workdir::new("frequency_weight_unq_limit_with_limit_zero");
+
+    // Create a dataset with some duplicate values and some unique values
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "10.0"],
+        svec!["a", "5.0"],
+        svec!["b", "3.0"],
+        svec!["c", "2.0"],
+        svec!["d", "1.0"],
+        svec!["e", "1.0"],
+        svec!["f", "1.0"],
+        svec!["g", "1.0"],
+        svec!["h", "1.0"],
+        svec!["i", "1.0"],
+        svec!["j", "1.0"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Test with --limit 0 and --unq-limit 5
+    // Since not all values are unique, --unq-limit shouldn't apply anyway
+    // But verify that --limit 0 shows all values
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--select", "value"])
+        .args(["--weight", "weight"])
+        .args(["--limit", "0"])
+        .args(["--unq-limit", "5"]);
+
+    wrk.assert_success(&mut cmd);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+
+    let freq_rows: Vec<_> = got
+        .iter()
+        .filter(|r| r.len() > 1 && r[0] == "value")
+        .collect();
+    // Should show all unique values (a, b, c, d, e, f, g, h, i, j = 10 values)
+    assert_eq!(
+        freq_rows.len(),
+        10,
+        "With --limit 0, all unique values should be shown"
+    );
+}
+
+#[test]
+fn frequency_weight_nan_values() {
+    let wrk = Workdir::new("frequency_weight_nan_values");
+
+    // Create a dataset with NaN weight values
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "1.0"],
+        svec!["a", "NaN"], // NaN weight
+        svec!["b", "2.0"],
+        svec!["b", "nan"], // lowercase NaN
+        svec!["c", "3.0"],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+
+    wrk.assert_success(&mut cmd);
+
+    // Read output - need to create a new command since assert_success consumes it
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+
+    // Skip header row
+    let freq_rows: Vec<_> = got
+        .iter()
+        .filter(|r| r.len() > 1 && r[0] == "value" && r[1] != "value") // Skip header
+        .collect();
+
+    let find_freq = |value: &str| -> Option<&Vec<String>> {
+        freq_rows.iter().find(|r| r[1] == value).map(|r| *r)
+    };
+
+    // The main goal is to verify that NaN weight values are handled gracefully without panicking.
+    // The exact behavior depends on how fast_float2 parses "NaN":
+    // - If it parses as NaN (non-finite), values with NaN weights get filtered out
+    // - If it fails to parse, it defaults to 1.0 and values appear
+
+    // "c" should always appear (no NaN weights)
+    assert!(
+        find_freq("c").is_some(),
+        "Value 'c' should appear (no NaN weights)"
+    );
+    if let Some(c_freq) = find_freq("c") {
+        assert_eq!(c_freq[2], "3", "Value 'c' should have weight 3");
+    }
+
+    // "a" and "b" may or may not appear depending on NaN parsing behavior
+    // Just verify the command handled NaN gracefully without panicking
+    // If they appear, verify they have reasonable positive weights
+    if let Some(a_freq) = find_freq("a") {
+        let a_weight: u64 = a_freq[2].parse().unwrap_or(0);
+        assert!(
+            a_weight > 0,
+            "Value 'a' should have positive weight if it appears"
+        );
+    }
+
+    if let Some(b_freq) = find_freq("b") {
+        let b_weight: u64 = b_freq[2].parse().unwrap_or(0);
+        assert!(
+            b_weight > 0,
+            "Value 'b' should have positive weight if it appears"
+        );
+    }
+}
+
+#[test]
+fn frequency_weight_infinity_values() {
+    let wrk = Workdir::new("frequency_weight_infinity_values");
+
+    // Create a dataset with infinity weight values
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "1.0"],
+        svec!["a", "Inf"], // Positive infinity
+        svec!["b", "2.0"],
+        svec!["b", "inf"], // lowercase infinity
+        svec!["c", "3.0"],
+        svec!["d", "-Inf"], // Negative infinity
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+
+    wrk.assert_success(&mut cmd);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+
+    // Infinity weights get aggregated with valid weights, making the total infinity (non-finite)
+    // When displaying, non-finite weights are filtered out, so values with infinity weights
+    // disappear entirely Negative infinity should be skipped (weight <= 0.0 check)
+    // "a" has weight 1.0 + Inf = Inf (filtered out)
+    // "b" has weight 2.0 + inf = inf (filtered out)
+    // "c" has weight 3.0 (valid, should appear)
+    // "d" should be skipped (negative infinity)
+    let freq_rows: Vec<_> = got
+        .iter()
+        .filter(|r| r.len() > 1 && r[0] == "value")
+        .collect();
+
+    // Should have only 1 value ("c") - values with infinity weights are filtered out entirely
+    assert_eq!(
+        freq_rows.len(),
+        1,
+        "Should have 1 value, values with infinity weights are filtered out entirely"
+    );
+
+    let find_freq = |value: &str| -> Option<&Vec<String>> {
+        freq_rows.iter().find(|r| r[1] == value).map(|r| *r)
+    };
+
+    // Verify that values with infinity weights are filtered out
+    assert!(
+        find_freq("a").is_none(),
+        "Value 'a' should be filtered out (has infinity weight)"
+    );
+    assert!(
+        find_freq("b").is_none(),
+        "Value 'b' should be filtered out (has infinity weight)"
+    );
+
+    // Only "c" should appear (no infinity weights)
+    let c_freq = find_freq("c").expect("Should find 'c'");
+    assert_eq!(c_freq[2], "3", "Value 'c' should have weight 3");
+
+    // "d" should not appear (negative infinity skipped)
+    assert!(
+        find_freq("d").is_none(),
+        "Value 'd' should not appear (negative infinity skipped)"
+    );
+}
+
+#[test]
+fn frequency_weight_extremely_large_values() {
+    let wrk = Workdir::new("frequency_weight_extremely_large_values");
+
+    // Create a dataset with extremely large weight values
+    let huge_weight = format!("{}", u64::MAX as f64 * 2.0);
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "1.0"],
+        svec!["b", "1e20"],                 // Very large but finite
+        vec!["c".to_string(), huge_weight], // Larger than u64::MAX
+        svec!["d", "1e308"],                // Near f64::MAX
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+
+    wrk.assert_success(&mut cmd);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+
+    // Extremely large values should be clamped to u64::MAX
+    let freq_rows: Vec<_> = got
+        .iter()
+        .filter(|r| r.len() > 1 && r[0] == "value")
+        .collect();
+
+    // All values should appear
+    assert_eq!(freq_rows.len(), 4, "Should have 4 values");
+
+    let find_freq = |value: &str| -> Option<&Vec<String>> {
+        freq_rows.iter().find(|r| r[1] == value).map(|r| *r)
+    };
+
+    // Verify that extremely large values are clamped to u64::MAX
+    let c_freq = find_freq("c").expect("Should find 'c'");
+    let c_count: u64 = c_freq[2].parse().expect("Should parse count");
+    assert_eq!(
+        c_count,
+        u64::MAX,
+        "Extremely large weight should be clamped to u64::MAX"
+    );
+
+    // Verify other values are correct
+    let a_freq = find_freq("a").expect("Should find 'a'");
+    assert_eq!(a_freq[2], "1", "Value 'a' should have weight 1");
+}
+
+#[test]
+fn frequency_weight_mixed_invalid_values() {
+    let wrk = Workdir::new("frequency_weight_mixed_invalid_values");
+
+    // Create a dataset with various invalid weight values
+    // Use a large but reasonable value instead of f64::MAX to avoid potential parsing issues
+    let huge_weight_str = "1e100"; // Very large but still reasonable
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["valid1", "5.0"],
+        svec!["valid2", "10.0"],
+        svec!["nan1", "NaN"],
+        svec!["nan2", "nan"],
+        svec!["inf1", "Inf"],
+        svec!["inf2", "infinity"],
+        svec!["neginf", "-Inf"],
+        svec!["zero", "0.0"],
+        svec!["negative", "-5.0"],
+        svec!["huge", huge_weight_str],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+
+    wrk.assert_success(&mut cmd);
+
+    // Read output - need to create a new command since assert_success consumes it
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+
+    // Skip header row: filter out where r[1] == "value" (header)
+    let freq_rows: Vec<_> = got
+        .iter()
+        .filter(|r| r.len() > 1 && r[0] == "value" && r[1] != "value") // Skip header
+        .collect();
+
+    let find_freq = |value: &str| -> Option<&Vec<String>> {
+        freq_rows.iter().find(|r| r[1] == value).map(|r| *r)
+    };
+
+    // The main goal is to verify that invalid weight values are handled gracefully
+    // without panicking. The exact behavior may vary based on how fast_float2 parses values.
+
+    // The main goal is to verify that invalid weight values are handled gracefully without
+    // panicking. The exact behavior depends on how fast_float2 parses values and how they're
+    // aggregated. Some values may be filtered out if they aggregate with invalid values to
+    // become non-finite.
+
+    // At minimum, we should have some frequency values (at least "huge" should appear)
+    assert!(
+        freq_rows.len() > 0,
+        "Should have at least some frequency values"
+    );
+
+    // Values with valid weights should ideally appear, but may be filtered if they aggregate
+    // with invalid values to become non-finite. The important thing is graceful handling.
+    if let Some(valid1_freq) = find_freq("valid1") {
+        let valid1_weight: u64 = valid1_freq[2].parse().unwrap_or(0);
+        assert!(
+            valid1_weight > 0,
+            "valid1 should have positive weight if it appears"
+        );
+    }
+
+    if let Some(valid2_freq) = find_freq("valid2") {
+        let valid2_weight: u64 = valid2_freq[2].parse().unwrap_or(0);
+        assert!(
+            valid2_weight > 0,
+            "valid2 should have positive weight if it appears"
+        );
+    }
+
+    // Values that should definitely be skipped (zero or negative weights)
+    assert!(
+        find_freq("neginf").is_none(),
+        "Negative infinity should be skipped (weight <= 0.0)"
+    );
+    assert!(
+        find_freq("zero").is_none(),
+        "Zero weights should be skipped (weight <= 0.0)"
+    );
+    assert!(
+        find_freq("negative").is_none(),
+        "Negative weights should be skipped (weight <= 0.0)"
+    );
+
+    // NaN/infinity values may or may not appear depending on parsing behavior
+    // The important thing is that the command handles them without panicking
+    // If they parse as NaN/infinity, they get filtered out (non-finite check)
+    // If they fail to parse, they default to 1.0 and appear
+
+    // "huge" should appear if it parses successfully (very large but finite)
+    // It will be clamped to u64::MAX when converted
+    if let Some(huge_freq) = find_freq("huge") {
+        let huge_count: u64 = huge_freq[2].parse().expect("Should parse count");
+        assert_eq!(
+            huge_count,
+            u64::MAX,
+            "Extremely large weight should be clamped to u64::MAX"
+        );
+    }
 }

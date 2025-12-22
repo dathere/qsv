@@ -730,8 +730,9 @@ impl Args {
     /// Process weighted frequencies
     fn process_frequencies_weighted(
         &self,
-        _all_unique_header: bool, /* Ignored for weighted frequencies - always show individual
-                                   * values */
+        _all_unique_header: bool, /* Indicates the column has all-unique values (e.g., an ID
+                                   * column). Ignored for weighted frequencies, which always
+                                   * show individual values regardless. */
         abs_dec_places: u32,
         _row_count: u64,
         weighted_map: &HashMap<Vec<u8>, f64>,
@@ -752,12 +753,13 @@ impl Args {
 
         // Convert to processed frequencies (count is f64, convert to u64 for display)
         for (value, weight, percentage, rank) in counts_to_process {
+            // Skip non-finite weights (NaN or infinity) to avoid emitting misleading zero-count
+            // rows.
+            if !weight.is_finite() {
+                continue;
+            }
             #[allow(clippy::cast_precision_loss)]
-            let count = if weight.is_finite() {
-                weight.clamp(0.0, u64::MAX as f64).round() as u64
-            } else {
-                0
-            };
+            let count = weight.clamp(0.0, u64::MAX as f64).round() as u64;
             processed_frequencies.push(ProcessedFrequency {
                 value,
                 count,
@@ -869,7 +871,6 @@ impl Args {
             }
         }
 
-        let mut pct_sum = 0.0_f64;
         let mut pct: f64;
         let mut count_sum = 0.0_f64;
         let pct_factor = if total_weight > 0.0 {
@@ -919,7 +920,7 @@ impl Args {
             current_group.push(byte_string);
         }
         if !current_group.is_empty() {
-            weight_groups.push((current_weight.unwrap(), current_group));
+            weight_groups.push((current_weight.unwrap_or(0.0), current_group));
         }
 
         // safety: NULL_VAL is set in the main function
@@ -935,7 +936,6 @@ impl Args {
                     for byte_string in group {
                         count_sum += weight;
                         pct = weight * pct_factor;
-                        pct_sum += pct;
 
                         if byte_string.is_empty() {
                             counts_final.push((null_val.clone(), weight, pct, current_rank));
@@ -953,7 +953,6 @@ impl Args {
                     for byte_string in group {
                         count_sum += weight;
                         pct = weight * pct_factor;
-                        pct_sum += pct;
 
                         if byte_string.is_empty() {
                             counts_final.push((null_val.clone(), weight, pct, current_rank));
@@ -972,7 +971,6 @@ impl Args {
                     for byte_string in group {
                         count_sum += weight;
                         pct = weight * pct_factor;
-                        pct_sum += pct;
 
                         if byte_string.is_empty() {
                             counts_final.push((null_val.clone(), weight, pct, max_rank));
@@ -989,7 +987,6 @@ impl Args {
                     for byte_string in group {
                         count_sum += weight;
                         pct = weight * pct_factor;
-                        pct_sum += pct;
 
                         if byte_string.is_empty() {
                             counts_final.push((null_val.clone(), weight, pct, current_rank));
@@ -1008,7 +1005,6 @@ impl Args {
                     for byte_string in group {
                         count_sum += weight;
                         pct = weight * pct_factor;
-                        pct_sum += pct;
 
                         if byte_string.is_empty() {
                             counts_final.push((null_val.clone(), weight, pct, avg_rank));
@@ -1499,8 +1495,9 @@ impl Args {
 
             let weight = if let Some(widx) = weight_col_idx {
                 if widx < row_result.len() {
-                    fast_float2::parse::<f64, &[u8]>(row_result.get(widx).unwrap_or(b"1.0"))
-                        .unwrap_or(1.0)
+                    // safety: widx < row_result.len() is checked above, so get(widx)
+                    // will always return Some(&[u8])
+                    fast_float2::parse::<f64, &[u8]>(row_result.get(widx).unwrap()).unwrap_or(1.0)
                 } else {
                     1.0
                 }

@@ -910,7 +910,7 @@ impl Args {
 
         for (byte_string, weight) in counts {
             if let Some(prev_weight) = current_weight
-                && (weight - prev_weight).abs() > weight_tolerance
+                && (prev_weight - weight).abs() > weight_tolerance
                 && !current_group.is_empty()
             {
                 weight_groups.push((prev_weight, std::mem::take(&mut current_group)));

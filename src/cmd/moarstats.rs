@@ -47,11 +47,11 @@ Currently computes the following 14 additional statistics:
 11. Kurtosis: Measures the "tailedness" of the distribution (excess kurtosis).
     Positive values indicate heavy tails, negative values indicate light tails.
     Values near 0 indicate a normal distribution.
-    Requires reading the original CSV file.
+    Requires --advanced flag.
     https://en.wikipedia.org/wiki/Kurtosis
 12. Gini Coefficient: Measures inequality/dispersion in the distribution.
     Values range from 0 (perfect equality) to 1 (maximum inequality).
-    Requires reading the original CSV file.
+    Requires --advanced flag.
     https://en.wikipedia.org/wiki/Gini_coefficient
 13. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
     All values are included in the calculation, but extreme values are capped at thresholds.

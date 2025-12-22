@@ -895,7 +895,9 @@ impl Args {
                         .or(stats.mean)
                         .filter(|&s| s > 0.0)
                 })
-                .map_or(f64::EPSILON, |scale| scale * 1e-9)
+                // Use a scale-aware tolerance with a minimum absolute epsilon to handle
+                // both small and large weight scales robustly.
+                .map_or(f64::EPSILON, |scale| (scale * 1e-6).max(1e-10))
         } else {
             f64::EPSILON
         };

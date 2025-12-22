@@ -444,20 +444,32 @@ fn moarstats_outlier_statistics() {
     let field_idx = get_column_index(&headers, "field").unwrap();
     let type_idx = get_column_index(&headers, "type").unwrap();
 
-    // Check for outlier columns
+    // Check for outlier columns (with _cnt suffix for counts)
     let outlier_columns = vec![
-        "outliers_extreme_lower",
-        "outliers_mild_lower",
-        "outliers_normal",
-        "outliers_mild_upper",
-        "outliers_extreme_upper",
-        "outliers_total",
+        "outliers_extreme_lower_cnt",
+        "outliers_mild_lower_cnt",
+        "outliers_normal_cnt",
+        "outliers_mild_upper_cnt",
+        "outliers_extreme_upper_cnt",
+        "outliers_total_cnt",
         "outliers_mean",
         "non_outliers_mean",
         "outliers_to_normal_mean_ratio",
         "outliers_min",
         "outliers_max",
         "outliers_range",
+        "outliers_stddev",
+        "outliers_variance",
+        "non_outliers_stddev",
+        "non_outliers_variance",
+        "outliers_cv",
+        "non_outliers_cv",
+        "outliers_percentage",
+        "outlier_impact",
+        "outlier_impact_ratio",
+        "outliers_normal_stddev_ratio",
+        "lower_outer_fence_zscore",
+        "upper_outer_fence_zscore",
     ];
 
     let mut found_outlier_columns = Vec::new();
@@ -479,12 +491,12 @@ fn moarstats_outlier_statistics() {
         {
             found_numeric_with_outliers = true;
 
-            // Verify outlier counts exist
-            if let Some(outliers_total_idx) = get_column_index(&headers, "outliers_total") {
+            // Verify outlier counts exist (with _cnt suffix)
+            if let Some(outliers_total_idx) = get_column_index(&headers, "outliers_total_cnt") {
                 let outliers_total_val = get_field_value(&record, outliers_total_idx);
                 assert!(
                     outliers_total_val.is_some(),
-                    "outliers_total should exist for numeric columns with quartiles"
+                    "outliers_total_cnt should exist for numeric columns with quartiles"
                 );
             }
 
@@ -687,6 +699,17 @@ fn moarstats_outlier_statistics_values() {
                 }
             }
 
+            // Verify outliers_total_cnt (updated column name)
+            if let Some(outliers_total_idx) = get_column_index(&headers, "outliers_total_cnt") {
+                let outliers_total_val = get_field_value(&record, outliers_total_idx);
+                if let Some(val_str) = outliers_total_val {
+                    if !val_str.is_empty() {
+                        let count: u64 = val_str.parse().unwrap();
+                        assert!(count > 0, "Should have some outliers");
+                    }
+                }
+            }
+
             break;
         }
     }
@@ -734,14 +757,14 @@ fn moarstats_no_outliers() {
         let field_name = get_field_value(&record, field_idx).unwrap();
 
         if field_name == "test" {
-            // Outlier columns should exist
+            // Outlier columns should exist (with _cnt suffix)
             assert!(
-                get_column_index(&headers, "outliers_total").is_some(),
-                "outliers_total column should exist"
+                get_column_index(&headers, "outliers_total_cnt").is_some(),
+                "outliers_total_cnt column should exist"
             );
 
-            // If no outliers, outliers_total should be 0
-            if let Some(outliers_total_idx) = get_column_index(&headers, "outliers_total") {
+            // If no outliers, outliers_total_cnt should be 0
+            if let Some(outliers_total_idx) = get_column_index(&headers, "outliers_total_cnt") {
                 let outliers_total_val = get_field_value(&record, outliers_total_idx);
                 if let Some(val_str) = outliers_total_val {
                     if !val_str.is_empty() {
@@ -2141,4 +2164,845 @@ fn moarstats_advanced_flag_does_not_affect_other_stats() {
         get_column_index(&headers, "gini_coefficient").is_some(),
         "gini_coefficient should exist with --advanced"
     );
+}
+
+#[test]
+fn moarstats_outlier_variance_stddev() {
+    let wrk = Workdir::new("moarstats_outlier_variance");
+
+    // Create CSV with known outliers
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "10"],
+            svec!["test", "11"],
+            svec!["test", "12"],
+            svec!["test", "13"],
+            svec!["test", "14"],
+            svec!["test", "100"], // outlier
+            svec!["test", "200"], // outlier
+        ],
+    );
+
+    // Generate stats with quartiles
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify outlier variance/stddev columns exist and have values
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "outliers_stddev").is_some(),
+        "outliers_stddev column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "outliers_variance").is_some(),
+        "outliers_variance column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "non_outliers_stddev").is_some(),
+        "non_outliers_stddev column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "non_outliers_variance").is_some(),
+        "non_outliers_variance column should exist"
+    );
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            // Verify outliers_stddev and outliers_variance
+            if let Some(stddev_idx) = get_column_index(&headers, "outliers_stddev") {
+                let stddev_val = get_field_value(&record, stddev_idx);
+                if let Some(val_str) = stddev_val {
+                    if !val_str.is_empty() {
+                        let stddev: f64 = val_str.parse().unwrap();
+                        assert!(stddev >= 0.0, "outliers_stddev should be non-negative");
+                        assert!(stddev.is_finite(), "outliers_stddev should be finite");
+                    }
+                }
+            }
+
+            if let Some(variance_idx) = get_column_index(&headers, "outliers_variance") {
+                let variance_val = get_field_value(&record, variance_idx);
+                if let Some(val_str) = variance_val {
+                    if !val_str.is_empty() {
+                        let variance: f64 = val_str.parse().unwrap();
+                        assert!(variance >= 0.0, "outliers_variance should be non-negative");
+                        assert!(variance.is_finite(), "outliers_variance should be finite");
+                    }
+                }
+            }
+
+            // Verify non_outliers_stddev and non_outliers_variance
+            if let Some(stddev_idx) = get_column_index(&headers, "non_outliers_stddev") {
+                let stddev_val = get_field_value(&record, stddev_idx);
+                if let Some(val_str) = stddev_val {
+                    if !val_str.is_empty() {
+                        let stddev: f64 = val_str.parse().unwrap();
+                        assert!(stddev >= 0.0, "non_outliers_stddev should be non-negative");
+                        assert!(stddev.is_finite(), "non_outliers_stddev should be finite");
+                    }
+                }
+            }
+
+            if let Some(variance_idx) = get_column_index(&headers, "non_outliers_variance") {
+                let variance_val = get_field_value(&record, variance_idx);
+                if let Some(val_str) = variance_val {
+                    if !val_str.is_empty() {
+                        let variance: f64 = val_str.parse().unwrap();
+                        assert!(
+                            variance >= 0.0,
+                            "non_outliers_variance should be non-negative"
+                        );
+                        assert!(
+                            variance.is_finite(),
+                            "non_outliers_variance should be finite"
+                        );
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_outlier_coefficient_of_variation() {
+    let wrk = Workdir::new("moarstats_outlier_cv");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "10"],
+            svec!["test", "20"],
+            svec!["test", "30"],
+            svec!["test", "40"],
+            svec!["test", "50"],
+            svec!["test", "1000"], // outlier
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "outliers_cv").is_some(),
+        "outliers_cv column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "non_outliers_cv").is_some(),
+        "non_outliers_cv column should exist"
+    );
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            if let Some(cv_idx) = get_column_index(&headers, "outliers_cv") {
+                let cv_val = get_field_value(&record, cv_idx);
+                if let Some(val_str) = cv_val {
+                    if !val_str.is_empty() {
+                        let cv: f64 = val_str.parse().unwrap();
+                        assert!(cv >= 0.0, "outliers_cv should be non-negative");
+                        assert!(cv.is_finite(), "outliers_cv should be finite");
+                    }
+                }
+            }
+
+            if let Some(cv_idx) = get_column_index(&headers, "non_outliers_cv") {
+                let cv_val = get_field_value(&record, cv_idx);
+                if let Some(val_str) = cv_val {
+                    if !val_str.is_empty() {
+                        let cv: f64 = val_str.parse().unwrap();
+                        assert!(cv >= 0.0, "non_outliers_cv should be non-negative");
+                        assert!(cv.is_finite(), "non_outliers_cv should be finite");
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_outlier_percentage() {
+    let wrk = Workdir::new("moarstats_outlier_pct");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "10"],
+            svec!["test", "20"],
+            svec!["test", "30"],
+            svec!["test", "40"],
+            svec!["test", "50"],
+            svec!["test", "1000"], // outlier
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "outliers_percentage").is_some(),
+        "outliers_percentage column should exist"
+    );
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            if let Some(pct_idx) = get_column_index(&headers, "outliers_percentage") {
+                let pct_val = get_field_value(&record, pct_idx);
+                if let Some(val_str) = pct_val {
+                    if !val_str.is_empty() {
+                        let pct: f64 = val_str.parse().unwrap();
+                        assert!(
+                            pct >= 0.0 && pct <= 100.0,
+                            "outliers_percentage should be between 0 and 100"
+                        );
+                        assert!(pct.is_finite(), "outliers_percentage should be finite");
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_outlier_impact() {
+    let wrk = Workdir::new("moarstats_outlier_impact");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "10"],
+            svec!["test", "11"],
+            svec!["test", "12"],
+            svec!["test", "13"],
+            svec!["test", "14"],
+            svec!["test", "100"], // outlier that affects mean
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "outlier_impact").is_some(),
+        "outlier_impact column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "outlier_impact_ratio").is_some(),
+        "outlier_impact_ratio column should exist"
+    );
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            if let Some(impact_idx) = get_column_index(&headers, "outlier_impact") {
+                let impact_val = get_field_value(&record, impact_idx);
+                if let Some(val_str) = impact_val {
+                    if !val_str.is_empty() {
+                        let impact: f64 = val_str.parse().unwrap();
+                        assert!(impact.is_finite(), "outlier_impact should be finite");
+                    }
+                }
+            }
+
+            if let Some(ratio_idx) = get_column_index(&headers, "outlier_impact_ratio") {
+                let ratio_val = get_field_value(&record, ratio_idx);
+                if let Some(val_str) = ratio_val {
+                    if !val_str.is_empty() {
+                        let ratio: f64 = val_str.parse().unwrap();
+                        assert!(ratio.is_finite(), "outlier_impact_ratio should be finite");
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_outlier_spread_ratio() {
+    let wrk = Workdir::new("moarstats_outlier_spread");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "10"],
+            svec!["test", "11"],
+            svec!["test", "12"],
+            svec!["test", "13"],
+            svec!["test", "14"],
+            svec!["test", "100"], // outlier
+            svec!["test", "200"], // outlier
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "outliers_normal_stddev_ratio").is_some(),
+        "outliers_normal_stddev_ratio column should exist"
+    );
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            if let Some(ratio_idx) = get_column_index(&headers, "outliers_normal_stddev_ratio") {
+                let ratio_val = get_field_value(&record, ratio_idx);
+                if let Some(val_str) = ratio_val {
+                    if !val_str.is_empty() {
+                        let ratio: f64 = val_str.parse().unwrap();
+                        assert!(
+                            ratio >= 0.0,
+                            "outliers_normal_stddev_ratio should be non-negative"
+                        );
+                        assert!(
+                            ratio.is_finite(),
+                            "outliers_normal_stddev_ratio should be finite"
+                        );
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_outlier_fence_zscores() {
+    let wrk = Workdir::new("moarstats_fence_zscore");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "10"],
+            svec!["test", "20"],
+            svec!["test", "30"],
+            svec!["test", "40"],
+            svec!["test", "50"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "lower_outer_fence_zscore").is_some(),
+        "lower_outer_fence_zscore column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "upper_outer_fence_zscore").is_some(),
+        "upper_outer_fence_zscore column should exist"
+    );
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            if let Some(zscore_idx) = get_column_index(&headers, "lower_outer_fence_zscore") {
+                let zscore_val = get_field_value(&record, zscore_idx);
+                if let Some(val_str) = zscore_val {
+                    if !val_str.is_empty() {
+                        let zscore: f64 = val_str.parse().unwrap();
+                        assert!(
+                            zscore.is_finite(),
+                            "lower_outer_fence_zscore should be finite"
+                        );
+                    }
+                }
+            }
+
+            if let Some(zscore_idx) = get_column_index(&headers, "upper_outer_fence_zscore") {
+                let zscore_val = get_field_value(&record, zscore_idx);
+                if let Some(val_str) = zscore_val {
+                    if !val_str.is_empty() {
+                        let zscore: f64 = val_str.parse().unwrap();
+                        assert!(
+                            zscore.is_finite(),
+                            "upper_outer_fence_zscore should be finite"
+                        );
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_trimmed_winsorized_variance_stddev() {
+    let wrk = Workdir::new("moarstats_trimmed_winsorized_var");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "1"],
+            svec!["test", "2"],
+            svec!["test", "3"],
+            svec!["test", "4"],
+            svec!["test", "5"],
+            svec!["test", "6"],
+            svec!["test", "7"],
+            svec!["test", "8"],
+            svec!["test", "9"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "trimmed_stddev_25pct").is_some(),
+        "trimmed_stddev_25pct column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "trimmed_variance_25pct").is_some(),
+        "trimmed_variance_25pct column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "winsorized_stddev_25pct").is_some(),
+        "winsorized_stddev_25pct column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "winsorized_variance_25pct").is_some(),
+        "winsorized_variance_25pct column should exist"
+    );
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            // Verify trimmed stddev/variance
+            if let Some(stddev_idx) = get_column_index(&headers, "trimmed_stddev_25pct") {
+                let stddev_val = get_field_value(&record, stddev_idx);
+                if let Some(val_str) = stddev_val {
+                    if !val_str.is_empty() {
+                        let stddev: f64 = val_str.parse().unwrap();
+                        assert!(stddev >= 0.0, "trimmed_stddev_25pct should be non-negative");
+                        assert!(stddev.is_finite(), "trimmed_stddev_25pct should be finite");
+                    }
+                }
+            }
+
+            if let Some(variance_idx) = get_column_index(&headers, "trimmed_variance_25pct") {
+                let variance_val = get_field_value(&record, variance_idx);
+                if let Some(val_str) = variance_val {
+                    if !val_str.is_empty() {
+                        let variance: f64 = val_str.parse().unwrap();
+                        assert!(
+                            variance >= 0.0,
+                            "trimmed_variance_25pct should be non-negative"
+                        );
+                        assert!(
+                            variance.is_finite(),
+                            "trimmed_variance_25pct should be finite"
+                        );
+                    }
+                }
+            }
+
+            // Verify winsorized stddev/variance
+            if let Some(stddev_idx) = get_column_index(&headers, "winsorized_stddev_25pct") {
+                let stddev_val = get_field_value(&record, stddev_idx);
+                if let Some(val_str) = stddev_val {
+                    if !val_str.is_empty() {
+                        let stddev: f64 = val_str.parse().unwrap();
+                        assert!(
+                            stddev >= 0.0,
+                            "winsorized_stddev_25pct should be non-negative"
+                        );
+                        assert!(
+                            stddev.is_finite(),
+                            "winsorized_stddev_25pct should be finite"
+                        );
+                    }
+                }
+            }
+
+            if let Some(variance_idx) = get_column_index(&headers, "winsorized_variance_25pct") {
+                let variance_val = get_field_value(&record, variance_idx);
+                if let Some(val_str) = variance_val {
+                    if !val_str.is_empty() {
+                        let variance: f64 = val_str.parse().unwrap();
+                        assert!(
+                            variance >= 0.0,
+                            "winsorized_variance_25pct should be non-negative"
+                        );
+                        assert!(
+                            variance.is_finite(),
+                            "winsorized_variance_25pct should be finite"
+                        );
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_trimmed_winsorized_cv() {
+    let wrk = Workdir::new("moarstats_trimmed_winsorized_cv");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "10"],
+            svec!["test", "20"],
+            svec!["test", "30"],
+            svec!["test", "40"],
+            svec!["test", "50"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "trimmed_cv_25pct").is_some(),
+        "trimmed_cv_25pct column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "winsorized_cv_25pct").is_some(),
+        "winsorized_cv_25pct column should exist"
+    );
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            if let Some(cv_idx) = get_column_index(&headers, "trimmed_cv_25pct") {
+                let cv_val = get_field_value(&record, cv_idx);
+                if let Some(val_str) = cv_val {
+                    if !val_str.is_empty() {
+                        let cv: f64 = val_str.parse().unwrap();
+                        assert!(cv >= 0.0, "trimmed_cv_25pct should be non-negative");
+                        assert!(cv.is_finite(), "trimmed_cv_25pct should be finite");
+                    }
+                }
+            }
+
+            if let Some(cv_idx) = get_column_index(&headers, "winsorized_cv_25pct") {
+                let cv_val = get_field_value(&record, cv_idx);
+                if let Some(val_str) = cv_val {
+                    if !val_str.is_empty() {
+                        let cv: f64 = val_str.parse().unwrap();
+                        assert!(cv >= 0.0, "winsorized_cv_25pct should be non-negative");
+                        assert!(cv.is_finite(), "winsorized_cv_25pct should be finite");
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_trimmed_winsorized_stddev_ratio() {
+    let wrk = Workdir::new("moarstats_trimmed_winsorized_ratio");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "10"],
+            svec!["test", "20"],
+            svec!["test", "30"],
+            svec!["test", "40"],
+            svec!["test", "50"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    // Check for stddev_ratio columns (names may vary based on implementation)
+    let trimmed_ratio_exists = headers
+        .iter()
+        .any(|h| h.contains("trimmed") && h.contains("stddev_ratio"));
+    let winsorized_ratio_exists = headers
+        .iter()
+        .any(|h| h.contains("winsorized") && h.contains("stddev_ratio"));
+
+    assert!(
+        trimmed_ratio_exists,
+        "trimmed stddev_ratio column should exist"
+    );
+    assert!(
+        winsorized_ratio_exists,
+        "winsorized stddev_ratio column should exist"
+    );
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            // Find and verify trimmed stddev ratio
+            for (idx, header) in headers.iter().enumerate() {
+                if header.contains("trimmed") && header.contains("stddev_ratio") {
+                    let ratio_val = get_field_value(&record, idx);
+                    if let Some(val_str) = ratio_val {
+                        if !val_str.is_empty() {
+                            let ratio: f64 = val_str.parse().unwrap();
+                            assert!(ratio >= 0.0, "trimmed stddev_ratio should be non-negative");
+                            assert!(ratio.is_finite(), "trimmed stddev_ratio should be finite");
+                        }
+                    }
+                }
+            }
+
+            // Find and verify winsorized stddev ratio
+            for (idx, header) in headers.iter().enumerate() {
+                if header.contains("winsorized") && header.contains("stddev_ratio") {
+                    let ratio_val = get_field_value(&record, idx);
+                    if let Some(val_str) = ratio_val {
+                        if !val_str.is_empty() {
+                            let ratio: f64 = val_str.parse().unwrap();
+                            assert!(
+                                ratio >= 0.0,
+                                "winsorized stddev_ratio should be non-negative"
+                            );
+                            assert!(
+                                ratio.is_finite(),
+                                "winsorized stddev_ratio should be finite"
+                            );
+                        }
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_trimmed_winsorized_range() {
+    let wrk = Workdir::new("moarstats_trimmed_winsorized_range");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "1"],
+            svec!["test", "2"],
+            svec!["test", "3"],
+            svec!["test", "4"],
+            svec!["test", "5"],
+            svec!["test", "6"],
+            svec!["test", "7"],
+            svec!["test", "8"],
+            svec!["test", "9"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "trimmed_range_25pct").is_some(),
+        "trimmed_range_25pct column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "winsorized_range_25pct").is_some(),
+        "winsorized_range_25pct column should exist"
+    );
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            if let Some(range_idx) = get_column_index(&headers, "trimmed_range_25pct") {
+                let range_val = get_field_value(&record, range_idx);
+                if let Some(val_str) = range_val {
+                    if !val_str.is_empty() {
+                        let range: f64 = val_str.parse().unwrap();
+                        assert!(range >= 0.0, "trimmed_range_25pct should be non-negative");
+                        assert!(range.is_finite(), "trimmed_range_25pct should be finite");
+                    }
+                }
+            }
+
+            if let Some(range_idx) = get_column_index(&headers, "winsorized_range_25pct") {
+                let range_val = get_field_value(&record, range_idx);
+                if let Some(val_str) = range_val {
+                    if !val_str.is_empty() {
+                        let range: f64 = val_str.parse().unwrap();
+                        assert!(
+                            range >= 0.0,
+                            "winsorized_range_25pct should be non-negative"
+                        );
+                        assert!(range.is_finite(), "winsorized_range_25pct should be finite");
+                    }
+                }
+            }
+
+            break;
+        }
+    }
 }

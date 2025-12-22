@@ -1,8 +1,10 @@
 static USAGE: &str = r#"
-Add 14 additional statistics and 12 outlier metadata to an existing stats CSV file.
+Add dozens of additional statistics, including extended outlier & robust statistics
+to an existing stats CSV file.
 
 The `moarstats` command extends an existing stats CSV file (created by the `stats` command)
-by computing "moar" statistics that can be derived from existing stats columns.
+by computing "moar" (https://www.dictionary.com/culture/slang/moar) statistics that can be
+derived from existing stats columns and by scanning the original CSV file.
 
 It looks for the `<FILESTEM>.stats.csv` file for a given CSV input. If the stats CSV file
 does not exist, it will first run the `stats` command with configurable options to establish
@@ -15,7 +17,7 @@ Currently computes the following 14 additional statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
-    https://en.wikipedia.org/wiki/Skewness#Pearson's_second_skewness_coefficient_(median_skewness)
+    https://en.wikipedia.org/wiki/Skewness
  2. Range to Standard Deviation Ratio: range / stddev
     Normalizes the spread of data.
     Higher values indicate more extreme outliers relative to the variability.
@@ -56,22 +58,31 @@ Currently computes the following 14 additional statistics:
 13. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
     All values are included in the calculation, but extreme values are capped at thresholds.
     https://en.wikipedia.org/wiki/Winsorized_mean
+    Also computes: winsorized_stddev, winsorized_variance, winsorized_cv, winsorized_range,
+    and winsorized_stddev_ratio (winsorized_stddev / overall_stddev).
 14. Trimmed Mean: Excludes values outside thresholds, then computes mean.
     Only values within thresholds are included in the calculation.
     https://en.wikipedia.org/wiki/Truncated_mean
+    Also computes: trimmed_stddev, trimmed_variance, trimmed_cv, trimmed_range,
+    and trimmed_stddev_ratio (trimmed_stddev / overall_stddev).
     By default, uses Q1 and Q3 as thresholds (25% winsorization/trimming).
     With --use-percentiles, uses configurable percentiles (e.g., 5th/95th) as thresholds
     with --pct-thresholds.
 
-In addition, it computes the following 12 outlier statistics.
+In addition, it computes the following outlier statistics (24 outlier statistics total).
 https://en.wikipedia.org/wiki/Outlier
 (requires --quartiles or --everything in stats):
-  - outliers_extreme_lower: Count of values below the lower outer fence
-  - outliers_mild_lower: Count of values between lower outer and inner fences
-  - outliers_normal: Count of values between inner fences (non-outliers)
-  - outliers_mild_upper: Count of values between upper inner and outer fences
-  - outliers_extreme_upper: Count of values above the upper outer fence
-  - outliers_total: Total count of all outliers (sum of extreme and mild outliers)
+
+Outlier Counts (7 statistics):
+  - outliers_extreme_lower_cnt: Count of values below the lower outer fence
+  - outliers_mild_lower_cnt: Count of values between lower outer and inner fences
+  - outliers_normal_cnt: Count of values between inner fences (non-outliers)
+  - outliers_mild_upper_cnt: Count of values between upper inner and outer fences
+  - outliers_extreme_upper_cnt: Count of values above the upper outer fence
+  - outliers_total_cnt: Total count of all outliers (sum of extreme and mild outliers)
+  - outliers_percentage: Percentage of values that are outliers
+
+Outlier Descriptive Statistics (6 statistics):
   - outliers_mean: Mean value of outliers
   - non_outliers_mean: Mean value of non-outliers
   - outliers_to_normal_mean_ratio: Ratio of outlier mean to non-outlier mean
@@ -79,16 +90,35 @@ https://en.wikipedia.org/wiki/Outlier
   - outliers_max: Maximum value among outliers
   - outliers_range: Range of outlier values (max - min)
 
+Outlier Variance/Spread Statistics (7 statistics):
+  - outliers_stddev: Standard deviation of outlier values
+  - outliers_variance: Variance of outlier values
+  - non_outliers_stddev: Standard deviation of non-outlier values
+  - non_outliers_variance: Variance of non-outlier values
+  - outliers_cv: Coefficient of variation for outliers (stddev / mean)
+  - non_outliers_cv: Coefficient of variation for non-outliers (stddev / mean)
+  - outliers_normal_stddev_ratio: Ratio of outlier stddev to non-outlier stddev
+
+Outlier Impact Statistics (2 statistics):
+  - outlier_impact: Difference between overall mean and non-outlier mean
+  - outlier_impact_ratio: Relative impact (outlier_impact / non_outlier_mean)
+
+Outlier Boundary Statistics (2 statistics):
+  - lower_outer_fence_zscore: Z-score of the lower outer fence boundary
+  - upper_outer_fence_zscore: Z-score of the upper outer fence boundary
+
   These outlier statistics require reading the original CSV file and comparing each
   value against the fence thresholds.
   Fences are computed using the IQR method:
     inner fences at Q1/Q3 ± 1.5*IQR, outer fences at Q1/Q3 ± 3.0*IQR.
 
-These statistics are only computed for numeric and date/datetime columns where the required
-base statistics are available. Outlier statistics additionally require that quartiles (and thus
-fences) were computed when generating the stats CSV. Winsorized/trimmed means require either
-quartiles (Q1/Q3) or percentiles to be available. Kurtosis and Gini coefficient require reading
-the original CSV file to collect all values for computation.
+These statistics are only computed for numeric and date/datetime columns where the
+required base statistics (mean, median, stddev, etc.) are available.
+Outlier statistics additionally require that quartiles (and thus fences) were
+computed when generating the stats CSV.
+Winsorized/trimmed means require either Q1/Q3 or percentiles to be available.
+Kurtosis and Gini coefficient require reading the original CSV file to collect
+all values for computation.
 
 Examples:
 
@@ -106,9 +136,9 @@ Usage:
     qsv moarstats --help
 
 moarstats options:
-    --advanced             Compute Gini coefficient and Kurtosis. These statistics require reading
-                           the original CSV file to collect all values for computation and are
-                           computationally expensive.
+    --advanced             Compute Gini coefficient and Kurtosis. These statistics
+                           require reading the original CSV file to collect all values
+                           for computation and are computationally expensive.
     --stats-options <arg>  Options to pass to the stats command if baseline stats need
                            to be generated. The options are passed as a single string
                            that will be split by whitespace.
@@ -457,21 +487,33 @@ struct OutlierFieldInfo {
 #[derive(Clone, Default)]
 struct OutlierStats {
     // Counts: [extreme_lower, mild_lower, normal, mild_upper, extreme_upper, total]
-    counts:           [u64; 6],
+    counts:                 [u64; 6],
     // Sums
-    sum_outliers:     f64,
-    sum_normal:       f64,
-    sum_all:          f64,
+    sum_outliers:           f64,
+    sum_normal:             f64,
+    sum_all:                f64,
     // Min/Max
-    min_outliers:     Option<f64>,
-    max_outliers:     Option<f64>,
-    min_normal:       Option<f64>,
-    max_normal:       Option<f64>,
+    min_outliers:           Option<f64>,
+    max_outliers:           Option<f64>,
+    min_normal:             Option<f64>,
+    max_normal:             Option<f64>,
     // Winsorized and trimmed means
-    winsorized_sum:   f64,
-    winsorized_count: u64,
-    trimmed_sum:      f64,
-    trimmed_count:    u64,
+    winsorized_sum:         f64,
+    winsorized_count:       u64,
+    trimmed_sum:            f64,
+    trimmed_count:          u64,
+    // For variance/stddev computation (using sum of squares)
+    sum_squares_outliers:   f64,
+    sum_squares_normal:     f64,
+    sum_squares_trimmed:    f64,
+    sum_squares_winsorized: f64,
+    // For trimmed/winsorized range
+    min_trimmed:            Option<f64>,
+    max_trimmed:            Option<f64>,
+    min_winsorized:         Option<f64>,
+    max_winsorized:         Option<f64>,
+    // Total count of all values processed
+    count_all:              u64,
 }
 
 /// Statistics for kurtosis and Gini coefficient
@@ -546,8 +588,9 @@ where
             // Get mutable reference to stats for this field
             let stats = chunk_stats.get_mut(field_name).unwrap();
 
-            // Update sums
+            // Update sums and count
             stats.sum_all += val;
+            stats.count_all += 1;
 
             // Compute winsorized and trimmed statistics
             let winsorized_val = val
@@ -555,11 +598,27 @@ where
                 .min(field_info.upper_threshold);
             stats.winsorized_sum += winsorized_val;
             stats.winsorized_count += 1;
+            // Track winsorized min/max and sum of squares
+            stats.min_winsorized = Some(
+                stats
+                    .min_winsorized
+                    .map_or(winsorized_val, |m| m.min(winsorized_val)),
+            );
+            stats.max_winsorized = Some(
+                stats
+                    .max_winsorized
+                    .map_or(winsorized_val, |m| m.max(winsorized_val)),
+            );
+            stats.sum_squares_winsorized += winsorized_val * winsorized_val;
 
             // For trimmed mean, only include values within thresholds
             if val >= field_info.lower_threshold && val <= field_info.upper_threshold {
                 stats.trimmed_sum += val;
                 stats.trimmed_count += 1;
+                // Track trimmed min/max and sum of squares
+                stats.min_trimmed = Some(stats.min_trimmed.map_or(val, |m| m.min(val)));
+                stats.max_trimmed = Some(stats.max_trimmed.map_or(val, |m| m.max(val)));
+                stats.sum_squares_trimmed += val * val;
             }
 
             // Count outliers and track statistics based on fence comparisons
@@ -567,29 +626,34 @@ where
                 stats.counts[0] += 1; // extreme_lower
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
+                stats.sum_squares_outliers += val * val;
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else if val < field_info.lower_inner {
                 stats.counts[1] += 1; // mild_lower
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
+                stats.sum_squares_outliers += val * val;
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else if val <= field_info.upper_inner {
                 stats.counts[2] += 1; // normal
                 stats.sum_normal += val;
+                stats.sum_squares_normal += val * val;
                 stats.min_normal = Some(stats.min_normal.map_or(val, |m| m.min(val)));
                 stats.max_normal = Some(stats.max_normal.map_or(val, |m| m.max(val)));
             } else if val <= field_info.upper_outer {
                 stats.counts[3] += 1; // mild_upper
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
+                stats.sum_squares_outliers += val * val;
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else {
                 stats.counts[4] += 1; // extreme_upper
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
+                stats.sum_squares_outliers += val * val;
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             }
@@ -692,11 +756,17 @@ fn count_all_outliers(
                     total_stats.sum_outliers += stats.sum_outliers;
                     total_stats.sum_normal += stats.sum_normal;
                     total_stats.sum_all += stats.sum_all;
+                    total_stats.count_all += stats.count_all;
                     // Aggregate winsorized/trimmed stats
                     total_stats.winsorized_sum += stats.winsorized_sum;
                     total_stats.winsorized_count += stats.winsorized_count;
                     total_stats.trimmed_sum += stats.trimmed_sum;
                     total_stats.trimmed_count += stats.trimmed_count;
+                    // Aggregate sum of squares
+                    total_stats.sum_squares_outliers += stats.sum_squares_outliers;
+                    total_stats.sum_squares_normal += stats.sum_squares_normal;
+                    total_stats.sum_squares_trimmed += stats.sum_squares_trimmed;
+                    total_stats.sum_squares_winsorized += stats.sum_squares_winsorized;
                     // Aggregate min/max
                     if let Some(min) = stats.min_outliers {
                         total_stats.min_outliers =
@@ -713,6 +783,22 @@ fn count_all_outliers(
                     if let Some(max) = stats.max_normal {
                         total_stats.max_normal =
                             Some(total_stats.max_normal.map_or(max, |m| m.max(max)));
+                    }
+                    if let Some(min) = stats.min_trimmed {
+                        total_stats.min_trimmed =
+                            Some(total_stats.min_trimmed.map_or(min, |m| m.min(min)));
+                    }
+                    if let Some(max) = stats.max_trimmed {
+                        total_stats.max_trimmed =
+                            Some(total_stats.max_trimmed.map_or(max, |m| m.max(max)));
+                    }
+                    if let Some(min) = stats.min_winsorized {
+                        total_stats.min_winsorized =
+                            Some(total_stats.min_winsorized.map_or(min, |m| m.min(min)));
+                    }
+                    if let Some(max) = stats.max_winsorized {
+                        total_stats.max_winsorized =
+                            Some(total_stats.max_winsorized.map_or(max, |m| m.max(max)));
                     }
                 }
             }
@@ -777,8 +863,9 @@ fn count_all_outliers_from_reader(
             // Get mutable reference to stats for this field
             let stats = all_stats.get_mut(field_name).unwrap();
 
-            // Update sums
+            // Update sums and count
             stats.sum_all += val;
+            stats.count_all += 1;
 
             // Compute winsorized and trimmed statistics
             let winsorized_val = val
@@ -786,11 +873,27 @@ fn count_all_outliers_from_reader(
                 .min(field_info.upper_threshold);
             stats.winsorized_sum += winsorized_val;
             stats.winsorized_count += 1;
+            // Track winsorized min/max and sum of squares
+            stats.min_winsorized = Some(
+                stats
+                    .min_winsorized
+                    .map_or(winsorized_val, |m| m.min(winsorized_val)),
+            );
+            stats.max_winsorized = Some(
+                stats
+                    .max_winsorized
+                    .map_or(winsorized_val, |m| m.max(winsorized_val)),
+            );
+            stats.sum_squares_winsorized += winsorized_val * winsorized_val;
 
             // For trimmed mean, only include values within thresholds
             if val >= field_info.lower_threshold && val <= field_info.upper_threshold {
                 stats.trimmed_sum += val;
                 stats.trimmed_count += 1;
+                // Track trimmed min/max and sum of squares
+                stats.min_trimmed = Some(stats.min_trimmed.map_or(val, |m| m.min(val)));
+                stats.max_trimmed = Some(stats.max_trimmed.map_or(val, |m| m.max(val)));
+                stats.sum_squares_trimmed += val * val;
             }
 
             // Count outliers and track statistics based on fence comparisons
@@ -798,29 +901,34 @@ fn count_all_outliers_from_reader(
                 stats.counts[0] += 1; // extreme_lower
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
+                stats.sum_squares_outliers += val * val;
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else if val < field_info.lower_inner {
                 stats.counts[1] += 1; // mild_lower
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
+                stats.sum_squares_outliers += val * val;
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else if val <= field_info.upper_inner {
                 stats.counts[2] += 1; // normal
                 stats.sum_normal += val;
+                stats.sum_squares_normal += val * val;
                 stats.min_normal = Some(stats.min_normal.map_or(val, |m| m.min(val)));
                 stats.max_normal = Some(stats.max_normal.map_or(val, |m| m.max(val)));
             } else if val <= field_info.upper_outer {
                 stats.counts[3] += 1; // mild_upper
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
+                stats.sum_squares_outliers += val * val;
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else {
                 stats.counts[4] += 1; // extreme_upper
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
+                stats.sum_squares_outliers += val * val;
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             }
@@ -1160,21 +1268,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && lower_inner_fence_idx.is_some()
         && upper_inner_fence_idx.is_some()
         && upper_outer_fence_idx.is_some()
-        && !column_exists("outliers_extreme_lower")
+        && !column_exists("outliers_extreme_lower_cnt")
     {
-        new_columns.push("outliers_extreme_lower".to_string());
-        new_column_indices.insert("outliers_extreme_lower".to_string(), new_columns.len() - 1);
-        new_columns.push("outliers_mild_lower".to_string());
-        new_column_indices.insert("outliers_mild_lower".to_string(), new_columns.len() - 1);
-        new_columns.push("outliers_normal".to_string());
-        new_column_indices.insert("outliers_normal".to_string(), new_columns.len() - 1);
-        new_columns.push("outliers_mild_upper".to_string());
-        new_column_indices.insert("outliers_mild_upper".to_string(), new_columns.len() - 1);
-        new_columns.push("outliers_extreme_upper".to_string());
-        new_column_indices.insert("outliers_extreme_upper".to_string(), new_columns.len() - 1);
-        new_columns.push("outliers_total".to_string());
-        new_column_indices.insert("outliers_total".to_string(), new_columns.len() - 1);
-        // Additional statistics computed during outlier scanning
+        // Count columns (with _cnt suffix)
+        new_columns.push("outliers_extreme_lower_cnt".to_string());
+        new_column_indices.insert(
+            "outliers_extreme_lower_cnt".to_string(),
+            new_columns.len() - 1,
+        );
+        new_columns.push("outliers_mild_lower_cnt".to_string());
+        new_column_indices.insert("outliers_mild_lower_cnt".to_string(), new_columns.len() - 1);
+        new_columns.push("outliers_normal_cnt".to_string());
+        new_column_indices.insert("outliers_normal_cnt".to_string(), new_columns.len() - 1);
+        new_columns.push("outliers_mild_upper_cnt".to_string());
+        new_column_indices.insert("outliers_mild_upper_cnt".to_string(), new_columns.len() - 1);
+        new_columns.push("outliers_extreme_upper_cnt".to_string());
+        new_column_indices.insert(
+            "outliers_extreme_upper_cnt".to_string(),
+            new_columns.len() - 1,
+        );
+        new_columns.push("outliers_total_cnt".to_string());
+        new_column_indices.insert("outliers_total_cnt".to_string(), new_columns.len() - 1);
+        // Additional outlier statistics computed during outlier scanning
         new_columns.push("outliers_mean".to_string());
         new_column_indices.insert("outliers_mean".to_string(), new_columns.len() - 1);
         new_columns.push("non_outliers_mean".to_string());
@@ -1190,6 +1305,45 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         new_column_indices.insert("outliers_max".to_string(), new_columns.len() - 1);
         new_columns.push("outliers_range".to_string());
         new_column_indices.insert("outliers_range".to_string(), new_columns.len() - 1);
+        // Additional outlier statistics: variance/stddev
+        new_columns.push("outliers_stddev".to_string());
+        new_column_indices.insert("outliers_stddev".to_string(), new_columns.len() - 1);
+        new_columns.push("outliers_variance".to_string());
+        new_column_indices.insert("outliers_variance".to_string(), new_columns.len() - 1);
+        new_columns.push("non_outliers_stddev".to_string());
+        new_column_indices.insert("non_outliers_stddev".to_string(), new_columns.len() - 1);
+        new_columns.push("non_outliers_variance".to_string());
+        new_column_indices.insert("non_outliers_variance".to_string(), new_columns.len() - 1);
+        // Coefficient of variation
+        new_columns.push("outliers_cv".to_string());
+        new_column_indices.insert("outliers_cv".to_string(), new_columns.len() - 1);
+        new_columns.push("non_outliers_cv".to_string());
+        new_column_indices.insert("non_outliers_cv".to_string(), new_columns.len() - 1);
+        // Outlier percentage
+        new_columns.push("outliers_percentage".to_string());
+        new_column_indices.insert("outliers_percentage".to_string(), new_columns.len() - 1);
+        // Outlier impact
+        new_columns.push("outlier_impact".to_string());
+        new_column_indices.insert("outlier_impact".to_string(), new_columns.len() - 1);
+        new_columns.push("outlier_impact_ratio".to_string());
+        new_column_indices.insert("outlier_impact_ratio".to_string(), new_columns.len() - 1);
+        // Outlier-to-normal spread ratio
+        new_columns.push("outliers_normal_stddev_ratio".to_string());
+        new_column_indices.insert(
+            "outliers_normal_stddev_ratio".to_string(),
+            new_columns.len() - 1,
+        );
+        // Z-scores of outlier boundaries
+        new_columns.push("lower_outer_fence_zscore".to_string());
+        new_column_indices.insert(
+            "lower_outer_fence_zscore".to_string(),
+            new_columns.len() - 1,
+        );
+        new_columns.push("upper_outer_fence_zscore".to_string());
+        new_column_indices.insert(
+            "upper_outer_fence_zscore".to_string(),
+            new_columns.len() - 1,
+        );
     }
 
     // Add winsorized and trimmed mean columns
@@ -1231,6 +1385,45 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         new_column_indices.insert(winsorized_col_name.clone(), new_columns.len() - 1);
         new_columns.push(trimmed_col_name.clone());
         new_column_indices.insert(trimmed_col_name.clone(), new_columns.len() - 1);
+        // Add trimmed/winsorized variance and stddev columns
+        let trimmed_stddev_name = trimmed_col_name.replace("mean", "stddev");
+        let trimmed_variance_name = trimmed_col_name.replace("mean", "variance");
+        let winsorized_stddev_name = winsorized_col_name.replace("mean", "stddev");
+        let winsorized_variance_name = winsorized_col_name.replace("mean", "variance");
+        new_columns.push(trimmed_stddev_name.clone());
+        new_column_indices.insert(trimmed_stddev_name, new_columns.len() - 1);
+        new_columns.push(trimmed_variance_name.clone());
+        new_column_indices.insert(trimmed_variance_name, new_columns.len() - 1);
+        new_columns.push(winsorized_stddev_name.clone());
+        new_column_indices.insert(winsorized_stddev_name, new_columns.len() - 1);
+        new_columns.push(winsorized_variance_name.clone());
+        new_column_indices.insert(winsorized_variance_name, new_columns.len() - 1);
+        // Add trimmed/winsorized coefficient of variation
+        let trimmed_cv_name = trimmed_col_name.replace("mean", "cv");
+        let winsorized_cv_name = winsorized_col_name.replace("mean", "cv");
+        new_columns.push(trimmed_cv_name.clone());
+        new_column_indices.insert(trimmed_cv_name, new_columns.len() - 1);
+        new_columns.push(winsorized_cv_name.clone());
+        new_column_indices.insert(winsorized_cv_name, new_columns.len() - 1);
+        // Add robust spread ratios (replace "mean" with empty string and clean up double
+        // underscores)
+        let trimmed_base = trimmed_col_name.replace("mean", "").replace("__", "_");
+        let winsorized_base = winsorized_col_name.replace("mean", "").replace("__", "_");
+        let trimmed_stddev_ratio_name =
+            format!("{}_stddev_ratio", trimmed_base.trim_end_matches('_'));
+        let winsorized_stddev_ratio_name =
+            format!("{}_stddev_ratio", winsorized_base.trim_end_matches('_'));
+        new_columns.push(trimmed_stddev_ratio_name.clone());
+        new_column_indices.insert(trimmed_stddev_ratio_name, new_columns.len() - 1);
+        new_columns.push(winsorized_stddev_ratio_name.clone());
+        new_column_indices.insert(winsorized_stddev_ratio_name, new_columns.len() - 1);
+        // Add trimmed/winsorized range
+        let trimmed_range_name = trimmed_col_name.replace("mean", "range");
+        let winsorized_range_name = winsorized_col_name.replace("mean", "range");
+        new_columns.push(trimmed_range_name.clone());
+        new_column_indices.insert(trimmed_range_name, new_columns.len() - 1);
+        new_columns.push(winsorized_range_name.clone());
+        new_column_indices.insert(winsorized_range_name, new_columns.len() - 1);
     }
 
     if new_columns.is_empty() {
@@ -1248,7 +1441,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "mad_stddev_ratio",
             "kurtosis",
             "gini_coefficient",
-            "outliers_extreme_lower",
+            "outliers_extreme_lower_cnt",
         ];
 
         let any_exist = moarstats_columns.iter().any(|col| column_exists(col));
@@ -1648,64 +1841,194 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
 
             // Get outlier statistics from pre-computed results
-            if new_column_indices.contains_key("outliers_extreme_lower")
+            if new_column_indices.contains_key("outliers_extreme_lower_cnt")
                 && !field_name.is_empty()
                 && let Some(stats) = outlier_counts.get(field_name)
             {
-                // Write counts
-                if let Some(idx) = new_column_indices.get("outliers_extreme_lower") {
+                // Write counts (with _cnt suffix)
+                if let Some(idx) = new_column_indices.get("outliers_extreme_lower_cnt") {
                     new_values[*idx] = stats.counts[0].to_string();
                 }
-                if let Some(idx) = new_column_indices.get("outliers_mild_lower") {
+                if let Some(idx) = new_column_indices.get("outliers_mild_lower_cnt") {
                     new_values[*idx] = stats.counts[1].to_string();
                 }
-                if let Some(idx) = new_column_indices.get("outliers_normal") {
+                if let Some(idx) = new_column_indices.get("outliers_normal_cnt") {
                     new_values[*idx] = stats.counts[2].to_string();
                 }
-                if let Some(idx) = new_column_indices.get("outliers_mild_upper") {
+                if let Some(idx) = new_column_indices.get("outliers_mild_upper_cnt") {
                     new_values[*idx] = stats.counts[3].to_string();
                 }
-                if let Some(idx) = new_column_indices.get("outliers_extreme_upper") {
+                if let Some(idx) = new_column_indices.get("outliers_extreme_upper_cnt") {
                     new_values[*idx] = stats.counts[4].to_string();
                 }
-                if let Some(idx) = new_column_indices.get("outliers_total") {
+                if let Some(idx) = new_column_indices.get("outliers_total_cnt") {
                     new_values[*idx] = stats.counts[5].to_string();
                 }
 
+                // Compute means
+                let mean_outliers = if stats.counts[5] > 0 {
+                    Some(stats.sum_outliers / stats.counts[5] as f64)
+                } else {
+                    None
+                };
+                let mean_normal = if stats.counts[2] > 0 {
+                    Some(stats.sum_normal / stats.counts[2] as f64)
+                } else {
+                    None
+                };
+                let mean_all = if stats.count_all > 0 {
+                    Some(stats.sum_all / stats.count_all as f64)
+                } else {
+                    None
+                };
+
+                // Compute outliers variance and stddev once for reuse
+                let (variance_outliers, stddev_outliers) = if stats.counts[5] > 1 {
+                    let n = stats.counts[5] as f64;
+                    let variance = (stats.sum_squares_outliers
+                        - (stats.sum_outliers * stats.sum_outliers / n))
+                        / (n - 1.0);
+                    if variance >= 0.0 {
+                        (Some(variance), Some(variance.sqrt()))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                };
+
                 // Compute and write additional statistics
-                if stats.counts[5] > 0 {
+                if let Some(mean_outliers_val) = mean_outliers {
                     // Mean of outliers
                     if let Some(idx) = new_column_indices.get("outliers_mean") {
-                        let mean_outliers = stats.sum_outliers / stats.counts[5] as f64;
                         new_values[*idx] = if field_type.is_date_or_datetime() {
-                            days_to_rfc3339(mean_outliers, field_type)
+                            days_to_rfc3339(mean_outliers_val, field_type)
                         } else {
-                            util::round_num(mean_outliers, args.flag_round)
+                            util::round_num(mean_outliers_val, args.flag_round)
                         };
+                    }
+
+                    // Variance and stddev of outliers
+                    if let (Some(variance_outliers_val), Some(stddev_outliers_val)) =
+                        (variance_outliers, stddev_outliers)
+                    {
+                        if let Some(idx) = new_column_indices.get("outliers_stddev") {
+                            new_values[*idx] =
+                                util::round_num(stddev_outliers_val, args.flag_round);
+                        }
+                        if let Some(idx) = new_column_indices.get("outliers_variance") {
+                            new_values[*idx] =
+                                util::round_num(variance_outliers_val, args.flag_round);
+                        }
+                        // Coefficient of variation for outliers
+                        if mean_outliers_val.abs() > f64::EPSILON
+                            && let Some(idx) = new_column_indices.get("outliers_cv")
+                        {
+                            let cv = stddev_outliers_val / mean_outliers_val.abs();
+                            new_values[*idx] = util::round_num(cv, args.flag_round);
+                        }
                     }
                 }
 
-                if stats.counts[2] > 0 {
+                if let Some(mean_normal_val) = mean_normal {
                     // Mean of non-outliers
                     if let Some(idx) = new_column_indices.get("non_outliers_mean") {
-                        let mean_normal = stats.sum_normal / stats.counts[2] as f64;
                         new_values[*idx] = if field_type.is_date_or_datetime() {
-                            days_to_rfc3339(mean_normal, field_type)
+                            days_to_rfc3339(mean_normal_val, field_type)
                         } else {
-                            util::round_num(mean_normal, args.flag_round)
+                            util::round_num(mean_normal_val, args.flag_round)
                         };
                     }
 
-                    // Outlier-to-normal mean ratio
-                    if stats.counts[5] > 0
-                        && let Some(idx) = new_column_indices.get("outliers_to_normal_mean_ratio")
-                    {
-                        let mean_outliers = stats.sum_outliers / stats.counts[5] as f64;
-                        let mean_normal = stats.sum_normal / stats.counts[2] as f64;
-                        if mean_normal.abs() > f64::EPSILON {
-                            let ratio = mean_outliers / mean_normal;
-                            new_values[*idx] = util::round_num(ratio, args.flag_round);
+                    // Variance and stddev of non-outliers
+                    if stats.counts[2] > 1 {
+                        let n = stats.counts[2] as f64;
+                        let variance_normal = (stats.sum_squares_normal
+                            - (stats.sum_normal * stats.sum_normal / n))
+                            / (n - 1.0);
+                        if variance_normal >= 0.0 {
+                            let stddev_normal = variance_normal.sqrt();
+                            if let Some(idx) = new_column_indices.get("non_outliers_stddev") {
+                                new_values[*idx] = util::round_num(stddev_normal, args.flag_round);
+                            }
+                            if let Some(idx) = new_column_indices.get("non_outliers_variance") {
+                                new_values[*idx] =
+                                    util::round_num(variance_normal, args.flag_round);
+                            }
+                            // Coefficient of variation for non-outliers
+                            if mean_normal_val.abs() > f64::EPSILON
+                                && let Some(idx) = new_column_indices.get("non_outliers_cv")
+                            {
+                                let cv = stddev_normal / mean_normal_val.abs();
+                                new_values[*idx] = util::round_num(cv, args.flag_round);
+                            }
+
+                            // Outlier-to-normal spread ratio
+                            if let Some(stddev_outliers_val) = stddev_outliers
+                                && stddev_normal.abs() > f64::EPSILON
+                                && let Some(idx) =
+                                    new_column_indices.get("outliers_normal_stddev_ratio")
+                            {
+                                let ratio = stddev_outliers_val / stddev_normal;
+                                new_values[*idx] = util::round_num(ratio, args.flag_round);
+                            }
                         }
+                    }
+
+                    // Outlier-to-normal mean ratio
+                    if let Some(mean_outliers_val) = mean_outliers
+                        && let Some(idx) = new_column_indices.get("outliers_to_normal_mean_ratio")
+                        && mean_normal_val.abs() > f64::EPSILON
+                    {
+                        let ratio = mean_outliers_val / mean_normal_val;
+                        new_values[*idx] = util::round_num(ratio, args.flag_round);
+                    }
+                }
+
+                // Outlier percentage
+                if stats.count_all > 0
+                    && let Some(idx) = new_column_indices.get("outliers_percentage")
+                {
+                    let percentage = (stats.counts[5] as f64 / stats.count_all as f64) * 100.0;
+                    new_values[*idx] = util::round_num(percentage, args.flag_round);
+                }
+
+                // Outlier impact
+                if let (Some(mean_all_val), Some(mean_normal_val)) = (mean_all, mean_normal) {
+                    if let Some(idx) = new_column_indices.get("outlier_impact") {
+                        let impact = mean_all_val - mean_normal_val;
+                        new_values[*idx] = util::round_num(impact, args.flag_round);
+                    }
+                    if let Some(idx) = new_column_indices.get("outlier_impact_ratio")
+                        && mean_normal_val.abs() > f64::EPSILON
+                    {
+                        let impact = mean_all_val - mean_normal_val;
+                        let ratio = impact / mean_normal_val.abs();
+                        new_values[*idx] = util::round_num(ratio, args.flag_round);
+                    }
+                }
+
+                // Z-scores of outlier boundaries
+                if let (Some(mean_val), Some(stddev_val)) = (mean, stddev)
+                    && stddev_val.abs() > f64::EPSILON
+                {
+                    if let (Some(lower_outer), Some(idx)) = (
+                        lower_outer_fence_idx
+                            .and_then(|idx| record.get(idx))
+                            .and_then(parse_float_opt),
+                        new_column_indices.get("lower_outer_fence_zscore"),
+                    ) {
+                        let zscore = (lower_outer - mean_val) / stddev_val;
+                        new_values[*idx] = util::round_num(zscore, args.flag_round);
+                    }
+                    if let (Some(upper_outer), Some(idx)) = (
+                        upper_outer_fence_idx
+                            .and_then(|idx| record.get(idx))
+                            .and_then(parse_float_opt),
+                        new_column_indices.get("upper_outer_fence_zscore"),
+                    ) {
+                        let zscore = (upper_outer - mean_val) / stddev_val;
+                        new_values[*idx] = util::round_num(zscore, args.flag_round);
                     }
                 }
 
@@ -1737,34 +2060,153 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
             }
 
-            // Write winsorized and trimmed means
+            // Write winsorized and trimmed means and related statistics
             if (new_column_indices.contains_key(winsorized_col_name.as_str())
                 || new_column_indices.contains_key(trimmed_col_name.as_str()))
                 && !field_name.is_empty()
                 && let Some(stats) = outlier_counts.get(field_name)
             {
+                // Compute means
+                let winsorized_mean = if stats.winsorized_count > 0 {
+                    Some(stats.winsorized_sum / stats.winsorized_count as f64)
+                } else {
+                    None
+                };
+                let trimmed_mean = if stats.trimmed_count > 0 {
+                    Some(stats.trimmed_sum / stats.trimmed_count as f64)
+                } else {
+                    None
+                };
+
                 // Winsorized mean
-                if stats.winsorized_count > 0
+                if let Some(winsorized_mean_val) = winsorized_mean
                     && let Some(idx) = new_column_indices.get(winsorized_col_name.as_str())
                 {
-                    let winsorized_mean = stats.winsorized_sum / stats.winsorized_count as f64;
                     new_values[*idx] = if field_type.is_date_or_datetime() {
-                        days_to_rfc3339(winsorized_mean, field_type)
+                        days_to_rfc3339(winsorized_mean_val, field_type)
                     } else {
-                        util::round_num(winsorized_mean, args.flag_round)
+                        util::round_num(winsorized_mean_val, args.flag_round)
                     };
                 }
 
+                // Winsorized variance and stddev
+                if let Some(winsorized_mean_val) = winsorized_mean
+                    && stats.winsorized_count > 1
+                {
+                    let n = stats.winsorized_count as f64;
+                    let winsorized_variance = (stats.sum_squares_winsorized
+                        - (stats.winsorized_sum * stats.winsorized_sum / n))
+                        / (n - 1.0);
+                    if winsorized_variance >= 0.0 {
+                        let winsorized_stddev = winsorized_variance.sqrt();
+                        let winsorized_stddev_name = winsorized_col_name.replace("mean", "stddev");
+                        let winsorized_variance_name =
+                            winsorized_col_name.replace("mean", "variance");
+                        if let Some(idx) = new_column_indices.get(&winsorized_stddev_name) {
+                            new_values[*idx] = util::round_num(winsorized_stddev, args.flag_round);
+                        }
+                        if let Some(idx) = new_column_indices.get(&winsorized_variance_name) {
+                            new_values[*idx] =
+                                util::round_num(winsorized_variance, args.flag_round);
+                        }
+                        // Winsorized coefficient of variation
+                        if winsorized_mean_val.abs() > f64::EPSILON {
+                            let winsorized_cv_name = winsorized_col_name.replace("mean", "cv");
+                            if let Some(idx) = new_column_indices.get(&winsorized_cv_name) {
+                                let cv = winsorized_stddev / winsorized_mean_val.abs();
+                                new_values[*idx] = util::round_num(cv, args.flag_round);
+                            }
+                        }
+                        // Winsorized stddev ratio
+                        if let Some(stddev_val) = stddev
+                            && stddev_val.abs() > f64::EPSILON
+                        {
+                            let winsorized_base =
+                                winsorized_col_name.replace("mean", "").replace("__", "_");
+                            let winsorized_stddev_ratio_name =
+                                format!("{}_stddev_ratio", winsorized_base.trim_end_matches('_'));
+                            if let Some(idx) = new_column_indices.get(&winsorized_stddev_ratio_name)
+                            {
+                                let ratio = winsorized_stddev / stddev_val;
+                                new_values[*idx] = util::round_num(ratio, args.flag_round);
+                            }
+                        }
+                    }
+                }
+
+                // Winsorized range
+                if let (Some(min_winsorized), Some(max_winsorized)) =
+                    (stats.min_winsorized, stats.max_winsorized)
+                {
+                    let winsorized_range_name = winsorized_col_name.replace("mean", "range");
+                    if let Some(idx) = new_column_indices.get(&winsorized_range_name) {
+                        let range = max_winsorized - min_winsorized;
+                        new_values[*idx] = util::round_num(range, args.flag_round);
+                    }
+                }
+
                 // Trimmed mean
-                if stats.trimmed_count > 0
+                if let Some(trimmed_mean_val) = trimmed_mean
                     && let Some(idx) = new_column_indices.get(trimmed_col_name.as_str())
                 {
-                    let trimmed_mean = stats.trimmed_sum / stats.trimmed_count as f64;
                     new_values[*idx] = if field_type.is_date_or_datetime() {
-                        days_to_rfc3339(trimmed_mean, field_type)
+                        days_to_rfc3339(trimmed_mean_val, field_type)
                     } else {
-                        util::round_num(trimmed_mean, args.flag_round)
+                        util::round_num(trimmed_mean_val, args.flag_round)
                     };
+                }
+
+                // Trimmed variance and stddev
+                if let Some(trimmed_mean_val) = trimmed_mean
+                    && stats.trimmed_count > 1
+                {
+                    let n = stats.trimmed_count as f64;
+                    let trimmed_variance = (stats.sum_squares_trimmed
+                        - (stats.trimmed_sum * stats.trimmed_sum / n))
+                        / (n - 1.0);
+                    if trimmed_variance >= 0.0 {
+                        let trimmed_stddev = trimmed_variance.sqrt();
+                        let trimmed_stddev_name = trimmed_col_name.replace("mean", "stddev");
+                        let trimmed_variance_name = trimmed_col_name.replace("mean", "variance");
+                        if let Some(idx) = new_column_indices.get(&trimmed_stddev_name) {
+                            new_values[*idx] = util::round_num(trimmed_stddev, args.flag_round);
+                        }
+                        if let Some(idx) = new_column_indices.get(&trimmed_variance_name) {
+                            new_values[*idx] = util::round_num(trimmed_variance, args.flag_round);
+                        }
+                        // Trimmed coefficient of variation
+                        if trimmed_mean_val.abs() > f64::EPSILON {
+                            let trimmed_cv_name = trimmed_col_name.replace("mean", "cv");
+                            if let Some(idx) = new_column_indices.get(&trimmed_cv_name) {
+                                let cv = trimmed_stddev / trimmed_mean_val.abs();
+                                new_values[*idx] = util::round_num(cv, args.flag_round);
+                            }
+                        }
+                        // Trimmed stddev ratio
+                        if let Some(stddev_val) = stddev
+                            && stddev_val.abs() > f64::EPSILON
+                        {
+                            let trimmed_base =
+                                trimmed_col_name.replace("mean", "").replace("__", "_");
+                            let trimmed_stddev_ratio_name =
+                                format!("{}_stddev_ratio", trimmed_base.trim_end_matches('_'));
+                            if let Some(idx) = new_column_indices.get(&trimmed_stddev_ratio_name) {
+                                let ratio = trimmed_stddev / stddev_val;
+                                new_values[*idx] = util::round_num(ratio, args.flag_round);
+                            }
+                        }
+                    }
+                }
+
+                // Trimmed range
+                if let (Some(min_trimmed), Some(max_trimmed)) =
+                    (stats.min_trimmed, stats.max_trimmed)
+                {
+                    let trimmed_range_name = trimmed_col_name.replace("mean", "range");
+                    if let Some(idx) = new_column_indices.get(&trimmed_range_name) {
+                        let range = max_trimmed - min_trimmed;
+                        new_values[*idx] = util::round_num(range, args.flag_round);
+                    }
                 }
             }
 

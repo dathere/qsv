@@ -136,7 +136,7 @@ use std::{
 };
 
 use crossbeam_channel;
-use csv::{ReaderBuilder, WriterBuilder};
+use csv::{ReaderBuilder, StringRecord, WriterBuilder};
 use indexmap::IndexMap;
 use qsv_dateparser::parse_with_preference;
 use serde::Deserialize;
@@ -303,6 +303,7 @@ fn compute_mad_stddev_ratio(mad: Option<f64>, stddev: Option<f64>) -> Option<f64
 }
 
 /// Parse a numeric value from a string, handling empty strings and invalid values
+#[inline]
 fn parse_float_opt(s: &str) -> Option<f64> {
     if s.is_empty() {
         return None;
@@ -311,6 +312,7 @@ fn parse_float_opt(s: &str) -> Option<f64> {
 }
 
 /// Parse a numeric value from bytes, handling empty bytes and invalid values
+#[inline]
 fn parse_float_opt_from_bytes(bytes: &[u8]) -> Option<f64> {
     if bytes.is_empty() {
         return None;
@@ -509,20 +511,24 @@ where
         .collect();
 
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+    #[allow(unused_assignments)]
+    let mut record: csv::ByteRecord = csv::ByteRecord::new();
+    let mut value_bytes;
+    let mut numeric_value;
 
     // Process each record in the chunk
     for result in records {
-        let record = result?;
+        record = result?;
 
         for (field_name, field_info) in fields_to_count {
-            let value_bytes = record.get(field_info.col_idx).unwrap_or(&[]);
+            value_bytes = record.get(field_info.col_idx).unwrap_or(&[]);
 
             if value_bytes.is_empty() {
                 continue; // Skip null/empty values
             }
 
             // Parse the value based on field type
-            let numeric_value = if field_info.field_type.is_date_or_datetime() {
+            numeric_value = if field_info.field_type.is_date_or_datetime() {
                 // Convert bytes to string for date parsing
                 if let Ok(value_str) = from_utf8(value_bytes) {
                     parse_date_to_days(value_str, prefer_dmy)
@@ -740,19 +746,25 @@ fn count_all_outliers_from_reader(
 
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
 
+    // amortize allocations
+    #[allow(unused_assignments)]
+    let mut record: StringRecord = StringRecord::new();
+    let mut value_str;
+    let mut numeric_value;
+
     // Process each record once, checking all fields
     for result in rdr.records() {
-        let record = result?;
+        record = result?;
 
         for (field_name, field_info) in fields_to_count {
-            let value_str = record.get(field_info.col_idx).unwrap_or("");
+            value_str = record.get(field_info.col_idx).unwrap_or("");
 
             if value_str.is_empty() {
                 continue; // Skip null/empty values
             }
 
             // Parse the value based on field type
-            let numeric_value = if field_info.field_type.is_date_or_datetime() {
+            numeric_value = if field_info.field_type.is_date_or_datetime() {
                 parse_date_to_days(value_str, prefer_dmy)
             } else {
                 parse_float_opt(value_str)
@@ -859,19 +871,25 @@ fn compute_all_kurtosis_gini_from_reader(
 
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
 
+    // amortize allocations
+    #[allow(unused_assignments)]
+    let mut record: StringRecord = StringRecord::new();
+    let mut value_str;
+    let mut numeric_value;
+
     // Process each record once, collecting values for all fields
     for result in rdr.records() {
-        let record = result?;
+        record = result?;
 
         for (field_name, field_info) in fields_to_compute {
-            let value_str = record.get(field_info.col_idx).unwrap_or("");
+            value_str = record.get(field_info.col_idx).unwrap_or("");
 
             if value_str.is_empty() {
                 continue; // Skip null/empty values
             }
 
             // Parse the value based on field type
-            let numeric_value = if field_info.field_type.is_date_or_datetime() {
+            numeric_value = if field_info.field_type.is_date_or_datetime() {
                 parse_date_to_days(value_str, prefer_dmy)
             } else {
                 parse_float_opt(value_str)

@@ -6,6 +6,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## What's Changed
+* feat: `stats` `--percentile-list` special values "deciles" and "quintiles" by @jqnatividad in https://github.com/dathere/qsv/pull/3176
+* docs: added qsv stats descriptions document by @kulnor in https://github.com/dathere/qsv/pull/3172
+* build(deps): bump reqwest from 0.12.24 to 0.12.25 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3177
+* feat: `describegpt` add `--add-cols` and `--addl-cols-list <list>` options by @jqnatividad in https://github.com/dathere/qsv/pull/3179
+* feat: add CITATION.cff by @rzmk in https://github.com/dathere/qsv/pull/3182
+* feat: `stats` add  percentile label prefixes in front of percentile values by @jqnatividad in https://github.com/dathere/qsv/pull/3183
+* feat: `describegpt` add `--language` option by @jqnatividad in https://github.com/dathere/qsv/pull/3184
+* build(deps): bump minijinja from 2.13.0 to 2.14.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3185
+* build(deps): bump minijinja-contrib from 2.13.0 to 2.14.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3186
+* feat: `describegpt` use minijinja engine for prompt processing by @jqnatividad in https://github.com/dathere/qsv/pull/3188
+* build(deps): bump actions/upload-artifact from 5 to 6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3189
+* build(deps): bump reqwest from 0.12.25 to 0.12.26 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3191
+* feat: `describegpt` add language autodetection in `--prompt` (chat) mode by @jqnatividad in https://github.com/dathere/qsv/pull/3193
+* feat: `transpose` add `--long` option by @jqnatividad in https://github.com/dathere/qsv/pull/3194
+* build(deps): bump governor from 0.10.2 to 0.10.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3196
+* `feat`: `transpose` add `--long` column selection by @jqnatividad in https://github.com/dathere/qsv/pull/3197
+* feat: `describegpt` sampling in prompt mode for better SQL generation… by @jqnatividad in https://github.com/dathere/qsv/pull/3198
+* build(deps): bump toml from 0.9.8 to 0.9.9+spec-1.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3199
+* feat: `describegpt` add --prompt sessions for iterative SQL RAG refinement by @jqnatividad in https://github.com/dathere/qsv/pull/3200
+* feat: `schema` change `$schema` from `https://json-schema.org/draft-07/schema` to `https://json-schema.org/draft/2020-12/schema` by @jqnatividad in https://github.com/dathere/qsv/pull/3203
+* feat: `describegpt` add TOON format support by @jqnatividad in https://github.com/dathere/qsv/pull/3205
+* feat: `frequency` add TOON format by @jqnatividad in https://github.com/dathere/qsv/pull/3206
+* feat: add new "moarstats" command by @jqnatividad in https://github.com/dathere/qsv/pull/3207
+* feat: `moarstats` add even moar! Now with detailed outliers info! by @jqnatividad in https://github.com/dathere/qsv/pull/3208
+* feat: `moarstats` - add configurable Winsorized and Trimmed means by @jqnatividad in https://github.com/dathere/qsv/pull/3209
+* build(deps): bump ryu from 1.0.20 to 1.0.21 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3210
+* chore: `moarstats` remove redundant Bowley's Skewness Coefficient by @jqnatividad in https://github.com/dathere/qsv/pull/3212
+* feat: `stats` add weighted statistics by @jqnatividad in https://github.com/dathere/qsv/pull/3213
+* build(deps): bump qsv-stats from 0.43.0 to 0.44.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3215
+* build(deps): bump itoa from 1.0.15 to 1.0.16 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3214
+* build(deps): bump qsv-stats from 0.44.0 to 0.45.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3216
+* feat: `moarstats` add kurtosis & gini stats behind `--advanced` option by @jqnatividad in https://github.com/dathere/qsv/pull/3217
+* feat: `frequency` add weighted frequencies by @jqnatividad in https://github.com/dathere/qsv/pull/3218
+* build(deps): bump serde_json from 1.0.145 to 1.0.146 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3219
+* feat: `moarstats` moar, moar, moar stats! by @jqnatividad in https://github.com/dathere/qsv/pull/3220
+* build(deps): bump reqwest from 0.12.26 to 0.12.27 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3221
+
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/11.0.2...12.0.0
 
 ## [11.0.2] - 2025-12-08
 

@@ -149,6 +149,12 @@ frequency options:
                             TOON is a compact, human-readable encoding of the JSON data model for LLM prompts.
                             See https://toonformat.dev/ for more info.
     --no-stats              When using the JSON or TOON output mode, do not include the additional stats.
+    --weight <column>       Compute weighted frequencies using the specified column as weights.
+                            The weight column must be numeric. When specified, frequency counts
+                            are multiplied by the weight value for each row. The weight column is
+                            automatically excluded from frequency computation. Missing or
+                            non-numeric weights default to 1.0. Zero and negative weights are
+                            ignored and do not contribute to frequencies.
 
 Common options:
     -h, --help             Display this message
@@ -239,6 +245,7 @@ pub struct Args {
     pub flag_pretty_json:     bool,
     pub flag_toon:            bool,
     pub flag_no_stats:        bool,
+    pub flag_weight:          Option<String>,
 }
 
 const NON_UTF8_ERR: &str = "<Non-UTF8 ERROR>";
@@ -566,7 +573,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .set(args.flag_all_unique_text.as_bytes().to_vec())
         .unwrap();
 
-    let (headers, tables) = if let Some(idx) = indexed_result
+    let (headers, tables, weighted_tables) = if let Some(idx) = indexed_result
         && util::njobs(args.flag_jobs) > 1
     {
         args.parallel_ftables(&idx)
@@ -575,7 +582,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }?;
 
     if is_json {
-        return args.output_json(&headers, tables, &rconfig, argv, is_stdin);
+        return args.output_json(
+            &headers,
+            tables,
+            weighted_tables.as_ref(),
+            &rconfig,
+            argv,
+            is_stdin,
+        );
     }
 
     // amortize allocations
@@ -604,46 +618,97 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // write headers
     wtr.write_record(vec!["field", "value", "count", "percentage", "rank"])?;
 
-    for (i, (header, ftab)) in head_ftables.enumerate() {
-        header_vec = if rconfig.no_headers {
-            (i + 1).to_string().into_bytes()
-        } else {
-            header.to_vec()
-        };
-
-        args.process_frequencies(
-            unique_headers_vec.contains(&i),
-            abs_dec_places,
-            row_count,
-            &ftab,
-            &mut processed_frequencies,
-        );
-
-        for processed_freq in &processed_frequencies {
-            // Format rank: show as integer if whole number, otherwise with decimals
-            rank_buffer.clear();
-            if processed_freq.rank.fract() == 0.0 {
-                rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
+    // Handle weighted vs unweighted frequencies
+    if let Some(ref weighted) = weighted_tables {
+        // Process weighted frequencies
+        for (i, header) in headers.iter().enumerate() {
+            header_vec = if rconfig.no_headers {
+                (i + 1).to_string().into_bytes()
             } else {
-                rank_buffer.push_str(ryu_buffer.format(processed_freq.rank));
+                header.to_vec()
+            };
+
+            if i < weighted.len() {
+                args.process_frequencies_weighted(
+                    unique_headers_vec.contains(&i),
+                    abs_dec_places,
+                    row_count,
+                    &weighted[i],
+                    &mut processed_frequencies,
+                );
             }
 
-            row = vec![
-                &*header_vec,
-                if vis_whitespace {
-                    value_str =
-                        util::visualize_whitespace(&String::from_utf8_lossy(&processed_freq.value));
-                    value_str.as_bytes()
+            for processed_freq in &processed_frequencies {
+                // Format rank: show as integer if whole number, otherwise with decimals
+                rank_buffer.clear();
+                if processed_freq.rank.fract() == 0.0 {
+                    rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
                 } else {
-                    &processed_freq.value
-                },
-                itoa_buffer.format(processed_freq.count).as_bytes(),
-                processed_freq.formatted_percentage.as_bytes(),
-                rank_buffer.as_bytes(),
-            ];
-            wtr.write_record(row)?;
+                    rank_buffer.push_str(ryu_buffer.format(processed_freq.rank));
+                }
+
+                row = vec![
+                    &*header_vec,
+                    if vis_whitespace {
+                        value_str = util::visualize_whitespace(&String::from_utf8_lossy(
+                            &processed_freq.value,
+                        ));
+                        value_str.as_bytes()
+                    } else {
+                        &processed_freq.value
+                    },
+                    itoa_buffer.format(processed_freq.count).as_bytes(),
+                    processed_freq.formatted_percentage.as_bytes(),
+                    rank_buffer.as_bytes(),
+                ];
+                wtr.write_record(row)?;
+            }
+            processed_frequencies.clear();
         }
-        processed_frequencies.clear();
+    } else {
+        // Process unweighted frequencies (original code)
+        for (i, (header, ftab)) in head_ftables.enumerate() {
+            header_vec = if rconfig.no_headers {
+                (i + 1).to_string().into_bytes()
+            } else {
+                header.to_vec()
+            };
+
+            args.process_frequencies(
+                unique_headers_vec.contains(&i),
+                abs_dec_places,
+                row_count,
+                &ftab,
+                &mut processed_frequencies,
+            );
+
+            for processed_freq in &processed_frequencies {
+                // Format rank: show as integer if whole number, otherwise with decimals
+                rank_buffer.clear();
+                if processed_freq.rank.fract() == 0.0 {
+                    rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
+                } else {
+                    rank_buffer.push_str(ryu_buffer.format(processed_freq.rank));
+                }
+
+                row = vec![
+                    &*header_vec,
+                    if vis_whitespace {
+                        value_str = util::visualize_whitespace(&String::from_utf8_lossy(
+                            &processed_freq.value,
+                        ));
+                        value_str.as_bytes()
+                    } else {
+                        &processed_freq.value
+                    },
+                    itoa_buffer.format(processed_freq.count).as_bytes(),
+                    processed_freq.formatted_percentage.as_bytes(),
+                    rank_buffer.as_bytes(),
+                ];
+                wtr.write_record(row)?;
+            }
+            processed_frequencies.clear();
+        }
     }
     Ok(wtr.flush()?)
 }
@@ -651,6 +716,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 type Headers = csv::ByteRecord;
 type FTable = Frequencies<Vec<u8>>;
 type FTables = Vec<Frequencies<Vec<u8>>>;
+// Weighted frequency tables: HashMap for each column storing value -> weighted count
+type WeightedFTables = Vec<HashMap<Vec<u8>, f64>>;
 
 impl Args {
     pub fn rconfig(&self) -> Config {
@@ -658,6 +725,41 @@ impl Args {
             .delimiter(self.flag_delimiter)
             .no_headers(self.flag_no_headers)
             .select(self.flag_select.clone())
+    }
+
+    /// Process weighted frequencies
+    fn process_frequencies_weighted(
+        &self,
+        _all_unique_header: bool, /* Ignored for weighted frequencies - always show individual
+                                   * values */
+        abs_dec_places: u32,
+        _row_count: u64,
+        weighted_map: &HashMap<Vec<u8>, f64>,
+        processed_frequencies: &mut Vec<ProcessedFrequency>,
+    ) {
+        // For weighted frequencies, always show individual values even if all-unique
+        // because the weights themselves provide meaningful information that would be
+        // lost if we only showed the sum. Users can see which values have higher/lower
+        // weights and rank them accordingly.
+        let mut counts_to_process = self.counts_weighted(weighted_map);
+        if !self.flag_other_sorted
+            && counts_to_process.first().is_some_and(|(value, _, _, _)| {
+                value.starts_with(format!("{} (", self.flag_other_text).as_bytes())
+            })
+        {
+            counts_to_process.rotate_left(1);
+        }
+
+        // Convert to processed frequencies (count is f64, convert to u64 for display)
+        for (value, weight, percentage, rank) in counts_to_process {
+            processed_frequencies.push(ProcessedFrequency {
+                value,
+                count: weight.round() as u64,
+                percentage,
+                formatted_percentage: self.format_percentage(percentage, abs_dec_places),
+                rank,
+            });
+        }
     }
 
     /// Shared frequency processing function used by both CSV and JSON output
@@ -726,6 +828,187 @@ impl Args {
         } else {
             final_pct_decimal.to_string()
         }
+    }
+
+    /// Process weighted frequencies from HashMap and return same format as counts()
+    #[allow(clippy::cast_precision_loss)]
+    fn counts_weighted(
+        &self,
+        weighted_map: &HashMap<Vec<u8>, f64>,
+    ) -> Vec<(ByteString, f64, f64, f64)> {
+        // Convert HashMap to Vec and sort
+        let mut counts: Vec<(Vec<u8>, f64)> =
+            weighted_map.iter().map(|(k, v)| (k.clone(), *v)).collect();
+
+        // Sort by count (weight)
+        if self.flag_asc {
+            counts.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        } else {
+            counts.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        }
+
+        // Calculate total weight (sum of all weights)
+        let total_weight: f64 = weighted_map.values().sum();
+
+        // Apply limits similar to unweighted version
+        let unique_counts_len = counts.len();
+        if self.flag_lmt_threshold == 0 || self.flag_lmt_threshold >= unique_counts_len {
+            let abs_limit = self.flag_limit.unsigned_abs();
+
+            if self.flag_limit > 0 {
+                counts.truncate(abs_limit);
+            } else if self.flag_limit < 0 {
+                let count_limit = abs_limit as f64;
+                counts.retain(|(_, weight)| *weight >= count_limit);
+            }
+        }
+
+        let mut pct_sum = 0.0_f64;
+        let mut pct: f64;
+        let mut count_sum = 0.0_f64;
+        let pct_factor = if total_weight > 0.0 {
+            100.0_f64 / total_weight
+        } else {
+            0.0_f64
+        };
+
+        let mut counts_final: Vec<(Vec<u8>, f64, f64, f64)> = Vec::with_capacity(counts.len() + 1);
+
+        // Group by weight to handle ties
+        let mut weight_groups: Vec<(f64, Vec<Vec<u8>>)> = Vec::new();
+        let mut current_weight: Option<f64> = None;
+        let mut current_group: Vec<Vec<u8>> = Vec::new();
+
+        for (byte_string, weight) in counts {
+            if let Some(prev_weight) = current_weight
+                && (weight - prev_weight).abs() > f64::EPSILON
+                && !current_group.is_empty()
+            {
+                weight_groups.push((prev_weight, std::mem::take(&mut current_group)));
+            }
+
+            current_weight = Some(weight);
+            current_group.push(byte_string);
+        }
+        if !current_group.is_empty() {
+            weight_groups.push((current_weight.unwrap(), current_group));
+        }
+
+        let null_val = NULL_VAL.get().unwrap();
+
+        // Sort each group alphabetically and assign ranks
+        let mut current_rank = 1.0_f64;
+
+        match self.flag_rank_strategy {
+            RankStrategy::Dense => {
+                for (weight, mut group) in weight_groups {
+                    group.sort_unstable();
+                    for byte_string in group {
+                        count_sum += weight;
+                        pct = weight * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), weight, pct, current_rank));
+                        } else {
+                            counts_final.push((byte_string, weight, pct, current_rank));
+                        }
+                    }
+                    current_rank += 1.0;
+                }
+            },
+            RankStrategy::Min => {
+                for (weight, mut group) in weight_groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
+                    for byte_string in group {
+                        count_sum += weight;
+                        pct = weight * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), weight, pct, current_rank));
+                        } else {
+                            counts_final.push((byte_string, weight, pct, current_rank));
+                        }
+                    }
+                    current_rank += group_len as f64;
+                }
+            },
+            RankStrategy::Max => {
+                for (weight, mut group) in weight_groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
+                    let max_rank = current_rank + group_len as f64 - 1.0;
+                    for byte_string in group {
+                        count_sum += weight;
+                        pct = weight * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), weight, pct, max_rank));
+                        } else {
+                            counts_final.push((byte_string, weight, pct, max_rank));
+                        }
+                    }
+                    current_rank += group_len as f64;
+                }
+            },
+            RankStrategy::Ordinal => {
+                for (weight, mut group) in weight_groups {
+                    group.sort_unstable();
+                    for byte_string in group {
+                        count_sum += weight;
+                        pct = weight * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), weight, pct, current_rank));
+                        } else {
+                            counts_final.push((byte_string, weight, pct, current_rank));
+                        }
+                        current_rank += 1.0;
+                    }
+                }
+            },
+            RankStrategy::Average => {
+                for (weight, mut group) in weight_groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
+                    let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
+                    for byte_string in group {
+                        count_sum += weight;
+                        pct = weight * pct_factor;
+                        pct_sum += pct;
+
+                        if byte_string.is_empty() {
+                            counts_final.push((null_val.clone(), weight, pct, avg_rank));
+                        } else {
+                            counts_final.push((byte_string, weight, pct, avg_rank));
+                        }
+                    }
+                    current_rank += group_len as f64;
+                }
+            },
+        }
+
+        let other_weight = total_weight - count_sum;
+        if other_weight > 0.0 && self.flag_other_text != "<NONE>" {
+            let other_unique_count = unique_counts_len - counts_final.len();
+            counts_final.push((
+                format!(
+                    "{} ({})",
+                    self.flag_other_text,
+                    HumanCount(other_unique_count as u64)
+                )
+                .as_bytes()
+                .to_vec(),
+                other_weight,
+                100.0_f64 - pct_sum,
+                0.0,
+            ));
+        }
+        counts_final
     }
 
     #[inline]
@@ -944,22 +1227,32 @@ impl Args {
         counts_final
     }
 
-    pub fn sequential_ftables(&self) -> CliResult<(Headers, FTables)> {
+    pub fn sequential_ftables(&self) -> CliResult<(Headers, FTables, Option<WeightedFTables>)> {
         let mut rdr = self.rconfig().reader()?;
-        let (headers, sel) = self.sel_headers(&mut rdr)?;
-        Ok((headers, self.ftables(&sel, rdr.byte_records(), 1)))
+        let (headers, sel, weight_col_idx) = self.sel_headers(&mut rdr)?;
+        if weight_col_idx.is_some() {
+            let weighted =
+                self.ftables_weighted_internal(&sel, rdr.byte_records(), 1, weight_col_idx);
+            Ok((headers, vec![], Some(weighted)))
+        } else {
+            Ok((
+                headers,
+                self.ftables_unweighted(&sel, rdr.byte_records(), 1),
+                None,
+            ))
+        }
     }
 
     pub fn parallel_ftables(
         &self,
         idx: &Indexed<fs::File, fs::File>,
-    ) -> CliResult<(Headers, FTables)> {
+    ) -> CliResult<(Headers, FTables, Option<WeightedFTables>)> {
         let mut rdr = self.rconfig().reader()?;
-        let (headers, sel) = self.sel_headers(&mut rdr)?;
+        let (headers, sel, weight_col_idx) = self.sel_headers(&mut rdr)?;
 
         let idx_count = idx.count() as usize;
         if idx_count == 0 {
-            return Ok((headers, vec![]));
+            return Ok((headers, vec![], None));
         }
 
         let njobs = util::njobs(self.flag_jobs);
@@ -1032,24 +1325,192 @@ impl Args {
         let nchunks = util::num_of_chunks(idx_count, chunk_size);
         log::info!("({chunking_mode}) nchunks={nchunks}");
 
-        let pool = ThreadPool::new(njobs);
-        let (send, recv) = crossbeam_channel::bounded(nchunks);
-        for i in 0..nchunks {
-            let (send, args, sel) = (send.clone(), self.clone(), sel.clone());
-            pool.execute(move || {
-                // safety: we know the file is indexed and seekable
-                let mut idx = args.rconfig().indexed().unwrap().unwrap();
-                idx.seek((i * chunk_size) as u64).unwrap();
-                let it = idx.byte_records().take(chunk_size);
-                send.send(args.ftables(&sel, it, nchunks)).unwrap();
-            });
+        if weight_col_idx.is_some() {
+            // Parallel weighted frequencies
+            let pool = ThreadPool::new(njobs);
+            let (send, recv) = crossbeam_channel::bounded(nchunks);
+            for i in 0..nchunks {
+                let (send, args, sel, weight_idx) =
+                    (send.clone(), self.clone(), sel.clone(), weight_col_idx);
+                pool.execute(move || {
+                    let mut idx = args.rconfig().indexed().unwrap().unwrap();
+                    idx.seek((i * chunk_size) as u64).unwrap();
+                    let it = idx.byte_records().take(chunk_size);
+                    send.send(args.ftables_weighted_internal(&sel, it, nchunks, weight_idx))
+                        .unwrap();
+                });
+            }
+            drop(send);
+
+            // Merge weighted frequencies
+            let mut merged: WeightedFTables = Vec::new();
+            for weighted_chunk in &recv {
+                if merged.is_empty() {
+                    merged = weighted_chunk;
+                } else {
+                    // Merge HashMaps
+                    for (col_idx, weighted_map) in weighted_chunk.into_iter().enumerate() {
+                        if col_idx < merged.len() {
+                            for (value, weight) in weighted_map {
+                                *merged[col_idx].entry(value).or_insert(0.0) += weight;
+                            }
+                        } else {
+                            merged.push(weighted_map);
+                        }
+                    }
+                }
+            }
+            Ok((headers, vec![], Some(merged)))
+        } else {
+            // Parallel unweighted frequencies
+            let pool = ThreadPool::new(njobs);
+            let (send, recv) = crossbeam_channel::bounded(nchunks);
+            for i in 0..nchunks {
+                let (send, args, sel) = (send.clone(), self.clone(), sel.clone());
+                pool.execute(move || {
+                    let mut idx = args.rconfig().indexed().unwrap().unwrap();
+                    idx.seek((i * chunk_size) as u64).unwrap();
+                    let it = idx.byte_records().take(chunk_size);
+                    send.send(args.ftables_unweighted(&sel, it, nchunks))
+                        .unwrap();
+                });
+            }
+            drop(send);
+            Ok((headers, merge_all(recv.iter()).unwrap(), None))
         }
-        drop(send);
-        Ok((headers, merge_all(recv.iter()).unwrap()))
     }
 
     #[inline]
-    fn ftables<I>(&self, sel: &Selection, it: I, nchunks: usize) -> FTables
+    fn ftables_weighted_internal<I>(
+        &self,
+        sel: &Selection,
+        it: I,
+        nchunks: usize,
+        weight_col_idx: Option<usize>,
+    ) -> WeightedFTables
+    where
+        I: Iterator<Item = csv::Result<csv::ByteRecord>>,
+    {
+        // Extract the weighted HashMap implementation from ftables_weighted
+        // This is a duplicate of the weighted logic but returns WeightedFTables
+        let nsel = sel.normal();
+        let nsel_len = nsel.len();
+
+        #[allow(unused_assignments)]
+        let mut field_buffer: Vec<u8> = Vec::with_capacity(1024);
+        let mut row_buffer: csv::ByteRecord = csv::ByteRecord::with_capacity(200, nsel_len);
+        let mut string_buf = String::with_capacity(512);
+
+        // For weighted frequencies, we process all columns including all-unique ones
+        // because the weights provide meaningful information, so we don't need to track
+        // which columns are all-unique here (unlike unweighted frequencies where all-unique
+        // columns are skipped for memory efficiency)
+        let flag_no_nulls = self.flag_no_nulls;
+        let flag_ignore_case = self.flag_ignore_case;
+        let flag_no_trim = self.flag_no_trim;
+
+        let col_cardinality_vec = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
+        let mut weighted_freq_tables: Vec<HashMap<Vec<u8>, f64>> = if col_cardinality_vec.is_empty()
+        {
+            (0..nsel_len)
+                .map(|_| HashMap::with_capacity(1000))
+                .collect()
+        } else {
+            (0..nsel_len)
+                .map(|i| {
+                    // For weighted frequencies, we process all columns including all-unique ones
+                    // so we use the actual cardinality (or a reasonable default) rather than 1
+                    let capacity = if nchunks == 1 {
+                        col_cardinality_vec
+                            .get(i)
+                            .map_or(1000, |(_, cardinality)| *cardinality as usize)
+                    } else {
+                        let cardinality = col_cardinality_vec
+                            .get(i)
+                            .map_or(1000, |(_, cardinality)| *cardinality as usize);
+                        cardinality / nchunks
+                    };
+                    HashMap::with_capacity(capacity)
+                })
+                .collect()
+        };
+
+        let process_field = if flag_ignore_case {
+            if flag_no_trim {
+                |field: &[u8], buf: &mut String| {
+                    if let Ok(s) = simdutf8::basic::from_utf8(field) {
+                        util::to_lowercase_into(s, buf);
+                        buf.as_bytes().to_vec()
+                    } else {
+                        field.to_vec()
+                    }
+                }
+            } else {
+                |field: &[u8], buf: &mut String| {
+                    if let Ok(s) = simdutf8::basic::from_utf8(field) {
+                        util::to_lowercase_into(s.trim(), buf);
+                        buf.as_bytes().to_vec()
+                    } else {
+                        trim_bs_whitespace(field).to_vec()
+                    }
+                }
+            }
+        } else if flag_no_trim {
+            |field: &[u8], _buf: &mut String| field.to_vec()
+        } else {
+            #[inline]
+            |field: &[u8], _buf: &mut String| trim_bs_whitespace(field).to_vec()
+        };
+
+        for row in it {
+            let row_result = unsafe { row.unwrap_unchecked() };
+            row_buffer.clone_from(&row_result);
+
+            let weight = if let Some(widx) = weight_col_idx {
+                if widx < row_result.len() {
+                    fast_float2::parse::<f64, &[u8]>(row_result.get(widx).unwrap_or(b"1.0"))
+                        .unwrap_or(1.0)
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            };
+
+            if weight <= 0.0 {
+                continue;
+            }
+
+            for (i, field) in nsel.select(row_buffer.into_iter()).enumerate() {
+                // For weighted frequencies, we process all columns including all-unique ones
+                // because the weights provide meaningful information even when values are unique
+                // (unlike unweighted frequencies where all-unique columns are skipped for memory
+                // efficiency)
+
+                if !field.is_empty() {
+                    field_buffer = process_field(field, &mut string_buf);
+                    unsafe {
+                        *weighted_freq_tables
+                            .get_unchecked_mut(i)
+                            .entry(field_buffer)
+                            .or_insert(0.0) += weight;
+                    }
+                } else if !flag_no_nulls {
+                    unsafe {
+                        *weighted_freq_tables
+                            .get_unchecked_mut(i)
+                            .entry(EMPTY_BYTE_VEC.clone())
+                            .or_insert(0.0) += weight;
+                    }
+                }
+            }
+        }
+
+        weighted_freq_tables
+    }
+
+    #[inline]
+    fn ftables_unweighted<I>(&self, sel: &Selection, it: I, nchunks: usize) -> FTables
     where
         I: Iterator<Item = csv::Result<csv::ByteRecord>>,
     {
@@ -1266,6 +1727,7 @@ impl Args {
         &self,
         headers: &Headers,
         tables: FTables,
+        weighted_tables: Option<&WeightedFTables>,
         rconfig: &Config,
         argv: &[&str],
         is_stdin: bool,
@@ -1274,120 +1736,233 @@ impl Args {
 
         // init vars and amortize allocations
         let mut fields = Vec::with_capacity(fieldcount);
-        let head_ftables = headers.iter().zip(tables);
         let rowcount = *FREQ_ROW_COUNT.get().unwrap_or(&0);
         let unique_headers_vec = UNIQUE_COLUMNS_VEC.get().unwrap();
-        let mut processed_frequencies = Vec::with_capacity(head_ftables.len());
+        let mut processed_frequencies = Vec::with_capacity(headers.len());
         let abs_dec_places = self.flag_pct_dec_places.unsigned_abs() as u32;
         // pre-allocate space for 17 field stats, see list below for details
         let mut field_stats: Vec<FieldStats> = Vec::with_capacity(17);
 
-        for (i, (header, ftab)) in head_ftables.enumerate() {
-            let field_name = if rconfig.no_headers {
-                (i + 1).to_string()
-            } else {
-                String::from_utf8_lossy(header).to_string()
-            };
-
-            let all_unique_header = unique_headers_vec.contains(&i);
-            self.process_frequencies(
-                all_unique_header,
-                abs_dec_places,
-                rowcount,
-                &ftab,
-                &mut processed_frequencies,
-            );
-
-            // Sort frequencies by count if flag_other_sorted
-            if self.flag_other_sorted {
-                if self.flag_asc {
-                    // asc order
-                    processed_frequencies.sort_unstable_by(|a, b| a.count.cmp(&b.count));
+        if let Some(weighted) = weighted_tables {
+            // Process weighted frequencies for JSON output
+            for (i, header) in headers.iter().enumerate() {
+                let field_name = if rconfig.no_headers {
+                    (i + 1).to_string()
                 } else {
-                    // desc order
-                    processed_frequencies.sort_unstable_by(|a, b| b.count.cmp(&a.count));
+                    String::from_utf8_lossy(header).to_string()
+                };
+
+                let all_unique_header = unique_headers_vec.contains(&i);
+                if i < weighted.len() {
+                    self.process_frequencies_weighted(
+                        all_unique_header,
+                        abs_dec_places,
+                        rowcount,
+                        &weighted[i],
+                        &mut processed_frequencies,
+                    );
                 }
+
+                // Sort frequencies by count if flag_other_sorted
+                if self.flag_other_sorted {
+                    if self.flag_asc {
+                        processed_frequencies.sort_unstable_by(|a, b| a.count.cmp(&b.count));
+                    } else {
+                        processed_frequencies.sort_unstable_by(|a, b| b.count.cmp(&a.count));
+                    }
+                }
+
+                // Calculate cardinality for this field
+                let cardinality = if all_unique_header {
+                    rowcount
+                } else if i < weighted.len() {
+                    weighted[i].len() as u64
+                } else {
+                    0
+                };
+
+                // Get stats record for this field
+                let stats_record = STATS_RECORDS
+                    .get()
+                    .and_then(|records| records.get(&field_name));
+
+                // Get data type and nullcount from stats record
+                let dtype = stats_record.map_or(String::new(), |sr| sr.r#type.clone());
+                let nullcount = stats_record.map_or(0, |sr| sr.nullcount);
+                let sparsity =
+                    fast_float2::parse(util::round_num(nullcount as f64 / rowcount as f64, 4))
+                        .unwrap_or(0.0);
+                let uniqueness_ratio =
+                    fast_float2::parse(util::round_num(cardinality as f64 / rowcount as f64, 4))
+                        .unwrap_or(0.0);
+
+                // Build stats vector from stats record if type is not empty and not NULL or Boolean
+                if !self.flag_no_stats
+                    && !dtype.is_empty()
+                    && dtype.as_str() != "NULL"
+                    && dtype.as_str() != "Boolean"
+                    && let Some(sr) = stats_record
+                {
+                    // Add all available stats if some
+                    add_stat(&mut field_stats, "sum", sr.sum);
+                    add_stat(&mut field_stats, "min", sr.min.clone());
+                    add_stat(&mut field_stats, "max", sr.max.clone());
+                    add_stat(&mut field_stats, "range", sr.range);
+                    add_stat(&mut field_stats, "sort_order", sr.sort_order.clone());
+
+                    // String-specific length stats
+                    add_stat(&mut field_stats, "min_length", sr.min_length);
+                    add_stat(&mut field_stats, "max_length", sr.max_length);
+                    add_stat(&mut field_stats, "sum_length", sr.sum_length);
+                    add_stat(&mut field_stats, "avg_length", sr.avg_length);
+                    add_stat(&mut field_stats, "stddev_length", sr.stddev_length);
+                    add_stat(&mut field_stats, "variance_length", sr.variance_length);
+                    add_stat(&mut field_stats, "cv_length", sr.cv_length);
+
+                    // Numeric-specific stats
+                    add_stat(&mut field_stats, "mean", sr.mean);
+                    add_stat(&mut field_stats, "sem", sr.sem);
+                    add_stat(&mut field_stats, "stddev", sr.stddev);
+                    add_stat(&mut field_stats, "variance", sr.variance);
+                    add_stat(&mut field_stats, "cv", sr.cv);
+                }
+
+                fields.push(FrequencyField {
+                    field: field_name,
+                    r#type: dtype,
+                    cardinality,
+                    nullcount,
+                    sparsity,
+                    uniqueness_ratio,
+                    stats: std::mem::take(&mut field_stats),
+                    frequencies: processed_frequencies
+                        .iter()
+                        .map(|pf| FrequencyEntry {
+                            value:      if self.flag_vis_whitespace {
+                                util::visualize_whitespace(&String::from_utf8_lossy(&pf.value))
+                            } else {
+                                String::from_utf8_lossy(&pf.value).into_owned()
+                            },
+                            count:      pf.count,
+                            percentage: fast_float2::parse(&pf.formatted_percentage)
+                                .unwrap_or(pf.percentage),
+                            rank:       pf.rank,
+                        })
+                        .collect(),
+                });
+
+                processed_frequencies.clear(); // clear for next field
             }
+        } else {
+            // Process unweighted frequencies for JSON output (original code)
+            let head_ftables = headers.iter().zip(tables);
+            for (i, (header, ftab)) in head_ftables.enumerate() {
+                let field_name = if rconfig.no_headers {
+                    (i + 1).to_string()
+                } else {
+                    String::from_utf8_lossy(header).to_string()
+                };
 
-            // Calculate cardinality for this field
-            let cardinality = if all_unique_header {
-                rowcount // For all-unique fields, cardinality == rowcount
-            } else {
-                ftab.len() as u64 // otherwise, cardinality == number of unique values
-            };
+                let all_unique_header = unique_headers_vec.contains(&i);
+                self.process_frequencies(
+                    all_unique_header,
+                    abs_dec_places,
+                    rowcount,
+                    &ftab,
+                    &mut processed_frequencies,
+                );
 
-            // Get stats record for this field
-            let stats_record = STATS_RECORDS
-                .get()
-                .and_then(|records| records.get(&field_name));
+                // Sort frequencies by count if flag_other_sorted
+                if self.flag_other_sorted {
+                    if self.flag_asc {
+                        // asc order
+                        processed_frequencies.sort_unstable_by(|a, b| a.count.cmp(&b.count));
+                    } else {
+                        // desc order
+                        processed_frequencies.sort_unstable_by(|a, b| b.count.cmp(&a.count));
+                    }
+                }
 
-            // Get data type and nullcount from stats record
-            let dtype = stats_record.map_or(String::new(), |sr| sr.r#type.clone());
-            let nullcount = stats_record.map_or(0, |sr| sr.nullcount);
-            let sparsity =
-                fast_float2::parse(util::round_num(nullcount as f64 / rowcount as f64, 4))
-                    .unwrap_or(0.0);
-            let uniqueness_ratio =
-                fast_float2::parse(util::round_num(cardinality as f64 / rowcount as f64, 4))
-                    .unwrap_or(0.0);
+                // Calculate cardinality for this field
+                let cardinality = if all_unique_header {
+                    rowcount // For all-unique fields, cardinality == rowcount
+                } else {
+                    ftab.len() as u64 // otherwise, cardinality == number of unique values
+                };
 
-            // Build stats vector from stats record if type is not empty and not NULL or Boolean
-            if !self.flag_no_stats
-                && !dtype.is_empty()
-                && dtype.as_str() != "NULL"
-                && dtype.as_str() != "Boolean"
-                && let Some(sr) = stats_record
-            {
-                // Add all available stats if some
-                add_stat(&mut field_stats, "sum", sr.sum);
-                add_stat(&mut field_stats, "min", sr.min.clone());
-                add_stat(&mut field_stats, "max", sr.max.clone());
-                add_stat(&mut field_stats, "range", sr.range);
-                add_stat(&mut field_stats, "sort_order", sr.sort_order.clone());
+                // Get stats record for this field
+                let stats_record = STATS_RECORDS
+                    .get()
+                    .and_then(|records| records.get(&field_name));
 
-                // String-specific length stats
-                add_stat(&mut field_stats, "min_length", sr.min_length);
-                add_stat(&mut field_stats, "max_length", sr.max_length);
-                add_stat(&mut field_stats, "sum_length", sr.sum_length);
-                add_stat(&mut field_stats, "avg_length", sr.avg_length);
-                add_stat(&mut field_stats, "stddev_length", sr.stddev_length);
-                add_stat(&mut field_stats, "variance_length", sr.variance_length);
-                add_stat(&mut field_stats, "cv_length", sr.cv_length);
+                // Get data type and nullcount from stats record
+                let dtype = stats_record.map_or(String::new(), |sr| sr.r#type.clone());
+                let nullcount = stats_record.map_or(0, |sr| sr.nullcount);
+                let sparsity =
+                    fast_float2::parse(util::round_num(nullcount as f64 / rowcount as f64, 4))
+                        .unwrap_or(0.0);
+                let uniqueness_ratio =
+                    fast_float2::parse(util::round_num(cardinality as f64 / rowcount as f64, 4))
+                        .unwrap_or(0.0);
 
-                // Numeric-specific stats
-                add_stat(&mut field_stats, "mean", sr.mean);
-                add_stat(&mut field_stats, "sem", sr.sem);
-                add_stat(&mut field_stats, "stddev", sr.stddev);
-                add_stat(&mut field_stats, "variance", sr.variance);
-                add_stat(&mut field_stats, "cv", sr.cv);
-            }
+                // Build stats vector from stats record if type is not empty and not NULL or Boolean
+                if !self.flag_no_stats
+                    && !dtype.is_empty()
+                    && dtype.as_str() != "NULL"
+                    && dtype.as_str() != "Boolean"
+                    && let Some(sr) = stats_record
+                {
+                    // Add all available stats if some
+                    add_stat(&mut field_stats, "sum", sr.sum);
+                    add_stat(&mut field_stats, "min", sr.min.clone());
+                    add_stat(&mut field_stats, "max", sr.max.clone());
+                    add_stat(&mut field_stats, "range", sr.range);
+                    add_stat(&mut field_stats, "sort_order", sr.sort_order.clone());
 
-            fields.push(FrequencyField {
-                field: field_name,
-                r#type: dtype,
-                cardinality,
-                nullcount,
-                sparsity,
-                uniqueness_ratio,
-                stats: std::mem::take(&mut field_stats),
-                frequencies: processed_frequencies
-                    .iter()
-                    .map(|pf| FrequencyEntry {
-                        value:      if self.flag_vis_whitespace {
-                            util::visualize_whitespace(&String::from_utf8_lossy(&pf.value))
-                        } else {
-                            String::from_utf8_lossy(&pf.value).into_owned()
-                        },
-                        count:      pf.count,
-                        percentage: fast_float2::parse(&pf.formatted_percentage)
-                            .unwrap_or(pf.percentage),
-                        rank:       pf.rank,
-                    })
-                    .collect(),
-            });
+                    // String-specific length stats
+                    add_stat(&mut field_stats, "min_length", sr.min_length);
+                    add_stat(&mut field_stats, "max_length", sr.max_length);
+                    add_stat(&mut field_stats, "sum_length", sr.sum_length);
+                    add_stat(&mut field_stats, "avg_length", sr.avg_length);
+                    add_stat(&mut field_stats, "stddev_length", sr.stddev_length);
+                    add_stat(&mut field_stats, "variance_length", sr.variance_length);
+                    add_stat(&mut field_stats, "cv_length", sr.cv_length);
 
-            processed_frequencies.clear(); // clear for next field
-        } // end for loop
+                    // Numeric-specific stats
+                    add_stat(&mut field_stats, "mean", sr.mean);
+                    add_stat(&mut field_stats, "sem", sr.sem);
+                    add_stat(&mut field_stats, "stddev", sr.stddev);
+                    add_stat(&mut field_stats, "variance", sr.variance);
+                    add_stat(&mut field_stats, "cv", sr.cv);
+                }
+
+                fields.push(FrequencyField {
+                    field: field_name,
+                    r#type: dtype,
+                    cardinality,
+                    nullcount,
+                    sparsity,
+                    uniqueness_ratio,
+                    stats: std::mem::take(&mut field_stats),
+                    frequencies: processed_frequencies
+                        .iter()
+                        .map(|pf| FrequencyEntry {
+                            value:      if self.flag_vis_whitespace {
+                                util::visualize_whitespace(&String::from_utf8_lossy(&pf.value))
+                            } else {
+                                String::from_utf8_lossy(&pf.value).into_owned()
+                            },
+                            count:      pf.count,
+                            percentage: fast_float2::parse(&pf.formatted_percentage)
+                                .unwrap_or(pf.percentage),
+                            rank:       pf.rank,
+                        })
+                        .collect(),
+                });
+
+                processed_frequencies.clear(); // clear for next field
+            } // end for loop
+        } // end else block for unweighted
 
         let output = FrequencyOutput {
             input: if is_stdin {
@@ -1464,14 +2039,83 @@ impl Args {
         Ok(())
     }
 
+    /// Processes headers and handles weight column exclusion if needed.
+    ///
+    /// This function handles the logic for excluding the weight column from frequency
+    /// computation. It finds the weight column index, creates a modified selection that
+    /// excludes it, and returns the selected headers.
+    ///
+    /// # Arguments
+    ///
+    /// * `full_headers` - The full CSV headers as a ByteRecord
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((Option<usize>, Selection, csv::ByteRecord))` - Tuple containing:
+    ///   - Weight column index (None if no weight column specified)
+    ///   - Modified selection (excluding weight column if present)
+    ///   - Selected headers (excluding weight column if present)
+    /// * `Err(CliError)` - If weight column is not found or no columns remain after exclusion
+    fn process_headers_with_weight_exclusion(
+        &self,
+        full_headers: &csv::ByteRecord,
+    ) -> CliResult<(Option<usize>, Selection, csv::ByteRecord)> {
+        if let Some(ref weight_col) = self.flag_weight {
+            // Find weight column index in full headers
+            let weight_idx = full_headers
+                .iter()
+                .position(|h| {
+                    let h_str = String::from_utf8_lossy(h);
+                    h_str.trim().eq_ignore_ascii_case(weight_col.trim())
+                })
+                .ok_or_else(|| {
+                    crate::CliError::Other(format!(
+                        "Weight column '{weight_col}' not found in CSV headers"
+                    ))
+                })?;
+
+            // Create selection excluding weight column
+            let sel = self.rconfig().selection(full_headers)?;
+            // Remove weight column index from selection if present
+            let sel_vec: Vec<usize> = sel
+                .iter()
+                .copied()
+                .filter(|&idx| idx != weight_idx)
+                .collect();
+
+            // Validate that we still have columns after excluding the weight column
+            if sel_vec.is_empty() {
+                return Err(crate::CliError::Other(format!(
+                    "After excluding weight column '{weight_col}', no columns remain for \
+                     frequency computation"
+                )));
+            }
+
+            // safety: We know Selection is a tuple struct with a Vec<usize> field
+            // This is safe because we're creating it with valid indices
+            let modified_sel = unsafe { std::mem::transmute::<Vec<usize>, Selection>(sel_vec) };
+
+            // Get selected headers (excluding weight column)
+            let selected_headers: csv::ByteRecord = modified_sel.select(full_headers).collect();
+
+            Ok((Some(weight_idx), modified_sel, selected_headers))
+        } else {
+            // No weight column specified, use normal selection
+            let sel = self.rconfig().selection(full_headers)?;
+            let headers: csv::ByteRecord = sel.select(full_headers).collect();
+            Ok((None, sel, headers))
+        }
+    }
+
     fn sel_headers<R: io::Read>(
         &self,
         rdr: &mut csv::Reader<R>,
-    ) -> CliResult<(csv::ByteRecord, Selection)> {
-        let headers = rdr.byte_headers()?;
-        let all_unique_headers_vec = self.get_unique_headers(headers)?;
+    ) -> CliResult<(csv::ByteRecord, Selection, Option<usize>)> {
+        let full_headers = rdr.byte_headers()?.clone();
+        let (weight_col_idx, sel, selected_headers) =
+            self.process_headers_with_weight_exclusion(&full_headers)?;
 
-        let sel = self.rconfig().selection(headers)?;
+        let all_unique_headers_vec = self.get_unique_headers(&selected_headers)?;
 
         // Map original column indices to selected column indices
         let mapped_unique_headers: Vec<usize> = all_unique_headers_vec
@@ -1486,7 +2130,7 @@ impl Args {
             .set(mapped_unique_headers)
             .map_err(|_| "Cannot set UNIQUE_COLUMNS")?;
 
-        Ok((sel.select(headers).map(<[u8]>::to_vec).collect(), sel))
+        Ok((selected_headers, sel, weight_col_idx))
     }
 }
 

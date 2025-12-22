@@ -752,9 +752,15 @@ impl Args {
 
         // Convert to processed frequencies (count is f64, convert to u64 for display)
         for (value, weight, percentage, rank) in counts_to_process {
+            #[allow(clippy::cast_precision_loss)]
+            let count = if weight.is_finite() {
+                weight.clamp(0.0, u64::MAX as f64).round() as u64
+            } else {
+                0
+            };
             processed_frequencies.push(ProcessedFrequency {
                 value,
-                count: weight.round() as u64,
+                count,
                 percentage,
                 formatted_percentage: self.format_percentage(percentage, abs_dec_places),
                 rank,
@@ -874,6 +880,26 @@ impl Args {
 
         let mut counts_final: Vec<(Vec<u8>, f64, f64, f64)> = Vec::with_capacity(counts.len() + 1);
 
+        // Compute tolerance once before the loop (outside hot path)
+        // Use stats cache if available to determine weight scale for more accurate tolerance
+        let weight_tolerance = if let Some(ref weight_col) = self.flag_weight {
+            STATS_RECORDS
+                .get()
+                .and_then(|records| records.get(weight_col))
+                .and_then(|stats| {
+                    // Prefer stddev as it represents the scale of variation
+                    // Fall back to range or mean if stddev not available
+                    stats
+                        .stddev
+                        .or(stats.range)
+                        .or(stats.mean)
+                        .filter(|&s| s > 0.0)
+                })
+                .map_or(f64::EPSILON, |scale| scale * 1e-9)
+        } else {
+            f64::EPSILON
+        };
+
         // Group by weight to handle ties
         let mut weight_groups: Vec<(f64, Vec<Vec<u8>>)> = Vec::new();
         let mut current_weight: Option<f64> = None;
@@ -881,7 +907,7 @@ impl Args {
 
         for (byte_string, weight) in counts {
             if let Some(prev_weight) = current_weight
-                && (weight - prev_weight).abs() > f64::EPSILON
+                && (weight - prev_weight).abs() > weight_tolerance
                 && !current_group.is_empty()
             {
                 weight_groups.push((prev_weight, std::mem::take(&mut current_group)));
@@ -894,6 +920,7 @@ impl Args {
             weight_groups.push((current_weight.unwrap(), current_group));
         }
 
+        // safety: NULL_VAL is set in the main function
         let null_val = NULL_VAL.get().unwrap();
 
         // Sort each group alphabetically and assign ranks
@@ -1462,8 +1489,10 @@ impl Args {
             |field: &[u8], _buf: &mut String| trim_bs_whitespace(field).to_vec()
         };
 
+        let mut row_result: csv::ByteRecord;
         for row in it {
-            let row_result = unsafe { row.unwrap_unchecked() };
+            // safety: we know the row is valid because it comes from an iterator
+            row_result = unsafe { row.unwrap_unchecked() };
             row_buffer.clone_from(&row_result);
 
             let weight = if let Some(widx) = weight_col_idx {
@@ -1487,6 +1516,8 @@ impl Args {
                 // (unlike unweighted frequencies where all-unique columns are skipped for memory
                 // efficiency)
 
+                // safety: weighted_freq_tables is pre-allocated with nsel_len elements.
+                // i will always be < nsel_len as it comes from enumerate() over the selected cols
                 if !field.is_empty() {
                     field_buffer = process_field(field, &mut string_buf);
                     unsafe {

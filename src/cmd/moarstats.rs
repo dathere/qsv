@@ -1,5 +1,5 @@
 static USAGE: &str = r#"
-Add 12 additional statistics and 12 outlier metadata to an existing stats CSV file.
+Add 14 additional statistics and 12 outlier metadata to an existing stats CSV file.
 
 The `moarstats` command extends an existing stats CSV file (created by the `stats` command)
 by computing "moar" statistics that can be derived from existing stats columns.
@@ -11,7 +11,7 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 12 additional statistics:
+Currently computes the following 14 additional statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
@@ -44,10 +44,19 @@ Currently computes the following 12 additional statistics:
 10. MAD-to-StdDev Ratio: mad / stddev
     Compares robust vs non-robust spread measures.
     Higher values suggest presence of outliers affecting stddev.
-11. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
+11. Kurtosis: Measures the "tailedness" of the distribution (excess kurtosis).
+    Positive values indicate heavy tails, negative values indicate light tails.
+    Values near 0 indicate a normal distribution.
+    Requires --advanced flag.
+    https://en.wikipedia.org/wiki/Kurtosis
+12. Gini Coefficient: Measures inequality/dispersion in the distribution.
+    Values range from 0 (perfect equality) to 1 (maximum inequality).
+    Requires --advanced flag.
+    https://en.wikipedia.org/wiki/Gini_coefficient
+13. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
     All values are included in the calculation, but extreme values are capped at thresholds.
     https://en.wikipedia.org/wiki/Winsorized_mean
-12. Trimmed Mean: Excludes values outside thresholds, then computes mean.
+14. Trimmed Mean: Excludes values outside thresholds, then computes mean.
     Only values within thresholds are included in the calculation.
     https://en.wikipedia.org/wiki/Truncated_mean
     By default, uses Q1 and Q3 as thresholds (25% winsorization/trimming).
@@ -78,7 +87,8 @@ https://en.wikipedia.org/wiki/Outlier
 These statistics are only computed for numeric and date/datetime columns where the required
 base statistics are available. Outlier statistics additionally require that quartiles (and thus
 fences) were computed when generating the stats CSV. Winsorized/trimmed means require either
-quartiles (Q1/Q3) or percentiles to be available.
+quartiles (Q1/Q3) or percentiles to be available. Kurtosis and Gini coefficient require reading
+the original CSV file to collect all values for computation.
 
 Examples:
 
@@ -96,6 +106,9 @@ Usage:
     qsv moarstats --help
 
 moarstats options:
+    --advanced             Compute Gini coefficient and Kurtosis. These statistics require reading
+                           the original CSV file to collect all values for computation and are
+                           computationally expensive.
     --stats-options <arg>  Options to pass to the stats command if baseline stats need
                            to be generated. The options are passed as a single string
                            that will be split by whitespace.
@@ -123,11 +136,12 @@ use std::{
 };
 
 use crossbeam_channel;
-use csv::{ReaderBuilder, WriterBuilder};
+use csv::{ReaderBuilder, StringRecord, WriterBuilder};
 use indexmap::IndexMap;
 use qsv_dateparser::parse_with_preference;
 use serde::Deserialize;
 use simdutf8::basic::from_utf8;
+use stats::{gini, kurtosis};
 use threadpool::ThreadPool;
 
 use crate::{CliError, CliResult, config::Config, util};
@@ -140,6 +154,7 @@ struct Args {
     flag_output:          Option<String>,
     flag_use_percentiles: bool,
     flag_pct_thresholds:  Option<String>,
+    flag_advanced:        bool,
 }
 
 /// Get the stats CSV file path for a given input CSV path
@@ -288,6 +303,7 @@ fn compute_mad_stddev_ratio(mad: Option<f64>, stddev: Option<f64>) -> Option<f64
 }
 
 /// Parse a numeric value from a string, handling empty strings and invalid values
+#[inline]
 fn parse_float_opt(s: &str) -> Option<f64> {
     if s.is_empty() {
         return None;
@@ -296,6 +312,7 @@ fn parse_float_opt(s: &str) -> Option<f64> {
 }
 
 /// Parse a numeric value from bytes, handling empty bytes and invalid values
+#[inline]
 fn parse_float_opt_from_bytes(bytes: &[u8]) -> Option<f64> {
     if bytes.is_empty() {
         return None;
@@ -457,6 +474,23 @@ struct OutlierStats {
     trimmed_count:    u64,
 }
 
+/// Statistics for kurtosis and Gini coefficient
+#[derive(Clone, Default)]
+struct KurtosisGiniStats {
+    kurtosis:         Option<f64>,
+    gini_coefficient: Option<f64>,
+}
+
+/// Field information needed for kurtosis and Gini computation (with precalculated stats)
+#[derive(Clone)]
+struct KurtosisGiniFieldInfo {
+    col_idx:    usize,
+    field_type: FieldType,
+    mean:       Option<f64>,
+    variance:   Option<f64>, // variance = stddev^2
+    sum:        Option<f64>, // sum for Gini coefficient
+}
+
 /// Count outliers for a chunk of records and compute statistics
 /// Returns a HashMap mapping field names to their outlier statistics
 fn count_chunk_outliers<I>(
@@ -477,20 +511,24 @@ where
         .collect();
 
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+    #[allow(unused_assignments)]
+    let mut record: csv::ByteRecord = csv::ByteRecord::new();
+    let mut value_bytes;
+    let mut numeric_value;
 
     // Process each record in the chunk
     for result in records {
-        let record = result?;
+        record = result?;
 
         for (field_name, field_info) in fields_to_count {
-            let value_bytes = record.get(field_info.col_idx).unwrap_or(&[]);
+            value_bytes = record.get(field_info.col_idx).unwrap_or(&[]);
 
             if value_bytes.is_empty() {
                 continue; // Skip null/empty values
             }
 
             // Parse the value based on field type
-            let numeric_value = if field_info.field_type.is_date_or_datetime() {
+            numeric_value = if field_info.field_type.is_date_or_datetime() {
                 // Convert bytes to string for date parsing
                 if let Ok(value_str) = from_utf8(value_bytes) {
                     parse_date_to_days(value_str, prefer_dmy)
@@ -708,19 +746,25 @@ fn count_all_outliers_from_reader(
 
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
 
+    // amortize allocations
+    #[allow(unused_assignments)]
+    let mut record: StringRecord = StringRecord::new();
+    let mut value_str;
+    let mut numeric_value;
+
     // Process each record once, checking all fields
     for result in rdr.records() {
-        let record = result?;
+        record = result?;
 
         for (field_name, field_info) in fields_to_count {
-            let value_str = record.get(field_info.col_idx).unwrap_or("");
+            value_str = record.get(field_info.col_idx).unwrap_or("");
 
             if value_str.is_empty() {
                 continue; // Skip null/empty values
             }
 
             // Parse the value based on field type
-            let numeric_value = if field_info.field_type.is_date_or_datetime() {
+            numeric_value = if field_info.field_type.is_date_or_datetime() {
                 parse_date_to_days(value_str, prefer_dmy)
             } else {
                 parse_float_opt(value_str)
@@ -781,6 +825,120 @@ fn count_all_outliers_from_reader(
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             }
         }
+    }
+
+    Ok(all_stats)
+}
+
+/// Compute kurtosis and Gini coefficient for all fields.
+/// Since kurtosis and Gini require all values from the entire dataset, this always uses
+/// sequential processing to read all values in a single pass.
+/// Returns a HashMap mapping field names to their kurtosis and Gini statistics
+fn compute_all_kurtosis_gini(
+    fields_to_compute: &HashMap<String, KurtosisGiniFieldInfo>,
+    input_path: &Path,
+) -> CliResult<HashMap<String, KurtosisGiniStats>> {
+    if fields_to_compute.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let input_path_str = input_path
+        .to_str()
+        .ok_or_else(|| CliError::Other(format!("Invalid input path: {}", input_path.display())))?;
+    let input_path_string = input_path_str.to_string();
+    let rconfig = Config::new(Some(&input_path_string));
+    let mut rdr = rconfig.reader_file()?;
+    let _headers = rdr.headers()?.clone();
+    compute_all_kurtosis_gini_from_reader(fields_to_compute, rdr)
+}
+
+/// Compute kurtosis and Gini coefficient for all fields in a single pass through the CSV
+/// (sequential) The CSV reader should already be positioned after the headers
+/// Returns a HashMap mapping field names to their kurtosis and Gini statistics
+fn compute_all_kurtosis_gini_from_reader(
+    fields_to_compute: &HashMap<String, KurtosisGiniFieldInfo>,
+    mut rdr: csv::Reader<std::fs::File>,
+) -> CliResult<HashMap<String, KurtosisGiniStats>> {
+    if fields_to_compute.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    // Collect all values for each field
+    let mut field_values: HashMap<String, Vec<f64>> = fields_to_compute
+        .keys()
+        .map(|k| (k.clone(), Vec::new()))
+        .collect();
+
+    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+
+    // amortize allocations
+    #[allow(unused_assignments)]
+    let mut record: StringRecord = StringRecord::new();
+    let mut value_str;
+    let mut numeric_value;
+
+    // Process each record once, collecting values for all fields
+    for result in rdr.records() {
+        record = result?;
+
+        for (field_name, field_info) in fields_to_compute {
+            value_str = record.get(field_info.col_idx).unwrap_or("");
+
+            if value_str.is_empty() {
+                continue; // Skip null/empty values
+            }
+
+            // Parse the value based on field type
+            numeric_value = if field_info.field_type.is_date_or_datetime() {
+                parse_date_to_days(value_str, prefer_dmy)
+            } else {
+                parse_float_opt(value_str)
+            };
+
+            if let Some(val) = numeric_value
+                && let Some(values) = field_values.get_mut(field_name)
+            {
+                values.push(val);
+            }
+        }
+    }
+
+    // Compute statistics for each field
+    let mut all_stats: HashMap<String, KurtosisGiniStats> = HashMap::new();
+
+    for (field_name, values) in field_values {
+        if values.len() < 2 {
+            // Need at least 2 values for meaningful statistics
+            all_stats.insert(
+                field_name,
+                KurtosisGiniStats {
+                    kurtosis:         None,
+                    gini_coefficient: None,
+                },
+            );
+            continue;
+        }
+
+        // Get precalculated stats for this field
+        let (precalc_mean, precalc_variance, precalc_sum) = fields_to_compute
+            .get(&field_name)
+            .map_or((None, None, None), |info| {
+                (info.mean, info.variance, info.sum)
+            });
+
+        // Compute kurtosis with precalculated mean and variance
+        let kurtosis_val = kurtosis(values.iter().copied(), precalc_mean, precalc_variance);
+
+        // Compute Gini coefficient with precalculated sum (not mean!)
+        let gini_val = gini(values.iter().copied(), precalc_sum);
+
+        all_stats.insert(
+            field_name,
+            KurtosisGiniStats {
+                kurtosis:         kurtosis_val,
+                gini_coefficient: gini_val,
+            },
+        );
     }
 
     Ok(all_stats)
@@ -852,6 +1010,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let iqr_idx = headers.iter().position(|h| h == "iqr");
     let mad_idx = headers.iter().position(|h| h == "mad");
     let field_idx = headers.iter().position(|h| h == "field");
+    let sum_idx = headers.iter().position(|h| h == "sum");
     let lower_outer_fence_idx = headers.iter().position(|h| h == "lower_outer_fence");
     let lower_inner_fence_idx = headers.iter().position(|h| h == "lower_inner_fence");
     let upper_inner_fence_idx = headers.iter().position(|h| h == "upper_inner_fence");
@@ -981,6 +1140,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         new_column_indices.insert("mad_stddev_ratio".to_string(), new_columns.len() - 1);
     }
 
+    // Add kurtosis column (requires reading raw data, computed for numeric/date types)
+    // Only add if --advanced flag is set
+    if args.flag_advanced && !column_exists("kurtosis") {
+        new_columns.push("kurtosis".to_string());
+        new_column_indices.insert("kurtosis".to_string(), new_columns.len() - 1);
+    }
+
+    // Add Gini coefficient column (requires reading raw data, computed for numeric/date types)
+    // Only add if --advanced flag is set
+    if args.flag_advanced && !column_exists("gini_coefficient") {
+        new_columns.push("gini_coefficient".to_string());
+        new_column_indices.insert("gini_coefficient".to_string(), new_columns.len() - 1);
+    }
+
     // Add outlier count columns if all fences are available
     // Only add if at least one outlier column doesn't exist (to avoid partial duplicates)
     if lower_outer_fence_idx.is_some()
@@ -1073,6 +1246,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "median_mean_ratio",
             "iqr_range_ratio",
             "mad_stddev_ratio",
+            "kurtosis",
+            "gini_coefficient",
             "outliers_extreme_lower",
         ];
 
@@ -1107,6 +1282,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let needs_outlier_counting = new_column_indices.contains_key("outliers_extreme_lower");
     let needs_winsorized_trimmed = new_column_indices.contains_key(winsorized_col_name.as_str())
         || new_column_indices.contains_key(trimmed_col_name.as_str());
+
+    // Collect fields that need kurtosis and Gini computation (with their precalculated stats)
+    let needs_kurtosis_gini = new_column_indices.contains_key("kurtosis")
+        || new_column_indices.contains_key("gini_coefficient");
 
     // First pass: collect field information from stats records
     if needs_outlier_counting || needs_winsorized_trimmed {
@@ -1225,6 +1404,48 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
+    // Collect fields for kurtosis and Gini computation with their precalculated stats
+    let mut fields_for_kurtosis_gini: HashMap<String, KurtosisGiniFieldInfo> = HashMap::new();
+    if needs_kurtosis_gini {
+        for record in &records {
+            let field_name = field_idx.and_then(|idx| record.get(idx)).unwrap_or("");
+            let field_type_str = record.get(type_idx).unwrap_or("");
+
+            // Convert string to enum for efficient comparisons
+            let Some(field_type) = FieldType::from_str(field_type_str) else {
+                continue;
+            };
+
+            if field_name.is_empty() || !field_type.is_numeric_or_date_type() {
+                continue;
+            }
+
+            // Parse precalculated stats
+            let mean_val = mean_idx
+                .and_then(|idx| record.get(idx))
+                .and_then(parse_float_opt);
+            let stddev_val = stddev_idx
+                .and_then(|idx| record.get(idx))
+                .and_then(parse_float_opt);
+            let variance_val = stddev_val.map(|s| s * s); // variance = stddev^2
+            let sum_val = sum_idx
+                .and_then(|idx| record.get(idx))
+                .and_then(parse_float_opt);
+
+            // We'll find the column index when we read the CSV
+            fields_for_kurtosis_gini.insert(
+                field_name.to_string(),
+                KurtosisGiniFieldInfo {
+                    col_idx: 0, // Will be set when we read CSV headers
+                    field_type,
+                    mean: mean_val,
+                    variance: variance_val,
+                    sum: sum_val,
+                },
+            );
+        }
+    }
+
     // Count outliers for all fields in a single pass through the original CSV
     let outlier_counts = if fields_to_count.is_empty() {
         HashMap::new()
@@ -1247,6 +1468,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // Count outliers (will use parallel processing if index exists)
         count_all_outliers(&fields_to_count, input_path)?
+    };
+
+    // Compute kurtosis and Gini coefficient for all fields
+    let kurtosis_gini_stats = if fields_for_kurtosis_gini.is_empty() {
+        HashMap::new()
+    } else {
+        // Get headers to map field names to column indices
+        let mut csv_rdr = ReaderBuilder::new()
+            .has_headers(true)
+            .from_path(input_path)?;
+        let csv_headers = csv_rdr.headers()?.clone();
+
+        // Update column indices in fields_for_kurtosis_gini and remove fields not found in CSV
+        fields_for_kurtosis_gini.retain(|field_name, field_info| {
+            if let Some(col_idx) = csv_headers.iter().position(|h| h == field_name) {
+                field_info.col_idx = col_idx;
+                true
+            } else {
+                false
+            }
+        });
+
+        // Compute kurtosis and Gini (will use sequential processing for correctness)
+        compute_all_kurtosis_gini(&fields_for_kurtosis_gini, input_path)?
     };
 
     // Prepare output
@@ -1432,7 +1677,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     // Mean of outliers
                     if let Some(idx) = new_column_indices.get("outliers_mean") {
                         let mean_outliers = stats.sum_outliers / stats.counts[5] as f64;
-                        new_values[*idx] = util::round_num(mean_outliers, args.flag_round);
+                        new_values[*idx] = if field_type.is_date_or_datetime() {
+                            days_to_rfc3339(mean_outliers, field_type)
+                        } else {
+                            util::round_num(mean_outliers, args.flag_round)
+                        };
                     }
                 }
 
@@ -1440,7 +1689,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     // Mean of non-outliers
                     if let Some(idx) = new_column_indices.get("non_outliers_mean") {
                         let mean_normal = stats.sum_normal / stats.counts[2] as f64;
-                        new_values[*idx] = util::round_num(mean_normal, args.flag_round);
+                        new_values[*idx] = if field_type.is_date_or_datetime() {
+                            days_to_rfc3339(mean_normal, field_type)
+                        } else {
+                            util::round_num(mean_normal, args.flag_round)
+                        };
                     }
 
                     // Outlier-to-normal mean ratio
@@ -1460,11 +1713,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 if let Some(min_outliers) = stats.min_outliers
                     && let Some(idx) = new_column_indices.get("outliers_min")
                 {
-                    new_values[*idx] = util::round_num(min_outliers, args.flag_round);
+                    new_values[*idx] = if field_type.is_date_or_datetime() {
+                        days_to_rfc3339(min_outliers, field_type)
+                    } else {
+                        util::round_num(min_outliers, args.flag_round)
+                    };
                 }
                 if let Some(max_outliers) = stats.max_outliers {
                     if let Some(idx) = new_column_indices.get("outliers_max") {
-                        new_values[*idx] = util::round_num(max_outliers, args.flag_round);
+                        new_values[*idx] = if field_type.is_date_or_datetime() {
+                            days_to_rfc3339(max_outliers, field_type)
+                        } else {
+                            util::round_num(max_outliers, args.flag_round)
+                        };
                     }
                     // Range of outliers
                     if let Some(min_outliers) = stats.min_outliers
@@ -1504,6 +1765,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     } else {
                         util::round_num(trimmed_mean, args.flag_round)
                     };
+                }
+            }
+
+            // Write kurtosis and Gini coefficient from pre-computed results
+            if (new_column_indices.contains_key("kurtosis")
+                || new_column_indices.contains_key("gini_coefficient"))
+                && !field_name.is_empty()
+                && let Some(stats) = kurtosis_gini_stats.get(field_name)
+            {
+                // Kurtosis
+                if let Some(kurtosis_val) = stats.kurtosis
+                    && let Some(idx) = new_column_indices.get("kurtosis")
+                {
+                    new_values[*idx] = util::round_num(kurtosis_val, args.flag_round);
+                }
+
+                // Gini coefficient
+                if let Some(gini_val) = stats.gini_coefficient
+                    && let Some(idx) = new_column_indices.get("gini_coefficient")
+                {
+                    new_values[*idx] = util::round_num(gini_val, args.flag_round);
                 }
             }
 

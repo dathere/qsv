@@ -153,8 +153,8 @@ frequency options:
                             The weight column must be numeric. When specified, frequency counts
                             are multiplied by the weight value for each row. The weight column is
                             automatically excluded from frequency computation. Missing or
-                            non-numeric weights default to 1.0. Zero and negative weights are
-                            ignored and do not contribute to frequencies.
+                            unparsable weights default to 1.0. Zero, negative, NaN and infinite
+                            weights are ignored and do not contribute to frequencies.
 
 Common options:
     -h, --help             Display this message

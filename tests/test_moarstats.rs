@@ -1541,9 +1541,9 @@ fn moarstats_kurtosis_gini_coefficient() {
         .arg(&test_file);
     wrk.assert_success(&mut stats_cmd);
 
-    // Run moarstats
+    // Run moarstats with --advanced flag
     let mut cmd = wrk.command("moarstats");
-    cmd.arg(&test_file);
+    cmd.arg("--advanced").arg(&test_file);
     wrk.assert_success(&mut cmd);
 
     // Verify kurtosis and gini_coefficient columns exist
@@ -1636,9 +1636,9 @@ fn moarstats_kurtosis_gini_insufficient_data() {
     stats_cmd.arg("--everything").arg("test.csv");
     wrk.assert_success(&mut stats_cmd);
 
-    // Run moarstats
+    // Run moarstats with --advanced flag
     let mut cmd = wrk.command("moarstats");
-    cmd.arg("test.csv");
+    cmd.arg("--advanced").arg("test.csv");
     wrk.assert_success(&mut cmd);
 
     // Verify columns exist but values may be empty
@@ -1911,9 +1911,9 @@ fn moarstats_kurtosis_gini_multiple_numeric_fields() {
         .arg(&test_file);
     wrk.assert_success(&mut stats_cmd);
 
-    // Run moarstats
+    // Run moarstats with --advanced flag
     let mut cmd = wrk.command("moarstats");
-    cmd.arg(&test_file);
+    cmd.arg("--advanced").arg(&test_file);
     wrk.assert_success(&mut cmd);
 
     // Verify that multiple numeric fields get kurtosis/Gini statistics
@@ -1958,5 +1958,187 @@ fn moarstats_kurtosis_gini_multiple_numeric_fields() {
     assert!(
         numeric_fields_with_gini > 1,
         "Multiple numeric fields should have gini_coefficient statistics"
+    );
+}
+
+#[test]
+fn moarstats_without_advanced_flag() {
+    let wrk = Workdir::new("moarstats_without_advanced");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats WITHOUT --advanced flag
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Verify kurtosis and gini_coefficient columns do NOT exist
+    let stats_content = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+
+    assert!(
+        get_column_index(&headers, "kurtosis").is_none(),
+        "kurtosis column should NOT exist without --advanced flag"
+    );
+    assert!(
+        get_column_index(&headers, "gini_coefficient").is_none(),
+        "gini_coefficient column should NOT exist without --advanced flag"
+    );
+
+    // Verify other columns still exist
+    assert!(
+        get_column_index(&headers, "pearson_skewness").is_some(),
+        "pearson_skewness column should still exist"
+    );
+}
+
+#[test]
+fn moarstats_with_advanced_flag() {
+    let wrk = Workdir::new("moarstats_with_advanced");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats WITH --advanced flag
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--advanced").arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Verify kurtosis and gini_coefficient columns exist
+    let stats_content = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+
+    assert!(
+        get_column_index(&headers, "kurtosis").is_some(),
+        "kurtosis column should exist with --advanced flag"
+    );
+    assert!(
+        get_column_index(&headers, "gini_coefficient").is_some(),
+        "gini_coefficient column should exist with --advanced flag"
+    );
+
+    // Verify values are computed for at least one numeric field
+    let mut found_kurtosis_value = false;
+    let mut found_gini_value = false;
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap();
+
+        if field_type == "Float" || field_type == "Integer" {
+            // Check kurtosis
+            if let Some(kurtosis_idx) = get_column_index(&headers, "kurtosis") {
+                let kurtosis_val = get_field_value(&record, kurtosis_idx);
+                if let Some(val_str) = kurtosis_val {
+                    if !val_str.is_empty() {
+                        found_kurtosis_value = true;
+                        let kurtosis: f64 = val_str.parse().unwrap();
+                        assert!(kurtosis.is_finite(), "kurtosis should be a finite number");
+                    }
+                }
+            }
+
+            // Check Gini coefficient
+            if let Some(gini_idx) = get_column_index(&headers, "gini_coefficient") {
+                let gini_val = get_field_value(&record, gini_idx);
+                if let Some(val_str) = gini_val {
+                    if !val_str.is_empty() {
+                        found_gini_value = true;
+                        let gini: f64 = val_str.parse().unwrap();
+                        assert!(
+                            gini >= 0.0 && gini <= 1.0,
+                            "gini_coefficient should be between 0 and 1, got: {}",
+                            gini
+                        );
+                    }
+                }
+            }
+
+            if found_kurtosis_value && found_gini_value {
+                break;
+            }
+        }
+    }
+
+    assert!(
+        found_kurtosis_value,
+        "Should find kurtosis value for numeric fields with --advanced flag"
+    );
+    assert!(
+        found_gini_value,
+        "Should find gini_coefficient value for numeric fields with --advanced flag"
+    );
+}
+
+#[test]
+fn moarstats_advanced_flag_does_not_affect_other_stats() {
+    let wrk = Workdir::new("moarstats_advanced_other_stats");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with --advanced flag
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--advanced").arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Verify that other statistics are still computed correctly
+    let stats_content = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+
+    // Verify standard moarstats columns exist
+    assert!(
+        get_column_index(&headers, "pearson_skewness").is_some(),
+        "pearson_skewness should exist"
+    );
+    assert!(
+        get_column_index(&headers, "range_stddev_ratio").is_some(),
+        "range_stddev_ratio should exist"
+    );
+    assert!(
+        get_column_index(&headers, "quartile_coefficient_dispersion").is_some(),
+        "quartile_coefficient_dispersion should exist"
+    );
+
+    // Verify advanced columns exist
+    assert!(
+        get_column_index(&headers, "kurtosis").is_some(),
+        "kurtosis should exist with --advanced"
+    );
+    assert!(
+        get_column_index(&headers, "gini_coefficient").is_some(),
+        "gini_coefficient should exist with --advanced"
     );
 }

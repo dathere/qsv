@@ -1033,7 +1033,7 @@ impl Args {
                 .as_bytes()
                 .to_vec(),
                 other_weight,
-                100.0_f64 - pct_sum,
+                other_weight * pct_factor,
                 0.0,
             ));
         }

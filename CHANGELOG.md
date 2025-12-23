@@ -8,6 +8,180 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [12.0.0] - 2025-12-23
 
+qsv 12.0.0 is a major release introducing the powerful new `moarstats` command, comprehensive weighted statistics support, enhanced AI-powered data description with multilingual capabilities, and the TOON (Tree Object Notation) format.
+
+## 🌟 Major Features
+
+### NEW: moarstats Command
+A powerful new command for advanced statistical analysis, providing statistics beyond what the `stats` command offers:
+
+- **Comprehensive Statistics**: Over 50+ advanced statistical measures including:
+  - Detailed outlier analysis (count, sum, average)
+  - Winsorized and trimmed means (5%, 10%, 20%, 25%)
+  - Multiple dispersion measures (IQR, quartile coefficient of dispersion)
+  - Distribution statistics (skewness, multiple kurtosis measures)
+  
+- **Advanced Option** (`--advanced`): Access computationally intensive statistics:
+  - Gini coefficient for inequality measurement
+  - Excess, Pearson, and sample kurtosis
+  - Shannon Entropy for data diversity analysis
+  
+- **Available on all binary variants** for universal access
+
+### Enhanced describegpt Command
+Major enhancements to AI-powered data description capabilities:
+
+- **⛩️ Minijinja Template Engine Integration**: 
+  - Custom prompt templating with full minijinja and minijinja-contrib filters
+  - More powerful and flexible prompt customization
+  
+- **Multilingual Support**:
+  - `--language` option for generating descriptions in any language/dialect
+  - Automatic language detection in prompts
+  - SQL comments also generated in requested language
+  - beyond language/dialect, this option can also be used to describe a persona
+    (e.g. Christopher Walken, Santa Claus after taking a Data Science Course, Spock)
+  
+- **Enhanced Format Support**:
+  - Added `--format TOON` for Tree Object Notation output
+  - More robust JSON parsing (handles LLM variations)
+  
+- **Advanced Features**:
+  - `--addl-columns` option with detailed attribution and system metadata
+  - `--export-prompt <file>` to save rendered prompts
+  - Iterative, session-based SQL RAG with `--prompt` option
+  - Sampling in prompt mode for better SQL generation
+  - Lookup table and CKAN support for controlled vocabularies
+  - Convenience values for `--addl-cols-list`
+    (i.e., "everything", "everything!", "moar", "moar!")
+
+### Weighted Statistics Support
+Comprehensive weighted statistics implementation across multiple commands:
+
+- **stats Command** (`--weight <column>`):
+  - Weighted mean, standard deviation, variance
+  - Weighted MAD (Median Absolute Deviation) and percentiles
+  - Weighted modes and antimodes
+  - Weighted harmonic and geometric means
+  - All weighted calculations handle non-finite values gracefully
+  
+- **frequency Command** (`--weight <column>`):
+  - Weighted frequency distributions
+  - Proper handling of weighted "Other" category
+  - Non-finite weights automatically skipped
+
+### TOON Format Support
+New Tree Object Notation format for human-readable structured output:
+
+- **Commands Supporting TOON**:
+  - `describegpt --format TOON`
+  - `frequency --toon`
+  
+- **Benefits**: More readable than JSON, easier to parse than CSV for hierarchical data
+  and more token-efficient, terse format targeted for LLMs
+
+### stats Command Enhancements
+
+- **Percentile Improvements**:
+  - `--percentile-list` special values: "deciles" and "quintiles"
+  - Percentile labels now include prefix before value (e.g., "p50: 42.5")
+  - Validation of percentile-list on startup
+  
+- **New Columns**: Added `n_counts` for more detailed count information
+
+- **Performance Optimizations**:
+  - Optimized Stats struct layout
+  - Eliminated redundant, unnecessary sorting
+  - Removed redundant filtering for weighted stats functions
+  - Microoptimizations throughout
+
+### transpose Command
+
+- **New `--long` Option**: Transform data from wide to long format
+  - Column selection support using select syntax
+  - Streaming implementation per GitHub Copilot review suggestions
+
+## 📊 Output Format Changes
+
+### schema Command
+- Updated `$schema` from Draft 7 to **JSON Schema Draft 2020-12**
+
+## 🐛 Bug Fixes
+
+### frequency Command
+- Fixed behavior when compiling weighted frequencies with `ALL_UNIQUE`
+- Fixed issue where "Other (0),0,0,0" could appear in output
+- Proper handling of non-finite weights (automatically skipped)
+
+### lens Command
+- Aligned `--no-streaming-stdin` behavior with csvlens upstream
+
+## 🏗️ Infrastructure & Quality
+
+### Testing
+- Test suite expanded from 2,060 to **2,260 tests**
+- Comprehensive test coverage for all new features
+- Weighted statistics thoroughly tested
+- Advanced moarstats options validated
+
+### Code Quality
+- Extensive GitHub Copilot review integration
+- Multiple refactoring passes for code clarity
+- Clippy suggestions incorporated throughout
+- Better error handling and edge case management
+
+### FAIR Principles
+- Added **CITATION.cff** (by rzmk) for academic citation
+- Added **Zenodo DOI badge** for dataset citation
+- Enhanced FAIRification of qsv as a research tool
+
+## 📚 Documentation Improvements
+
+### Statistical Documentation
+- Comprehensive documentation for statistics produced by stats command (by @kulnor) WIP
+- Enhanced usage text for stats, frequency, and moarstats
+- Better examples throughout documentation
+
+### Command Documentation
+- Updated describegpt with multilingual examples
+- Added controlled tag vocabulary examples
+- Enhanced TOON format documentation
+- Better SQL RAG workflow documentation
+
+---
+
+## Migration Notes
+
+### Breaking Changes
+
+1. **schema command**: `$schema` output changed from Draft 7 to Draft 2020-12
+   - Most schemas should be compatible
+   - Validation tools must support JSON Schema Draft 2020-12
+
+2. **stats command**: Output now includes percentile label prefixes
+   - Example: "p50" instead of just the value
+   - May affect parsing scripts that expect raw numbers
+
+### New Features to Explore
+
+1. **Try moarstats**: Run `qsv moarstats --help` to explore advanced statistics
+   - Use `--advanced` flag for computationally intensive measures
+   
+2. **Weighted Analysis**: Add `--weight` to stats and frequency commands
+   - Perfect for analyzing survey data or weighted samples
+   
+3. **Multilingual describegpt**: Use `--language Spanish` or any other language
+   - Try a dialect like "Franglais" or a personality like 
+     "Angry Data Science Professor berating his students"
+   
+4. **TOON Format**: Try `--format TOON` or `--toon` for more readable output
+   - Especially useful for hierarchical data
+
+5. **Percentile Shortcuts**: Use `--percentile-list deciles` or `quintiles`
+   - Quick way to get standard percentile distributions
+
+---
+
 ## Added
 * feat: `describegpt` add `--add-cols` and `--addl-cols-list <list>` options https://github.com/dathere/qsv/pull/3179
 * feat: `describegpt` add `--language` option https://github.com/dathere/qsv/pull/3184

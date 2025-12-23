@@ -1146,16 +1146,35 @@ fn compute_all_entropy(input_path: &Path) -> CliResult<HashMap<String, EntropySt
             continue;
         }
 
-        // Compute Shannon Entropy: H(X) = -Σ p_i * log2(p_i)
-        let mut entropy = 0.0;
-        let total = total_count as f64;
+        // Check if this is an all-unique field (frequency command outputs <ALL_UNIQUE> for these)
+        // The default text is "<ALL_UNIQUE>" but it can be customized with --all-unique-text
+        // We check for both the default and common variations
+        let is_all_unique = frequencies.len() == 1
+            && frequencies.keys().any(|v| {
+                v == "<ALL_UNIQUE>"
+                    || v == "<ALL UNIQUE>"
+                    || (v.starts_with("<ALL") && v.contains("UNIQUE"))
+            });
 
-        for count in frequencies.values() {
-            if *count > 0 {
-                let p = *count as f64 / total;
-                entropy -= p * p.log2();
+        let entropy = if is_all_unique {
+            // For all-unique fields, each value appears exactly once
+            // Entropy = log2(n) where n is the number of unique values (which equals total_count)
+            // Formula: -Σ p_i * log2(p_i) where p_i = 1/n for each of n values
+            // = -n * (1/n) * log2(1/n) = -log2(1/n) = log2(n)
+            (total_count as f64).log2()
+        } else {
+            // Compute Shannon Entropy: H(X) = -Σ p_i * log2(p_i)
+            let mut entropy = 0.0;
+            let total = total_count as f64;
+
+            for count in frequencies.values() {
+                if *count > 0 {
+                    let p = *count as f64 / total;
+                    entropy -= p * p.log2();
+                }
             }
-        }
+            entropy
+        };
 
         entropy_stats.insert(
             field_name,
@@ -1864,16 +1883,31 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let field_type_str = record.get(type_idx).unwrap_or("");
 
         // Convert string to enum for efficient comparisons
-        let Some(field_type) = FieldType::from_str(field_type_str) else {
-            // For non-numeric types, append empty strings
-            for _ in &new_columns {
-                output_record.push_field("");
+        let field_type_opt = FieldType::from_str(field_type_str);
+
+        // Initialize new_values for all field types (needed for entropy which works for all types)
+        let mut new_values = vec![String::new(); new_columns.len()];
+
+        // Write Shannon Entropy from pre-computed results (works for all field types)
+        if new_column_indices.contains_key("shannon_entropy")
+            && !field_name.is_empty()
+            && let Some(stats) = entropy_stats.get(field_name)
+            && let Some(entropy_val) = stats.entropy
+            && let Some(idx) = new_column_indices.get("shannon_entropy")
+        {
+            new_values[*idx] = util::round_num(entropy_val, args.flag_round);
+        }
+
+        // Only compute other stats for numeric/date types
+        let Some(field_type) = field_type_opt else {
+            // For unrecognized types, append new values (entropy already set above)
+            for val in new_values {
+                output_record.push_field(&val);
             }
             wtr.write_record(&output_record)?;
             continue;
         };
 
-        // Only compute stats for numeric/date types
         if field_type.is_numeric_or_date_type() {
             // Parse existing stats values
             let mean = mean_idx
@@ -1931,8 +1965,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .and_then(|idx| record.get(idx))
                 .and_then(parse_float_opt);
 
-            // Compute new stats
-            let mut new_values = vec![String::new(); new_columns.len()];
+            // Compute new stats (entropy already computed above for all field types)
 
             if let Some(idx) = new_column_indices.get("pearson_skewness")
                 && let Some(val) = compute_pearson_skewness(mean, median, stddev)
@@ -2385,24 +2418,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
             }
 
-            // Write Shannon Entropy from pre-computed results
-            if new_column_indices.contains_key("shannon_entropy")
-                && !field_name.is_empty()
-                && let Some(stats) = entropy_stats.get(field_name)
-                && let Some(entropy_val) = stats.entropy
-                && let Some(idx) = new_column_indices.get("shannon_entropy")
-            {
-                new_values[*idx] = util::round_num(entropy_val, args.flag_round);
-            }
-
-            // Append new values to record
+            // Append new values to record (entropy already set above)
             for val in new_values {
                 output_record.push_field(&val);
             }
         } else {
-            // For non-numeric types, append empty strings
-            for _ in &new_columns {
-                output_record.push_field("");
+            // For non-numeric types, append new values (entropy already set above)
+            for val in new_values {
+                output_record.push_field(&val);
             }
         }
 

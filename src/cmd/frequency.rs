@@ -742,6 +742,12 @@ impl Args {
             // For all-unique headers with weighted frequencies, create a single entry
             // with the sum of all weights
             let total_weight: f64 = weighted_map.values().sum();
+            // Skip emitting an all-unique entry if the total weight is non-finite (NaN or infinity)
+            // to avoid producing a misleading count, consistent with the non-all-unique path
+            // where non-finite weights are skipped entirely.
+            if !total_weight.is_finite() {
+                return;
+            }
             #[allow(clippy::cast_precision_loss)]
             let count = total_weight.clamp(0.0, u64::MAX as f64).round() as u64;
             processed_frequencies.push(ProcessedFrequency {

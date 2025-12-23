@@ -3044,8 +3044,6 @@ fn moarstats_shannon_entropy_basic() {
         .from_reader(stats_content.as_bytes());
 
     let headers = rdr.headers().unwrap().clone();
-    let field_idx = get_column_index(&headers, "field").unwrap();
-    let type_idx = get_column_index(&headers, "type").unwrap();
 
     assert!(
         get_column_index(&headers, "shannon_entropy").is_some(),
@@ -3057,8 +3055,6 @@ fn moarstats_shannon_entropy_basic() {
 
     for result in rdr.records() {
         let record = result.unwrap();
-        let _field_name = get_field_value(&record, field_idx).unwrap();
-        let _field_type = get_field_value(&record, type_idx).unwrap();
 
         // Shannon entropy works for all field types
         if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
@@ -3392,14 +3388,12 @@ fn moarstats_shannon_entropy_multiple_fields() {
         .from_reader(stats_content.as_bytes());
 
     let headers = rdr.headers().unwrap().clone();
-    let type_idx = get_column_index(&headers, "type").unwrap();
     let entropy_idx = get_column_index(&headers, "shannon_entropy");
 
     let mut fields_with_entropy = 0;
 
     for result in rdr.records() {
         let record = result.unwrap();
-        let _field_type = get_field_value(&record, type_idx).unwrap();
 
         // Entropy works for all field types
         if let Some(entropy_idx) = entropy_idx {

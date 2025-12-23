@@ -1822,16 +1822,16 @@ dependencies = [
 
 [[package]]
 name = "csv-diff"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c472abdf9c60339b3fd083252dda1ade996587a08752e94646495be76084e0f3"
+checksum = "5a106e73fbfa7bcda5b32780ab5f53fa4777dc611078974e0b91c99f1ab06e0f"
 dependencies = [
  "ahash 0.8.12",
  "crossbeam-channel",
  "csv",
  "mown",
  "rayon",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
  "xxhash-rust",
 ]
 
@@ -4142,9 +4142,9 @@ dependencies = [
 
 [[package]]
 name = "mown"
-version = "0.2.2"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7627d8bbeb17edbf1c3f74b21488e4af680040da89713b4217d0010e9cbd97e"
+checksum = "1460558cee241bd687f37536f9d15403645e749db36e277a7d773505e6508db9"
 
 [[package]]
 name = "munge"

@@ -2783,57 +2783,15 @@ fn frequency_weight_infinity_values() {
 
     wrk.assert_success(&mut cmd);
 
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    got.sort_by(|a, b| {
-        if a.len() < 2 || b.len() < 2 {
-            std::cmp::Ordering::Equal
-        } else {
-            a[1].cmp(&b[1])
-        }
-    });
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
-    // Infinity weights get aggregated with valid weights, making the total infinity (non-finite)
-    // When displaying, non-finite weights are filtered out, so values with infinity weights
-    // disappear entirely Negative infinity should be skipped (weight <= 0.0 check)
-    // "a" has weight 1.0 + Inf = Inf (filtered out)
-    // "b" has weight 2.0 + inf = inf (filtered out)
-    // "c" has weight 3.0 (valid, should appear)
-    // "d" should be skipped (negative infinity)
-    let freq_rows: Vec<_> = got
-        .iter()
-        .filter(|r| r.len() > 1 && r[0] == "value")
-        .collect();
-
-    // Should have only 1 value ("c") - values with infinity weights are filtered out entirely
-    assert_eq!(
-        freq_rows.len(),
-        1,
-        "Should have 1 value, values with infinity weights are filtered out entirely"
-    );
-
-    let find_freq = |value: &str| -> Option<&Vec<String>> {
-        freq_rows.iter().find(|r| r[1] == value).map(|r| *r)
-    };
-
-    // Verify that values with infinity weights are filtered out
-    assert!(
-        find_freq("a").is_none(),
-        "Value 'a' should be filtered out (has infinity weight)"
-    );
-    assert!(
-        find_freq("b").is_none(),
-        "Value 'b' should be filtered out (has infinity weight)"
-    );
-
-    // Only "c" should appear (no infinity weights)
-    let c_freq = find_freq("c").expect("Should find 'c'");
-    assert_eq!(c_freq[2], "3", "Value 'c' should have weight 3");
-
-    // "d" should not appear (negative infinity skipped)
-    assert!(
-        find_freq("d").is_none(),
-        "Value 'd' should not appear (negative infinity skipped)"
-    );
+    let expected_values = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "c", "3", "50", "1"],
+        svec!["value", "b", "2", "33.33333", "2"],
+        svec!["value", "a", "1", "16.66667", "3"],
+    ];
+    assert_eq!(got, expected_values);
 }
 
 #[test]

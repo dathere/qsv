@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * build(deps): bump serde_json from 1.0.145 to 1.0.146 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3219
 * feat: `moarstats` moar, moar, moar stats! by @jqnatividad in https://github.com/dathere/qsv/pull/3220
 * build(deps): bump reqwest from 0.12.26 to 0.12.27 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3221
+* fix: `frequency` fix <ALL_UNIQUE> weighted behavior by @jqnatividad in https://github.com/dathere/qsv/pull/3224
+* fix: `frequency` fix "Other (0),0,0,0" should never happen by @jqnatividad in https://github.com/dathere/qsv/pull/3225
+* build(deps): bump reqwest from 0.12.27 to 0.12.28 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3226
+* feat: `moarstats` add shannon entropy to advanced statistics by @jqnatividad in https://github.com/dathere/qsv/pull/3227
 
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/11.0.2...12.0.0

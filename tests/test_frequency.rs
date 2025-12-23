@@ -2973,3 +2973,133 @@ fn frequency_weight_mixed_invalid_values() {
         );
     }
 }
+
+#[test]
+fn frequency_weight_no_other_zero() {
+    let wrk = Workdir::new("frequency_weight_no_other_zero");
+
+    // Create a dataset with multiple values and weights
+    // This test exercises issue #3223: "Other (0)" entries should not appear
+    // when --limit 0 is used and all values are included
+    // Use duplicate values to ensure it's not detected as all-unique
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "5.0"],
+        svec!["a", "2.0"], // duplicate to make it not all-unique
+        svec!["b", "3.0"],
+        svec!["c", "2.0"],
+        svec!["d", "1.0"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Test with --limit 0: all values should be included, no "Other" entry
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--unq-limit", "0"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+
+    wrk.assert_success(&mut cmd);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+
+    // Filter out header row
+    let freq_rows: Vec<_> = got
+        .iter()
+        .filter(|r| r.len() > 1 && r[0] == "value" && r[1] != "value")
+        .collect();
+
+    // Should have exactly 4 values (a, b, c, d), no "Other" entry
+    assert_eq!(
+        freq_rows.len(),
+        4,
+        "With --limit 0, all values should be included, no 'Other' entry"
+    );
+
+    // Verify no "Other" entry exists
+    let has_other = freq_rows
+        .iter()
+        .any(|r| r.len() > 1 && r[1].starts_with("Other"));
+    assert!(
+        !has_other,
+        "Should not have 'Other' entry when all values are included (--limit 0)"
+    );
+
+    // Verify all expected values are present
+    let find_freq = |value: &str| -> Option<&Vec<String>> {
+        freq_rows.iter().find(|r| r[1] == value).map(|r| *r)
+    };
+
+    assert!(find_freq("a").is_some(), "Should find 'a'");
+    assert!(find_freq("b").is_some(), "Should find 'b'");
+    assert!(find_freq("c").is_some(), "Should find 'c'");
+    assert!(find_freq("d").is_some(), "Should find 'd'");
+
+    // Verify weights are correct
+    // "a" has weight 5.0 + 2.0 = 7.0
+    let a_freq = find_freq("a").unwrap();
+    assert_eq!(a_freq[2], "7", "Value 'a' should have weight 7 (5.0 + 2.0)");
+
+    let b_freq = find_freq("b").unwrap();
+    assert_eq!(b_freq[2], "3", "Value 'b' should have weight 3");
+
+    let c_freq = find_freq("c").unwrap();
+    assert_eq!(c_freq[2], "2", "Value 'c' should have weight 2");
+
+    let d_freq = find_freq("d").unwrap();
+    assert_eq!(d_freq[2], "1", "Value 'd' should have weight 1");
+
+    // Test with --limit 2: should have "Other" entry with remaining values
+    let mut cmd_limit = wrk.command("frequency");
+    cmd_limit
+        .arg("in.csv")
+        .args(["--limit", "2"])
+        .args(["--select", "value"])
+        .args(["--weight", "weight"]);
+
+    let mut got_limit: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_limit);
+    got_limit.sort_by(|a, b| {
+        if a.len() < 2 || b.len() < 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            a[1].cmp(&b[1])
+        }
+    });
+
+    let freq_rows_limit: Vec<_> = got_limit
+        .iter()
+        .filter(|r| r.len() > 1 && r[0] == "value" && r[1] != "value")
+        .collect();
+
+    // Should have 2 top values + 1 "Other" entry = 3 total
+    assert_eq!(
+        freq_rows_limit.len(),
+        3,
+        "With --limit 2, should have 2 top values + 1 'Other' entry"
+    );
+
+    // Verify "Other" entry exists and has correct count
+    let other_entry = freq_rows_limit
+        .iter()
+        .find(|r| r.len() > 1 && r[1].starts_with("Other"))
+        .expect("Should have 'Other' entry when --limit is set");
+    assert!(
+        other_entry[1].contains("Other"),
+        "Should have 'Other' entry"
+    );
+    // Other should have weight 2.0 + 1.0 = 3.0 (c + d)
+    // Note: "a" has weight 7.0, "b" has 3.0, so top 2 are "a" and "b"
+    // Remaining: "c" (2.0) + "d" (1.0) = 3.0
+    assert_eq!(
+        other_entry[2], "3",
+        "Other entry should have weight 3 (c + d)"
+    );
+}

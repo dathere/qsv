@@ -1524,7 +1524,7 @@ impl Args {
                 1.0
             };
 
-            if weight.is_nan() || weight <= 0.0 {
+            if !weight.is_finite() || weight <= 0.0 {
                 continue;
             }
 

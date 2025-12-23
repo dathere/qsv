@@ -1964,9 +1964,11 @@ fn frequency_weight_zero_and_negative_ignored() {
 #[test]
 fn frequency_weight_with_limit() {
     let wrk = Workdir::new("frequency_weight_with_limit");
+    // Use duplicate values so it's not all-unique and can test limit behavior
     let rows = vec![
         svec!["value", "weight"],
         svec!["a", "10.0"],
+        svec!["a", "2.0"], // duplicate to make it not all-unique
         svec!["b", "5.0"],
         svec!["c", "3.0"],
         svec!["d", "2.0"],
@@ -1979,9 +1981,8 @@ fn frequency_weight_with_limit() {
         .args(["--weight", "weight"]);
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    // For weighted frequencies, even when all values are unique, show individual frequencies
-    // sorted by weight (descending by default), limited to top 2
-    // Sort by value for consistent comparison
+    // For weighted frequencies, show individual frequencies sorted by weight (descending by
+    // default), limited to top 2. Sort by value for consistent comparison.
     got.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
             std::cmp::Ordering::Equal
@@ -1989,11 +1990,13 @@ fn frequency_weight_with_limit() {
             a[1].cmp(&b[1])
         }
     });
+    // "a" has weight 10.0 + 2.0 = 12.0, "b" has 5.0, "c" has 3.0, "d" has 2.0
+    // Top 2: "a" (12.0) and "b" (5.0), rest go to "Other"
     let mut expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
-        svec!["value", "a", "10", "50", "1"],
-        svec!["value", "b", "5", "25", "2"],
-        svec!["value", "Other (2)", "5", "25", "0"],
+        svec!["value", "a", "12", "54.54545", "1"],
+        svec!["value", "b", "5", "22.72727", "2"],
+        svec!["value", "Other (2)", "5", "22.72727", "0"],
     ];
     expected.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
@@ -2008,9 +2011,11 @@ fn frequency_weight_with_limit() {
 #[test]
 fn frequency_weight_with_asc() {
     let wrk = Workdir::new("frequency_weight_with_asc");
+    // Use duplicate values so it's not all-unique and can test sorting behavior
     let rows = vec![
         svec!["value", "weight"],
         svec!["a", "10.0"],
+        svec!["a", "5.0"], // duplicate to make it not all-unique
         svec!["b", "5.0"],
         svec!["c", "3.0"],
     ];
@@ -2032,11 +2037,13 @@ fn frequency_weight_with_asc() {
             a[1].cmp(&b[1])
         }
     });
+    // "a" has weight 10.0 + 5.0 = 15.0, "b" has 5.0, "c" has 3.0
+    // With --asc, sorted ascending: c (3.0), b (5.0), a (15.0)
     let mut expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
-        svec!["value", "a", "10", "55.55556", "3"],
-        svec!["value", "b", "5", "27.77778", "2"],
-        svec!["value", "c", "3", "16.66667", "1"],
+        svec!["value", "c", "3", "13.04348", "1"],
+        svec!["value", "b", "5", "21.73913", "2"],
+        svec!["value", "a", "15", "65.21739", "3"],
     ];
     expected.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
@@ -2051,9 +2058,11 @@ fn frequency_weight_with_asc() {
 #[test]
 fn frequency_weight_with_rank_strategy() {
     let wrk = Workdir::new("frequency_weight_with_rank_strategy");
+    // Use duplicate values so it's not all-unique and can test rank strategy behavior
     let rows = vec![
         svec!["value", "weight"],
         svec!["a", "5.0"],
+        svec!["a", "2.0"], // duplicate to make it not all-unique
         svec!["b", "3.0"],
         svec!["c", "3.0"],
         svec!["d", "2.0"],
@@ -2075,13 +2084,13 @@ fn frequency_weight_with_rank_strategy() {
             a[1].cmp(&b[1])
         }
     });
-    // "a" rank 1, "b" and "c" tied at rank 2.5, "d" rank 4
+    // "a" has weight 5.0 + 2.0 = 7.0 (rank 1), "b" and "c" tied at 3.0 (rank 2.5), "d" rank 4
     let mut expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
-        svec!["value", "a", "5", "38.46154", "1"],
-        svec!["value", "b", "3", "23.07692", "2.5"],
-        svec!["value", "c", "3", "23.07692", "2.5"],
-        svec!["value", "d", "2", "15.38462", "4"],
+        svec!["value", "a", "7", "46.66667", "1"],
+        svec!["value", "b", "3", "20", "2.5"],
+        svec!["value", "c", "3", "20", "2.5"],
+        svec!["value", "d", "2", "13.33333", "4"],
     ];
     expected.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
@@ -2172,30 +2181,13 @@ fn frequency_weight_all_unique() {
         .args(["--select", "id"])
         .args(["--weight", "weight"]);
 
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    // For weighted frequencies, even when all values are unique, show individual frequencies
-    // sorted by weight (descending by default)
-    // Sort by value for consistent comparison
-    got.sort_by(|a, b| {
-        if a.len() < 2 || b.len() < 2 {
-            std::cmp::Ordering::Equal
-        } else {
-            a[1].cmp(&b[1])
-        }
-    });
-    let mut expected = vec![
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // For weighted frequencies with all-unique columns, show a single <ALL_UNIQUE> entry
+    // with the sum of all weights (2.0 + 3.0 + 1.0 = 6.0)
+    let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
-        svec!["id", "2", "3", "50", "1"],
-        svec!["id", "1", "2", "33.33333", "2"],
-        svec!["id", "3", "1", "16.66667", "3"],
+        svec!["id", "<ALL_UNIQUE>", "6", "100", "0"],
     ];
-    expected.sort_by(|a, b| {
-        if a.len() < 2 || b.len() < 2 {
-            std::cmp::Ordering::Equal
-        } else {
-            a[1].cmp(&b[1])
-        }
-    });
     assert_eq!(got, expected);
 }
 
@@ -2214,15 +2206,21 @@ fn frequency_weight_column_not_found() {
 #[test]
 fn frequency_weight_with_ignore_case() {
     let wrk = Workdir::new("frequency_weight_with_ignore_case");
+    // Use values that will combine with ignore-case, but add more rows to ensure
+    // it's not detected as all-unique. Need to disable stats cache to avoid
+    // it being detected as all-unique based on pre-computed stats.
     let rows = vec![
         svec!["value", "weight"],
         svec!["A", "2.0"],
         svec!["a", "3.0"],
         svec!["B", "1.0"],
+        svec!["b", "2.0"],
+        svec!["a", "1.0"], // Another "a" to ensure it's not all-unique
     ];
     wrk.create("in.csv", rows);
     let mut cmd = wrk.command("frequency");
-    cmd.arg("in.csv")
+    cmd.env("QSV_STATSCACHE_MODE", "none") // Disable stats cache to avoid all-unique detection
+        .arg("in.csv")
         .args(["--limit", "0"])
         .args(["--select", "value"])
         .args(["--weight", "weight"])
@@ -2237,11 +2235,12 @@ fn frequency_weight_with_ignore_case() {
             a[1].cmp(&b[1])
         }
     });
-    // With ignore-case, "A" and "a" should be combined: 2.0 + 3.0 = 5.0
+    // With ignore-case, "A" and "a" should be combined: 2.0 + 3.0 + 1.0 = 6.0
+    // "B" and "b" should be combined: 1.0 + 2.0 = 3.0
     let mut expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
-        svec!["value", "a", "5", "83.33333", "1"],
-        svec!["value", "b", "1", "16.66667", "2"],
+        svec!["value", "a", "6", "66.66667", "1"],
+        svec!["value", "b", "3", "33.33333", "2"],
     ];
     expected.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
@@ -2256,10 +2255,12 @@ fn frequency_weight_with_ignore_case() {
 #[test]
 fn frequency_weight_with_no_nulls() {
     let wrk = Workdir::new("frequency_weight_with_no_nulls");
+    // Use duplicate values so it's not all-unique and can test no-nulls behavior
     let rows = vec![
         svec!["value", "weight"],
         svec!["a", "2.0"],
-        svec!["", "3.0"], // empty value
+        svec!["a", "1.0"], // duplicate to make it not all-unique
+        svec!["", "3.0"],  // empty value
         svec!["b", "1.0"],
     ];
     wrk.create("in.csv", rows);
@@ -2280,10 +2281,11 @@ fn frequency_weight_with_no_nulls() {
         }
     });
     // Empty values should be excluded with --no-nulls
+    // "a" has weight 2.0 + 1.0 = 3.0, "b" has 1.0
     let mut expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
-        svec!["value", "a", "2", "66.66667", "1"],
-        svec!["value", "b", "1", "33.33333", "2"],
+        svec!["value", "a", "3", "75", "1"],
+        svec!["value", "b", "1", "25", "2"],
     ];
     expected.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
@@ -2454,34 +2456,37 @@ fn frequency_weight_with_unq_limit_all_unique() {
     }
     wrk.create("in.csv", rows);
 
-    // Test that --unq-limit is ignored when using --weight
-    // Even though all values are unique, weighted frequencies should show all values
-    // (or be limited by --limit, not --unq-limit)
+    // Test that with --weight and all-unique columns, show a single <ALL_UNIQUE> entry
+    // The sum of weights is 1+2+3+...+100 = 5050
     let mut cmd = wrk.command("frequency");
     cmd.arg("in.csv")
         .args(["--select", "id"])
         .args(["--weight", "weight"])
         .args(["--limit", "0"])
-        .args(["--unq-limit", "10"]); // This should be ignored
+        .args(["--unq-limit", "10"]); // This should be ignored for all-unique columns
 
     wrk.assert_success(&mut cmd);
 
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    got.sort_by(|a, b| {
-        if a.len() < 2 || b.len() < 2 {
-            std::cmp::Ordering::Equal
-        } else {
-            a[1].cmp(&b[1])
-        }
-    });
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
-    // With --limit 0 and --weight, all values should be shown (unq-limit ignored)
+    // With --weight and all-unique columns, should show a single <ALL_UNIQUE> entry
     let freq_rows: Vec<_> = got.iter().filter(|r| r.len() > 1 && r[0] == "id").collect();
-    // Should have all 100 unique values, not limited to 10
     assert_eq!(
         freq_rows.len(),
-        100,
-        "All unique values should be shown when using --weight, --unq-limit should be ignored"
+        1,
+        "All-unique columns with --weight should show a single <ALL_UNIQUE> entry"
+    );
+    assert_eq!(
+        freq_rows[0][1], "<ALL_UNIQUE>",
+        "Value should be <ALL_UNIQUE>"
+    );
+    assert_eq!(
+        freq_rows[0][2], "5050",
+        "Count should be sum of all weights (1+2+...+100 = 5050)"
+    );
+    assert_eq!(
+        freq_rows[0][4], "0",
+        "Rank should be 0 for all-unique entries"
     );
 }
 
@@ -2496,57 +2501,40 @@ fn frequency_weight_with_unq_limit_and_limit() {
     }
     wrk.create("in.csv", rows);
 
-    // Test that --limit works with --weight, but --unq-limit is ignored
+    // Test that with --weight and all-unique columns, show a single <ALL_UNIQUE> entry
+    // regardless of --limit or --unq-limit
     let mut cmd = wrk.command("frequency");
     cmd.arg("in.csv")
         .args(["--select", "id"])
         .args(["--weight", "weight"])
         .args(["--limit", "5"])
-        .args(["--unq-limit", "10"]); // This should be ignored, --limit should apply
+        .args(["--unq-limit", "10"]); // Both should be ignored for all-unique columns
 
     wrk.assert_success(&mut cmd);
 
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    got.sort_by(|a, b| {
-        if a.len() < 2 || b.len() < 2 {
-            std::cmp::Ordering::Equal
-        } else {
-            // Sort by count (weight) descending
-            let count_a: u64 = if a.len() > 2 {
-                a[2].parse().unwrap_or(0)
-            } else {
-                0
-            };
-            let count_b: u64 = if b.len() > 2 {
-                b[2].parse().unwrap_or(0)
-            } else {
-                0
-            };
-            count_b.cmp(&count_a)
-        }
-    });
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
-    // Filter out "Other" category if present
-    let freq_rows: Vec<_> = got
-        .iter()
-        .filter(|r| r.len() > 1 && r[0] == "id" && !r[1].starts_with("Other"))
-        .collect();
-    // Should be limited to 5 by --limit, not 10 by --unq-limit
+    // With --weight and all-unique columns, should show a single <ALL_UNIQUE> entry
+    let freq_rows: Vec<_> = got.iter().filter(|r| r.len() > 1 && r[0] == "id").collect();
+    // Should have a single <ALL_UNIQUE> entry, not limited by --limit
     assert_eq!(
         freq_rows.len(),
-        5,
-        "Should have exactly 5 individual values (limited by --limit, not --unq-limit)"
-    );
-
-    // Verify the top values are the ones with highest weights (id_1 through id_5 have weights
-    // 50-46)
-    assert_eq!(
-        freq_rows[0][1], "id_1",
-        "Top value should be id_1 (weight 50)"
+        1,
+        "All-unique columns with --weight should show a single <ALL_UNIQUE> entry regardless of \
+         --limit"
     );
     assert_eq!(
-        freq_rows[1][1], "id_2",
-        "Second value should be id_2 (weight 49)"
+        freq_rows[0][1], "<ALL_UNIQUE>",
+        "Value should be <ALL_UNIQUE>"
+    );
+    // Sum of weights: 1+2+3+...+50 = 1275
+    assert_eq!(
+        freq_rows[0][2], "1275",
+        "Count should be sum of all weights (1+2+...+50 = 1275)"
+    );
+    assert_eq!(
+        freq_rows[0][4], "0",
+        "Rank should be 0 for all-unique entries"
     );
 }
 
@@ -2612,7 +2600,8 @@ fn frequency_weight_unq_limit_vs_unweighted() {
         .collect();
 
     // Unweighted should be limited to 5 by --unq-limit
-    // Weighted should show all 20 values (--unq-limit ignored)
+    // Weighted should show a single <ALL_UNIQUE> entry (--unq-limit ignored, all-unique columns
+    // show summary)
     assert_eq!(
         freq_rows_unweighted.len(),
         5,
@@ -2620,8 +2609,17 @@ fn frequency_weight_unq_limit_vs_unweighted() {
     );
     assert_eq!(
         freq_rows_weighted.len(),
-        20,
-        "Weighted frequency should ignore --unq-limit and show all values"
+        1,
+        "Weighted frequency with all-unique columns should show a single <ALL_UNIQUE> entry"
+    );
+    assert_eq!(
+        freq_rows_weighted[0][1], "<ALL_UNIQUE>",
+        "Weighted frequency should show <ALL_UNIQUE> for all-unique columns"
+    );
+    // Sum of weights: 20 * 1.0 = 20.0
+    assert_eq!(
+        freq_rows_weighted[0][2], "20",
+        "Count should be sum of all weights (20 * 1.0 = 20)"
     );
 }
 
@@ -2785,57 +2783,15 @@ fn frequency_weight_infinity_values() {
 
     wrk.assert_success(&mut cmd);
 
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    got.sort_by(|a, b| {
-        if a.len() < 2 || b.len() < 2 {
-            std::cmp::Ordering::Equal
-        } else {
-            a[1].cmp(&b[1])
-        }
-    });
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
-    // Infinity weights get aggregated with valid weights, making the total infinity (non-finite)
-    // When displaying, non-finite weights are filtered out, so values with infinity weights
-    // disappear entirely Negative infinity should be skipped (weight <= 0.0 check)
-    // "a" has weight 1.0 + Inf = Inf (filtered out)
-    // "b" has weight 2.0 + inf = inf (filtered out)
-    // "c" has weight 3.0 (valid, should appear)
-    // "d" should be skipped (negative infinity)
-    let freq_rows: Vec<_> = got
-        .iter()
-        .filter(|r| r.len() > 1 && r[0] == "value")
-        .collect();
-
-    // Should have only 1 value ("c") - values with infinity weights are filtered out entirely
-    assert_eq!(
-        freq_rows.len(),
-        1,
-        "Should have 1 value, values with infinity weights are filtered out entirely"
-    );
-
-    let find_freq = |value: &str| -> Option<&Vec<String>> {
-        freq_rows.iter().find(|r| r[1] == value).map(|r| *r)
-    };
-
-    // Verify that values with infinity weights are filtered out
-    assert!(
-        find_freq("a").is_none(),
-        "Value 'a' should be filtered out (has infinity weight)"
-    );
-    assert!(
-        find_freq("b").is_none(),
-        "Value 'b' should be filtered out (has infinity weight)"
-    );
-
-    // Only "c" should appear (no infinity weights)
-    let c_freq = find_freq("c").expect("Should find 'c'");
-    assert_eq!(c_freq[2], "3", "Value 'c' should have weight 3");
-
-    // "d" should not appear (negative infinity skipped)
-    assert!(
-        find_freq("d").is_none(),
-        "Value 'd' should not appear (negative infinity skipped)"
-    );
+    let expected_values = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["value", "c", "3", "50", "1"],
+        svec!["value", "b", "2", "33.33333", "2"],
+        svec!["value", "a", "1", "16.66667", "3"],
+    ];
+    assert_eq!(got, expected_values);
 }
 
 #[test]
@@ -2843,10 +2799,12 @@ fn frequency_weight_extremely_large_values() {
     let wrk = Workdir::new("frequency_weight_extremely_large_values");
 
     // Create a dataset with extremely large weight values
+    // Use duplicate values so it's not all-unique and can test clamping behavior
     let huge_weight = format!("{}", u64::MAX as f64 * 2.0);
     let rows = vec![
         svec!["value", "weight"],
         svec!["a", "1.0"],
+        svec!["a", "1.0"],                  // duplicate to make it not all-unique
         svec!["b", "1e20"],                 // Very large but finite
         vec!["c".to_string(), huge_weight], // Larger than u64::MAX
         svec!["d", "1e308"],                // Near f64::MAX
@@ -2876,7 +2834,7 @@ fn frequency_weight_extremely_large_values() {
         .filter(|r| r.len() > 1 && r[0] == "value")
         .collect();
 
-    // All values should appear
+    // All values should appear (a, b, c, d)
     assert_eq!(freq_rows.len(), 4, "Should have 4 values");
 
     let find_freq = |value: &str| -> Option<&Vec<String>> {
@@ -2893,8 +2851,9 @@ fn frequency_weight_extremely_large_values() {
     );
 
     // Verify other values are correct
+    // "a" appears twice with weight 1.0 each, so total weight is 2.0
     let a_freq = find_freq("a").expect("Should find 'a'");
-    assert_eq!(a_freq[2], "1", "Value 'a' should have weight 1");
+    assert_eq!(a_freq[2], "2", "Value 'a' should have weight 2 (1.0 + 1.0)");
 }
 
 #[test]

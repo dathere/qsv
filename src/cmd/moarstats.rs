@@ -2417,16 +2417,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     new_values[*idx] = util::round_num(gini_val, args.flag_round);
                 }
             }
-
-            // Append new values to record (entropy already set above)
-            for val in new_values {
-                output_record.push_field(&val);
-            }
-        } else {
-            // For non-numeric types, append new values (entropy already set above)
-            for val in new_values {
-                output_record.push_field(&val);
-            }
+        }
+        // Append all new values to record
+        for val in new_values {
+            output_record.push_field(&val);
         }
 
         wtr.write_record(&output_record)?;

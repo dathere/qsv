@@ -140,6 +140,8 @@ describegpt options:
                            You can adjust the available columns with --stats-options.
                            "everything!" automatically sets --stats-options to compute "all" 51 supported stats.
                            The 6 addl cols are the mode/s & antimode/s stats with each having counts & occurrences.
+                           "moar" gets you even moar stats, with detailed outliers info.
+                           "moar!" gets you even moar with --advanced stats (Kurtosis, Gini Coefficient & Shannon Entropy)
                            [default: sort_order, sortiness, mean, median, mad, stddev, variance, cv]
 
                            TAG OPTIONS:
@@ -4484,8 +4486,11 @@ fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String
 
     let cols_to_include = if let Some(list_str) = &args.flag_addl_cols_list {
         // Parse comma-separated list
-        if list_str.trim().to_lowercase().starts_with("everything") {
+        if list_str.trim().to_lowercase().starts_with("everything")
+            || list_str.trim().to_lowercase().starts_with("moar")
+        {
             // note that we use starts_with("everything") to match "everything" and "everything!"
+            // the same is true for "moar" and "moar!"
             // Include all available columns except standard ones, preserving CSV order
             // IndexSet preserves insertion order, so we can iterate directly
             avail_cols
@@ -5044,19 +5049,47 @@ fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults>
     // get the delimiter of the input file
     let delimiter = config.get_delimiter();
 
-    // Run qsv commands to analyze data
-    print_status(
-        &format!(
-            "  Compiling Summary Statistics (options: '{}')...",
-            args.flag_stats_options
-        ),
-        None,
-    );
-    let stats_args_vec = args
-        .flag_stats_options
-        .split_whitespace()
-        .collect::<Vec<&str>>();
-    let (stats, _) = run_qsv_cmd("stats", &stats_args_vec, input_path, " ")?;
+    // Decide if we want to use moarstats or stats
+    let (stats, _) = match args
+        .flag_addl_cols_list
+        .as_deref()
+        .map(|s| s.trim().to_lowercase())
+    {
+        Some(ref addl) if addl == "moar" || addl == "moar!" => {
+            // Use moarstats when requested
+            let stats_cmd: Vec<&str> = if addl == "moar!" {
+                vec!["--advanced"] // also get gini coefficient, kurtosis, and shannon entropy
+            } else {
+                vec![]
+            };
+            print_status(
+                &format!("  Compiling Summary Statistics (options: '{addl}')..."),
+                None,
+            );
+            // moarstats writes output to <input>.stats.csv
+            run_qsv_cmd("moarstats", &stats_cmd, input_path, " ")?;
+            let stats_csv_path = Path::new(input_path).with_extension("stats.csv");
+            let stats = fs::read_to_string(&stats_csv_path).map_err(|e| {
+                CliError::Other(format!(
+                    "Failed to read moarstats output file '{}': {e}",
+                    stats_csv_path.display()
+                ))
+            })?;
+            (stats, String::new())
+        },
+        _ => {
+            // Use regular stats
+            print_status(
+                &format!(
+                    "  Compiling Summary Statistics (options: '{}')...",
+                    args.flag_stats_options
+                ),
+                None,
+            );
+            let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
+            run_qsv_cmd("stats", &stats_args_vec, input_path, " ")?
+        },
+    };
 
     print_status(
         &format!(

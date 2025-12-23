@@ -1037,8 +1037,11 @@ impl Args {
         }
 
         let other_weight = total_weight - count_sum;
-        if other_weight > 0.0 && self.flag_other_text != "<NONE>" {
-            let other_unique_count = unique_counts_len - counts_final.len();
+        let other_unique_count = unique_counts_len - counts_final.len();
+        // Only create Other entry if there are actually remaining unique values
+        // and the weight is positive. This prevents "Other (0)" entries when
+        // --limit 0 is used and all values are included.
+        if other_weight > 0.0 && other_unique_count > 0 && self.flag_other_text != "<NONE>" {
             counts_final.push((
                 format!(
                     "{} ({})",

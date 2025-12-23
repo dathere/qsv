@@ -1982,7 +1982,7 @@ fn frequency_weight_with_limit() {
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     // For weighted frequencies, show individual frequencies sorted by weight (descending by
-    // default), limited to top 2 Sort by value for consistent comparison
+    // default), limited to top 2. Sort by value for consistent comparison.
     got.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
             std::cmp::Ordering::Equal

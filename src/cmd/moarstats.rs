@@ -55,12 +55,17 @@ Currently computes the following 14 additional statistics:
     Values range from 0 (perfect equality) to 1 (maximum inequality).
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Gini_coefficient
-13. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
+13. Shannon Entropy: Measures the information content/uncertainty in the distribution.
+    Higher values indicate more diversity, lower values indicate more concentration.
+    Values range from 0 (all values identical) to log2(n) where n is the number of unique values.
+    Requires --advanced flag.
+    https://en.wikipedia.org/wiki/Entropy_(information_theory)
+14. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
     All values are included in the calculation, but extreme values are capped at thresholds.
     https://en.wikipedia.org/wiki/Winsorized_mean
     Also computes: winsorized_stddev, winsorized_variance, winsorized_cv, winsorized_range,
     and winsorized_stddev_ratio (winsorized_stddev / overall_stddev).
-14. Trimmed Mean: Excludes values outside thresholds, then computes mean.
+15. Trimmed Mean: Excludes values outside thresholds, then computes mean.
     Only values within thresholds are included in the calculation.
     https://en.wikipedia.org/wiki/Truncated_mean
     Also computes: trimmed_stddev, trimmed_variance, trimmed_cv, trimmed_range,
@@ -136,9 +141,14 @@ Usage:
     qsv moarstats --help
 
 moarstats options:
-    --advanced             Compute Gini coefficient and Kurtosis. These statistics
-                           require reading the original CSV file to collect all values
+    --advanced             Compute Gini coefficient, Kurtosis, and Shannon Entropy.
+                           These advanced statistics computations require reading the
+                           original CSV file to collect all values
                            for computation and are computationally expensive.
+                           Further, Shannon Entropy computation requires the frequency command
+                           to be run with --limit 0 to collect all frequencies.
+                           An index will be auto-created for the original CSV file
+                           if it doesn't already exist to enable parallel processing.
     --stats-options <arg>  Options to pass to the stats command if baseline stats need
                            to be generated. The options are passed as a single string
                            that will be split by whitespace.
@@ -521,6 +531,12 @@ struct OutlierStats {
 struct KurtosisGiniStats {
     kurtosis:         Option<f64>,
     gini_coefficient: Option<f64>,
+}
+
+/// Statistics for Shannon Entropy
+#[derive(Clone, Default)]
+struct EntropyStats {
+    entropy: Option<f64>,
 }
 
 /// Field information needed for kurtosis and Gini computation (with precalculated stats)
@@ -1052,6 +1068,106 @@ fn compute_all_kurtosis_gini_from_reader(
     Ok(all_stats)
 }
 
+/// Compute Shannon Entropy for all fields by calling the frequency command.
+/// Uses run_qsv_cmd to call frequency command with --limit 0 to get all frequencies,
+/// then parses the CSV output and computes entropy for each field.
+/// Returns a HashMap mapping field names to their entropy statistics
+fn compute_all_entropy(input_path: &Path) -> CliResult<HashMap<String, EntropyStats>> {
+    let input_path_str = input_path
+        .to_str()
+        .ok_or_else(|| CliError::Other(format!("Invalid input path: {}", input_path.display())))?;
+
+    // Call frequency command with --limit 0 to get all frequencies for all fields
+    let (freq_output, _) = util::run_qsv_cmd(
+        "frequency",
+        &["--limit", "0"],
+        input_path_str,
+        "Computing frequency distributions for entropy...",
+    )?;
+
+    // Parse the frequency CSV output
+    // Format: field,value,count,percentage,rank
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(freq_output.as_bytes());
+
+    let headers = rdr.headers()?.clone();
+    let field_idx = headers
+        .iter()
+        .position(|h| h == "field")
+        .ok_or_else(|| CliError::Other("Frequency CSV missing 'field' column".to_string()))?;
+    let value_idx = headers
+        .iter()
+        .position(|h| h == "value")
+        .ok_or_else(|| CliError::Other("Frequency CSV missing 'value' column".to_string()))?;
+    let count_idx = headers
+        .iter()
+        .position(|h| h == "count")
+        .ok_or_else(|| CliError::Other("Frequency CSV missing 'count' column".to_string()))?;
+
+    // Group frequencies by field name
+    let mut field_frequencies: HashMap<String, HashMap<String, u64>> = HashMap::new();
+    let mut field_totals: HashMap<String, u64> = HashMap::new();
+
+    for result in rdr.records() {
+        let record = result?;
+        let field_name = record.get(field_idx).unwrap_or("").to_string();
+        let value = record.get(value_idx).unwrap_or("").to_string();
+        let count: u64 = record
+            .get(count_idx)
+            .ok_or_else(|| CliError::Other("Missing count in frequency CSV".to_string()))?
+            .parse()
+            .map_err(|e| CliError::Other(format!("Failed to parse count: {e}")))?;
+
+        // Skip empty field names (shouldn't happen, but be safe)
+        if field_name.is_empty() {
+            continue;
+        }
+
+        // Initialize field entry if needed
+        field_frequencies
+            .entry(field_name.clone())
+            .or_default()
+            .insert(value, count);
+
+        // Accumulate total count for this field
+        *field_totals.entry(field_name).or_insert(0) += count;
+    }
+
+    // Compute entropy for each field
+    let mut entropy_stats: HashMap<String, EntropyStats> = HashMap::new();
+
+    #[allow(clippy::cast_precision_loss)]
+    for (field_name, frequencies) in field_frequencies {
+        let total_count = field_totals.get(&field_name).copied().unwrap_or(0);
+
+        if total_count == 0 {
+            entropy_stats.insert(field_name, EntropyStats { entropy: None });
+            continue;
+        }
+
+        // Compute Shannon Entropy: H(X) = -Σ p_i * log2(p_i)
+        let mut entropy = 0.0;
+        let total = total_count as f64;
+
+        for count in frequencies.values() {
+            if *count > 0 {
+                let p = *count as f64 / total;
+                entropy -= p * p.log2();
+            }
+        }
+
+        entropy_stats.insert(
+            field_name,
+            EntropyStats {
+                entropy: Some(entropy),
+            },
+        );
+    }
+
+    Ok(entropy_stats)
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let start_time = Instant::now();
     let args: Args = util::get_args(USAGE, argv)?;
@@ -1064,6 +1180,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let input_path = Path::new(&input_path_str);
     if !input_path.exists() {
         return fail_clierror!("Input file does not exist: {}", input_path.display());
+    }
+
+    // Auto-create index if --advanced is set and index doesn't exist
+    if args.flag_advanced {
+        let rconfig = Config::new(Some(&input_path_str));
+        let indexed_result = rconfig.indexed()?;
+
+        if indexed_result.is_none() && !rconfig.is_stdin() {
+            log::info!(
+                "--advanced option requires reading the entire CSV file. Auto-creating index to \
+                 enable parallel processing..."
+            );
+
+            match util::create_index_for_file(input_path, &rconfig) {
+                Ok(()) => {
+                    log::info!("Index created successfully for advanced statistics computation.");
+                },
+                Err(index_err) => {
+                    log::warn!("Failed to auto-create index: {index_err}");
+                    // Continue anyway - the code will fall back to sequential processing
+                },
+            }
+        }
     }
 
     // Determine stats CSV path
@@ -1262,6 +1401,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         new_column_indices.insert("gini_coefficient".to_string(), new_columns.len() - 1);
     }
 
+    // Add Shannon Entropy column (requires reading raw data, computed for all field types)
+    // Only add if --advanced flag is set
+    if args.flag_advanced && !column_exists("shannon_entropy") {
+        new_columns.push("shannon_entropy".to_string());
+        new_column_indices.insert("shannon_entropy".to_string(), new_columns.len() - 1);
+    }
+
     // Add outlier count columns if all fences are available
     // Only add if at least one outlier column doesn't exist (to avoid partial duplicates)
     if lower_outer_fence_idx.is_some()
@@ -1441,6 +1587,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "mad_stddev_ratio",
             "kurtosis",
             "gini_coefficient",
+            "shannon_entropy",
             "outliers_extreme_lower_cnt",
         ];
 
@@ -1685,6 +1832,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // Compute kurtosis and Gini (will use sequential processing for correctness)
         compute_all_kurtosis_gini(&fields_for_kurtosis_gini, input_path)?
+    };
+
+    // Compute Shannon Entropy for all fields
+    let entropy_stats = if new_column_indices.contains_key("shannon_entropy") {
+        compute_all_entropy(input_path)?
+    } else {
+        HashMap::new()
     };
 
     // Prepare output
@@ -2229,6 +2383,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 {
                     new_values[*idx] = util::round_num(gini_val, args.flag_round);
                 }
+            }
+
+            // Write Shannon Entropy from pre-computed results
+            if new_column_indices.contains_key("shannon_entropy")
+                && !field_name.is_empty()
+                && let Some(stats) = entropy_stats.get(field_name)
+                && let Some(entropy_val) = stats.entropy
+                && let Some(idx) = new_column_indices.get("shannon_entropy")
+            {
+                new_values[*idx] = util::round_num(entropy_val, args.flag_round);
             }
 
             // Append new values to record

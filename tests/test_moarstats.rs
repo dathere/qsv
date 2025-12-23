@@ -2018,6 +2018,10 @@ fn moarstats_without_advanced_flag() {
         get_column_index(&headers, "gini_coefficient").is_none(),
         "gini_coefficient column should NOT exist without --advanced flag"
     );
+    assert!(
+        get_column_index(&headers, "shannon_entropy").is_none(),
+        "shannon_entropy column should NOT exist without --advanced flag"
+    );
 
     // Verify other columns still exist
     assert!(
@@ -2060,6 +2064,10 @@ fn moarstats_with_advanced_flag() {
     assert!(
         get_column_index(&headers, "gini_coefficient").is_some(),
         "gini_coefficient column should exist with --advanced flag"
+    );
+    assert!(
+        get_column_index(&headers, "shannon_entropy").is_some(),
+        "shannon_entropy column should exist with --advanced flag"
     );
 
     // Verify values are computed for at least one numeric field
@@ -2163,6 +2171,10 @@ fn moarstats_advanced_flag_does_not_affect_other_stats() {
     assert!(
         get_column_index(&headers, "gini_coefficient").is_some(),
         "gini_coefficient should exist with --advanced"
+    );
+    assert!(
+        get_column_index(&headers, "shannon_entropy").is_some(),
+        "shannon_entropy should exist with --advanced"
     );
 }
 
@@ -2998,6 +3010,531 @@ fn moarstats_trimmed_winsorized_range() {
                             "winsorized_range_25pct should be non-negative"
                         );
                         assert!(range.is_finite(), "winsorized_range_25pct should be finite");
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_shannon_entropy_basic() {
+    let wrk = Workdir::new("moarstats_shannon_entropy");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with --advanced flag
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--advanced").arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Verify shannon_entropy column exists
+    let stats_content = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+
+    assert!(
+        get_column_index(&headers, "shannon_entropy").is_some(),
+        "shannon_entropy column should exist"
+    );
+
+    // Verify values are computed for various field types
+    let mut found_entropy_value = false;
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let _field_name = get_field_value(&record, field_idx).unwrap();
+        let _field_type = get_field_value(&record, type_idx).unwrap();
+
+        // Shannon entropy works for all field types
+        if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
+            let entropy_val = get_field_value(&record, entropy_idx);
+            if let Some(val_str) = entropy_val {
+                if !val_str.is_empty() {
+                    found_entropy_value = true;
+                    let entropy: f64 = val_str.parse().unwrap();
+                    // Entropy should be non-negative
+                    assert!(
+                        entropy >= 0.0,
+                        "shannon_entropy should be non-negative, got: {}",
+                        entropy
+                    );
+                    assert!(
+                        entropy.is_finite(),
+                        "shannon_entropy should be finite, got: {}",
+                        entropy
+                    );
+                }
+            }
+        }
+
+        if found_entropy_value {
+            break;
+        }
+    }
+
+    assert!(
+        found_entropy_value,
+        "Should find shannon_entropy value for at least one field"
+    );
+}
+
+#[test]
+fn moarstats_shannon_entropy_constant_values() {
+    let wrk = Workdir::new("moarstats_shannon_entropy_constant");
+
+    // Create CSV with constant values (entropy should be 0)
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "5"],
+            svec!["test", "5"],
+            svec!["test", "5"],
+            svec!["test", "5"],
+            svec!["test", "5"],
+        ],
+    );
+
+    // Generate stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv").arg("--advanced");
+    wrk.assert_success(&mut cmd);
+
+    // Verify entropy is 0 for constant values
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            // With constant values, entropy should be 0 (all values identical)
+            if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
+                let entropy_val = get_field_value(&record, entropy_idx);
+                if let Some(val_str) = entropy_val {
+                    if !val_str.is_empty() {
+                        let entropy: f64 = val_str.parse().unwrap();
+                        // Entropy should be approximately 0 for constant values
+                        assert!(
+                            entropy.abs() < 0.001,
+                            "shannon_entropy should be approximately 0 for constant values, got: \
+                             {}",
+                            entropy
+                        );
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_shannon_entropy_all_unique() {
+    let wrk = Workdir::new("moarstats_shannon_entropy_unique");
+
+    // Create CSV with all unique values (maximum entropy)
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "1"],
+            svec!["test", "2"],
+            svec!["test", "3"],
+            svec!["test", "4"],
+            svec!["test", "5"],
+            svec!["test", "6"],
+            svec!["test", "7"],
+            svec!["test", "8"],
+        ],
+    );
+
+    // Generate stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv").arg("--advanced");
+    wrk.assert_success(&mut cmd);
+
+    // Verify entropy is at maximum (log2(8) = 3.0)
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
+                let entropy_val = get_field_value(&record, entropy_idx);
+                if let Some(val_str) = entropy_val {
+                    if !val_str.is_empty() {
+                        let entropy: f64 = val_str.parse().unwrap();
+                        let max_entropy = 8.0_f64.log2(); // log2(8) = 3.0
+                        // Entropy should be close to maximum (all unique values)
+                        assert!(
+                            entropy >= max_entropy * 0.99,
+                            "shannon_entropy should be close to maximum for all unique values, \
+                             expected ~{}, got: {}",
+                            max_entropy,
+                            entropy
+                        );
+                        assert!(
+                            entropy <= max_entropy,
+                            "shannon_entropy cannot exceed log2(n), expected <= {}, got: {}",
+                            max_entropy,
+                            entropy
+                        );
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_shannon_entropy_string_fields() {
+    let wrk = Workdir::new("moarstats_shannon_entropy_strings");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "text_value"],
+            svec!["test", "apple"],
+            svec!["test", "banana"],
+            svec!["test", "cherry"],
+            svec!["test", "apple"],
+            svec!["test", "banana"],
+        ],
+    );
+
+    // Generate stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv").arg("--advanced");
+    wrk.assert_success(&mut cmd);
+
+    // Verify string fields have entropy computed
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap();
+
+        if field_name == "test" && field_type == "String" {
+            // String fields should have entropy computed
+            if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
+                let entropy_val = get_field_value(&record, entropy_idx);
+                if let Some(val_str) = entropy_val {
+                    if !val_str.is_empty() {
+                        let entropy: f64 = val_str.parse().unwrap();
+                        // With 3 unique values out of 5 total, entropy should be between 0 and
+                        // log2(3)
+                        assert!(
+                            entropy >= 0.0 && entropy <= 3.0_f64.log2(),
+                            "shannon_entropy for string fields should be in valid range, got: {}",
+                            entropy
+                        );
+                        assert!(entropy.is_finite(), "shannon_entropy should be finite");
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_shannon_entropy_mixed_distribution() {
+    let wrk = Workdir::new("moarstats_shannon_entropy_mixed");
+
+    // Create CSV with mixed distribution (some values repeated, some unique)
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "value"],
+            svec!["test", "A"],
+            svec!["test", "A"],
+            svec!["test", "A"],
+            svec!["test", "B"],
+            svec!["test", "B"],
+            svec!["test", "C"],
+        ],
+    );
+
+    // Generate stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv").arg("--advanced");
+    wrk.assert_success(&mut cmd);
+
+    // Verify entropy is computed correctly for mixed distribution
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
+                let entropy_val = get_field_value(&record, entropy_idx);
+                if let Some(val_str) = entropy_val {
+                    if !val_str.is_empty() {
+                        let entropy: f64 = val_str.parse().unwrap();
+                        // With 3 unique values (A appears 3 times, B appears 2 times, C appears 1
+                        // time) Entropy should be between 0 and log2(3) ≈
+                        // 1.585 But since distribution is not uniform, it
+                        // should be less than maximum
+                        let max_entropy = 3.0_f64.log2();
+                        assert!(
+                            entropy >= 0.0 && entropy <= max_entropy,
+                            "shannon_entropy should be in valid range [0, log2(3)], got: {}",
+                            entropy
+                        );
+                        // With non-uniform distribution, entropy should be less than maximum
+                        assert!(
+                            entropy < max_entropy,
+                            "shannon_entropy should be less than maximum for non-uniform \
+                             distribution, got: {}",
+                            entropy
+                        );
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_shannon_entropy_multiple_fields() {
+    let wrk = Workdir::new("moarstats_shannon_entropy_multiple");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with --advanced flag
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--advanced").arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Verify that multiple fields get entropy statistics
+    let stats_content = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+    let entropy_idx = get_column_index(&headers, "shannon_entropy");
+
+    let mut fields_with_entropy = 0;
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let _field_type = get_field_value(&record, type_idx).unwrap();
+
+        // Entropy works for all field types
+        if let Some(entropy_idx) = entropy_idx {
+            let entropy_val = get_field_value(&record, entropy_idx);
+            if entropy_val.is_some() && !entropy_val.as_ref().unwrap().is_empty() {
+                fields_with_entropy += 1;
+            }
+        }
+    }
+
+    assert!(
+        fields_with_entropy > 1,
+        "Multiple fields should have shannon_entropy statistics"
+    );
+}
+
+#[test]
+fn moarstats_shannon_entropy_insufficient_data() {
+    let wrk = Workdir::new("moarstats_shannon_entropy_insufficient");
+
+    // Create CSV with only one value
+    wrk.create(
+        "test.csv",
+        vec![svec!["field", "value"], svec!["test", "5"]],
+    );
+
+    // Generate stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with --advanced flag
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--advanced").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify column exists but value may be empty or 0
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    assert!(
+        get_column_index(&headers, "shannon_entropy").is_some(),
+        "shannon_entropy column should exist"
+    );
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "test" {
+            // With only one value, entropy should be 0 (all values identical)
+            if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
+                let entropy_val = get_field_value(&record, entropy_idx);
+                if let Some(val_str) = entropy_val {
+                    if !val_str.is_empty() {
+                        let entropy: f64 = val_str.parse().unwrap();
+                        // Single value means entropy = 0
+                        assert!(
+                            entropy.abs() < 0.001,
+                            "shannon_entropy should be 0 for single value, got: {}",
+                            entropy
+                        );
+                    }
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_shannon_entropy_boolean_fields() {
+    let wrk = Workdir::new("moarstats_shannon_entropy_boolean");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["field", "bool_value"],
+            svec!["test", "true"],
+            svec!["test", "false"],
+            svec!["test", "true"],
+            svec!["test", "false"],
+            svec!["test", "true"],
+        ],
+    );
+
+    // Generate stats with boolean inference
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-boolean")
+        .arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv").arg("--advanced");
+    wrk.assert_success(&mut cmd);
+
+    // Verify boolean fields have entropy computed
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let type_idx = get_column_index(&headers, "type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap();
+
+        if field_name == "test" && field_type == "Boolean" {
+            // Boolean fields should have entropy computed
+            if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
+                let entropy_val = get_field_value(&record, entropy_idx);
+                if let Some(val_str) = entropy_val {
+                    if !val_str.is_empty() {
+                        let entropy: f64 = val_str.parse().unwrap();
+                        // With 2 unique values (true/false), max entropy is log2(2) = 1.0
+                        // With 3 true and 2 false, entropy should be less than 1.0
+                        assert!(
+                            entropy >= 0.0 && entropy <= 1.0,
+                            "shannon_entropy for boolean fields should be in [0, 1], got: {}",
+                            entropy
+                        );
+                        assert!(entropy.is_finite(), "shannon_entropy should be finite");
                     }
                 }
             }

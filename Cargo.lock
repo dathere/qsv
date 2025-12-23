@@ -2408,9 +2408,9 @@ checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
 name = "fancy-regex"
-version = "0.16.2"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "998b056554fbe42e03ae0e152895cd1a7e1002aec800fdc6635d20270260c46f"
+checksum = "72cf461f865c862bb7dc573f643dd6a2b6842f7c30b07882b56bd148cc2761b8"
 dependencies = [
  "bit-set",
  "regex-automata",
@@ -3657,7 +3657,7 @@ dependencies = [
 [[package]]
 name = "jsonschema"
 version = "0.37.4"
-source = "git+https://github.com/Stranger6667/jsonschema?rev=de9416b#de9416bba52519ec2af0235cfb3c8813bc64d2e9"
+source = "git+https://github.com/Stranger6667/jsonschema?rev=14bc0dc#14bc0dcd400bd0530eb1be87f7fa51d744dbbcdc"
 dependencies = [
  "ahash 0.8.12",
  "bytecount",
@@ -6435,7 +6435,7 @@ dependencies = [
 [[package]]
 name = "referencing"
 version = "0.37.4"
-source = "git+https://github.com/Stranger6667/jsonschema?rev=de9416b#de9416bba52519ec2af0235cfb3c8813bc64d2e9"
+source = "git+https://github.com/Stranger6667/jsonschema?rev=14bc0dc#14bc0dcd400bd0530eb1be87f7fa51d744dbbcdc"
 dependencies = [
  "ahash 0.8.12",
  "fluent-uri",

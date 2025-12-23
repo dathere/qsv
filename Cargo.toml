@@ -321,7 +321,7 @@ csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }
 
 # use upstream of jsonschema with unreleased email validation features now that our PR is merged
-jsonschema = { git = "https://github.com/Stranger6667/jsonschema", rev = "de9416b" }
+jsonschema = { git = "https://github.com/Stranger6667/jsonschema", rev = "14bc0dc" }
 
 # use upstream of mimalloc with unreleased fixes
 mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "7daf67f", optional = true }

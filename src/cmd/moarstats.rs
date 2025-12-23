@@ -159,7 +159,6 @@ Common options:
 "#;
 
 use std::{
-    collections::HashMap,
     fs,
     path::{Path, PathBuf},
     time::Instant,
@@ -167,6 +166,7 @@ use std::{
 
 use crossbeam_channel;
 use csv::{ReaderBuilder, StringRecord, WriterBuilder};
+use foldhash::{HashMap, HashMapExt};
 use indexmap::IndexMap;
 use qsv_dateparser::parse_with_preference;
 use serde::Deserialize;

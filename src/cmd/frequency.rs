@@ -730,18 +730,31 @@ impl Args {
     /// Process weighted frequencies
     fn process_frequencies_weighted(
         &self,
-        _all_unique_header: bool, /* Indicates the column has all-unique values (e.g., an ID
-                                   * column). Ignored for weighted frequencies, which always
-                                   * show individual values regardless. */
+        all_unique_header: bool, /* Indicates the column has all-unique values (e.g., an ID
+                                  * column). For all-unique columns, show a single <ALL_UNIQUE>
+                                  * entry with the sum of all weights. */
         abs_dec_places: u32,
         _row_count: u64,
         weighted_map: &HashMap<Vec<u8>, f64>,
         processed_frequencies: &mut Vec<ProcessedFrequency>,
     ) {
-        // For weighted frequencies, always show individual values even if all-unique
-        // because the weights themselves provide meaningful information that would be
-        // lost if we only showed the sum. Users can see which values have higher/lower
-        // weights and rank them accordingly.
+        if all_unique_header {
+            // For all-unique headers with weighted frequencies, create a single entry
+            // with the sum of all weights
+            let total_weight: f64 = weighted_map.values().sum();
+            #[allow(clippy::cast_precision_loss)]
+            let count = total_weight.clamp(0.0, u64::MAX as f64).round() as u64;
+            processed_frequencies.push(ProcessedFrequency {
+                value: ALL_UNIQUE_TEXT.get().unwrap().clone(),
+                count,
+                percentage: 100.0,
+                formatted_percentage: self.format_percentage(100.0, abs_dec_places),
+                rank: 0.0, // Rank 0 for all-unique headers
+            });
+            return;
+        }
+
+        // For non-all-unique columns, process individual weighted values
         let mut counts_to_process = self.counts_weighted(weighted_map);
         if !self.flag_other_sorted
             && counts_to_process.first().is_some_and(|(value, _, _, _)| {

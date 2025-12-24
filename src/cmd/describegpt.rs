@@ -4886,13 +4886,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Check if addl-cols-list is set to "everything" or "everything!"
     if let Some(list_str) = &args.flag_addl_cols_list {
-        // as a convenience, if addl-cols-list starts with "everything", set addl-cols to true
-        if list_str.trim().to_lowercase().starts_with("everything") {
+        // as a convenience, if addl-cols-list starts with "everything" or "moar"
+        // set addl-cols to true
+        let addl_cols_list = list_str.trim().to_lowercase();
+        if addl_cols_list.starts_with("everything") || addl_cols_list.starts_with("moar") {
             args.flag_addl_cols = true;
         }
 
         // further, if addl-cols-list is set to "everything!" (exclamation point)
         // set stats-options to use --everything to force stats to compute "all" supported stats
+        // we don't need to do this for "moar" as it will automatically compute all supported stats
         if list_str.trim().eq_ignore_ascii_case("everything!") {
             args.flag_stats_options =
                 "--infer-dates --infer-boolean --everything --force --stats-jsonl".to_string();

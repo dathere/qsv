@@ -40,8 +40,8 @@ Major enhancements to AI-powered data description capabilities:
   - Automatic language detection in prompts
   - SQL comments also generated in requested language
   - beyond language/dialect, this option can also be used to describe a dataset
-    using a persona (e.g. Christopher Walken, Silly Santa after taking a
-    Data Science Course, Spock, etc.)
+    using a persona (e.g. Yoda, Spock, Valley Girl, Silly Santa after taking a
+    Data Science Course, etc.)
     
 - **Advanced Features**:
   - `--addl-columns` option with detailed attribution and system metadata
@@ -98,10 +98,34 @@ Comprehensive weighted statistics implementation across multiple commands:
   - Column selection support using select syntax
   - Streaming implementation per GitHub Copilot review suggestions
 
+### diff Command
+
+- upgraded csv-diff from 0.1.1 to faster 0.1.2, improving performance
+  in optimal cases by up to 25% 🚀
+
+### lens Command
+- Aligned `--no-streaming-stdin` behavior with csvlens upstream
+
 ## 📊 Output Format Changes
 
 ### schema Command
 - Updated `$schema` from Draft 7 to **JSON Schema Draft 2020-12**
+
+## ⚡ Performance Improvements
+
+### suite-wide
+- replaced already fast ryu float to string conversion crate crate with even
+  faster zmij crate (https://vitaut.net/posts/2025/faster-dtoa/)
+
+### stats Command
+- Optimized Stats struct memory layout
+- Eliminated redundant sorting operations
+- Removed unnecessary clone operations
+- Better handling of real-world data (assumes no infinity values)
+
+### frequency Command
+- Microoptimizations for faster frequency computation
+- Optimized top_n/bottom_n retrieval
 
 ## 🐛 Bug Fixes
 
@@ -110,13 +134,10 @@ Comprehensive weighted statistics implementation across multiple commands:
 - Fixed issue where "Other (0),0,0,0" could appear in output
 - Proper handling of non-finite weights (automatically skipped)
 
-### lens Command
-- Aligned `--no-streaming-stdin` behavior with csvlens upstream
-
 ## 🏗️ Infrastructure & Quality
 
 ### Testing
-- Test suite expanded from 2,060 to **2,260 tests**
+- Test suite expanded from 2,060 to **2,380 tests**
 - Comprehensive test coverage for all new features
 - Weighted statistics thoroughly tested
 - Advanced moarstats options validated
@@ -156,26 +177,8 @@ Comprehensive weighted statistics implementation across multiple commands:
    - Validation tools must support JSON Schema Draft 2020-12
 
 2. **stats command**: Output now includes percentile label prefixes
-   - Example: "p50" instead of just the value
+   - Example: "p50: 10" of the 50th percentile value instead of just the value "10"
    - May affect parsing scripts that expect raw numbers
-
-### New Features to Explore
-
-1. **Try moarstats**: Run `qsv moarstats --help` to explore advanced statistics
-   - Use `--advanced` flag for computationally intensive measures
-   
-2. **Weighted Analysis**: Add `--weight` to stats and frequency commands
-   - Perfect for analyzing survey data or weighted samples
-   
-3. **Multilingual describegpt**: Use `--language Spanish` or any other language
-   - Try a dialect like "Franglais" or a personality like 
-     "Angry Data Science Professor berating his students"
-   
-4. **TOON Format**: Try `--format TOON` or `--toon` for more readable output
-   - Especially useful for hierarchical data
-
-5. **Percentile Shortcuts**: Use `--percentile-list deciles` or `quintiles`
-   - Quick way to get standard percentile distributions
 
 ---
 
@@ -215,7 +218,9 @@ Comprehensive weighted statistics implementation across multiple commands:
 * deps: cached use upstream fork with redis updated to 1
 * deps: jsonschema use latest upstream
 * deps: polars use latest upstream
+* deps: replaced ryu with faster zmij binary to decimal floating point library
 * build(deps): bump actions/upload-artifact from 5 to 6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3189
+* build(deps): bump csv-diff from 0.1.1 to 0.1.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3228
 * build(deps): bump governor from 0.10.2 to 0.10.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3196
 * build(deps): bump itoa from 1.0.15 to 1.0.16 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3214
 * build(deps): bump minijinja from 2.13.0 to 2.14.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3185
@@ -227,6 +232,8 @@ Comprehensive weighted statistics implementation across multiple commands:
 * build(deps): bump reqwest from 0.12.26 to 0.12.27 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3221
 * build(deps): bump reqwest from 0.12.27 to 0.12.28 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3226
 * build(deps): bump serde_json from 1.0.145 to 1.0.146 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3219
+* build(deps): bump serde_json from 1.0.146 to 1.0.147 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3229
+* build(deps): bump tempfile from 3.23.0 to 3.24.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3230
 * build(deps): bump toml from 0.9.8 to 0.9.9+spec-1.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3199
 * bumped several indirect dependencies
 * applied select clippy & Codacy suggestions

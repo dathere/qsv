@@ -6,9 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [12.0.0] - 2025-12-23
+## [12.0.0] - 2025-12-24
 
-qsv 12.0.0 is a major release introducing the powerful new `moarstats` command, comprehensive weighted statistics support, enhanced AI-powered data description with multilingual capabilities, and the TOON (Tree Object Notation) format.
+🎄 Stuff your virtual stocking and jingle your data bells - qsv 12.0.0 slides down the chimney packed fuller than Santa’s sleigh! Unwrap delightful surprises like the shiny new `moarstats` command, gift-wrapped weighted statistics, and AI-powered FAIR metadata inferencing now speaking in multiple languages (no elf translation required). As the star on top, meet TOON - the [brand new LLM-optimized, token-efficient format](https://openapi.com/blog/what-the-toon-format-is-token-oriented-object-notation) - ready to sleigh your AI projects all through 2026. Ho-ho-hold my data, this update’s a festive feast!
 
 ## 🌟 Major Features
 
@@ -40,12 +40,13 @@ Major enhancements to AI-powered data description capabilities:
   - Automatic language detection in prompts
   - SQL comments also generated in requested language
   - beyond language/dialect, this option can also be used to describe a dataset
-    using a persona (e.g. Yoda, Spock, Valley Girl, Silly Santa after taking a
-    Data Science Course, etc.)
+    using a persona (e.g. Yoda, Spock, Valley Girl, Christopher Walken,
+    Silly Santa after taking a Data Science Course, etc.)
     
 - **Advanced Features**:
   - `--addl-columns` option with detailed attribution and system metadata
-  - `--export-prompt <file>` to save rendered prompts
+  - `--export-prompt <file>` to save the default prompts to the specified file.
+    This file can then be tailored and used with the `--prompt-file <file>` option.
   - Iterative, session-based SQL RAG with `--prompt` option
   - Sampling in prompt mode for better SQL generation
   - Lookup table and CKAN support for controlled vocabularies

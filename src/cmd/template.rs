@@ -872,7 +872,7 @@ fn register_lookup(
             let key = if let Ok(num) = key_trim.parse::<i64>() {
                 itoa::Buffer::new().format(num).to_owned()
             } else if let Ok(num) = key_trim.parse::<f64>() {
-                ryu::Buffer::new().format(num).to_owned()
+                zmij::Buffer::new().format(num).to_owned()
             } else {
                 key_trim.to_owned()
             };
@@ -951,7 +951,7 @@ fn lookup_filter(
     let case_sensitive = case_sensitive.unwrap_or(true);
 
     let mut itoa_buf = itoa::Buffer::new();
-    let mut ryu_buf = ryu::Buffer::new();
+    let mut zmij_buf = zmij::Buffer::new();
     let value = match value.kind() {
         ValueKind::String => value.as_str().unwrap(),
         ValueKind::Number => {
@@ -962,7 +962,7 @@ fn lookup_filter(
                 match value.clone().try_into() {
                     Ok(num) => {
                         float_num = num;
-                        ryu_buf.format(float_num)
+                        zmij_buf.format(float_num)
                     },
                     _ => {
                         unreachable!("Kind::Number should be integer or float")

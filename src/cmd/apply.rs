@@ -1250,17 +1250,17 @@ fn apply_operations(
                     .clone_into(cell);
             },
             Operations::Simdln => {
-                ryu::Buffer::new()
+                zmij::Buffer::new()
                     .format_finite(normalized_damerau_levenshtein(cell, comparand))
                     .clone_into(cell);
             },
             Operations::Simjw => {
-                ryu::Buffer::new()
+                zmij::Buffer::new()
                     .format_finite(jaro_winkler(cell, comparand))
                     .clone_into(cell);
             },
             Operations::Simsd => {
-                ryu::Buffer::new()
+                zmij::Buffer::new()
                     .format_finite(sorensen_dice(cell, comparand))
                     .clone_into(cell);
             },
@@ -1286,7 +1286,7 @@ fn apply_operations(
                 // safety: we set SENTIMENT_ANALYZER in validate_operations()
                 let sentiment_analyzer = SENTIMENT_ANALYZER.get().unwrap();
                 let sentiment_scores = sentiment_analyzer.polarity_scores(cell);
-                ryu::Buffer::new()
+                zmij::Buffer::new()
                     .format_finite(*sentiment_scores.get("compound").unwrap_or(&0.0))
                     .clone_into(cell);
             },

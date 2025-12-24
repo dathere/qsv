@@ -1044,7 +1044,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             let mut cell_formula;
             let mut itoa_buf = itoa::Buffer::new();
-            let mut ryu_buf = ryu::Buffer::new();
+            let mut zmij_buf = zmij::Buffer::new();
 
             for (row_idx, row) in chunk {
                 for (col_idx, cell) in row.iter().enumerate() {
@@ -1053,7 +1053,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         Data::String(s) => record.push_field(s),
                         Data::Int(i) => record.push_field(itoa_buf.format(*i)),
                         Data::Float(float_val) => {
-                            // push the ryu-formatted float value if its
+                            // push the zmij-formatted float value if its
                             // not an integer or the candidate
                             // integer is too big or too small to be an i64
                             #[allow(clippy::cast_precision_loss)]
@@ -1061,9 +1061,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 || *float_val > i64::MAX as f64
                                 || *float_val < i64::MIN as f64
                             {
-                                record.push_field(ryu_buf.format_finite(*float_val));
+                                record.push_field(zmij_buf.format_finite(*float_val));
                             } else {
-                                // its an i64 integer. We can't use ryu to format it, because it
+                                // its an i64 integer. We can't use zmij to format it, because it
                                 // will be formatted as a float (have a ".0"). So we use itoa.
                                 record.push_field(itoa_buf.format(*float_val as i64));
                             }

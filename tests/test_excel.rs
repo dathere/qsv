@@ -1619,7 +1619,7 @@ fn excel_large_floats() {
     cmd.arg(xls_file);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    let expected = vec![svec!["A"], svec!["9.22337203685478e19"]];
+    let expected = vec![svec!["A"], svec!["9.22337203685478e+19"]];
 
     assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);

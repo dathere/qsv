@@ -5913,7 +5913,6 @@ dependencies = [
  "reqwest",
  "rfd",
  "rust_decimal",
- "ryu",
  "sanitize-filename",
  "self_update",
  "semver",
@@ -5943,6 +5942,7 @@ dependencies = [
  "whatlang",
  "xxhash-rust",
  "zip 6.0.0",
+ "zmij",
 ]
 
 [[package]]

@@ -1550,7 +1550,7 @@ fn format_value(value: Value) -> String {
     match value {
         Value::Number(num) => {
             if let Some(f) = num.as_f64() {
-                ryu::Buffer::new().format_finite(f).to_string()
+                zmij::Buffer::new().format_finite(f).to_string()
             } else if let Some(i) = num.as_i64() {
                 itoa::Buffer::new().format(i).to_string()
             } else {

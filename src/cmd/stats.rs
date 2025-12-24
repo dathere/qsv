@@ -3162,7 +3162,7 @@ impl Stats {
                     // safety: we know that f is a valid f64
                     // so there will always be a fraction part, even if it's 0
                     unsafe {
-                        ryu::Buffer::new()
+                        zmij::Buffer::new()
                             .format_finite(float_val)
                             .split('.')
                             .next_back()
@@ -4396,7 +4396,7 @@ impl TypedSum {
             },
             TFloat => Some((
                 self.stotlen,
-                ryu::Buffer::new()
+                zmij::Buffer::new()
                     .format(self.float.unwrap_or(0.0))
                     .to_owned(),
             )),
@@ -4563,8 +4563,8 @@ impl TypedMinMax {
                     self.floats.sortiness(),
                 ) {
                     Some((
-                        ryu::Buffer::new().format(*min).to_owned(),
-                        ryu::Buffer::new().format(*max).to_owned(),
+                        zmij::Buffer::new().format(*min).to_owned(),
+                        zmij::Buffer::new().format(*max).to_owned(),
                         util::round_num(*max - *min, round_places),
                         sort_order.to_string(),
                         util::round_num(sortiness, round_places),

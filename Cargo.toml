@@ -241,7 +241,6 @@ reqwest = { version = "0.12", features = [
 ], default-features = false }
 rfd = { version = "0.16", optional = true }
 rust_decimal = { version = "1.39", default-features = false }
-ryu = "1"
 sanitize-filename = { version = "0.6", optional = true }
 simd-json = "0.17"
 self_update = { version = "0.42", features = [
@@ -276,6 +275,7 @@ url = "2.5"
 whatlang = { version = "0.18", optional = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zip = "6"
+zmij = "0.1"
 
 [dev-dependencies]
 actix-governor = "0.10"

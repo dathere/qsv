@@ -13,17 +13,17 @@ qsv 12.0.0 is a major release introducing the powerful new `moarstats` command, 
 ## 🌟 Major Features
 
 ### NEW: moarstats Command
-A powerful new command for advanced statistical analysis, providing statistics beyond what the `stats` command offers:
+A powerful new command for "[moar](https://www.dictionary.com/culture/slang/moar)" advanced statistical analysis, providing statistics beyond what the `stats` command offers:
 
 - **Comprehensive Statistics**: Over 50+ advanced statistical measures including:
   - Detailed outlier analysis (count, sum, average)
   - Winsorized and trimmed means (5%, 10%, 20%, 25%)
-  - Multiple dispersion measures (IQR, quartile coefficient of dispersion)
+  - Multiple dispersion measures (IQR to range ratio, quartile coefficient of dispersion)
   - Distribution statistics (skewness, multiple kurtosis measures)
   
 - **Advanced Option** (`--advanced`): Access computationally intensive statistics:
   - Gini coefficient for inequality measurement
-  - Excess, Pearson, and sample kurtosis
+  - Excess Kurtosis to measure "tailedness" of the distribution
   - Shannon Entropy for data diversity analysis
   
 - **Available on all binary variants** for universal access
@@ -32,20 +32,17 @@ A powerful new command for advanced statistical analysis, providing statistics b
 Major enhancements to AI-powered data description capabilities:
 
 - **⛩️ Minijinja Template Engine Integration**: 
-  - Custom prompt templating with full minijinja and minijinja-contrib filters
+  - Custom prompt templating with full Minijinja and Minijinja-contrib filters
   - More powerful and flexible prompt customization
   
 - **Multilingual Support**:
   - `--language` option for generating descriptions in any language/dialect
   - Automatic language detection in prompts
   - SQL comments also generated in requested language
-  - beyond language/dialect, this option can also be used to describe a persona
-    (e.g. Christopher Walken, Santa Claus after taking a Data Science Course, Spock)
-  
-- **Enhanced Format Support**:
-  - Added `--format TOON` for Tree Object Notation output
-  - More robust JSON parsing (handles LLM variations)
-  
+  - beyond language/dialect, this option can also be used to describe a dataset
+    using a persona (e.g. Christopher Walken, Silly Santa after taking a
+    Data Science Course, Spock, etc.)
+    
 - **Advanced Features**:
   - `--addl-columns` option with detailed attribution and system metadata
   - `--export-prompt <file>` to save rendered prompts
@@ -67,11 +64,11 @@ Comprehensive weighted statistics implementation across multiple commands:
   
 - **frequency Command** (`--weight <column>`):
   - Weighted frequency distributions
-  - Proper handling of weighted "Other" category
+  - Proper handling of weighted "Other" and "ALL UNIQUE" category
   - Non-finite weights automatically skipped
 
-### TOON Format Support
-New Tree Object Notation format for human-readable structured output:
+### Token Object Oriented Notation ([TOON](https://toonformat.dev)) Format Support
+  - A compact, human-readable encoding of the JSON data model for LLM prompts
 
 - **Commands Supporting TOON**:
   - `describegpt --format TOON`

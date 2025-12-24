@@ -265,7 +265,7 @@ strsim = { version = "0.11", optional = true }
 strum = { version = "0.27", features = ["phf"] }
 strum_macros = "0.27"
 sysinfo = "0.37"
-tempfile = "3.23"
+tempfile = "3.24"
 thousands = { version = "0.2", optional = true }
 textwrap = "0.16"
 threadpool = "1.8"

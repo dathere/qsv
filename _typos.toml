@@ -30,4 +30,5 @@ extend-exclude = [
     "*.ssv",
     "*.tab",
     "nyc311-describegpt*.*",
+    "docs/describegpt/*",
 ]

@@ -3560,6 +3560,11 @@ fn run_inference_options(
 
     print_status("LLM inference/s completed.", Some(llm_start.elapsed()));
 
+    // if args.flag_output is set, display the output to the console
+    if let Some(output) = &args.flag_output {
+        print_status(&format!("Output written to {output}"), None);
+    }
+
     if let Some(sql_results) = &args.flag_sql_results
         && has_sql_query
     {

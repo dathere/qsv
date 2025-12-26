@@ -302,3 +302,112 @@ That is fine.
 
 TokenUsage { prompt: 9207, completion: 620, total: 9827, elapsed: 20282 }
 ---
+# Dictionary
+| Name | Type | Label | Description | Min | Max | Cardinality | Enumeration | Null Count | Examples |
+|------|------|-------|-------------|-----|-----|-------------|-------------|------------|----------|
+| **_id** | Integer | Unique ID | The system‑generated key that uniquely identifies each record. It’s a massive integer with a 1:1 mapping to the dataset rows. | 38703919 | 39183846 | 479,928 |  | 0 | <ALL_UNIQUE> |
+| **PARID** | String | Property Tag (Par ID) | A unique alphanumeric identifier for each property address record. The top 5 values appear only a few dozen times, and most of the remaining 99% are in the “Other” bucket. | 0001C00037000A00 | 9946X83943000000 | 302,643 |  | 0 | Other (302,633) [479,750]<br>0431B00017000000 [23]<br>0027D00263000000 [20]<br>0027D00272000000 [20]<br>0027D00286000000 [20] |
+| **FULL_ADDRESS** | String | Full Address | The complete street address (house number, street name, suffix, city, state, zip). About 2.8 % of rows start with a ‘0’, and the top 10 addresses each show up under 120 times. | 0 , BRADDOCK, PA 15104 | FORBES AVE, PITTSBURGH, PA 15219 | 278,190 |  | 0 | Other (278,180) [479,006]<br>0 SONIE DR, SEWICKLEY, PA… [113]<br>0 COAL, ELIZABETH, PA 150… [111]<br>0 HUNTER ST, PITTSBURGH, … [98]<br>0 PERRYSVILLE AVE, PITTSB… [98] |
+| **PROPERTYHOUSENUM** | Integer | House # | The numeric part of the address (e.g., 112). Zero is by far the most common house number, accounting for ~8 % of records; the next highest numbers range from 100‑115. | 0 | 65015 | 10,012 |  | 3 | Other (10,002) [428,653]<br>0 [38,055]<br>112 [1,615]<br>100 [1,595]<br>110 [1,522] |
+| **PROPERTYFRACTION** | String | Address Fraction | Fractional or lettered address components (e.g., ‘1/2’, ‘A’). Most rows are null (~98 %), with a handful of common fractions like 1/2 and letters A‑C. |   |  S | 2,803 |  | 0 | (NULL) [468,512]<br>Other (2,793) [9,695]<br>1/2 [853]<br>A [405]<br>B [294] |
+| **PROPERTYADDRESSDIR** | String | Street Direction | North/South/East/West indicator. Nearly all records contain one of the four directions, with North being the most frequent (~96 %). | E | W | 5 | (NULL)<br>E<br>N<br>S<br>W | 459,948 | (NULL) [459,948]<br>N [5,466]<br>S [5,201]<br>E [5,053]<br>W [4,260] |
+| **PROPERTYADDRESSSTREET** | String | Street Name | The main part of the street (e.g., ‘WASHINGTON’, ‘5TH’). The top ten streets cover ~4 % of the data, while over 96 % fall into the “Other” bucket. | 0 OHIO RIVER BLVD | ZUZU | 9,571 |  | 13 | Other (9,538) [462,225]<br>WASHINGTON [2,606]<br>5TH [2,557]<br>HIGHLAND [1,777]<br>PENN [1,602] |
+| **PROPERTYADDRESSSUF** | String | Street Suffix | The suffix like St, Ave, Rd, etc. ‘ST’ leads (~26 %) followed by ‘DR’ and ‘AVE’. The remaining ~1 % are grouped as “Other.” | ALY | XING | 48 |  | 1,985 | ST [122,764]<br>DR [113,069]<br>AVE [105,232]<br>RD [71,902]<br>LN [15,471] |
+| **PROPERTYADDRESSUNITDESC** | String | Unit Type | Describes the type of unit (e.g., UNIT, APT, STE). Most entries are null (~98 %), with ‘UNIT’ being the most common non‑null value. | # | UNIT | 11 |  | 468,267 | (NULL) [468,267]<br>UNIT [10,580]<br>REAR [421]<br>APT [391]<br>STE [132] |
+| **PROPERTYUNITNO** | String | Unit # | The number or letter for a specific unit within a building. Only about 2 % of records have a unit number; otherwise it’s null. | 01 | ` | 1,334 |  | 468,641 | (NULL) [468,641]<br>Other (1,324) [10,002]<br>1 [195]<br>2 [170]<br>3 [166] |
+| **PROPERTYCITY** | String | City | Name of the city where the property is located. Pittsburgh dominates (~54 %) followed by smaller cities like Coroopolis and Mc Keesport. | 15216 | WITAKER | 106 |  | 1 | PITTSBURGH [257,608]<br>Other (89) [123,311]<br>CORAOPOLIS [16,497]<br>MC KEESPORT [15,307]<br>GIBSONIA [11,048] |
+| **PROPERTYSTATE** | String | State | Two‑letter state code – always ‘PA’ for every record, so it’s a constant field. | PA | PA | 1 | PA | 0 | <ALL_UNIQUE> |
+| **PROPERTYZIP** | Integer | Zip Code | Five‑digit ZIP. The most frequent are 15108 and 15237; about 74 % of records fall into the “Other” bucket. | 15003 | 16229 | 124 |  | 1 | Other (114) [355,692]<br>15108 [16,509]<br>15237 [15,435]<br>15235 [14,585]<br>15212 [13,301] |
+| **SCHOOLCODE** | String | School Code | Numeric code for the school district. ‘47’ is the top value (~25 %), with a large portion (48 %) classified as “Other.” | 01 | 50 | 46 |  | 0 | Other (36) [228,000]<br>47 [117,977]<br>27 [19,685]<br>09 [19,227]<br>30 [17,635] |
+| **SCHOOLDESC** | String | School Name | Name of the school or district. The top entries are ‘Pittsburgh’, ‘North Allegheny’, etc., while most other values are grouped under “Other.” | Allegheny Valley | Woodland Hills | 46 |  | 0 | Other (36) [228,000]<br>Pittsburgh [117,977]<br>North Allegheny [19,685]<br>Woodland Hills [19,227]<br>Penn Hills Twp [17,635] |
+| **MUNICODE** | Integer | Municipal Code | Code for the local municipality. 934 is the most common (~3.7 %), and the majority of records (77 %) are in the “Other” group. | 101 | 953 | 175 |  | 0 | Other (165) [369,793]<br>934 [17,635]<br>119 [12,648]<br>940 [12,003]<br>926 [10,359] |
+| **MUNIDESC** | String | Municipality Description | Human‑readable name for the municipality, matching the code. ‘Penn Hills’ is the most frequent, with a large portion labeled as “Other.” | 10th Ward -  McKEESPORT | Wilmerding   | 175 |  | 0 | Other (165) [369,793]<br>Penn Hills [17,635]<br>19th Ward - PITTSBURGH [12,648]<br>Ross [12,003]<br>Mt.Lebanon [10,359] |
+| **RECORDDATE** | Date | Record Date | The date when the property record was entered into the system. Most dates cluster between 2012‑2025; about 99 % are real dates and only ~0.3 % are null. | 0212-08-01 | 2028-09-28 | 3,821 |  | 1,262 | Other (3,811) [474,687]<br>(NULL) [1,262]<br>2012-10-26 [587]<br>2013-04-26 [552]<br>2012-01-11 [488] |
+| **SALEDATE** | Date | Sale Date | When the property sale actually occurred. Dates range from 2012 to 2025, with a heavy concentration around the mid‑2010s. | 2012-01-01 | 2025-12-13 | 4,888 |  | 0 | Other (4,878) [475,391]<br>2012-10-26 [586]<br>2016-04-29 [584]<br>2013-04-26 [559]<br>2012-01-11 [490] |
+| **PRICE** | Integer | Sale Price | The monetary value of the transaction. The top price is $148 752 900, but the most common values are small integers (1, 0, 10) due to data quirks; about 71 % fall into an “Other” bucket. | 0 | 148752900 | 37,872 |  | 3,020 | Other (37,862) [340,479]<br>1 [98,344]<br>0 [15,508]<br>10 [6,763]<br>150000 [3,140] |
+| **DEEDBOOK** | String | Deed Book | Identifier for the book in which the deed is recorded. The most common books are ‘TR18’, ‘0’, and ‘TR13’. Over 98 % of records belong to one of these or the “Other” group. |  14795 | `17274 | 5,814 |  | 570 | Other (5,800) [473,060]<br>TR18 [1,239]<br>0 [1,063]<br>TR13 [938]<br>00 [798] |
+| **DEEDPAGE** | String | Deed Page | Page number within the deed book. The majority of pages are between 1‑12; a large chunk (97 %) is grouped as “Other.” |  120 | W | 2,133 |  | 582 | Other (2,115) [465,578]<br>1 [5,174]<br>6 [1,485]<br>7 [1,112]<br>0 [1,002] |
+| **SALECODE** | String | Sale Code | Code that classifies the type of sale transaction. ‘3’ and ‘0’ dominate (~40 % combined), followed by codes like H, 14, 36. | 0 | Z | 47 |  | 0 | 3 [97,932]<br>0 [91,484]<br>H [63,750]<br>Other (37) [54,274]<br>14 [42,089] |
+| **SALEDESC** | String | Sale Description | Human‑readable explanation of the sale code (e.g., LOVE AND AFFECTION SALE). The top description is ‘LOVE AND AFFECTION SALE’ (~20 %). | BANK/FINANCIAL INSTITUTION | VALID SALE | 27 |  | 0 | LOVE AND AFFECTION SALE [97,932]<br>VALID SALE [91,484]<br>MULTI-PARCEL SALE [63,750]<br>Other (17) [45,680]<br>TIME ON MARKET (INSUFF/EX… [42,089] |
+| **INSTRTYP** | String | Instruction Type | Abbreviation for how the deed instruction was processed. ‘DE’ accounts for ~58 %, followed by ‘SW’, ‘GW’, etc. | AD | WD | 31 |  | 0 | DE [278,804]<br>SW [113,966]<br>GW [23,662]<br>QC [18,068]<br>SD [15,521] |
+| **INSTRTYPDESC** | String | Instruction Description | Full name of the instruction type (e.g., DEED, SPECIAL WARRANTY). Matches the codes in INSTRTYP; ‘DEED’ is the most frequent (~58 %). | ADMIN DEED | WILL BOOK | 31 |  | 0 | DEED [278,804]<br>SPECIAL WARRANTY [113,966]<br>GENERAL WARRANTY [23,662]<br>QUIT CLAIM [18,068]<br>SHERIFF DEED [15,521] |
+
+*Attribution: Generated by qsv v12.0.0 describegpt
+Command line: qsv describegpt --all allegheny_county_property_sale_transactions.csv --language Gen Z Slang -o GenZSlang.md --fresh
+Prompt file: Default v7.0.0
+Model: openai/gpt-oss-20b
+LLM API URL: http://localhost:1234/v1
+Language: 
+Timestamp: 2025-12-26T00:09:21.722743+00:00
+
+WARNING: Label and Description generated by an LLM and may contain inaccuracies. Verify before using!
+*
+
+## REASONING
+
+We need to generate Gen Z slang labels and descriptions for all fields in dataset, using summary statistics and frequency distribution to understand context.
+
+Need JSON where each field name is key with label and description. Use Gen Z slang; so labels like "ID", "Par ID", "Full Address" but maybe "Street Address"? We need to be creative but maintain clarity.
+
+We should use the summary stats to inform meaning: e.g., _id is unique identifier, PARID likely property address record id? FULL_ADDRESS etc. Use frequency distribution to note common values; we can mention that many addresses start with '0', and some fields have many nulls. Provide description referencing cardinality.
+
+Use Gen Z slang like "lit", "on point", "dope", "real talk". But keep professional enough?
+
+We need 26 objects in JSON. Ensure keys match field names exactly: _id, PARID, FULL_ADDRESS etc.
+
+Let's craft labels:
+
+- _id: "Uniq ID" or "Unique Key"
+- PARID: "Par ID (Property Address Record ID)" maybe slang: "Par ID (the property's unique tag)"
+- FULL_ADDRESS: "Full Address" but slang: "Street Full"
+- PROPERTYHOUSENUM: "House #"
+- PROPERTYFRACTION: "Fraction Part"
+- PROPERTYADDRESSDIR: "Dir. (N/S/E/W)"
+- PROPERTYADDRESSSTREET: "Street Name"
+- PROPERTYADDRESSSUF: "Address Suffix (St, Ave etc.)"
+- PROPERTYADDRESSUNITDESC: "Unit Type"
+- PROPERTYUNITNO: "Unit #"
+- PROPERTYCITY: "City"
+- PROPERTYSTATE: "State"
+- PROPERTYZIP: "Zip Code"
+- SCHOOLCODE: "School Code"
+- SCHOOLDESC: "School Name"
+- MUNICODE: "Municipal Code"
+- MUNIDESC: "Municipality Description"
+- RECORDDATE: "Record Date"
+- SALEDATE: "Sale Date"
+- PRICE: "Sale Price"
+- DEEDBOOK: "Deed Book"
+- DEEDPAGE: "Deed Page"
+- SALECODE: "Sale Code"
+- SALEDESC: "Sale Desc"
+- INSTRTYP: "Instr Type"
+- INSTRTYPDESC: "Instr Type Desc"
+
+But must be Gen Z slang. Maybe labels like:
+
+"_id": "ID (Uniq ID)"
+
+"PARID": "Par ID (Property Tag)"
+
+"FULL_ADDRESS": "Full Address (Street Lit)"
+
+But they want human-friendly labels. Use some slang but not too obscure.
+
+Descriptions: mention field type, typical values, uniqueness, cardinality.
+
+Use summary stats: e.g., for FULL_ADDRESS, note that many start with 0, top addresses etc.
+
+Also use frequency distribution: mention most common values like 0 SONIE DR etc.
+
+But keep concise.
+
+Let's craft.
+
+We'll produce JSON. Ensure no trailing commas.
+
+Ok generate.
+## TOKEN USAGE
+
+TokenUsage { prompt: 7883, completion: 2139, total: 10022, elapsed: 31934 }
+---

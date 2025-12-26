@@ -6,9 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [12.0.0] - 2025-12-24
+## [12.0.0] - 2025-12-24 🎄
 
-🎄 Stuff your virtual stocking and jingle your data bells - qsv 12.0.0 slides down the chimney packed fuller than Santa’s sleigh! Unwrap delightful surprises like the shiny new `moarstats` command, gift-wrapped weighted statistics, and AI-powered FAIR metadata inferencing now speaking in multiple languages (no elf translation required). As the star on top, meet TOON - the [brand new LLM-optimized, token-efficient format](https://openapi.com/blog/what-the-toon-format-is-token-oriented-object-notation) - ready to sleigh your AI projects all through 2026. Ho-ho-hold my data, this update’s a festive feast!
+Stuff your virtual stocking and jingle your data bells - qsv 12.0.0 slides down the chimney packed fuller than Santa’s sleigh! Unwrap delightful surprises like the shiny new `moarstats` command, gift-wrapped weighted statistics, and AI-powered FAIR metadata inferencing now speaking in multiple languages ([no elf translation required](https://github.com/dathere/qsv/blob/master/docs/describegpt/silly_opendata_elves.md#description)). As the star on top, meet TOON - the [brand new LLM-optimized, token-efficient format](https://openapi.com/blog/what-the-toon-format-is-token-oriented-object-notation) - ready to sleigh your AI projects all through 2026. Ho-ho-hold my data, this update’s a festive feast!
+
+Special thanks to @kulnor for advocating, brainstorming & testing many of the new features below!
 
 ## 🌟 Major Features
 
@@ -37,11 +39,13 @@ Major enhancements to AI-powered data description capabilities:
   
 - **Multilingual Support**:
   - `--language` option for generating descriptions in any language/dialect
-  - Automatic language detection in prompts
+     - Languages: [Spanish](https://github.com/dathere/qsv/blob/master/docs/describegpt/Spanish.md), [Portugese](https://github.com/dathere/qsv/blob/master/docs/describegpt/Portugese.md), [Italian](https://github.com/dathere/qsv/blob/master/docs/describegpt/Italian.md), [Japanese](https://github.com/dathere/qsv/blob/master/docs/describegpt/Japanese.md), [Hindi](https://github.com/dathere/qsv/blob/master/docs/describegpt/Hindi.md), [Arabic](https://github.com/dathere/qsv/blob/master/docs/describegpt/Arabic.md)
+     - Dialects: [Franglais](https://github.com/dathere/qsv/blob/master/docs/describegpt/Franglais.md), [Taglish](https://github.com/dathere/qsv/blob/master/docs/describegpt/Taglish.md), [Pennsylvania Dutch](https://github.com/dathere/qsv/blob/master/docs/describegpt/PennsylvaniaDutch.md)
+     - Constructed Languages: [Klingon](https://github.com/dathere/qsv/blob/master/docs/describegpt/Klingon.md), [High Valyrian](https://github.com/dathere/qsv/blob/master/docs/describegpt/HighValyrian.md), [Quenya](https://github.com/dathere/qsv/blob/master/docs/describegpt/Quenya.md)
+     - Personalities: [Snoop Dog](https://github.com/dathere/qsv/blob/master/docs/describegpt/SnoopDog.md), [Hans Rosling](https://github.com/dathere/qsv/blob/master/docs/describegpt/HansRosling.md), [Christopher Walken](https://github.com/dathere/qsv/blob/master/docs/describegpt/ChristopherWalken.md)
+     - Personas: [Gen Z Slang](https://github.com/dathere/qsv/blob/master/docs/describegpt/GenZSlang.md), [Silly, Emoji-loving Santa](https://github.com/dathere/qsv/blob/master/docs/describegpt/EmojiSanta.md)
+  - Automatic language detection in ` --prompt` mode
   - SQL comments also generated in requested language
-  - beyond language/dialect, this option can also be used to describe a dataset
-    using a persona (e.g. Yoda, Spock, Valley Girl, Christopher Walken,
-    Silly Santa after taking a Data Science Course, etc.)
     
 - **Advanced Features**:
   - `--addl-columns` option with detailed attribution and system metadata
@@ -150,7 +154,7 @@ Comprehensive weighted statistics implementation across multiple commands:
 - Better error handling and edge case management
 
 ### FAIR Principles
-- Added **CITATION.cff** (by rzmk) for academic citation
+- Added **CITATION.cff** (by @rzmk) for academic citation
 - Added **Zenodo DOI badge** for dataset citation
 - Enhanced FAIRification of qsv as a research tool
 

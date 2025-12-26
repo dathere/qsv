@@ -1110,8 +1110,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 == current_stats_args.flag_prefer_dmy
                             && existing_stats_args_json.flag_no_headers
                                 == current_stats_args.flag_no_headers
-                            && existing_stats_args_json.flag_dates_whitelist
-                                == current_stats_args.flag_dates_whitelist
                             && existing_stats_args_json.flag_delimiter
                                 == current_stats_args.flag_delimiter
                             && existing_stats_args_json.flag_nulls == current_stats_args.flag_nulls

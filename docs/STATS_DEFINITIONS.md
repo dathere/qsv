@@ -1,6 +1,38 @@
-# QSV Stats Definitions
+# qsv Stats Definitions
 
-This document enumerates all the statistics produced by the `qsv stats` command, sourced from `src/cmd/stats.rs`.
+
+## Table of Contents
+
+- [stats](#stats)
+  - [Streaming vs Non-Streaming Statistics](#streaming-vs-non-streaming-statistics)
+  - [Weighted Statistics](#weighted-statistics)
+  - [Date/DateTime Statistics](#datedatetime-statistics)
+  - [Metadata & Type Inference](#metadata--type-inference)
+  - [Descriptive Statistics (Numerical & General)](#descriptive-statistics-numerical--general)
+  - [Central Tendency & Dispersion](#central-tendency--dispersion-streaming)
+  - [String Statistics](#string-statistics)
+  - [Quality & Distribution](#quality--distribution)
+  - [Median & Quartiles (Non-Streaming)](#median--quartiles-non-streaming)
+  - [Cardinality & Modes (Non-Streaming)](#cardinality--modes-non-streaming)
+  - [Percentiles (Non-Streaming)](#percentiles-non-streaming)
+  - [Dataset Statistics (File Level)](#dataset-statistics-file-level)
+  - [Whitespace Visualization](#whitespace-visualization)
+  - [Performance & Caching](#performance--caching)
+- [moarstats](#moarstats)
+  - [Derived Statistics](#derived-statistics)
+  - [Advanced Statistics](#advanced-statistics)
+  - [Robust Statistics (Winsorized & Trimmed Means)](#robust-statistics-winsorized--trimmed-means)
+  - [Outlier Statistics](#outlier-statistics)
+    - [Outlier Counts](#outlier-counts)
+    - [Outlier Descriptive Statistics](#outlier-descriptive-statistics)
+    - [Outlier Variance/Spread Statistics](#outlier-variancespread-statistics)
+    - [Outlier Impact Statistics](#outlier-impact-statistics)
+    - [Outlier Boundary Statistics](#outlier-boundary-statistics)
+
+---
+
+## `stats`
+Here are all the statistics produced by the `qsv stats` command, sourced from `src/cmd/stats.rs`.
 
 Each statistic is categorized by its relevant section, with its identifier (column name), summary, computation method, and level (File or Variable).
 
@@ -10,7 +42,7 @@ Each statistic is categorized by its relevant section, with its identifier (colu
 
 The command supports various caching options to improve performance on subsequent runs. See `--stats-jsonl` and `--cache-threshold` options for details.
 
-## Streaming vs Non-Streaming Statistics
+### Streaming vs Non-Streaming Statistics
 
 **Streaming Statistics** (computed in constant memory, always included by default):
 - Metadata: `field`, `type`, `is_ascii`
@@ -28,7 +60,7 @@ The command supports various caching options to improve performance on subsequen
 
 Non-streaming statistics use memory-aware chunking for large files, dynamically calculating chunk size based on available memory and record sampling.
 
-## Weighted Statistics
+### Weighted Statistics
 
 When the `--weight <column>` option is specified, all statistics are computed using weighted algorithms. The weight column must be numeric and is automatically excluded from statistics computation. Missing or non-numeric weights default to 1.0. Zero and negative weights are ignored and do not contribute to the statistics.
 
@@ -42,7 +74,7 @@ Weighted statistics use weighted versions of the standard algorithms:
 
 The output filename will be `<FILESTEM>.stats.weighted.csv` to distinguish from unweighted statistics.
 
-## Date/DateTime Statistics
+### Date/DateTime Statistics
 
 Date and DateTime statistics are only computed when `--infer-dates` is enabled. Date inference is an expensive operation that matches date candidates against 19 possible date formats with multiple variants.
 
@@ -63,7 +95,7 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 - Use `--dates-whitelist all` to inspect all fields (may cause false positives with numeric data like Unix epoch timestamps)
 - Use `--prefer-dmy` to parse dates in day/month/year format instead of month/day/year
 
-## Metadata & Type Inference
+### Metadata & Type Inference
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
@@ -83,7 +115,7 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 - Patterns are case-insensitive and support prefix matching with `*` wildcards
 - **Example:** With the default patterns `"t*:f*,y*:n*"`, a column is inferred as Boolean only when it contains exactly two distinct values—one matching a "true" pattern (for example, "true", "truthy", "Truth") and one matching a "false" pattern (for example, "false", "f", "no"); any additional distinct values (such as "falsified" or "falseness") would increase the cardinality above 2 and therefore prevent Boolean inference.
 
-## Descriptive Statistics (Numerical & General)
+### Descriptive Statistics (Numerical & General)
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
@@ -94,7 +126,7 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 | `sort_order` | Variable | Sorting status of the column. | Checked during scan. Returns "ASCENDING", "DESCENDING", or "UNSORTED". |
 | `sortiness` | Variable | Measure of how sorted the column is. | Returns a score between -1.0 and 1.0: 1.0 indicates perfectly ascending order, -1.0 indicates perfectly descending order, values in between indicate the general tendency towards ascending or descending order, and 0.0 indicates either no clear ordering or empty/single-element collections. |
 
-## Central Tendency & Dispersion (Streaming)
+### Central Tendency & Dispersion (Streaming)
 
 Computed using Welford's online algorithm for single-pass accuracy. When `--weight <column>` is specified, weighted versions are computed using weighted Welford's algorithm (West, 1979).
 
@@ -108,7 +140,7 @@ Computed using Welford's online algorithm for single-pass accuracy. When `--weig
 | `variance` | Variable | Variance (sample). | Square of standard deviation. Weighted: `S_n / (W_n - 1)` where S_n is sum of squared differences. |
 | `cv` | Variable | Coefficient of Variation. | `(stddev / mean) * 100`. Returns NaN when mean is 0. |
 
-## String Statistics
+### String Statistics
 
 > **NOTE:** Length statistics are **only computed for columns with a String data type**. Lengths are **byte lengths, not character lengths**, as some UTF-8 characters take more than one byte.
 
@@ -122,7 +154,7 @@ Computed using Welford's online algorithm for single-pass accuracy. When `--weig
 | `variance_length` | Variable | Variance of string lengths. | Square of `stddev_length`. Shows `*OVERFLOW*` when `sum_length` overflowed. |
 | `cv_length` | Variable | Coefficient of Variation of lengths. | `(stddev_length / avg_length) * 100`. Shows `*OVERFLOW*` when `sum_length` overflowed. |
 
-## Quality & Distribution
+### Quality & Distribution
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
@@ -133,7 +165,7 @@ Computed using Welford's online algorithm for single-pass accuracy. When `--weig
 | `max_precision` | Variable | Maximum decimal precision found (Floats). | Tracks the maximum number of digits after the decimal point. |
 | `sparsity` | Variable | Fraction of missing (NULL) values. | `nullcount / record_count`. |
 
-## Median & Quartiles (Non-Streaming)
+### Median & Quartiles (Non-Streaming)
 
 Requires loading data into memory and sorting. When `--weight <column>` is specified, weighted versions are computed using weighted nearest-rank method.
 
@@ -158,7 +190,7 @@ Requires loading data into memory and sorting. When `--weight <column>` is speci
 | `upper_outer_fence` | Variable | Upper bound for extreme outliers. | `q3 + (3.0 * iqr)`, used to identify extreme outliers. For dates/datetimes, returned in RFC3339 format. |
 | `skewness` | Variable | Measure of asymmetry of the probability distribution. | Quantile-based skewness: `((q3 - q2) - (q2 - q1)) / iqr` or `(q3 - (2.0 * q2) + q1) / iqr`. |
 
-## Cardinality & Modes (Non-Streaming)
+### Cardinality & Modes (Non-Streaming)
 
 **Requirements:**
 - `cardinality` and `uniqueness_ratio` require `--cardinality` or `--everything`
@@ -179,7 +211,7 @@ Multiple modes/antimodes are separated by the `QSV_STATS_SEPARATOR` environment 
 | `antimode_count` | Variable | Number of antimodes found. | Count of values tied for lowest frequency. |
 | `antimode_occurrences` | Variable | Frequency count of the antimode. | Number of times the antimode(s) appear. Weighted: minimum weight (rounded). |
 
-## Percentiles (Non-Streaming)
+### Percentiles (Non-Streaming)
 
 Requires loading data into memory and sorting. When `--weight <column>` is specified, weighted percentiles are computed using weighted nearest-rank method.
 
@@ -191,7 +223,7 @@ Computed using the [nearest-rank method](https://en.wikipedia.org/wiki/Percentil
 |:---|:---:|:---|:---|
 | `percentiles` | Variable | Custom percentiles of sorted values. | Nearest rank method for user-defined list. Weighted: weighted nearest-rank method. Multiple percentiles are separated by `QSV_STATS_SEPARATOR` (default: `|`). Special values: "deciles" expands to "10,20,30,40,50,60,70,80,90" and "quintiles" expands to "20,40,60,80". Default: "5,10,40,60,90,95". For dates/datetimes, values are returned in RFC3339 format. |
 
-## Dataset Statistics (File Level)
+### Dataset Statistics (File Level)
 
 These statistics appear as additional rows with the prefix `qsv__` when `--dataset-stats` is enabled. The `qsv__value` column is added to hold the values for these dataset-level statistics.
 
@@ -205,7 +237,7 @@ These statistics appear as additional rows with the prefix `qsv__` when `--datas
 | `qsv__fingerprint_hash`| File | Cryptographic hash of the dataset's stats. | BLAKE3 hash (formerly SHA-256) of the first 26 columns ("streaming" stats) + dataset stats (rowcount, columncount, filesize_bytes). This allows users to quickly detect duplicate files without having to load the entire file to compute the hash. Especially useful for detecting duplicates of very large files with pre-existing stats cache metadata. |
 | `qsv__value` | File | The value column for dataset stats. | Holds the value for the `qsv__` row (e.g., the row count integer, column count, file size, or fingerprint hash). |
 
-## Whitespace Visualization
+### Whitespace Visualization
 
 The `--vis-whitespace` option visualizes whitespace characters in the output to make them visible. Note that spaces will only be visualized (using `《_》`) if the entire value is composed of spaces.
 
@@ -228,7 +260,7 @@ The following whitespace markers are used (as defined in the [Rust reference](ht
 | `\u{2007}` | `《figsp》` | Figure space |
 | `\u{200B}` | `《zwsp》` | Zero width space |
 
-## Performance & Caching
+### Performance & Caching
 
 The `stats` command is central to qsv and underpins other "smart" commands (`frequency`, `pivotp`, `sample`, `schema`, `validate`, `tojsonl`) that use cached statistical information to work smarter & faster.
 
@@ -239,7 +271,9 @@ The `stats` command is central to qsv and underpins other "smart" commands (`fre
 - Use `--force` to force recomputing stats even if valid cache exists
 - Use `--cache-threshold` to control caching behavior (default: 5000ms)
 
-## Additional Statistics (moarstats Command)
+## `moarstats`
+Here are all the additional statistics produced by the `qsv moarstats` command, sourced from `src/cmd/moarstats.rs`.
+
 
 The `moarstats` command extends an existing stats CSV file (created by the `stats` command) by computing additional statistics that can be derived from existing stats columns and/or by scanning the original CSV file.
 

@@ -1040,7 +1040,15 @@ fn apply_limits_unweighted(
     }
 }
 
-/// Group unweighted frequency values by count
+/// Group unweighted frequency values by count.
+///
+/// # Arguments
+/// * `counts` - A vector of `(value, count)` pairs, where `value` is the
+///   byte-string representation of the category and `count` is its frequency.
+///
+/// # Returns
+/// A vector of `(count, values)` pairs, where `values` is the list of
+/// byte-strings that share the same `count`.
 fn group_by_count(counts: Vec<(Vec<u8>, u64)>) -> Vec<(u64, Vec<Vec<u8>>)> {
     let mut count_groups: Vec<(u64, Vec<Vec<u8>>)> = Vec::new();
     let mut current_count = None;

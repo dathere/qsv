@@ -86,7 +86,7 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 - A column is inferred as Boolean when its cardinality is 2 and the two values match the boolean patterns specified by `--boolean-patterns` (default: `1:0,t*:f*,y*:n*`)
 - Boolean inference automatically enables `--cardinality` computation
 - Patterns are case-insensitive and support prefix matching with `*` wildcards
-- **Example:** `"t*:f*,y*:n*"` will match "true", "truthy", "Truth" as boolean true values so long as the corresponding false pattern (e.g., False, f, etc.) is also matched and cardinality is 2
+- **Example:** With the default patterns `"t*:f*,y*:n*"`, a column is inferred as Boolean only when it contains exactly two distinct values—one matching a "true" pattern (for example, "true", "truthy", "Truth") and one matching a "false" pattern (for example, "false", "f", "no"); any additional distinct values (such as "falsified" or "falseness") would increase the cardinality above 2 and therefore prevent Boolean inference.
 
 ## Descriptive Statistics (Numerical & General)
 

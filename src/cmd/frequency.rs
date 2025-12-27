@@ -1118,9 +1118,11 @@ impl Args {
 
     /// Helper to move "Other" category to end if not sorted
     fn move_other_to_end_if_needed<T>(&self, counts: &mut [(Vec<u8>, T, f64, f64)]) {
+        let other_prefix = format!("{} (", self.flag_other_text);
+        let other_prefix_bytes = other_prefix.as_bytes();
         if !self.flag_other_sorted
             && counts.first().is_some_and(|(value, _, _, _)| {
-                value.starts_with(format!("{} (", self.flag_other_text).as_bytes())
+                value.starts_with(other_prefix_bytes)
             })
         {
             counts.rotate_left(1);

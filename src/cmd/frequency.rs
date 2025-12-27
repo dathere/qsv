@@ -1073,7 +1073,15 @@ fn group_by_count(counts: Vec<(Vec<u8>, u64)>) -> Vec<(u64, Vec<Vec<u8>>)> {
     count_groups
 }
 
-/// Group weighted frequency values by weight (with tolerance)
+/// Group weighted frequency values by weight (with tolerance).
+///
+/// # Arguments
+///
+/// * `counts` - A list of `(value, weight)` pairs, where `value` is a byte string
+///   and `weight` is the numeric weight used for grouping. The vector is expected
+///   to be ordered by `weight` so that equal (or near-equal) weights are adjacent.
+/// * `tolerance` - The maximum absolute difference between consecutive weights for
+///   them to be treated as belonging to the same group.
 fn group_by_weight(counts: Vec<(Vec<u8>, f64)>, tolerance: f64) -> Vec<(f64, Vec<Vec<u8>>)> {
     let mut weight_groups: Vec<(f64, Vec<Vec<u8>>)> = Vec::new();
     let mut current_weight: Option<f64> = None;

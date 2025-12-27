@@ -1075,39 +1075,6 @@ fn group_by_weight(counts: Vec<(Vec<u8>, f64)>, tolerance: f64) -> Vec<(f64, Vec
 
 /// Create a field processing function based on flags
 /// Returns a closure that processes a field according to ignore_case and no_trim flags
-#[allow(dead_code)]
-fn create_field_processor(
-    flag_ignore_case: bool,
-    flag_no_trim: bool,
-) -> impl Fn(&[u8], &mut String) -> Vec<u8> {
-    if flag_ignore_case {
-        if flag_no_trim {
-            move |field: &[u8], buf: &mut String| {
-                if let Ok(s) = simdutf8::basic::from_utf8(field) {
-                    util::to_lowercase_into(s, buf);
-                    buf.as_bytes().to_vec()
-                } else {
-                    field.to_vec()
-                }
-            }
-        } else {
-            move |field: &[u8], buf: &mut String| {
-                if let Ok(s) = simdutf8::basic::from_utf8(field) {
-                    util::to_lowercase_into(s.trim(), buf);
-                    buf.as_bytes().to_vec()
-                } else {
-                    trim_bs_whitespace(field).to_vec()
-                }
-            }
-        }
-    } else if flag_no_trim {
-        move |field: &[u8], _buf: &mut String| field.to_vec()
-    } else {
-        #[inline]
-        move |field: &[u8], _buf: &mut String| trim_bs_whitespace(field).to_vec()
-    }
-}
-
 impl Args {
     pub fn rconfig(&self) -> Config {
         Config::new(self.arg_input.as_ref())

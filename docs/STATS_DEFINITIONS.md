@@ -69,7 +69,7 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 |:---|:---:|:---|:---|
 | `field` | Variable | The name of the column/header (or its index if `--no-headers` is used). | Extracted from the CSV header row. |
 | `type` | Variable | Inferred data type of the column. | Inferred by checking values against: NULL, Integer, Float, Date, DateTime, Boolean (optional), and fallback to String. Data type inferences are **GUARANTEED** as `stats` scans the entire file. |
-| `subtype_xsd` | Variable | Inferred XSD data subtype (if enabled). | Refined inference for Integers (Requesting `byte`, `short`, `int`, `long`) and Floats (`decimal`). Note: This may not be actively used in the current implementation. |
+| `subtype_xsd` | Variable | Inferred XSD data subtype (if enabled). | Refined inference for integers, representing XSD integer subtypes (`byte`, `short`, `int`, `long`) and the XSD decimal subtype (`decimal`). Note: This may not be actively used in the current implementation. |
 | `is_ascii` | Variable | Indicates if all characters in the string column are ASCII. | Checked during UTF-8 validation; true if bytes are valid ASCII. |
 
 **Date and DateTime Type Inference:**

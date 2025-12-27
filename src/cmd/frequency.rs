@@ -722,18 +722,18 @@ type WeightedFTables = Vec<HashMap<Vec<u8>, f64>>;
 /// Apply ranking strategy to grouped unweighted frequency values (u64 counts)
 ///
 /// # Arguments
-/// * `groups` - A list of `(count, values)` pairs, where each `values` vector contains
-///   all distinct values that share the same unweighted count.
-/// * `strategy` - The ranking strategy to apply when assigning ranks to counts
-///   (for example, min, max, dense, ordinal, or average).
-/// * `pct_factor` - Multiplier used to convert counts into percentage values
-///   (typically derived from the total row count).
+/// * `groups` - A list of `(count, values)` pairs, where each `values` vector contains all distinct
+///   values that share the same unweighted count.
+/// * `strategy` - The ranking strategy to apply when assigning ranks to counts (for example, min,
+///   max, dense, ordinal, or average).
+/// * `pct_factor` - Multiplier used to convert counts into percentage values (typically derived
+///   from the total row count).
 /// * `null_val` - Byte representation used to identify or label null or missing values.
 ///
 /// # Returns
 /// A tuple `(counts_final, count_sum, pct_sum)` where:
-/// * `counts_final` - The flattened list of `(value, count, percentage, rank)` tuples
-///   for each grouped value after ranking.
+/// * `counts_final` - The flattened list of `(value, count, percentage, rank)` tuples for each
+///   grouped value after ranking.
 /// * `count_sum` - The sum of all counts in `counts_final`.
 /// * `pct_sum` - The sum of all percentage values in `counts_final`.
 #[allow(clippy::cast_precision_loss)]
@@ -972,36 +972,23 @@ fn apply_ranking_strategy_weighted(
 ///
 /// # Arguments
 /// * `counts` - Mutable reference to vector of `(value, weight)` pairs
-/// * `limit` - Limit value; if positive, keep only the top N weighted values;
-///              if negative, keep only values with weight greater than or equal
-///              to the absolute value of this limit; if zero, no limits are applied
-/// * `lmt_threshold` - Minimum number of unique values required before applying
-///                     any limits; if zero or greater than or equal to the number
-///                     of unique values, limits may be applied
-///
-/// # Returns
-/// Whether any limits were applied
-fn apply_limits_weighted(
-    counts: &mut Vec<(Vec<u8>, f64)>,
-    limit: isize,
-    lmt_threshold: usize,
-) -> bool {
+/// * `limit` - Limit value; if positive, keep only the top N weighted values; if negative, keep
+///   only values with weight greater than or equal to the absolute value of this limit; if zero, no
+///   limits are applied
+/// * `lmt_threshold` - Minimum number of unique values required before applying any limits; if zero
+///   or greater than or equal to the number of unique values, limits may be applied
+fn apply_limits_weighted(counts: &mut Vec<(Vec<u8>, f64)>, limit: isize, lmt_threshold: usize) {
     let unique_counts_len = counts.len();
     if lmt_threshold == 0 || lmt_threshold >= unique_counts_len {
         let abs_limit = limit.unsigned_abs();
 
+        #[allow(clippy::cast_precision_loss)]
         if limit > 0 {
             counts.truncate(abs_limit);
-            true
         } else if limit < 0 {
             let count_limit = abs_limit as f64;
             counts.retain(|(_, weight)| *weight >= count_limit);
-            true
-        } else {
-            false
         }
-    } else {
-        false
     }
 }
 
@@ -1013,16 +1000,13 @@ fn apply_limits_weighted(
 /// * `unq_limit` - Unique limit for all-unique columns
 /// * `lmt_threshold` - Threshold for applying limits
 /// * `all_unique` - Whether the column has all unique values
-///
-/// # Returns
-/// (whether limits were applied, whether unique_limit was applied)
 fn apply_limits_unweighted(
     counts: &mut Vec<(Vec<u8>, u64)>,
     limit: isize,
     unq_limit: usize,
     lmt_threshold: usize,
     all_unique: bool,
-) -> (bool, bool) {
+) {
     let unique_counts_len = counts.len();
     if lmt_threshold == 0 || lmt_threshold >= unique_counts_len {
         let abs_limit = limit.unsigned_abs();
@@ -1033,31 +1017,22 @@ fn apply_limits_unweighted(
             false
         };
 
-        // check if we need to limit the number of values
-        let limit_applied = if limit > 0 {
+        if limit > 0 {
             counts.truncate(abs_limit);
-            true
         } else if limit < 0 && !unique_limited {
             // if limit < 0, only return values with an occurrence count >= abs value of limit
             // Only do this if we haven't already unique limited the values
             let count_limit = abs_limit as u64;
             counts.retain(|(_, count)| *count >= count_limit);
-            true
-        } else {
-            false
-        };
-
-        (limit_applied, unique_limited)
-    } else {
-        (false, false)
+        }
     }
 }
 
 /// Group unweighted frequency values by count.
 ///
 /// # Arguments
-/// * `counts` - A vector of `(value, count)` pairs, where `value` is the
-///   byte-string representation of the category and `count` is its frequency.
+/// * `counts` - A vector of `(value, count)` pairs, where `value` is the byte-string representation
+///   of the category and `count` is its frequency.
 ///
 /// # Returns
 /// A vector of `(count, values)` pairs, where `values` is the list of
@@ -1090,11 +1065,11 @@ fn group_by_count(counts: Vec<(Vec<u8>, u64)>) -> Vec<(u64, Vec<Vec<u8>>)> {
 ///
 /// # Arguments
 ///
-/// * `counts` - A list of `(value, weight)` pairs, where `value` is a byte string
-///   and `weight` is the numeric weight used for grouping. The vector is expected
-///   to be ordered by `weight` so that equal (or near-equal) weights are adjacent.
-/// * `tolerance` - The maximum absolute difference between consecutive weights for
-///   them to be treated as belonging to the same group.
+/// * `counts` - A list of `(value, weight)` pairs, where `value` is a byte string and `weight` is
+///   the numeric weight used for grouping. The vector is expected to be ordered by `weight` so that
+///   equal (or near-equal) weights are adjacent.
+/// * `tolerance` - The maximum absolute difference between consecutive weights for them to be
+///   treated as belonging to the same group.
 fn group_by_weight(counts: Vec<(Vec<u8>, f64)>, tolerance: f64) -> Vec<(f64, Vec<Vec<u8>>)> {
     let mut weight_groups: Vec<(f64, Vec<Vec<u8>>)> = Vec::new();
     let mut current_weight: Option<f64> = None;
@@ -1134,9 +1109,9 @@ impl Args {
         let other_prefix = format!("{} (", self.flag_other_text);
         let other_prefix_bytes = other_prefix.as_bytes();
         if !self.flag_other_sorted
-            && counts.first().is_some_and(|(value, _, _, _)| {
-                value.starts_with(other_prefix_bytes)
-            })
+            && counts
+                .first()
+                .is_some_and(|(value, _, _, _)| value.starts_with(other_prefix_bytes))
         {
             counts.rotate_left(1);
         }

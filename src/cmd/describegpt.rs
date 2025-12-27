@@ -2194,9 +2194,18 @@ fn get_completion(
     if let Some(addl_props) = args.flag_addl_props.as_ref() {
         let addl_props_json: serde_json::Value = serde_json::from_str(addl_props)
             .map_err(|e| CliError::Other(format!("Invalid JSON in --addl-props: {e:?}")))?;
-        // safety: addl_props_json is valid JSON and as_object() returns a valid object
-        for (key, value) in addl_props_json.as_object().unwrap() {
-            request_data[key] = value.clone();
+
+        // If addl_props_json is an object, extend/overlay all its keys into request_data
+        if let Some(obj) = addl_props_json.as_object() {
+            for (key, value) in obj {
+                request_data[key] = value.clone();
+            }
+        } else {
+            // If it is not an object, treat as error (must be JSON object of key/values)
+            return fail_clierror!(
+                "--addl-props should be a JSON object mapping keys to values; got: {}",
+                addl_props_json
+            );
         }
     }
 
@@ -3455,21 +3464,27 @@ fn run_inference_options(
             };
 
             session_state = Some(load_session(session_path)?);
-            let state = session_state.as_mut().unwrap();
+            if let Some(ref mut state) = session_state {
+                // If not first message, check relevance and apply sliding window
+                if !state.messages.is_empty() {
+                    if let Some(ref baseline_sql) = state.baseline_sql
+                        && !check_message_relevance(
+                            user_prompt,
+                            baseline_sql,
+                            args,
+                            &client,
+                            api_key,
+                        )?
+                    {
+                        return fail_clierror!(
+                            "The current message does not appear to be related to refining the \
+                             baseline SQL query. Please start a new session for unrelated queries."
+                        );
+                    }
 
-            // If not first message, check relevance and apply sliding window
-            if !state.messages.is_empty() {
-                if let Some(ref baseline_sql) = state.baseline_sql
-                    && !check_message_relevance(user_prompt, baseline_sql, args, &client, api_key)?
-                {
-                    return fail_clierror!(
-                        "The current message does not appear to be related to refining the \
-                         baseline SQL query. Please start a new session for unrelated queries."
-                    );
+                    // Apply sliding window
+                    apply_sliding_window(state, session_len, args, &client, api_key)?;
                 }
-
-                // Apply sliding window
-                apply_sliding_window(state, session_len, args, &client, api_key)?;
             }
         }
 

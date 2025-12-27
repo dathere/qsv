@@ -985,6 +985,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // Set QSV_DEFAULT_DELIMITER environment variable
             // this is only for the current process. When qsv exits, it will not persist
+            // safety: we wrap the set_var in an unsafe block because it's an unsafe function,
+            // as it asumes a single-threaded environment, which we still are at this point
             unsafe { std::env::set_var("QSV_DEFAULT_DELIMITER", inferred) };
         }
 
@@ -1693,6 +1695,8 @@ impl Args {
             pool.execute(move || {
                 // safety: indexed() is safe as we know we have an index file
                 // and we know it will return an Ok
+                // arguably, there is still a very small risk of a TOCTOU here,
+                // but it's unlikely
                 let mut idx = unsafe {
                     args.rconfig()
                         .indexed()
@@ -1703,7 +1707,7 @@ impl Args {
                 // we do an expect() here so that it triggers a human-panic
                 // with some actionable infoif the index is corrupted
                 idx.seek((i * chunk_size) as u64)
-                    .expect("File seek failed.");
+                    .expect("File seek failed for chunk {i}: {e}");
                 let it = idx.byte_records().take(chunk_size);
                 // safety: this will only return an Error if the channel has been disconnected
                 unsafe {
@@ -1713,6 +1717,9 @@ impl Args {
             });
         }
         drop(send);
+        // safety: we know the merge_all will not return an Error because we're using an iterator
+        // and we know the iterator will not be empty because we're using a bounded channel
+        // in the event of a channel error, we will return an empty vector
         Ok((headers, merge_all(recv.iter()).unwrap_or_default()))
     }
 
@@ -1834,12 +1841,17 @@ impl Args {
 
         let mut i;
         for row in it {
+            // reset the index for each row
             i = 0;
 
-            // safety: unwrap the row first
-            let row_result = unsafe { row.unwrap_unchecked() };
+            // safety: we know the row is Ok because we're using an iterator
+            // Note that `stats` assumes a valid CSV, so we don't check for CSV errors
+            // in this performance-critical path
+            let row_result: csv::ByteRecord = unsafe { row.unwrap_unchecked() };
 
             // Extract weight value if weight column is specified
+            // safety: we know the weight column index is valid because we checked it above
+            // in case of a parse error, invalid weight defaults to 1.0
             let weight = if let Some(widx) = weight_col_idx {
                 if widx < row_result.len() {
                     fast_float2::parse::<f64, &[u8]>(row_result.get(widx).unwrap_or(b"1.0"))
@@ -1853,6 +1865,7 @@ impl Args {
 
             // safety: because we're using iterators and INFER_DATE_FLAGS has the same size,
             // we know we don't need to bounds check
+            debug_assert_eq!(infer_date_flags.len(), sel_len);
             unsafe {
                 for field in sel.select(&row_result) {
                     stats.get_unchecked_mut(i).add(

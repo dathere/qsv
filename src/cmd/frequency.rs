@@ -1099,7 +1099,8 @@ fn group_by_weight(counts: Vec<(Vec<u8>, f64)>, tolerance: f64) -> Vec<(f64, Vec
         current_group.push(byte_string);
     }
     if !current_group.is_empty() {
-        weight_groups.push((current_weight.unwrap_or(0.0), current_group));
+        // safety: we know that current_weight is Some
+        weight_groups.push((current_weight.unwrap(), current_group));
     }
 
     weight_groups

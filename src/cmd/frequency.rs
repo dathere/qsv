@@ -1003,8 +1003,9 @@ fn apply_ranking_strategy_weighted(
 /// * `limit` - Limit value; if positive, keep only the top N weighted values; if negative, keep
 ///   only values with weight greater than or equal to the absolute value of this limit; if zero, no
 ///   limits are applied
-/// * `lmt_threshold` - Minimum number of unique values required before applying any limits; if zero
-///   or greater than or equal to the number of unique values, limits may be applied
+/// * `lmt_threshold` - Threshold controlling when limits are applied. Limits are applied when this
+///   is 0 or when it is greater than or equal to the number of unique values; when this is a
+///   positive number less than the unique count, no limits are applied.
 fn apply_limits_weighted(counts: &mut Vec<(Vec<u8>, f64)>, limit: isize, lmt_threshold: usize) {
     let unique_counts_len = counts.len();
     if lmt_threshold == 0 || lmt_threshold >= unique_counts_len {

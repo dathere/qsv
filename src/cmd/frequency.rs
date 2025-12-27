@@ -719,12 +719,432 @@ type FTables = Vec<Frequencies<Vec<u8>>>;
 // Weighted frequency tables: HashMap for each column storing value -> weighted count
 type WeightedFTables = Vec<HashMap<Vec<u8>, f64>>;
 
+/// Apply ranking strategy to grouped unweighted frequency values (u64 counts)
+///
+/// # Arguments
+/// * `groups` - A list of `(count, values)` pairs, where each `values` vector contains all distinct
+///   values that share the same unweighted count.
+/// * `strategy` - The ranking strategy to apply when assigning ranks to counts (for example, min,
+///   max, dense, ordinal, or average).
+/// * `pct_factor` - Multiplier used to convert counts into percentage values (typically derived
+///   from the total row count).
+/// * `null_val` - Byte representation used to identify or label null or missing values.
+///
+/// # Returns
+/// A tuple `(counts_final, count_sum, pct_sum)` where:
+/// * `counts_final` - The flattened list of `(value, count, percentage, rank)` tuples for each
+///   grouped value after ranking.
+/// * `count_sum` - The sum of all counts in `counts_final`.
+/// * `pct_sum` - The sum of all percentage values in `counts_final`.
+#[allow(clippy::cast_precision_loss)]
+fn apply_ranking_strategy_unweighted(
+    groups: Vec<(u64, Vec<Vec<u8>>)>,
+    strategy: RankStrategy,
+    pct_factor: f64,
+    null_val: &[u8],
+) -> (Vec<(Vec<u8>, u64, f64, f64)>, u64, f64) {
+    let mut counts_final: Vec<(Vec<u8>, u64, f64, f64)> =
+        Vec::with_capacity(groups.iter().map(|(_, group)| group.len()).sum::<usize>() + 1);
+    let mut current_rank = 1.0_f64;
+    let mut count_sum = 0_u64;
+    let mut pct_sum = 0.0_f64;
+
+    match strategy {
+        RankStrategy::Dense => {
+            // Dense ranking (1223)
+            for (count, mut group) in groups {
+                group.sort_unstable();
+                for byte_string in group {
+                    count_sum += count;
+                    let pct = count as f64 * pct_factor;
+                    pct_sum += pct;
+
+                    if byte_string.is_empty() {
+                        counts_final.push((null_val.to_vec(), count, pct, current_rank));
+                    } else {
+                        counts_final.push((byte_string, count, pct, current_rank));
+                    }
+                }
+                current_rank += 1.0;
+            }
+        },
+        RankStrategy::Min => {
+            // Standard competition ranking (1224)
+            for (count, mut group) in groups {
+                group.sort_unstable();
+                let group_len = group.len();
+                for byte_string in group {
+                    count_sum += count;
+                    let pct = count as f64 * pct_factor;
+                    pct_sum += pct;
+
+                    if byte_string.is_empty() {
+                        counts_final.push((null_val.to_vec(), count, pct, current_rank));
+                    } else {
+                        counts_final.push((byte_string, count, pct, current_rank));
+                    }
+                }
+                current_rank += group_len as f64;
+            }
+        },
+        RankStrategy::Max => {
+            // Modified competition ranking (1334)
+            for (count, mut group) in groups {
+                group.sort_unstable();
+                let group_len = group.len();
+                let max_rank = current_rank + group_len as f64 - 1.0;
+                for byte_string in group {
+                    count_sum += count;
+                    let pct = count as f64 * pct_factor;
+                    pct_sum += pct;
+
+                    if byte_string.is_empty() {
+                        counts_final.push((null_val.to_vec(), count, pct, max_rank));
+                    } else {
+                        counts_final.push((byte_string, count, pct, max_rank));
+                    }
+                }
+                current_rank += group_len as f64;
+            }
+        },
+        RankStrategy::Ordinal => {
+            // Ordinal ranking (1234)
+            for (count, mut group) in groups {
+                group.sort_unstable();
+                for byte_string in group {
+                    count_sum += count;
+                    let pct = count as f64 * pct_factor;
+                    pct_sum += pct;
+
+                    if byte_string.is_empty() {
+                        counts_final.push((null_val.to_vec(), count, pct, current_rank));
+                    } else {
+                        counts_final.push((byte_string, count, pct, current_rank));
+                    }
+                    current_rank += 1.0;
+                }
+            }
+        },
+        RankStrategy::Average => {
+            // Fractional ranking (1 2.5 2.5 4)
+            for (count, mut group) in groups {
+                group.sort_unstable();
+                let group_len = group.len();
+                let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
+                for byte_string in group {
+                    count_sum += count;
+                    let pct = count as f64 * pct_factor;
+                    pct_sum += pct;
+
+                    if byte_string.is_empty() {
+                        counts_final.push((null_val.to_vec(), count, pct, avg_rank));
+                    } else {
+                        counts_final.push((byte_string, count, pct, avg_rank));
+                    }
+                }
+                current_rank += group_len as f64;
+            }
+        },
+    }
+
+    (counts_final, count_sum, pct_sum)
+}
+
+/// Apply a ranking strategy to grouped weighted frequency values.
+///
+/// This function takes pre-aggregated weighted frequency groups and flattens them into a list
+/// of individual values with their associated weight, percentage, and rank. The rank assigned
+/// to each value depends on the provided `strategy`, and percentages are computed using
+/// `pct_factor`. The `null_val` is treated specially as the null/other bucket when present.
+///
+/// # Arguments
+///
+/// * `groups` - A vector of tuples where each tuple contains:
+///   * the total weight for the group of values (`f64`), and
+///   * a vector of the grouped values (`Vec<u8>` for each value) that share that weight. Typically,
+///     these groups represent distinct values with their aggregated weights after applying any
+///     limiting or bucketing logic.
+/// * `strategy` - The ranking strategy (`RankStrategy`) used to assign ranks to values based on
+///   their weights. This controls how ties are handled (e.g., minimum, maximum, dense, ordinal, or
+///   average ranks).
+/// * `pct_factor` - A scaling factor used to convert weights into percentage values. For example,
+///   this is often the reciprocal of the total weight so that the resulting percentages sum to
+///   approximately 100.
+/// * `null_val` - The byte representation of the value that should be treated as the null/other
+///   bucket. This is used to identify and correctly label null/other values in the output.
+///
+/// # Returns
+///
+/// A tuple `(counts_final, count_sum, pct_sum)` where:
+///
+/// * `counts_final` - The flattened list of `(value, weight, percentage, rank)` tuples for each
+///   grouped value after ranking has been applied.
+/// * `count_sum` - The sum of all weights in `counts_final`.
+/// * `pct_sum` - The sum of all percentage values in `counts_final`.
+#[allow(clippy::cast_precision_loss)]
+fn apply_ranking_strategy_weighted(
+    groups: Vec<(f64, Vec<Vec<u8>>)>,
+    strategy: RankStrategy,
+    pct_factor: f64,
+    null_val: &[u8],
+) -> (Vec<(Vec<u8>, f64, f64, f64)>, f64, f64) {
+    let mut counts_final: Vec<(Vec<u8>, f64, f64, f64)> =
+        Vec::with_capacity(groups.iter().map(|(_, group)| group.len()).sum::<usize>() + 1);
+    let mut current_rank = 1.0_f64;
+    let mut count_sum = 0.0_f64;
+    let mut pct_sum = 0.0_f64;
+
+    match strategy {
+        RankStrategy::Dense => {
+            // Dense ranking (1223)
+            for (weight, mut group) in groups {
+                group.sort_unstable();
+                for byte_string in group {
+                    count_sum += weight;
+                    let pct = weight * pct_factor;
+                    pct_sum += pct;
+
+                    if byte_string.is_empty() {
+                        counts_final.push((null_val.to_vec(), weight, pct, current_rank));
+                    } else {
+                        counts_final.push((byte_string, weight, pct, current_rank));
+                    }
+                }
+                current_rank += 1.0;
+            }
+        },
+        RankStrategy::Min => {
+            // Standard competition ranking (1224)
+            for (weight, mut group) in groups {
+                group.sort_unstable();
+                let group_len = group.len();
+                for byte_string in group {
+                    count_sum += weight;
+                    let pct = weight * pct_factor;
+                    pct_sum += pct;
+
+                    if byte_string.is_empty() {
+                        counts_final.push((null_val.to_vec(), weight, pct, current_rank));
+                    } else {
+                        counts_final.push((byte_string, weight, pct, current_rank));
+                    }
+                }
+                current_rank += group_len as f64;
+            }
+        },
+        RankStrategy::Max => {
+            // Modified competition ranking (1334)
+            for (weight, mut group) in groups {
+                group.sort_unstable();
+                let group_len = group.len();
+                let max_rank = current_rank + group_len as f64 - 1.0;
+                for byte_string in group {
+                    count_sum += weight;
+                    let pct = weight * pct_factor;
+                    pct_sum += pct;
+
+                    if byte_string.is_empty() {
+                        counts_final.push((null_val.to_vec(), weight, pct, max_rank));
+                    } else {
+                        counts_final.push((byte_string, weight, pct, max_rank));
+                    }
+                }
+                current_rank += group_len as f64;
+            }
+        },
+        RankStrategy::Ordinal => {
+            // Ordinal ranking (1234)
+            for (weight, mut group) in groups {
+                group.sort_unstable();
+                for byte_string in group {
+                    count_sum += weight;
+                    let pct = weight * pct_factor;
+                    pct_sum += pct;
+
+                    if byte_string.is_empty() {
+                        counts_final.push((null_val.to_vec(), weight, pct, current_rank));
+                    } else {
+                        counts_final.push((byte_string, weight, pct, current_rank));
+                    }
+                    current_rank += 1.0;
+                }
+            }
+        },
+        RankStrategy::Average => {
+            // Fractional ranking (1 2.5 2.5 4)
+            for (weight, mut group) in groups {
+                group.sort_unstable();
+                let group_len = group.len();
+                let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
+                for byte_string in group {
+                    count_sum += weight;
+                    let pct = weight * pct_factor;
+                    pct_sum += pct;
+
+                    if byte_string.is_empty() {
+                        counts_final.push((null_val.to_vec(), weight, pct, avg_rank));
+                    } else {
+                        counts_final.push((byte_string, weight, pct, avg_rank));
+                    }
+                }
+                current_rank += group_len as f64;
+            }
+        },
+    }
+
+    (counts_final, count_sum, pct_sum)
+}
+
+/// Apply limits to weighted frequency counts
+///
+/// # Arguments
+/// * `counts` - Mutable reference to vector of `(value, weight)` pairs
+/// * `limit` - Limit value; if positive, keep only the top N weighted values; if negative, keep
+///   only values with weight greater than or equal to the absolute value of this limit; if zero, no
+///   limits are applied
+/// * `lmt_threshold` - Threshold controlling when limits are applied. Limits are applied when this
+///   is 0 or when it is greater than or equal to the number of unique values; when this is a
+///   positive number less than the unique count, no limits are applied.
+fn apply_limits_weighted(counts: &mut Vec<(Vec<u8>, f64)>, limit: isize, lmt_threshold: usize) {
+    let unique_counts_len = counts.len();
+    if lmt_threshold == 0 || lmt_threshold >= unique_counts_len {
+        let abs_limit = limit.unsigned_abs();
+
+        #[allow(clippy::cast_precision_loss)]
+        if limit > 0 {
+            counts.truncate(abs_limit);
+        } else if limit < 0 {
+            let count_limit = abs_limit as f64;
+            counts.retain(|(_, weight)| *weight >= count_limit);
+        }
+    }
+}
+
+/// Apply limits to unweighted frequency counts
+///
+/// # Arguments
+/// * `counts` - Mutable reference to counts vector
+/// * `limit` - Limit value (positive = top N, negative = threshold)
+/// * `unq_limit` - Unique limit for all-unique columns
+/// * `lmt_threshold` - Threshold controlling when limits are applied. Limits are applied when this
+///   is 0 or when it is >= the number of unique values. When this is a positive number less than
+///   the unique count, no limits are applied.
+/// * `all_unique` - Whether the column has all unique values
+fn apply_limits_unweighted(
+    counts: &mut Vec<(Vec<u8>, u64)>,
+    limit: isize,
+    unq_limit: usize,
+    lmt_threshold: usize,
+    all_unique: bool,
+) {
+    let unique_counts_len = counts.len();
+    if lmt_threshold == 0 || lmt_threshold >= unique_counts_len {
+        let abs_limit = limit.unsigned_abs();
+        let unique_limited = if all_unique && limit > 0 && unq_limit != abs_limit && unq_limit > 0 {
+            counts.truncate(unq_limit);
+            true
+        } else {
+            false
+        };
+
+        if limit > 0 {
+            counts.truncate(abs_limit);
+        } else if limit < 0 && !unique_limited {
+            // if limit < 0, only return values with an occurrence count >= abs value of limit
+            // Only do this if we haven't already unique limited the values
+            let count_limit = abs_limit as u64;
+            counts.retain(|(_, count)| *count >= count_limit);
+        }
+    }
+}
+
+/// Group unweighted frequency values by count.
+///
+/// # Arguments
+/// * `counts` - A vector of `(value, count)` pairs, where `value` is the byte-string representation
+///   of the category and `count` is its frequency.
+///
+/// # Returns
+/// A vector of `(count, values)` pairs, where `values` is the list of
+/// byte-strings that share the same `count`.
+fn group_by_count(counts: Vec<(Vec<u8>, u64)>) -> Vec<(u64, Vec<Vec<u8>>)> {
+    let mut count_groups: Vec<(u64, Vec<Vec<u8>>)> = Vec::new();
+    let mut current_count = None;
+    let mut current_group = Vec::new();
+
+    for (byte_string, count) in counts {
+        if let Some(prev_count) = current_count
+            && count != prev_count
+            && !current_group.is_empty()
+        {
+            count_groups.push((prev_count, std::mem::take(&mut current_group)));
+        }
+
+        current_count = Some(count);
+        current_group.push(byte_string);
+    }
+    if !current_group.is_empty() {
+        // safety: we know that current_count is Some
+        count_groups.push((current_count.unwrap(), current_group));
+    }
+
+    count_groups
+}
+
+/// Group weighted frequency values by weight (with tolerance).
+///
+/// # Arguments
+///
+/// * `counts` - A list of `(value, weight)` pairs, where `value` is a byte string and `weight` is
+///   the numeric weight used for grouping. The vector is expected to be ordered by `weight` so that
+///   equal (or near-equal) weights are adjacent.
+/// * `tolerance` - The maximum absolute difference between consecutive weights for them to be
+///   treated as belonging to the same group.
+fn group_by_weight(counts: Vec<(Vec<u8>, f64)>, tolerance: f64) -> Vec<(f64, Vec<Vec<u8>>)> {
+    let mut weight_groups: Vec<(f64, Vec<Vec<u8>>)> = Vec::new();
+    let mut current_weight: Option<f64> = None;
+    let mut current_group: Vec<Vec<u8>> = Vec::new();
+
+    for (byte_string, weight) in counts {
+        if let Some(prev_weight) = current_weight
+            && (prev_weight - weight).abs() > tolerance
+            && !current_group.is_empty()
+        {
+            weight_groups.push((prev_weight, std::mem::take(&mut current_group)));
+        }
+
+        current_weight = Some(weight);
+        current_group.push(byte_string);
+    }
+    if !current_group.is_empty() {
+        // safety: we know that current_weight is Some
+        weight_groups.push((current_weight.unwrap(), current_group));
+    }
+
+    weight_groups
+}
+
+/// Implementation of helper methods for frequency command arguments.
+/// Provides configuration helpers and post-processing utilities for results.
 impl Args {
     pub fn rconfig(&self) -> Config {
         Config::new(self.arg_input.as_ref())
             .delimiter(self.flag_delimiter)
             .no_headers(self.flag_no_headers)
             .select(self.flag_select.clone())
+    }
+
+    /// Helper to move "Other" category to end if not sorted
+    fn move_other_to_end_if_needed<T>(&self, counts: &mut [(Vec<u8>, T, f64, f64)]) {
+        let other_prefix = format!("{} (", self.flag_other_text);
+        let other_prefix_bytes = other_prefix.as_bytes();
+        if !self.flag_other_sorted
+            && counts
+                .first()
+                .is_some_and(|(value, _, _, _)| value.starts_with(other_prefix_bytes))
+        {
+            counts.rotate_left(1);
+        }
     }
 
     /// Process weighted frequencies
@@ -762,13 +1182,7 @@ impl Args {
 
         // For non-all-unique columns, process individual weighted values
         let mut counts_to_process = self.counts_weighted(weighted_map);
-        if !self.flag_other_sorted
-            && counts_to_process.first().is_some_and(|(value, _, _, _)| {
-                value.starts_with(format!("{} (", self.flag_other_text).as_bytes())
-            })
-        {
-            counts_to_process.rotate_left(1);
-        }
+        self.move_other_to_end_if_needed(&mut counts_to_process);
 
         // Convert to processed frequencies (count is f64, convert to u64 for display)
         for (value, weight, percentage, rank) in counts_to_process {
@@ -810,13 +1224,7 @@ impl Args {
         } else {
             // Process regular frequencies
             let mut counts_to_process = self.counts(ftab);
-            if !self.flag_other_sorted
-                && counts_to_process.first().is_some_and(|(value, _, _, _)| {
-                    value.starts_with(format!("{} (", self.flag_other_text).as_bytes())
-                })
-            {
-                counts_to_process.rotate_left(1);
-            }
+            self.move_other_to_end_if_needed(&mut counts_to_process);
 
             // Convert to processed frequencies
             for (value, count, percentage, rank) in counts_to_process {
@@ -877,28 +1285,15 @@ impl Args {
         // Calculate total weight (sum of all weights)
         let total_weight: f64 = weighted_map.values().sum();
 
-        // Apply limits similar to unweighted version
+        // Apply limits
         let unique_counts_len = counts.len();
-        if self.flag_lmt_threshold == 0 || self.flag_lmt_threshold >= unique_counts_len {
-            let abs_limit = self.flag_limit.unsigned_abs();
+        apply_limits_weighted(&mut counts, self.flag_limit, self.flag_lmt_threshold);
 
-            if self.flag_limit > 0 {
-                counts.truncate(abs_limit);
-            } else if self.flag_limit < 0 {
-                let count_limit = abs_limit as f64;
-                counts.retain(|(_, weight)| *weight >= count_limit);
-            }
-        }
-
-        let mut pct: f64;
-        let mut count_sum = 0.0_f64;
         let pct_factor = if total_weight > 0.0 {
             100.0_f64 / total_weight
         } else {
             0.0_f64
         };
-
-        let mut counts_final: Vec<(Vec<u8>, f64, f64, f64)> = Vec::with_capacity(counts.len() + 1);
 
         // Compute tolerance once before the loop (outside hot path)
         // Use stats cache if available to determine weight scale for more accurate tolerance
@@ -923,124 +1318,26 @@ impl Args {
         };
 
         // Group by weight to handle ties
-        let mut weight_groups: Vec<(f64, Vec<Vec<u8>>)> = Vec::new();
-        let mut current_weight: Option<f64> = None;
-        let mut current_group: Vec<Vec<u8>> = Vec::new();
-
-        for (byte_string, weight) in counts {
-            if let Some(prev_weight) = current_weight
-                && (prev_weight - weight).abs() > weight_tolerance
-                && !current_group.is_empty()
-            {
-                weight_groups.push((prev_weight, std::mem::take(&mut current_group)));
-            }
-
-            current_weight = Some(weight);
-            current_group.push(byte_string);
-        }
-        if !current_group.is_empty() {
-            weight_groups.push((current_weight.unwrap_or(0.0), current_group));
-        }
+        let weight_groups = group_by_weight(counts, weight_tolerance);
 
         // safety: NULL_VAL is set in the main function
         let null_val = NULL_VAL.get().unwrap();
 
-        // Sort each group alphabetically and assign ranks
-        let mut current_rank = 1.0_f64;
-
-        match self.flag_rank_strategy {
-            RankStrategy::Dense => {
-                for (weight, mut group) in weight_groups {
-                    group.sort_unstable();
-                    for byte_string in group {
-                        count_sum += weight;
-                        pct = weight * pct_factor;
-
-                        if byte_string.is_empty() {
-                            counts_final.push((null_val.clone(), weight, pct, current_rank));
-                        } else {
-                            counts_final.push((byte_string, weight, pct, current_rank));
-                        }
-                    }
-                    current_rank += 1.0;
-                }
-            },
-            RankStrategy::Min => {
-                for (weight, mut group) in weight_groups {
-                    group.sort_unstable();
-                    let group_len = group.len();
-                    for byte_string in group {
-                        count_sum += weight;
-                        pct = weight * pct_factor;
-
-                        if byte_string.is_empty() {
-                            counts_final.push((null_val.clone(), weight, pct, current_rank));
-                        } else {
-                            counts_final.push((byte_string, weight, pct, current_rank));
-                        }
-                    }
-                    current_rank += group_len as f64;
-                }
-            },
-            RankStrategy::Max => {
-                for (weight, mut group) in weight_groups {
-                    group.sort_unstable();
-                    let group_len = group.len();
-                    let max_rank = current_rank + group_len as f64 - 1.0;
-                    for byte_string in group {
-                        count_sum += weight;
-                        pct = weight * pct_factor;
-
-                        if byte_string.is_empty() {
-                            counts_final.push((null_val.clone(), weight, pct, max_rank));
-                        } else {
-                            counts_final.push((byte_string, weight, pct, max_rank));
-                        }
-                    }
-                    current_rank += group_len as f64;
-                }
-            },
-            RankStrategy::Ordinal => {
-                for (weight, mut group) in weight_groups {
-                    group.sort_unstable();
-                    for byte_string in group {
-                        count_sum += weight;
-                        pct = weight * pct_factor;
-
-                        if byte_string.is_empty() {
-                            counts_final.push((null_val.clone(), weight, pct, current_rank));
-                        } else {
-                            counts_final.push((byte_string, weight, pct, current_rank));
-                        }
-                        current_rank += 1.0;
-                    }
-                }
-            },
-            RankStrategy::Average => {
-                for (weight, mut group) in weight_groups {
-                    group.sort_unstable();
-                    let group_len = group.len();
-                    let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
-                    for byte_string in group {
-                        count_sum += weight;
-                        pct = weight * pct_factor;
-
-                        if byte_string.is_empty() {
-                            counts_final.push((null_val.clone(), weight, pct, avg_rank));
-                        } else {
-                            counts_final.push((byte_string, weight, pct, avg_rank));
-                        }
-                    }
-                    current_rank += group_len as f64;
-                }
-            },
-        }
+        // Apply ranking strategy
+        let (mut counts_final, count_sum, pct_sum) = apply_ranking_strategy_weighted(
+            weight_groups,
+            self.flag_rank_strategy,
+            pct_factor,
+            null_val,
+        );
 
         let other_weight = total_weight - count_sum;
         let other_unique_count = unique_counts_len - counts_final.len();
         // Only create Other entry if there are actually remaining unique values
         // and the weight is positive. This prevents "Other (0)" entries when
         // --limit 0 is used and all values are included.
+        // Use 100.0 - pct_sum to ensure percentages sum exactly to 100%,
+        // handling floating-point precision issues consistently with unweighted case.
         if other_weight > 0.0 && other_unique_count > 0 && self.flag_other_text != "<NONE>" {
             counts_final.push((
                 format!(
@@ -1051,7 +1348,7 @@ impl Args {
                 .as_bytes()
                 .to_vec(),
                 other_weight,
-                other_weight * pct_factor,
+                100.0_f64 - pct_sum,
                 0.0,
             ));
         }
@@ -1060,7 +1357,7 @@ impl Args {
 
     #[inline]
     fn counts(&self, ftab: &FTable) -> Vec<(ByteString, u64, f64, f64)> {
-        let (mut counts, total_count) = if self.flag_asc {
+        let (counts_ref, total_count) = if self.flag_asc {
             // parallel sort in ascending order - least frequent values first
             ftab.par_frequent(true)
         } else {
@@ -1068,192 +1365,53 @@ impl Args {
             ftab.par_frequent(false)
         };
 
+        // Convert references to owned values
+        let mut counts: Vec<(Vec<u8>, u64)> = counts_ref
+            .into_iter()
+            .map(|(k, v)| (k.clone(), v))
+            .collect();
+
         // check if we need to apply limits
         let unique_counts_len = counts.len();
-        if self.flag_lmt_threshold == 0 || self.flag_lmt_threshold >= unique_counts_len {
-            // check if the column has all unique values
-            // i.e., counts vec has a count of 1, indicating all unique values
-            let all_unique = counts[if self.flag_asc {
+        let all_unique = if unique_counts_len > 0 {
+            counts[if self.flag_asc {
                 unique_counts_len - 1
             } else {
                 0
             }]
-            .1 == 1;
+            .1 == 1
+        } else {
+            false
+        };
 
-            let abs_limit = self.flag_limit.unsigned_abs();
-            let unique_limited = if all_unique
-                && self.flag_limit > 0
-                && self.flag_unq_limit != abs_limit
-                && self.flag_unq_limit > 0
-            {
-                counts.truncate(self.flag_unq_limit);
-                true
-            } else {
-                false
-            };
+        // Apply limits (including unique limit logic for all-unique columns)
+        apply_limits_unweighted(
+            &mut counts,
+            self.flag_limit,
+            self.flag_unq_limit,
+            self.flag_lmt_threshold,
+            all_unique,
+        );
 
-            // check if we need to limit the number of values
-            if self.flag_limit > 0 {
-                counts.truncate(abs_limit);
-            } else if self.flag_limit < 0 && !unique_limited {
-                // if limit < 0, only return values with an occurrence count >= abs value of limit
-                // Only do this if we haven't already unique limited the values
-                let count_limit = abs_limit as u64;
-                counts.retain(|(_, count)| *count >= count_limit);
-            }
-        }
-
-        let mut pct_sum = 0.0_f64;
-        let mut pct: f64;
-        let mut count_sum = 0_u64;
         let pct_factor = if total_count > 0 {
             100.0_f64 / total_count.to_f64().unwrap_or(1.0_f64)
         } else {
             0.0_f64
         };
 
-        // Pre-allocate the result vector with known capacity
-        // We might add an "Other" entry, so add 1 to capacity
-        let mut counts_final: Vec<(Vec<u8>, u64, f64, f64)> = Vec::with_capacity(counts.len() + 1);
-
         // Group by count to handle ties
-        let mut count_groups: Vec<(u64, Vec<Vec<u8>>)> = Vec::new();
-        let mut current_count = None;
-        let mut current_group = Vec::new();
-
-        for (byte_string, count) in counts {
-            if let Some(prev_count) = current_count
-                && count != prev_count
-                && !current_group.is_empty()
-            {
-                count_groups.push((prev_count, std::mem::take(&mut current_group)));
-            }
-
-            current_count = Some(count);
-            current_group.push(byte_string.clone());
-        }
-        if !current_group.is_empty() {
-            count_groups.push((current_count.unwrap(), current_group));
-        }
+        let count_groups = group_by_count(counts);
 
         // safety: NULL_VAL is set in the main function
         let null_val = NULL_VAL.get().unwrap();
 
-        // Sort each group alphabetically and assign ranks based on strategy
-        let mut current_rank = 1.0_f64;
-
-        #[allow(clippy::cast_precision_loss)]
-        match self.flag_rank_strategy {
-            RankStrategy::Dense => {
-                // Dense ranking (1223)
-                // Rank increments by 1 for each distinct count value
-                for (count, mut group) in count_groups {
-                    // sort the group alphabetically
-                    // since tied values are typically only a few, it's
-                    // not worth the overhead of a parallel sort
-                    group.sort_unstable();
-
-                    // Iterate by value to move instead of clone
-                    for byte_string in group {
-                        count_sum += count;
-                        pct = count as f64 * pct_factor;
-                        pct_sum += pct;
-
-                        if byte_string.is_empty() {
-                            counts_final.push((null_val.clone(), count, pct, current_rank));
-                        } else {
-                            counts_final.push((byte_string, count, pct, current_rank));
-                        }
-                    }
-                    current_rank += 1.0;
-                }
-            },
-            RankStrategy::Min => {
-                // Standard competition ranking (1224)
-                // All tied items get the minimum rank
-                for (count, mut group) in count_groups {
-                    group.sort_unstable();
-                    let group_len = group.len();
-
-                    for byte_string in group {
-                        count_sum += count;
-                        pct = count as f64 * pct_factor;
-                        pct_sum += pct;
-
-                        if byte_string.is_empty() {
-                            counts_final.push((null_val.clone(), count, pct, current_rank));
-                        } else {
-                            counts_final.push((byte_string, count, pct, current_rank));
-                        }
-                    }
-                    current_rank += group_len as f64;
-                }
-            },
-            RankStrategy::Max => {
-                // Modified competition ranking (1334)
-                // All tied items get the maximum rank
-                for (count, mut group) in count_groups {
-                    group.sort_unstable();
-                    let group_len = group.len();
-                    let max_rank = current_rank + group_len as f64 - 1.0;
-
-                    for byte_string in group {
-                        count_sum += count;
-                        pct = count as f64 * pct_factor;
-                        pct_sum += pct;
-
-                        if byte_string.is_empty() {
-                            counts_final.push((null_val.clone(), count, pct, max_rank));
-                        } else {
-                            counts_final.push((byte_string, count, pct, max_rank));
-                        }
-                    }
-                    current_rank += group_len as f64;
-                }
-            },
-            RankStrategy::Ordinal => {
-                // Ordinal ranking (1234)
-                // Each item gets a unique rank, ordered alphabetically within ties
-                for (count, mut group) in count_groups {
-                    group.sort_unstable();
-
-                    for byte_string in group {
-                        count_sum += count;
-                        pct = count as f64 * pct_factor;
-                        pct_sum += pct;
-
-                        if byte_string.is_empty() {
-                            counts_final.push((null_val.clone(), count, pct, current_rank));
-                        } else {
-                            counts_final.push((byte_string, count, pct, current_rank));
-                        }
-                        current_rank += 1.0;
-                    }
-                }
-            },
-            RankStrategy::Average => {
-                // Fractional ranking (1 2.5 2.5 4)
-                // All tied items get the average of their ordinal ranks
-                for (count, mut group) in count_groups {
-                    group.sort_unstable();
-                    let group_len = group.len();
-                    let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
-
-                    for byte_string in group {
-                        count_sum += count;
-                        pct = count as f64 * pct_factor;
-                        pct_sum += pct;
-
-                        if byte_string.is_empty() {
-                            counts_final.push((null_val.clone(), count, pct, avg_rank));
-                        } else {
-                            counts_final.push((byte_string, count, pct, avg_rank));
-                        }
-                    }
-                    current_rank += group_len as f64;
-                }
-            },
-        }
+        // Apply ranking strategy
+        let (mut counts_final, count_sum, pct_sum) = apply_ranking_strategy_unweighted(
+            count_groups,
+            self.flag_rank_strategy,
+            pct_factor,
+            null_val,
+        );
 
         let other_count = total_count - count_sum;
         if other_count > 0 && self.flag_other_text != "<NONE>" {
@@ -1795,6 +1953,92 @@ impl Args {
         // pre-allocate space for 17 field stats, see list below for details
         let mut field_stats: Vec<FieldStats> = Vec::with_capacity(17);
 
+        // Helper function to build a frequency field for JSON output
+        let build_frequency_field =
+            |field_name: String,
+             cardinality: u64,
+             processed_frequencies: &mut Vec<ProcessedFrequency>,
+             field_stats: &mut Vec<FieldStats>| {
+                // Sort frequencies by count if flag_other_sorted
+                if self.flag_other_sorted {
+                    if self.flag_asc {
+                        processed_frequencies.sort_unstable_by(|a, b| a.count.cmp(&b.count));
+                    } else {
+                        processed_frequencies.sort_unstable_by(|a, b| b.count.cmp(&a.count));
+                    }
+                }
+
+                // Get stats record for this field
+                let stats_record = STATS_RECORDS
+                    .get()
+                    .and_then(|records| records.get(&field_name));
+
+                // Get data type and nullcount from stats record
+                let dtype = stats_record.map_or(String::new(), |sr| sr.r#type.clone());
+                let nullcount = stats_record.map_or(0, |sr| sr.nullcount);
+                let sparsity =
+                    fast_float2::parse(util::round_num(nullcount as f64 / rowcount as f64, 4))
+                        .unwrap_or(0.0);
+                let uniqueness_ratio =
+                    fast_float2::parse(util::round_num(cardinality as f64 / rowcount as f64, 4))
+                        .unwrap_or(0.0);
+
+                // Build stats vector from stats record if type is not empty and not NULL or Boolean
+                if !self.flag_no_stats
+                    && !dtype.is_empty()
+                    && dtype.as_str() != "NULL"
+                    && dtype.as_str() != "Boolean"
+                    && let Some(sr) = stats_record
+                {
+                    // Add all available stats if some
+                    add_stat(field_stats, "sum", sr.sum);
+                    add_stat(field_stats, "min", sr.min.clone());
+                    add_stat(field_stats, "max", sr.max.clone());
+                    add_stat(field_stats, "range", sr.range);
+                    add_stat(field_stats, "sort_order", sr.sort_order.clone());
+
+                    // String-specific length stats
+                    add_stat(field_stats, "min_length", sr.min_length);
+                    add_stat(field_stats, "max_length", sr.max_length);
+                    add_stat(field_stats, "sum_length", sr.sum_length);
+                    add_stat(field_stats, "avg_length", sr.avg_length);
+                    add_stat(field_stats, "stddev_length", sr.stddev_length);
+                    add_stat(field_stats, "variance_length", sr.variance_length);
+                    add_stat(field_stats, "cv_length", sr.cv_length);
+
+                    // Numeric-specific stats
+                    add_stat(field_stats, "mean", sr.mean);
+                    add_stat(field_stats, "sem", sr.sem);
+                    add_stat(field_stats, "stddev", sr.stddev);
+                    add_stat(field_stats, "variance", sr.variance);
+                    add_stat(field_stats, "cv", sr.cv);
+                }
+
+                FrequencyField {
+                    field: field_name,
+                    r#type: dtype,
+                    cardinality,
+                    nullcount,
+                    sparsity,
+                    uniqueness_ratio,
+                    stats: std::mem::take(field_stats),
+                    frequencies: processed_frequencies
+                        .iter()
+                        .map(|pf| FrequencyEntry {
+                            value:      if self.flag_vis_whitespace {
+                                util::visualize_whitespace(&String::from_utf8_lossy(&pf.value))
+                            } else {
+                                String::from_utf8_lossy(&pf.value).into_owned()
+                            },
+                            count:      pf.count,
+                            percentage: fast_float2::parse(&pf.formatted_percentage)
+                                .unwrap_or(pf.percentage),
+                            rank:       pf.rank,
+                        })
+                        .collect(),
+                }
+            };
+
         if let Some(weighted) = weighted_tables {
             // Process weighted frequencies for JSON output
             for (i, header) in headers.iter().enumerate() {
@@ -1815,15 +2059,6 @@ impl Args {
                     );
                 }
 
-                // Sort frequencies by count if flag_other_sorted
-                if self.flag_other_sorted {
-                    if self.flag_asc {
-                        processed_frequencies.sort_unstable_by(|a, b| a.count.cmp(&b.count));
-                    } else {
-                        processed_frequencies.sort_unstable_by(|a, b| b.count.cmp(&a.count));
-                    }
-                }
-
                 // Calculate cardinality for this field
                 let cardinality = if all_unique_header {
                     rowcount
@@ -1833,80 +2068,17 @@ impl Args {
                     0
                 };
 
-                // Get stats record for this field
-                let stats_record = STATS_RECORDS
-                    .get()
-                    .and_then(|records| records.get(&field_name));
-
-                // Get data type and nullcount from stats record
-                let dtype = stats_record.map_or(String::new(), |sr| sr.r#type.clone());
-                let nullcount = stats_record.map_or(0, |sr| sr.nullcount);
-                let sparsity =
-                    fast_float2::parse(util::round_num(nullcount as f64 / rowcount as f64, 4))
-                        .unwrap_or(0.0);
-                let uniqueness_ratio =
-                    fast_float2::parse(util::round_num(cardinality as f64 / rowcount as f64, 4))
-                        .unwrap_or(0.0);
-
-                // Build stats vector from stats record if type is not empty and not NULL or Boolean
-                if !self.flag_no_stats
-                    && !dtype.is_empty()
-                    && dtype.as_str() != "NULL"
-                    && dtype.as_str() != "Boolean"
-                    && let Some(sr) = stats_record
-                {
-                    // Add all available stats if some
-                    add_stat(&mut field_stats, "sum", sr.sum);
-                    add_stat(&mut field_stats, "min", sr.min.clone());
-                    add_stat(&mut field_stats, "max", sr.max.clone());
-                    add_stat(&mut field_stats, "range", sr.range);
-                    add_stat(&mut field_stats, "sort_order", sr.sort_order.clone());
-
-                    // String-specific length stats
-                    add_stat(&mut field_stats, "min_length", sr.min_length);
-                    add_stat(&mut field_stats, "max_length", sr.max_length);
-                    add_stat(&mut field_stats, "sum_length", sr.sum_length);
-                    add_stat(&mut field_stats, "avg_length", sr.avg_length);
-                    add_stat(&mut field_stats, "stddev_length", sr.stddev_length);
-                    add_stat(&mut field_stats, "variance_length", sr.variance_length);
-                    add_stat(&mut field_stats, "cv_length", sr.cv_length);
-
-                    // Numeric-specific stats
-                    add_stat(&mut field_stats, "mean", sr.mean);
-                    add_stat(&mut field_stats, "sem", sr.sem);
-                    add_stat(&mut field_stats, "stddev", sr.stddev);
-                    add_stat(&mut field_stats, "variance", sr.variance);
-                    add_stat(&mut field_stats, "cv", sr.cv);
-                }
-
-                fields.push(FrequencyField {
-                    field: field_name,
-                    r#type: dtype,
+                fields.push(build_frequency_field(
+                    field_name,
                     cardinality,
-                    nullcount,
-                    sparsity,
-                    uniqueness_ratio,
-                    stats: std::mem::take(&mut field_stats),
-                    frequencies: processed_frequencies
-                        .iter()
-                        .map(|pf| FrequencyEntry {
-                            value:      if self.flag_vis_whitespace {
-                                util::visualize_whitespace(&String::from_utf8_lossy(&pf.value))
-                            } else {
-                                String::from_utf8_lossy(&pf.value).into_owned()
-                            },
-                            count:      pf.count,
-                            percentage: fast_float2::parse(&pf.formatted_percentage)
-                                .unwrap_or(pf.percentage),
-                            rank:       pf.rank,
-                        })
-                        .collect(),
-                });
+                    &mut processed_frequencies,
+                    &mut field_stats,
+                ));
 
                 processed_frequencies.clear(); // clear for next field
             }
         } else {
-            // Process unweighted frequencies for JSON output (original code)
+            // Process unweighted frequencies for JSON output
             let head_ftables = headers.iter().zip(tables);
             for (i, (header, ftab)) in head_ftables.enumerate() {
                 let field_name = if rconfig.no_headers {
@@ -1924,17 +2096,6 @@ impl Args {
                     &mut processed_frequencies,
                 );
 
-                // Sort frequencies by count if flag_other_sorted
-                if self.flag_other_sorted {
-                    if self.flag_asc {
-                        // asc order
-                        processed_frequencies.sort_unstable_by(|a, b| a.count.cmp(&b.count));
-                    } else {
-                        // desc order
-                        processed_frequencies.sort_unstable_by(|a, b| b.count.cmp(&a.count));
-                    }
-                }
-
                 // Calculate cardinality for this field
                 let cardinality = if all_unique_header {
                     rowcount // For all-unique fields, cardinality == rowcount
@@ -1942,79 +2103,16 @@ impl Args {
                     ftab.len() as u64 // otherwise, cardinality == number of unique values
                 };
 
-                // Get stats record for this field
-                let stats_record = STATS_RECORDS
-                    .get()
-                    .and_then(|records| records.get(&field_name));
-
-                // Get data type and nullcount from stats record
-                let dtype = stats_record.map_or(String::new(), |sr| sr.r#type.clone());
-                let nullcount = stats_record.map_or(0, |sr| sr.nullcount);
-                let sparsity =
-                    fast_float2::parse(util::round_num(nullcount as f64 / rowcount as f64, 4))
-                        .unwrap_or(0.0);
-                let uniqueness_ratio =
-                    fast_float2::parse(util::round_num(cardinality as f64 / rowcount as f64, 4))
-                        .unwrap_or(0.0);
-
-                // Build stats vector from stats record if type is not empty and not NULL or Boolean
-                if !self.flag_no_stats
-                    && !dtype.is_empty()
-                    && dtype.as_str() != "NULL"
-                    && dtype.as_str() != "Boolean"
-                    && let Some(sr) = stats_record
-                {
-                    // Add all available stats if some
-                    add_stat(&mut field_stats, "sum", sr.sum);
-                    add_stat(&mut field_stats, "min", sr.min.clone());
-                    add_stat(&mut field_stats, "max", sr.max.clone());
-                    add_stat(&mut field_stats, "range", sr.range);
-                    add_stat(&mut field_stats, "sort_order", sr.sort_order.clone());
-
-                    // String-specific length stats
-                    add_stat(&mut field_stats, "min_length", sr.min_length);
-                    add_stat(&mut field_stats, "max_length", sr.max_length);
-                    add_stat(&mut field_stats, "sum_length", sr.sum_length);
-                    add_stat(&mut field_stats, "avg_length", sr.avg_length);
-                    add_stat(&mut field_stats, "stddev_length", sr.stddev_length);
-                    add_stat(&mut field_stats, "variance_length", sr.variance_length);
-                    add_stat(&mut field_stats, "cv_length", sr.cv_length);
-
-                    // Numeric-specific stats
-                    add_stat(&mut field_stats, "mean", sr.mean);
-                    add_stat(&mut field_stats, "sem", sr.sem);
-                    add_stat(&mut field_stats, "stddev", sr.stddev);
-                    add_stat(&mut field_stats, "variance", sr.variance);
-                    add_stat(&mut field_stats, "cv", sr.cv);
-                }
-
-                fields.push(FrequencyField {
-                    field: field_name,
-                    r#type: dtype,
+                fields.push(build_frequency_field(
+                    field_name,
                     cardinality,
-                    nullcount,
-                    sparsity,
-                    uniqueness_ratio,
-                    stats: std::mem::take(&mut field_stats),
-                    frequencies: processed_frequencies
-                        .iter()
-                        .map(|pf| FrequencyEntry {
-                            value:      if self.flag_vis_whitespace {
-                                util::visualize_whitespace(&String::from_utf8_lossy(&pf.value))
-                            } else {
-                                String::from_utf8_lossy(&pf.value).into_owned()
-                            },
-                            count:      pf.count,
-                            percentage: fast_float2::parse(&pf.formatted_percentage)
-                                .unwrap_or(pf.percentage),
-                            rank:       pf.rank,
-                        })
-                        .collect(),
-                });
+                    &mut processed_frequencies,
+                    &mut field_stats,
+                ));
 
                 processed_frequencies.clear(); // clear for next field
-            } // end for loop
-        } // end else block for unweighted
+            }
+        }
 
         let output = FrequencyOutput {
             input: if is_stdin {

@@ -3566,9 +3566,9 @@ dependencies = [
 
 [[package]]
 name = "itoa"
-version = "1.0.16"
+version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ee5b5339afb4c41626dde77b7a611bd4f2c202b897852b4bcf5d03eddc61010"
+checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
 name = "jaq-core"
@@ -5829,7 +5829,7 @@ dependencies = [
  "whatlang",
  "xxhash-rust",
  "zip 6.0.0",
- "zmij 0.1.10",
+ "zmij 1.0.0",
 ]
 
 [[package]]
@@ -9162,9 +9162,15 @@ checksum = "40990edd51aae2c2b6907af74ffb635029d5788228222c4bb811e9351c0caad3"
 
 [[package]]
 name = "zmij"
-version = "0.1.10"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4af59da1029247450b54ba43e0b62c8e376582464bbe5504dd525fe521e7e8fd"
+checksum = "3273ed2c1f89f63ec74ab75efe20159d0058e30831e6e9f1502cd5bf2fd8b178"
+
+[[package]]
+name = "zmij"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6d6085d62852e35540689d1f97ad663e3971fc19cf5eceab364d62c646ea167"
 
 [[package]]
 name = "zmij"

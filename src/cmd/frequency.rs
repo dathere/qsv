@@ -1105,8 +1105,8 @@ fn group_by_weight(counts: Vec<(Vec<u8>, f64)>, tolerance: f64) -> Vec<(f64, Vec
     weight_groups
 }
 
-/// Create a field processing function based on flags
-/// Returns a closure that processes a field according to ignore_case and no_trim flags
+/// Implementation of helper methods for frequency command arguments.
+/// Provides configuration helpers and post-processing utilities for results.
 impl Args {
     pub fn rconfig(&self) -> Config {
         Config::new(self.arg_input.as_ref())

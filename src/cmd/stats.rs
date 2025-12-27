@@ -1705,9 +1705,9 @@ impl Args {
                 };
                 // safety: seek() is safe as we know we have an index file
                 // we do an expect() here so that it triggers a human-panic
-                // with some actionable infoif the index is corrupted
+                // with some actionable info if the index is corrupted
                 idx.seek((i * chunk_size) as u64)
-                    .expect("File seek failed for chunk {i}: {e}");
+                    .expect("Index seek failed.");
                 let it = idx.byte_records().take(chunk_size);
                 // safety: this will only return an Error if the channel has been disconnected
                 unsafe {

@@ -957,6 +957,15 @@ fn apply_ranking_strategy_weighted(
 
 /// Apply limits to weighted frequency counts
 ///
+/// # Arguments
+/// * `counts` - Mutable reference to vector of `(value, weight)` pairs
+/// * `limit` - Limit value; if positive, keep only the top N weighted values;
+///              if negative, keep only values with weight greater than or equal
+///              to the absolute value of this limit; if zero, no limits are applied
+/// * `lmt_threshold` - Minimum number of unique values required before applying
+///                     any limits; if zero or greater than or equal to the number
+///                     of unique values, limits may be applied
+///
 /// # Returns
 /// Whether any limits were applied
 fn apply_limits_weighted(

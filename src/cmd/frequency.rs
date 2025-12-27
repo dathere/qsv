@@ -850,10 +850,38 @@ fn apply_ranking_strategy_unweighted(
     (counts_final, count_sum, pct_sum)
 }
 
-/// Apply ranking strategy to grouped weighted frequency values (f64 weights)
+/// Apply a ranking strategy to grouped weighted frequency values.
+///
+/// This function takes pre-aggregated weighted frequency groups and flattens them into a list
+/// of individual values with their associated weight, percentage, and rank. The rank assigned
+/// to each value depends on the provided `strategy`, and percentages are computed using
+/// `pct_factor`. The `null_val` is treated specially as the null/other bucket when present.
+///
+/// # Arguments
+///
+/// * `groups` - A vector of tuples where each tuple contains:
+///   * the total weight for the group of values (`f64`), and
+///   * a vector of the grouped values (`Vec<u8>` for each value) that share that weight.
+///   Typically, these groups represent distinct values with their aggregated weights after
+///   applying any limiting or bucketing logic.
+/// * `strategy` - The ranking strategy (`RankStrategy`) used to assign ranks to values
+///   based on their weights. This controls how ties are handled (e.g., minimum, maximum,
+///   dense, ordinal, or average ranks).
+/// * `pct_factor` - A scaling factor used to convert weights into percentage values.
+///   For example, this is often the reciprocal of the total weight so that the resulting
+///   percentages sum to approximately 100.
+/// * `null_val` - The byte representation of the value that should be treated as the
+///   null/other bucket. This is used to identify and correctly label null/other values
+///   in the output.
 ///
 /// # Returns
-/// (counts_final, count_sum, pct_sum)
+///
+/// A tuple `(counts_final, count_sum, pct_sum)` where:
+///
+/// * `counts_final` - The flattened list of `(value, weight, percentage, rank)` tuples for
+///   each grouped value after ranking has been applied.
+/// * `count_sum` - The sum of all weights in `counts_final`.
+/// * `pct_sum` - The sum of all percentage values in `counts_final`.
 #[allow(clippy::cast_precision_loss)]
 fn apply_ranking_strategy_weighted(
     groups: Vec<(f64, Vec<Vec<u8>>)>,

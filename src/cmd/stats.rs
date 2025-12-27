@@ -986,7 +986,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // Set QSV_DEFAULT_DELIMITER environment variable
             // this is only for the current process. When qsv exits, it will not persist
             // safety: we wrap the set_var in an unsafe block because it's an unsafe function,
-            // as it asumes a single-threaded environment, which we still are at this point
+            // as it assumes a single-threaded environment, which we still are at this point
             unsafe { std::env::set_var("QSV_DEFAULT_DELIMITER", inferred) };
         }
 

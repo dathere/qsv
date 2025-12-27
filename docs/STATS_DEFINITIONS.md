@@ -73,13 +73,8 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 | `is_ascii` | Variable | Indicates if all characters in the string column are ASCII. | Checked during UTF-8 validation; true if bytes are valid ASCII. |
 
 **Date and DateTime Type Inference:**
-- Date and DateTime types are only inferred when `--infer-dates` is enabled
-- Date inference matches candidates against **19 possible date formats** with multiple variants
-- As date parsing is relatively expensive, it only attempts date inferencing for columns in the `--dates-whitelist` (default: `date,time,due,open,close,created`)
-- **Examples of column names that trigger date inference:** "start_date", "Observation Time", "timestamp", "Date Closed"
-- **Examples that do NOT trigger:** "start_dt", "create_dt", "tmstmp", "close_dt" (unless added to whitelist)
-- Use `--dates-whitelist all` to inspect all fields (may cause false positives with numeric data like Unix epoch timestamps)
-- The date formats recognized and their sub-variants can be found at: https://github.com/dathere/qsv-dateparser?tab=readme-ov-file#accepted-date-formats
+- See the **Date/DateTime Statistics** section for full details on how date columns are selected, the default `--dates-whitelist`, example column names that do and do not trigger inference, and the list of supported date formats.
+- In summary, Date and DateTime types are only inferred when `--infer-dates` is enabled, and inference relies on matching candidate values against the supported date formats.
 
 **Boolean Type Inference:**
 - Boolean type is inferred when `--infer-boolean` is enabled

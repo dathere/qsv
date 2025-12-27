@@ -1901,7 +1901,7 @@ impl Args {
         // Helper function to build a frequency field for JSON output
         let build_frequency_field =
             |field_name: String,
-             _all_unique_header: bool,
+             all_unique_header: bool,
              cardinality: u64,
              processed_frequencies: &mut Vec<ProcessedFrequency>,
              field_stats: &mut Vec<FieldStats>| {

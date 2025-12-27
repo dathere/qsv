@@ -721,8 +721,21 @@ type WeightedFTables = Vec<HashMap<Vec<u8>, f64>>;
 
 /// Apply ranking strategy to grouped unweighted frequency values (u64 counts)
 ///
+/// # Arguments
+/// * `groups` - A list of `(count, values)` pairs, where each `values` vector contains
+///   all distinct values that share the same unweighted count.
+/// * `strategy` - The ranking strategy to apply when assigning ranks to counts
+///   (for example, min, max, dense, ordinal, or average).
+/// * `pct_factor` - Multiplier used to convert counts into percentage values
+///   (typically derived from the total row count).
+/// * `null_val` - Byte representation used to identify or label null or missing values.
+///
 /// # Returns
-/// (counts_final, count_sum, pct_sum)
+/// A tuple `(counts_final, count_sum, pct_sum)` where:
+/// * `counts_final` - The flattened list of `(value, count, percentage, rank)` tuples
+///   for each grouped value after ranking.
+/// * `count_sum` - The sum of all counts in `counts_final`.
+/// * `pct_sum` - The sum of all percentage values in `counts_final`.
 #[allow(clippy::cast_precision_loss)]
 fn apply_ranking_strategy_unweighted(
     groups: Vec<(u64, Vec<Vec<u8>>)>,

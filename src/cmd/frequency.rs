@@ -840,18 +840,19 @@ fn apply_ranking_strategy_unweighted(
 /// Apply ranking strategy to grouped weighted frequency values (f64 weights)
 ///
 /// # Returns
-/// (counts_final, count_sum)
+/// (counts_final, count_sum, pct_sum)
 #[allow(clippy::cast_precision_loss)]
 fn apply_ranking_strategy_weighted(
     groups: Vec<(f64, Vec<Vec<u8>>)>,
     strategy: RankStrategy,
     pct_factor: f64,
     null_val: &[u8],
-) -> (Vec<(Vec<u8>, f64, f64, f64)>, f64) {
+) -> (Vec<(Vec<u8>, f64, f64, f64)>, f64, f64) {
     let mut counts_final: Vec<(Vec<u8>, f64, f64, f64)> =
         Vec::with_capacity(groups.iter().map(|(_, group)| group.len()).sum::<usize>() + 1);
     let mut current_rank = 1.0_f64;
     let mut count_sum = 0.0_f64;
+    let mut pct_sum = 0.0_f64;
 
     match strategy {
         RankStrategy::Dense => {
@@ -861,6 +862,7 @@ fn apply_ranking_strategy_weighted(
                 for byte_string in group {
                     count_sum += weight;
                     let pct = weight * pct_factor;
+                    pct_sum += pct;
 
                     if byte_string.is_empty() {
                         counts_final.push((null_val.to_vec(), weight, pct, current_rank));
@@ -879,6 +881,7 @@ fn apply_ranking_strategy_weighted(
                 for byte_string in group {
                     count_sum += weight;
                     let pct = weight * pct_factor;
+                    pct_sum += pct;
 
                     if byte_string.is_empty() {
                         counts_final.push((null_val.to_vec(), weight, pct, current_rank));
@@ -898,6 +901,7 @@ fn apply_ranking_strategy_weighted(
                 for byte_string in group {
                     count_sum += weight;
                     let pct = weight * pct_factor;
+                    pct_sum += pct;
 
                     if byte_string.is_empty() {
                         counts_final.push((null_val.to_vec(), weight, pct, max_rank));
@@ -915,6 +919,7 @@ fn apply_ranking_strategy_weighted(
                 for byte_string in group {
                     count_sum += weight;
                     let pct = weight * pct_factor;
+                    pct_sum += pct;
 
                     if byte_string.is_empty() {
                         counts_final.push((null_val.to_vec(), weight, pct, current_rank));
@@ -934,6 +939,7 @@ fn apply_ranking_strategy_weighted(
                 for byte_string in group {
                     count_sum += weight;
                     let pct = weight * pct_factor;
+                    pct_sum += pct;
 
                     if byte_string.is_empty() {
                         counts_final.push((null_val.to_vec(), weight, pct, avg_rank));
@@ -946,7 +952,7 @@ fn apply_ranking_strategy_weighted(
         },
     }
 
-    (counts_final, count_sum)
+    (counts_final, count_sum, pct_sum)
 }
 
 /// Apply limits to weighted frequency counts
@@ -1043,6 +1049,7 @@ fn group_by_count(counts: Vec<(Vec<u8>, u64)>) -> Vec<(u64, Vec<Vec<u8>>)> {
         current_group.push(byte_string);
     }
     if !current_group.is_empty() {
+        // safety: we know that current_count is Some
         count_groups.push((current_count.unwrap(), current_group));
     }
 
@@ -1271,7 +1278,7 @@ impl Args {
         let null_val = NULL_VAL.get().unwrap();
 
         // Apply ranking strategy
-        let (mut counts_final, count_sum) = apply_ranking_strategy_weighted(
+        let (mut counts_final, count_sum, pct_sum) = apply_ranking_strategy_weighted(
             weight_groups,
             self.flag_rank_strategy,
             pct_factor,
@@ -1283,6 +1290,8 @@ impl Args {
         // Only create Other entry if there are actually remaining unique values
         // and the weight is positive. This prevents "Other (0)" entries when
         // --limit 0 is used and all values are included.
+        // Use 100.0 - pct_sum to ensure percentages sum exactly to 100%,
+        // handling floating-point precision issues consistently with unweighted case.
         if other_weight > 0.0 && other_unique_count > 0 && self.flag_other_text != "<NONE>" {
             counts_final.push((
                 format!(
@@ -1293,7 +1302,7 @@ impl Args {
                 .as_bytes()
                 .to_vec(),
                 other_weight,
-                other_weight * pct_factor,
+                100.0_f64 - pct_sum,
                 0.0,
             ));
         }
@@ -1901,7 +1910,6 @@ impl Args {
         // Helper function to build a frequency field for JSON output
         let build_frequency_field =
             |field_name: String,
-             all_unique_header: bool,
              cardinality: u64,
              processed_frequencies: &mut Vec<ProcessedFrequency>,
              field_stats: &mut Vec<FieldStats>| {
@@ -2016,7 +2024,6 @@ impl Args {
 
                 fields.push(build_frequency_field(
                     field_name,
-                    all_unique_header,
                     cardinality,
                     &mut processed_frequencies,
                     &mut field_stats,
@@ -2052,7 +2059,6 @@ impl Args {
 
                 fields.push(build_frequency_field(
                     field_name,
-                    all_unique_header,
                     cardinality,
                     &mut processed_frequencies,
                     &mut field_stats,

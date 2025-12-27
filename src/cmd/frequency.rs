@@ -1027,7 +1027,9 @@ fn apply_limits_weighted(counts: &mut Vec<(Vec<u8>, f64)>, limit: isize, lmt_thr
 /// * `counts` - Mutable reference to counts vector
 /// * `limit` - Limit value (positive = top N, negative = threshold)
 /// * `unq_limit` - Unique limit for all-unique columns
-/// * `lmt_threshold` - Threshold for applying limits
+/// * `lmt_threshold` - Threshold controlling when limits are applied. Limits are applied when this
+///   is 0 or when it is >= the number of unique values. When this is a positive number less than
+///   the unique count, no limits are applied.
 /// * `all_unique` - Whether the column has all unique values
 fn apply_limits_unweighted(
     counts: &mut Vec<(Vec<u8>, u64)>,

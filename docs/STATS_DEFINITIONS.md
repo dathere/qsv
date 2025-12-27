@@ -223,7 +223,6 @@ The following whitespace markers are used (as defined in the [Rust reference](ht
 | `\r` | `《⏎》` | Carriage return |
 | `\u{000B}` | `《⋮》` | Vertical tab |
 | `\u{000C}` | `《␌》` | Form feed |
-| `\u{0009}` | `《↹》` | Horizontal tab |
 | `\u{0085}` | `《␤》` | Next line |
 | `\u{200E}` | `《␎》` | Left-to-right mark |
 | `\u{200F}` | `《␏》` | Right-to-left mark |

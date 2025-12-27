@@ -861,9 +861,9 @@ fn apply_ranking_strategy_unweighted(
 ///
 /// * `groups` - A vector of tuples where each tuple contains:
 ///   * the total weight for the group of values (`f64`), and
-///   * a vector of the grouped values (`Vec<u8>` for each value) that share that weight.
-///   Typically, these groups represent distinct values with their aggregated weights after
-///   applying any limiting or bucketing logic.
+///   * a vector of the grouped values (`Vec<u8>` for each value) that share that weight. Typically,
+///     these groups represent distinct values with their aggregated weights after applying any
+///     limiting or bucketing logic.
 /// * `strategy` - The ranking strategy (`RankStrategy`) used to assign ranks to values based on
 ///   their weights. This controls how ties are handled (e.g., minimum, maximum, dense, ordinal, or
 ///   average ranks).

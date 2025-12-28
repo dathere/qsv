@@ -263,7 +263,7 @@ describegpt options:
 
                            CACHING OPTIONS:
     --no-cache             Disable default disk cache.
-   --disk-cache-dir <dir>  The directory <dir> to store the disk cache. Note that if the directory
+  --disk-cache-dir <dir>   The directory <dir> to store the disk cache. Note that if the directory
                            does not exist, it will be created. If the directory exists, it will be used as is,
                            and will not be flushed. This option allows you to maintain several disk caches
                            for different describegpt jobs (e.g. one for a data portal, another for internal
@@ -1269,62 +1269,136 @@ fn generate_code_based_dictionary(
     dictionary_entries
 }
 
+/// Extract JSON from LLM response AND Output using common pattern
+fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
+    // Helper function to validate and return JSON candidate
+    fn validate_json_candidate(candidate: &str) -> Option<serde_json::Value> {
+        serde_json::from_str::<serde_json::Value>(candidate.trim()).ok()
+    }
+
+    // Helper function to try to fix common JSON issues,
+    // particularly unescaped newlines in strings
+    fn try_fix_json(json_str: &str) -> String {
+        let mut result = String::with_capacity(json_str.len());
+        let chars = json_str.chars();
+        let mut in_string = false;
+        let mut escape_next = false;
+
+        for ch in chars {
+            if escape_next {
+                result.push(ch);
+                escape_next = false;
+                continue;
+            }
+
+            match ch {
+                '\\' => {
+                    result.push(ch);
+                    escape_next = true;
+                },
+                '"' => {
+                    result.push(ch);
+                    in_string = !in_string;
+                },
+                '\n' if in_string => {
+                    // Escape newlines inside strings
+                    result.push_str("\\n");
+                },
+                '\r' if in_string => {
+                    // Escape carriage returns inside strings
+                    result.push_str("\\r");
+                },
+                '\t' if in_string => {
+                    // Escape tabs inside strings
+                    result.push_str("\\t");
+                },
+                _ => {
+                    result.push(ch);
+                },
+            }
+        }
+
+        result
+    }
+
+    // Helper function to try parsing with fallback to fixed version
+    fn try_parse_json(candidate: &str) -> Option<serde_json::Value> {
+        // First try parsing as-is
+        if let Some(json) = validate_json_candidate(candidate) {
+            return Some(json);
+        }
+        // If that fails, try fixing common issues
+        let fixed = try_fix_json(candidate);
+        validate_json_candidate(&fixed)
+    }
+
+    // Pattern 1: JSON wrapped in ```json and ``` blocks (improved regex to handle multiline)
+    if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*?)\n```").captures(output)
+        && let Some(m) = caps.get(1)
+        && let Some(valid_json) = try_parse_json(m.as_str())
+    {
+        return Ok(valid_json);
+    }
+
+    // Pattern 1b: JSON wrapped in ```json and ``` blocks (greedy match as fallback)
+    if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*)\n```").captures(output)
+        && let Some(m) = caps.get(1)
+        && let Some(valid_json) = try_parse_json(m.as_str())
+    {
+        return Ok(valid_json);
+    }
+
+    // Pattern 2: JSON wrapped in ``` and ``` blocks (without json specifier)
+    if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*?)\n```").captures(output)
+        && let Some(m) = caps.get(1)
+        && let Some(valid_json) = try_parse_json(m.as_str())
+    {
+        return Ok(valid_json);
+    }
+
+    // Pattern 2b: JSON wrapped in ``` and ``` blocks (greedy match as fallback)
+    if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*)\n```").captures(output)
+        && let Some(m) = caps.get(1)
+        && let Some(valid_json) = try_parse_json(m.as_str())
+    {
+        return Ok(valid_json);
+    }
+
+    // Pattern 3: Try to find JSON array or object at the start of the response
+    if let Some(caps) = regex_oncelock!(r"(?s)^\s*(\[.*?\]|\{.*?\})").captures(output)
+        && let Some(m) = caps.get(1)
+        && let Some(valid_json) = try_parse_json(m.as_str())
+    {
+        return Ok(valid_json);
+    }
+
+    // Pattern 4: Try to find JSON array or object anywhere in the response (non-greedy)
+    if let Some(caps) = regex_oncelock!(r"(?s)(\[.*?\]|\{.*?\})").captures(output)
+        && let Some(m) = caps.get(1)
+        && let Some(valid_json) = try_parse_json(m.as_str())
+    {
+        return Ok(valid_json);
+    }
+
+    // If no pattern matches, return the entire output (might be raw JSON)
+    if (output.trim().starts_with('[') || output.trim().starts_with('{'))
+        && let Some(valid_json) = try_parse_json(output)
+    {
+        return Ok(valid_json);
+    }
+
+    fail_clierror!(
+        "Failed to extract JSON content from LLM response. Output: {}",
+        if output.is_empty() { "<empty>" } else { output }
+    )
+}
+
 /// Parse LLM JSON response to extract Label and Description for each field
 fn parse_llm_dictionary_response(
     llm_response: &str,
     field_names: &[String],
 ) -> CliResult<HashMap<String, (String, String)>> {
-    // Extract JSON from LLM response (similar to extract_json_from_output)
-    fn validate_json_candidate(candidate: &str) -> Option<serde_json::Value> {
-        serde_json::from_str::<serde_json::Value>(candidate.trim()).ok()
-    }
-
-    let json_value = {
-        // Pattern 1: JSON wrapped in ```json and ``` blocks
-        if let Some(caps) = regex_oncelock!(r"(?s)```json\n(.*?)\n```").captures(llm_response)
-            && let Some(m) = caps.get(1)
-            && let Some(valid_json) = validate_json_candidate(m.as_str())
-        {
-            valid_json
-        }
-        // Pattern 2: JSON wrapped in ``` and ``` blocks (without json specifier)
-        else if let Some(caps) = regex_oncelock!(r"(?s)```\n(.*?)\n```").captures(llm_response)
-            && let Some(m) = caps.get(1)
-            && let Some(valid_json) = validate_json_candidate(m.as_str())
-        {
-            valid_json
-        }
-        // Pattern 3: Try to find JSON array or object at the start of the response
-        else if let Some(caps) =
-            regex_oncelock!(r"(?s)^\s*(\[.*?\]|\{.*?\})").captures(llm_response)
-            && let Some(m) = caps.get(1)
-            && let Some(valid_json) = validate_json_candidate(m.as_str())
-        {
-            valid_json
-        }
-        // Pattern 4: Try to find JSON array or object anywhere in the response (non-greedy)
-        else if let Some(caps) = regex_oncelock!(r"(?s)(\[.*?\]|\{.*?\})").captures(llm_response)
-            && let Some(m) = caps.get(1)
-            && let Some(valid_json) = validate_json_candidate(m.as_str())
-        {
-            valid_json
-        }
-        // If no pattern matches, try the entire output (might be raw JSON)
-        else if (llm_response.trim().starts_with('[') || llm_response.trim().starts_with('{'))
-            && let Some(valid_json) = validate_json_candidate(llm_response)
-        {
-            valid_json
-        } else {
-            return fail_clierror!(
-                "Failed to extract JSON content from LLM response. Output: {}",
-                if llm_response.is_empty() {
-                    "<empty>"
-                } else {
-                    llm_response
-                }
-            );
-        }
-    };
+    let json_value = extract_json_from_output(llm_response)?;
 
     let mut result = HashMap::new();
 
@@ -2194,9 +2268,18 @@ fn get_completion(
     if let Some(addl_props) = args.flag_addl_props.as_ref() {
         let addl_props_json: serde_json::Value = serde_json::from_str(addl_props)
             .map_err(|e| CliError::Other(format!("Invalid JSON in --addl-props: {e:?}")))?;
-        // safety: addl_props_json is valid JSON and as_object() returns a valid object
-        for (key, value) in addl_props_json.as_object().unwrap() {
-            request_data[key] = value.clone();
+
+        // If addl_props_json is an object, extend/overlay all its keys into request_data
+        if let Some(obj) = addl_props_json.as_object() {
+            for (key, value) in obj {
+                request_data[key] = value.clone();
+            }
+        } else {
+            // If it is not an object, treat as error (must be JSON object of key/values)
+            return fail_clierror!(
+                "--addl-props should be a JSON object mapping keys to values; got: {}",
+                addl_props_json
+            );
         }
     }
 
@@ -2726,133 +2809,6 @@ fn run_inference_options(
             .replace("\\'", "'")
             .replace("\\`", "`")
             + "\n\n"
-    }
-
-    // Helper function to extract JSON from various LLM response formats
-    fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
-        // Helper function to validate and return JSON candidate
-        fn validate_json_candidate(candidate: &str) -> Option<serde_json::Value> {
-            serde_json::from_str::<serde_json::Value>(candidate.trim()).ok()
-        }
-
-        // Helper function to try to fix common JSON issues,
-        // particularly unescaped newlines in strings
-        fn try_fix_json(json_str: &str) -> String {
-            let mut result = String::with_capacity(json_str.len());
-            let chars = json_str.chars();
-            let mut in_string = false;
-            let mut escape_next = false;
-
-            for ch in chars {
-                if escape_next {
-                    result.push(ch);
-                    escape_next = false;
-                    continue;
-                }
-
-                match ch {
-                    '\\' => {
-                        result.push(ch);
-                        escape_next = true;
-                    },
-                    '"' => {
-                        result.push(ch);
-                        // Only toggle in_string if the quote is not escaped
-                        if !escape_next {
-                            in_string = !in_string;
-                        }
-                    },
-                    '\n' if in_string => {
-                        // Escape newlines inside strings
-                        result.push_str("\\n");
-                    },
-                    '\r' if in_string => {
-                        // Escape carriage returns inside strings
-                        result.push_str("\\r");
-                    },
-                    '\t' if in_string => {
-                        // Escape tabs inside strings
-                        result.push_str("\\t");
-                    },
-                    _ => {
-                        result.push(ch);
-                    },
-                }
-            }
-
-            result
-        }
-
-        // Helper function to try parsing with fallback to fixed version
-        fn try_parse_json(candidate: &str) -> Option<serde_json::Value> {
-            // First try parsing as-is
-            if let Some(json) = validate_json_candidate(candidate) {
-                return Some(json);
-            }
-            // If that fails, try fixing common issues
-            let fixed = try_fix_json(candidate);
-            validate_json_candidate(&fixed)
-        }
-
-        // Pattern 1: JSON wrapped in ```json and ``` blocks (improved regex to handle multiline)
-        if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*?)\n```").captures(output)
-            && let Some(m) = caps.get(1)
-            && let Some(valid_json) = try_parse_json(m.as_str())
-        {
-            return Ok(valid_json);
-        }
-
-        // Pattern 1b: JSON wrapped in ```json and ``` blocks (greedy match as fallback)
-        if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*)\n```").captures(output)
-            && let Some(m) = caps.get(1)
-            && let Some(valid_json) = try_parse_json(m.as_str())
-        {
-            return Ok(valid_json);
-        }
-
-        // Pattern 2: JSON wrapped in ``` and ``` blocks (without json specifier)
-        if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*?)\n```").captures(output)
-            && let Some(m) = caps.get(1)
-            && let Some(valid_json) = try_parse_json(m.as_str())
-        {
-            return Ok(valid_json);
-        }
-
-        // Pattern 2b: JSON wrapped in ``` and ``` blocks (greedy match as fallback)
-        if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*)\n```").captures(output)
-            && let Some(m) = caps.get(1)
-            && let Some(valid_json) = try_parse_json(m.as_str())
-        {
-            return Ok(valid_json);
-        }
-
-        // Pattern 3: Try to find JSON array or object at the start of the response
-        if let Some(caps) = regex_oncelock!(r"(?s)^\s*(\[.*?\]|\{.*?\})").captures(output)
-            && let Some(m) = caps.get(1)
-            && let Some(valid_json) = try_parse_json(m.as_str())
-        {
-            return Ok(valid_json);
-        }
-
-        // Pattern 4: Try to find JSON array or object anywhere in the response (non-greedy)
-        if let Some(caps) = regex_oncelock!(r"(?s)(\[.*?\]|\{.*?\})").captures(output)
-            && let Some(m) = caps.get(1)
-            && let Some(valid_json) = try_parse_json(m.as_str())
-        {
-            return Ok(valid_json);
-        }
-
-        // If no pattern matches, return the entire output (might be raw JSON)
-        if (output.trim().starts_with('[') || output.trim().starts_with('{'))
-            && let Some(valid_json) = try_parse_json(output)
-        {
-            return Ok(valid_json);
-        }
-
-        fail_clierror!(
-            "Failed to extract JSON content from LLM response. Output: {}",
-            if output.is_empty() { "<empty>" } else { output }
-        )
     }
 
     // Generate the plaintext and/or JSON output of an inference option
@@ -3455,21 +3411,27 @@ fn run_inference_options(
             };
 
             session_state = Some(load_session(session_path)?);
-            let state = session_state.as_mut().unwrap();
+            if let Some(ref mut state) = session_state {
+                // If not first message, check relevance and apply sliding window
+                if !state.messages.is_empty() {
+                    if let Some(ref baseline_sql) = state.baseline_sql
+                        && !check_message_relevance(
+                            user_prompt,
+                            baseline_sql,
+                            args,
+                            &client,
+                            api_key,
+                        )?
+                    {
+                        return fail_clierror!(
+                            "The current message does not appear to be related to refining the \
+                             baseline SQL query. Please start a new session for unrelated queries."
+                        );
+                    }
 
-            // If not first message, check relevance and apply sliding window
-            if !state.messages.is_empty() {
-                if let Some(ref baseline_sql) = state.baseline_sql
-                    && !check_message_relevance(user_prompt, baseline_sql, args, &client, api_key)?
-                {
-                    return fail_clierror!(
-                        "The current message does not appear to be related to refining the \
-                         baseline SQL query. Please start a new session for unrelated queries."
-                    );
+                    // Apply sliding window
+                    apply_sliding_window(state, session_len, args, &client, api_key)?;
                 }
-
-                // Apply sliding window
-                apply_sliding_window(state, session_len, args, &client, api_key)?;
             }
         }
 
@@ -3644,15 +3606,11 @@ fn run_inference_options(
                     Ok((stdout, stderr)) => {
                         // Check stderr for error messages
                         if stderr.to_ascii_lowercase().contains(" error:") {
-                            // Track error in session if present
-                            if let Some(ref mut state) = session_state {
-                                state
-                                    .sql_errors
-                                    .push(format!("DuckDB SQL query execution failed: {stderr}"));
-                                if let Some(ref normalized_path) = normalized_session_path {
-                                    let _ = save_session(Path::new(normalized_path), state);
-                                }
-                            }
+                            track_sql_error_in_session(
+                                session_state.as_mut(),
+                                normalized_session_path.as_ref(),
+                                format!("DuckDB SQL query execution failed: {stderr}"),
+                            );
                             // Invalidate the prompt cache entry so user can try again without
                             // reinferring dictionary
                             if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
@@ -3663,15 +3621,11 @@ fn run_inference_options(
                         (stdout, stderr)
                     },
                     Err(e) => {
-                        // Track error in session if present
-                        if let Some(ref mut state) = session_state {
-                            state
-                                .sql_errors
-                                .push(format!("DuckDB SQL query execution failed: {e}"));
-                            if let Some(ref normalized_path) = normalized_session_path {
-                                let _ = save_session(Path::new(normalized_path), state);
-                            }
-                        }
+                        track_sql_error_in_session(
+                            session_state.as_mut(),
+                            normalized_session_path.as_ref(),
+                            format!("DuckDB SQL query execution failed: {e}"),
+                        );
                         // Invalidate the prompt cache entry so user can try again
                         if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
                             let _ = invalidate_cache_entry(args, PromptType::Prompt);
@@ -3681,21 +3635,7 @@ fn run_inference_options(
                 };
 
             // Track successful execution in session
-            if let Some(ref mut state) = session_state {
-                let results_path = Path::new(sql_results).with_extension("csv");
-                if results_path.exists()
-                    && let Ok(sample) = extract_sql_sample(&results_path)
-                {
-                    state.sql_results = Some(sample);
-                    state.sql_errors.clear(); // Clear errors on success
-                }
-
-                // Extract and store baseline SQL only after successful execution
-                // This ensures baseline SQL is only set when the query executes successfully
-                if state.baseline_sql.is_none() {
-                    state.baseline_sql = Some(sql_query);
-                }
-            }
+            update_session_after_sql_success(session_state.as_mut(), sql_results, &sql_query);
 
             print_status(
                 &format!("DuckDB SQL query successful. Saved results to {sql_results} {stderr}"),
@@ -3733,15 +3673,11 @@ fn run_inference_options(
                     Ok((stdout, stderr)) => {
                         // Check stderr for error messages
                         if stderr.to_ascii_lowercase().contains("error:") {
-                            // Track error in session if present
-                            if let Some(ref mut state) = session_state {
-                                state
-                                    .sql_errors
-                                    .push(format!("Polars SQL query error detected: {stderr}"));
-                                if let Some(ref normalized_path) = normalized_session_path {
-                                    let _ = save_session(Path::new(normalized_path), state);
-                                }
-                            }
+                            track_sql_error_in_session(
+                                session_state.as_mut(),
+                                normalized_session_path.as_ref(),
+                                format!("Polars SQL query error detected: {stderr}"),
+                            );
                             return handle_sql_error(
                                 args,
                                 cache_type,
@@ -3771,19 +3707,17 @@ fn run_inference_options(
                                 state.baseline_sql = Some(sql_query_for_baseline);
                             }
                         }
+                        // Note: We can't use update_session_after_sql_success here because
+                        // Polars renames the file, so we need to handle it inline
 
                         (stdout, stderr)
                     },
                     Err(e) => {
-                        // Track error in session if present
-                        if let Some(ref mut state) = session_state {
-                            state
-                                .sql_errors
-                                .push(format!("Polars SQL query execution failed: {e}"));
-                            if let Some(ref normalized_path) = normalized_session_path {
-                                let _ = save_session(Path::new(normalized_path), state);
-                            }
-                        }
+                        track_sql_error_in_session(
+                            session_state.as_mut(),
+                            normalized_session_path.as_ref(),
+                            format!("Polars SQL query execution failed: {e}"),
+                        );
                         return handle_sql_error(
                             args,
                             cache_type,
@@ -3795,13 +3729,11 @@ fn run_inference_options(
                 };
 
                 if stderr.starts_with("Failed to execute query:") {
-                    // Track error in session if present
-                    if let Some(ref mut state) = session_state {
-                        state.sql_errors.push(stderr.clone());
-                        if let Some(ref normalized_path) = normalized_session_path {
-                            let _ = save_session(Path::new(normalized_path), state);
-                        }
-                    }
+                    track_sql_error_in_session(
+                        session_state.as_mut(),
+                        normalized_session_path.as_ref(),
+                        stderr.clone(),
+                    );
                     return handle_sql_error(
                         args,
                         cache_type,
@@ -3946,6 +3878,42 @@ fn determine_cache_kinds_to_remove(args: &Args) -> Vec<PromptType> {
     }
 }
 
+/// Remove a cache entry by key (works for both disk and redis cache)
+fn remove_cache_entry_by_key(key: &str, args: &Args, kind: PromptType, success_msg: &str) {
+    if !args.flag_no_cache {
+        // Disk cache
+        let key_string = key.to_string();
+        if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key_string) {
+            print_status(
+                &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
+                None,
+            );
+        } else {
+            print_status(success_msg, None);
+            // Flush the disk cache to ensure changes are persisted
+            if let Err(e) = GET_DISKCACHE_COMPLETION.connection().flush() {
+                print_status(&format!("Warning: Cannot flush disk cache: {e:?}"), None);
+            } else if success_msg.contains("removed") {
+                print_status("Flushed disk cache after removing cache entry", None);
+            }
+        }
+    } else if args.flag_redis_cache {
+        // Redis cache
+        let conn_str = &REDISCONFIG.get().unwrap().conn_str;
+        if let Ok(redis_client) = redis::Client::open(conn_str.to_string())
+            && let Ok(mut redis_conn) = redis_client.get_connection()
+        {
+            match redis::cmd("DEL").arg(key).exec(&mut redis_conn) {
+                Ok(()) => print_status(success_msg, None),
+                Err(e) => print_status(
+                    &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
+                    None,
+                ),
+            }
+        }
+    }
+}
+
 // Helper function to invalidate a specific cache entry by modifying the cache key
 fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
     if kind == PromptType::Prompt {
@@ -3990,48 +3958,52 @@ fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
         // For other kinds, try to remove the cache entry directly
         let prompt_file = get_prompt_file(args)?;
         let key = get_cache_key(args, kind, &prompt_file.model);
-
-        if !args.flag_no_cache {
-            if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key) {
-                print_status(
-                    &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
-                    None,
-                );
-            } else {
-                print_status(
-                    &format!("Removed cache entry for {kind} due to SQL execution failure"),
-                    None,
-                );
-                // Flush the disk cache to ensure changes are persisted
-                if let Err(e) = GET_DISKCACHE_COMPLETION.connection().flush() {
-                    print_status(&format!("Warning: Cannot flush disk cache: {e:?}"), None);
-                } else {
-                    print_status("Flushed disk cache after removing cache entry", None);
-                }
-            }
-        } else if args.flag_redis_cache {
-            let conn_str = &REDISCONFIG.get().unwrap().conn_str;
-            let redis_client = redis::Client::open(conn_str.to_string())
-                .map_err(|e| CliError::Other(format!("Invalid Redis connection string: {e:?}")))?;
-
-            let mut redis_conn = redis_client
-                .get_connection()
-                .map_err(|e| CliError::Other(format!("Cannot connect to Redis: {e:?}")))?;
-
-            match redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
-                Ok(()) => print_status(
-                    &format!("Removed cache entry for {kind} due to SQL execution failure"),
-                    None,
-                ),
-                Err(e) => print_status(
-                    &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
-                    None,
-                ),
-            }
-        }
+        remove_cache_entry_by_key(
+            &key,
+            args,
+            kind,
+            &format!("Removed cache entry for {kind} due to SQL execution failure"),
+        );
     }
 
     Ok(())
+}
+
+/// Track SQL error in session state if present
+fn track_sql_error_in_session(
+    session_state: Option<&mut SessionState>,
+    normalized_session_path: Option<&String>,
+    error_msg: String,
+) {
+    if let Some(state) = session_state {
+        state.sql_errors.push(error_msg);
+        if let Some(normalized_path) = normalized_session_path {
+            let _ = save_session(Path::new(normalized_path), state);
+        }
+    }
+}
+
+/// Update session state after successful SQL execution
+fn update_session_after_sql_success(
+    session_state: Option<&mut SessionState>,
+    sql_results: &str,
+    sql_query: &str,
+) {
+    if let Some(state) = session_state {
+        let results_path = Path::new(sql_results).with_extension("csv");
+        if results_path.exists()
+            && let Ok(sample) = extract_sql_sample(&results_path)
+        {
+            state.sql_results = Some(sample);
+            state.sql_errors.clear(); // Clear errors on success
+        }
+
+        // Extract and store baseline SQL only after successful execution
+        // This ensures baseline SQL is only set when the query executes successfully
+        if state.baseline_sql.is_none() {
+            state.baseline_sql = Some(sql_query.to_string());
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -4731,9 +4703,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 None,
                             );
                         } else {
-                            print_status(
+                            remove_cache_entry_by_key(
+                                &key,
+                                &args,
+                                kind,
                                 &format!("Found and removed cache entry for {kind}"),
-                                None,
                             );
                         }
                     }
@@ -4790,18 +4764,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // Remove cache entries for all specified kinds
                 for kind in kinds_to_remove {
                     let key = get_cache_key(&args, kind, &prompt_file.model);
-                    match redis::cmd("DEL").arg(&key).exec(&mut redis_conn) {
-                        Ok(()) => {
-                            print_status(
-                                &format!("Found and removed cache entry for {kind}"),
-                                None,
-                            );
-                        },
-                        Err(e) => print_status(
-                            &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
-                            None,
-                        ),
-                    }
+                    remove_cache_entry_by_key(
+                        &key,
+                        &args,
+                        kind,
+                        &format!("Found and removed cache entry for {kind}"),
+                    );
                 }
                 return Ok(());
             }

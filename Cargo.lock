@@ -1392,9 +1392,9 @@ dependencies = [
 
 [[package]]
 name = "cmov"
-version = "0.3.1"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b1dc960ba75d543267db9254da8ec1cb318a037beb3f8d2497520e410096fab"
+checksum = "c11ed919bd3bae4af5ab56372b627dfc32622aba6cec36906e8ab46746037c9d"
 
 [[package]]
 name = "codepage"
@@ -2845,8 +2845,7 @@ dependencies = [
 [[package]]
 name = "geosuggest-core"
 version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c9db1fcece70bcee96214e3d336e7a2764bd0a8e4b8ba547cfa1f0f8442ecc3"
+source = "git+https://github.com/jqnatividad/geosuggest?branch=kiddo-patch-for-cmov-dependency-security-response#a1cc9eefb47f02bf4f9e9a1446a758a1493b1811"
 dependencies = [
  "csv",
  "geoip2",
@@ -2861,8 +2860,7 @@ dependencies = [
 [[package]]
 name = "geosuggest-utils"
 version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fdcb38ade1c01dcac1d98df06a6bf54127c6e7a18dd0b318b5eb0194abd0a7f"
+source = "git+https://github.com/jqnatividad/geosuggest?branch=kiddo-patch-for-cmov-dependency-security-response#a1cc9eefb47f02bf4f9e9a1446a758a1493b1811"
 dependencies = [
  "anyhow",
  "futures",
@@ -3684,9 +3682,8 @@ dependencies = [
 
 [[package]]
 name = "kiddo"
-version = "5.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7722b5b12a2b83342ea1d2c6215915118f4dd5aaed6cab2bf4ce581838275d3c"
+version = "5.2.1"
+source = "git+https://github.com/jqnatividad/kiddo.git?branch=bump-cmov-as-part-of-security-response#e88a55f2d506486cb9413223a76142306c09ee8e"
 dependencies = [
  "aligned-vec",
  "array-init",
@@ -5459,9 +5456,9 @@ checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
 
 [[package]]
 name = "portable-atomic"
-version = "1.12.0"
+version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f59e70c4aef1e55797c2e8fd94a4f2a973fc972cfde0e0b05f683667b0cd39dd"
+checksum = "f89776e4d69bb58bc6993e99ffa1d11f228b839984854c7daeb5d37f87cbe950"
 
 [[package]]
 name = "portable-atomic-util"
@@ -5573,9 +5570,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.103"
+version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ee95bc4ef87b8d5ba32e8b7714ccc834865276eab0aed5c9958d00ec45f49e8"
+checksum = "9695f8df41bb4f3d222c95a67532365f569318332d03d5f3f67f37b20e6ebdf0"
 dependencies = [
  "unicode-ident",
 ]

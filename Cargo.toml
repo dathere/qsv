@@ -317,8 +317,16 @@ cached = { git = "https://github.com/nihohit/cached", branch = "client-side-cach
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88", optional = true }
 
+# use our patched fork until our kiddo PR is merged and geosuggest release a new version with the new kiddo
+# kiddo has a dependency on cmov crate, which was yanked due to security vulnerabilities
+geosuggest-core = { git = "https://github.com/jqnatividad/geosuggest", branch = "kiddo-patch-for-cmov-dependency-security-response" }
+geosuggest-utils = { git = "https://github.com/jqnatividad/geosuggest", branch = "kiddo-patch-for-cmov-dependency-security-response" }
+
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }
+
+# use our patched fork of kiddo to bump cmov dependency to a fixed version until our PR is merged and kiddo release a new version with the new cmov
+kiddo = { git = "https://github.com/jqnatividad/kiddo.git", branch = "bump-cmov-as-part-of-security-response" }
 
 # use upstream of mimalloc with unreleased fixes
 mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "7daf67f", optional = true }

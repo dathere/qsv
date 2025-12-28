@@ -372,7 +372,7 @@ fn compute_bimodality_coefficient(skewness: Option<f64>, kurtosis: Option<f64>) 
     if let (Some(skew_val), Some(kurt_val)) = (skewness, kurtosis) {
         let denominator = kurt_val + 3.0;
         if denominator.abs() > f64::EPSILON {
-            Some((skew_val * skew_val + 1.0) / denominator)
+            Some(skew_val.mul_add(skew_val, 1.0) / denominator)
         } else {
             None
         }
@@ -389,6 +389,7 @@ fn compute_normalized_entropy(
 ) -> Option<f64> {
     if let (Some(entropy_val), Some(card_val)) = (shannon_entropy, cardinality) {
         if card_val > 1 {
+            #[allow(clippy::cast_precision_loss)]
             let max_entropy = (card_val as f64).log2();
             if max_entropy.abs() > f64::EPSILON {
                 Some(entropy_val / max_entropy)
@@ -1519,6 +1520,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Helper function to check if a column already exists in headers
     let column_exists = |col_name: &str| headers.iter().any(|h| h == col_name);
 
+    // Generate Atkinson Index column name with epsilon parameter
+    let atkinson_index_col_name = format!("atkinson_index_({})", args.flag_epsilon);
+
     // Check which new columns we can add (based on available base stats)
     // Skip columns that already exist to avoid duplicates
     let mut new_columns: Vec<String> = Vec::new();
@@ -1623,9 +1627,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Add Atkinson Index column (requires reading raw data, computed for numeric/date types)
     // Only add if --advanced flag is set
-    if args.flag_advanced && !column_exists("atkinson_index") {
-        new_columns.push("atkinson_index".to_string());
-        new_column_indices.insert("atkinson_index".to_string(), new_columns.len() - 1);
+    if args.flag_advanced && !column_exists(&atkinson_index_col_name) {
+        new_columns.push(atkinson_index_col_name.clone());
+        new_column_indices.insert(atkinson_index_col_name.clone(), new_columns.len() - 1);
     }
 
     // Add Shannon Entropy column (requires reading raw data, computed for all field types)
@@ -1836,7 +1840,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "outliers_extreme_lower_cnt",
         ];
 
-        let any_exist = moarstats_columns.iter().any(|col| column_exists(col));
+        let any_exist = moarstats_columns.iter().any(|col| column_exists(col))
+            || headers.iter().any(|h| h.starts_with("atkinson_index_"));
 
         if any_exist {
             eprintln!(
@@ -2699,7 +2704,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // Write kurtosis and Gini coefficient from pre-computed results
             if (new_column_indices.contains_key("kurtosis")
                 || new_column_indices.contains_key("gini_coefficient")
-                || new_column_indices.contains_key("atkinson_index"))
+                || new_column_indices.contains_key(&atkinson_index_col_name))
                 && !field_name.is_empty()
                 && let Some(stats) = kurtosis_gini_stats.get(field_name)
             {
@@ -2719,7 +2724,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                 // Atkinson Index
                 if let Some(atkinson_val) = stats.atkinson_index
-                    && let Some(idx) = new_column_indices.get("atkinson_index")
+                    && let Some(idx) = new_column_indices.get(&atkinson_index_col_name)
                 {
                     new_values[*idx] = util::round_num(atkinson_val, args.flag_round);
                 }

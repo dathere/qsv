@@ -14,7 +14,7 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 17 additional statistics:
+Currently computes the following 18 additional statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
@@ -138,7 +138,7 @@ required base statistics (mean, median, stddev, etc.) are available.
 Outlier statistics additionally require that quartiles (and thus fences) were
 computed when generating the stats CSV.
 Winsorized/trimmed means require either Q1/Q3 or percentiles to be available.
-Kurtosis and Gini coefficient require reading the original CSV file to collect
+Kurtosis, Gini & Atkinson Index require reading the original CSV file to collect
 all values for computation.
 
 Examples:
@@ -690,7 +690,7 @@ struct OutlierStats {
     count_all:              u64,
 }
 
-/// Statistics for kurtosis and Gini coefficient
+/// Statistics for Kurtosis, Gini & Atkinson Index
 #[derive(Clone, Default)]
 struct KGAStats {
     kurtosis:         Option<f64>,
@@ -704,7 +704,8 @@ struct EntropyStats {
     entropy: Option<f64>,
 }
 
-/// Field information needed for kurtosis and Gini computation (with precalculated stats)
+/// Field information needed for Kurtosis, Gini & Atkinson Index computation (with precalculated
+/// stats)
 #[derive(Clone)]
 struct KGAFieldInfo {
     col_idx:    usize,
@@ -1120,8 +1121,8 @@ fn count_all_outliers_from_reader(
 }
 
 /// Compute Kurtosis, Gini coefficient, and Atkinson index for all fields.
-/// Since kurtosis and Gini require all values from the entire dataset, this always uses
-/// sequential processing to read all values in a single pass.
+/// Since Kurtosis, Gini & Atkinson Index require all values from the entire dataset, this always
+/// uses sequential processing to read all values in a single pass.
 /// Returns a HashMap mapping field names to their Kurtosis, Gini coefficient, and Atkinson index
 /// statistics
 fn compute_all_kga(
@@ -1227,7 +1228,7 @@ fn compute_all_kga_from_reader(
         let gini_val = gini(values.iter().copied(), precalc_sum);
 
         // Compute Atkinson Index (epsilon parameter typically 0.5 or 1.0, configurable via
-        // --atkinson-epsilon) atkinson function signature: atkinson(iter, epsilon,
+        // --epsilon) atkinson function signature: atkinson(iter, epsilon,
         // precalc_mean, precalc_geometric_sum) See: https://docs.rs/qsv-stats/latest/stats/fn.atkinson.html
         let atkinson_val = atkinson(
             values.iter().copied(),
@@ -1873,8 +1874,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let needs_winsorized_trimmed = new_column_indices.contains_key(winsorized_col_name.as_str())
         || new_column_indices.contains_key(trimmed_col_name.as_str());
 
-    // Collect fields that need kurtosis and Gini computation (with their precalculated stats)
-    let needs_kurtosis_gini = new_column_indices.contains_key("kurtosis")
+    // Collect fields that need Kurtosis, Gini & Atkinson Index computation (with their
+    // precalculated stats)
+    let needs_kga = new_column_indices.contains_key("kurtosis")
         || new_column_indices.contains_key("gini_coefficient");
 
     // First pass: collect field information from stats records
@@ -1994,9 +1996,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    // Collect fields for kurtosis and Gini computation with their precalculated stats
-    let mut fields_for_kurtosis_gini: HashMap<String, KGAFieldInfo> = HashMap::new();
-    if needs_kurtosis_gini {
+    // Collect fields for Kurtosis, Gini & Atkinson Index computation with their precalculated stats
+    let mut fields_for_kga: HashMap<String, KGAFieldInfo> = HashMap::new();
+    if needs_kga {
         for record in &records {
             let field_name = field_idx.and_then(|idx| record.get(idx)).unwrap_or("");
             let field_type_str = record.get(type_idx).unwrap_or("");
@@ -2023,7 +2025,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .and_then(parse_float_opt);
 
             // We'll find the column index when we read the CSV
-            fields_for_kurtosis_gini.insert(
+            fields_for_kga.insert(
                 field_name.to_string(),
                 KGAFieldInfo {
                     col_idx: 0, // Will be set when we read CSV headers
@@ -2060,8 +2062,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         count_all_outliers(&fields_to_count, input_path)?
     };
 
-    // Compute kurtosis and Gini coefficient for all fields
-    let kurtosis_gini_stats = if fields_for_kurtosis_gini.is_empty() {
+    // Compute kurtosis, Gini coefficient & Atkinson Index for all fields
+    let kga_stats = if fields_for_kga.is_empty() {
         HashMap::new()
     } else {
         // Get headers to map field names to column indices
@@ -2070,8 +2072,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .from_path(input_path)?;
         let csv_headers = csv_rdr.headers()?.clone();
 
-        // Update column indices in fields_for_kurtosis_gini and remove fields not found in CSV
-        fields_for_kurtosis_gini.retain(|field_name, field_info| {
+        // Update column indices in fields_for_kga and remove fields not found in CSV
+        fields_for_kga.retain(|field_name, field_info| {
             if let Some(col_idx) = csv_headers.iter().position(|h| h == field_name) {
                 field_info.col_idx = col_idx;
                 true
@@ -2080,8 +2082,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         });
 
-        // Compute kurtosis and Gini (will use sequential processing for correctness)
-        compute_all_kga(&fields_for_kurtosis_gini, input_path, args.flag_epsilon)?
+        // Compute Kurtosis, Gini & Atkinson Index (will use sequential processing for correctness)
+        compute_all_kga(&fields_for_kga, input_path, args.flag_epsilon)?
     };
 
     // Compute Shannon Entropy for all fields
@@ -2320,8 +2322,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // Compute Bimodality Coefficient (requires skewness and kurtosis)
             if let Some(idx) = new_column_indices.get("bimodality_coefficient")
                 && !field_name.is_empty()
-                && let Some(kurtosis_gini_stats_val) = kurtosis_gini_stats.get(field_name)
-                && let Some(kurtosis_val) = kurtosis_gini_stats_val.kurtosis
+                && let Some(kga_stats_val) = kga_stats.get(field_name)
+                && let Some(kurtosis_val) = kga_stats_val.kurtosis
             {
                 let skewness = skewness_idx
                     .and_then(|idx| record.get(idx))
@@ -2701,12 +2703,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
             }
 
-            // Write kurtosis and Gini coefficient from pre-computed results
+            // Write Kurtosis, Gini & Atkinson Index from pre-computed results
             if (new_column_indices.contains_key("kurtosis")
                 || new_column_indices.contains_key("gini_coefficient")
                 || new_column_indices.contains_key(&atkinson_index_col_name))
                 && !field_name.is_empty()
-                && let Some(stats) = kurtosis_gini_stats.get(field_name)
+                && let Some(stats) = kga_stats.get(field_name)
             {
                 // Kurtosis
                 if let Some(kurtosis_val) = stats.kurtosis

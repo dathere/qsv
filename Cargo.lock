@@ -1847,8 +1847,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7015dcf5090ff8deac79b237801d60245752abff72ebf9bed3ec788da6c7831"
+source = "git+https://github.com/YS-L/csvlens?rev=f15f55e#f15f55e68e2a8e60d7a368fff375fff66bf37627"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
@@ -7487,9 +7486,9 @@ dependencies = [
 
 [[package]]
 name = "terminal-colorsaurus"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d857562778b687a4e918ccff8c329ff821610d3589fe011821b89f9d40688cc"
+checksum = "7a46bb5364467da040298c573c8a95dbf9a512efc039630409a03126e3703e90"
 dependencies = [
  "cfg-if",
  "libc",
@@ -8913,9 +8912,9 @@ checksum = "3ae8337f8a065cfc972643663ea4279e04e7256de865aa66fe25cec5fb912d3f"
 
 [[package]]
 name = "xterm-color"
-version = "1.0.1"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4de5f056fb9dc8b7908754867544e26145767187aaac5a98495e88ad7cb8a80f"
+checksum = "7008a9d8ba97a7e47d9b2df63fcdb8dade303010c5a7cd5bf2469d4da6eba673"
 
 [[package]]
 name = "xxhash-rust"

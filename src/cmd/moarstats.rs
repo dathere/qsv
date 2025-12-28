@@ -1877,7 +1877,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Collect fields that need Kurtosis, Gini & Atkinson Index computation (with their
     // precalculated stats)
     let needs_kga = new_column_indices.contains_key("kurtosis")
-        || new_column_indices.contains_key("gini_coefficient");
+        || new_column_indices.contains_key("gini_coefficient")
+        || new_column_indices.contains_key("atkinson_index");
 
     // First pass: collect field information from stats records
     if needs_outlier_counting || needs_winsorized_trimmed {

@@ -1298,10 +1298,7 @@ fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
                 },
                 '"' => {
                     result.push(ch);
-                    // Only toggle in_string if the quote is not escaped
-                    if !escape_next {
-                        in_string = !in_string;
-                    }
+                    in_string = !in_string;
                 },
                 '\n' if in_string => {
                     // Escape newlines inside strings

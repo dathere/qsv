@@ -3520,7 +3520,13 @@ pub fn run_qsv_cmd(
     // safety: we know that the current_exe() is very unlikely to fail as qsv is already running
     let qsv_path = QSV_PATH.get_or_init(|| current_exe().unwrap().to_string_lossy().to_string());
     let mut cmd = Command::new(qsv_path);
-    cmd.arg(command).arg(input_path).args(args);
+
+    // special case for sample command, as the args are passed as the first argument
+    if command == "sample" {
+        cmd.arg(command).args(args).arg(input_path);
+    } else {
+        cmd.arg(command).arg(input_path).args(args);
+    }
 
     let output = cmd
         .output()

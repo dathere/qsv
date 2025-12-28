@@ -461,6 +461,107 @@ fn parse_date_to_days(s: &str, prefer_dmy: bool) -> Option<f64> {
         .map(|dt| dt.timestamp_millis() as f64 / 86_400_000.0)
 }
 
+/// Infer the most specific W3C XML Schema datatype based on field type and min/max values
+/// Returns the XSD type string (e.g., "byte", "int", "decimal", "string", "date", etc.)
+/// Based on the analysis at https://github.com/user-attachments/files/23841656/xsd_analysis.md
+fn infer_xsd_type(
+    field_type_str: &str,
+    min_val: Option<f64>,
+    max_val: Option<f64>,
+    field_type_enum: Option<FieldType>,
+) -> String {
+    // Handle NULL type
+    if field_type_str == "NULL" || field_type_str.is_empty() {
+        return String::new();
+    }
+
+    // Handle Boolean type
+    if field_type_str == "Boolean" {
+        return "boolean".to_string();
+    }
+
+    // Handle Date and DateTime types
+    if field_type_enum == Some(FieldType::TDate) {
+        return "date".to_string();
+    }
+    if field_type_enum == Some(FieldType::TDateTime) {
+        return "dateTime".to_string();
+    }
+
+    // Handle String type
+    if field_type_str == "String" {
+        return "string".to_string();
+    }
+
+    // Handle Float type
+    if field_type_str == "Float" {
+        return "decimal".to_string();
+    }
+
+    // Handle Integer type with range-based refinement
+    if field_type_str == "Integer" {
+        let (Some(min), Some(max)) = (min_val, max_val) else {
+            // If min/max not available, default to integer
+            return "integer".to_string();
+        };
+
+        // Check for unsigned integer types first (most specific first)
+        // Only check unsigned types if min >= 0
+        if min >= 0.0 {
+            if max <= 255.0 {
+                return "unsignedByte".to_string();
+            }
+            if max <= 65_535.0 {
+                return "unsignedShort".to_string();
+            }
+            if max <= 4_294_967_295.0 {
+                return "unsignedInt".to_string();
+            }
+            // unsignedLong: 0 to 2^64-1 (18446744073709551615)
+            // Check if max fits in u64 range
+            if max <= 18_446_744_073_709_551_615.0 {
+                return "unsignedLong".to_string();
+            }
+            // Check for special unsigned constraints (unbounded)
+            if min > 0.0 {
+                return "positiveInteger".to_string();
+            }
+            // min >= 0.0 (already checked above)
+            return "nonNegativeInteger".to_string();
+        }
+
+        // Check for signed integer types (most specific first)
+        // Only check signed types if min < 0 (or if we have negative values)
+        // Use f64 comparisons to avoid clamping issues
+        if min >= -128.0 && max <= 127.0 {
+            return "byte".to_string();
+        }
+        if min >= -32_768.0 && max <= 32_767.0 {
+            return "short".to_string();
+        }
+        if min >= -2_147_483_648.0 && max <= 2_147_483_647.0 {
+            return "int".to_string();
+        }
+        if min >= -9_223_372_036_854_775_808.0 && max <= 9_223_372_036_854_775_807.0 {
+            return "long".to_string();
+        }
+
+        // Check for special signed integer constraints
+        if max < 0.0 {
+            return "negativeInteger".to_string();
+        }
+        if max <= 0.0 {
+            return "nonPositiveInteger".to_string();
+        }
+
+        // Default to unbounded integer
+        return "integer".to_string();
+    }
+
+    // Fallback: return empty string for unrecognized types
+    String::new()
+}
+
 /// Convert days since epoch to RFC3339 formatted date string
 /// For Date types, returns only the date component (YYYY-MM-DD)
 /// For DateTime types, returns full RFC3339 format with time and timezone
@@ -1237,7 +1338,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "stats",
             &stats_args_vec,
             &input_path_str,
-            "Running stats command to generate baseline stats...",
+            "Ran stats command to generate baseline stats...",
         )?;
         if !stats_csv_path.exists() {
             return fail_clierror!(
@@ -1427,6 +1528,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         new_column_indices.insert("shannon_entropy".to_string(), new_columns.len() - 1);
     }
 
+    // Add XSD type column (computed for all field types based on type and min/max)
+    if !column_exists("xsd_type") {
+        new_columns.push("xsd_type".to_string());
+        new_column_indices.insert("xsd_type".to_string(), new_columns.len() - 1);
+    }
+
     // Add outlier count columns if all fences are available
     // Only add if at least one outlier column doesn't exist (to avoid partial duplicates)
     if lower_outer_fence_idx.is_some()
@@ -1607,6 +1714,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "kurtosis",
             "gini_coefficient",
             "shannon_entropy",
+            "xsd_type",
             "outliers_extreme_lower_cnt",
         ];
 
@@ -1887,6 +1995,51 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // Initialize new_values for all field types (needed for entropy which works for all types)
         let mut new_values = vec![String::new(); new_columns.len()];
+
+        // Compute XSD type for all field types (needs type, min, max)
+        if new_column_indices.contains_key("xsd_type") {
+            // Parse min and max values - they may be strings (for dates) or numbers (for
+            // integers/floats)
+            let min_val = if let Some(min_idx_val) = min_idx {
+                record.get(min_idx_val).and_then(|s| {
+                    if s.is_empty() {
+                        None
+                    } else if field_type_opt.is_some_and(FieldType::is_date_or_datetime) {
+                        // For dates, parse as date string
+                        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                        parse_date_to_days(s, prefer_dmy)
+                    } else {
+                        // For integers/floats, parse as number
+                        parse_float_opt(s)
+                    }
+                })
+            } else {
+                None
+            };
+
+            let max_val = if let Some(max_idx_val) = max_idx {
+                record.get(max_idx_val).and_then(|s| {
+                    if s.is_empty() {
+                        None
+                    } else if field_type_opt.is_some_and(FieldType::is_date_or_datetime) {
+                        // For dates, parse as date string
+                        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                        parse_date_to_days(s, prefer_dmy)
+                    } else {
+                        // For integers/floats, parse as number
+                        parse_float_opt(s)
+                    }
+                })
+            } else {
+                None
+            };
+
+            // Infer XSD type
+            let xsd_type = infer_xsd_type(field_type_str, min_val, max_val, field_type_opt);
+            if let Some(idx) = new_column_indices.get("xsd_type") {
+                new_values[*idx] = xsd_type;
+            }
+        }
 
         // Write Shannon Entropy from pre-computed results (works for all field types)
         if new_column_indices.contains_key("shannon_entropy")

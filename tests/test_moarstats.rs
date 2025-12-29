@@ -3596,24 +3596,12 @@ fn moarstats_bivariate_basic() {
         "pearson_correlation column should exist"
     );
     assert!(
-        get_column_index(&headers, "spearman_correlation").is_some(),
-        "spearman_correlation column should exist"
-    );
-    assert!(
-        get_column_index(&headers, "kendall_tau").is_some(),
-        "kendall_tau column should exist"
-    );
-    assert!(
         get_column_index(&headers, "covariance_sample").is_some(),
         "covariance_sample column should exist"
     );
     assert!(
         get_column_index(&headers, "covariance_population").is_some(),
         "covariance_population column should exist"
-    );
-    assert!(
-        get_column_index(&headers, "mutual_information").is_some(),
-        "mutual_information column should exist"
     );
     assert!(
         get_column_index(&headers, "n_pairs").is_some(),
@@ -3743,7 +3731,9 @@ fn moarstats_bivariate_string_fields() {
     wrk.assert_success(&mut stats_cmd);
 
     let mut cmd = wrk.command("moarstats");
-    cmd.arg("--bivariate").arg("test.csv");
+    cmd.arg("--bivariate")
+        .arg("test.csv")
+        .args(["--bivariate-stats", "all"]);
     wrk.assert_success(&mut cmd);
 
     let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
@@ -3887,7 +3877,9 @@ fn moarstats_bivariate_all_statistics() {
     wrk.assert_success(&mut stats_cmd);
 
     let mut cmd = wrk.command("moarstats");
-    cmd.arg("--bivariate").arg("test.csv");
+    cmd.arg("--bivariate")
+        .arg("test.csv")
+        .args(["--bivariate-stats", "all"]);
     wrk.assert_success(&mut cmd);
 
     let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
@@ -4005,7 +3997,9 @@ fn moarstats_bivariate_mixed_field_types() {
     wrk.assert_success(&mut stats_cmd);
 
     let mut cmd = wrk.command("moarstats");
-    cmd.arg("--bivariate").arg("test.csv");
+    cmd.arg("--bivariate")
+        .arg("test.csv")
+        .args(["--bivariate-stats", "all"]);
     wrk.assert_success(&mut cmd);
 
     let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
@@ -4159,4 +4153,310 @@ fn moarstats_bivariate_index_auto_creation() {
         bivariate_path.exists(),
         "Bivariate statistics file should exist"
     );
+}
+
+// Test for --bivariate-stats flag with "pearson" only
+#[test]
+fn moarstats_bivariate_stats_pearson_only() {
+    let wrk = Workdir::new("moarstats_bivariate_stats_pearson");
+
+    // Create CSV with two numeric fields
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["x", "y"],
+            svec!["1", "2"],
+            svec!["2", "4"],
+            svec!["3", "6"],
+            svec!["4", "8"],
+            svec!["5", "10"],
+            svec!["1", "2"], // Duplicate to ensure cardinality < rowcount
+        ],
+    );
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with --bivariate and --bivariate-stats pearson
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("--bivariate-stats")
+        .arg("pearson")
+        .arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify bivariate CSV file exists
+    let bivariate_path = wrk.path("test.stats.bivariate.csv");
+    assert!(
+        bivariate_path.exists(),
+        "Bivariate statistics file should exist"
+    );
+
+    // Read bivariate CSV
+    let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(bivariate_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+
+    // Verify that only requested columns are present
+    assert!(
+        get_column_index(&headers, "field1").is_some(),
+        "field1 column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "field2").is_some(),
+        "field2 column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "pearson_correlation").is_some(),
+        "pearson_correlation column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "n_pairs").is_some(),
+        "n_pairs column should exist"
+    );
+
+    // Verify that non-requested columns are NOT present
+    assert!(
+        get_column_index(&headers, "spearman_correlation").is_none(),
+        "spearman_correlation column should NOT exist when not requested"
+    );
+    assert!(
+        get_column_index(&headers, "kendall_tau").is_none(),
+        "kendall_tau column should NOT exist when not requested"
+    );
+    assert!(
+        get_column_index(&headers, "covariance_sample").is_none(),
+        "covariance_sample column should NOT exist when not requested"
+    );
+    assert!(
+        get_column_index(&headers, "mutual_information").is_none(),
+        "mutual_information column should NOT exist when not requested"
+    );
+
+    let pearson_idx = get_column_index(&headers, "pearson_correlation").unwrap();
+    let n_pairs_idx = get_column_index(&headers, "n_pairs").unwrap();
+
+    // Verify that pearson has a value
+    for result in rdr.records() {
+        let record = result.unwrap();
+
+        // Pearson should have a value
+        let pearson_val = get_field_value(&record, pearson_idx);
+        assert!(
+            pearson_val.is_some() && !pearson_val.unwrap().is_empty(),
+            "Pearson correlation should be computed"
+        );
+
+        // n_pairs should have a value
+        let n_pairs_val = get_field_value(&record, n_pairs_idx);
+        assert!(
+            n_pairs_val.is_some() && !n_pairs_val.unwrap().is_empty(),
+            "n_pairs should be present"
+        );
+    }
+}
+
+// Test for --bivariate-stats flag with multiple stats
+#[test]
+fn moarstats_bivariate_stats_multiple() {
+    let wrk = Workdir::new("moarstats_bivariate_stats_multiple");
+
+    // Create CSV with two numeric fields
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["x", "y"],
+            svec!["1", "2"],
+            svec!["2", "4"],
+            svec!["3", "6"],
+            svec!["4", "8"],
+            svec!["5", "10"],
+            svec!["1", "2"], // Duplicate to ensure cardinality < rowcount
+        ],
+    );
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with --bivariate and --bivariate-stats pearson,covariance
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("--bivariate-stats")
+        .arg("pearson,covariance")
+        .arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify bivariate CSV file exists
+    let bivariate_path = wrk.path("test.stats.bivariate.csv");
+    assert!(
+        bivariate_path.exists(),
+        "Bivariate statistics file should exist"
+    );
+
+    // Read bivariate CSV
+    let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(bivariate_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+
+    // Verify that only requested columns are present
+    assert!(
+        get_column_index(&headers, "field1").is_some(),
+        "field1 column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "field2").is_some(),
+        "field2 column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "pearson_correlation").is_some(),
+        "pearson_correlation column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "covariance_sample").is_some(),
+        "covariance_sample column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "covariance_population").is_some(),
+        "covariance_population column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "n_pairs").is_some(),
+        "n_pairs column should exist"
+    );
+
+    // Verify that non-requested columns are NOT present
+    assert!(
+        get_column_index(&headers, "spearman_correlation").is_none(),
+        "spearman_correlation column should NOT exist when not requested"
+    );
+    assert!(
+        get_column_index(&headers, "kendall_tau").is_none(),
+        "kendall_tau column should NOT exist when not requested"
+    );
+    assert!(
+        get_column_index(&headers, "mutual_information").is_none(),
+        "mutual_information column should NOT exist when not requested"
+    );
+
+    let pearson_idx = get_column_index(&headers, "pearson_correlation").unwrap();
+    let cov_sample_idx = get_column_index(&headers, "covariance_sample").unwrap();
+    let cov_pop_idx = get_column_index(&headers, "covariance_population").unwrap();
+
+    // Verify that pearson and covariance have values
+    for result in rdr.records() {
+        let record = result.unwrap();
+
+        // Pearson should have a value
+        let pearson_val = get_field_value(&record, pearson_idx);
+        assert!(
+            pearson_val.is_some() && !pearson_val.unwrap().is_empty(),
+            "Pearson correlation should be computed"
+        );
+
+        // Covariance (sample) should have a value
+        let cov_sample_val = get_field_value(&record, cov_sample_idx);
+        assert!(
+            cov_sample_val.is_some() && !cov_sample_val.unwrap().is_empty(),
+            "Covariance (sample) should be computed"
+        );
+
+        // Covariance (population) should have a value
+        let cov_pop_val = get_field_value(&record, cov_pop_idx);
+        assert!(
+            cov_pop_val.is_some() && !cov_pop_val.unwrap().is_empty(),
+            "Covariance (population) should be computed"
+        );
+    }
+}
+
+// Test for --bivariate-stats flag with "all" (default)
+#[test]
+fn moarstats_bivariate_stats_all() {
+    let wrk = Workdir::new("moarstats_bivariate_stats_all");
+
+    // Create CSV with two numeric fields
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["x", "y"],
+            svec!["1", "2"],
+            svec!["2", "4"],
+            svec!["3", "6"],
+            svec!["4", "8"],
+            svec!["5", "10"],
+            svec!["1", "2"], // Duplicate to ensure cardinality < rowcount
+        ],
+    );
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with --bivariate and --bivariate-stats all
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("--bivariate-stats")
+        .arg("all")
+        .arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify bivariate CSV file exists
+    let bivariate_path = wrk.path("test.stats.bivariate.csv");
+    assert!(
+        bivariate_path.exists(),
+        "Bivariate statistics file should exist"
+    );
+
+    // Read bivariate CSV
+    let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(bivariate_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let pearson_idx = get_column_index(&headers, "pearson_correlation").unwrap();
+    let spearman_idx = get_column_index(&headers, "spearman_correlation").unwrap();
+    let kendall_idx = get_column_index(&headers, "kendall_tau").unwrap();
+    let cov_sample_idx = get_column_index(&headers, "covariance_sample").unwrap();
+
+    // Verify that all statistics are computed
+    for result in rdr.records() {
+        let record = result.unwrap();
+
+        // All stats should have values
+        let pearson_val = get_field_value(&record, pearson_idx);
+        assert!(
+            pearson_val.is_some() && !pearson_val.unwrap().is_empty(),
+            "Pearson correlation should be computed with 'all'"
+        );
+
+        let spearman_val = get_field_value(&record, spearman_idx);
+        assert!(
+            spearman_val.is_some() && !spearman_val.unwrap().is_empty(),
+            "Spearman correlation should be computed with 'all'"
+        );
+
+        let kendall_val = get_field_value(&record, kendall_idx);
+        assert!(
+            kendall_val.is_some() && !kendall_val.unwrap().is_empty(),
+            "Kendall tau should be computed with 'all'"
+        );
+
+        let cov_val = get_field_value(&record, cov_sample_idx);
+        assert!(
+            cov_val.is_some() && !cov_val.unwrap().is_empty(),
+            "Covariance should be computed with 'all'"
+        );
+    }
 }

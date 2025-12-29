@@ -1384,8 +1384,8 @@ fn compute_kendall_tau(x: &[f64], y: &[f64]) -> Option<f64> {
     let concordant = total_pairs - discordant - ties_x - ties_y;
 
     let n0 = n * (n - 1.0) / 2.0;
-    let n1 = (ties_x * (ties_x - 1)) as f64 / 2.0;
-    let n2 = (ties_y * (ties_y - 1)) as f64 / 2.0;
+    let n1 = ties_x as f64;
+    let n2 = ties_y as f64;
 
     let denominator = ((n0 - n1) * (n0 - n2)).sqrt();
 

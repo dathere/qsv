@@ -4491,17 +4491,17 @@ fn moarstats_bivariate_stats_invalid() {
     wrk.assert_err(&mut cmd);
 
     // Test with mix of valid and invalid stats
-    let mut cmd2 = wrk.command("moarstats");
-    cmd2.arg("--bivariate")
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
         .arg("--bivariate-stats")
         .arg("pearson,invalid_stat,kendall")
         .arg("test.csv");
-    wrk.assert_err(&mut cmd2);
+    wrk.assert_err(&mut cmd);
 
-    let mut cmd3 = wrk.command("moarstats");
-    cmd3.arg("--bivariate")
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
         .arg("--bivariate-stats")
         .arg("")
         .arg("test.csv");
-    wrk.assert_err(&mut cmd3);
+    wrk.assert_err(&mut cmd);
 }

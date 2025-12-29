@@ -14,7 +14,7 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 18 additional statistics:
+Currently computes the following 18 additional univariate statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
@@ -90,7 +90,7 @@ Currently computes the following 18 additional statistics:
     With --use-percentiles, uses configurable percentiles (e.g., 5th/95th) as thresholds
     with --pct-thresholds.
 
-In addition, it computes the following outlier statistics (24 outlier statistics total).
+In addition, it computes the following univariate outlier statistics (24 outlier statistics total).
 https://en.wikipedia.org/wiki/Outlier
 (requires --quartiles or --everything in stats):
 
@@ -133,13 +133,58 @@ Outlier Boundary Statistics (2 statistics):
   Fences are computed using the IQR method:
     inner fences at Q1/Q3 ± 1.5*IQR, outer fences at Q1/Q3 ± 3.0*IQR.
 
-These statistics are only computed for numeric and date/datetime columns where the
-required base statistics (mean, median, stddev, etc.) are available.
-Outlier statistics additionally require that quartiles (and thus fences) were
+These univariate statistics are only computed for numeric and date/datetime columns
+where the required base univariate statistics (mean, median, stddev, etc.) are available.
+Univariate outlier statistics additionally require that quartiles (and thus fences) were
 computed when generating the stats CSV.
 Winsorized/trimmed means require either Q1/Q3 or percentiles to be available.
 Kurtosis, Gini & Atkinson Index require reading the original CSV file to collect
 all values for computation.
+
+BIVARIATE STATISTICS:
+
+The `moarstats` command also computes the following 5 bivariate statistics:
+ 1. Pearson's correlation
+    Measures linear correlation between two numeric/date fields.
+    Values range from -1 (perfect negative correlation) to +1 (perfect positive correlation).
+    0 indicates no linear correlation.
+    https://en.wikipedia.org/wiki/Pearson_correlation_coefficient
+ 2. Spearman's rank correlation
+    Measures monotonic correlation between two numeric/date fields.
+    Values range from -1 (perfect negative correlation) to +1 (perfect positive correlation).
+    0 indicates no monotonic correlation.
+    https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient
+ 3. Kendall's tau
+    Measures monotonic correlation between two numeric/date fields.
+    Values range from -1 (perfect negative correlation) to +1 (perfect positive correlation).
+    0 indicates no monotonic correlation.
+    https://en.wikipedia.org/wiki/Kendall_rank_correlation_coefficient
+ 4. Covariance
+    Measures the linear relationship between two numeric/date fields.
+    Values range from negative infinity to positive infinity.
+    0 indicates no linear relationship.
+    https://en.wikipedia.org/wiki/Covariance
+ 5. Mutual Information
+    Measures the amount of information obtained about one field by observing another.
+    Values range from 0 (independent) to positive infinity.
+    https://en.wikipedia.org/wiki/Mutual_information
+
+These bivariate statistics are computed when the `--bivariate` flag is used
+and require an indexed CSV file (index will be auto-created if missing).
+Bivariate statistics are output to a separate file: `<FILESTEM>.stats.bivariate.csv`.
+
+Bivariate statistics require reading the entire CSV file and are computationally VERY expensive.
+For large files (>= 10k records), parallel chunked processing is used when an index is available.
+For smaller files or when no index exists, sequential processing is used.
+
+MULTI-DATASET BIVARIATE STATISTICS:
+
+When using the `--join-inputs` flag, multiple datasets can be joined internally before
+computing bivariate statistics. This allows analyzing bivariate statistics across datasets
+that share common join keys. The joined dataset is automatically indexed before bivariate
+statistics computation. The joined dataset is output to a temporary file with the
+`.joined.csv` extension. The bivariate statistics are output to a separate file:
+`<FILESTEM>.stats.bivariate.joined.csv`.
 
 Examples:
 
@@ -151,6 +196,15 @@ Examples:
 
   # Output to different file
   $ qsv moarstats data.csv --output enhanced_stats.csv
+
+  # Compute bivariate statistics between fields
+  $ qsv moarstats data.csv --bivariate
+
+  # Join multiple datasets and compute bivariate statistics
+  $ qsv moarstats data.csv -B --join-inputs customers.csv,products.csv --join-keys cust_id,prod_id
+
+  # Join multiple datasets and compute bivariate statistics with different join type
+  $ qsv moarstats data.csv -B -J customers.csv,products.csv -K cust_id,prod_id -T left
 
 Usage:
     qsv moarstats [options] [<input>]
@@ -186,39 +240,68 @@ moarstats options:
                            Both values must be between 0 and 100, and lower < upper.
                            [default: 5,95]
 
+                           BIVARIATE STATISTICS OPTIONS:
+    -B, --bivariate        Enable bivariate statistics computation.
+                           Requires indexed CSV file (index will be auto-created if missing).
+                           Computes pairwise correlations, covariances, and mutual information
+                           between columns. Outputs to <FILESTEM>.stats.bivariate.csv.
+    --cardinality-threshold <n>
+                           Skip mutual information computation for field pairs where either
+                           field has cardinality exceeding this threshold. Helps avoid
+                           expensive computations for high-cardinality fields.
+                           [default: 1000000]
+ -J, --join-inputs <files>  Additional datasets to join.
+                           Comma-separated list of CSV files to join with the primary input.
+                           Example: --join-inputs customers.csv,products.csv
+-K, --join-keys <keys>     Join keys for each dataset.
+                           Comma-separated list of join key column names, one per dataset.
+                           Must specify same number of keys as datasets (primary + additional).
+                           Example: --join-keys customer_id,customer_id,product_id
+-T, --join-type <type>     Join type when using --join-inputs.
+                           Valid values: inner, left, right, full (default: inner)
+    -p, --progressbar      Show progress bars when computing bivariate statistics.
+
 Common options:
     -h, --help             Display this message
     -o, --output <file>    Write output to <file> instead of overwriting the stats CSV file.
 "#;
 
 use std::{
-    fs,
+    env, fs,
     path::{Path, PathBuf},
+    process::Command,
     time::Instant,
 };
 
 use crossbeam_channel;
 use csv::{ReaderBuilder, StringRecord, WriterBuilder};
-use foldhash::{HashMap, HashMapExt};
+use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use indexmap::IndexMap;
+use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use qsv_dateparser::parse_with_preference;
+use rayon::prelude::*;
 use serde::Deserialize;
 use simdutf8::basic::from_utf8;
 use stats::{atkinson, gini, kurtosis};
 use threadpool::ThreadPool;
 
 use crate::{CliError, CliResult, config::Config, util};
-
 #[derive(Debug, Deserialize)]
 struct Args {
-    arg_input:            Option<String>,
-    flag_stats_options:   String,
-    flag_round:           u32,
-    flag_output:          Option<String>,
-    flag_use_percentiles: bool,
-    flag_pct_thresholds:  Option<String>,
-    flag_advanced:        bool,
-    flag_epsilon:         f64,
+    arg_input:                  Option<String>,
+    flag_stats_options:         String,
+    flag_round:                 u32,
+    flag_output:                Option<String>,
+    flag_use_percentiles:       bool,
+    flag_pct_thresholds:        Option<String>,
+    flag_advanced:              bool,
+    flag_epsilon:               f64,
+    flag_bivariate:             bool,
+    flag_cardinality_threshold: Option<u64>,
+    flag_join_inputs:           Option<String>,
+    flag_join_keys:             Option<String>,
+    flag_join_type:             Option<String>,
+    flag_progressbar:           bool,
 }
 
 /// Get the stats CSV file path for a given input CSV path
@@ -230,6 +313,152 @@ fn get_stats_csv_path(input_path: &Path) -> CliResult<PathBuf> {
 
     let stats_filename = format!("{}.stats.csv", fstem.to_string_lossy());
     Ok(parent.join(stats_filename))
+}
+
+/// Get the bivariate CSV file path for a given input CSV path
+fn get_bivariate_csv_path(input_path: &Path) -> CliResult<PathBuf> {
+    let parent = input_path.parent().unwrap_or_else(|| Path::new("."));
+    let fstem = input_path
+        .file_stem()
+        .ok_or_else(|| CliError::Other("Invalid input path: no file name".to_string()))?;
+
+    let bivariate_filename = format!("{}.stats.bivariate.csv", fstem.to_string_lossy());
+    Ok(parent.join(bivariate_filename))
+}
+
+/// Join multiple datasets internally using join
+fn join_datasets_internal(
+    primary_input: &Path,
+    additional_inputs: &[String],
+    join_keys: &[String],
+    join_type: &str,
+) -> CliResult<PathBuf> {
+    use tempfile::NamedTempFile;
+
+    if additional_inputs.is_empty() {
+        return fail_clierror!("No additional datasets provided for joining");
+    }
+
+    if join_keys.len() != additional_inputs.len() + 1 {
+        return fail_clierror!(
+            "Number of join keys ({}) must match number of datasets ({})",
+            join_keys.len(),
+            additional_inputs.len() + 1
+        );
+    }
+
+    // Create temporary file for joined output with .csv extension
+    let temp_dir =
+        crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep());
+    let temp_file = tempfile::Builder::new()
+        .suffix(".csv")
+        .tempfile_in(temp_dir)?;
+    let temp_path = temp_file.path().to_path_buf();
+    drop(temp_file); // Close the file so join can write to it
+
+    let temp_path_str = temp_path
+        .to_str()
+        .ok_or_else(|| CliError::Other("Invalid temp path".to_string()))?
+        .to_string();
+
+    let primary_input_str = primary_input
+        .to_str()
+        .ok_or_else(|| CliError::Other("Invalid input path".to_string()))?
+        .to_string();
+
+    // Build join command arguments
+    let join_type_flag: Option<&str> = match join_type {
+        "left" => Some("--left"),
+        "right" => Some("--right"),
+        "full" => Some("--full"),
+        _ => None, // inner is default
+    };
+
+    // Join datasets sequentially (join first additional to primary, then next to result, etc.)
+    // This is simpler than handling multiple joins at once
+    let mut current_input = primary_input_str;
+    let mut current_key = join_keys[0].clone();
+
+    // These are never read, but we need to declare them to avoid compiler errors
+    #[allow(clippy::collection_is_never_read)]
+    let mut intermediate_temps: Vec<NamedTempFile> = Vec::new();
+    #[allow(clippy::collection_is_never_read)]
+    let mut intermediate_path_strs: Vec<String> = Vec::new();
+
+    for (i, (additional_input, next_key)) in additional_inputs
+        .iter()
+        .zip(join_keys[1..].iter())
+        .enumerate()
+    {
+        let mut args: Vec<&str> = Vec::new();
+
+        // Add join type flag if specified
+        if let Some(flag) = join_type_flag {
+            args.push(flag);
+        }
+
+        args.push(&current_key);
+        args.push(&current_input);
+        args.push(next_key);
+        args.push(additional_input);
+
+        let output_path_str = if i == additional_inputs.len() - 1 {
+            // Last join - use final temp path
+            temp_path_str.clone()
+        } else {
+            // Intermediate join - create another temp file with .csv extension
+            let intermediate_temp = tempfile::Builder::new()
+                .suffix(".csv")
+                .tempfile_in(temp_dir)?;
+            let intermediate_path = intermediate_temp.path().to_path_buf();
+            intermediate_temps.push(intermediate_temp); // Keep temp file alive
+            let intermediate_path_str = intermediate_path
+                .to_str()
+                .ok_or_else(|| CliError::Other("Invalid intermediate temp path".to_string()))?
+                .to_string();
+            intermediate_path_strs.push(intermediate_path_str.clone());
+            intermediate_path_str
+        };
+        args.push("--output");
+        args.push(&output_path_str);
+
+        // Construct join command directly since it doesn't fit run_qsv_cmd pattern
+        // (join takes two input files, not one)
+
+        let qsv_path = env::current_exe()
+            .map_err(|e| CliError::Other(format!("Failed to get current executable path: {e:?}")))?
+            .to_string_lossy()
+            .to_string();
+
+        let mut cmd = Command::new(&qsv_path);
+        cmd.arg("join").args(&args);
+
+        let output = cmd
+            .output()
+            .map_err(|e| CliError::Other(format!("Error while executing join command: {e:?}")))?;
+
+        if !output.status.success() {
+            return fail_clierror!(
+                "Command join failed: Output {{ status: {:?}, stdout: {:?}, stderr: {:?} }}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        log::info!("Joining datasets...");
+
+        // Update for next iteration
+        current_input = output_path_str;
+        current_key.clone_from(next_key);
+    }
+
+    // Intermediate temp files will be cleaned up when intermediate_temps is dropped
+
+    // Ensure joined file is indexed
+    util::run_qsv_cmd("index", &[], &temp_path_str, "Indexing joined dataset...")?;
+
+    Ok(temp_path)
 }
 
 /// Compute Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
@@ -514,6 +743,7 @@ impl FieldType {
 
 /// Parse a date/datetime value and convert to days since epoch
 /// Returns None if parsing fails or value is empty
+#[inline]
 fn parse_date_to_days(s: &str, prefer_dmy: bool) -> Option<f64> {
     if s.is_empty() {
         return None;
@@ -702,6 +932,402 @@ struct KGAStats {
 #[derive(Clone, Default)]
 struct EntropyStats {
     entropy: Option<f64>,
+}
+
+/// Online algorithm state for correlation/covariance computation
+/// Uses Welford's online algorithm for aggregating across chunks
+#[derive(Clone, Default)]
+struct CorrelationState {
+    count:  u64,
+    mean_x: f64,
+    mean_y: f64,
+    m2_x:   f64, // sum of squared differences for x
+    m2_y:   f64, // sum of squared differences for y
+    cxy:    f64, // sum of (x - mean_x) * (y - mean_y)
+}
+
+/// Statistics tracked during bivariate computation for a field pair
+#[derive(Clone, Default)]
+struct BivariateChunkStats {
+    correlation_state: CorrelationState,
+    x_values:          Vec<f64>, // For Spearman/Kendall (need ranks)
+    y_values:          Vec<f64>, // For Spearman/Kendall (need ranks)
+    // Frequency counts for mutual information (more memory efficient than storing all strings)
+    xy_counts:         HashMap<(String, String), u64>, // Joint frequencies
+    x_counts:          HashMap<String, u64>,           // Marginal frequencies for x
+    y_counts:          HashMap<String, u64>,           // Marginal frequencies for y
+    total_pairs:       u64,                            // Total count of pairs
+}
+
+/// Final bivariate statistics for a field pair
+#[derive(Clone, Default)]
+struct BivariateStats {
+    pearson:               Option<f64>,
+    spearman:              Option<f64>,
+    kendall:               Option<f64>,
+    covariance_sample:     Option<f64>,
+    covariance_population: Option<f64>,
+    mutual_information:    Option<f64>,
+    n_pairs:               u64,
+}
+
+/// Field information for bivariate computation
+#[derive(Clone)]
+struct BivariateFieldInfo {
+    col_idx:     usize,
+    field_type:  FieldType,
+    // Pre-computed statistics from stats CSV (used for optimizations)
+    stddev:      Option<f64>, // Pre-computed standard deviation (used for filtering)
+    variance:    Option<f64>, // Pre-computed variance (used for filtering)
+    cardinality: Option<u64>, // Pre-computed cardinality (used for threshold filtering)
+}
+
+/// Update correlation state with a new pair of values using Welford's online algorithm
+#[allow(clippy::cast_precision_loss)]
+fn update_correlation_state(state: &mut CorrelationState, x: f64, y: f64) {
+    state.count += 1;
+    let n = state.count as f64;
+
+    let delta_x = x - state.mean_x;
+    let delta_y = y - state.mean_y;
+
+    // Update means
+    state.mean_x += delta_x / n;
+    state.mean_y += delta_y / n;
+
+    // Update sum of squared differences and covariance term
+    let delta_x_new = x - state.mean_x;
+    let delta_y_new = y - state.mean_y;
+
+    state.m2_x += delta_x * delta_x_new;
+    state.m2_y += delta_y * delta_y_new;
+    state.cxy += delta_x * delta_y_new;
+}
+
+/// Merge two correlation states (for aggregating across chunks)
+#[allow(clippy::cast_precision_loss)]
+fn merge_correlation_states(
+    state1: &CorrelationState,
+    state2: &CorrelationState,
+) -> CorrelationState {
+    if state1.count == 0 {
+        return state2.clone();
+    }
+    if state2.count == 0 {
+        return state1.clone();
+    }
+
+    let n1 = state1.count as f64;
+    let n2 = state2.count as f64;
+    let n_total = n1 + n2;
+
+    // NOTE: we use fused multiply-add extensively below
+    // for more efficient, performant, accurate computations.
+    // the original formula is in a comment above each FMA implementation.
+
+    // Combined mean
+    // let mean_x_combined = (state1.mean_x * n1 + state2.mean_x * n2) / n_total;
+    let mean_x_combined = state1.mean_x.mul_add(n1, state2.mean_x * n2) / n_total;
+    // let mean_y_combined = (state1.mean_y * n1 + state2.mean_y * n2) / n_total;
+    let mean_y_combined = state1.mean_y.mul_add(n1, state2.mean_y * n2) / n_total;
+
+    // Combined variance terms (using parallel algorithm formula)
+    let delta_x1 = state1.mean_x - mean_x_combined;
+    let delta_x2 = state2.mean_x - mean_x_combined;
+    let delta_y1 = state1.mean_y - mean_y_combined;
+    let delta_y2 = state2.mean_y - mean_y_combined;
+
+    let m2_x_combined =
+        // state1.m2_x + state2.m2_x + delta_x1 * delta_x1 * n1 + delta_x2 * delta_x2 * n2;
+        (delta_x2 * delta_x2).mul_add(n2, (delta_x1 * delta_x1).mul_add(n1, state1.m2_x + state2.m2_x));
+    let m2_y_combined =
+        // state1.m2_y + state2.m2_y + delta_y1 * delta_y1 * n1 + delta_y2 * delta_y2 * n2;
+        (delta_y2 * delta_y2).mul_add(n2, (delta_y1 * delta_y1).mul_add(n1, state1.m2_y + state2.m2_y));
+
+    // Combined covariance term
+    let cxy_combined =
+        // state1.cxy + state2.cxy + delta_x1 * delta_y1 * n1 + delta_x2 * delta_y2 * n2;
+        (delta_x2 * delta_y2).mul_add(n2, (delta_x1 * delta_y1).mul_add(n1, state1.cxy + state2.cxy));
+
+    CorrelationState {
+        count:  state1.count + state2.count,
+        mean_x: mean_x_combined,
+        mean_y: mean_y_combined,
+        m2_x:   m2_x_combined,
+        m2_y:   m2_y_combined,
+        cxy:    cxy_combined,
+    }
+}
+
+/// Compute final Pearson correlation coefficient from correlation state
+#[allow(clippy::cast_precision_loss)]
+fn finalize_pearson_correlation(state: &CorrelationState) -> Option<f64> {
+    if state.count < 2 {
+        return None;
+    }
+
+    let variance_x = state.m2_x / (state.count as f64 - 1.0);
+    let variance_y = state.m2_y / (state.count as f64 - 1.0);
+
+    if variance_x <= 0.0 || variance_y <= 0.0 {
+        return None;
+    }
+
+    let covariance = state.cxy / (state.count as f64 - 1.0);
+    let stddev_x = variance_x.sqrt();
+    let stddev_y = variance_y.sqrt();
+
+    if stddev_x.abs() > f64::EPSILON && stddev_y.abs() > f64::EPSILON {
+        Some(covariance / (stddev_x * stddev_y))
+    } else {
+        None
+    }
+}
+
+/// Compute final covariance from correlation state
+#[allow(clippy::cast_precision_loss)]
+fn finalize_covariance(state: &CorrelationState, sample: bool) -> Option<f64> {
+    if state.count < 2 {
+        return None;
+    }
+
+    let divisor = if sample {
+        state.count as f64 - 1.0
+    } else {
+        state.count as f64
+    };
+
+    Some(state.cxy / divisor)
+}
+
+/// Compute Pearson correlation coefficient from two arrays of values
+fn compute_pearson_correlation(x: &[f64], y: &[f64]) -> Option<f64> {
+    if x.len() != y.len() || x.len() < 2 {
+        return None;
+    }
+
+    let mut state = CorrelationState::default();
+    for (xi, yi) in x.iter().zip(y.iter()) {
+        update_correlation_state(&mut state, *xi, *yi);
+    }
+
+    finalize_pearson_correlation(&state)
+}
+
+/// Compute Spearman's rank correlation coefficient
+#[allow(clippy::cast_precision_loss)]
+fn compute_spearman_correlation(x: &[f64], y: &[f64]) -> Option<f64> {
+    if x.len() != y.len() || x.len() < 2 {
+        return None;
+    }
+
+    // Create indexed pairs for ranking (more efficient than recreating indices)
+    let mut x_ranked: Vec<(usize, f64)> = x.iter().enumerate().map(|(i, &v)| (i, v)).collect();
+    let mut y_ranked: Vec<(usize, f64)> = y.iter().enumerate().map(|(i, &v)| (i, v)).collect();
+
+    // Rank x values (handle ties by averaging)
+    x_ranked.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    let mut x_ranks = vec![0.0; x.len()];
+    let mut i = 0;
+    while i < x_ranked.len() {
+        let mut j = i;
+        while j < x_ranked.len() && (x_ranked[j].1 - x_ranked[i].1).abs() < f64::EPSILON {
+            j += 1;
+        }
+        let rank = (i + j - 1) as f64 / 2.0 + 1.0;
+        for k in i..j {
+            x_ranks[x_ranked[k].0] = rank;
+        }
+        i = j;
+    }
+
+    // Rank y values
+    y_ranked.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    let mut y_ranks = vec![0.0; y.len()];
+    i = 0;
+    while i < y_ranked.len() {
+        let mut j = i;
+        while j < y_ranked.len() && (y_ranked[j].1 - y_ranked[i].1).abs() < f64::EPSILON {
+            j += 1;
+        }
+        let rank = (i + j - 1) as f64 / 2.0 + 1.0;
+        for k in i..j {
+            y_ranks[y_ranked[k].0] = rank;
+        }
+        i = j;
+    }
+
+    // Compute Pearson correlation on ranks
+    compute_pearson_correlation(&x_ranks, &y_ranks)
+}
+
+/// Count inversions in y values when sorted by x using merge sort (O(n log n))
+/// Returns number of inversions (discordant pairs)
+#[allow(clippy::cast_precision_loss)]
+fn count_inversions_merge(
+    pairs: &mut [(f64, f64)],
+    temp: &mut [(f64, f64)],
+    left: usize,
+    right: usize,
+) -> i64 {
+    if left >= right {
+        return 0;
+    }
+
+    let mid = left + (right - left) / 2;
+    let mut inversions = count_inversions_merge(pairs, temp, left, mid)
+        + count_inversions_merge(pairs, temp, mid + 1, right);
+
+    // Merge and count inversions
+    let mut i = left;
+    let mut j = mid + 1;
+    let mut k = left;
+
+    while i <= mid && j <= right {
+        if pairs[i].1 <= pairs[j].1 {
+            temp[k] = pairs[i];
+            i += 1;
+        } else {
+            // Inversion found: pairs[i].1 > pairs[j].1
+            // All remaining elements in left half form inversions with pairs[j]
+            inversions += (mid - i + 1) as i64;
+            temp[k] = pairs[j];
+            j += 1;
+        }
+        k += 1;
+    }
+
+    // Copy remaining elements
+    while i <= mid {
+        temp[k] = pairs[i];
+        i += 1;
+        k += 1;
+    }
+    while j <= right {
+        temp[k] = pairs[j];
+        j += 1;
+        k += 1;
+    }
+
+    // Copy back from temp
+    // for idx in left..=right {
+    //     pairs[idx] = temp[idx];
+    // }
+    pairs[left..=right].copy_from_slice(&temp[left..=right]);
+
+    inversions
+}
+
+/// Compute Kendall's tau rank correlation coefficient using O(n log n) merge sort
+#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::many_single_char_names)]
+fn compute_kendall_tau(x: &[f64], y: &[f64]) -> Option<f64> {
+    if x.len() != y.len() || x.len() < 2 {
+        return None;
+    }
+
+    let n = x.len() as f64;
+    let mut ties_x = 0i64;
+    let mut ties_y = 0i64;
+
+    // Create pairs and sort by x values
+    let mut pairs: Vec<(f64, f64)> = x.iter().zip(y.iter()).map(|(&a, &b)| (a, b)).collect();
+    pairs.sort_unstable_by(|a, b| {
+        a.0.partial_cmp(&b.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+    });
+
+    // Clone pairs before mutable operations for counting ties in y
+    let pairs_for_y_ties: Vec<(f64, f64)> = pairs.clone();
+    let pairs_len = pairs.len();
+
+    // Count ties in x
+    let mut i = 0;
+    while i < pairs.len() {
+        let mut j = i + 1;
+        while j < pairs.len() && (pairs[j].0 - pairs[i].0).abs() < f64::EPSILON {
+            j += 1;
+        }
+        let tie_count = (j - i) as i64;
+        if tie_count > 1 {
+            ties_x += tie_count * (tie_count - 1) / 2;
+        }
+        i = j;
+    }
+
+    // Count inversions in y using merge sort (when sorted by x)
+    let mut temp = vec![(0.0, 0.0); pairs_len];
+    let inversions = count_inversions_merge(&mut pairs, &mut temp, 0, pairs_len - 1);
+
+    // Count ties in y (need to check all pairs where x values differ)
+    // Re-sort pairs by y to count ties in y
+    let mut pairs_by_y: Vec<(f64, f64)> = pairs_for_y_ties;
+    pairs_by_y.sort_unstable_by(|a, b| {
+        a.1.partial_cmp(&b.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+    });
+
+    i = 0;
+    while i < pairs_by_y.len() {
+        let mut j = i + 1;
+        while j < pairs_by_y.len() && (pairs_by_y[j].1 - pairs_by_y[i].1).abs() < f64::EPSILON {
+            j += 1;
+        }
+        let tie_count = (j - i) as i64;
+        if tie_count > 1 {
+            ties_y += tie_count * (tie_count - 1) / 2;
+        }
+        i = j;
+    }
+
+    // Calculate concordant and discordant pairs
+    let total_pairs = (n * (n - 1.0) / 2.0) as i64;
+    let discordant = inversions;
+    let concordant = total_pairs - discordant - ties_x - ties_y;
+
+    let n0 = n * (n - 1.0) / 2.0;
+    let n1 = (ties_x * (ties_x - 1)) as f64 / 2.0;
+    let n2 = (ties_y * (ties_y - 1)) as f64 / 2.0;
+
+    let denominator = ((n0 - n1) * (n0 - n2)).sqrt();
+
+    if denominator.abs() < f64::EPSILON {
+        return None;
+    }
+
+    let tau = ((concordant - discordant) as f64) / denominator;
+    Some(tau)
+}
+
+/// Compute mutual information between two categorical/numeric fields from frequency counts
+#[allow(clippy::cast_precision_loss)]
+fn compute_mutual_information_from_counts(
+    xy_counts: &HashMap<(String, String), u64>,
+    x_counts: &HashMap<String, u64>,
+    y_counts: &HashMap<String, u64>,
+    total: u64,
+) -> Option<f64> {
+    if total == 0 {
+        return None;
+    }
+
+    let total_f64 = total as f64;
+
+    // Compute mutual information: MI(X,Y) = sum(p(x,y) * log2(p(x,y) / (p(x) * p(y))))
+    let mut mi = 0.0;
+    for ((x_val, y_val), &xy_count) in xy_counts {
+        let p_xy = xy_count as f64 / total_f64;
+        let p_x = x_counts.get(x_val).copied().unwrap_or(0) as f64 / total_f64;
+        let p_y = y_counts.get(y_val).copied().unwrap_or(0) as f64 / total_f64;
+
+        if p_x > 0.0 && p_y > 0.0 && p_xy > 0.0 {
+            mi += p_xy * (p_xy / (p_x * p_y)).log2();
+        }
+    }
+
+    Some(mi)
 }
 
 /// Field information needed for Kurtosis, Gini & Atkinson Index computation (with precalculated
@@ -995,6 +1621,165 @@ fn count_all_outliers(
     }
 }
 
+/// Process a chunk of records and update bivariate statistics
+/// Similar to count_chunk_outliers but for bivariate computation
+fn compute_chunk_bivariate<I>(
+    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+    records: I,
+) -> CliResult<HashMap<(u16, u16), BivariateChunkStats>>
+where
+    I: Iterator<Item = csv::Result<csv::ByteRecord>>,
+{
+    if field_pairs.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    // Initialize statistics for all field pairs
+    // Pre-allocate vectors with estimated capacity (typical chunk size is 1k-10k records)
+    let estimated_capacity = 5000; // Reasonable estimate for chunk processing
+    let estimated_unique_strings = estimated_capacity.min(1000); // Estimate for string frequency maps
+    let mut chunk_stats: HashMap<(u16, u16), BivariateChunkStats> = field_pairs
+        .keys()
+        .map(|k| {
+            let mut stats = BivariateChunkStats::default();
+            stats.x_values.reserve(estimated_capacity);
+            stats.y_values.reserve(estimated_capacity);
+            // Pre-allocate HashMap capacity to reduce rehashing (optimization #3)
+            stats.xy_counts.reserve(estimated_unique_strings);
+            stats.x_counts.reserve(estimated_unique_strings / 2);
+            stats.y_counts.reserve(estimated_unique_strings / 2);
+            (*k, stats)
+        })
+        .collect();
+
+    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+
+    // Optimization #1: Date parsing cache - Cache parsed dates to avoid re-parsing same strings
+    let mut date_cache: HashMap<String, Option<f64>> = HashMap::with_capacity(estimated_capacity);
+
+    // Optimization #6: String interning - Cache frequently used strings to reduce allocations
+    // This helps when the same string values appear multiple times across records
+    let mut string_interner: HashMap<String, String> =
+        HashMap::with_capacity(estimated_unique_strings);
+
+    #[allow(unused_assignments)]
+    let mut record: csv::ByteRecord = csv::ByteRecord::new();
+    let mut value_bytes_x;
+    let mut value_bytes_y;
+    let mut numeric_value_x;
+    let mut numeric_value_y;
+
+    // Process each record in the chunk
+    for result in records {
+        record = result?;
+
+        // Optimization #4: Batch string conversions - convert record to strings once, reuse for all
+        // field pairs Collect all column indices that need string conversion
+        let mut col_indices_needed: HashSet<usize> = HashSet::new();
+        for (field1_info, field2_info) in field_pairs.values() {
+            col_indices_needed.insert(field1_info.col_idx);
+            col_indices_needed.insert(field2_info.col_idx);
+        }
+
+        // Convert needed columns to strings once
+        let mut record_strings: HashMap<usize, String> =
+            HashMap::with_capacity(col_indices_needed.len());
+        for &col_idx in &col_indices_needed {
+            if let Some(bytes) = record.get(col_idx)
+                && !bytes.is_empty()
+                && let Ok(s) = from_utf8(bytes)
+            {
+                record_strings.insert(col_idx, s.to_string());
+            }
+        }
+
+        for ((idx1, idx2), (field1_info, field2_info)) in field_pairs {
+            // Optimization: Check record_strings first (already excludes empty values)
+            // This avoids redundant empty checks and byte fetching for empty fields
+            let (Some(x_str), Some(y_str)) = (
+                record_strings.get(&field1_info.col_idx),
+                record_strings.get(&field2_info.col_idx),
+            ) else {
+                continue; // Skip if either value is empty (not in record_strings)
+            };
+
+            // Get mutable reference to stats for this field pair
+            let stats = chunk_stats.get_mut(&(*idx1, *idx2)).unwrap();
+
+            // Get bytes only for numeric parsing (date fields use strings from cache)
+            value_bytes_x = record.get(field1_info.col_idx).unwrap_or(&[]);
+            value_bytes_y = record.get(field2_info.col_idx).unwrap_or(&[]);
+
+            // Optimization #1: Use date parsing cache
+            // Optimization #5: Skip date parsing for non-date fields
+            numeric_value_x = if field1_info.field_type.is_date_or_datetime() {
+                // Use cached parsed date or parse and cache
+                *date_cache
+                    .entry(x_str.clone())
+                    .or_insert_with(|| parse_date_to_days(x_str, prefer_dmy))
+            } else {
+                // Direct float parsing (much faster than date parsing)
+                parse_float_opt_from_bytes(value_bytes_x)
+            };
+
+            numeric_value_y = if field2_info.field_type.is_date_or_datetime() {
+                // Use cached parsed date or parse and cache
+                *date_cache
+                    .entry(y_str.clone())
+                    .or_insert_with(|| parse_date_to_days(y_str, prefer_dmy))
+            } else {
+                // Direct float parsing (much faster than date parsing)
+                parse_float_opt_from_bytes(value_bytes_y)
+            };
+
+            // For numeric/date types, update correlation state and collect values
+            if let (Some(x_val), Some(y_val)) = (numeric_value_x, numeric_value_y) {
+                update_correlation_state(&mut stats.correlation_state, x_val, y_val);
+                stats.x_values.push(x_val);
+                stats.y_values.push(y_val);
+            }
+
+            // Optimization #2 & #6: Optimized string interning - reduce clones
+            // For occupied entries (common case with repeated strings): 1 clone instead of 3
+            // For vacant entries: 2 clones (same as before, but more efficient)
+            let x_str_interned = if let Some(cached) = string_interner.get(x_str) {
+                // String already interned - reuse it (1 clone instead of 3)
+                cached.clone()
+            } else {
+                // String not interned - clone once and store reference to itself
+                let owned = x_str.clone();
+                string_interner.insert(owned.clone(), owned.clone());
+                owned
+            };
+            let y_str_interned = if let Some(cached) = string_interner.get(y_str) {
+                // String already interned - reuse it (1 clone instead of 3)
+                cached.clone()
+            } else {
+                // String not interned - clone once and store reference to itself
+                let owned = y_str.clone();
+                string_interner.insert(owned.clone(), owned.clone());
+                owned
+            };
+
+            // Accumulate joint frequency counts (xy_counts) - these are needed for mutual
+            // information Note: Marginal frequencies (x_counts, y_counts) will be
+            // populated from cache in compute_all_bivariatestats_chunked before
+            // computing mutual information
+            *stats
+                .xy_counts
+                .entry((x_str_interned.clone(), y_str_interned.clone()))
+                .or_insert(0) += 1;
+            // Still collect marginal frequencies as fallback if cache not available
+            // They will be replaced with cached values if cache is initialized
+            *stats.x_counts.entry(x_str_interned).or_insert(0) += 1;
+            *stats.y_counts.entry(y_str_interned).or_insert(0) += 1;
+            stats.total_pairs += 1;
+        }
+    }
+
+    Ok(chunk_stats)
+}
+
 /// Count outliers for all fields in a single pass through the CSV (sequential)
 /// The CSV reader should already be positioned after the headers
 /// Returns a HashMap mapping field names to their outlier statistics
@@ -1118,6 +1903,590 @@ fn count_all_outliers_from_reader(
     }
 
     Ok(all_stats)
+}
+
+/// Compute bivariate statistics using parallel chunked processing (requires index)
+fn compute_all_bivariatestats_chunked(
+    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+    field_names: &[String],
+    input_path: &Path,
+    progress: Option<&ProgressBar>,
+    cardinality_threshold: Option<u64>,
+) -> CliResult<HashMap<(u16, u16), BivariateStats>> {
+    if field_pairs.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    // Check if index exists for parallel processing
+    let input_path_str = input_path
+        .to_str()
+        .ok_or_else(|| CliError::Other(format!("Invalid input path: {}", input_path.display())))?;
+    let input_path_string = input_path_str.to_string();
+    let rconfig = Config::new(Some(&input_path_string));
+    let indexed_result = rconfig.indexed()?;
+
+    if let Some(idx) = indexed_result {
+        // Parallel processing path
+        let idx_count = idx.count() as usize;
+        if idx_count == 0 {
+            return Ok(HashMap::new());
+        }
+
+        // Only parallelize if file is large enough (threshold: 10k records)
+        if idx_count < 10_000 {
+            // Fall back to sequential for small files
+            let mut rdr = rconfig.reader_file()?;
+            let _headers = rdr.headers()?.clone();
+            winfo!("Computing bivariate statistics sequentially...");
+            return compute_all_bivariatestats_from_reader(
+                field_pairs,
+                field_names,
+                rdr,
+                progress,
+                cardinality_threshold,
+            );
+        }
+
+        let njobs = util::njobs(None);
+        let chunk_size = util::chunk_size(idx_count, njobs);
+        let nchunks = util::num_of_chunks(idx_count, chunk_size);
+
+        winfo!("Parallelizing bivariate computation: {nchunks} chunks, {njobs} jobs");
+
+        // Setup progress bar if requested
+        if let Some(pb) = progress {
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template(
+                        "[{elapsed_precise}] [{wide_bar} {percent}%{msg}] ({per_sec} - {eta})",
+                    )
+                    .unwrap(),
+            );
+            pb.set_message(format!(" of {} chunks", HumanCount(nchunks as u64)));
+            pb.set_length(nchunks as u64);
+            log::info!("Progress started... {nchunks} chunks");
+        }
+
+        let pool = ThreadPool::new(njobs);
+        let (send, recv) = crossbeam_channel::bounded(nchunks);
+
+        // Process each chunk in parallel
+        let input_path_string = input_path.to_str().unwrap_or("").to_string();
+        for i in 0..nchunks {
+            let (send, field_pairs_clone, input_path_string_clone) =
+                (send.clone(), field_pairs.clone(), input_path_string.clone());
+            pool.execute(move || {
+                // Open index for this thread
+                let rconfig_chunk = Config::new(Some(&input_path_string_clone));
+                // safety: we know the file is indexed and seekable
+                let Ok(Some(mut idx_chunk)) = rconfig_chunk.indexed() else {
+                    // If we can't open index, send empty result
+                    let _ = send.send(Ok(HashMap::new()));
+                    return;
+                };
+
+                // Seek to chunk start position
+                if let Err(e) = idx_chunk.seek((i * chunk_size) as u64) {
+                    let _ = send.send(Err(CliError::Other(format!("Seek failed: {e}"))));
+                    return;
+                }
+
+                // Process chunk records
+                let it = idx_chunk.byte_records().take(chunk_size);
+                let result = compute_chunk_bivariate(&field_pairs_clone, it);
+                let _ = send.send(result);
+            });
+        }
+
+        drop(send);
+
+        // Aggregate results from all chunks
+        let mut all_stats: HashMap<(u16, u16), BivariateChunkStats> = field_pairs
+            .keys()
+            .map(|k| (*k, BivariateChunkStats::default()))
+            .collect();
+
+        for chunk_result in &recv {
+            let chunk_stats = chunk_result?;
+            for (pair_key, stats) in chunk_stats {
+                if let Some(total_stats) = all_stats.get_mut(&pair_key) {
+                    // Merge correlation states
+                    total_stats.correlation_state = merge_correlation_states(
+                        &total_stats.correlation_state,
+                        &stats.correlation_state,
+                    );
+                    // Append values for Spearman/Kendall
+                    total_stats.x_values.extend(stats.x_values);
+                    total_stats.y_values.extend(stats.y_values);
+                    // Merge frequency counts for mutual information
+                    for ((x_val, y_val), count) in stats.xy_counts {
+                        *total_stats.xy_counts.entry((x_val, y_val)).or_insert(0) += count;
+                    }
+                    for (x_val, count) in stats.x_counts {
+                        *total_stats.x_counts.entry(x_val).or_insert(0) += count;
+                    }
+                    for (y_val, count) in stats.y_counts {
+                        *total_stats.y_counts.entry(y_val).or_insert(0) += count;
+                    }
+                    total_stats.total_pairs += stats.total_pairs;
+                }
+            }
+            // Update progress bar
+            if let Some(pb) = progress {
+                pb.inc(1);
+            }
+        }
+
+        winfo!("Finalizing bivariate statistics...");
+        // Update progress bar for Phase 2: final statistics computation
+        let num_field_pairs = all_stats.len();
+        if let Some(pb) = progress {
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template(
+                        "[{elapsed_precise}] [{wide_bar} {percent}%{msg}] ({per_sec} - {eta})",
+                    )
+                    .unwrap(),
+            );
+            pb.set_message(format!(
+                " of {} field pairs",
+                HumanCount(num_field_pairs as u64)
+            ));
+            pb.set_length(num_field_pairs as u64);
+            pb.set_position(0); // Reset position for Phase 2
+            log::info!("Phase 2 started... {num_field_pairs} field pairs");
+        }
+
+        // Compute marginal frequencies from joint frequencies to ensure consistency
+        // This ensures x_counts and y_counts are computed from the same set of records
+        // as xy_counts (only pairs where both fields are non-empty)
+        // This is critical for correct mutual information calculation
+        for chunk_stats in all_stats.values_mut() {
+            // Compute marginal frequencies from joint frequencies
+            // Sum over y to get x_counts, sum over x to get y_counts
+            chunk_stats.x_counts.clear();
+            chunk_stats.y_counts.clear();
+
+            for ((x_val, y_val), &count) in &chunk_stats.xy_counts {
+                *chunk_stats.x_counts.entry(x_val.clone()).or_insert(0) += count;
+                *chunk_stats.y_counts.entry(y_val.clone()).or_insert(0) += count;
+            }
+        }
+
+        // Finalize statistics from aggregated chunk stats (parallelized)
+        let final_stats: HashMap<(u16, u16), BivariateStats> = all_stats
+            .into_par_iter()
+            .inspect(|_| {
+                // Update progress bar for each field pair processed
+                if let Some(pb) = progress {
+                    pb.inc(1);
+                }
+            })
+            .map(|(pair_key, chunk_stats)| {
+                let n_pairs = chunk_stats.correlation_state.count;
+
+                // Get field info for this pair to check cardinality threshold
+                let (field1_info, field2_info) = field_pairs
+                    .get(&pair_key)
+                    .unwrap_or_else(|| panic!("Field pair not found: {pair_key:?}"));
+
+                // Early termination: skip all correlation/covariance computations if variance is
+                // zero
+                let has_zero_variance = field1_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
+                    || field2_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
+                    || field1_info.variance.is_some_and(|v| v.abs() < f64::EPSILON)
+                    || field2_info.variance.is_some_and(|v| v.abs() < f64::EPSILON);
+
+                // Skip Pearson correlation and covariance if variance is zero (correlation
+                // undefined)
+                let pearson = if has_zero_variance || chunk_stats.correlation_state.count < 2 {
+                    None
+                } else {
+                    finalize_pearson_correlation(&chunk_stats.correlation_state)
+                };
+                let covariance_sample =
+                    if has_zero_variance || chunk_stats.correlation_state.count < 2 {
+                        None
+                    } else {
+                        finalize_covariance(&chunk_stats.correlation_state, true)
+                    };
+                let covariance_population =
+                    if has_zero_variance || chunk_stats.correlation_state.count < 2 {
+                        None
+                    } else {
+                        finalize_covariance(&chunk_stats.correlation_state, false)
+                    };
+
+                let spearman = if has_zero_variance || chunk_stats.x_values.len() < 2 {
+                    None
+                } else {
+                    compute_spearman_correlation(&chunk_stats.x_values, &chunk_stats.y_values)
+                };
+                let kendall = if has_zero_variance || chunk_stats.x_values.len() < 2 {
+                    None
+                } else {
+                    compute_kendall_tau(&chunk_stats.x_values, &chunk_stats.y_values)
+                };
+
+                // Apply cardinality threshold for mutual information
+                let mutual_information = if chunk_stats.total_pairs == 0 {
+                    None
+                } else if let Some(threshold) = cardinality_threshold {
+                    // Check if either field exceeds cardinality threshold
+                    let exceeds_threshold = field1_info.cardinality.is_some_and(|c| c > threshold)
+                        || field2_info.cardinality.is_some_and(|c| c > threshold);
+                    if exceeds_threshold {
+                        // Convert indices to names for logging (u16 -> usize for indexing)
+                        let (idx1, idx2) = pair_key;
+                        let field1_name = field_names
+                            .get(idx1 as usize)
+                            .map_or("?", std::string::String::as_str);
+                        let field2_name = field_names
+                            .get(idx2 as usize)
+                            .map_or("?", std::string::String::as_str);
+                        log::debug!(
+                            "Skipping mutual information for pair ({field1_name}, {field2_name}) \
+                             - cardinality exceeds threshold {threshold}"
+                        );
+                        None
+                    } else {
+                        compute_mutual_information_from_counts(
+                            &chunk_stats.xy_counts,
+                            &chunk_stats.x_counts,
+                            &chunk_stats.y_counts,
+                            chunk_stats.total_pairs,
+                        )
+                    }
+                } else {
+                    compute_mutual_information_from_counts(
+                        &chunk_stats.xy_counts,
+                        &chunk_stats.x_counts,
+                        &chunk_stats.y_counts,
+                        chunk_stats.total_pairs,
+                    )
+                };
+
+                (
+                    pair_key,
+                    BivariateStats {
+                        pearson,
+                        spearman,
+                        kendall,
+                        covariance_sample,
+                        covariance_population,
+                        mutual_information,
+                        n_pairs,
+                    },
+                )
+            })
+            .collect();
+
+        // Finish progress bar after final statistics computation
+        if let Some(pb) = progress {
+            util::finish_progress(pb);
+        }
+
+        Ok(final_stats)
+    } else {
+        // Sequential fallback when no index exists
+        let mut rdr = rconfig.reader_file()?;
+        let _headers = rdr.headers()?.clone();
+        compute_all_bivariatestats_from_reader(
+            field_pairs,
+            field_names,
+            rdr,
+            progress,
+            cardinality_threshold,
+        )
+    }
+}
+
+/// Sequential fallback when no index exists (for small files)
+fn compute_all_bivariatestats_from_reader(
+    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+    field_names: &[String],
+    mut rdr: csv::Reader<std::fs::File>,
+    progress: Option<&ProgressBar>,
+    cardinality_threshold: Option<u64>,
+) -> CliResult<HashMap<(u16, u16), BivariateStats>> {
+    if field_pairs.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    // Collect all values for each field pair
+    // Use frequency counts for strings instead of storing all strings
+    let estimated_capacity = 5000; // Reasonable estimate for sequential processing
+    let estimated_unique_strings = estimated_capacity.min(1000); // Estimate for string frequency maps
+    let mut pair_values: HashMap<
+        (u16, u16),
+        (
+            Vec<f64>,
+            Vec<f64>,
+            HashMap<(String, String), u64>,
+            HashMap<String, u64>,
+            HashMap<String, u64>,
+            u64,
+        ),
+    > = field_pairs
+        .keys()
+        .map(|k| {
+            let mut xy_counts = HashMap::new();
+            let mut x_counts = HashMap::new();
+            let mut y_counts = HashMap::new();
+            // Optimization #3: Pre-allocate HashMap capacity to reduce rehashing
+            xy_counts.reserve(estimated_unique_strings);
+            x_counts.reserve(estimated_unique_strings / 2);
+            y_counts.reserve(estimated_unique_strings / 2);
+            (
+                *k,
+                (
+                    Vec::with_capacity(estimated_capacity),
+                    Vec::with_capacity(estimated_capacity),
+                    xy_counts,
+                    x_counts,
+                    y_counts,
+                    0,
+                ),
+            )
+        })
+        .collect();
+
+    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+
+    // Optimization #1: Date parsing cache - Cache parsed dates to avoid re-parsing same strings
+    let mut date_cache: HashMap<String, Option<f64>> = HashMap::with_capacity(estimated_capacity);
+
+    // Optimization #6: String interning - Cache frequently used strings to reduce allocations
+    let mut string_interner: HashMap<String, String> =
+        HashMap::with_capacity(estimated_unique_strings);
+
+    // amortize allocations
+    #[allow(unused_assignments)]
+    let mut record: StringRecord = StringRecord::new();
+    let mut value_str_x;
+    let mut value_str_y;
+    let mut numeric_value_x;
+    let mut numeric_value_y;
+
+    // Process each record once, collecting values for all field pairs
+    let mut processed = 0u64;
+    for result in rdr.records() {
+        record = result?;
+        processed += 1;
+
+        // Update progress bar every 1000 records
+        if let Some(pb) = progress {
+            if processed == 1 {
+                // Initialize progress bar on first record (unknown total)
+                pb.set_style(
+                    ProgressStyle::default_bar()
+                        .template("[{elapsed_precise}] [{wide_bar}] {pos} records ({per_sec})")
+                        .unwrap(),
+                );
+                pb.set_length(0); // Unknown length
+            }
+            if processed.is_multiple_of(1000) {
+                pb.set_position(processed);
+            }
+        }
+
+        // Optimization #4: Batch string conversions - record is already StringRecord, so strings
+        // are available But we still need to cache date parsing results
+
+        for ((idx1, idx2), (field1_info, field2_info)) in field_pairs {
+            value_str_x = record.get(field1_info.col_idx).unwrap_or("");
+            value_str_y = record.get(field2_info.col_idx).unwrap_or("");
+
+            if value_str_x.is_empty() || value_str_y.is_empty() {
+                continue;
+            }
+
+            if let Some((x_nums, y_nums, xy_counts, x_counts, y_counts, total_pairs)) =
+                pair_values.get_mut(&(*idx1, *idx2))
+            {
+                // Optimization #1: Use date parsing cache
+                // Optimization #5: Skip date parsing for non-date fields
+                numeric_value_x = if field1_info.field_type.is_date_or_datetime() {
+                    // Use cached parsed date or parse and cache
+                    *date_cache
+                        .entry(value_str_x.to_string())
+                        .or_insert_with(|| parse_date_to_days(value_str_x, prefer_dmy))
+                } else {
+                    // Direct float parsing (much faster than date parsing)
+                    parse_float_opt(value_str_x)
+                };
+
+                numeric_value_y = if field2_info.field_type.is_date_or_datetime() {
+                    // Use cached parsed date or parse and cache
+                    *date_cache
+                        .entry(value_str_y.to_string())
+                        .or_insert_with(|| parse_date_to_days(value_str_y, prefer_dmy))
+                } else {
+                    // Direct float parsing (much faster than date parsing)
+                    parse_float_opt(value_str_y)
+                };
+
+                if let (Some(x_val), Some(y_val)) = (numeric_value_x, numeric_value_y) {
+                    x_nums.push(x_val);
+                    y_nums.push(y_val);
+                }
+
+                // Optimization #2 & #6: Reduce string allocations using string interning
+                // Intern strings to reuse allocations for frequently repeated values
+                let x_str = string_interner
+                    .entry(value_str_x.to_string())
+                    .or_insert_with(|| value_str_x.to_string())
+                    .clone();
+                let y_str = string_interner
+                    .entry(value_str_y.to_string())
+                    .or_insert_with(|| value_str_y.to_string())
+                    .clone();
+
+                // Accumulate joint frequency counts (xy_counts) - these are needed for mutual
+                // information Marginal frequencies (x_counts, y_counts) will be
+                // computed from xy_counts to ensure consistency (all from same set
+                // of records where both fields are non-empty)
+                *xy_counts.entry((x_str.clone(), y_str.clone())).or_insert(0) += 1;
+                // Still collect marginal frequencies during processing (will be recomputed from
+                // xy_counts) This is kept for potential fallback but will be
+                // replaced with computed marginals
+                *x_counts.entry(x_str).or_insert(0) += 1;
+                *y_counts.entry(y_str).or_insert(0) += 1;
+                *total_pairs += 1;
+            }
+        }
+    }
+
+    // Finish progress bar
+    if let Some(pb) = progress {
+        pb.set_position(processed);
+        util::finish_progress(pb);
+    }
+
+    // Compute statistics for each field pair
+    let mut final_stats: HashMap<(u16, u16), BivariateStats> =
+        HashMap::with_capacity(field_pairs.len() * 2);
+
+    for (pair_key, (x_nums, y_nums, xy_counts, mut x_counts, mut y_counts, total_pairs)) in
+        pair_values
+    {
+        // Get field info for this pair to check variance and cardinality
+        let (field1_info, field2_info) = field_pairs
+            .get(&pair_key)
+            .unwrap_or_else(|| panic!("Field pair not found: {pair_key:?}"));
+
+        // Compute marginal frequencies from joint frequencies to ensure consistency
+        // This ensures x_counts and y_counts are computed from the same set of records
+        // as xy_counts (only pairs where both fields are non-empty)
+        // This is critical for correct mutual information calculation
+        x_counts.clear();
+        y_counts.clear();
+
+        for ((x_val, y_val), &count) in &xy_counts {
+            *x_counts.entry(x_val.clone()).or_insert(0) += count;
+            *y_counts.entry(y_val.clone()).or_insert(0) += count;
+        }
+
+        // Early termination: check for zero variance
+        let has_zero_variance = field1_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
+            || field2_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
+            || field1_info.variance.is_some_and(|v| v.abs() < f64::EPSILON)
+            || field2_info.variance.is_some_and(|v| v.abs() < f64::EPSILON);
+
+        let n_pairs = x_nums.len().max(total_pairs as usize) as u64;
+
+        // Skip all correlation/covariance computations if variance is zero or insufficient data
+        let pearson = if has_zero_variance || x_nums.len() < 2 {
+            None
+        } else {
+            compute_pearson_correlation(&x_nums, &y_nums)
+        };
+        let spearman = if has_zero_variance || x_nums.len() < 2 {
+            None
+        } else {
+            compute_spearman_correlation(&x_nums, &y_nums)
+        };
+        let kendall = if has_zero_variance || x_nums.len() < 2 {
+            None
+        } else {
+            compute_kendall_tau(&x_nums, &y_nums)
+        };
+
+        // Compute covariance from correlation state (skip if variance is zero)
+        let (covariance_sample, covariance_population) = if has_zero_variance || x_nums.len() < 2 {
+            (None, None)
+        } else {
+            let mut state = CorrelationState::default();
+            for (xi, yi) in x_nums.iter().zip(y_nums.iter()) {
+                update_correlation_state(&mut state, *xi, *yi);
+            }
+            (
+                finalize_covariance(&state, true),
+                finalize_covariance(&state, false),
+            )
+        };
+
+        // Apply cardinality threshold for mutual information
+        let mutual_information = if total_pairs == 0 {
+            None
+        } else if let Some(threshold) = cardinality_threshold {
+            // Check if either field exceeds cardinality threshold
+            let exceeds_threshold = field1_info.cardinality.is_some_and(|c| c > threshold)
+                || field2_info.cardinality.is_some_and(|c| c > threshold);
+            if exceeds_threshold {
+                // Convert indices to names for logging (u16 -> usize for indexing)
+                let (idx1, idx2) = pair_key;
+                let field1_name = field_names.get(idx1 as usize).map_or("?", |s| s.as_str());
+                let field2_name = field_names.get(idx2 as usize).map_or("?", |s| s.as_str());
+                log::debug!(
+                    "Skipping mutual information for pair ({field1_name}, {field2_name}) - \
+                     cardinality exceeds threshold {threshold}",
+                );
+                None
+            } else {
+                compute_mutual_information_from_counts(
+                    &xy_counts,
+                    &x_counts,
+                    &y_counts,
+                    total_pairs,
+                )
+            }
+        } else {
+            compute_mutual_information_from_counts(&xy_counts, &x_counts, &y_counts, total_pairs)
+        };
+
+        final_stats.insert(
+            pair_key,
+            BivariateStats {
+                pearson,
+                spearman,
+                kendall,
+                covariance_sample,
+                covariance_population,
+                mutual_information,
+                n_pairs,
+            },
+        );
+    }
+
+    Ok(final_stats)
+}
+
+/// Compute all bivariate statistics (handles chunked vs sequential automatically)
+fn compute_all_bivariatestats(
+    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+    field_names: &[String],
+    input_path: &Path,
+    progress: Option<&ProgressBar>,
+    cardinality_threshold: Option<u64>,
+) -> CliResult<HashMap<(u16, u16), BivariateStats>> {
+    compute_all_bivariatestats_chunked(
+        field_pairs,
+        field_names,
+        input_path,
+        progress,
+        cardinality_threshold,
+    )
 }
 
 /// Compute Kurtosis, Gini coefficient, and Atkinson index for all fields.
@@ -1391,20 +2760,56 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    // Auto-create index if --advanced is set and index doesn't exist
-    if args.flag_advanced {
-        let rconfig = Config::new(Some(&input_path_str));
+    // Handle multi-dataset join if requested
+    let temp_joined_path: Option<PathBuf>;
+    let actual_input_path = if let Some(ref join_inputs_str) = args.flag_join_inputs {
+        let additional_inputs: Vec<String> = join_inputs_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
+        let join_keys_str = args.flag_join_keys.as_ref().ok_or_else(|| {
+            CliError::IncorrectUsage(
+                "--join-keys required when --join-inputs is specified".to_string(),
+            )
+        })?;
+        let join_keys: Vec<String> = join_keys_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
+        let join_type = args.flag_join_type.as_deref().unwrap_or("inner");
+
+        let joined_path =
+            join_datasets_internal(input_path, &additional_inputs, &join_keys, join_type)?;
+        temp_joined_path = Some(joined_path);
+        temp_joined_path.as_ref().unwrap()
+    } else {
+        temp_joined_path = None;
+        input_path
+    };
+
+    // Auto-create index if --advanced or --bivariate is set and index doesn't exist
+    if args.flag_advanced || args.flag_bivariate {
+        let actual_input_path_str = actual_input_path
+            .to_str()
+            .ok_or_else(|| CliError::Other("Invalid input path".to_string()))?
+            .to_string();
+        let rconfig = Config::new(Some(&actual_input_path_str));
         let indexed_result = rconfig.indexed()?;
 
         if indexed_result.is_none() && !rconfig.is_stdin() {
+            let option_name = if args.flag_bivariate {
+                "--bivariate"
+            } else {
+                "--advanced"
+            };
             log::info!(
-                "--advanced option requires reading the entire CSV file. Auto-creating index to \
-                 enable parallel processing..."
+                "{option_name} option requires reading the entire CSV file. Auto-creating index \
+                 to enable parallel processing..."
             );
 
-            match util::create_index_for_file(input_path, &rconfig) {
+            match util::create_index_for_file(actual_input_path, &rconfig) {
                 Ok(()) => {
-                    log::info!("Index created successfully for advanced statistics computation.");
+                    log::info!("Index created successfully for statistics computation.");
                 },
                 Err(index_err) => {
                     log::warn!("Failed to auto-create index: {index_err}");
@@ -1415,27 +2820,74 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Determine stats CSV path
-    let stats_csv_path = get_stats_csv_path(input_path)?;
-
-    // Check if stats CSV exists, if not, run stats command
-    if !stats_csv_path.exists() {
-        eprintln!("Stats CSV file not found: {}", stats_csv_path.display());
-
-        // Parse stats options
-        let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
-        let _ = util::run_qsv_cmd(
-            "stats",
-            &stats_args_vec,
-            &input_path_str,
-            "Ran stats command to generate baseline stats...",
+    // If we joined datasets, we need stats for the joined dataset, but write bivariate stats
+    // based on the original input path
+    let stats_csv_path = if temp_joined_path.is_some() {
+        // For joined datasets, generate stats for the joined dataset
+        // Use a temp stats CSV file
+        let actual_input_path_str = actual_input_path
+            .to_str()
+            .ok_or_else(|| CliError::Other("Invalid joined path".to_string()))?
+            .to_string();
+        let temp_stats_file = tempfile::Builder::new().suffix(".stats.csv").tempfile_in(
+            crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep()),
         )?;
-        if !stats_csv_path.exists() {
+        let temp_stats_path = temp_stats_file.path().to_path_buf();
+        drop(temp_stats_file); // Close so stats can write to it
+
+        // Generate stats for joined dataset
+        let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
+        let mut stats_cmd_args = stats_args_vec.clone();
+        stats_cmd_args.push("--output");
+        stats_cmd_args.push(temp_stats_path.to_str().unwrap());
+
+        let qsv_path = env::current_exe()
+            .map_err(|e| CliError::Other(format!("Failed to get current executable path: {e:?}")))?
+            .to_string_lossy()
+            .to_string();
+        let mut cmd = Command::new(&qsv_path);
+        cmd.arg("stats")
+            .args(&stats_cmd_args)
+            .arg(&actual_input_path_str);
+        let output = cmd
+            .output()
+            .map_err(|e| CliError::Other(format!("Error while executing stats command: {e:?}")))?;
+        if !output.status.success() {
             return fail_clierror!(
-                "Stats CSV file was not created: {}",
-                stats_csv_path.display()
+                "Command stats failed: Output {{ status: {:?}, stdout: {:?}, stderr: {:?} }}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
             );
         }
-    }
+
+        temp_stats_path
+    } else {
+        // For single dataset, use normal stats CSV path
+        let path = get_stats_csv_path(input_path)?;
+
+        // Check if stats CSV exists, if not, run stats command
+        if !path.exists() {
+            eprintln!(
+                "Stats CSV file not found: {}\nComputing baseline stats...",
+                path.display()
+            );
+
+            // Parse stats options
+            let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
+            let _ = util::run_qsv_cmd(
+                "stats",
+                &stats_args_vec,
+                &input_path_str,
+                "Ran stats command to generate baseline stats...",
+            )?;
+            if !path.exists() {
+                return fail_clierror!("Stats CSV file was not created: {}", path.display());
+            }
+        }
+
+        path
+    };
 
     // Read the stats CSV file
     let stats_csv_content = fs::read_to_string(&stats_csv_path)?;
@@ -1456,6 +2908,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let median_idx = headers.iter().position(|h| h == "median");
     let q2_median_idx = headers.iter().position(|h| h == "q2_median");
     let stddev_idx = headers.iter().position(|h| h == "stddev");
+    let variance_idx = headers.iter().position(|h| h == "variance");
     let range_idx = headers.iter().position(|h| h == "range");
     let q1_idx = headers.iter().position(|h| h == "q1");
     let q3_idx = headers.iter().position(|h| h == "q3");
@@ -1469,6 +2922,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let sum_idx = headers.iter().position(|h| h == "sum");
     let skewness_idx = headers.iter().position(|h| h == "skewness");
     let cardinality_idx = headers.iter().position(|h| h == "cardinality");
+    // let nullcount_idx = headers.iter().position(|h| h == "nullcount");
     let lower_outer_fence_idx = headers.iter().position(|h| h == "lower_outer_fence");
     let lower_inner_fence_idx = headers.iter().position(|h| h == "lower_inner_fence");
     let upper_inner_fence_idx = headers.iter().position(|h| h == "upper_inner_fence");
@@ -1874,8 +3328,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let needs_winsorized_trimmed = new_column_indices.contains_key(winsorized_col_name.as_str())
         || new_column_indices.contains_key(trimmed_col_name.as_str());
 
-    // Collect fields that need Kurtosis, Gini & Atkinson Index computation (with their
-    // precalculated stats)
+    // Collect fields that need Kurtosis, Gini & Atkinson Index computation
+    // (with their precalculated stats)
     let needs_kga = new_column_indices.contains_key("kurtosis")
         || new_column_indices.contains_key("gini_coefficient")
         || new_column_indices.contains_key("atkinson_index");
@@ -2046,7 +3500,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Get headers to map field names to column indices
         let mut csv_rdr = ReaderBuilder::new()
             .has_headers(true)
-            .from_path(input_path)?;
+            .from_path(actual_input_path)?;
         let csv_headers = csv_rdr.headers()?.clone();
 
         // Update column indices in fields_to_count and remove fields not found in CSV
@@ -2060,7 +3514,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         });
 
         // Count outliers (will use parallel processing if index exists)
-        count_all_outliers(&fields_to_count, input_path)?
+        count_all_outliers(&fields_to_count, actual_input_path)?
     };
 
     // Compute kurtosis, Gini coefficient & Atkinson Index for all fields
@@ -2070,7 +3524,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Get headers to map field names to column indices
         let mut csv_rdr = ReaderBuilder::new()
             .has_headers(true)
-            .from_path(input_path)?;
+            .from_path(actual_input_path)?;
         let csv_headers = csv_rdr.headers()?.clone();
 
         // Update column indices in fields_for_kga and remove fields not found in CSV
@@ -2084,15 +3538,297 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         });
 
         // Compute Kurtosis, Gini & Atkinson Index (will use sequential processing for correctness)
-        compute_all_kga(&fields_for_kga, input_path, args.flag_epsilon)?
+        compute_all_kga(&fields_for_kga, actual_input_path, args.flag_epsilon)?
     };
 
     // Compute Shannon Entropy for all fields
     let entropy_stats = if new_column_indices.contains_key("shannon_entropy") {
-        compute_all_entropy(input_path)?
+        compute_all_entropy(actual_input_path)?
     } else {
         HashMap::new()
     };
+
+    // Compute bivariate statistics if requested
+    // Store field_names for output conversion (indices -> names)
+    let mut bivariate_field_names: Option<Vec<String>> = None;
+    let bivariate_stats = if args.flag_bivariate {
+        // Get record count to check for all-unique fields (cardinality == rowcount)
+        let record_count: Option<u64> = {
+            let actual_input_path_str = actual_input_path
+                .to_str()
+                .ok_or_else(|| CliError::Other("Invalid input path".to_string()))?
+                .to_string();
+            let rconfig = Config::new(Some(&actual_input_path_str));
+            if let Ok(Some(idx)) = rconfig.indexed() {
+                Some(idx.count())
+            } else if !rconfig.is_stdin() {
+                // Fall back to counting rows if no index
+                util::count_rows(&rconfig).ok()
+            } else {
+                None // Can't get count from stdin
+            }
+        };
+
+        // Get CSV headers to map field names to column indices
+        let mut csv_rdr = ReaderBuilder::new()
+            .has_headers(true)
+            .from_path(actual_input_path)?;
+        let csv_headers = csv_rdr.headers()?.clone();
+
+        // Store field names for index-to-name lookups (used for output and frequency cache)
+        let field_names: Vec<String> = csv_headers
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
+        bivariate_field_names = Some(field_names.clone());
+
+        // Collect all field pairs for bivariate computation using column indices as keys
+        // Using u16 for keys (2 bytes) instead of usize (8 bytes) for better memory efficiency
+        // u16 supports up to 65,535 columns, which is more than sufficient for any CSV
+        let mut field_pairs: HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)> =
+            HashMap::new();
+
+        // Collect all numeric/date/string field names from stats CSV
+        let stats_field_names: Vec<String> = records
+            .iter()
+            .filter_map(|r| {
+                field_idx
+                    .and_then(|idx| r.get(idx))
+                    .map(std::string::ToString::to_string)
+            })
+            .collect();
+
+        for (i, field1_name) in stats_field_names.iter().enumerate() {
+            let field1_type_str = records.get(i).and_then(|r| r.get(type_idx)).unwrap_or("");
+            let Some(field1_type) = FieldType::from_str(field1_type_str) else {
+                continue;
+            };
+
+            // Get column index for field1
+            let Some(field1_col_idx) = csv_headers.iter().position(|h| h == field1_name) else {
+                continue;
+            };
+
+            // Extract pre-computed statistics for field1 from stats CSV
+            let field1_record = records.get(i);
+            let field1_stddev = field1_record
+                .and_then(|r| stddev_idx.and_then(|idx| r.get(idx)))
+                .and_then(parse_float_opt);
+            let field1_variance = field1_record
+                .and_then(|r| variance_idx.and_then(|idx| r.get(idx)))
+                .and_then(parse_float_opt);
+            let field1_cardinality = field1_record
+                .and_then(|r| cardinality_idx.and_then(|idx| r.get(idx)))
+                .and_then(|s| s.parse::<u64>().ok());
+
+            // Compare with all other fields
+            for (j, field2_name) in stats_field_names.iter().enumerate().skip(i + 1) {
+                let field2_type_str = records.get(j).and_then(|r| r.get(type_idx)).unwrap_or("");
+                let Some(field2_type) = FieldType::from_str(field2_type_str) else {
+                    continue;
+                };
+
+                // Get column index for field2
+                let Some(field2_col_idx) = csv_headers.iter().position(|h| h == field2_name) else {
+                    continue;
+                };
+
+                // Extract pre-computed statistics for field2 from stats CSV
+                let field2_record = records.get(j);
+                let field2_stddev = field2_record
+                    .and_then(|r| stddev_idx.and_then(|idx| r.get(idx)))
+                    .and_then(parse_float_opt);
+                let field2_variance = field2_record
+                    .and_then(|r| variance_idx.and_then(|idx| r.get(idx)))
+                    .and_then(parse_float_opt);
+                let field2_cardinality = field2_record
+                    .and_then(|r| cardinality_idx.and_then(|idx| r.get(idx)))
+                    .and_then(|s| s.parse::<u64>().ok());
+
+                // Filter invalid pairs: skip constant fields (zero variance)
+                if let (Some(stddev1), Some(stddev2)) = (field1_stddev, field2_stddev) {
+                    if stddev1.abs() < f64::EPSILON || stddev2.abs() < f64::EPSILON {
+                        continue; // Skip pairs with constant fields (correlation undefined)
+                    }
+                } else if let (Some(var1), Some(var2)) = (field1_variance, field2_variance)
+                    && (var1.abs() < f64::EPSILON || var2.abs() < f64::EPSILON)
+                {
+                    continue; // Skip pairs with constant fields (correlation undefined)
+                }
+
+                // Filter invalid pairs: skip both-constant pairs (cardinality = 1 for both)
+                if let (Some(card1), Some(card2)) = (field1_cardinality, field2_cardinality)
+                    && card1 == 1
+                    && card2 == 1
+                {
+                    continue; // Both constant, no meaningful correlation
+                }
+
+                // Filter invalid pairs: skip fields with all unique values (cardinality ==
+                // rowcount)
+                if let Some(rowcount) = record_count
+                    && (field1_cardinality.is_some_and(|c| c == rowcount)
+                        || field2_cardinality.is_some_and(|c| c == rowcount))
+                {
+                    continue; // All values are unique, correlations are not meaningful
+                }
+
+                // Include pairs where at least one field is numeric/date/string
+                // (for mutual information, we want all types)
+                if field1_type.is_numeric_or_date_type()
+                    || field2_type.is_numeric_or_date_type()
+                    || field1_type == FieldType::TString
+                    || field2_type == FieldType::TString
+                {
+                    // Use column indices as keys (cast to u16 for memory efficiency)
+                    // col_idx is usize but we store as u16 in the HashMap key
+                    field_pairs.insert(
+                        (field1_col_idx as u16, field2_col_idx as u16),
+                        (
+                            BivariateFieldInfo {
+                                col_idx:     field1_col_idx,
+                                field_type:  field1_type,
+                                // mean:        field1_mean,
+                                stddev:      field1_stddev,
+                                variance:    field1_variance,
+                                cardinality: field1_cardinality,
+                                // nullcount:   field1_nullcount,
+                            },
+                            BivariateFieldInfo {
+                                col_idx:     field2_col_idx,
+                                field_type:  field2_type,
+                                // mean:        field2_mean,
+                                stddev:      field2_stddev,
+                                variance:    field2_variance,
+                                cardinality: field2_cardinality,
+                                // nullcount:   field2_nullcount,
+                            },
+                        ),
+                    );
+                }
+            }
+        }
+
+        if field_pairs.is_empty() {
+            HashMap::new()
+        } else {
+            // Setup progress bar if requested and not reading from stdin
+            let actual_input_path_str = actual_input_path
+                .to_str()
+                .ok_or_else(|| CliError::Other("Invalid input path".to_string()))?
+                .to_string();
+            let rconfig_bivariate = Config::new(Some(&actual_input_path_str));
+            let show_progress = (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR"))
+                && !rconfig_bivariate.is_stdin();
+            let progress = if show_progress {
+                Some(ProgressBar::with_draw_target(
+                    Some(0),
+                    ProgressDrawTarget::stderr_with_hz(5),
+                ))
+            } else {
+                None
+            };
+
+            // Get cardinality threshold (default: 1,000,000)
+            let cardinality_threshold = args.flag_cardinality_threshold.or(Some(1_000_000));
+            winfo!("Computing bivariate statistics...");
+            let result = compute_all_bivariatestats(
+                &field_pairs,
+                &field_names,
+                actual_input_path,
+                progress.as_ref(),
+                cardinality_threshold,
+            );
+
+            // Clean up progress bar if it was created
+            if let Some(pb) = progress {
+                pb.finish_and_clear();
+            }
+
+            result?
+        }
+    } else {
+        HashMap::new()
+    };
+
+    // Write bivariate statistics CSV if computed
+    // Always use the original input path for naming, even if we joined datasets
+    if args.flag_bivariate && !bivariate_stats.is_empty() {
+        let bivariate_csv_path = get_bivariate_csv_path(input_path)?;
+        let mut bivariate_wtr = WriterBuilder::new()
+            .has_headers(true)
+            .from_path(&bivariate_csv_path)?;
+
+        // Write headers
+        bivariate_wtr.write_record([
+            "field1",
+            "field2",
+            "pearson_correlation",
+            "spearman_correlation",
+            "kendall_tau",
+            "covariance_sample",
+            "covariance_population",
+            "mutual_information",
+            "n_pairs",
+        ])?;
+
+        // Write bivariate statistics
+        // Convert indices to names for output
+        let field_names_for_output = bivariate_field_names.as_ref().ok_or_else(|| {
+            CliError::Other("Field names not available for bivariate output".to_string())
+        })?;
+
+        let mut sorted_pairs: Vec<_> = bivariate_stats.keys().collect();
+        sorted_pairs.sort();
+
+        for (idx1, idx2) in sorted_pairs {
+            if let Some(stats) = bivariate_stats.get(&(*idx1, *idx2)) {
+                // Convert indices to field names for output (u16 -> usize for indexing)
+                let field1_name = field_names_for_output
+                    .get(*idx1 as usize)
+                    .map_or("?", |s| s.as_str());
+                let field2_name = field_names_for_output
+                    .get(*idx2 as usize)
+                    .map_or("?", |s| s.as_str());
+
+                bivariate_wtr.write_record([
+                    field1_name,
+                    field2_name,
+                    stats
+                        .pearson
+                        .map_or(String::new(), |v| util::round_num(v, args.flag_round))
+                        .as_str(),
+                    stats
+                        .spearman
+                        .map_or(String::new(), |v| util::round_num(v, args.flag_round))
+                        .as_str(),
+                    stats
+                        .kendall
+                        .map_or(String::new(), |v| util::round_num(v, args.flag_round))
+                        .as_str(),
+                    stats
+                        .covariance_sample
+                        .map_or(String::new(), |v| util::round_num(v, args.flag_round))
+                        .as_str(),
+                    stats
+                        .covariance_population
+                        .map_or(String::new(), |v| util::round_num(v, args.flag_round))
+                        .as_str(),
+                    stats
+                        .mutual_information
+                        .map_or(String::new(), |v| util::round_num(v, args.flag_round))
+                        .as_str(),
+                    stats.n_pairs.to_string().as_str(),
+                ])?;
+            }
+        }
+
+        bivariate_wtr.flush()?;
+        eprintln!(
+            "Wrote bivariate statistics to {}",
+            bivariate_csv_path.display()
+        );
+    }
 
     // Prepare output
     let output_path: &Path = args.flag_output.as_ref().map_or(&stats_csv_path, Path::new);
@@ -2749,6 +4485,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         output_path.display()
     );
     eprintln!("Elapsed: {:.2}s", start_time.elapsed().as_secs_f64());
+
+    // Clean up temporary joined file if it was created
+    if let Some(ref temp_path) = temp_joined_path
+        && temp_path.exists()
+        && let Err(e) = fs::remove_file(temp_path)
+    {
+        log::warn!(
+            "Failed to remove temporary joined file {}: {}",
+            temp_path.display(),
+            e
+        );
+    }
 
     Ok(())
 }

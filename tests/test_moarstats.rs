@@ -3539,3 +3539,624 @@ fn moarstats_shannon_entropy_boolean_fields() {
         }
     }
 }
+
+#[test]
+fn moarstats_bivariate_basic() {
+    let wrk = Workdir::new("moarstats_bivariate_basic");
+
+    // Create CSV with two numeric fields that should correlate
+    // Note: Added duplicate values so cardinality < rowcount (avoids filtering)
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["x", "y"],
+            svec!["1", "2"],
+            svec!["2", "4"],
+            svec!["3", "6"],
+            svec!["4", "8"],
+            svec!["5", "10"],
+            svec!["1", "2"], // Duplicate to ensure cardinality < rowcount
+        ],
+    );
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with --bivariate flag
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify bivariate CSV file exists
+    let bivariate_path = wrk.path("test.stats.bivariate.csv");
+    assert!(
+        bivariate_path.exists(),
+        "Bivariate statistics file should exist"
+    );
+
+    // Verify bivariate CSV has correct columns
+    let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(bivariate_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    assert!(
+        get_column_index(&headers, "field1").is_some(),
+        "field1 column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "field2").is_some(),
+        "field2 column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "pearson_correlation").is_some(),
+        "pearson_correlation column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "spearman_correlation").is_some(),
+        "spearman_correlation column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "kendall_tau").is_some(),
+        "kendall_tau column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "covariance_sample").is_some(),
+        "covariance_sample column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "covariance_population").is_some(),
+        "covariance_population column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "mutual_information").is_some(),
+        "mutual_information column should exist"
+    );
+    assert!(
+        get_column_index(&headers, "n_pairs").is_some(),
+        "n_pairs column should exist"
+    );
+
+    // Verify relationship between x and y (should be perfect positive correlation)
+    let field1_idx = get_column_index(&headers, "field1").unwrap();
+    let field2_idx = get_column_index(&headers, "field2").unwrap();
+    let pearson_idx = get_column_index(&headers, "pearson_correlation").unwrap();
+    let n_pairs_idx = get_column_index(&headers, "n_pairs").unwrap();
+
+    let mut found_x_y_pair = false;
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field1 = get_field_value(&record, field1_idx).unwrap();
+        let field2 = get_field_value(&record, field2_idx).unwrap();
+
+        if (field1 == "x" && field2 == "y") || (field1 == "y" && field2 == "x") {
+            found_x_y_pair = true;
+
+            // Verify n_pairs (6 rows including duplicate)
+            let n_pairs_val = get_field_value(&record, n_pairs_idx).unwrap();
+            let n_pairs: u64 = n_pairs_val.parse().unwrap();
+            assert_eq!(n_pairs, 6, "n_pairs should be 6");
+
+            // Verify Pearson correlation (should be 1.0 for perfect positive correlation)
+            let pearson_val = get_field_value(&record, pearson_idx);
+            if let Some(val_str) = pearson_val {
+                if !val_str.is_empty() {
+                    let pearson: f64 = val_str.parse().unwrap();
+                    assert!(
+                        pearson >= 0.99 && pearson <= 1.0,
+                        "Pearson correlation should be close to 1.0 for perfect positive \
+                         correlation, got: {}",
+                        pearson
+                    );
+                }
+            }
+
+            break;
+        }
+    }
+
+    assert!(found_x_y_pair, "Should find x-y field pair");
+}
+
+#[test]
+fn moarstats_bivariate_negative_correlation() {
+    let wrk = Workdir::new("moarstats_bivariate_negative");
+
+    // Create CSV with two numeric fields that have negative correlation
+    // Note: Added duplicate values so cardinality < rowcount (avoids filtering)
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["x", "y"],
+            svec!["1", "10"],
+            svec!["2", "8"],
+            svec!["3", "6"],
+            svec!["4", "4"],
+            svec!["5", "2"],
+            svec!["1", "10"], // Duplicate to ensure cardinality < rowcount
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(bivariate_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field1_idx = get_column_index(&headers, "field1").unwrap();
+    let field2_idx = get_column_index(&headers, "field2").unwrap();
+    let pearson_idx = get_column_index(&headers, "pearson_correlation").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field1 = get_field_value(&record, field1_idx).unwrap();
+        let field2 = get_field_value(&record, field2_idx).unwrap();
+
+        if (field1 == "x" && field2 == "y") || (field1 == "y" && field2 == "x") {
+            let pearson_val = get_field_value(&record, pearson_idx);
+            if let Some(val_str) = pearson_val {
+                if !val_str.is_empty() {
+                    let pearson: f64 = val_str.parse().unwrap();
+                    assert!(
+                        pearson <= -0.99 && pearson >= -1.0,
+                        "Pearson correlation should be close to -1.0 for perfect negative \
+                         correlation, got: {}",
+                        pearson
+                    );
+                }
+            }
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_bivariate_string_fields() {
+    let wrk = Workdir::new("moarstats_bivariate_strings");
+
+    // Create CSV with string fields (should compute mutual information)
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["category", "status"],
+            svec!["A", "active"],
+            svec!["A", "active"],
+            svec!["B", "inactive"],
+            svec!["B", "inactive"],
+            svec!["C", "active"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(bivariate_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field1_idx = get_column_index(&headers, "field1").unwrap();
+    let field2_idx = get_column_index(&headers, "field2").unwrap();
+    let mi_idx = get_column_index(&headers, "mutual_information").unwrap();
+    let n_pairs_idx = get_column_index(&headers, "n_pairs").unwrap();
+
+    let mut found_pair = false;
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field1 = get_field_value(&record, field1_idx).unwrap();
+        let field2 = get_field_value(&record, field2_idx).unwrap();
+
+        if (field1 == "category" && field2 == "status")
+            || (field1 == "status" && field2 == "category")
+        {
+            found_pair = true;
+
+            // Verify n_pairs (5 rows - string fields already have duplicates so cardinality <
+            // rowcount)
+            let n_pairs_val = get_field_value(&record, n_pairs_idx).unwrap();
+            let n_pairs: u64 = n_pairs_val.parse().unwrap();
+            assert_eq!(n_pairs, 5, "n_pairs should be 5");
+
+            // Verify mutual information exists and is non-negative
+            let mi_val = get_field_value(&record, mi_idx);
+            if let Some(val_str) = mi_val {
+                if !val_str.is_empty() {
+                    let mi: f64 = val_str.parse().unwrap();
+                    assert!(
+                        mi >= 0.0,
+                        "Mutual information should be non-negative, got: {}",
+                        mi
+                    );
+                    assert!(mi.is_finite(), "Mutual information should be finite");
+                }
+            }
+
+            break;
+        }
+    }
+
+    assert!(found_pair, "Should find category-status field pair");
+}
+
+#[test]
+fn moarstats_bivariate_multiple_fields() {
+    let wrk = Workdir::new("moarstats_bivariate_multiple");
+
+    // Create CSV with multiple numeric fields
+    // Note: Added duplicate values so cardinality < rowcount (avoids filtering)
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["x", "y", "z"],
+            svec!["1", "2", "3"],
+            svec!["2", "4", "6"],
+            svec!["3", "6", "9"],
+            svec!["4", "8", "12"],
+            svec!["5", "10", "15"],
+            svec!["1", "2", "3"], // Duplicate to ensure cardinality < rowcount
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(bivariate_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field1_idx = get_column_index(&headers, "field1").unwrap();
+    let field2_idx = get_column_index(&headers, "field2").unwrap();
+
+    // Should have 3 pairs: x-y, x-z, y-z
+    let mut pairs = Vec::new();
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field1 = get_field_value(&record, field1_idx).unwrap();
+        let field2 = get_field_value(&record, field2_idx).unwrap();
+        pairs.push((field1, field2));
+    }
+
+    assert_eq!(pairs.len(), 3, "Should have 3 field pairs for 3 fields");
+    assert!(
+        pairs
+            .iter()
+            .any(|(f1, f2)| (f1 == "x" && f2 == "y") || (f1 == "y" && f2 == "x")),
+        "Should have x-y pair"
+    );
+    assert!(
+        pairs
+            .iter()
+            .any(|(f1, f2)| (f1 == "x" && f2 == "z") || (f1 == "z" && f2 == "x")),
+        "Should have x-z pair"
+    );
+    assert!(
+        pairs
+            .iter()
+            .any(|(f1, f2)| (f1 == "y" && f2 == "z") || (f1 == "z" && f2 == "y")),
+        "Should have y-z pair"
+    );
+}
+
+#[test]
+fn moarstats_bivariate_all_statistics() {
+    let wrk = Workdir::new("moarstats_bivariate_all_stats");
+
+    // Create CSV with enough data to compute all bivariate statistics
+    // Note: Added duplicate values so cardinality < rowcount (avoids filtering)
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["x", "y"],
+            svec!["1", "3"],
+            svec!["2", "5"],
+            svec!["3", "7"],
+            svec!["4", "9"],
+            svec!["5", "11"],
+            svec!["6", "13"],
+            svec!["7", "15"],
+            svec!["1", "3"], // Duplicate to ensure cardinality < rowcount
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(bivariate_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field1_idx = get_column_index(&headers, "field1").unwrap();
+    let field2_idx = get_column_index(&headers, "field2").unwrap();
+    let pearson_idx = get_column_index(&headers, "pearson_correlation").unwrap();
+    let spearman_idx = get_column_index(&headers, "spearman_correlation").unwrap();
+    let kendall_idx = get_column_index(&headers, "kendall_tau").unwrap();
+    let cov_sample_idx = get_column_index(&headers, "covariance_sample").unwrap();
+    let cov_pop_idx = get_column_index(&headers, "covariance_population").unwrap();
+    let mi_idx = get_column_index(&headers, "mutual_information").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field1 = get_field_value(&record, field1_idx).unwrap();
+        let field2 = get_field_value(&record, field2_idx).unwrap();
+
+        if (field1 == "x" && field2 == "y") || (field1 == "y" && field2 == "x") {
+            // Verify all statistics are computed
+            let pearson_val = get_field_value(&record, pearson_idx);
+            assert!(
+                pearson_val.is_some() && !pearson_val.as_ref().unwrap().is_empty(),
+                "Pearson correlation should be computed"
+            );
+
+            let spearman_val = get_field_value(&record, spearman_idx);
+            assert!(
+                spearman_val.is_some() && !spearman_val.as_ref().unwrap().is_empty(),
+                "Spearman correlation should be computed"
+            );
+
+            let kendall_val = get_field_value(&record, kendall_idx);
+            assert!(
+                kendall_val.is_some() && !kendall_val.as_ref().unwrap().is_empty(),
+                "Kendall tau should be computed"
+            );
+
+            let cov_sample_val = get_field_value(&record, cov_sample_idx);
+            assert!(
+                cov_sample_val.is_some() && !cov_sample_val.as_ref().unwrap().is_empty(),
+                "Sample covariance should be computed"
+            );
+
+            let cov_pop_val = get_field_value(&record, cov_pop_idx);
+            assert!(
+                cov_pop_val.is_some() && !cov_pop_val.as_ref().unwrap().is_empty(),
+                "Population covariance should be computed"
+            );
+
+            let mi_val = get_field_value(&record, mi_idx);
+            assert!(
+                mi_val.is_some() && !mi_val.as_ref().unwrap().is_empty(),
+                "Mutual information should be computed"
+            );
+
+            // Verify values are in valid ranges
+            if let Some(val_str) = pearson_val {
+                let pearson: f64 = val_str.parse().unwrap();
+                assert!(
+                    pearson >= -1.0 && pearson <= 1.0,
+                    "Pearson correlation should be in [-1, 1], got: {}",
+                    pearson
+                );
+            }
+
+            if let Some(val_str) = spearman_val {
+                let spearman: f64 = val_str.parse().unwrap();
+                assert!(
+                    spearman >= -1.0 && spearman <= 1.0,
+                    "Spearman correlation should be in [-1, 1], got: {}",
+                    spearman
+                );
+            }
+
+            if let Some(val_str) = kendall_val {
+                let kendall: f64 = val_str.parse().unwrap();
+                assert!(
+                    kendall >= -1.0 && kendall <= 1.0,
+                    "Kendall tau should be in [-1, 1], got: {}",
+                    kendall
+                );
+            }
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_bivariate_mixed_field_types() {
+    let wrk = Workdir::new("moarstats_bivariate_mixed");
+
+    // Create CSV with numeric and string fields
+    // Note: Added duplicate numeric value so cardinality < rowcount (avoids filtering)
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["numeric", "category"],
+            svec!["10", "A"],
+            svec!["20", "A"],
+            svec!["30", "B"],
+            svec!["40", "B"],
+            svec!["50", "C"],
+            svec!["10", "A"], // Duplicate to ensure cardinality < rowcount
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(bivariate_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field1_idx = get_column_index(&headers, "field1").unwrap();
+    let field2_idx = get_column_index(&headers, "field2").unwrap();
+    let pearson_idx = get_column_index(&headers, "pearson_correlation").unwrap();
+    let mi_idx = get_column_index(&headers, "mutual_information").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field1 = get_field_value(&record, field1_idx).unwrap();
+        let field2 = get_field_value(&record, field2_idx).unwrap();
+
+        if (field1 == "numeric" && field2 == "category")
+            || (field1 == "category" && field2 == "numeric")
+        {
+            // Pearson correlation should be empty (can't compute between numeric and string)
+            let pearson_val = get_field_value(&record, pearson_idx);
+            if let Some(val_str) = pearson_val {
+                assert!(
+                    val_str.is_empty(),
+                    "Pearson correlation should be empty for mixed field types"
+                );
+            }
+
+            // Mutual information should be computed (works for all types)
+            let mi_val = get_field_value(&record, mi_idx);
+            assert!(
+                mi_val.is_some() && !mi_val.as_ref().unwrap().is_empty(),
+                "Mutual information should be computed for mixed field types"
+            );
+
+            break;
+        }
+    }
+}
+
+#[test]
+fn moarstats_bivariate_with_join() {
+    let wrk = Workdir::new("moarstats_bivariate_join");
+
+    // Create primary dataset
+    // Note: Added duplicate values so cardinality < rowcount (avoids filtering)
+    wrk.create(
+        "primary.csv",
+        vec![
+            svec!["id", "value1"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+            svec!["1", "10"], // Duplicate to ensure cardinality < rowcount
+        ],
+    );
+
+    // Create secondary dataset
+    wrk.create(
+        "secondary.csv",
+        vec![
+            svec!["id", "value2"],
+            svec!["1", "100"],
+            svec!["2", "200"],
+            svec!["3", "300"],
+        ],
+    );
+
+    // Generate stats for primary
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("primary.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with --bivariate and --join-inputs
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("--join-inputs")
+        .arg("secondary.csv")
+        .arg("--join-keys")
+        .arg("id,id")
+        .arg("primary.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify bivariate file exists (should be based on joined dataset)
+    let bivariate_path = wrk.path("primary.stats.bivariate.csv");
+    assert!(
+        bivariate_path.exists(),
+        "Bivariate statistics file should exist after join"
+    );
+
+    // Verify the bivariate file has content
+    let bivariate_content = wrk.read_to_string("primary.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(bivariate_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    assert!(
+        get_column_index(&headers, "field1").is_some(),
+        "Bivariate file should have field1 column"
+    );
+}
+
+#[test]
+fn moarstats_bivariate_index_auto_creation() {
+    let wrk = Workdir::new("moarstats_bivariate_index");
+
+    // Create CSV file
+    // Note: Added duplicate values so cardinality < rowcount (avoids filtering)
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["x", "y"],
+            svec!["1", "2"],
+            svec!["2", "4"],
+            svec!["3", "6"],
+            svec!["4", "8"],
+            svec!["5", "10"],
+            svec!["1", "2"], // Duplicate to ensure cardinality < rowcount
+        ],
+    );
+
+    // Generate stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Ensure no index exists initially
+    let index_path = wrk.path("test.csv.idx");
+    if index_path.exists() {
+        std::fs::remove_file(&index_path).unwrap();
+    }
+
+    // Run moarstats with --bivariate (should auto-create index)
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate").arg("test.csv");
+    let output = wrk.output_stderr(&mut cmd);
+    wrk.assert_success(&mut cmd);
+
+    // Verify index was auto-created or message was logged
+    assert!(
+        index_path.exists() || output.contains("Auto-creating index"),
+        "Index should be auto-created for bivariate statistics"
+    );
+
+    // Verify bivariate file was created
+    let bivariate_path = wrk.path("test.stats.bivariate.csv");
+    assert!(
+        bivariate_path.exists(),
+        "Bivariate statistics file should exist"
+    );
+}

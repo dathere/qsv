@@ -4086,14 +4086,16 @@ fn moarstats_bivariate_with_join() {
     wrk.assert_success(&mut cmd);
 
     // Verify bivariate file exists (should be based on joined dataset)
-    let bivariate_path = wrk.path("primary.stats.bivariate.csv");
+    let bivariate_path = wrk.path("primary.stats.bivariate.joined.csv");
     assert!(
         bivariate_path.exists(),
-        "Bivariate statistics file should exist after join"
+        "Bivariate joined statistics file should exist after join"
     );
 
     // Verify the bivariate file has content
-    let bivariate_content = wrk.read_to_string("primary.stats.bivariate.csv").unwrap();
+    let bivariate_content = wrk
+        .read_to_string("primary.stats.bivariate.joined.csv")
+        .unwrap();
     let mut rdr = ReaderBuilder::new()
         .has_headers(true)
         .from_reader(bivariate_content.as_bytes());
@@ -4101,7 +4103,7 @@ fn moarstats_bivariate_with_join() {
     let headers = rdr.headers().unwrap().clone();
     assert!(
         get_column_index(&headers, "field1").is_some(),
-        "Bivariate file should have field1 column"
+        "Bivariate joined file should have field1 column"
     );
 }
 

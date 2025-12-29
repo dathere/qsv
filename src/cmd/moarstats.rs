@@ -245,27 +245,30 @@ moarstats options:
                            Requires indexed CSV file (index will be auto-created if missing).
                            Computes pairwise correlations, covariances, and mutual information
                            between columns. Outputs to <FILESTEM>.stats.bivariate.csv.
-    --bivariate-stats <stats>
+    -S, --bivariate-stats <stats>
                            Comma-separated list of bivariate statistics to compute.
                            Options: pearson, spearman, kendall, covariance, mi (mutual information)
-                           Use "all" or omit to compute all statistics or "fast" to compute only
+                           Use "all" to compute all statistics or "fast" to compute only
                            pearson & covariance, which is much faster as it doesn't require storing
-                           all values (uses online, "streaming" algorithms).
+                           all values and uses streaming algorithms.
                            [default: fast]
-    --cardinality-threshold <n>
+    -C, --cardinality-threshold <n>
                            Skip mutual information computation for field pairs where either
                            field has cardinality exceeding this threshold. Helps avoid
                            expensive computations for high-cardinality fields.
                            [default: 1000000]
- -J, --join-inputs <files>  Additional datasets to join.
-                           Comma-separated list of CSV files to join with the primary input.
-                           Example: --join-inputs customers.csv,products.csv
--K, --join-keys <keys>     Join keys for each dataset.
-                           Comma-separated list of join key column names, one per dataset.
-                           Must specify same number of keys as datasets (primary + additional).
-                           Example: --join-keys customer_id,customer_id,product_id
--T, --join-type <type>     Join type when using --join-inputs.
-                           Valid values: inner, left, right, full (default: inner)
+    -J, --join-inputs <files>
+                           Additional datasets to join. Comma-separated list of CSV files to join
+                           with the primary input.
+                           e.g.: --join-inputs customers.csv,products.csv
+    -K, --join-keys <keys>
+                           Join keys for each dataset. Comma-separated list of join key column names,
+                           one per dataset. Must specify same number of keys as datasets (primary + addl).
+                           e.g.: --join-keys customer_id,customer_id,product_id
+    -T, --join-type <type>
+                           Join type when using --join-inputs.
+                           Valid values: inner, left, right, full
+                           [default: inner]
     -p, --progressbar      Show progress bars when computing bivariate statistics.
 
 Common options:
@@ -412,13 +415,18 @@ fn get_stats_csv_path(input_path: &Path) -> CliResult<PathBuf> {
 }
 
 /// Get the bivariate CSV file path for a given input CSV path
-fn get_bivariate_csv_path(input_path: &Path) -> CliResult<PathBuf> {
+/// If `is_joined` is true, appends `.joined` to the filename before `.csv`
+fn get_bivariate_csv_path(input_path: &Path, is_joined: bool) -> CliResult<PathBuf> {
     let parent = input_path.parent().unwrap_or_else(|| Path::new("."));
     let fstem = input_path
         .file_stem()
         .ok_or_else(|| CliError::Other("Invalid input path: no file name".to_string()))?;
 
-    let bivariate_filename = format!("{}.stats.bivariate.csv", fstem.to_string_lossy());
+    let bivariate_filename = if is_joined {
+        format!("{}.stats.bivariate.joined.csv", fstem.to_string_lossy())
+    } else {
+        format!("{}.stats.bivariate.csv", fstem.to_string_lossy())
+    };
     Ok(parent.join(bivariate_filename))
 }
 
@@ -548,11 +556,6 @@ fn join_datasets_internal(
         current_input = output_path_str;
         current_key.clone_from(next_key);
     }
-
-    // Intermediate temp files will be cleaned up when intermediate_temps is dropped
-
-    // Ensure joined file is indexed
-    util::run_qsv_cmd("index", &[], &temp_path_str, "Indexing joined dataset...")?;
 
     Ok(temp_path)
 }
@@ -3945,7 +3948,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Write bivariate statistics CSV if computed
     // Always use the original input path for naming, even if we joined datasets
     if args.flag_bivariate && !bivariate_stats.is_empty() {
-        let bivariate_csv_path = get_bivariate_csv_path(input_path)?;
+        let is_joined = temp_joined_path.is_some();
+        let bivariate_csv_path = get_bivariate_csv_path(input_path, is_joined)?;
         let mut bivariate_wtr = WriterBuilder::new()
             .has_headers(true)
             .from_path(&bivariate_csv_path)?;

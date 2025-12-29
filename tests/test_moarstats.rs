@@ -4460,3 +4460,48 @@ fn moarstats_bivariate_stats_all() {
         );
     }
 }
+
+// Test for invalid --bivariate-stats values
+#[test]
+fn moarstats_bivariate_stats_invalid() {
+    let wrk = Workdir::new("moarstats_bivariate_stats_invalid");
+
+    // Create CSV with two numeric fields
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["x", "y"],
+            svec!["1", "2"],
+            svec!["2", "4"],
+            svec!["3", "6"],
+        ],
+    );
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Test with invalid stat name
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("--bivariate-stats")
+        .arg("invalid_stat")
+        .arg("test.csv");
+    wrk.assert_err(&mut cmd);
+
+    // Test with mix of valid and invalid stats
+    let mut cmd2 = wrk.command("moarstats");
+    cmd2.arg("--bivariate")
+        .arg("--bivariate-stats")
+        .arg("pearson,invalid_stat,kendall")
+        .arg("test.csv");
+    wrk.assert_err(&mut cmd2);
+
+    let mut cmd3 = wrk.command("moarstats");
+    cmd3.arg("--bivariate")
+        .arg("--bivariate-stats")
+        .arg("")
+        .arg("test.csv");
+    wrk.assert_err(&mut cmd3);
+}

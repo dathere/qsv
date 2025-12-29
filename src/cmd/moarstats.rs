@@ -324,29 +324,56 @@ struct BivariateStatsConfig {
 
 impl BivariateStatsConfig {
     /// Parse the --bivariate-stats flag value
-    fn from_flag(flag_value: &str) -> Self {
-        let flag_lower = flag_value.to_lowercase();
-        if flag_lower == "all" {
-            return Self::all();
-        }
-
+    fn from_flag(flag_value: &str) -> CliResult<Self> {
         let mut config = Self::default();
+        let mut invalid_stats = Vec::new();
+
+        let flag_lower = flag_value.to_lowercase();
         for stat in flag_lower.split(',') {
-            match stat.trim() {
+            let stat_trimmed = stat.trim();
+            if stat_trimmed.is_empty() {
+                continue; // Skip empty entries from trailing commas
+            }
+            match stat_trimmed {
                 "pearson" => config.pearson = true,
                 "spearman" => config.spearman = true,
                 "kendall" => config.kendall = true,
                 "covariance" | "cov" => config.covariance = true,
                 "mi" | "mutual_information" | "mutual-information" => config.mi = true,
-                "all" => return Self::all(),
+                "all" => return Ok(Self::all()),
                 "fast" => {
                     config.pearson = true;
                     config.covariance = true;
                 },
-                _ => {}, // Ignore unknown stats
+                _ => {
+                    invalid_stats.push(stat_trimmed.to_string());
+                },
             }
         }
-        config
+
+        if !invalid_stats.is_empty() {
+            return fail_clierror!(
+                "Invalid bivariate statistics: {}. Valid options are: pearson, spearman, kendall, \
+                 covariance (or cov), mi (or mutual_information or mutual-information), fast, all",
+                invalid_stats.join(", ")
+            );
+        }
+
+        // Check if at least one stat was requested
+        if !config.pearson
+            && !config.spearman
+            && !config.kendall
+            && !config.covariance
+            && !config.mi
+        {
+            return fail_clierror!(
+                "No valid bivariate statistics specified. Valid options are: pearson, spearman, \
+                 kendall, covariance (or cov), mi (or mutual_information or mutual-information), \
+                 fast, all"
+            );
+        }
+
+        Ok(config)
     }
 
     /// Enable all bivariate statistics
@@ -2189,8 +2216,7 @@ fn compute_all_bivariatestats_chunked(
                     .get(&pair_key)
                     .unwrap_or_else(|| panic!("Field pair not found: {pair_key:?}"));
 
-                // Early termination: skip all correlation/covariance computations if variance is
-                // zero
+                // Early exit: skip all correlation/covariance computations if variance is zero
                 let has_zero_variance = field1_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
                     || field2_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
                     || field1_info.variance.is_some_and(|v| v.abs() < f64::EPSILON)
@@ -3692,10 +3718,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         HashMap::new()
     };
 
+    let mut stats_config = BivariateStatsConfig::default();
     // Compute bivariate statistics if requested
     // Store field_names for output conversion (indices -> names)
     let mut bivariate_field_names: Option<Vec<String>> = None;
     let bivariate_stats = if args.flag_bivariate {
+        // Validate bivariate stats config early
+        stats_config = BivariateStatsConfig::from_flag(&args.flag_bivariate_stats)?;
+
         // Get record count to check for all-unique fields (cardinality == rowcount)
         let record_count: Option<u64> = {
             let actual_input_path_str = actual_input_path
@@ -3876,9 +3906,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // Get cardinality threshold (default: 1,000,000)
             let cardinality_threshold = args.flag_cardinality_threshold.or(Some(1_000_000));
 
-            // Parse bivariate stats config from flag
-            let stats_config = BivariateStatsConfig::from_flag(&args.flag_bivariate_stats);
-
             // Log which stats are being computed
             let stats_list: Vec<&str> = [
                 stats_config.pearson.then_some("pearson"),
@@ -3922,9 +3949,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut bivariate_wtr = WriterBuilder::new()
             .has_headers(true)
             .from_path(&bivariate_csv_path)?;
-
-        // Parse stats config to determine which columns to include
-        let stats_config = BivariateStatsConfig::from_flag(&args.flag_bivariate_stats);
 
         // Build headers dynamically based on requested stats
         let mut headers = vec!["field1", "field2"];

@@ -326,7 +326,7 @@ impl BivariateStatsConfig {
     /// Parse the --bivariate-stats flag value
     fn from_flag(flag_value: &str) -> Self {
         let flag_lower = flag_value.to_lowercase();
-        if flag_lower.is_empty() || flag_lower == "all" {
+        if flag_lower == "all" {
             return Self::all();
         }
 

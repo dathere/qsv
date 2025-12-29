@@ -324,7 +324,7 @@ These statistics require the `--advanced` flag and reading the entire CSV file t
 
 ### Bivariate Statistics
 
-These statistics examine relationships between pairs of columns in a dataset. They are computed when the `--bivariate` flag is used and require an indexed CSV file (index will be auto-created if missing). Relationship statistics are output to a separate file: `<FILESTEM>.stats.bivariate.csv`.
+These statistics examine relationships between pairs of columns in a dataset. They are computed when the `--bivariate` flag is used and require an indexed CSV file (index will be auto-created if missing). Bivariate statistics are output to a separate file: `<FILESTEM>.stats.bivariate.csv`.
 
 **Note**: Bivariate statistics require reading the entire CSV file and are computationally expensive. For large files (>= 10k records), parallel chunked processing is used when an index is available. For smaller files or when no index exists, sequential processing is used.
 

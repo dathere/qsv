@@ -378,6 +378,8 @@ fn join_datasets_internal(
     // This is simpler than handling multiple joins at once
     let mut current_input = primary_input_str;
     let mut current_key = join_keys[0].clone();
+
+    // These are never read, but we need to declare them to avoid compiler errors
     #[allow(clippy::collection_is_never_read)]
     let mut intermediate_temps: Vec<NamedTempFile> = Vec::new();
     #[allow(clippy::collection_is_never_read)]
@@ -448,7 +450,7 @@ fn join_datasets_internal(
 
         // Update for next iteration
         current_input = output_path_str;
-        current_key.clone_from(next_key); //current_key = next_key.clone();
+        current_key.clone_from(next_key);
     }
 
     // Intermediate temp files will be cleaned up when intermediate_temps is dropped
@@ -1124,8 +1126,7 @@ fn compute_spearman_correlation(x: &[f64], y: &[f64]) -> Option<f64> {
     let mut y_ranked: Vec<(usize, f64)> = y.iter().enumerate().map(|(i, &v)| (i, v)).collect();
 
     // Rank x values (handle ties by averaging)
-    x_ranked
-        .par_sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    x_ranked.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     let mut x_ranks = vec![0.0; x.len()];
     let mut i = 0;
     while i < x_ranked.len() {
@@ -1141,8 +1142,7 @@ fn compute_spearman_correlation(x: &[f64], y: &[f64]) -> Option<f64> {
     }
 
     // Rank y values
-    y_ranked
-        .par_sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    y_ranked.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     let mut y_ranks = vec![0.0; y.len()];
     i = 0;
     while i < y_ranked.len() {
@@ -1232,7 +1232,7 @@ fn compute_kendall_tau(x: &[f64], y: &[f64]) -> Option<f64> {
 
     // Create pairs and sort by x values
     let mut pairs: Vec<(f64, f64)> = x.iter().zip(y.iter()).map(|(&a, &b)| (a, b)).collect();
-    pairs.par_sort_unstable_by(|a, b| {
+    pairs.sort_unstable_by(|a, b| {
         a.0.partial_cmp(&b.0)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
@@ -1263,7 +1263,7 @@ fn compute_kendall_tau(x: &[f64], y: &[f64]) -> Option<f64> {
     // Count ties in y (need to check all pairs where x values differ)
     // Re-sort pairs by y to count ties in y
     let mut pairs_by_y: Vec<(f64, f64)> = pairs_for_y_ties;
-    pairs_by_y.par_sort_unstable_by(|a, b| {
+    pairs_by_y.sort_unstable_by(|a, b| {
         a.1.partial_cmp(&b.1)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
@@ -2075,8 +2075,7 @@ fn compute_all_bivariatestats_chunked(
 
         // Finalize statistics from aggregated chunk stats (parallelized)
         let final_stats: HashMap<(u16, u16), BivariateStats> = all_stats
-            // .into_par_iter()
-            .into_iter()
+            .into_par_iter()
             .inspect(|_| {
                 // Update progress bar for each field pair processed
                 if let Some(pb) = progress {
@@ -3330,7 +3329,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         || new_column_indices.contains_key(trimmed_col_name.as_str());
 
     // Collect fields that need Kurtosis, Gini & Atkinson Index computation
-    // (with theirprecalculated stats)
+    // (with their precalculated stats)
     let needs_kga = new_column_indices.contains_key("kurtosis")
         || new_column_indices.contains_key("gini_coefficient")
         || new_column_indices.contains_key("atkinson_index");
@@ -3612,9 +3611,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // Extract pre-computed statistics for field1 from stats CSV
             let field1_record = records.get(i);
-            // let field1_mean = field1_record
-            //     .and_then(|r| mean_idx.and_then(|idx| r.get(idx)))
-            //     .and_then(parse_float_opt);
             let field1_stddev = field1_record
                 .and_then(|r| stddev_idx.and_then(|idx| r.get(idx)))
                 .and_then(parse_float_opt);
@@ -3624,9 +3620,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let field1_cardinality = field1_record
                 .and_then(|r| cardinality_idx.and_then(|idx| r.get(idx)))
                 .and_then(|s| s.parse::<u64>().ok());
-            // let field1_nullcount = field1_record
-            //     .and_then(|r| nullcount_idx.and_then(|idx| r.get(idx)))
-            //     .and_then(|s| s.parse::<u64>().ok());
 
             // Compare with all other fields
             for (j, field2_name) in stats_field_names.iter().enumerate().skip(i + 1) {
@@ -3642,9 +3635,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                 // Extract pre-computed statistics for field2 from stats CSV
                 let field2_record = records.get(j);
-                // let field2_mean = field2_record
-                //     .and_then(|r| mean_idx.and_then(|idx| r.get(idx)))
-                //     .and_then(parse_float_opt);
                 let field2_stddev = field2_record
                     .and_then(|r| stddev_idx.and_then(|idx| r.get(idx)))
                     .and_then(parse_float_opt);
@@ -3654,9 +3644,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 let field2_cardinality = field2_record
                     .and_then(|r| cardinality_idx.and_then(|idx| r.get(idx)))
                     .and_then(|s| s.parse::<u64>().ok());
-                // let field2_nullcount = field2_record
-                //     .and_then(|r| nullcount_idx.and_then(|idx| r.get(idx)))
-                //     .and_then(|s| s.parse::<u64>().ok());
 
                 // Filter invalid pairs: skip constant fields (zero variance)
                 if let (Some(stddev1), Some(stddev2)) = (field1_stddev, field2_stddev) {

@@ -245,20 +245,30 @@ moarstats options:
                            Requires indexed CSV file (index will be auto-created if missing).
                            Computes pairwise correlations, covariances, and mutual information
                            between columns. Outputs to <FILESTEM>.stats.bivariate.csv.
-    --cardinality-threshold <n>
+    -S, --bivariate-stats <stats>
+                           Comma-separated list of bivariate statistics to compute.
+                           Options: pearson, spearman, kendall, covariance, mi (mutual information)
+                           Use "all" to compute all statistics or "fast" to compute only
+                           pearson & covariance, which is much faster as it doesn't require storing
+                           all values and uses streaming algorithms.
+                           [default: fast]
+    -C, --cardinality-threshold <n>
                            Skip mutual information computation for field pairs where either
                            field has cardinality exceeding this threshold. Helps avoid
                            expensive computations for high-cardinality fields.
                            [default: 1000000]
- -J, --join-inputs <files>  Additional datasets to join.
-                           Comma-separated list of CSV files to join with the primary input.
-                           Example: --join-inputs customers.csv,products.csv
--K, --join-keys <keys>     Join keys for each dataset.
-                           Comma-separated list of join key column names, one per dataset.
-                           Must specify same number of keys as datasets (primary + additional).
-                           Example: --join-keys customer_id,customer_id,product_id
--T, --join-type <type>     Join type when using --join-inputs.
-                           Valid values: inner, left, right, full (default: inner)
+    -J, --join-inputs <files>
+                           Additional datasets to join. Comma-separated list of CSV files to join
+                           with the primary input.
+                           e.g.: --join-inputs customers.csv,products.csv
+    -K, --join-keys <keys>
+                           Join keys for each dataset. Comma-separated list of join key column names,
+                           one per dataset. Must specify same number of keys as datasets (primary + addl).
+                           e.g.: --join-keys customer_id,customer_id,product_id
+    -T, --join-type <type>
+                           Join type when using --join-inputs.
+                           Valid values: inner, left, right, full
+                           [default: inner]
     -p, --progressbar      Show progress bars when computing bivariate statistics.
 
 Common options:
@@ -297,11 +307,100 @@ struct Args {
     flag_advanced:              bool,
     flag_epsilon:               f64,
     flag_bivariate:             bool,
+    flag_bivariate_stats:       String,
     flag_cardinality_threshold: Option<u64>,
     flag_join_inputs:           Option<String>,
     flag_join_keys:             Option<String>,
     flag_join_type:             Option<String>,
     flag_progressbar:           bool,
+}
+
+/// Configuration for which bivariate statistics to compute
+#[derive(Clone, Copy, Debug, Default)]
+struct BivariateStatsConfig {
+    pearson:    bool,
+    spearman:   bool,
+    kendall:    bool,
+    covariance: bool,
+    mi:         bool, // mutual information
+}
+
+impl BivariateStatsConfig {
+    /// Parse the --bivariate-stats flag value
+    fn from_flag(flag_value: &str) -> CliResult<Self> {
+        let mut config = Self::default();
+        let mut invalid_stats = Vec::new();
+
+        let flag_lower = flag_value.to_lowercase();
+        for stat in flag_lower.split(',') {
+            let stat_trimmed = stat.trim();
+            if stat_trimmed.is_empty() {
+                continue; // Skip empty entries from trailing commas
+            }
+            match stat_trimmed {
+                "pearson" => config.pearson = true,
+                "spearman" => config.spearman = true,
+                "kendall" => config.kendall = true,
+                "covariance" | "cov" => config.covariance = true,
+                "mi" | "mutual_information" | "mutual-information" => config.mi = true,
+                "all" => return Ok(Self::all()),
+                "fast" => {
+                    config.pearson = true;
+                    config.covariance = true;
+                },
+                _ => {
+                    invalid_stats.push(stat_trimmed.to_string());
+                },
+            }
+        }
+
+        if !invalid_stats.is_empty() {
+            return fail_clierror!(
+                "Invalid bivariate statistics: {}. Valid options are: pearson, spearman, kendall, \
+                 covariance (or cov), mi (or mutual_information or mutual-information), fast, all",
+                invalid_stats.join(", ")
+            );
+        }
+
+        // Check if at least one stat was requested
+        if !config.pearson
+            && !config.spearman
+            && !config.kendall
+            && !config.covariance
+            && !config.mi
+        {
+            return fail_clierror!(
+                "No valid bivariate statistics specified. Valid options are: pearson, spearman, \
+                 kendall, covariance (or cov), mi (or mutual_information or mutual-information), \
+                 fast, all"
+            );
+        }
+
+        Ok(config)
+    }
+
+    /// Enable all bivariate statistics
+    const fn all() -> Self {
+        Self {
+            pearson:    true,
+            spearman:   true,
+            kendall:    true,
+            covariance: true,
+            mi:         true,
+        }
+    }
+
+    /// Check if we need to store all values (required for Spearman/Kendall)
+    #[inline]
+    const fn needs_all_values(self) -> bool {
+        self.spearman || self.kendall
+    }
+
+    /// Check if we need frequency counts (required for mutual information)
+    #[inline]
+    const fn needs_frequency_counts(self) -> bool {
+        self.mi
+    }
 }
 
 /// Get the stats CSV file path for a given input CSV path
@@ -316,13 +415,18 @@ fn get_stats_csv_path(input_path: &Path) -> CliResult<PathBuf> {
 }
 
 /// Get the bivariate CSV file path for a given input CSV path
-fn get_bivariate_csv_path(input_path: &Path) -> CliResult<PathBuf> {
+/// If `is_joined` is true, appends `.joined` to the filename before `.csv`
+fn get_bivariate_csv_path(input_path: &Path, is_joined: bool) -> CliResult<PathBuf> {
     let parent = input_path.parent().unwrap_or_else(|| Path::new("."));
     let fstem = input_path
         .file_stem()
         .ok_or_else(|| CliError::Other("Invalid input path: no file name".to_string()))?;
 
-    let bivariate_filename = format!("{}.stats.bivariate.csv", fstem.to_string_lossy());
+    let bivariate_filename = if is_joined {
+        format!("{}.stats.bivariate.joined.csv", fstem.to_string_lossy())
+    } else {
+        format!("{}.stats.bivariate.csv", fstem.to_string_lossy())
+    };
     Ok(parent.join(bivariate_filename))
 }
 
@@ -452,11 +556,6 @@ fn join_datasets_internal(
         current_input = output_path_str;
         current_key.clone_from(next_key);
     }
-
-    // Intermediate temp files will be cleaned up when intermediate_temps is dropped
-
-    // Ensure joined file is indexed
-    util::run_qsv_cmd("index", &[], &temp_path_str, "Indexing joined dataset...")?;
 
     Ok(temp_path)
 }
@@ -1227,10 +1326,32 @@ fn compute_kendall_tau(x: &[f64], y: &[f64]) -> Option<f64> {
     }
 
     let n = x.len() as f64;
-    let mut ties_x = 0i64;
-    let mut ties_y = 0i64;
+    let pairs_len = x.len();
 
-    // Create pairs and sort by x values
+    // Count ties in y directly from original slice using indices (avoids clone)
+    // Sort indices by y values instead of cloning pairs
+    let mut y_indices: Vec<usize> = (0..pairs_len).collect();
+    y_indices.sort_unstable_by(|&a, &b| {
+        y[a].partial_cmp(&y[b])
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| x[a].partial_cmp(&x[b]).unwrap_or(std::cmp::Ordering::Equal))
+    });
+
+    let mut ties_y = 0i64;
+    let mut i = 0;
+    while i < pairs_len {
+        let mut j = i + 1;
+        while j < pairs_len && (y[y_indices[j]] - y[y_indices[i]]).abs() < f64::EPSILON {
+            j += 1;
+        }
+        let tie_count = (j - i) as i64;
+        if tie_count > 1 {
+            ties_y += tie_count * (tie_count - 1) / 2;
+        }
+        i = j;
+    }
+
+    // Create pairs and sort by x values for counting x ties and inversions
     let mut pairs: Vec<(f64, f64)> = x.iter().zip(y.iter()).map(|(&a, &b)| (a, b)).collect();
     pairs.sort_unstable_by(|a, b| {
         a.0.partial_cmp(&b.0)
@@ -1238,12 +1359,9 @@ fn compute_kendall_tau(x: &[f64], y: &[f64]) -> Option<f64> {
             .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
     });
 
-    // Clone pairs before mutable operations for counting ties in y
-    let pairs_for_y_ties: Vec<(f64, f64)> = pairs.clone();
-    let pairs_len = pairs.len();
-
     // Count ties in x
-    let mut i = 0;
+    let mut ties_x = 0i64;
+    i = 0;
     while i < pairs.len() {
         let mut j = i + 1;
         while j < pairs.len() && (pairs[j].0 - pairs[i].0).abs() < f64::EPSILON {
@@ -1260,36 +1378,14 @@ fn compute_kendall_tau(x: &[f64], y: &[f64]) -> Option<f64> {
     let mut temp = vec![(0.0, 0.0); pairs_len];
     let inversions = count_inversions_merge(&mut pairs, &mut temp, 0, pairs_len - 1);
 
-    // Count ties in y (need to check all pairs where x values differ)
-    // Re-sort pairs by y to count ties in y
-    let mut pairs_by_y: Vec<(f64, f64)> = pairs_for_y_ties;
-    pairs_by_y.sort_unstable_by(|a, b| {
-        a.1.partial_cmp(&b.1)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
-    });
-
-    i = 0;
-    while i < pairs_by_y.len() {
-        let mut j = i + 1;
-        while j < pairs_by_y.len() && (pairs_by_y[j].1 - pairs_by_y[i].1).abs() < f64::EPSILON {
-            j += 1;
-        }
-        let tie_count = (j - i) as i64;
-        if tie_count > 1 {
-            ties_y += tie_count * (tie_count - 1) / 2;
-        }
-        i = j;
-    }
-
     // Calculate concordant and discordant pairs
     let total_pairs = (n * (n - 1.0) / 2.0) as i64;
     let discordant = inversions;
     let concordant = total_pairs - discordant - ties_x - ties_y;
 
     let n0 = n * (n - 1.0) / 2.0;
-    let n1 = (ties_x * (ties_x - 1)) as f64 / 2.0;
-    let n2 = (ties_y * (ties_y - 1)) as f64 / 2.0;
+    let n1 = ties_x as f64;
+    let n2 = ties_y as f64;
 
     let denominator = ((n0 - n1) * (n0 - n2)).sqrt();
 
@@ -1626,6 +1722,7 @@ fn count_all_outliers(
 fn compute_chunk_bivariate<I>(
     field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
     records: I,
+    stats_config: BivariateStatsConfig,
 ) -> CliResult<HashMap<(u16, u16), BivariateChunkStats>>
 where
     I: Iterator<Item = csv::Result<csv::ByteRecord>>,
@@ -1633,6 +1730,10 @@ where
     if field_pairs.is_empty() {
         return Ok(HashMap::new());
     }
+
+    // Check what we need to compute based on config
+    let needs_all_values = stats_config.needs_all_values();
+    let needs_freq_counts = stats_config.needs_frequency_counts();
 
     // Initialize statistics for all field pairs
     // Pre-allocate vectors with estimated capacity (typical chunk size is 1k-10k records)
@@ -1642,12 +1743,17 @@ where
         .keys()
         .map(|k| {
             let mut stats = BivariateChunkStats::default();
-            stats.x_values.reserve(estimated_capacity);
-            stats.y_values.reserve(estimated_capacity);
-            // Pre-allocate HashMap capacity to reduce rehashing (optimization #3)
-            stats.xy_counts.reserve(estimated_unique_strings);
-            stats.x_counts.reserve(estimated_unique_strings / 2);
-            stats.y_counts.reserve(estimated_unique_strings / 2);
+            // Only allocate value vectors if needed for Spearman/Kendall
+            if needs_all_values {
+                stats.x_values.reserve(estimated_capacity);
+                stats.y_values.reserve(estimated_capacity);
+            }
+            // Only allocate frequency maps if needed for mutual information
+            if needs_freq_counts {
+                stats.xy_counts.reserve(estimated_unique_strings);
+                stats.x_counts.reserve(estimated_unique_strings / 2);
+                stats.y_counts.reserve(estimated_unique_strings / 2);
+            }
             (*k, stats)
         })
         .collect();
@@ -1658,9 +1764,12 @@ where
     let mut date_cache: HashMap<String, Option<f64>> = HashMap::with_capacity(estimated_capacity);
 
     // Optimization #6: String interning - Cache frequently used strings to reduce allocations
-    // This helps when the same string values appear multiple times across records
-    let mut string_interner: HashMap<String, String> =
-        HashMap::with_capacity(estimated_unique_strings);
+    // Only needed if we're computing mutual information
+    let mut string_interner: HashMap<String, String> = if needs_freq_counts {
+        HashMap::with_capacity(estimated_unique_strings)
+    } else {
+        HashMap::new()
+    };
 
     #[allow(unused_assignments)]
     let mut record: csv::ByteRecord = csv::ByteRecord::new();
@@ -1735,45 +1844,46 @@ where
             // For numeric/date types, update correlation state and collect values
             if let (Some(x_val), Some(y_val)) = (numeric_value_x, numeric_value_y) {
                 update_correlation_state(&mut stats.correlation_state, x_val, y_val);
-                stats.x_values.push(x_val);
-                stats.y_values.push(y_val);
+                // Only store values if needed for Spearman/Kendall
+                if needs_all_values {
+                    stats.x_values.push(x_val);
+                    stats.y_values.push(y_val);
+                }
             }
 
-            // Optimization #2 & #6: Optimized string interning - reduce clones
-            // For occupied entries (common case with repeated strings): 1 clone instead of 3
-            // For vacant entries: 2 clones (same as before, but more efficient)
-            let x_str_interned = if let Some(cached) = string_interner.get(x_str) {
-                // String already interned - reuse it (1 clone instead of 3)
-                cached.clone()
-            } else {
-                // String not interned - clone once and store reference to itself
-                let owned = x_str.clone();
-                string_interner.insert(owned.clone(), owned.clone());
-                owned
-            };
-            let y_str_interned = if let Some(cached) = string_interner.get(y_str) {
-                // String already interned - reuse it (1 clone instead of 3)
-                cached.clone()
-            } else {
-                // String not interned - clone once and store reference to itself
-                let owned = y_str.clone();
-                string_interner.insert(owned.clone(), owned.clone());
-                owned
-            };
+            // Only compute frequency counts if needed for mutual information
+            if needs_freq_counts {
+                // Optimization #2 & #6: Optimized string interning - reduce clones
+                // For occupied entries (common case with repeated strings): 1 clone instead of 3
+                // For vacant entries: 2 clones (same as before, but more efficient)
+                let x_str_interned = if let Some(cached) = string_interner.get(x_str) {
+                    // String already interned - reuse it (1 clone instead of 3)
+                    cached.clone()
+                } else {
+                    // String not interned - clone once and store reference to itself
+                    let owned = x_str.clone();
+                    string_interner.insert(owned.clone(), owned.clone());
+                    owned
+                };
+                let y_str_interned = if let Some(cached) = string_interner.get(y_str) {
+                    // String already interned - reuse it (1 clone instead of 3)
+                    cached.clone()
+                } else {
+                    // String not interned - clone once and store reference to itself
+                    let owned = y_str.clone();
+                    string_interner.insert(owned.clone(), owned.clone());
+                    owned
+                };
 
-            // Accumulate joint frequency counts (xy_counts) - these are needed for mutual
-            // information Note: Marginal frequencies (x_counts, y_counts) will be
-            // populated from cache in compute_all_bivariatestats_chunked before
-            // computing mutual information
-            *stats
-                .xy_counts
-                .entry((x_str_interned.clone(), y_str_interned.clone()))
-                .or_insert(0) += 1;
-            // Still collect marginal frequencies as fallback if cache not available
-            // They will be replaced with cached values if cache is initialized
-            *stats.x_counts.entry(x_str_interned).or_insert(0) += 1;
-            *stats.y_counts.entry(y_str_interned).or_insert(0) += 1;
-            stats.total_pairs += 1;
+                // Accumulate joint frequency counts (xy_counts) - these are needed for mutual
+                // information. Marginal frequencies (x_counts, y_counts) will be computed
+                // from xy_counts at finalization to ensure consistency.
+                *stats
+                    .xy_counts
+                    .entry((x_str_interned, y_str_interned))
+                    .or_insert(0) += 1;
+                stats.total_pairs += 1;
+            }
         }
     }
 
@@ -1912,10 +2022,15 @@ fn compute_all_bivariatestats_chunked(
     input_path: &Path,
     progress: Option<&ProgressBar>,
     cardinality_threshold: Option<u64>,
+    stats_config: BivariateStatsConfig,
 ) -> CliResult<HashMap<(u16, u16), BivariateStats>> {
     if field_pairs.is_empty() {
         return Ok(HashMap::new());
     }
+
+    // Check what we need based on config
+    let needs_all_values = stats_config.needs_all_values();
+    let needs_freq_counts = stats_config.needs_frequency_counts();
 
     // Check if index exists for parallel processing
     let input_path_str = input_path
@@ -1944,6 +2059,7 @@ fn compute_all_bivariatestats_chunked(
                 rdr,
                 progress,
                 cardinality_threshold,
+                stats_config,
             );
         }
 
@@ -1993,7 +2109,7 @@ fn compute_all_bivariatestats_chunked(
 
                 // Process chunk records
                 let it = idx_chunk.byte_records().take(chunk_size);
-                let result = compute_chunk_bivariate(&field_pairs_clone, it);
+                let result = compute_chunk_bivariate(&field_pairs_clone, it, stats_config);
                 let _ = send.send(result);
             });
         }
@@ -2001,34 +2117,44 @@ fn compute_all_bivariatestats_chunked(
         drop(send);
 
         // Aggregate results from all chunks
+        // Pre-allocate based on idx_count to avoid repeated reallocations during extend
         let mut all_stats: HashMap<(u16, u16), BivariateChunkStats> = field_pairs
             .keys()
-            .map(|k| (*k, BivariateChunkStats::default()))
+            .map(|k| {
+                let mut stats = BivariateChunkStats::default();
+                // Pre-allocate value vectors with total capacity if needed
+                if needs_all_values {
+                    stats.x_values.reserve(idx_count);
+                    stats.y_values.reserve(idx_count);
+                }
+                (*k, stats)
+            })
             .collect();
 
         for chunk_result in &recv {
             let chunk_stats = chunk_result?;
             for (pair_key, stats) in chunk_stats {
                 if let Some(total_stats) = all_stats.get_mut(&pair_key) {
-                    // Merge correlation states
+                    // Merge correlation states (always needed for Pearson/covariance)
                     total_stats.correlation_state = merge_correlation_states(
                         &total_stats.correlation_state,
                         &stats.correlation_state,
                     );
-                    // Append values for Spearman/Kendall
-                    total_stats.x_values.extend(stats.x_values);
-                    total_stats.y_values.extend(stats.y_values);
-                    // Merge frequency counts for mutual information
-                    for ((x_val, y_val), count) in stats.xy_counts {
-                        *total_stats.xy_counts.entry((x_val, y_val)).or_insert(0) += count;
+                    // Only merge values if needed for Spearman/Kendall
+                    if needs_all_values {
+                        total_stats.x_values.extend(stats.x_values);
+                        total_stats.y_values.extend(stats.y_values);
                     }
-                    for (x_val, count) in stats.x_counts {
-                        *total_stats.x_counts.entry(x_val).or_insert(0) += count;
+                    // Only merge frequency counts if needed for mutual information
+                    // Note: Only xy_counts and total_pairs are collected during chunk processing
+                    // Marginal frequencies (x_counts, y_counts) are computed from xy_counts at
+                    // finalization
+                    if needs_freq_counts {
+                        for ((x_val, y_val), count) in stats.xy_counts {
+                            *total_stats.xy_counts.entry((x_val, y_val)).or_insert(0) += count;
+                        }
+                        total_stats.total_pairs += stats.total_pairs;
                     }
-                    for (y_val, count) in stats.y_counts {
-                        *total_stats.y_counts.entry(y_val).or_insert(0) += count;
-                    }
-                    total_stats.total_pairs += stats.total_pairs;
                 }
             }
             // Update progress bar
@@ -2057,19 +2183,22 @@ fn compute_all_bivariatestats_chunked(
             log::info!("Phase 2 started... {num_field_pairs} field pairs");
         }
 
-        // Compute marginal frequencies from joint frequencies to ensure consistency
-        // This ensures x_counts and y_counts are computed from the same set of records
-        // as xy_counts (only pairs where both fields are non-empty)
-        // This is critical for correct mutual information calculation
-        for chunk_stats in all_stats.values_mut() {
-            // Compute marginal frequencies from joint frequencies
-            // Sum over y to get x_counts, sum over x to get y_counts
-            chunk_stats.x_counts.clear();
-            chunk_stats.y_counts.clear();
+        // Only compute marginal frequencies if we need mutual information
+        if needs_freq_counts {
+            // Compute marginal frequencies from joint frequencies to ensure consistency
+            // This ensures x_counts and y_counts are computed from the same set of records
+            // as xy_counts (only pairs where both fields are non-empty)
+            // This is critical for correct mutual information calculation
+            for chunk_stats in all_stats.values_mut() {
+                // Compute marginal frequencies from joint frequencies
+                // Sum over y to get x_counts, sum over x to get y_counts
+                chunk_stats.x_counts.clear();
+                chunk_stats.y_counts.clear();
 
-            for ((x_val, y_val), &count) in &chunk_stats.xy_counts {
-                *chunk_stats.x_counts.entry(x_val.clone()).or_insert(0) += count;
-                *chunk_stats.y_counts.entry(y_val.clone()).or_insert(0) += count;
+                for ((x_val, y_val), &count) in &chunk_stats.xy_counts {
+                    *chunk_stats.x_counts.entry(x_val.clone()).or_insert(0) += count;
+                    *chunk_stats.y_counts.entry(y_val.clone()).or_insert(0) += count;
+                }
             }
         }
 
@@ -2090,46 +2219,61 @@ fn compute_all_bivariatestats_chunked(
                     .get(&pair_key)
                     .unwrap_or_else(|| panic!("Field pair not found: {pair_key:?}"));
 
-                // Early termination: skip all correlation/covariance computations if variance is
-                // zero
+                // Early exit: skip all correlation/covariance computations if variance is zero
                 let has_zero_variance = field1_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
                     || field2_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
                     || field1_info.variance.is_some_and(|v| v.abs() < f64::EPSILON)
                     || field2_info.variance.is_some_and(|v| v.abs() < f64::EPSILON);
 
-                // Skip Pearson correlation and covariance if variance is zero (correlation
-                // undefined)
-                let pearson = if has_zero_variance || chunk_stats.correlation_state.count < 2 {
+                // Compute Pearson correlation if requested
+                let pearson = if !stats_config.pearson
+                    || has_zero_variance
+                    || chunk_stats.correlation_state.count < 2
+                {
                     None
                 } else {
                     finalize_pearson_correlation(&chunk_stats.correlation_state)
                 };
-                let covariance_sample =
-                    if has_zero_variance || chunk_stats.correlation_state.count < 2 {
-                        None
-                    } else {
-                        finalize_covariance(&chunk_stats.correlation_state, true)
-                    };
-                let covariance_population =
-                    if has_zero_variance || chunk_stats.correlation_state.count < 2 {
-                        None
-                    } else {
-                        finalize_covariance(&chunk_stats.correlation_state, false)
-                    };
 
-                let spearman = if has_zero_variance || chunk_stats.x_values.len() < 2 {
+                // Compute covariance if requested
+                let covariance_sample = if !stats_config.covariance
+                    || has_zero_variance
+                    || chunk_stats.correlation_state.count < 2
+                {
+                    None
+                } else {
+                    finalize_covariance(&chunk_stats.correlation_state, true)
+                };
+                let covariance_population = if !stats_config.covariance
+                    || has_zero_variance
+                    || chunk_stats.correlation_state.count < 2
+                {
+                    None
+                } else {
+                    finalize_covariance(&chunk_stats.correlation_state, false)
+                };
+
+                // Compute Spearman correlation if requested
+                let spearman = if !stats_config.spearman
+                    || has_zero_variance
+                    || chunk_stats.x_values.len() < 2
+                {
                     None
                 } else {
                     compute_spearman_correlation(&chunk_stats.x_values, &chunk_stats.y_values)
                 };
-                let kendall = if has_zero_variance || chunk_stats.x_values.len() < 2 {
-                    None
-                } else {
-                    compute_kendall_tau(&chunk_stats.x_values, &chunk_stats.y_values)
-                };
 
-                // Apply cardinality threshold for mutual information
-                let mutual_information = if chunk_stats.total_pairs == 0 {
+                // Compute Kendall's tau if requested
+                let kendall =
+                    if !stats_config.kendall || has_zero_variance || chunk_stats.x_values.len() < 2
+                    {
+                        None
+                    } else {
+                        compute_kendall_tau(&chunk_stats.x_values, &chunk_stats.y_values)
+                    };
+
+                // Compute mutual information if requested and apply cardinality threshold
+                let mutual_information = if !stats_config.mi || chunk_stats.total_pairs == 0 {
                     None
                 } else if let Some(threshold) = cardinality_threshold {
                     // Check if either field exceeds cardinality threshold
@@ -2197,6 +2341,7 @@ fn compute_all_bivariatestats_chunked(
             rdr,
             progress,
             cardinality_threshold,
+            stats_config,
         )
     }
 }
@@ -2208,10 +2353,15 @@ fn compute_all_bivariatestats_from_reader(
     mut rdr: csv::Reader<std::fs::File>,
     progress: Option<&ProgressBar>,
     cardinality_threshold: Option<u64>,
+    stats_config: BivariateStatsConfig,
 ) -> CliResult<HashMap<(u16, u16), BivariateStats>> {
     if field_pairs.is_empty() {
         return Ok(HashMap::new());
     }
+
+    // Check what we need based on config
+    let needs_all_values = stats_config.needs_all_values();
+    let needs_freq_counts = stats_config.needs_frequency_counts();
 
     // Collect all values for each field pair
     // Use frequency counts for strings instead of storing all strings
@@ -2222,6 +2372,7 @@ fn compute_all_bivariatestats_from_reader(
         (
             Vec<f64>,
             Vec<f64>,
+            CorrelationState, // Always track correlation state for Pearson/covariance
             HashMap<(String, String), u64>,
             HashMap<String, u64>,
             HashMap<String, u64>,
@@ -2233,15 +2384,26 @@ fn compute_all_bivariatestats_from_reader(
             let mut xy_counts = HashMap::new();
             let mut x_counts = HashMap::new();
             let mut y_counts = HashMap::new();
-            // Optimization #3: Pre-allocate HashMap capacity to reduce rehashing
-            xy_counts.reserve(estimated_unique_strings);
-            x_counts.reserve(estimated_unique_strings / 2);
-            y_counts.reserve(estimated_unique_strings / 2);
+            // Only allocate if needed
+            if needs_freq_counts {
+                xy_counts.reserve(estimated_unique_strings);
+                x_counts.reserve(estimated_unique_strings / 2);
+                y_counts.reserve(estimated_unique_strings / 2);
+            }
             (
                 *k,
                 (
-                    Vec::with_capacity(estimated_capacity),
-                    Vec::with_capacity(estimated_capacity),
+                    if needs_all_values {
+                        Vec::with_capacity(estimated_capacity)
+                    } else {
+                        Vec::new()
+                    },
+                    if needs_all_values {
+                        Vec::with_capacity(estimated_capacity)
+                    } else {
+                        Vec::new()
+                    },
+                    CorrelationState::default(), // Always initialize for Pearson/covariance
                     xy_counts,
                     x_counts,
                     y_counts,
@@ -2257,8 +2419,12 @@ fn compute_all_bivariatestats_from_reader(
     let mut date_cache: HashMap<String, Option<f64>> = HashMap::with_capacity(estimated_capacity);
 
     // Optimization #6: String interning - Cache frequently used strings to reduce allocations
-    let mut string_interner: HashMap<String, String> =
-        HashMap::with_capacity(estimated_unique_strings);
+    // Only needed if we're computing mutual information
+    let mut string_interner: HashMap<String, String> = if needs_freq_counts {
+        HashMap::with_capacity(estimated_unique_strings)
+    } else {
+        HashMap::new()
+    };
 
     // amortize allocations
     #[allow(unused_assignments)]
@@ -2301,7 +2467,7 @@ fn compute_all_bivariatestats_from_reader(
                 continue;
             }
 
-            if let Some((x_nums, y_nums, xy_counts, x_counts, y_counts, total_pairs)) =
+            if let Some((x_nums, y_nums, correlation_state, xy_counts, _, _, total_pairs)) =
                 pair_values.get_mut(&(*idx1, *idx2))
             {
                 // Optimization #1: Use date parsing cache
@@ -2327,32 +2493,34 @@ fn compute_all_bivariatestats_from_reader(
                 };
 
                 if let (Some(x_val), Some(y_val)) = (numeric_value_x, numeric_value_y) {
-                    x_nums.push(x_val);
-                    y_nums.push(y_val);
+                    // Always update correlation state for Pearson/covariance
+                    update_correlation_state(correlation_state, x_val, y_val);
+                    // Only store values if needed for Spearman/Kendall
+                    if needs_all_values {
+                        x_nums.push(x_val);
+                        y_nums.push(y_val);
+                    }
                 }
 
-                // Optimization #2 & #6: Reduce string allocations using string interning
-                // Intern strings to reuse allocations for frequently repeated values
-                let x_str = string_interner
-                    .entry(value_str_x.to_string())
-                    .or_insert_with(|| value_str_x.to_string())
-                    .clone();
-                let y_str = string_interner
-                    .entry(value_str_y.to_string())
-                    .or_insert_with(|| value_str_y.to_string())
-                    .clone();
+                // Only compute frequency counts if needed for mutual information
+                if needs_freq_counts {
+                    // Optimization #2 & #6: Reduce string allocations using string interning
+                    // Intern strings to reuse allocations for frequently repeated values
+                    let x_str = string_interner
+                        .entry(value_str_x.to_string())
+                        .or_insert_with(|| value_str_x.to_string())
+                        .clone();
+                    let y_str = string_interner
+                        .entry(value_str_y.to_string())
+                        .or_insert_with(|| value_str_y.to_string())
+                        .clone();
 
-                // Accumulate joint frequency counts (xy_counts) - these are needed for mutual
-                // information Marginal frequencies (x_counts, y_counts) will be
-                // computed from xy_counts to ensure consistency (all from same set
-                // of records where both fields are non-empty)
-                *xy_counts.entry((x_str.clone(), y_str.clone())).or_insert(0) += 1;
-                // Still collect marginal frequencies during processing (will be recomputed from
-                // xy_counts) This is kept for potential fallback but will be
-                // replaced with computed marginals
-                *x_counts.entry(x_str).or_insert(0) += 1;
-                *y_counts.entry(y_str).or_insert(0) += 1;
-                *total_pairs += 1;
+                    // Accumulate joint frequency counts (xy_counts) - these are needed for mutual
+                    // information. Marginal frequencies (x_counts, y_counts) are computed from
+                    // xy_counts at finalization to ensure consistency.
+                    *xy_counts.entry((x_str, y_str)).or_insert(0) += 1;
+                    *total_pairs += 1;
+                }
             }
         }
     }
@@ -2367,25 +2535,27 @@ fn compute_all_bivariatestats_from_reader(
     let mut final_stats: HashMap<(u16, u16), BivariateStats> =
         HashMap::with_capacity(field_pairs.len() * 2);
 
-    for (pair_key, (x_nums, y_nums, xy_counts, mut x_counts, mut y_counts, total_pairs)) in
-        pair_values
+    for (pair_key, (x_nums, y_nums, correlation_state, xy_counts, _, _, total_pairs)) in pair_values
     {
         // Get field info for this pair to check variance and cardinality
         let (field1_info, field2_info) = field_pairs
             .get(&pair_key)
             .unwrap_or_else(|| panic!("Field pair not found: {pair_key:?}"));
 
-        // Compute marginal frequencies from joint frequencies to ensure consistency
+        // Compute marginal frequencies from joint frequencies if needed for mutual information
         // This ensures x_counts and y_counts are computed from the same set of records
         // as xy_counts (only pairs where both fields are non-empty)
-        // This is critical for correct mutual information calculation
-        x_counts.clear();
-        y_counts.clear();
-
-        for ((x_val, y_val), &count) in &xy_counts {
-            *x_counts.entry(x_val.clone()).or_insert(0) += count;
-            *y_counts.entry(y_val.clone()).or_insert(0) += count;
-        }
+        let (x_counts, y_counts) = if needs_freq_counts && !xy_counts.is_empty() {
+            let mut x_counts: HashMap<String, u64> = HashMap::new();
+            let mut y_counts: HashMap<String, u64> = HashMap::new();
+            for ((x_val, y_val), &count) in &xy_counts {
+                *x_counts.entry(x_val.clone()).or_insert(0) += count;
+                *y_counts.entry(y_val.clone()).or_insert(0) += count;
+            }
+            (x_counts, y_counts)
+        } else {
+            (HashMap::new(), HashMap::new())
+        };
 
         // Early termination: check for zero variance
         let has_zero_variance = field1_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
@@ -2393,41 +2563,42 @@ fn compute_all_bivariatestats_from_reader(
             || field1_info.variance.is_some_and(|v| v.abs() < f64::EPSILON)
             || field2_info.variance.is_some_and(|v| v.abs() < f64::EPSILON);
 
-        let n_pairs = x_nums.len().max(total_pairs as usize) as u64;
+        let n_pairs = correlation_state.count.max(total_pairs);
 
-        // Skip all correlation/covariance computations if variance is zero or insufficient data
-        let pearson = if has_zero_variance || x_nums.len() < 2 {
+        // Compute Pearson correlation if requested (use correlation_state)
+        let pearson = if !stats_config.pearson || has_zero_variance || correlation_state.count < 2 {
             None
         } else {
-            compute_pearson_correlation(&x_nums, &y_nums)
+            finalize_pearson_correlation(&correlation_state)
         };
-        let spearman = if has_zero_variance || x_nums.len() < 2 {
+
+        // Compute Spearman correlation if requested (requires arrays)
+        let spearman = if !stats_config.spearman || has_zero_variance || x_nums.len() < 2 {
             None
         } else {
             compute_spearman_correlation(&x_nums, &y_nums)
         };
-        let kendall = if has_zero_variance || x_nums.len() < 2 {
+
+        // Compute Kendall's tau if requested (requires arrays)
+        let kendall = if !stats_config.kendall || has_zero_variance || x_nums.len() < 2 {
             None
         } else {
             compute_kendall_tau(&x_nums, &y_nums)
         };
 
-        // Compute covariance from correlation state (skip if variance is zero)
-        let (covariance_sample, covariance_population) = if has_zero_variance || x_nums.len() < 2 {
-            (None, None)
-        } else {
-            let mut state = CorrelationState::default();
-            for (xi, yi) in x_nums.iter().zip(y_nums.iter()) {
-                update_correlation_state(&mut state, *xi, *yi);
-            }
-            (
-                finalize_covariance(&state, true),
-                finalize_covariance(&state, false),
-            )
-        };
+        // Compute covariance from correlation state (skip if not requested or variance is zero)
+        let (covariance_sample, covariance_population) =
+            if !stats_config.covariance || has_zero_variance || correlation_state.count < 2 {
+                (None, None)
+            } else {
+                (
+                    finalize_covariance(&correlation_state, true),
+                    finalize_covariance(&correlation_state, false),
+                )
+            };
 
-        // Apply cardinality threshold for mutual information
-        let mutual_information = if total_pairs == 0 {
+        // Compute mutual information if requested and apply cardinality threshold
+        let mutual_information = if !stats_config.mi || total_pairs == 0 {
             None
         } else if let Some(threshold) = cardinality_threshold {
             // Check if either field exceeds cardinality threshold
@@ -2479,6 +2650,7 @@ fn compute_all_bivariatestats(
     input_path: &Path,
     progress: Option<&ProgressBar>,
     cardinality_threshold: Option<u64>,
+    stats_config: BivariateStatsConfig,
 ) -> CliResult<HashMap<(u16, u16), BivariateStats>> {
     compute_all_bivariatestats_chunked(
         field_pairs,
@@ -2486,6 +2658,7 @@ fn compute_all_bivariatestats(
         input_path,
         progress,
         cardinality_threshold,
+        stats_config,
     )
 }
 
@@ -3548,10 +3721,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         HashMap::new()
     };
 
+    let mut stats_config = BivariateStatsConfig::default();
     // Compute bivariate statistics if requested
     // Store field_names for output conversion (indices -> names)
     let mut bivariate_field_names: Option<Vec<String>> = None;
     let bivariate_stats = if args.flag_bivariate {
+        // Validate bivariate stats config early
+        stats_config = BivariateStatsConfig::from_flag(&args.flag_bivariate_stats)?;
+
         // Get record count to check for all-unique fields (cardinality == rowcount)
         let record_count: Option<u64> = {
             let actual_input_path_str = actual_input_path
@@ -3731,13 +3908,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // Get cardinality threshold (default: 1,000,000)
             let cardinality_threshold = args.flag_cardinality_threshold.or(Some(1_000_000));
-            winfo!("Computing bivariate statistics...");
+
+            // Log which stats are being computed
+            let stats_list: Vec<&str> = [
+                stats_config.pearson.then_some("pearson"),
+                stats_config.spearman.then_some("spearman"),
+                stats_config.kendall.then_some("kendall"),
+                stats_config.covariance.then_some("covariance"),
+                stats_config.mi.then_some("mi"),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            winfo!(
+                "Computing bivariate statistics: {}...",
+                stats_list.join(", ")
+            );
+
             let result = compute_all_bivariatestats(
                 &field_pairs,
                 &field_names,
                 actual_input_path,
                 progress.as_ref(),
                 cardinality_threshold,
+                stats_config,
             );
 
             // Clean up progress bar if it was created
@@ -3754,23 +3948,34 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Write bivariate statistics CSV if computed
     // Always use the original input path for naming, even if we joined datasets
     if args.flag_bivariate && !bivariate_stats.is_empty() {
-        let bivariate_csv_path = get_bivariate_csv_path(input_path)?;
+        let is_joined = temp_joined_path.is_some();
+        let bivariate_csv_path = get_bivariate_csv_path(input_path, is_joined)?;
         let mut bivariate_wtr = WriterBuilder::new()
             .has_headers(true)
             .from_path(&bivariate_csv_path)?;
 
+        // Build headers dynamically based on requested stats
+        let mut headers = vec!["field1", "field2"];
+        if stats_config.pearson {
+            headers.push("pearson_correlation");
+        }
+        if stats_config.spearman {
+            headers.push("spearman_correlation");
+        }
+        if stats_config.kendall {
+            headers.push("kendall_tau");
+        }
+        if stats_config.covariance {
+            headers.push("covariance_sample");
+            headers.push("covariance_population");
+        }
+        if stats_config.mi {
+            headers.push("mutual_information");
+        }
+        headers.push("n_pairs");
+
         // Write headers
-        bivariate_wtr.write_record([
-            "field1",
-            "field2",
-            "pearson_correlation",
-            "spearman_correlation",
-            "kendall_tau",
-            "covariance_sample",
-            "covariance_population",
-            "mutual_information",
-            "n_pairs",
-        ])?;
+        bivariate_wtr.write_record(&headers)?;
 
         // Write bivariate statistics
         // Convert indices to names for output
@@ -3791,35 +3996,52 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     .get(*idx2 as usize)
                     .map_or("?", |s| s.as_str());
 
-                bivariate_wtr.write_record([
-                    field1_name,
-                    field2_name,
-                    stats
-                        .pearson
-                        .map_or(String::new(), |v| util::round_num(v, args.flag_round))
-                        .as_str(),
-                    stats
-                        .spearman
-                        .map_or(String::new(), |v| util::round_num(v, args.flag_round))
-                        .as_str(),
-                    stats
-                        .kendall
-                        .map_or(String::new(), |v| util::round_num(v, args.flag_round))
-                        .as_str(),
-                    stats
-                        .covariance_sample
-                        .map_or(String::new(), |v| util::round_num(v, args.flag_round))
-                        .as_str(),
-                    stats
-                        .covariance_population
-                        .map_or(String::new(), |v| util::round_num(v, args.flag_round))
-                        .as_str(),
-                    stats
-                        .mutual_information
-                        .map_or(String::new(), |v| util::round_num(v, args.flag_round))
-                        .as_str(),
-                    stats.n_pairs.to_string().as_str(),
-                ])?;
+                // Build record dynamically based on requested stats
+                let mut record: Vec<String> =
+                    vec![field1_name.to_string(), field2_name.to_string()];
+                if stats_config.pearson {
+                    record.push(
+                        stats
+                            .pearson
+                            .map_or(String::new(), |v| util::round_num(v, args.flag_round)),
+                    );
+                }
+                if stats_config.spearman {
+                    record.push(
+                        stats
+                            .spearman
+                            .map_or(String::new(), |v| util::round_num(v, args.flag_round)),
+                    );
+                }
+                if stats_config.kendall {
+                    record.push(
+                        stats
+                            .kendall
+                            .map_or(String::new(), |v| util::round_num(v, args.flag_round)),
+                    );
+                }
+                if stats_config.covariance {
+                    record.push(
+                        stats
+                            .covariance_sample
+                            .map_or(String::new(), |v| util::round_num(v, args.flag_round)),
+                    );
+                    record.push(
+                        stats
+                            .covariance_population
+                            .map_or(String::new(), |v| util::round_num(v, args.flag_round)),
+                    );
+                }
+                if stats_config.mi {
+                    record.push(
+                        stats
+                            .mutual_information
+                            .map_or(String::new(), |v| util::round_num(v, args.flag_round)),
+                    );
+                }
+                record.push(stats.n_pairs.to_string());
+
+                bivariate_wtr.write_record(&record)?;
             }
         }
 

@@ -1215,38 +1215,53 @@ fn compute_pearson_correlation(x: &[f64], y: &[f64]) -> Option<f64> {
 
 /// Compute Spearman's rank correlation coefficient
 #[allow(clippy::cast_precision_loss)]
+#[allow(clippy::many_single_char_names)]
 fn compute_spearman_correlation(x: &[f64], y: &[f64]) -> Option<f64> {
     if x.len() != y.len() || x.len() < 2 {
         return None;
     }
 
-    // Create indexed pairs for ranking (more efficient than recreating indices)
-    let mut x_ranked: Vec<(usize, f64)> = x.iter().enumerate().map(|(i, &v)| (i, v)).collect();
-    let mut y_ranked: Vec<(usize, f64)> = y.iter().enumerate().map(|(i, &v)| (i, v)).collect();
+    let n = x.len();
 
-    // Rank x values (handle ties by averaging)
-    x_ranked.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-    let mut x_ranks = vec![0.0; x.len()];
+    // Pre-allocate with capacity to avoid reallocations
+    let mut x_ranked: Vec<(usize, f64)> = Vec::with_capacity(n);
+    x_ranked.extend(x.iter().enumerate().map(|(i, &v)| (i, v)));
+
+    let mut y_ranked: Vec<(usize, f64)> = Vec::with_capacity(n);
+    y_ranked.extend(y.iter().enumerate().map(|(i, &v)| (i, v)));
+
+    // Use total_cmp for faster, more predictable sorting (handles NaNs consistently)
+    // This is faster than partial_cmp and gives consistent ordering
+    x_ranked.sort_unstable_by(|a, b| a.1.total_cmp(&b.1));
+    y_ranked.sort_unstable_by(|a, b| a.1.total_cmp(&b.1));
+
+    // Pre-allocate rank vectors
+    let mut x_ranks = vec![0.0; n];
+    let mut y_ranks = vec![0.0; n];
+
+    // Rank x values (handle ties by averaging) - optimized loop
     let mut i = 0;
-    while i < x_ranked.len() {
+    while i < n {
         let mut j = i;
-        while j < x_ranked.len() && (x_ranked[j].1 - x_ranked[i].1).abs() < f64::EPSILON {
+        let val = x_ranked[i].1;
+        // Use total_cmp for tie detection - faster than abs diff
+        while j < n && x_ranked[j].1.total_cmp(&val) == std::cmp::Ordering::Equal {
             j += 1;
         }
         let rank = (i + j - 1) as f64 / 2.0 + 1.0;
+        // Use slice assignment for better cache locality
         for k in i..j {
             x_ranks[x_ranked[k].0] = rank;
         }
         i = j;
     }
 
-    // Rank y values
-    y_ranked.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-    let mut y_ranks = vec![0.0; y.len()];
+    // Rank y values - use total_cmp for faster comparison
     i = 0;
-    while i < y_ranked.len() {
+    while i < n {
         let mut j = i;
-        while j < y_ranked.len() && (y_ranked[j].1 - y_ranked[i].1).abs() < f64::EPSILON {
+        let val = y_ranked[i].1;
+        while j < n && y_ranked[j].1.total_cmp(&val) == std::cmp::Ordering::Equal {
             j += 1;
         }
         let rank = (i + j - 1) as f64 / 2.0 + 1.0;
@@ -1277,41 +1292,39 @@ fn count_inversions_merge(
     let mut inversions = count_inversions_merge(pairs, temp, left, mid)
         + count_inversions_merge(pairs, temp, mid + 1, right);
 
-    // Merge and count inversions
+    // Merge and count inversions - use total_cmp for faster comparison
     let mut i = left;
     let mut j = mid + 1;
     let mut k = left;
 
     while i <= mid && j <= right {
-        if pairs[i].1 <= pairs[j].1 {
-            temp[k] = pairs[i];
-            i += 1;
-        } else {
+        // Use total_cmp instead of <= for faster comparison
+        if pairs[i].1.total_cmp(&pairs[j].1) == std::cmp::Ordering::Greater {
             // Inversion found: pairs[i].1 > pairs[j].1
             // All remaining elements in left half form inversions with pairs[j]
             inversions += (mid - i + 1) as i64;
             temp[k] = pairs[j];
             j += 1;
+        } else {
+            // No inversion: pairs[i].1 <= pairs[j].1
+            // Copy pairs[i] to temp and move to next element in left half
+            temp[k] = pairs[i];
+            i += 1;
         }
-        k += 1;
+        k += 1; // Move to next position in temp array
     }
 
-    // Copy remaining elements
-    while i <= mid {
-        temp[k] = pairs[i];
-        i += 1;
-        k += 1;
+    // Copy remaining elements - use copy_from_slice for better performance
+    if i <= mid {
+        let remaining = mid - i + 1;
+        temp[k..k + remaining].copy_from_slice(&pairs[i..i + remaining]);
     }
-    while j <= right {
-        temp[k] = pairs[j];
-        j += 1;
-        k += 1;
+    if j <= right {
+        let remaining = right - j + 1;
+        temp[k..k + remaining].copy_from_slice(&pairs[j..j + remaining]);
     }
 
     // Copy back from temp
-    // for idx in left..=right {
-    //     pairs[idx] = temp[idx];
-    // }
     pairs[left..=right].copy_from_slice(&temp[left..=right]);
 
     inversions
@@ -1328,20 +1341,21 @@ fn compute_kendall_tau(x: &[f64], y: &[f64]) -> Option<f64> {
     let n = x.len() as f64;
     let pairs_len = x.len();
 
-    // Count ties in y directly from original slice using indices (avoids clone)
-    // Sort indices by y values instead of cloning pairs
-    let mut y_indices: Vec<usize> = (0..pairs_len).collect();
-    y_indices.sort_unstable_by(|&a, &b| {
-        y[a].partial_cmp(&y[b])
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| x[a].partial_cmp(&x[b]).unwrap_or(std::cmp::Ordering::Equal))
-    });
+    // Pre-allocate indices vector
+    let mut y_indices: Vec<usize> = Vec::with_capacity(pairs_len);
+    y_indices.extend(0..pairs_len);
 
+    // Use total_cmp for faster, more predictable sorting
+    y_indices.sort_unstable_by(|&a, &b| y[a].total_cmp(&y[b]).then_with(|| x[a].total_cmp(&x[b])));
+
+    // Count ties in y
     let mut ties_y = 0i64;
     let mut i = 0;
     while i < pairs_len {
         let mut j = i + 1;
-        while j < pairs_len && (y[y_indices[j]] - y[y_indices[i]]).abs() < f64::EPSILON {
+        let val = y[y_indices[i]];
+        // Use total_cmp instead of abs diff for tie detection
+        while j < pairs_len && y[y_indices[j]].total_cmp(&val) == std::cmp::Ordering::Equal {
             j += 1;
         }
         let tie_count = (j - i) as i64;
@@ -1351,20 +1365,20 @@ fn compute_kendall_tau(x: &[f64], y: &[f64]) -> Option<f64> {
         i = j;
     }
 
-    // Create pairs and sort by x values for counting x ties and inversions
-    let mut pairs: Vec<(f64, f64)> = x.iter().zip(y.iter()).map(|(&a, &b)| (a, b)).collect();
-    pairs.sort_unstable_by(|a, b| {
-        a.0.partial_cmp(&b.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-    });
+    // Pre-allocate pairs vector with capacity
+    let mut pairs: Vec<(f64, f64)> = Vec::with_capacity(pairs_len);
+    pairs.extend(x.iter().zip(y.iter()).map(|(&a, &b)| (a, b)));
+
+    // Use total_cmp for faster sorting
+    pairs.sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.total_cmp(&b.1)));
 
     // Count ties in x
     let mut ties_x = 0i64;
     i = 0;
-    while i < pairs.len() {
+    while i < pairs_len {
         let mut j = i + 1;
-        while j < pairs.len() && (pairs[j].0 - pairs[i].0).abs() < f64::EPSILON {
+        let val = pairs[i].0;
+        while j < pairs_len && pairs[j].0.total_cmp(&val) == std::cmp::Ordering::Equal {
             j += 1;
         }
         let tie_count = (j - i) as i64;
@@ -1374,7 +1388,7 @@ fn compute_kendall_tau(x: &[f64], y: &[f64]) -> Option<f64> {
         i = j;
     }
 
-    // Count inversions in y using merge sort (when sorted by x)
+    // Pre-allocate temp buffer once
     let mut temp = vec![(0.0, 0.0); pairs_len];
     let inversions = count_inversions_merge(&mut pairs, &mut temp, 0, pairs_len - 1);
 
@@ -2205,13 +2219,10 @@ fn compute_all_bivariatestats_chunked(
         // Finalize statistics from aggregated chunk stats (parallelized)
         let final_stats: HashMap<(u16, u16), BivariateStats> = all_stats
             .into_par_iter()
-            .inspect(|_| {
-                // Update progress bar for each field pair processed
+            .map(|(pair_key, chunk_stats)| {
                 if let Some(pb) = progress {
                     pb.inc(1);
                 }
-            })
-            .map(|(pair_key, chunk_stats)| {
                 let n_pairs = chunk_stats.correlation_state.count;
 
                 // Get field info for this pair to check cardinality threshold

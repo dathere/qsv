@@ -124,9 +124,7 @@ pub struct Config {
 }
 
 // Empty trait as an alias for Seek and Read that avoids auto trait errors
-#[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub trait SeekRead: io::Seek + io::Read {}
-#[cfg(any(feature = "feature_capable", feature = "lite"))]
 impl<T: io::Seek + io::Read> SeekRead for T {}
 
 impl Config {
@@ -508,7 +506,6 @@ impl Config {
         }
     }
 
-    #[cfg(any(feature = "feature_capable", feature = "lite"))]
     pub fn reader_file_stdin(&self) -> io::Result<csv::Reader<Box<dyn SeekRead + 'static>>> {
         Ok(match self.path {
             None => {

@@ -181,10 +181,9 @@ MULTI-DATASET BIVARIATE STATISTICS:
 
 When using the `--join-inputs` flag, multiple datasets can be joined internally before
 computing bivariate statistics. This allows analyzing bivariate statistics across datasets
-that share common join keys. The joined dataset is automatically indexed before bivariate
-statistics computation. The joined dataset is output to a temporary file with the
-`.joined.csv` extension. The bivariate statistics are output to a separate file:
-`<FILESTEM>.stats.bivariate.joined.csv`.
+that share common join keys. The joined dataset is saved as a temporary file that is
+automatically deleted after computing the bivariate statistics.
+The bivariate statistics are saved to `<FILESTEM>.stats.bivariate.joined.csv`.
 
 Examples:
 
@@ -272,6 +271,13 @@ moarstats options:
     -p, --progressbar      Show progress bars when computing bivariate statistics.
 
 Common options:
+    --force                Force recomputing stats even if valid precomputed stats
+                           cache exists.
+    -j, --jobs <arg>       The number of jobs to run in parallel.
+                           This works only when the given CSV has an index.
+                           Note that a file handle is opened for each job.
+                           When not set, the number of jobs is set to the
+                           number of CPUs detected.
     -h, --help             Display this message
     -o, --output <file>    Write output to <file> instead of overwriting the stats CSV file.
 "#;
@@ -313,6 +319,8 @@ struct Args {
     flag_join_keys:             Option<String>,
     flag_join_type:             Option<String>,
     flag_progressbar:           bool,
+    flag_jobs:                  Option<usize>,
+    flag_force:                 bool,
 }
 
 /// Configuration for which bivariate statistics to compute
@@ -1586,6 +1594,7 @@ where
 fn count_all_outliers(
     fields_to_count: &HashMap<String, OutlierFieldInfo>,
     input_path: &Path,
+    flag_jobs: Option<usize>,
 ) -> CliResult<HashMap<String, OutlierStats>> {
     if fields_to_count.is_empty() {
         return Ok(HashMap::new());
@@ -1614,7 +1623,7 @@ fn count_all_outliers(
             return count_all_outliers_from_reader(fields_to_count, rdr);
         }
 
-        let njobs = util::njobs(None);
+        let njobs = util::njobs(flag_jobs);
         let chunk_size = util::chunk_size(idx_count, njobs);
         let nchunks = util::num_of_chunks(idx_count, chunk_size);
 
@@ -2029,14 +2038,19 @@ fn count_all_outliers_from_reader(
     Ok(all_stats)
 }
 
-/// Compute bivariate statistics using parallel chunked processing (requires index)
-fn compute_all_bivariatestats_chunked(
+/// Compute all bivariate statistics
+/// Uses parallel chunked processing when an index is available and there
+/// are more than 10,000 records.
+/// Otherwise, uses sequential processing.
+/// Returns a HashMap mapping field pairs to their bivariate statistics.
+fn compute_all_bivariatestats(
     field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
     field_names: &[String],
     input_path: &Path,
     progress: Option<&ProgressBar>,
     cardinality_threshold: Option<u64>,
     stats_config: BivariateStatsConfig,
+    flag_jobs: Option<usize>,
 ) -> CliResult<HashMap<(u16, u16), BivariateStats>> {
     if field_pairs.is_empty() {
         return Ok(HashMap::new());
@@ -2067,7 +2081,7 @@ fn compute_all_bivariatestats_chunked(
             let mut rdr = rconfig.reader_file()?;
             let _headers = rdr.headers()?.clone();
             winfo!("Computing bivariate statistics sequentially...");
-            return compute_all_bivariatestats_from_reader(
+            return compute_all_bivariatestats_sequential(
                 field_pairs,
                 field_names,
                 rdr,
@@ -2077,7 +2091,7 @@ fn compute_all_bivariatestats_chunked(
             );
         }
 
-        let njobs = util::njobs(None);
+        let njobs = util::njobs(flag_jobs);
         let chunk_size = util::chunk_size(idx_count, njobs);
         let nchunks = util::num_of_chunks(idx_count, chunk_size);
 
@@ -2346,7 +2360,7 @@ fn compute_all_bivariatestats_chunked(
         // Sequential fallback when no index exists
         let mut rdr = rconfig.reader_file()?;
         let _headers = rdr.headers()?.clone();
-        compute_all_bivariatestats_from_reader(
+        compute_all_bivariatestats_sequential(
             field_pairs,
             field_names,
             rdr,
@@ -2357,8 +2371,8 @@ fn compute_all_bivariatestats_chunked(
     }
 }
 
-/// Sequential fallback when no index exists (for small files)
-fn compute_all_bivariatestats_from_reader(
+/// Sequential processing for small files (< 10k records) or when no index exists
+fn compute_all_bivariatestats_sequential(
     field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
     field_names: &[String],
     mut rdr: csv::Reader<std::fs::File>,
@@ -2652,25 +2666,6 @@ fn compute_all_bivariatestats_from_reader(
     }
 
     Ok(final_stats)
-}
-
-/// Compute all bivariate statistics (handles chunked vs sequential automatically)
-fn compute_all_bivariatestats(
-    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
-    field_names: &[String],
-    input_path: &Path,
-    progress: Option<&ProgressBar>,
-    cardinality_threshold: Option<u64>,
-    stats_config: BivariateStatsConfig,
-) -> CliResult<HashMap<(u16, u16), BivariateStats>> {
-    compute_all_bivariatestats_chunked(
-        field_pairs,
-        field_names,
-        input_path,
-        progress,
-        cardinality_threshold,
-        stats_config,
-    )
 }
 
 /// Compute Kurtosis, Gini coefficient, and Atkinson index for all fields.
@@ -3051,11 +3046,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let path = get_stats_csv_path(input_path)?;
 
         // Check if stats CSV exists, if not, run stats command
-        if !path.exists() {
-            eprintln!(
-                "Stats CSV file not found: {}\nComputing baseline stats...",
-                path.display()
-            );
+        if args.flag_force || !path.exists() {
+            if args.flag_force {
+                eprintln!("Force flag set: recomputing stats...");
+            } else {
+                eprintln!(
+                    "Stats CSV file not found: {}\nComputing baseline stats...",
+                    path.display()
+                );
+            }
 
             // Parse stats options
             let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
@@ -3698,7 +3697,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         });
 
         // Count outliers (will use parallel processing if index exists)
-        count_all_outliers(&fields_to_count, actual_input_path)?
+        count_all_outliers(&fields_to_count, actual_input_path, args.flag_jobs)?
     };
 
     // Compute kurtosis, Gini coefficient & Atkinson Index for all fields
@@ -3943,6 +3942,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 progress.as_ref(),
                 cardinality_threshold,
                 stats_config,
+                args.flag_jobs,
             );
 
             // Clean up progress bar if it was created

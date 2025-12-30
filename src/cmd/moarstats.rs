@@ -2039,7 +2039,8 @@ fn count_all_outliers_from_reader(
 }
 
 /// Compute all bivariate statistics
-/// Uses parallel chunked processing when an index is available there are more than 10,000 records.
+/// Uses parallel chunked processing when an index is available and there
+/// are more than 10,000 records.
 /// Otherwise, uses sequential processing.
 /// Returns a HashMap mapping field pairs to their bivariate statistics.
 fn compute_all_bivariatestats(
@@ -2370,7 +2371,7 @@ fn compute_all_bivariatestats(
     }
 }
 
-/// Sequential fallback when no index exists (for small files)
+/// Sequential processing for small files (< 10k records) or when no index exists
 fn compute_all_bivariatestats_sequential(
     field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
     field_names: &[String],

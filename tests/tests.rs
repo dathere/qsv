@@ -86,7 +86,6 @@ mod test_geoconvert;
 mod test_headers;
 mod test_index;
 mod test_input;
-#[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_join;
 #[cfg(feature = "polars")]
 mod test_joinp;

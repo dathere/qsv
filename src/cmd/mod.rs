@@ -46,7 +46,6 @@ pub mod geoconvert;
 pub mod headers;
 pub mod index;
 pub mod input;
-#[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod join;
 #[cfg(all(
     feature = "polars",

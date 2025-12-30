@@ -64,6 +64,7 @@ static COMMAND_LIST: &str = r#"
     help        Show this usage message
     index       Create CSV index for faster access
     input       Read CSVs w/ special quoting, skipping, trimming & transcoding rules
+    join        Join CSV files
     joinp       Join CSV files using the Pola.rs engine 🐻‍❄️
     luau        Execute Luau script on CSV data 👑
     moarstats   Add "moar" statistics to existing stats CSV
@@ -259,6 +260,7 @@ enum Command {
     Help,
     Index,
     Input,
+    Join,
     #[cfg(feature = "polars")]
     JoinP,
     #[cfg(feature = "luau")]
@@ -322,6 +324,7 @@ impl Command {
             },
             Command::Index => cmd::index::run(argv),
             Command::Input => cmd::input::run(argv),
+            Command::Join => cmd::join::run(argv),
             #[cfg(feature = "polars")]
             Command::JoinP => cmd::joinp::run(argv),
             #[cfg(feature = "luau")]

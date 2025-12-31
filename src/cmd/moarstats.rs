@@ -1505,7 +1505,7 @@ fn compute_normalized_mutual_information(
 
     // Compute denominator: sqrt(H(X) * H(Y))
     let denominator = (h_x_val * h_y_val).sqrt();
-    if denominator.abs() < f64::EPSILON {
+    if denominator == 0.0 {
         return None;
     }
 

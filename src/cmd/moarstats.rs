@@ -1513,6 +1513,63 @@ fn compute_normalized_mutual_information(
     Some(mi_val / denominator)
 }
 
+/// Helper function to compute NMI with cardinality threshold checking
+/// Encapsulates the logic for:
+/// 1. Checking if NMI is requested and if we have valid data
+/// 2. Applying cardinality threshold filtering (if configured)
+/// 3. Computing entropies from marginal frequency counts
+/// 4. Computing MI if needed (reusing pre-computed MI if available)
+/// 5. Computing final NMI value
+#[allow(clippy::too_many_arguments)]
+fn compute_nmi_with_threshold(
+    nmi_requested: bool,
+    total_pairs: u64,
+    cardinality_threshold: Option<u64>,
+    field1_info: &BivariateFieldInfo,
+    field2_info: &BivariateFieldInfo,
+    pair_key: (u16, u16),
+    field_names: &[String],
+    x_counts: &HashMap<String, u64>,
+    y_counts: &HashMap<String, u64>,
+    xy_counts: &HashMap<(String, String), u64>,
+    mutual_information: Option<f64>,
+) -> Option<f64> {
+    // Early return if NMI not requested or no valid data
+    if !nmi_requested || total_pairs == 0 {
+        return None;
+    }
+
+    // Check cardinality threshold if configured
+    if let Some(threshold) = cardinality_threshold {
+        let exceeds_threshold = field1_info.cardinality.is_some_and(|c| c > threshold)
+            || field2_info.cardinality.is_some_and(|c| c > threshold);
+        if exceeds_threshold {
+            // Convert indices to names for logging (u16 -> usize for indexing)
+            let (idx1, idx2) = pair_key;
+            let field1_name = field_names.get(idx1 as usize).map_or("?", |s| s.as_str());
+            let field2_name = field_names.get(idx2 as usize).map_or("?", |s| s.as_str());
+            log::debug!(
+                "Skipping normalized mutual information for pair ({field1_name}, \
+                 {field2_name}) - cardinality exceeds threshold {threshold}",
+            );
+            return None;
+        }
+    }
+
+    // Compute entropies from marginal frequency counts
+    let h_x = compute_entropy_from_counts(x_counts, total_pairs);
+    let h_y = compute_entropy_from_counts(y_counts, total_pairs);
+
+    // Compute MI if not already computed (needed for NMI)
+    let mi = if mutual_information.is_some() {
+        mutual_information
+    } else {
+        compute_mutual_information_from_counts(xy_counts, x_counts, y_counts, total_pairs)
+    };
+
+    compute_normalized_mutual_information(mi, h_x, h_y)
+}
+
 /// Field information needed for Kurtosis, Gini & Atkinson Index computation (with precalculated
 /// stats)
 #[derive(Clone)]
@@ -2405,70 +2462,19 @@ fn compute_all_bivariatestats(
 
                 // Compute normalized mutual information if requested
                 // NMI requires MI and entropies computed from the same frequency counts
-                let normalized_mutual_information = if !stats_config.nmi
-                    || chunk_stats.total_pairs == 0
-                {
-                    None
-                } else if let Some(threshold) = cardinality_threshold {
-                    // Check if either field exceeds cardinality threshold (same as MI)
-                    let exceeds_threshold = field1_info.cardinality.is_some_and(|c| c > threshold)
-                        || field2_info.cardinality.is_some_and(|c| c > threshold);
-                    if exceeds_threshold {
-                        // Convert indices to names for logging (u16 -> usize for indexing)
-                        let (idx1, idx2) = pair_key;
-                        let field1_name = field_names
-                            .get(idx1 as usize)
-                            .map_or("?", std::string::String::as_str);
-                        let field2_name = field_names
-                            .get(idx2 as usize)
-                            .map_or("?", std::string::String::as_str);
-                        log::debug!(
-                            "Skipping normalized mutual information for pair ({field1_name}, \
-                             {field2_name}) - cardinality exceeds threshold {threshold}"
-                        );
-                        None
-                    } else {
-                        // Compute entropies from marginal frequency counts
-                        let h_x = compute_entropy_from_counts(
-                            &chunk_stats.x_counts,
-                            chunk_stats.total_pairs,
-                        );
-                        let h_y = compute_entropy_from_counts(
-                            &chunk_stats.y_counts,
-                            chunk_stats.total_pairs,
-                        );
-                        // Compute MI if not already computed (needed for NMI)
-                        let mi = if mutual_information.is_some() {
-                            mutual_information
-                        } else {
-                            compute_mutual_information_from_counts(
-                                &chunk_stats.xy_counts,
-                                &chunk_stats.x_counts,
-                                &chunk_stats.y_counts,
-                                chunk_stats.total_pairs,
-                            )
-                        };
-                        compute_normalized_mutual_information(mi, h_x, h_y)
-                    }
-                } else {
-                    // Compute entropies from marginal frequency counts
-                    let h_x =
-                        compute_entropy_from_counts(&chunk_stats.x_counts, chunk_stats.total_pairs);
-                    let h_y =
-                        compute_entropy_from_counts(&chunk_stats.y_counts, chunk_stats.total_pairs);
-                    // Compute MI if not already computed (needed for NMI)
-                    let mi = if mutual_information.is_some() {
-                        mutual_information
-                    } else {
-                        compute_mutual_information_from_counts(
-                            &chunk_stats.xy_counts,
-                            &chunk_stats.x_counts,
-                            &chunk_stats.y_counts,
-                            chunk_stats.total_pairs,
-                        )
-                    };
-                    compute_normalized_mutual_information(mi, h_x, h_y)
-                };
+                let normalized_mutual_information = compute_nmi_with_threshold(
+                    stats_config.nmi,
+                    chunk_stats.total_pairs,
+                    cardinality_threshold,
+                    field1_info,
+                    field2_info,
+                    pair_key,
+                    field_names,
+                    &chunk_stats.x_counts,
+                    &chunk_stats.y_counts,
+                    &chunk_stats.xy_counts,
+                    mutual_information,
+                );
 
                 (
                     pair_key,
@@ -2789,56 +2795,19 @@ fn compute_all_bivariatestats_sequential(
 
         // Compute normalized mutual information if requested
         // NMI requires MI and entropies computed from the same frequency counts
-        let normalized_mutual_information = if !stats_config.nmi || total_pairs == 0 {
-            None
-        } else if let Some(threshold) = cardinality_threshold {
-            // Check if either field exceeds cardinality threshold (same as MI)
-            let exceeds_threshold = field1_info.cardinality.is_some_and(|c| c > threshold)
-                || field2_info.cardinality.is_some_and(|c| c > threshold);
-            if exceeds_threshold {
-                // Convert indices to names for logging (u16 -> usize for indexing)
-                let (idx1, idx2) = pair_key;
-                let field1_name = field_names.get(idx1 as usize).map_or("?", |s| s.as_str());
-                let field2_name = field_names.get(idx2 as usize).map_or("?", |s| s.as_str());
-                log::debug!(
-                    "Skipping normalized mutual information for pair ({field1_name}, \
-                     {field2_name}) - cardinality exceeds threshold {threshold}",
-                );
-                None
-            } else {
-                // Compute entropies from marginal frequency counts
-                let h_x = compute_entropy_from_counts(&x_counts, total_pairs);
-                let h_y = compute_entropy_from_counts(&y_counts, total_pairs);
-                // Compute MI if not already computed (needed for NMI)
-                let mi = if mutual_information.is_some() {
-                    mutual_information
-                } else {
-                    compute_mutual_information_from_counts(
-                        &xy_counts,
-                        &x_counts,
-                        &y_counts,
-                        total_pairs,
-                    )
-                };
-                compute_normalized_mutual_information(mi, h_x, h_y)
-            }
-        } else {
-            // Compute entropies from marginal frequency counts
-            let h_x = compute_entropy_from_counts(&x_counts, total_pairs);
-            let h_y = compute_entropy_from_counts(&y_counts, total_pairs);
-            // Compute MI if not already computed (needed for NMI)
-            let mi = if mutual_information.is_some() {
-                mutual_information
-            } else {
-                compute_mutual_information_from_counts(
-                    &xy_counts,
-                    &x_counts,
-                    &y_counts,
-                    total_pairs,
-                )
-            };
-            compute_normalized_mutual_information(mi, h_x, h_y)
-        };
+        let normalized_mutual_information = compute_nmi_with_threshold(
+            stats_config.nmi,
+            total_pairs,
+            cardinality_threshold,
+            field1_info,
+            field2_info,
+            pair_key,
+            field_names,
+            &x_counts,
+            &y_counts,
+            &xy_counts,
+            mutual_information,
+        );
 
         final_stats.insert(
             pair_key,

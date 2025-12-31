@@ -2844,7 +2844,7 @@ dependencies = [
 [[package]]
 name = "geosuggest-core"
 version = "0.8.2"
-source = "git+https://github.com/jqnatividad/geosuggest?branch=kiddo-patch-for-cmov-dependency-security-response#a1cc9eefb47f02bf4f9e9a1446a758a1493b1811"
+source = "git+https://github.com/jqnatividad/geosuggest?branch=kiddo-patch-for-cmov-dependency-security-response#6cb1ff2fa71a32f33be758f054149d27037e1702"
 dependencies = [
  "csv",
  "geoip2",
@@ -2859,7 +2859,7 @@ dependencies = [
 [[package]]
 name = "geosuggest-utils"
 version = "0.8.2"
-source = "git+https://github.com/jqnatividad/geosuggest?branch=kiddo-patch-for-cmov-dependency-security-response#a1cc9eefb47f02bf4f9e9a1446a758a1493b1811"
+source = "git+https://github.com/jqnatividad/geosuggest?branch=kiddo-patch-for-cmov-dependency-security-response#6cb1ff2fa71a32f33be758f054149d27037e1702"
 dependencies = [
  "anyhow",
  "futures",

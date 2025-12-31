@@ -3238,9 +3238,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Check if stats CSV exists, if not, run stats command
         if args.flag_force || !path.exists() {
             if args.flag_force {
-                eprintln!("Force flag set: recomputing stats...");
+                winfo!("Force flag set: recomputing stats...");
             } else {
-                eprintln!(
+                wwarn!(
                     "Stats CSV file not found: {}\nComputing baseline stats...",
                     path.display()
                 );
@@ -3672,20 +3672,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             || headers.iter().any(|h| h.starts_with("atkinson_index_"));
 
         if any_exist {
-            eprintln!(
+            wwarn!(
                 "Warning: No additional stats can be computed. All available additional \
                  statistics have already been added to this stats CSV file."
             );
         } else {
-            eprintln!(
+            wwarn!(
                 "Warning: No additional stats can be computed with the available base statistics."
             );
-            eprintln!(
+            wwarn!(
                 "Consider running stats with --everything, or including --quartiles --median \
                  --mode in your --stats-options."
             );
         }
-        return Ok(());
+        // If bivariate statistics are not requested, we can return early
+        if !args.flag_bivariate {
+            return Ok(());
+        }
     }
 
     // Read all records
@@ -4258,7 +4261,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
 
         bivariate_wtr.flush()?;
-        eprintln!(
+        wwarn!(
             "Wrote bivariate statistics to {}",
             bivariate_csv_path.display()
         );
@@ -4913,19 +4916,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     wtr.flush()?;
 
-    eprintln!(
+    winfo!(
         "Added {} additional statistics columns to {}",
         new_columns.len(),
         output_path.display()
     );
-    eprintln!("Elapsed: {:.2}s", start_time.elapsed().as_secs_f64());
+    winfo!("Elapsed: {:.2}s", start_time.elapsed().as_secs_f64());
 
     // Clean up temporary joined file if it was created
     if let Some(ref temp_path) = temp_joined_path
         && temp_path.exists()
         && let Err(e) = fs::remove_file(temp_path)
     {
-        log::warn!(
+        wwarn!(
             "Failed to remove temporary joined file {}: {}",
             temp_path.display(),
             e

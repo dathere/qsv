@@ -143,7 +143,7 @@ all values for computation.
 
 BIVARIATE STATISTICS:
 
-The `moarstats` command also computes the following 5 bivariate statistics:
+The `moarstats` command also computes the following 6 bivariate statistics:
  1. Pearson's correlation
     Measures linear correlation between two numeric/date fields.
     Values range from -1 (perfect negative correlation) to +1 (perfect positive correlation).
@@ -168,6 +168,10 @@ The `moarstats` command also computes the following 5 bivariate statistics:
     Measures the amount of information obtained about one field by observing another.
     Values range from 0 (independent) to positive infinity.
     https://en.wikipedia.org/wiki/Mutual_information
+ 6. Normalized Mutual Information
+    Normalized version of mutual information, scaled by the geometric mean of individual entropies.
+    Values range from 0 (independent) to 1 (perfectly dependent).
+    https://en.wikipedia.org/wiki/Mutual_information#Normalized_variants
 
 These bivariate statistics are computed when the `--bivariate` flag is used
 and require an indexed CSV file (index will be auto-created if missing).
@@ -242,11 +246,13 @@ moarstats options:
                            BIVARIATE STATISTICS OPTIONS:
     -B, --bivariate        Enable bivariate statistics computation.
                            Requires indexed CSV file (index will be auto-created if missing).
-                           Computes pairwise correlations, covariances, and mutual information
-                           between columns. Outputs to <FILESTEM>.stats.bivariate.csv.
+                           Computes pairwise correlations, covariances, mutual information, and
+                           normalized mutual information between columns. Outputs to
+                           <FILESTEM>.stats.bivariate.csv.
     -S, --bivariate-stats <stats>
                            Comma-separated list of bivariate statistics to compute.
-                           Options: pearson, spearman, kendall, covariance, mi (mutual information)
+                           Options: pearson, spearman, kendall, covariance, mi (mutual information),
+                           nmi (normalized mutual information)
                            Use "all" to compute all statistics or "fast" to compute only
                            pearson & covariance, which is much faster as it doesn't require storing
                            all values and uses streaming algorithms.
@@ -331,6 +337,7 @@ struct BivariateStatsConfig {
     kendall:    bool,
     covariance: bool,
     mi:         bool, // mutual information
+    nmi:        bool, // normalized mutual information
 }
 
 impl BivariateStatsConfig {
@@ -351,6 +358,9 @@ impl BivariateStatsConfig {
                 "kendall" => config.kendall = true,
                 "covariance" | "cov" => config.covariance = true,
                 "mi" | "mutual_information" | "mutual-information" => config.mi = true,
+                "nmi" | "normalized_mutual_information" | "normalized-mutual-information" => {
+                    config.nmi = true;
+                },
                 "all" => return Ok(Self::all()),
                 "fast" => {
                     config.pearson = true;
@@ -365,7 +375,8 @@ impl BivariateStatsConfig {
         if !invalid_stats.is_empty() {
             return fail_clierror!(
                 "Invalid bivariate statistics: {}. Valid options are: pearson, spearman, kendall, \
-                 covariance (or cov), mi (or mutual_information or mutual-information), fast, all",
+                 covariance (or cov), mi (or mutual_information or mutual-information), nmi (or \
+                 normalized_mutual_information or normalized-mutual-information), fast, all",
                 invalid_stats.join(", ")
             );
         }
@@ -376,11 +387,13 @@ impl BivariateStatsConfig {
             && !config.kendall
             && !config.covariance
             && !config.mi
+            && !config.nmi
         {
             return fail_clierror!(
                 "No valid bivariate statistics specified. Valid options are: pearson, spearman, \
                  kendall, covariance (or cov), mi (or mutual_information or mutual-information), \
-                 fast, all"
+                 nmi (or normalized_mutual_information or normalized-mutual-information), fast, \
+                 all"
             );
         }
 
@@ -395,6 +408,7 @@ impl BivariateStatsConfig {
             kendall:    true,
             covariance: true,
             mi:         true,
+            nmi:        true,
         }
     }
 
@@ -404,10 +418,11 @@ impl BivariateStatsConfig {
         self.spearman || self.kendall
     }
 
-    /// Check if we need frequency counts (required for mutual information)
+    /// Check if we need frequency counts (required for mutual information and normalized mutual
+    /// information)
     #[inline]
     const fn needs_frequency_counts(self) -> bool {
-        self.mi
+        self.mi || self.nmi
     }
 }
 
@@ -1069,13 +1084,14 @@ struct BivariateChunkStats {
 /// Final bivariate statistics for a field pair
 #[derive(Clone, Default)]
 struct BivariateStats {
-    pearson:               Option<f64>,
-    spearman:              Option<f64>,
-    kendall:               Option<f64>,
-    covariance_sample:     Option<f64>,
+    pearson: Option<f64>,
+    spearman: Option<f64>,
+    kendall: Option<f64>,
+    covariance_sample: Option<f64>,
     covariance_population: Option<f64>,
-    mutual_information:    Option<f64>,
-    n_pairs:               u64,
+    mutual_information: Option<f64>,
+    normalized_mutual_information: Option<f64>,
+    n_pairs: u64,
 }
 
 /// Field information for bivariate computation
@@ -1446,6 +1462,55 @@ fn compute_mutual_information_from_counts(
     }
 
     Some(mi)
+}
+
+/// Compute Shannon entropy from frequency counts
+/// Uses the same formula as compute_all_entropy(): H(X) = -Σ p_i * log2(p_i)
+/// where p_i = count_i / total
+#[allow(clippy::cast_precision_loss)]
+fn compute_entropy_from_counts(counts: &HashMap<String, u64>, total: u64) -> Option<f64> {
+    if total == 0 {
+        return None;
+    }
+
+    let total_f64 = total as f64;
+    let mut entropy = 0.0;
+
+    for count in counts.values() {
+        if *count > 0 {
+            let p = *count as f64 / total_f64;
+            entropy -= p * p.log2();
+        }
+    }
+
+    Some(entropy)
+}
+
+/// Compute normalized mutual information from mutual information and entropies
+/// NMI = MI / sqrt(H(X) * H(Y))
+/// Returns None if either entropy is invalid (0, negative, or None) or if the denominator is 0
+fn compute_normalized_mutual_information(
+    mi: Option<f64>,
+    h_x: Option<f64>,
+    h_y: Option<f64>,
+) -> Option<f64> {
+    let (Some(mi_val), Some(h_x_val), Some(h_y_val)) = (mi, h_x, h_y) else {
+        return None;
+    };
+
+    // Check for invalid entropy values (non-positive)
+    if h_x_val <= 0.0 || h_y_val <= 0.0 {
+        return None;
+    }
+
+    // Compute denominator: sqrt(H(X) * H(Y))
+    let denominator = (h_x_val * h_y_val).sqrt();
+    if denominator == 0.0 {
+        return None;
+    }
+
+    // NMI = MI / sqrt(H(X) * H(Y))
+    Some(mi_val / denominator)
 }
 
 /// Field information needed for Kurtosis, Gini & Atkinson Index computation (with precalculated
@@ -2237,7 +2302,10 @@ fn compute_all_bivariatestats(
                 if let Some(pb) = progress {
                     pb.inc(1);
                 }
-                let n_pairs = chunk_stats.correlation_state.count;
+                let n_pairs = chunk_stats
+                    .correlation_state
+                    .count
+                    .max(chunk_stats.total_pairs);
 
                 // Get field info for this pair to check cardinality threshold
                 let (field1_info, field2_info) = field_pairs
@@ -2335,6 +2403,73 @@ fn compute_all_bivariatestats(
                     )
                 };
 
+                // Compute normalized mutual information if requested
+                // NMI requires MI and entropies computed from the same frequency counts
+                let normalized_mutual_information = if !stats_config.nmi
+                    || chunk_stats.total_pairs == 0
+                {
+                    None
+                } else if let Some(threshold) = cardinality_threshold {
+                    // Check if either field exceeds cardinality threshold (same as MI)
+                    let exceeds_threshold = field1_info.cardinality.is_some_and(|c| c > threshold)
+                        || field2_info.cardinality.is_some_and(|c| c > threshold);
+                    if exceeds_threshold {
+                        // Convert indices to names for logging (u16 -> usize for indexing)
+                        let (idx1, idx2) = pair_key;
+                        let field1_name = field_names
+                            .get(idx1 as usize)
+                            .map_or("?", std::string::String::as_str);
+                        let field2_name = field_names
+                            .get(idx2 as usize)
+                            .map_or("?", std::string::String::as_str);
+                        log::debug!(
+                            "Skipping normalized mutual information for pair ({field1_name}, \
+                             {field2_name}) - cardinality exceeds threshold {threshold}"
+                        );
+                        None
+                    } else {
+                        // Compute entropies from marginal frequency counts
+                        let h_x = compute_entropy_from_counts(
+                            &chunk_stats.x_counts,
+                            chunk_stats.total_pairs,
+                        );
+                        let h_y = compute_entropy_from_counts(
+                            &chunk_stats.y_counts,
+                            chunk_stats.total_pairs,
+                        );
+                        // Compute MI if not already computed (needed for NMI)
+                        let mi = if mutual_information.is_some() {
+                            mutual_information
+                        } else {
+                            compute_mutual_information_from_counts(
+                                &chunk_stats.xy_counts,
+                                &chunk_stats.x_counts,
+                                &chunk_stats.y_counts,
+                                chunk_stats.total_pairs,
+                            )
+                        };
+                        compute_normalized_mutual_information(mi, h_x, h_y)
+                    }
+                } else {
+                    // Compute entropies from marginal frequency counts
+                    let h_x =
+                        compute_entropy_from_counts(&chunk_stats.x_counts, chunk_stats.total_pairs);
+                    let h_y =
+                        compute_entropy_from_counts(&chunk_stats.y_counts, chunk_stats.total_pairs);
+                    // Compute MI if not already computed (needed for NMI)
+                    let mi = if mutual_information.is_some() {
+                        mutual_information
+                    } else {
+                        compute_mutual_information_from_counts(
+                            &chunk_stats.xy_counts,
+                            &chunk_stats.x_counts,
+                            &chunk_stats.y_counts,
+                            chunk_stats.total_pairs,
+                        )
+                    };
+                    compute_normalized_mutual_information(mi, h_x, h_y)
+                };
+
                 (
                     pair_key,
                     BivariateStats {
@@ -2344,6 +2479,7 @@ fn compute_all_bivariatestats(
                         covariance_sample,
                         covariance_population,
                         mutual_information,
+                        normalized_mutual_information,
                         n_pairs,
                     },
                 )
@@ -2651,6 +2787,59 @@ fn compute_all_bivariatestats_sequential(
             compute_mutual_information_from_counts(&xy_counts, &x_counts, &y_counts, total_pairs)
         };
 
+        // Compute normalized mutual information if requested
+        // NMI requires MI and entropies computed from the same frequency counts
+        let normalized_mutual_information = if !stats_config.nmi || total_pairs == 0 {
+            None
+        } else if let Some(threshold) = cardinality_threshold {
+            // Check if either field exceeds cardinality threshold (same as MI)
+            let exceeds_threshold = field1_info.cardinality.is_some_and(|c| c > threshold)
+                || field2_info.cardinality.is_some_and(|c| c > threshold);
+            if exceeds_threshold {
+                // Convert indices to names for logging (u16 -> usize for indexing)
+                let (idx1, idx2) = pair_key;
+                let field1_name = field_names.get(idx1 as usize).map_or("?", |s| s.as_str());
+                let field2_name = field_names.get(idx2 as usize).map_or("?", |s| s.as_str());
+                log::debug!(
+                    "Skipping normalized mutual information for pair ({field1_name}, \
+                     {field2_name}) - cardinality exceeds threshold {threshold}",
+                );
+                None
+            } else {
+                // Compute entropies from marginal frequency counts
+                let h_x = compute_entropy_from_counts(&x_counts, total_pairs);
+                let h_y = compute_entropy_from_counts(&y_counts, total_pairs);
+                // Compute MI if not already computed (needed for NMI)
+                let mi = if mutual_information.is_some() {
+                    mutual_information
+                } else {
+                    compute_mutual_information_from_counts(
+                        &xy_counts,
+                        &x_counts,
+                        &y_counts,
+                        total_pairs,
+                    )
+                };
+                compute_normalized_mutual_information(mi, h_x, h_y)
+            }
+        } else {
+            // Compute entropies from marginal frequency counts
+            let h_x = compute_entropy_from_counts(&x_counts, total_pairs);
+            let h_y = compute_entropy_from_counts(&y_counts, total_pairs);
+            // Compute MI if not already computed (needed for NMI)
+            let mi = if mutual_information.is_some() {
+                mutual_information
+            } else {
+                compute_mutual_information_from_counts(
+                    &xy_counts,
+                    &x_counts,
+                    &y_counts,
+                    total_pairs,
+                )
+            };
+            compute_normalized_mutual_information(mi, h_x, h_y)
+        };
+
         final_stats.insert(
             pair_key,
             BivariateStats {
@@ -2660,6 +2849,7 @@ fn compute_all_bivariatestats_sequential(
                 covariance_sample,
                 covariance_population,
                 mutual_information,
+                normalized_mutual_information,
                 n_pairs,
             },
         );
@@ -3926,6 +4116,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 stats_config.kendall.then_some("kendall"),
                 stats_config.covariance.then_some("covariance"),
                 stats_config.mi.then_some("mi"),
+                stats_config.nmi.then_some("nmi"),
             ]
             .into_iter()
             .flatten()
@@ -3982,6 +4173,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         if stats_config.mi {
             headers.push("mutual_information");
+        }
+        if stats_config.nmi {
+            headers.push("normalized_mutual_information");
         }
         headers.push("n_pairs");
 
@@ -4047,6 +4241,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     record.push(
                         stats
                             .mutual_information
+                            .map_or(String::new(), |v| util::round_num(v, args.flag_round)),
+                    );
+                }
+                if stats_config.nmi {
+                    record.push(
+                        stats
+                            .normalized_mutual_information
                             .map_or(String::new(), |v| util::round_num(v, args.flag_round)),
                     );
                 }

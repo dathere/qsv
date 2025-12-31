@@ -3786,6 +3786,116 @@ fn moarstats_bivariate_string_fields() {
 }
 
 #[test]
+fn moarstats_bivariate_normalized_mutual_information() {
+    let wrk = Workdir::new("moarstats_bivariate_nmi");
+
+    // Create CSV with string fields that have some correlation
+    // This will allow us to test normalized mutual information
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["category", "status"],
+            svec!["A", "active"],
+            svec!["A", "active"],
+            svec!["A", "active"],
+            svec!["B", "inactive"],
+            svec!["B", "inactive"],
+            svec!["B", "inactive"],
+            svec!["C", "active"],
+            svec!["C", "pending"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("test.csv")
+        .args(["--bivariate-stats", "all"]);
+    wrk.assert_success(&mut cmd);
+
+    let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(bivariate_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field1_idx = get_column_index(&headers, "field1").unwrap();
+    let field2_idx = get_column_index(&headers, "field2").unwrap();
+    let nmi_idx = get_column_index(&headers, "normalized_mutual_information")
+        .expect("normalized_mutual_information column should exist");
+    let mi_idx = get_column_index(&headers, "mutual_information").unwrap();
+    let n_pairs_idx = get_column_index(&headers, "n_pairs").unwrap();
+
+    let mut found_pair = false;
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field1 = get_field_value(&record, field1_idx).unwrap();
+        let field2 = get_field_value(&record, field2_idx).unwrap();
+
+        if (field1 == "category" && field2 == "status")
+            || (field1 == "status" && field2 == "category")
+        {
+            found_pair = true;
+
+            // Verify n_pairs (8 rows)
+            let n_pairs_val = get_field_value(&record, n_pairs_idx).unwrap();
+            let n_pairs: u64 = n_pairs_val.parse().unwrap();
+            assert_eq!(n_pairs, 8, "n_pairs should be 8");
+
+            // Verify mutual information exists (required for NMI)
+            let mi_val = get_field_value(&record, mi_idx);
+            assert!(
+                mi_val.is_some() && !mi_val.as_ref().unwrap().is_empty(),
+                "Mutual information should be computed for NMI"
+            );
+
+            // Verify normalized mutual information exists and is valid
+            let nmi_val = get_field_value(&record, nmi_idx);
+            assert!(
+                nmi_val.is_some() && !nmi_val.as_ref().unwrap().is_empty(),
+                "Normalized mutual information should be computed"
+            );
+
+            if let Some(val_str) = nmi_val {
+                if !val_str.is_empty() {
+                    let nmi: f64 = val_str.parse().unwrap();
+                    // NMI should be between 0 and 1 (normalized)
+                    assert!(
+                        nmi >= 0.0 && nmi <= 1.0,
+                        "Normalized mutual information should be in [0, 1], got: {}",
+                        nmi
+                    );
+                    assert!(
+                        nmi.is_finite(),
+                        "Normalized mutual information should be finite, got: {}",
+                        nmi
+                    );
+                    assert!(
+                        !nmi.is_nan(),
+                        "Normalized mutual information should not be NaN"
+                    );
+
+                    // Verify NMI is non-negative
+                    //(should always be true given the range check above)
+                    assert!(
+                        nmi >= 0.0,
+                        "Normalized mutual information should be non-negative, got: {}",
+                        nmi
+                    );
+                }
+            }
+
+            break;
+        }
+    }
+
+    assert!(found_pair, "Should find category-status field pair");
+}
+
+#[test]
 fn moarstats_bivariate_multiple_fields() {
     let wrk = Workdir::new("moarstats_bivariate_multiple");
 

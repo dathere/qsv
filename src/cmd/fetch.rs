@@ -636,7 +636,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .gzip(true)
         .deflate(true)
         .zstd(true)
-        .tls_backend_rustls()
+        .use_rustls_tls()
         .http2_adaptive_window(true)
         .connection_verbose(log_enabled!(Debug) || log_enabled!(Trace))
         .timeout(client_timeout)

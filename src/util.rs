@@ -382,7 +382,7 @@ pub fn create_reqwest_async_client(
         .gzip(true)
         .deflate(true)
         .zstd(true)
-        .tls_backend_rustls()
+        .use_rustls_tls()
         .http2_adaptive_window(true)
         .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
         .retry(retries);
@@ -429,7 +429,7 @@ pub fn create_reqwest_blocking_client(
         .gzip(true)
         .deflate(true)
         .zstd(true)
-        .tls_backend_rustls()
+        .use_rustls_tls()
         .http2_adaptive_window(true)
         .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
         .timeout(if timeout_secs == 0 {

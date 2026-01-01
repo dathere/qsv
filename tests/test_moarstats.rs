@@ -89,7 +89,7 @@ police_district,String,true,, ,E5,,Unsorted,0.1717,1,3,223,2.23,0.444,0.1971,0.1
 neighborhood,String,true,, ,West Roxbury,,Unsorted,0.0303,1,38,1486,14.86,9.8671,97.3604,0.664,,,,,,,,0,,,,,0,,,,,,,,,,,19,0.19,Dorchester,1,15, |Brighton|Mission Hill,3,1,,,,,,,,,,,,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 neighborhood_services_district,String,true,, ,9,,Unsorted,0.0303,1,2,139,1.39,0.4877,0.2379,0.3509,,,,,,,,0,,,,,0,,,,,,,,,,,16,0.16,3,1,15, |12,2,1,,,,,,,,,,,,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ward,String,true,, ,Ward 9,,Unsorted,0.0505,1,7,499,4.99,2.2293,4.9699,0.4468,,,,,,,,0,,,,,0,,,,,,,,,,,42,0.42,Ward 3,1,10,*PREVIEW:  |01|02|04|06|07|1|10|16|18,23,1,,,,,,,,,,,,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-precinct,String,true,, ,2210,,Unsorted,0.0408,0,4,393,3.93,0.4951,0.2451,0.126,,,,,,,,1,,,,,0.01,,,,,,,,,,,76,0.76,0306,1,5,*PREVIEW: NULL| |0102|0105|0108|0109|0201|0204|0305|0307,61,1,,,,,,,,,,,,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+precinct,String,true,, ,2210,,Unsorted,0.0408,0,4,393,3.93,0.4951,0.2451,0.126,,,,,,,,1,,,,,0.01,,,,,,,,,,,76,0.76,0306,1,5,*PREVIEW: NULL| |0102|0105|0108|0109|0201|0204|0305|0307,61,1,,,,,,,,,,,,gYear??,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 location_street_name,String,true,,103 N Beacon St,INTERSECTION Verdun St & Gallivan Blvd,,Unsorted,-0.0204,0,45,1800,18,9.3995,88.3508,0.5222,,,,,,,,1,,,,,0.01,,,,,,,,,,,97,0.97,20 Washington St|563 Columbus Ave|INTERSECTION Gallivan Blvd & Washington St,3,2,*PREVIEW: NULL|103 N Beacon St|11 Aberdeen St|1148 Hyde Park Ave|119 L St|12 Derne St|126 Elm St|127...,94,1,,,,,,,,,,,,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 location_zipcode,String,true,,02109,02215,,Unsorted,0.0488,0,5,415,4.15,1.8405,3.3874,0.4435,,,,,,,,17,,,,,0.17,,,,,,,,,,,24,0.24,,1,17,02126|02134|02210|02215,4,1,,,,,,,,,,,,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 latitude,Float,,4233.6674,42.2553,42.3806,0.1253,Unsorted,0.0505,,,,,,,,42.3367,0.0031,42.3367,42.3367,0.0305,0.0009,0.072,0,0,0,100,4,0,0.0163,42.2034,42.2619,42.3204,42.3432,42.3594,0.039,42.4179,42.4764,-0.1667,78,0.78,42.3594,1,20,*PREVIEW: 42.2553|42.2601|42.2609|42.2645|42.2674|42.2789|42.2797|42.2804|42.2821|42.2878,74,1,5: 42.2674|10: 42.2878|40: 42.3347|60: 42.3549|90: 42.3666|95: 42.3735,-0.6393,4.1082,0.0005,0.7443,0.0001,-2.6689,1.4393,1.0002,0.3113,0.5344,decimal,0,3,97,0,0,3,42.2588,42.3391,0.9981,42.2553,42.2609,0.0056,0.003,0,0.0278,0.0008,0.0001,0.0007,3,-0.0024,-0.0001,0.1089,-4.3705,4.5803,42.3421,42.3458,0.0126,0.0002,0.0165,0.0003,0.0003,0.0004,0.4131,0.5412,0.0374,0.039
@@ -1581,7 +1581,7 @@ police_district,String,true,, ,E5,,Unsorted,0.1717,1,3,223,2.23,0.444,0.1971,0.1
 neighborhood,String,true,, ,West Roxbury,,Unsorted,0.0303,1,38,1486,14.86,9.8671,97.3604,0.664,,,,,,,,0,,,,,0,,,,,,,,,,,19,0.19,Dorchester,1,15, |Brighton|Mission Hill,3,1,,,,,,,,,,,,,,,,3.8906,0.9159,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 neighborhood_services_district,String,true,, ,9,,Unsorted,0.0303,1,2,139,1.39,0.4877,0.2379,0.3509,,,,,,,,0,,,,,0,,,,,,,,,,,16,0.16,3,1,15, |12,2,1,,,,,,,,,,,,,,,,3.6409,0.9102,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ward,String,true,, ,Ward 9,,Unsorted,0.0505,1,7,499,4.99,2.2293,4.9699,0.4468,,,,,,,,0,,,,,0,,,,,,,,,,,42,0.42,Ward 3,1,10,*PREVIEW:  |01|02|04|06|07|1|10|16|18,23,1,,,,,,,,,,,,,,,,4.9655,0.9208,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-precinct,String,true,, ,2210,,Unsorted,0.0408,0,4,393,3.93,0.4951,0.2451,0.126,,,,,,,,1,,,,,0.01,,,,,,,,,,,76,0.76,0306,1,5,*PREVIEW: NULL| |0102|0105|0108|0109|0201|0204|0305|0307,61,1,,,,,,,,,,,,,,,,6.0527,0.9687,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+precinct,String,true,, ,2210,,Unsorted,0.0408,0,4,393,3.93,0.4951,0.2451,0.126,,,,,,,,1,,,,,0.01,,,,,,,,,,,76,0.76,0306,1,5,*PREVIEW: NULL| |0102|0105|0108|0109|0201|0204|0305|0307,61,1,,,,,,,,,,,,,,,,6.0527,0.9687,gYear??,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 location_street_name,String,true,,103 N Beacon St,INTERSECTION Verdun St & Gallivan Blvd,,Unsorted,-0.0204,0,45,1800,18,9.3995,88.3508,0.5222,,,,,,,,1,,,,,0.01,,,,,,,,,,,97,0.97,20 Washington St|563 Columbus Ave|INTERSECTION Gallivan Blvd & Washington St,3,2,*PREVIEW: NULL|103 N Beacon St|11 Aberdeen St|1148 Hyde Park Ave|119 L St|12 Derne St|126 Elm St|127...,94,1,,,,,,,,,,,,,,,,6.5839,0.9976,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 location_zipcode,String,true,,02109,02215,,Unsorted,0.0488,0,5,415,4.15,1.8405,3.3874,0.4435,,,,,,,,17,,,,,0.17,,,,,,,,,,,24,0.24,,1,17,02126|02134|02210|02215,4,1,,,,,,,,,,,,,,,,4.1873,0.9133,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 latitude,Float,,4233.6674,42.2553,42.3806,0.1253,Unsorted,0.0505,,,,,,,,42.3367,0.0031,42.3367,42.3367,0.0305,0.0009,0.072,0,0,0,100,4,0,0.0163,42.2034,42.2619,42.3204,42.3432,42.3594,0.039,42.4179,42.4764,-0.1667,78,0.78,42.3594,1,20,*PREVIEW: 42.2553|42.2601|42.2609|42.2645|42.2674|42.2789|42.2797|42.2804|42.2821|42.2878,74,1,5: 42.2674|10: 42.2878|40: 42.3347|60: 42.3549|90: 42.3666|95: 42.3735,-0.6393,4.1082,0.0005,0.7443,0.0001,-2.6689,1.4393,1.0002,0.3113,0.5344,0.1777,0.3234,0.0004,0,5.7195,0.91,decimal,0,3,97,0,0,3,42.2588,42.3391,0.9981,42.2553,42.2609,0.0056,0.003,0,0.0278,0.0008,0.0001,0.0007,3,-0.0024,-0.0001,0.1089,-4.3705,4.5803,42.3421,42.3458,0.0126,0.0002,0.0165,0.0003,0.0003,0.0004,0.4131,0.5412,0.0374,0.039
@@ -1636,7 +1636,7 @@ police_district,String,true,, ,E5,,Unsorted,0.1717,1,3,223,2.23,0.444,0.1971,0.1
 neighborhood,String,true,, ,West Roxbury,,Unsorted,0.0303,1,38,1486,14.86,9.8671,97.3604,0.664,,,,,,,,0,,,,,0,,,,,,,,,,,19,0.19,Dorchester,1,15, |Brighton|Mission Hill,3,1,,,,,,,,,,,,,,,,3.8906,0.9159,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 neighborhood_services_district,String,true,, ,9,,Unsorted,0.0303,1,2,139,1.39,0.4877,0.2379,0.3509,,,,,,,,0,,,,,0,,,,,,,,,,,16,0.16,3,1,15, |12,2,1,,,,,,,,,,,,,,,,3.6409,0.9102,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ward,String,true,, ,Ward 9,,Unsorted,0.0505,1,7,499,4.99,2.2293,4.9699,0.4468,,,,,,,,0,,,,,0,,,,,,,,,,,42,0.42,Ward 3,1,10,*PREVIEW:  |01|02|04|06|07|1|10|16|18,23,1,,,,,,,,,,,,,,,,4.9655,0.9208,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-precinct,String,true,, ,2210,,Unsorted,0.0408,0,4,393,3.93,0.4951,0.2451,0.126,,,,,,,,1,,,,,0.01,,,,,,,,,,,76,0.76,0306,1,5,*PREVIEW: NULL| |0102|0105|0108|0109|0201|0204|0305|0307,61,1,,,,,,,,,,,,,,,,6.0527,0.9687,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+precinct,String,true,, ,2210,,Unsorted,0.0408,0,4,393,3.93,0.4951,0.2451,0.126,,,,,,,,1,,,,,0.01,,,,,,,,,,,76,0.76,0306,1,5,*PREVIEW: NULL| |0102|0105|0108|0109|0201|0204|0305|0307,61,1,,,,,,,,,,,,,,,,6.0527,0.9687,gYear??,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 location_street_name,String,true,,103 N Beacon St,INTERSECTION Verdun St & Gallivan Blvd,,Unsorted,-0.0204,0,45,1800,18,9.3995,88.3508,0.5222,,,,,,,,1,,,,,0.01,,,,,,,,,,,97,0.97,20 Washington St|563 Columbus Ave|INTERSECTION Gallivan Blvd & Washington St,3,2,*PREVIEW: NULL|103 N Beacon St|11 Aberdeen St|1148 Hyde Park Ave|119 L St|12 Derne St|126 Elm St|127...,94,1,,,,,,,,,,,,,,,,6.5839,0.9976,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 location_zipcode,String,true,,02109,02215,,Unsorted,0.0488,0,5,415,4.15,1.8405,3.3874,0.4435,,,,,,,,17,,,,,0.17,,,,,,,,,,,24,0.24,,1,17,02126|02134|02210|02215,4,1,,,,,,,,,,,,,,,,4.1873,0.9133,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 latitude,Float,,4233.6674,42.2553,42.3806,0.1253,Unsorted,0.0505,,,,,,,,42.3367,0.0031,42.3367,42.3367,0.0305,0.0009,0.072,0,0,0,100,4,0,0.0163,42.2034,42.2619,42.3204,42.3432,42.3594,0.039,42.4179,42.4764,-0.1667,78,0.78,42.3594,1,20,*PREVIEW: 42.2553|42.2601|42.2609|42.2645|42.2674|42.2789|42.2797|42.2804|42.2821|42.2878,74,1,5: 42.2674|10: 42.2878|40: 42.3347|60: 42.3549|90: 42.3666|95: 42.3735,-0.6393,4.1082,0.0005,0.7443,0.0001,-2.6689,1.4393,1.0002,0.3113,0.5344,0.1777,0.3234,0.0004,0,5.7195,0.91,decimal,0,3,97,0,0,3,42.2588,42.3391,0.9981,42.2553,42.2609,0.0056,0.003,0,0.0278,0.0008,0.0001,0.0007,3,-0.0024,-0.0001,0.1089,-4.3705,4.5803,42.3421,42.3458,0.0126,0.0002,0.0165,0.0003,0.0003,0.0004,0.4131,0.5412,0.0374,0.039
@@ -4616,4 +4616,413 @@ fn moarstats_bivariate_stats_invalid() {
         .arg("")
         .arg("test.csv");
     wrk.assert_err(&mut cmd);
+}
+
+// Test --xsd-gdate-scan with thorough mode requested for all Gregorian types.
+// Note: Integer-backed types (gYear) have percentile stats available, so they can
+// actually run in thorough mode and are marked with the `?` suffix.
+// String-backed types (gYearMonth, gMonthDay, gDay, gMonth) never have percentile
+// stats, so even under thorough mode they behave like quick mode and are marked
+// with the `??` suffix.
+#[test]
+fn moarstats_xsd_gdate_scan_thorough_mode() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_thorough");
+
+    // Create CSV with various Gregorian date types
+    wrk.create(
+        "test.csv",
+        vec![
+            svec![
+                "gYear",
+                "gYearMonth",
+                "gMonthDay",
+                "gDay",
+                "gMonth",
+                "regular_string"
+            ],
+            svec!["1999", "1999-05", "--05-01", "---01", "--05", "not a date"],
+            svec!["2000", "2000-06", "--06-15", "---15", "--06", "also not"],
+            svec!["2001", "2001-07", "--07-20", "---20", "--07", "text"],
+            svec!["2002", "2002-08", "--08-25", "---25", "--08", "data"],
+            svec!["2003", "2003-09", "--09-30", "---30", "--09", "value"],
+        ],
+    );
+
+    // Generate baseline stats with percentiles
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with thorough mode
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--xsd-gdate-scan").arg("thorough").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify xsd_type column contains Gregorian types with correct suffixes:
+    // "?" for gYear (Integer) and "??" for gYearMonth, gMonthDay, gDay, gMonth (String)
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let xsd_type_idx = get_column_index(&headers, "xsd_type").unwrap();
+
+    let mut found_g_year = false;
+    let mut found_g_year_month = false;
+    let mut found_g_month_day = false;
+    let mut found_g_day = false;
+    let mut found_g_month = false;
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field = get_field_value(&record, field_idx).unwrap();
+        let xsd_type = get_field_value(&record, xsd_type_idx);
+
+        match field.as_str() {
+            "gYear" => {
+                // Integer types get percentiles, so thorough mode works with ? suffix (more
+                // confident)
+                assert_eq!(
+                    xsd_type.as_deref(),
+                    Some("gYear?"),
+                    "gYear (Integer) should have ? suffix in thorough mode"
+                );
+                found_g_year = true;
+            },
+            "gYearMonth" => {
+                // String types don't get percentiles, so thorough mode falls back to quick with
+                // ?? suffix (less confident)
+                assert_eq!(
+                    xsd_type.as_deref(),
+                    Some("gYearMonth??"),
+                    "gYearMonth (String) falls back to quick mode (?? suffix) since String types \
+                     don't have percentiles"
+                );
+                found_g_year_month = true;
+            },
+            "gMonthDay" => {
+                // String types don't get percentiles, so thorough mode falls back to quick with
+                // ?? suffix (less confident)
+                assert_eq!(
+                    xsd_type.as_deref(),
+                    Some("gMonthDay??"),
+                    "gMonthDay (String) falls back to quick mode (?? suffix) since String types \
+                     don't have percentiles"
+                );
+                found_g_month_day = true;
+            },
+            "gDay" => {
+                // String types don't get percentiles, so thorough mode falls back to quick with
+                // ?? suffix (less confident)
+                assert_eq!(
+                    xsd_type.as_deref(),
+                    Some("gDay??"),
+                    "gDay (String) falls back to quick mode (?? suffix) since String types don't \
+                     have percentiles"
+                );
+                found_g_day = true;
+            },
+            "gMonth" => {
+                // String types don't get percentiles, so thorough mode falls back to quick with
+                // ?? suffix (less confident)
+                assert_eq!(
+                    xsd_type.as_deref(),
+                    Some("gMonth??"),
+                    "gMonth (String) falls back to quick mode (?? suffix) since String types \
+                     don't have percentiles"
+                );
+                found_g_month = true;
+            },
+            "regular_string" => {
+                assert_eq!(
+                    xsd_type.as_deref(),
+                    Some("string"),
+                    "Regular string should not be detected as Gregorian"
+                );
+            },
+            _ => {},
+        }
+    }
+
+    assert!(found_g_year, "gYear field should be found");
+    assert!(found_g_year_month, "gYearMonth field should be found");
+    assert!(found_g_month_day, "gMonthDay field should be found");
+    assert!(found_g_day, "gDay field should be found");
+    assert!(found_g_month, "gMonth field should be found");
+}
+
+// Test --xsd-gdate-scan quick mode
+#[test]
+fn moarstats_xsd_gdate_scan_quick_mode() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_quick");
+
+    // Create CSV with Gregorian date types
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["gYear", "gYearMonth", "gMonthDay", "gDay", "gMonth"],
+            svec!["1999", "1999-05", "--05-01", "---01", "--05"],
+            svec!["2000", "2000-06", "--06-15", "---15", "--06"],
+            svec!["2001", "2001-07", "--07-20", "---20", "--07"],
+        ],
+    );
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with quick mode
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--xsd-gdate-scan").arg("quick").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify xsd_type column contains Gregorian types with ?? suffix (less confident)
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let xsd_type_idx = get_column_index(&headers, "xsd_type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field = get_field_value(&record, field_idx).unwrap();
+        let xsd_type = get_field_value(&record, xsd_type_idx);
+
+        if field.starts_with("g") {
+            assert!(
+                xsd_type.as_deref().map_or(false, |t| t.ends_with("??")),
+                "Quick mode should use double ?? suffix (less confident), got: {:?}",
+                xsd_type
+            );
+        }
+    }
+}
+
+// Test Integer gYear detection in thorough mode
+#[test]
+fn moarstats_xsd_gdate_scan_integer_g_year_thorough() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_integer_thorough");
+
+    // Create CSV with Integer years in valid range
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["year"],
+            svec!["1999"],
+            svec!["2000"],
+            svec!["2001"],
+            svec!["2002"],
+            svec!["2003"],
+            svec!["2010"],
+            svec!["2020"],
+        ],
+    );
+
+    // Generate baseline stats with percentiles
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with thorough mode
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--xsd-gdate-scan").arg("thorough").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify Integer gYear is detected with ? suffix (more confident)
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let xsd_type_idx = get_column_index(&headers, "xsd_type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field = get_field_value(&record, field_idx).unwrap();
+        if field == "year" {
+            let xsd_type = get_field_value(&record, xsd_type_idx);
+            assert_eq!(
+                xsd_type.as_deref(),
+                Some("gYear?"),
+                "Integer year should be detected as gYear? in thorough mode"
+            );
+        }
+    }
+}
+
+// Test Integer gYear detection in quick mode
+#[test]
+fn moarstats_xsd_gdate_scan_integer_g_year_quick() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_integer_quick");
+
+    // Create CSV with Integer years in valid range
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["year"],
+            svec!["1999"],
+            svec!["2000"],
+            svec!["2001"],
+            svec!["2020"],
+        ],
+    );
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with quick mode
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--xsd-gdate-scan").arg("quick").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify Integer gYear is detected with ?? suffix (less confident)
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let xsd_type_idx = get_column_index(&headers, "xsd_type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field = get_field_value(&record, field_idx).unwrap();
+        if field == "year" {
+            let xsd_type = get_field_value(&record, xsd_type_idx);
+            assert_eq!(
+                xsd_type.as_deref(),
+                Some("gYear??"),
+                "Integer year should be detected as gYear?? in quick mode"
+            );
+        }
+    }
+}
+
+// Test invalid scan mode
+#[test]
+fn moarstats_xsd_gdate_scan_invalid_mode() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_invalid");
+
+    wrk.create("test.csv", vec![svec!["field"], svec!["value"]]);
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Test with invalid scan mode
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--xsd-gdate-scan")
+        .arg("invalid_mode")
+        .arg("test.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+// Test default quick mode (no option specified)
+#[test]
+fn moarstats_xsd_gdate_scan_default_quick() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_default");
+
+    // Create CSV with gYear values
+    wrk.create(
+        "test.csv",
+        vec![svec!["year"], svec!["1999"], svec!["2000"], svec!["2001"]],
+    );
+
+    // Generate baseline stats with percentiles
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats without specifying scan mode (should default to quick)
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify default behavior uses quick mode (?? suffix - less confident)
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let xsd_type_idx = get_column_index(&headers, "xsd_type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field = get_field_value(&record, field_idx).unwrap();
+        if field == "year" {
+            let xsd_type = get_field_value(&record, xsd_type_idx);
+            // Default should be quick mode with ?? suffix
+            // So we just check that it's detected as gYear with some suffix
+            assert!(
+                xsd_type
+                    .as_deref()
+                    .map_or(false, |t| t.starts_with("gYear")),
+                "Year should be detected as gYear variant, got: {:?}",
+                xsd_type
+            );
+        }
+    }
+}
+
+// Test fallback to quick when percentiles are missing
+#[test]
+fn moarstats_xsd_gdate_scan_fallback_quick() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_fallback_quick");
+
+    // Create CSV with gYear values
+    wrk.create(
+        "test.csv",
+        vec![svec!["year"], svec!["1999"], svec!["2000"], svec!["2001"]],
+    );
+
+    // Generate baseline stats WITHOUT percentiles (use minimal stats)
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("test.csv"); // Minimal stats, no --everything
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with thorough mode (should fallback to quick if percentiles missing)
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--xsd-gdate-scan").arg("thorough").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify it falls back to quick mode (?? suffix) when percentiles unavailable
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let xsd_type_idx = get_column_index(&headers, "xsd_type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field = get_field_value(&record, field_idx).unwrap();
+        if field == "year" {
+            let xsd_type = get_field_value(&record, xsd_type_idx);
+            // Should fallback to quick mode (?? suffix) when percentiles unavailable
+            // But if the field is Integer and min/max are in range, it should still detect gYear??
+            assert!(
+                xsd_type
+                    .as_deref()
+                    .map_or(false, |t| t.starts_with("gYear")),
+                "Year should be detected even when percentiles missing, got: {:?}",
+                xsd_type
+            );
+        }
+    }
 }

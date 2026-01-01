@@ -242,6 +242,13 @@ moarstats options:
                            for winsorization/trimming when --use-percentiles is set.
                            Both values must be between 0 and 100, and lower < upper.
                            [default: 5,95]
+ --xsd-gdate-scan <mode>   Gregorian XSD date type detection mode.
+                           "quick": Fast detection using min/max values.
+                                    Produces types with ?? suffix (less confident).
+                           "thorough": Comprehensive detection checking all percentile values.
+                                     Slower but ensures all values match the pattern.
+                                     Produces types with ? suffix (more confident).
+                           [default: quick]
 
                            BIVARIATE STATISTICS OPTIONS:
     -B, --bivariate        Enable bivariate statistics computation.
@@ -307,7 +314,7 @@ use simdutf8::basic::from_utf8;
 use stats::{atkinson, gini, kurtosis};
 use threadpool::ThreadPool;
 
-use crate::{CliError, CliResult, config::Config, util};
+use crate::{CliError, CliResult, config::Config, regex_oncelock, util};
 #[derive(Debug, Deserialize)]
 struct Args {
     arg_input:                  Option<String>,
@@ -316,6 +323,7 @@ struct Args {
     flag_output:                Option<String>,
     flag_use_percentiles:       bool,
     flag_pct_thresholds:        Option<String>,
+    flag_xsd_gdate_scan:        Option<String>,
     flag_advanced:              bool,
     flag_epsilon:               f64,
     flag_bivariate:             bool,
@@ -813,6 +821,34 @@ fn parse_percentile_value(
     None
 }
 
+/// Parse all percentile string values from the percentiles column string
+/// Format: "5: value1|10: value2|25: value3|..." (separator from QSV_STATS_SEPARATOR env var,
+/// default "|") Returns a vector of all percentile value strings (the values after colons)
+/// Used for pattern matching all percentile values in fast mode
+fn parse_all_percentile_string_values(percentile_str: &str) -> Vec<&str> {
+    if percentile_str.is_empty() {
+        return Vec::new();
+    }
+
+    // Get the separator (default "|")
+    let separator = std::env::var("QSV_STATS_SEPARATOR").unwrap_or_else(|_| "|".to_string());
+
+    // Split by separator and extract all values after colons
+    percentile_str
+        .split(&separator)
+        .filter_map(|entry| {
+            let entry = entry.trim();
+            if let Some(colon_pos) = entry.find(':') {
+                let value_str = entry[colon_pos + 1..].trim();
+                if !value_str.is_empty() {
+                    return Some(value_str);
+                }
+            }
+            None
+        })
+        .collect()
+}
+
 /// Field type enum for efficient comparisons
 /// Matches the FieldType enum from stats.rs but kept local for performance
 #[allow(clippy::enum_variant_names)]
@@ -876,6 +912,207 @@ fn parse_date_to_days(s: &str, prefer_dmy: bool) -> Option<f64> {
         .map(|dt| dt.timestamp_millis() as f64 / 86_400_000.0)
 }
 
+/// Detect Gregorian date types (gYearMonth, gYear, gMonthDay, gDay, gMonth) using
+/// optimized pattern matching with cheap checks first, regex only when necessary.
+/// Returns Some("typeName?") or Some("typeName??") if detected, None otherwise.
+/// Performance optimized: uses numeric comparisons for Integer gYear, cheap string
+/// checks (length/prefix) before regex for String types.
+/// Quick mode checks min/max values only (fast), thorough mode checks all percentile values (slower
+/// but more confident).
+fn detect_gregorian_date_type(
+    min_str: Option<&str>,
+    max_str: Option<&str>,
+    field_type_str: &str,
+    min_val: Option<f64>,
+    max_val: Option<f64>,
+    scan_mode: &str,
+    percentile_values: Option<&[&str]>,
+) -> Option<String> {
+    // Determine suffix based on scan mode
+    // More question marks = less confidence
+    let suffix = if scan_mode == "quick" { "??" } else { "?" };
+
+    // Shared closure used for both quick and thorough modes
+    // to check if a string matches a Gregorian date pattern
+    let check_value = |s: &str| -> Option<&str> {
+        // gYearMonth: "1999-05" (length 7, dash at position 4)
+        if s.len() == 7
+            && s.as_bytes().get(4) == Some(&b'-')
+            && regex_oncelock!(r"^\d{4}-(0[1-9]|1[0-2])$").is_match(s)
+        {
+            // Validate that the month portion is within 01-12
+            let month_str = &s[5..7];
+            if let Ok(month) = month_str.parse::<u8>()
+                && (1..=12).contains(&month)
+            {
+                return Some("gYearMonth");
+            }
+        }
+
+        // gYear: "1999" (length 4)
+        if s.len() == 4
+            && regex_oncelock!(r"^\d{4}$").is_match(s)
+            && let Ok(year) = s.parse::<i32>()
+            && (1000..=3000).contains(&year)
+        {
+            return Some("gYear");
+        }
+
+        // gMonthDay: "--05-01" (length 7)
+        if s.len() == 7 && regex_oncelock!(r"^--\d{2}-\d{2}$").is_match(s) {
+            // validate numeric ranges: month 1-12, with month-specific day limits
+            if let (Ok(month), Ok(day)) = (s[2..4].parse::<u32>(), s[5..7].parse::<u32>())
+                && (1..=12).contains(&month)
+                && match month {
+                    // Months with 31 days
+                    1 | 3 | 5 | 7 | 8 | 10 | 12 => (1..=31).contains(&day),
+                    // Months with 30 days
+                    4 | 6 | 9 | 11 => (1..=30).contains(&day),
+                    // February: allow up to 29 to accommodate leap years (year is unknown)
+                    2 => (1..=29).contains(&day),
+                    _ => false,
+                }
+            {
+                return Some("gMonthDay");
+            }
+        }
+
+        // gDay: "---01" (length 5)
+        if s.len() == 5 && regex_oncelock!(r"^---\d{2}$").is_match(s) &&
+            // validate numeric range: day 1-31
+            let Ok(day) = s[3..5].parse::<u32>()
+            && (1..=31).contains(&day)
+        {
+            return Some("gDay");
+        }
+
+        // gMonth: "--05" (length 4)
+        if s.len() == 4 && regex_oncelock!(r"^--\d{2}$").is_match(s) {
+            // validate numeric range: month 1-12
+            if let Ok(month) = s[2..4].parse::<u32>()
+                && (1..=12).contains(&month)
+            {
+                return Some("gMonth");
+            }
+        }
+
+        None
+    };
+
+    // Thorough mode: check all percentile values
+    if scan_mode == "thorough" {
+        if let Some(pct_values) = percentile_values {
+            if pct_values.is_empty() {
+                return None;
+            }
+
+            // Fast path for Integer gYear (no regex needed)
+            if field_type_str == "Integer" {
+                // Parse all percentile values as numbers and check if all are in year range
+                // Skip empty strings but require all non-empty values to be in range
+                let non_empty_values: Vec<&str> = pct_values
+                    .iter()
+                    .copied()
+                    .filter(|&s| !s.is_empty())
+                    .collect();
+                if !non_empty_values.is_empty() {
+                    let all_in_range = non_empty_values.iter().all(|&val_str| {
+                        if let Some(val) = parse_float_opt(val_str) {
+                            (1000.0..=3000.0).contains(&val)
+                        } else {
+                            false
+                        }
+                    });
+                    if all_in_range {
+                        return Some(format!("gYear{suffix}"));
+                    }
+                }
+                return None;
+            }
+
+            // For String types, check all percentile values against patterns
+            // Check all percentile values - only return type if ALL match the same pattern
+            let mut matched_type: Option<&str> = None;
+            for &val_str in pct_values {
+                if val_str.is_empty() {
+                    continue; // Skip empty values
+                }
+                if let Some(pattern_type) = check_value(val_str) {
+                    match matched_type {
+                        None => matched_type = Some(pattern_type),
+                        Some(existing_type) if existing_type == pattern_type => {
+                            // Same pattern, continue
+                        },
+                        _ => {
+                            // Different pattern or no match, not consistent
+                            return None;
+                        },
+                    }
+                } else {
+                    // Value doesn't match any pattern
+                    return None;
+                }
+            }
+
+            // All values matched the same pattern
+            if let Some(base_type) = matched_type {
+                return Some(format!("{base_type}{suffix}"));
+            }
+        }
+        return None;
+    }
+
+    // Quick mode: check min/max values
+    // Fast path for Integer gYear (no regex needed)
+    if field_type_str == "Integer" {
+        if let (Some(min), Some(max)) = (min_val, max_val) {
+            // Check if values are in reasonable year range (1000-3000)
+            if min >= 1000.0 && max <= 3000.0 {
+                return Some(format!("gYear{suffix}"));
+            }
+        }
+        // Not a year range, return None to continue with normal Integer inference
+        return None;
+    }
+
+    // For String types, check both min and max to increase confidence
+    // Check min_str first
+    if let Some(min_s) = min_str
+        && !min_s.is_empty()
+        && let Some(greg_type) = check_value(min_s)
+    {
+        // If max_str is available, verify it matches the same pattern for confidence
+        if let Some(max_s) = max_str {
+            if !max_s.is_empty() {
+                if let Some(max_type) = check_value(max_s) {
+                    // Both match the same type, return it
+                    if greg_type == max_type {
+                        return Some(format!("{greg_type}{suffix}"));
+                    }
+                    // Different patterns, not confident - return None
+                    return None;
+                }
+                // max_str does not match pattern, don't return based only on min_str
+                return None;
+            }
+            // max_str is empty; treat as missing, don't return based only on min_str
+            return None;
+        }
+        // max_str not present at all, rely on min_str alone (conservative)
+        return Some(format!("{greg_type}{suffix}"));
+    }
+
+    // Check max_str if min_str didn't match
+    if let Some(max_s) = max_str
+        && !max_s.is_empty()
+        && let Some(greg_type) = check_value(max_s)
+    {
+        return Some(format!("{greg_type}{suffix}"));
+    }
+
+    None
+}
+
 /// Infer the most specific W3C XML Schema datatype based on field type and min/max values
 /// Returns the XSD type string (e.g., "byte", "int", "decimal", "string", "date", etc.)
 /// Based on the analysis at https://github.com/user-attachments/files/23841656/xsd_analysis.md
@@ -884,6 +1121,10 @@ fn infer_xsd_type(
     min_val: Option<f64>,
     max_val: Option<f64>,
     field_type_enum: Option<FieldType>,
+    scan_mode: &str,
+    min_str: Option<&str>,
+    max_str: Option<&str>,
+    percentile_values: Option<&[&str]>,
 ) -> String {
     // Handle NULL type
     if field_type_str == "NULL" || field_type_str.is_empty() {
@@ -893,6 +1134,20 @@ fn infer_xsd_type(
     // Handle Boolean type
     if field_type_str == "Boolean" {
         return "boolean".to_string();
+    }
+
+    // Check for Gregorian date types early (after NULL/Boolean, before other type checks)
+    // This allows detection for both Integer and String fields
+    if let Some(greg_type) = detect_gregorian_date_type(
+        min_str,
+        max_str,
+        field_type_str,
+        min_val,
+        max_val,
+        scan_mode,
+        percentile_values,
+    ) {
+        return greg_type;
     }
 
     // Handle Date and DateTime types
@@ -3302,6 +3557,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let upper_outer_fence_idx = headers.iter().position(|h| h == "upper_outer_fence");
     let percentiles_idx = headers.iter().position(|h| h == "percentiles");
 
+    // Parse and validate scan mode for Gregorian XSD date type detection
+    let scan_mode = args.flag_xsd_gdate_scan.as_deref().unwrap_or("quick");
+    if scan_mode != "quick" && scan_mode != "thorough" {
+        return fail_clierror!(
+            "Invalid scan mode: {}. Must be either 'quick' or 'thorough'",
+            scan_mode
+        );
+    }
+
     // Parse and validate percentile thresholds if --use-percentiles is set
     let (lower_percentile, upper_percentile) = if args.flag_use_percentiles {
         let thresholds_str = args
@@ -4297,6 +4561,44 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // Compute XSD type for all field types (needs type, min, max)
         if new_column_indices.contains_key("xsd_type") {
+            // Extract min and max string values (needed for comprehensive mode and as fallback)
+            let min_str = min_idx.and_then(|idx| {
+                let s = record.get(idx)?;
+                if s.is_empty() { None } else { Some(s) }
+            });
+            let max_str = max_idx.and_then(|idx| {
+                let s = record.get(idx)?;
+                if s.is_empty() { None } else { Some(s) }
+            });
+
+            // Extract percentile values for thorough mode
+            let (percentile_values, actual_scan_mode) = if scan_mode == "thorough" {
+                if let Some(idx) = percentiles_idx {
+                    if let Some(percentiles_str) = record.get(idx) {
+                        if percentiles_str.is_empty() {
+                            // Empty percentile string, fall back to quick
+                            (None, "quick")
+                        } else {
+                            let values = parse_all_percentile_string_values(percentiles_str);
+                            if values.is_empty() {
+                                // Empty percentile values, fall back to quick
+                                (None, "quick")
+                            } else {
+                                (Some(values), "thorough")
+                            }
+                        }
+                    } else {
+                        // No percentile string, fall back to quick
+                        (None, "quick")
+                    }
+                } else {
+                    // No percentiles column, fall back to quick
+                    (None, "quick")
+                }
+            } else {
+                (None, scan_mode)
+            };
+
             // Parse min and max values - they may be strings (for dates) or numbers (for
             // integers/floats)
             let min_val = if let Some(min_idx_val) = min_idx {
@@ -4333,8 +4635,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 None
             };
 
-            // Infer XSD type
-            let xsd_type = infer_xsd_type(field_type_str, min_val, max_val, field_type_opt);
+            // Infer XSD type (pass all parameters including scan_mode and percentile_values)
+            // Use actual_scan_mode which may have fallen back to quick if percentiles unavailable
+            let xsd_type = infer_xsd_type(
+                field_type_str,
+                min_val,
+                max_val,
+                field_type_opt,
+                actual_scan_mode,
+                min_str,
+                max_str,
+                percentile_values.as_deref(),
+            );
             if let Some(idx) = new_column_indices.get("xsd_type") {
                 new_values[*idx] = xsd_type;
             }

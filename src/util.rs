@@ -516,7 +516,8 @@ pub fn version() -> String {
     let max_file_size = mem_file_check(Path::new(""), true, false).unwrap_or(0) as u64;
 
     // we also get System info to help with debugging and logging.
-    sys.refresh_cpu_all();
+    // we just need the CPU model name, so we ask for nothing
+    sys.refresh_cpu_list(sysinfo::CpuRefreshKind::nothing());
     let os_version = System::long_os_version().unwrap_or_else(|| "Unknown".to_string());
     let kernel_version = System::kernel_long_version();
     let cpu_brand = sys

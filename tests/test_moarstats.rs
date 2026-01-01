@@ -4930,7 +4930,7 @@ fn moarstats_xsd_gdate_scan_invalid_mode() {
 
 // Test default quick mode (no option specified)
 #[test]
-fn moarstats_xsd_gdate_scan_default_fast() {
+fn moarstats_xsd_gdate_scan_default_quick() {
     let wrk = Workdir::new("moarstats_xsd_gdate_default");
 
     // Create CSV with gYear values

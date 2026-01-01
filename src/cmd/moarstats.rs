@@ -244,7 +244,7 @@ moarstats options:
                            [default: 5,95]
  --xsd-gdate-scan <mode>   Scan mode for Gregorian XSD date type detection.
                            "fast" (default): Use all available percentile values for detection.
-                           "comprehensive": Scan min/max values from all records.
+                           "comprehensive": Use min/max values from stats for detection.
                            Fast mode checks all percentiles for pattern consistency.
                            Fast mode uses "??" suffix, comprehensive uses "?" suffix.
                            [default: fast]

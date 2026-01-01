@@ -4658,7 +4658,8 @@ fn moarstats_xsd_gdate_scan_thorough_mode() {
     cmd.arg("--xsd-gdate-scan").arg("thorough").arg("test.csv");
     wrk.assert_success(&mut cmd);
 
-    // Verify xsd_type column contains Gregorian types with ?? suffix
+    // Verify xsd_type column contains Gregorian types with correct suffixes:
+    // "?" for gYear (Integer) and "??" for gYearMonth, gMonthDay, gDay, gMonth (String)
     let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
     let mut rdr = ReaderBuilder::new()
         .has_headers(true)

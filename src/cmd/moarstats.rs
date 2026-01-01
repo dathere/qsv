@@ -967,7 +967,13 @@ fn detect_gregorian_date_type(
                     && s.as_bytes().get(4) == Some(&b'-')
                     && regex_oncelock!(r"^\d{4}-\d{2}$").is_match(s)
                 {
-                    return Some("gYearMonth");
+                    // Validate that the month portion is within 01-12
+                    let month_str = &s[5..7];
+                    if let Ok(month) = month_str.parse::<u8>() {
+                        if (1..=12).contains(&month) {
+                            return Some("gYearMonth");
+                        }
+                    }
                 }
 
                 // gYear: "1999" (length 4)

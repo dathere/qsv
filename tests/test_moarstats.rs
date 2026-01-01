@@ -4965,7 +4965,7 @@ fn moarstats_xsd_gdate_scan_default_quick() {
         let field = get_field_value(&record, field_idx).unwrap();
         if field == "year" {
             let xsd_type = get_field_value(&record, xsd_type_idx);
-            // Default should be quick mode with ? suffix
+            // Default should be quick mode with ?? suffix
             // So we just check that it's detected as gYear with some suffix
             assert!(
                 xsd_type

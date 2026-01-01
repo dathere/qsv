@@ -1060,7 +1060,7 @@ fn detect_gregorian_date_type(
         // gYearMonth: "1999-05" (length 7, dash at position 4)
         if s.len() == 7
             && s.as_bytes().get(4) == Some(&b'-')
-            && regex_oncelock!(r"^\d{4}-\d{2}$").is_match(s)
+            && regex_oncelock!(r"^\d{4}-(0[1-9]|1[0-2])$").is_match(s)
         {
             return Some("gYearMonth");
         }

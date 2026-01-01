@@ -972,7 +972,12 @@ fn detect_gregorian_date_type(
 
                 // gYear: "1999" (length 4)
                 if s.len() == 4 && regex_oncelock!(r"^\d{4}$").is_match(s) {
-                    return Some("gYear");
+                    // Also validate the numeric year is within a reasonable range
+                    if let Ok(year) = s.parse::<u32>() {
+                        if (1000..=3000).contains(&year) {
+                            return Some("gYear");
+                        }
+                    }
                 }
 
                 // gMonthDay: "--05-01" (length 7, starts with "--")

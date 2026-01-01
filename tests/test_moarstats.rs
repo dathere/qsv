@@ -4803,8 +4803,8 @@ fn moarstats_xsd_gdate_scan_quick_mode() {
 
 // Test Integer gYear detection in thorough mode
 #[test]
-fn moarstats_xsd_gdate_scan_integer_g_year_fast() {
-    let wrk = Workdir::new("moarstats_xsd_gdate_integer_fast");
+fn moarstats_xsd_gdate_scan_integer_g_year_thorough() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_integer_thorough");
 
     // Create CSV with Integer years in valid range
     wrk.create(

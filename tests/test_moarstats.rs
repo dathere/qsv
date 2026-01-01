@@ -4623,8 +4623,8 @@ fn moarstats_bivariate_stats_invalid() {
 // String types (gYearMonth, gMonthDay, gDay, gMonth) fall back to quick mode with ?? suffix
 // since String types don't have percentiles computed in stats.
 #[test]
-fn moarstats_xsd_gdate_scan_fast_mode() {
-    let wrk = Workdir::new("moarstats_xsd_gdate_fast");
+fn moarstats_xsd_gdate_scan_thorough_mode() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_thorough");
 
     // Create CSV with various Gregorian date types
     wrk.create(

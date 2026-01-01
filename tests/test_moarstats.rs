@@ -4618,10 +4618,12 @@ fn moarstats_bivariate_stats_invalid() {
     wrk.assert_err(&mut cmd);
 }
 
-// Test --xsd-gdate-scan thorough mode with all Gregorian types
-// Note: Integer types (gYear) can use thorough mode with ? suffix since they have percentiles.
-// String types (gYearMonth, gMonthDay, gDay, gMonth) fall back to quick mode with ?? suffix
-// since String types don't have percentiles computed in stats.
+// Test --xsd-gdate-scan with thorough mode requested for all Gregorian types.
+// Note: Integer-backed types (gYear) have percentile stats available, so they can
+// actually run in thorough mode and are marked with the `?` suffix.
+// String-backed types (gYearMonth, gMonthDay, gDay, gMonth) never have percentile
+// stats, so even under thorough mode they behave like quick mode and are marked
+// with the `??` suffix.
 #[test]
 fn moarstats_xsd_gdate_scan_thorough_mode() {
     let wrk = Workdir::new("moarstats_xsd_gdate_thorough");

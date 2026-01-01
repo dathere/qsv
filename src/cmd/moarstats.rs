@@ -1066,17 +1066,32 @@ fn detect_gregorian_date_type(
 
         // gMonthDay: "--05-01" (length 7, starts with "--")
         if s.len() == 7 && s.starts_with("--") && regex_oncelock!(r"^--\d{2}-\d{2}$").is_match(s) {
-            return Some("gMonthDay");
+            // validate numeric ranges: month 1-12, day 1-31
+            if let (Ok(month), Ok(day)) = (s[2..4].parse::<u32>(), s[5..7].parse::<u32>()) {
+                if (1..=12).contains(&month) && (1..=31).contains(&day) {
+                    return Some("gMonthDay");
+                }
+            }
         }
 
         // gDay: "---01" (length 5, starts with "---")
         if s.len() == 5 && s.starts_with("---") && regex_oncelock!(r"^---\d{2}$").is_match(s) {
-            return Some("gDay");
+            // validate numeric range: day 1-31
+            if let Ok(day) = s[3..5].parse::<u32>() {
+                if (1..=31).contains(&day) {
+                    return Some("gDay");
+                }
+            }
         }
 
         // gMonth: "--05" (length 4, starts with "--")
         if s.len() == 4 && s.starts_with("--") && regex_oncelock!(r"^--\d{2}$").is_match(s) {
-            return Some("gMonth");
+            // validate numeric range: month 1-12
+            if let Ok(month) = s[2..4].parse::<u32>() {
+                if (1..=12).contains(&month) {
+                    return Some("gMonth");
+                }
+            }
         }
 
         None

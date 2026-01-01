@@ -960,10 +960,18 @@ fn detect_gregorian_date_type(
 
         // gMonthDay: "--05-01" (length 7)
         if s.len() == 7 && regex_oncelock!(r"^--\d{2}-\d{2}$").is_match(s) {
-            // validate numeric ranges: month 1-12, day 1-31
+            // validate numeric ranges: month 1-12, with month-specific day limits
             if let (Ok(month), Ok(day)) = (s[2..4].parse::<u32>(), s[5..7].parse::<u32>())
                 && (1..=12).contains(&month)
-                && (1..=31).contains(&day)
+                && match month {
+                    // Months with 31 days
+                    1 | 3 | 5 | 7 | 8 | 10 | 12 => (1..=31).contains(&day),
+                    // Months with 30 days
+                    4 | 6 | 9 | 11 => (1..=30).contains(&day),
+                    // February: allow up to 29 to accommodate leap years (year is unknown)
+                    2 => (1..=29).contains(&day),
+                    _ => false,
+                }
             {
                 return Some("gMonthDay");
             }

@@ -242,12 +242,13 @@ moarstats options:
                            for winsorization/trimming when --use-percentiles is set.
                            Both values must be between 0 and 100, and lower < upper.
                            [default: 5,95]
- --xsd-gdate-scan <mode>   Scan mode for Gregorian XSD date type detection.
-                           "fast" (default): Use all available percentile values for detection.
-                           "comprehensive": Use min/max values from stats for detection.
-                           Fast mode checks all percentiles for pattern consistency.
-                           Fast mode uses "??" suffix, comprehensive uses "?" suffix.
-                           [default: fast]
+ --xsd-gdate-scan <mode>   Gregorian XSD date type detection mode.
+                           "quick": Fast detection using min/max values.
+                                    Produces types with ?? suffix (less confident).
+                           "thorough": Comprehensive detection checking all percentile values.
+                                     Slower but ensures all values match the pattern.
+                                     Produces types with ? suffix (more confident).
+                           [default: quick]
 
                            BIVARIATE STATISTICS OPTIONS:
     -B, --bivariate        Enable bivariate statistics computation.
@@ -916,7 +917,8 @@ fn parse_date_to_days(s: &str, prefer_dmy: bool) -> Option<f64> {
 /// Returns Some("typeName?") or Some("typeName??") if detected, None otherwise.
 /// Performance optimized: uses numeric comparisons for Integer gYear, cheap string
 /// checks (length/prefix) before regex for String types.
-/// Fast mode checks all percentile values for consistency, comprehensive mode checks min/max.
+/// Quick mode checks min/max values only (fast), thorough mode checks all percentile values (slower
+/// but more confident).
 fn detect_gregorian_date_type(
     min_str: Option<&str>,
     max_str: Option<&str>,
@@ -927,10 +929,70 @@ fn detect_gregorian_date_type(
     percentile_values: Option<&[&str]>,
 ) -> Option<String> {
     // Determine suffix based on scan mode
-    let suffix = if scan_mode == "fast" { "??" } else { "?" };
+    // More question marks = less confidence
+    let suffix = if scan_mode == "quick" { "??" } else { "?" };
 
-    // Fast mode: check all percentile values
-    if scan_mode == "fast" {
+    // Shared closure used for both quick and thorough modes
+    // to check if a string matches a Gregorian date pattern
+    let check_value = |s: &str| -> Option<&str> {
+        // gYearMonth: "1999-05" (length 7, dash at position 4)
+        if s.len() == 7
+            && s.as_bytes().get(4) == Some(&b'-')
+            && regex_oncelock!(r"^\d{4}-(0[1-9]|1[0-2])$").is_match(s)
+        {
+            // Validate that the month portion is within 01-12
+            let month_str = &s[5..7];
+            if let Ok(month) = month_str.parse::<u8>()
+                && (1..=12).contains(&month)
+            {
+                return Some("gYearMonth");
+            }
+        }
+
+        // gYear: "1999" (length 4)
+        if s.len() == 4
+            && regex_oncelock!(r"^\d{4}$").is_match(s)
+            && let Ok(year) = s.parse::<i32>()
+            && (1000..=3000).contains(&year)
+        {
+            return Some("gYear");
+        }
+
+        // gMonthDay: "--05-01" (length 7)
+        if s.len() == 7 && regex_oncelock!(r"^--\d{2}-\d{2}$").is_match(s) {
+            // validate numeric ranges: month 1-12, day 1-31
+            if let (Ok(month), Ok(day)) = (s[2..4].parse::<u32>(), s[5..7].parse::<u32>())
+                && (1..=12).contains(&month)
+                && (1..=31).contains(&day)
+            {
+                return Some("gMonthDay");
+            }
+        }
+
+        // gDay: "---01" (length 5)
+        if s.len() == 5 && regex_oncelock!(r"^---\d{2}$").is_match(s) &&
+            // validate numeric range: day 1-31
+            let Ok(day) = s[3..5].parse::<u32>()
+            && (1..=31).contains(&day)
+        {
+            return Some("gDay");
+        }
+
+        // gMonth: "--05" (length 4)
+        if s.len() == 4 && regex_oncelock!(r"^--\d{2}$").is_match(s) {
+            // validate numeric range: month 1-12
+            if let Ok(month) = s[2..4].parse::<u32>()
+                && (1..=12).contains(&month)
+            {
+                return Some("gMonth");
+            }
+        }
+
+        None
+    };
+
+    // Thorough mode: check all percentile values
+    if scan_mode == "thorough" {
         if let Some(pct_values) = percentile_values {
             if pct_values.is_empty() {
                 return None;
@@ -961,56 +1023,6 @@ fn detect_gregorian_date_type(
             }
 
             // For String types, check all percentile values against patterns
-            let check_value = |s: &str| -> Option<&str> {
-                // gYearMonth: "1999-05" (length 7, dash at position 4)
-                if s.len() == 7
-                    && s.as_bytes().get(4) == Some(&b'-')
-                    && regex_oncelock!(r"^\d{4}-\d{2}$").is_match(s)
-                {
-                    // Validate that the month portion is within 01-12
-                    let month_str = &s[5..7];
-                    if let Ok(month) = month_str.parse::<u8>() {
-                        if (1..=12).contains(&month) {
-                            return Some("gYearMonth");
-                        }
-                    }
-                }
-
-                // gYear: "1999" (length 4)
-                if s.len() == 4 && regex_oncelock!(r"^\d{4}$").is_match(s) {
-                    // Also validate the numeric year is within a reasonable range
-                    if let Ok(year) = s.parse::<u32>() {
-                        if (1000..=3000).contains(&year) {
-                            return Some("gYear");
-                        }
-                    }
-                }
-
-                // gMonthDay: "--05-01" (length 7, starts with "--")
-                if s.len() == 7
-                    && s.starts_with("--")
-                    && regex_oncelock!(r"^--\d{2}-\d{2}$").is_match(s)
-                {
-                    return Some("gMonthDay");
-                }
-
-                // gDay: "---01" (length 5, starts with "---")
-                if s.len() == 5
-                    && s.starts_with("---")
-                    && regex_oncelock!(r"^---\d{2}$").is_match(s)
-                {
-                    return Some("gDay");
-                }
-
-                // gMonth: "--05" (length 4, starts with "--")
-                if s.len() == 4 && s.starts_with("--") && regex_oncelock!(r"^--\d{2}$").is_match(s)
-                {
-                    return Some("gMonth");
-                }
-
-                None
-            };
-
             // Check all percentile values - only return type if ALL match the same pattern
             let mut matched_type: Option<&str> = None;
             for &val_str in pct_values {
@@ -1042,7 +1054,7 @@ fn detect_gregorian_date_type(
         return None;
     }
 
-    // Comprehensive mode: check min/max values
+    // Quick mode: check min/max values
     // Fast path for Integer gYear (no regex needed)
     if field_type_str == "Integer" {
         if let (Some(min), Some(max)) = (min_val, max_val) {
@@ -1056,57 +1068,6 @@ fn detect_gregorian_date_type(
     }
 
     // For String types, check both min and max to increase confidence
-    let check_value = |s: &str| -> Option<&str> {
-        // gYearMonth: "1999-05" (length 7, dash at position 4)
-        if s.len() == 7
-            && s.as_bytes().get(4) == Some(&b'-')
-            && regex_oncelock!(r"^\d{4}-(0[1-9]|1[0-2])$").is_match(s)
-        {
-            return Some("gYearMonth");
-        }
-
-        // gYear: "1999" (length 4)
-        if s.len() == 4 && regex_oncelock!(r"^\d{4}$").is_match(s) {
-            if let Ok(year) = s.parse::<i32>() {
-                if (1000..=3000).contains(&year) {
-                    return Some("gYear");
-                }
-            }
-        }
-
-        // gMonthDay: "--05-01" (length 7, starts with "--")
-        if s.len() == 7 && s.starts_with("--") && regex_oncelock!(r"^--\d{2}-\d{2}$").is_match(s) {
-            // validate numeric ranges: month 1-12, day 1-31
-            if let (Ok(month), Ok(day)) = (s[2..4].parse::<u32>(), s[5..7].parse::<u32>()) {
-                if (1..=12).contains(&month) && (1..=31).contains(&day) {
-                    return Some("gMonthDay");
-                }
-            }
-        }
-
-        // gDay: "---01" (length 5, starts with "---")
-        if s.len() == 5 && s.starts_with("---") && regex_oncelock!(r"^---\d{2}$").is_match(s) {
-            // validate numeric range: day 1-31
-            if let Ok(day) = s[3..5].parse::<u32>() {
-                if (1..=31).contains(&day) {
-                    return Some("gDay");
-                }
-            }
-        }
-
-        // gMonth: "--05" (length 4, starts with "--")
-        if s.len() == 4 && s.starts_with("--") && regex_oncelock!(r"^--\d{2}$").is_match(s) {
-            // validate numeric range: month 1-12
-            if let Ok(month) = s[2..4].parse::<u32>() {
-                if (1..=12).contains(&month) {
-                    return Some("gMonth");
-                }
-            }
-        }
-
-        None
-    };
-
     // Check min_str first
     if let Some(min_s) = min_str
         && !min_s.is_empty()
@@ -1114,19 +1075,23 @@ fn detect_gregorian_date_type(
     {
         // If max_str is available, verify it matches the same pattern for confidence
         if let Some(max_s) = max_str {
-            if !max_s.is_empty()
-                && let Some(max_type) = check_value(max_s)
-            {
-                // Both match the same type, return it
-                if greg_type == max_type {
-                    return Some(format!("{greg_type}{suffix}"));
+            if !max_s.is_empty() {
+                if let Some(max_type) = check_value(max_s) {
+                    // Both match the same type, return it
+                    if greg_type == max_type {
+                        return Some(format!("{greg_type}{suffix}"));
+                    }
+                    // Different patterns, not confident - return None
+                    return None;
                 }
-                // Different patterns, not confident - return None
+                // max_str does not match pattern, don't return based only on min_str
                 return None;
             }
-            // Only min_str matched, still return it (with ? indicating uncertainty)
-            return Some(format!("{greg_type}{suffix}"));
+            // max_str is empty; treat as missing, don't return based only on min_str
+            return None;
         }
+        // max_str not present at all, rely on min_str alone (conservative)
+        return Some(format!("{greg_type}{suffix}"));
     }
 
     // Check max_str if min_str didn't match
@@ -3585,10 +3550,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let percentiles_idx = headers.iter().position(|h| h == "percentiles");
 
     // Parse and validate scan mode for Gregorian XSD date type detection
-    let scan_mode = args.flag_xsd_gdate_scan.as_deref().unwrap_or("fast");
-    if scan_mode != "fast" && scan_mode != "comprehensive" {
+    let scan_mode = args.flag_xsd_gdate_scan.as_deref().unwrap_or("quick");
+    if scan_mode != "quick" && scan_mode != "thorough" {
         return fail_clierror!(
-            "Invalid scan mode: {}. Must be either 'fast' or 'comprehensive'",
+            "Invalid scan mode: {}. Must be either 'quick' or 'thorough'",
             scan_mode
         );
     }
@@ -4598,29 +4563,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 if s.is_empty() { None } else { Some(s) }
             });
 
-            // Extract percentile values for fast mode
-            let (percentile_values, actual_scan_mode) = if scan_mode == "fast" {
+            // Extract percentile values for thorough mode
+            let (percentile_values, actual_scan_mode) = if scan_mode == "thorough" {
                 if let Some(idx) = percentiles_idx {
                     if let Some(percentiles_str) = record.get(idx) {
                         if percentiles_str.is_empty() {
-                            // Empty percentile string, fall back to comprehensive
-                            (None, "comprehensive")
+                            // Empty percentile string, fall back to quick
+                            (None, "quick")
                         } else {
                             let values = parse_all_percentile_string_values(percentiles_str);
                             if values.is_empty() {
-                                // Empty percentile values, fall back to comprehensive
-                                (None, "comprehensive")
+                                // Empty percentile values, fall back to quick
+                                (None, "quick")
                             } else {
-                                (Some(values), "fast")
+                                (Some(values), "thorough")
                             }
                         }
                     } else {
-                        // No percentile string, fall back to comprehensive
-                        (None, "comprehensive")
+                        // No percentile string, fall back to quick
+                        (None, "quick")
                     }
                 } else {
-                    // No percentiles column, fall back to comprehensive
-                    (None, "comprehensive")
+                    // No percentiles column, fall back to quick
+                    (None, "quick")
                 }
             } else {
                 (None, scan_mode)

@@ -4636,8 +4636,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             };
 
             // Infer XSD type (pass all parameters including scan_mode and percentile_values)
-            // Use actual_scan_mode which may have fallen back to comprehensive if percentiles
-            // unavailable
+            // Use actual_scan_mode which may have fallen back to quick if percentiles unavailable
             let xsd_type = infer_xsd_type(
                 field_type_str,
                 min_val,

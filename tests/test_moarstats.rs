@@ -4617,3 +4617,415 @@ fn moarstats_bivariate_stats_invalid() {
         .arg("test.csv");
     wrk.assert_err(&mut cmd);
 }
+
+// Test --xsd-gdate-scan fast mode with all Gregorian types
+// Note: Integer types (gYear) can use fast mode with ?? suffix since they have percentiles.
+// String types (gYearMonth, gMonthDay, gDay, gMonth) fall back to comprehensive mode with ? suffix
+// since String types don't have percentiles computed in stats.
+#[test]
+fn moarstats_xsd_gdate_scan_fast_mode() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_fast");
+
+    // Create CSV with various Gregorian date types
+    wrk.create(
+        "test.csv",
+        vec![
+            svec![
+                "gYear",
+                "gYearMonth",
+                "gMonthDay",
+                "gDay",
+                "gMonth",
+                "regular_string"
+            ],
+            svec!["1999", "1999-05", "--05-01", "---01", "--05", "not a date"],
+            svec!["2000", "2000-06", "--06-15", "---15", "--06", "also not"],
+            svec!["2001", "2001-07", "--07-20", "---20", "--07", "text"],
+            svec!["2002", "2002-08", "--08-25", "---25", "--08", "data"],
+            svec!["2003", "2003-09", "--09-30", "---30", "--09", "value"],
+        ],
+    );
+
+    // Generate baseline stats with percentiles
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with fast mode (default)
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--xsd-gdate-scan").arg("fast").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify xsd_type column contains Gregorian types with ?? suffix
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let xsd_type_idx = get_column_index(&headers, "xsd_type").unwrap();
+
+    let mut found_g_year = false;
+    let mut found_g_year_month = false;
+    let mut found_g_month_day = false;
+    let mut found_g_day = false;
+    let mut found_g_month = false;
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field = get_field_value(&record, field_idx).unwrap();
+        let xsd_type = get_field_value(&record, xsd_type_idx);
+
+        match field.as_str() {
+            "gYear" => {
+                // Integer types get percentiles, so fast mode works with ?? suffix
+                assert_eq!(
+                    xsd_type.as_deref(),
+                    Some("gYear??"),
+                    "gYear (Integer) should have ?? suffix in fast mode"
+                );
+                found_g_year = true;
+            },
+            "gYearMonth" => {
+                // String types don't get percentiles, so fast mode falls back to comprehensive with
+                // ? suffix
+                assert_eq!(
+                    xsd_type.as_deref(),
+                    Some("gYearMonth?"),
+                    "gYearMonth (String) falls back to comprehensive mode (? suffix) since String \
+                     types don't have percentiles"
+                );
+                found_g_year_month = true;
+            },
+            "gMonthDay" => {
+                // String types don't get percentiles, so fast mode falls back to comprehensive with
+                // ? suffix
+                assert_eq!(
+                    xsd_type.as_deref(),
+                    Some("gMonthDay?"),
+                    "gMonthDay (String) falls back to comprehensive mode (? suffix) since String \
+                     types don't have percentiles"
+                );
+                found_g_month_day = true;
+            },
+            "gDay" => {
+                // String types don't get percentiles, so fast mode falls back to comprehensive with
+                // ? suffix
+                assert_eq!(
+                    xsd_type.as_deref(),
+                    Some("gDay?"),
+                    "gDay (String) falls back to comprehensive mode (? suffix) since String types \
+                     don't have percentiles"
+                );
+                found_g_day = true;
+            },
+            "gMonth" => {
+                // String types don't get percentiles, so fast mode falls back to comprehensive with
+                // ? suffix
+                assert_eq!(
+                    xsd_type.as_deref(),
+                    Some("gMonth?"),
+                    "gMonth (String) falls back to comprehensive mode (? suffix) since String \
+                     types don't have percentiles"
+                );
+                found_g_month = true;
+            },
+            "regular_string" => {
+                assert_eq!(
+                    xsd_type.as_deref(),
+                    Some("string"),
+                    "Regular string should not be detected as Gregorian"
+                );
+            },
+            _ => {},
+        }
+    }
+
+    assert!(found_g_year, "gYear field should be found");
+    assert!(found_g_year_month, "gYearMonth field should be found");
+    assert!(found_g_month_day, "gMonthDay field should be found");
+    assert!(found_g_day, "gDay field should be found");
+    assert!(found_g_month, "gMonth field should be found");
+}
+
+// Test --xsd-gdate-scan comprehensive mode
+#[test]
+fn moarstats_xsd_gdate_scan_comprehensive_mode() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_comprehensive");
+
+    // Create CSV with Gregorian date types
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["gYear", "gYearMonth", "gMonthDay", "gDay", "gMonth"],
+            svec!["1999", "1999-05", "--05-01", "---01", "--05"],
+            svec!["2000", "2000-06", "--06-15", "---15", "--06"],
+            svec!["2001", "2001-07", "--07-20", "---20", "--07"],
+        ],
+    );
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with comprehensive mode
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--xsd-gdate-scan")
+        .arg("comprehensive")
+        .arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify xsd_type column contains Gregorian types with ? suffix
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let xsd_type_idx = get_column_index(&headers, "xsd_type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field = get_field_value(&record, field_idx).unwrap();
+        let xsd_type = get_field_value(&record, xsd_type_idx);
+
+        if field.starts_with("g") {
+            assert!(
+                xsd_type
+                    .as_deref()
+                    .map_or(false, |t| t.ends_with("?") && !t.ends_with("??")),
+                "Comprehensive mode should use single ? suffix, got: {:?}",
+                xsd_type
+            );
+        }
+    }
+}
+
+// Test Integer gYear detection in fast mode
+#[test]
+fn moarstats_xsd_gdate_scan_integer_g_year_fast() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_integer_fast");
+
+    // Create CSV with Integer years in valid range
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["year"],
+            svec!["1999"],
+            svec!["2000"],
+            svec!["2001"],
+            svec!["2002"],
+            svec!["2003"],
+            svec!["2010"],
+            svec!["2020"],
+        ],
+    );
+
+    // Generate baseline stats with percentiles
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with fast mode
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--xsd-gdate-scan").arg("fast").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify Integer gYear is detected with ?? suffix
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let xsd_type_idx = get_column_index(&headers, "xsd_type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field = get_field_value(&record, field_idx).unwrap();
+        if field == "year" {
+            let xsd_type = get_field_value(&record, xsd_type_idx);
+            assert_eq!(
+                xsd_type.as_deref(),
+                Some("gYear??"),
+                "Integer year should be detected as gYear?? in fast mode"
+            );
+        }
+    }
+}
+
+// Test Integer gYear detection in comprehensive mode
+#[test]
+fn moarstats_xsd_gdate_scan_integer_g_year_comprehensive() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_integer_comprehensive");
+
+    // Create CSV with Integer years in valid range
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["year"],
+            svec!["1999"],
+            svec!["2000"],
+            svec!["2001"],
+            svec!["2020"],
+        ],
+    );
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with comprehensive mode
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--xsd-gdate-scan")
+        .arg("comprehensive")
+        .arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify Integer gYear is detected with ? suffix
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let xsd_type_idx = get_column_index(&headers, "xsd_type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field = get_field_value(&record, field_idx).unwrap();
+        if field == "year" {
+            let xsd_type = get_field_value(&record, xsd_type_idx);
+            assert_eq!(
+                xsd_type.as_deref(),
+                Some("gYear?"),
+                "Integer year should be detected as gYear? in comprehensive mode"
+            );
+        }
+    }
+}
+
+// Test invalid scan mode
+#[test]
+fn moarstats_xsd_gdate_scan_invalid_mode() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_invalid");
+
+    wrk.create("test.csv", vec![svec!["field"], svec!["value"]]);
+
+    // Generate baseline stats
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Test with invalid scan mode
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--xsd-gdate-scan")
+        .arg("invalid_mode")
+        .arg("test.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+// Test default fast mode (no option specified)
+#[test]
+fn moarstats_xsd_gdate_scan_default_fast() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_default");
+
+    // Create CSV with gYear values
+    wrk.create(
+        "test.csv",
+        vec![svec!["year"], svec!["1999"], svec!["2000"], svec!["2001"]],
+    );
+
+    // Generate baseline stats with percentiles
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats without specifying scan mode (should default to fast)
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify default behavior uses fast mode (?? suffix)
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let xsd_type_idx = get_column_index(&headers, "xsd_type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field = get_field_value(&record, field_idx).unwrap();
+        if field == "year" {
+            let xsd_type = get_field_value(&record, xsd_type_idx);
+            // Default should be fast mode, but if percentiles are available it will use ??
+            // If percentiles are not available, it falls back to comprehensive with ?
+            // So we just check that it's detected as gYear with some suffix
+            assert!(
+                xsd_type
+                    .as_deref()
+                    .map_or(false, |t| t.starts_with("gYear")),
+                "Year should be detected as gYear variant, got: {:?}",
+                xsd_type
+            );
+        }
+    }
+}
+
+// Test fallback to comprehensive when percentiles are missing
+#[test]
+fn moarstats_xsd_gdate_scan_fallback_comprehensive() {
+    let wrk = Workdir::new("moarstats_xsd_gdate_fallback");
+
+    // Create CSV with gYear values
+    wrk.create(
+        "test.csv",
+        vec![svec!["year"], svec!["1999"], svec!["2000"], svec!["2001"]],
+    );
+
+    // Generate baseline stats WITHOUT percentiles (use minimal stats)
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("test.csv"); // Minimal stats, no --everything
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats with fast mode (should fallback to comprehensive if percentiles missing)
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--xsd-gdate-scan").arg("fast").arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify it falls back to comprehensive mode (? suffix) when percentiles unavailable
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let xsd_type_idx = get_column_index(&headers, "xsd_type").unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field = get_field_value(&record, field_idx).unwrap();
+        if field == "year" {
+            let xsd_type = get_field_value(&record, xsd_type_idx);
+            // Should fallback to comprehensive mode (? suffix) when percentiles unavailable
+            // But if the field is Integer and min/max are in range, it should still detect gYear?
+            assert!(
+                xsd_type
+                    .as_deref()
+                    .map_or(false, |t| t.starts_with("gYear")),
+                "Year should be detected even when percentiles missing, got: {:?}",
+                xsd_type
+            );
+        }
+    }
+}

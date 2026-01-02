@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=7.1.0
+bm_version=7.2.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -612,6 +612,12 @@ run luau_script_debug env QSV_LOG_LEVEL=debug bash -c \'"$qsv_bin" luau map turn
 run luau_script_colidx "$qsv_bin" luau map turnaround_time --colindex "file:turnaround_time.luau" "$data"
 run luau_script_no_globals "$qsv_bin" luau map turnaround_time --no-globals "file:turnaround_time.luau" "$data"
 run luau_script_no_globals_colidx "$qsv_bin" luau map turnaround_time --no-globals --colindex "file:turnaround_time.luau" "$data"
+run --index moarstats_index "$qsv_bin" moarstats "$data"
+run --index moarstats_advanced_index "$qsv_bin" moarstats --advanced "$data"
+run --index moarstats_bivariate_index "$qsv_bin" moarstats --bivariate "$data"
+run --index moarstats_bivariate_all_index "$qsv_bin" moarstats --bivariate --bivariate-stats all "$data"
+run --index moarstats_advanced_bivariate_index "$qsv_bin" moarstats --advanced --bivariate "$data"
+run --index moarstats_advanced_bivariate_all_index "$qsv_bin" moarstats --advanced --bivariate --bivariate-stats all "$data"
 run partition "$qsv_bin" partition \'Community Board\' /tmp/partitioned "$data"
 run pivotp_basic "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" "$data"
 run pivotp_smart "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" --agg smart "$data"

@@ -3,14 +3,17 @@
 // This tool parses Rust test files and extracts working examples with
 // input data, commands, and expected outputs for load-as-needed documentation.
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::PathBuf};
 
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+macro_rules! regex_oncelock {
+    ($re:literal $(,)?) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        #[allow(clippy::regex_creation_in_loops)] // false positive as we use oncelock
+        RE.get_or_init(|| regex::Regex::new($re).expect("Invalid regex"))
+    }};
+}
 #[derive(Debug, Serialize, Deserialize)]
 struct TestExamples {
     skill:    String,
@@ -77,8 +80,7 @@ impl TestParser {
         examples.extend(self.parse_macro_tests()?);
 
         // Find all #[test] function headers
-        let test_header_re = Regex::new(r"#\[test\]\s+fn\s+(\w+)\s*\(\s*\)\s*\{")
-            .map_err(|e| format!("Regex error: {}", e))?;
+        let test_header_re = regex_oncelock!(r"#\[test\]\s+fn\s+(\w+)\s*\(\s*\)\s*\{");
 
         for cap in test_header_re.captures_iter(&self.test_content) {
             let test_name = cap.get(1).unwrap().as_str();
@@ -96,17 +98,17 @@ impl TestParser {
             // Deduplicate by adding counter if name already exists
             let unique_name = if let Some(count) = name_counts.get_mut(&qualified_name) {
                 *count += 1;
-                format!("{}_{}", qualified_name, count)
+                format!("{qualified_name}_{count}")
             } else {
                 name_counts.insert(qualified_name.clone(), 1);
                 qualified_name.clone()
             };
 
             // Extract body by counting braces
-            if let Some(test_body) = self.extract_function_body(start_pos) {
-                if let Ok(example) = self.parse_test_function(&unique_name, &test_body) {
-                    examples.push(example);
-                }
+            if let Some(test_body) = self.extract_function_body(start_pos)
+                && let Ok(example) = self.parse_test_function(&unique_name, &test_body)
+            {
+                examples.push(example);
             }
         }
 
@@ -119,8 +121,7 @@ impl TestParser {
 
         // Match: macro_name!(test_name, |params| { body })
         // Simple pattern to match test macro invocations
-        let macro_re =
-            Regex::new(r#"_test!\s*\(\s*(\w+)"#).map_err(|e| format!("Regex error: {}", e))?;
+        let macro_re = regex_oncelock!(r#"_test!\s*\(\s*(\w+)"#);
 
         for cap in macro_re.captures_iter(&self.test_content) {
             let test_name = cap.get(1).unwrap().as_str();
@@ -131,10 +132,10 @@ impl TestParser {
                 let start_pos = match_end + brace_pos + 1;
 
                 // Extract closure body by counting braces
-                if let Some(test_body) = self.extract_function_body(start_pos) {
-                    if let Ok(example) = self.parse_test_function(test_name, &test_body) {
-                        examples.push(example);
-                    }
+                if let Some(test_body) = self.extract_function_body(start_pos)
+                    && let Ok(example) = self.parse_test_function(test_name, &test_body)
+                {
+                    examples.push(example);
                 }
             }
         }
@@ -170,24 +171,24 @@ impl TestParser {
 
         // First try to find a macro invocation pattern like "macro_name!(test_name,"
         // This handles macro-generated tests
-        let macro_re = Regex::new(r"(\w+_test!)\s*\(\s*(\w+)\s*,").unwrap();
+        let macro_re = regex_oncelock!(r"(\w+_test!)\s*\(\s*(\w+)\s*,");
 
         // Look for the last macro invocation before this test
-        if let Some(cap) = macro_re.captures_iter(before_test).last() {
-            if let Some(module_name) = cap.get(2) {
-                // Use the macro parameter as the module name (what the macro expands to)
-                return module_name.as_str().to_string();
-            }
+        if let Some(cap) = macro_re.captures_iter(before_test).last()
+            && let Some(module_name) = cap.get(2)
+        {
+            // Use the macro parameter as the module name (what the macro expands to)
+            return module_name.as_str().to_string();
         }
 
         // Otherwise look for a regular "mod module_name {" before this test
-        let mod_re = Regex::new(r"mod\s+(\w+)\s*\{[^}]*$").unwrap();
+        let mod_re = regex_oncelock!(r"mod\s+(\w+)\s*\{[^}]*$");
 
-        if let Some(cap) = mod_re.captures(before_test) {
-            if let Some(module_name) = cap.get(1) {
-                // Return module::function format if within a module
-                return format!("{}::{}", module_name.as_str(), test_name);
-            }
+        if let Some(cap) = mod_re.captures(before_test)
+            && let Some(module_name) = cap.get(1)
+        {
+            // Return module::function format if within a module
+            return format!("{}::{}", module_name.as_str(), test_name);
         }
 
         // If no module or macro found, just return the test name
@@ -253,17 +254,16 @@ impl TestParser {
 
     fn extract_input_data(&self, body: &str) -> Option<TestInput> {
         // Match wrk.create("filename", vec![svec![...], ...])
-        let create_re = Regex::new(
+        let create_re = regex_oncelock!(
             r#"wrk\.create\(\s*"([^"]+)"\s*,\s*vec!\s*\[((?:\s*svec!\s*\[[^\]]*\]\s*,?)*)\s*\]"#,
-        )
-        .ok()?;
+        );
 
         if let Some(cap) = create_re.captures(body) {
             let filename = cap.get(1)?.as_str().to_string();
             let vec_content = cap.get(2)?.as_str();
 
             // Parse svec! macro calls
-            let svec_re = Regex::new(r#"svec!\s*\[([^\]]*)\]"#).ok()?;
+            let svec_re = regex_oncelock!(r#"svec!\s*\[([^\]]*)\]"#);
             let mut data = Vec::new();
 
             for svec_cap in svec_re.captures_iter(vec_content) {
@@ -299,8 +299,7 @@ impl TestParser {
         String,
     > {
         // Match wrk.command("subcommand")
-        let cmd_re = Regex::new(r#"wrk\.command\("([^"]+)"\)"#)
-            .map_err(|e| format!("Regex error: {}", e))?;
+        let cmd_re = regex_oncelock!(r#"wrk\.command\("([^"]+)"\)"#);
 
         let subcommand = cmd_re
             .captures(body)
@@ -310,8 +309,7 @@ impl TestParser {
 
         // Extract .arg() calls - only match string literals, skip variable references
         // Match both .arg("...") for method chaining and cmd.arg("...") for variable calls
-        let arg_re = Regex::new(r#"(?:cmd|wrk)?\.?arg\("([^"]+)"\)"#)
-            .map_err(|e| format!("Regex error: {}", e))?;
+        let arg_re = regex_oncelock!(r#"(?:cmd|wrk)?\.?arg\("([^"]+)"\)"#);
 
         let mut args = Vec::new();
         let mut options = std::collections::HashMap::new();
@@ -326,11 +324,11 @@ impl TestParser {
             }
 
             // Check if it's an option (starts with -)
-            if arg_value.starts_with("-") {
+            if arg_value.starts_with('-') {
                 // If it's a flag-style option (like -i, --no-headers)
-                if arg_value.starts_with("--") && !arg_value.contains("=") {
+                if arg_value.starts_with("--") && !arg_value.contains('=') {
                     pending_option = Some(arg_value.clone());
-                } else if arg_value.starts_with("-") && arg_value.len() == 2 {
+                } else if arg_value.starts_with('-') && arg_value.len() == 2 {
                     pending_option = Some(arg_value.clone());
                 } else {
                     args.push(arg_value);
@@ -407,20 +405,20 @@ impl TestParser {
 
         // Escape backslashes and double quotes, then wrap in double quotes
         let escaped = arg.replace('\\', "\\\\").replace('"', "\\\"");
-        format!("\"{}\"", escaped)
+        format!("\"{escaped}\"")
     }
 
     fn extract_expected_output(&self, body: &str) -> Option<TestOutput> {
         // Match let expected = vec![svec![...], ...]
-        let expected_re =
-            Regex::new(r#"let\s+expected\s*=\s*vec!\s*\[((?:\s*svec!\s*\[[^\]]*\]\s*,?)*)\s*\]"#)
-                .ok()?;
+        let expected_re = regex_oncelock!(
+            r#"let\s+expected\s*=\s*vec!\s*\[((?:\s*svec!\s*\[[^\]]*\]\s*,?)*)\s*\]"#
+        );
 
         if let Some(cap) = expected_re.captures(body) {
             let vec_content = cap.get(1)?.as_str();
 
             // Parse svec! macro calls
-            let svec_re = Regex::new(r#"svec!\s*\[([^\]]*)\]"#).ok()?;
+            let svec_re = regex_oncelock!(r#"svec!\s*\[([^\]]*)\]"#);
             let mut data = Vec::new();
 
             for svec_cap in svec_re.captures_iter(vec_content) {
@@ -578,9 +576,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut total_examples = 0;
 
     for cmd_name in &commands {
-        println!("Processing: test_{}.rs", cmd_name);
+        println!("Processing: test_{cmd_name}.rs");
 
-        let test_file = PathBuf::from(format!("tests/test_{}.rs", cmd_name));
+        let test_file = PathBuf::from(format!("tests/test_{cmd_name}.rs"));
 
         if !test_file.exists() {
             println!("  ⚠️  Test file not found, skipping");
@@ -590,7 +588,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let test_content = match fs::read_to_string(&test_file) {
             Ok(content) => content,
             Err(e) => {
-                eprintln!("  ❌ Failed to read test file: {}", e);
+                eprintln!("  ❌ Failed to read test file: {e}");
                 error_count += 1;
                 continue;
             },
@@ -600,7 +598,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let examples = match parser.parse() {
             Ok(ex) => ex,
             Err(e) => {
-                eprintln!("  ❌ Failed to parse tests: {}", e);
+                eprintln!("  ❌ Failed to parse tests: {e}");
                 error_count += 1;
                 continue;
             },
@@ -612,12 +610,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let test_examples = TestExamples {
-            skill:    format!("qsv-{}", cmd_name),
+            skill:    format!("qsv-{cmd_name}"),
             version:  env!("CARGO_PKG_VERSION").to_string(),
             examples: examples.clone(),
         };
 
-        let output_file = output_dir.join(format!("qsv-{}-examples.json", cmd_name));
+        let output_file = output_dir.join(format!("qsv-{cmd_name}-examples.json"));
         let json = serde_json::to_string_pretty(&test_examples)?;
         fs::write(&output_file, json)?;
 
@@ -631,11 +629,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n✨ Test example extraction complete!");
     println!("📁 Output directory: {}", output_dir.display());
-    println!(
-        "📊 Summary: {} succeeded, {} failed",
-        success_count, error_count
-    );
-    println!("📚 Total examples extracted: {}", total_examples);
+    println!("📊 Summary: {success_count} succeeded, {error_count} failed",);
+    println!("📚 Total examples extracted: {total_examples}");
 
     Ok(())
 }

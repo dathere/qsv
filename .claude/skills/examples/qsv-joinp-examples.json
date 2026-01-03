@@ -1873,10 +1873,10 @@
     {
       "name": "joinp_right_anti_9",
       "description": "Joinp Right Anti 9",
-      "command": "qsv joinp --non-equi \"date_left  + interval '4 months' < deadline_right\" --try-parsedates",
+      "command": "qsv joinp --try-parsedates --non-equi \"date_left  + interval '4 months' < deadline_right\"",
       "options": {
-        "--non-equi": "date_left  + interval '4 months' < deadline_right",
-        "--try-parsedates": "true"
+        "--try-parsedates": "true",
+        "--non-equi": "date_left  + interval '4 months' < deadline_right"
       }
     },
     {

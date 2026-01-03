@@ -76,13 +76,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv fetch URL --jaq data.csv --new-column result",
+      "command": "qsv fetch URL --new-column result --jaq data.csv",
       "args": [
         "URL"
       ],
       "options": {
-        "--jaq": "data.csv",
-        "--new-column": "result"
+        "--new-column": "result",
+        "--jaq": "data.csv"
       },
       "expected": {
         "data": [

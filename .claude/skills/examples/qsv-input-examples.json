@@ -622,13 +622,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv input data.csv --skip-lines 2 --skip-lastlines 2",
+      "command": "qsv input data.csv --skip-lastlines 2 --skip-lines 2",
       "args": [
         "data.csv"
       ],
       "options": {
-        "--skip-lines": "2",
-        "--skip-lastlines": "2"
+        "--skip-lastlines": "2",
+        "--skip-lines": "2"
       },
       "expected": {
         "data": [

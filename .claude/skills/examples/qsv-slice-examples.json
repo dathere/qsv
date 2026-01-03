@@ -5,19 +5,19 @@
     {
       "name": "slice_from_json",
       "description": "Slice From Json",
-      "command": "qsv slice --json --index 2",
+      "command": "qsv slice --index 2 --json",
       "options": {
-        "--json": "true",
-        "--index": "2"
+        "--index": "2",
+        "--json": "true"
       }
     },
     {
       "name": "slice_from_jsonl",
       "description": "Slice From Jsonl",
-      "command": "qsv slice --json --index 2",
+      "command": "qsv slice --index 2 --json",
       "options": {
-        "--json": "true",
-        "--index": "2"
+        "--index": "2",
+        "--json": "true"
       }
     },
     {
@@ -31,19 +31,19 @@
     {
       "name": "slice_from_arrow",
       "description": "Slice From Arrow",
-      "command": "qsv slice --json --index 2",
+      "command": "qsv slice --index 2 --json",
       "options": {
-        "--json": "true",
-        "--index": "2"
+        "--index": "2",
+        "--json": "true"
       }
     },
     {
       "name": "slice_from_csvgz",
       "description": "Slice From Csvgz",
-      "command": "qsv slice --index 2 --json",
+      "command": "qsv slice --json --index 2",
       "options": {
-        "--index": "2",
-        "--json": "true"
+        "--json": "true",
+        "--index": "2"
       }
     },
     {
@@ -76,28 +76,28 @@
     {
       "name": "slice_from_tsvzst",
       "description": "Slice From Tsvzst",
-      "command": "qsv slice --json --index 2",
+      "command": "qsv slice --index 2 --json",
       "options": {
-        "--json": "true",
-        "--index": "2"
+        "--index": "2",
+        "--json": "true"
       }
     },
     {
       "name": "slice_from_tsvzlib",
       "description": "Slice From Tsvzlib",
-      "command": "qsv slice --json --index 2",
+      "command": "qsv slice --index 2 --json",
       "options": {
-        "--json": "true",
-        "--index": "2"
+        "--index": "2",
+        "--json": "true"
       }
     },
     {
       "name": "slice_from_tsv",
       "description": "Slice From Tsv",
-      "command": "qsv slice --json --index 2",
+      "command": "qsv slice --index 2 --json",
       "options": {
-        "--json": "true",
-        "--index": "2"
+        "--index": "2",
+        "--json": "true"
       }
     },
     {
@@ -114,13 +114,13 @@
     {
       "name": "slice_from_json_with_pschema",
       "description": "Slice From Json With Pschema",
-      "command": "qsv slice test.json --json --index 1",
+      "command": "qsv slice test.json --index 1 --json",
       "args": [
         "test.json"
       ],
       "options": {
-        "--json": "true",
-        "--index": "1"
+        "--index": "1",
+        "--json": "true"
       }
     },
     {
@@ -138,13 +138,13 @@
     {
       "name": "slice_from_csvgz_with_pschema",
       "description": "Slice From Csvgz With Pschema",
-      "command": "qsv slice test.csv.gz --json --index 1",
+      "command": "qsv slice test.csv.gz --index 1 --json",
       "args": [
         "test.csv.gz"
       ],
       "options": {
-        "--json": "true",
-        "--index": "1"
+        "--index": "1",
+        "--json": "true"
       }
     },
     {
@@ -162,11 +162,11 @@
     {
       "name": "slice_from_csvzlib_with_pschema",
       "description": "Slice From Csvzlib With Pschema",
-      "command": "qsv slice --json -c test.csv.zlib --index 1",
+      "command": "qsv slice -c test.csv.zlib --index 1 --json",
       "options": {
-        "--json": "true",
         "-c": "test.csv.zlib",
-        "--index": "1"
+        "--index": "1",
+        "--json": "true"
       }
     },
     {

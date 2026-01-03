@@ -175,10 +175,10 @@
     {
       "name": "stats_infer_boolean_true_false_error",
       "description": "Stats Infer Boolean True False Error",
-      "command": "qsv stats --boolean-patterns true:falsy --dataset-stats",
+      "command": "qsv stats --dataset-stats --boolean-patterns true:falsy",
       "options": {
-        "--boolean-patterns": "true:falsy",
-        "--dataset-stats": "true"
+        "--dataset-stats": "true",
+        "--boolean-patterns": "true:falsy"
       },
       "tags": [
         "error-handling"
@@ -215,10 +215,10 @@
     {
       "name": "stats_infer_boolean_invalid_pattern",
       "description": "Stats Infer Boolean Invalid Pattern",
-      "command": "qsv stats --dataset-stats --boolean-patterns :false,yep:,1:0",
+      "command": "qsv stats --boolean-patterns :false,yep:,1:0 --dataset-stats",
       "options": {
-        "--dataset-stats": "true",
-        "--boolean-patterns": ":false,yep:,1:0"
+        "--boolean-patterns": ":false,yep:,1:0",
+        "--dataset-stats": "true"
       }
     },
     {
@@ -1499,13 +1499,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv --percentile-list 25,50,75 --infer-dates",
+      "command": "qsv stats data.csv --infer-dates --percentile-list 25,50,75",
       "args": [
         "data.csv"
       ],
       "options": {
-        "--percentile-list": "25,50,75",
-        "--infer-dates": "true"
+        "--infer-dates": "true",
+        "--percentile-list": "25,50,75"
       },
       "expected": {
         "data": [
@@ -2653,10 +2653,10 @@
     {
       "name": "stats_infer_boolean_prefix_pattern",
       "description": "Stats Infer Boolean Prefix Pattern",
-      "command": "qsv stats --dataset-stats --boolean-patterns \"t*:f*\"",
+      "command": "qsv stats --boolean-patterns \"t*:f*\" --dataset-stats",
       "options": {
-        "--dataset-stats": "true",
-        "--boolean-patterns": "t*:f*"
+        "--boolean-patterns": "t*:f*",
+        "--dataset-stats": "true"
       }
     },
     {
@@ -2671,10 +2671,10 @@
     {
       "name": "stats_infer_boolean_case_insensitive",
       "description": "Stats Infer Boolean Case Insensitive",
-      "command": "qsv stats --boolean-patterns TRUE:FALSE --dataset-stats",
+      "command": "qsv stats --dataset-stats --boolean-patterns TRUE:FALSE",
       "options": {
-        "--boolean-patterns": "TRUE:FALSE",
-        "--dataset-stats": "true"
+        "--dataset-stats": "true",
+        "--boolean-patterns": "TRUE:FALSE"
       },
       "tags": [
         "case-sensitivity"
@@ -2703,10 +2703,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats --boolean-patterns truthy:falsy --dataset-stats data.csv",
+      "command": "qsv stats --dataset-stats data.csv --boolean-patterns truthy:falsy",
       "options": {
-        "--boolean-patterns": "truthy:falsy",
-        "--dataset-stats": "data.csv"
+        "--dataset-stats": "data.csv",
+        "--boolean-patterns": "truthy:falsy"
       }
     },
     {
@@ -2748,10 +2748,10 @@
     {
       "name": "stats_infer_boolean_missing_colon",
       "description": "Stats Infer Boolean Missing Colon",
-      "command": "qsv stats --boolean-patterns truefalse --dataset-stats",
+      "command": "qsv stats --dataset-stats --boolean-patterns truefalse",
       "options": {
-        "--boolean-patterns": "truefalse",
-        "--dataset-stats": "true"
+        "--dataset-stats": "true",
+        "--boolean-patterns": "truefalse"
       }
     },
     {
@@ -2766,10 +2766,10 @@
     {
       "name": "stats_infer_boolean_missing_false_pattern",
       "description": "Stats Infer Boolean Missing False Pattern",
-      "command": "qsv stats --dataset-stats --boolean-patterns true:",
+      "command": "qsv stats --boolean-patterns true: --dataset-stats",
       "options": {
-        "--dataset-stats": "true",
-        "--boolean-patterns": "true:"
+        "--boolean-patterns": "true:",
+        "--dataset-stats": "true"
       }
     },
     {
@@ -3128,10 +3128,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats --weight weight --median data.csv",
+      "command": "qsv stats --median data.csv --weight weight",
       "options": {
-        "--weight": "weight",
-        "--median": "data.csv"
+        "--median": "data.csv",
+        "--weight": "weight"
       }
     },
     {
@@ -3196,10 +3196,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats --mad data.csv --weight weight",
+      "command": "qsv stats --weight weight --mad data.csv",
       "options": {
-        "--mad": "data.csv",
-        "--weight": "weight"
+        "--weight": "weight",
+        "--mad": "data.csv"
       }
     },
     {
@@ -3234,13 +3234,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv --percentile-list 10,50,90 --weight weight",
+      "command": "qsv stats data.csv --weight weight --percentile-list 10,50,90",
       "args": [
         "data.csv"
       ],
       "options": {
-        "--percentile-list": "10,50,90",
-        "--weight": "weight"
+        "--weight": "weight",
+        "--percentile-list": "10,50,90"
       }
     },
     {
@@ -3497,10 +3497,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats --weight weight --mode data.csv",
+      "command": "qsv stats --mode data.csv --weight weight",
       "options": {
-        "--weight": "weight",
-        "--mode": "data.csv"
+        "--mode": "data.csv",
+        "--weight": "weight"
       }
     },
     {
@@ -3527,10 +3527,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats --weight weight --mode data.csv",
+      "command": "qsv stats --mode data.csv --weight weight",
       "options": {
-        "--weight": "weight",
-        "--mode": "data.csv"
+        "--mode": "data.csv",
+        "--weight": "weight"
       }
     },
     {
@@ -3758,10 +3758,10 @@
     {
       "name": "stats_weighted_negative_weights_with_quartiles",
       "description": "Stats Weighted Negative Weights With Quartiles",
-      "command": "qsv stats --weight weight --quartiles data.csv",
+      "command": "qsv stats --quartiles data.csv --weight weight",
       "options": {
-        "--weight": "weight",
-        "--quartiles": "data.csv"
+        "--quartiles": "data.csv",
+        "--weight": "weight"
       }
     },
     {

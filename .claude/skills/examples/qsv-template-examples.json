@@ -139,10 +139,10 @@
     {
       "name": "template_output_file",
       "description": "Template Output File",
-      "command": "qsv template --template-file template.txt --output data.csv",
+      "command": "qsv template --output data.csv --template-file template.txt",
       "options": {
-        "--template-file": "template.txt",
-        "--output": "data.csv"
+        "--output": "data.csv",
+        "--template-file": "template.txt"
       }
     },
     {
@@ -171,10 +171,10 @@
     {
       "name": "template_output_directory_no_headers",
       "description": "Template Output Directory No Headers",
-      "command": "qsv template --no-headers data.csv --template-file template.txt",
+      "command": "qsv template --template-file template.txt --no-headers data.csv",
       "options": {
-        "--no-headers": "data.csv",
-        "--template-file": "template.txt"
+        "--template-file": "template.txt",
+        "--no-headers": "data.csv"
       },
       "tags": [
         "no-headers"
@@ -718,13 +718,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template data.csv --customfilter-error ERROR --template \"{{number|human_float_count}}\\\\n\\\\n\"",
+      "command": "qsv template data.csv --template \"{{number|human_float_count}}\\\\n\\\\n\" --customfilter-error ERROR",
       "args": [
         "data.csv"
       ],
       "options": {
-        "--customfilter-error": "ERROR",
-        "--template": "{{number|human_float_count}}\\n\\n"
+        "--template": "{{number|human_float_count}}\\n\\n",
+        "--customfilter-error": "ERROR"
       }
     },
     {
@@ -800,13 +800,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template data.csv --template \"{{name}}\\\\n\" --globals-json invalid.json",
+      "command": "qsv template data.csv --globals-json invalid.json --template \"{{name}}\\\\n\"",
       "args": [
         "data.csv"
       ],
       "options": {
-        "--template": "{{name}}\\n",
-        "--globals-json": "invalid.json"
+        "--globals-json": "invalid.json",
+        "--template": "{{name}}\\n"
       }
     }
   ]

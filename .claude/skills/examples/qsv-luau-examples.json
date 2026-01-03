@@ -368,15 +368,15 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map Total \"amt_array[_IDX] = Amount; tot = tot + Amount; gtotal = gtotal + tot; return tot\" --begin \"tot = 0; gtotal = 0; amt_array = {}\" --end data.csv",
+      "command": "qsv luau map Total \"amt_array[_IDX] = Amount; tot = tot + Amount; gtotal = gtotal + tot; return tot\" --end data.csv --begin \"tot = 0; gtotal = 0; amt_array = {}\"",
       "args": [
         "map",
         "Total",
         "amt_array[_IDX] = Amount; tot = tot + Amount; gtotal = gtotal + tot; return tot"
       ],
       "options": {
-        "--begin": "tot = 0; gtotal = 0; amt_array = {}",
-        "--end": "data.csv"
+        "--end": "data.csv",
+        "--begin": "tot = 0; gtotal = 0; amt_array = {}"
       },
       "expected": {
         "data": [
@@ -1604,15 +1604,15 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map Total \"amt_array[_IDX] = Amount; tot += if tonumber(Amount) < 0 then Amount * -1 else Amount; gtotal += tot; return tot\" --begin \"tot = 0; gtotal = 0; amt_array = {}\" --end data.csv",
+      "command": "qsv luau map Total \"amt_array[_IDX] = Amount; tot += if tonumber(Amount) < 0 then Amount * -1 else Amount; gtotal += tot; return tot\" --end data.csv --begin \"tot = 0; gtotal = 0; amt_array = {}\"",
       "args": [
         "map",
         "Total",
         "amt_array[_IDX] = Amount; tot += if tonumber(Amount) < 0 then Amount * -1 else Amount; gtotal += tot; return tot"
       ],
       "options": {
-        "--begin": "tot = 0; gtotal = 0; amt_array = {}",
-        "--end": "data.csv"
+        "--end": "data.csv",
+        "--begin": "tot = 0; gtotal = 0; amt_array = {}"
       },
       "expected": {
         "data": [

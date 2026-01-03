@@ -290,10 +290,10 @@
     {
       "name": "split_filter_with_cleanup",
       "description": "Split Filter With Cleanup",
-      "command": "qsv split --filter \"cp $FILE {}.bak\" --filter-cleanup in.csv",
+      "command": "qsv split --filter-cleanup in.csv --filter \"cp $FILE {}.bak\"",
       "options": {
-        "--filter": "cp $FILE {}.bak",
-        "--filter-cleanup": "in.csv"
+        "--filter-cleanup": "in.csv",
+        "--filter": "cp $FILE {}.bak"
       }
     },
     {
@@ -311,10 +311,10 @@
     {
       "name": "split_filter_with_cleanup_failed_command",
       "description": "Split Filter With Cleanup Failed Command",
-      "command": "qsv split --filter \"nonexistent_command $FILE {}.bak\" --filter-cleanup in.csv",
+      "command": "qsv split --filter-cleanup in.csv --filter \"nonexistent_command $FILE {}.bak\"",
       "options": {
-        "--filter": "nonexistent_command $FILE {}.bak",
-        "--filter-cleanup": "in.csv"
+        "--filter-cleanup": "in.csv",
+        "--filter": "nonexistent_command $FILE {}.bak"
       }
     },
     {

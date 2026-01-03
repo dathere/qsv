@@ -1044,7 +1044,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations trim,strip_prefix,upper,squeeze,strip_suffix name data.csv --comparand Joe -c new_column",
+      "command": "qsv applydp operations trim,strip_prefix,upper,squeeze,strip_suffix name data.csv -c new_column --comparand Joe",
       "args": [
         "operations",
         "trim,strip_prefix,upper,squeeze,strip_suffix",
@@ -1052,8 +1052,8 @@
         "data.csv"
       ],
       "options": {
-        "--comparand": "Joe",
-        "-c": "new_column"
+        "-c": "new_column",
+        "--comparand": "Joe"
       },
       "tags": [
         "error-handling"

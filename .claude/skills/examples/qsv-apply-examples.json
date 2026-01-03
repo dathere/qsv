@@ -1030,14 +1030,14 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply dynfmt data.csv -c FullName --formatstr \"Sir/Madam {FirstName} {MI}. {LastName}\"",
+      "command": "qsv apply dynfmt data.csv --formatstr \"Sir/Madam {FirstName} {MI}. {LastName}\" -c FullName",
       "args": [
         "dynfmt",
         "data.csv"
       ],
       "options": {
-        "-c": "FullName",
-        "--formatstr": "Sir/Madam {FirstName} {MI}. {LastName}"
+        "--formatstr": "Sir/Madam {FirstName} {MI}. {LastName}",
+        "-c": "FullName"
       },
       "expected": {
         "data": [
@@ -1177,14 +1177,14 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply calcconv data.csv --formatstr \"{qty_fruit_day} * {calories} calories to watt hours\" --new-column watthours",
+      "command": "qsv apply calcconv data.csv --new-column watthours --formatstr \"{qty_fruit_day} * {calories} calories to watt hours\"",
       "args": [
         "calcconv",
         "data.csv"
       ],
       "options": {
-        "--formatstr": "{qty_fruit_day} * {calories} calories to watt hours",
-        "--new-column": "watthours"
+        "--new-column": "watthours",
+        "--formatstr": "{qty_fruit_day} * {calories} calories to watt hours"
       },
       "expected": {
         "data": [
@@ -1327,14 +1327,14 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply calcconv data.csv --new-column watthours --formatstr \"{qty_fruit_day} * {calories} calories to watt hours <UNIT>\"",
+      "command": "qsv apply calcconv data.csv --formatstr \"{qty_fruit_day} * {calories} calories to watt hours <UNIT>\" --new-column watthours",
       "args": [
         "calcconv",
         "data.csv"
       ],
       "options": {
-        "--new-column": "watthours",
-        "--formatstr": "{qty_fruit_day} * {calories} calories to watt hours <UNIT>"
+        "--formatstr": "{qty_fruit_day} * {calories} calories to watt hours <UNIT>",
+        "--new-column": "watthours"
       },
       "expected": {
         "data": [
@@ -1404,15 +1404,15 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv enum data.csv calcconv enum.csv --formatstr \"{index} * {index}\" -c result",
+      "command": "qsv enum data.csv calcconv enum.csv -c result --formatstr \"{index} * {index}\"",
       "args": [
         "data.csv",
         "calcconv",
         "enum.csv"
       ],
       "options": {
-        "--formatstr": "{index} * {index}",
-        "-c": "result"
+        "-c": "result",
+        "--formatstr": "{index} * {index}"
       },
       "expected": {
         "data": [
@@ -1843,7 +1843,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply operations censor_check description data.csv --new-column profanity_flag --comparand shlong,dong,cameltoe",
+      "command": "qsv apply operations censor_check description data.csv --comparand shlong,dong,cameltoe --new-column profanity_flag",
       "args": [
         "operations",
         "censor_check",
@@ -1851,8 +1851,8 @@
         "data.csv"
       ],
       "options": {
-        "--new-column": "profanity_flag",
-        "--comparand": "shlong,dong,cameltoe"
+        "--comparand": "shlong,dong,cameltoe",
+        "--new-column": "profanity_flag"
       },
       "expected": {
         "data": [
@@ -2049,7 +2049,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply operations censor_count description data.csv --new-column profanity_count --comparand \"shlong, dong, cameltoe, bitch\"",
+      "command": "qsv apply operations censor_count description data.csv --comparand \"shlong, dong, cameltoe, bitch\" --new-column profanity_count",
       "args": [
         "operations",
         "censor_count",
@@ -2057,8 +2057,8 @@
         "data.csv"
       ],
       "options": {
-        "--new-column": "profanity_count",
-        "--comparand": "shlong, dong, cameltoe, bitch"
+        "--comparand": "shlong, dong, cameltoe, bitch",
+        "--new-column": "profanity_count"
       },
       "expected": {
         "data": [
@@ -2235,7 +2235,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply operations regex_replace description data.csv --comparand \"(?:\\\\\\\\d{3}-\\\\\\\\d{2}-\\\\\\\\d{4})\" --replacement SSN",
+      "command": "qsv apply operations regex_replace description data.csv --replacement SSN --comparand \"(?:\\\\\\\\d{3}-\\\\\\\\d{2}-\\\\\\\\d{4})\"",
       "args": [
         "operations",
         "regex_replace",
@@ -2243,8 +2243,8 @@
         "data.csv"
       ],
       "options": {
-        "--comparand": "(?:\\\\d{3}-\\\\d{2}-\\\\d{4})",
-        "--replacement": "SSN"
+        "--replacement": "SSN",
+        "--comparand": "(?:\\\\d{3}-\\\\d{2}-\\\\d{4})"
       },
       "expected": {
         "data": [
@@ -2318,7 +2318,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply operations regex_replace description data.csv --replacement SSN --comparand \"(?:?)\"",
+      "command": "qsv apply operations regex_replace description data.csv --comparand \"(?:?)\" --replacement SSN",
       "args": [
         "operations",
         "regex_replace",
@@ -2326,8 +2326,8 @@
         "data.csv"
       ],
       "options": {
-        "--replacement": "SSN",
-        "--comparand": "(?:?)"
+        "--comparand": "(?:?)",
+        "--replacement": "SSN"
       },
       "tags": [
         "error-handling"
@@ -4704,7 +4704,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply operations whatlang description data.csv --new-column language --comparand \"0.95?\"",
+      "command": "qsv apply operations whatlang description data.csv --comparand \"0.95?\" --new-column language",
       "args": [
         "operations",
         "whatlang",
@@ -4712,8 +4712,8 @@
         "data.csv"
       ],
       "options": {
-        "--new-column": "language",
-        "--comparand": "0.95?"
+        "--comparand": "0.95?",
+        "--new-column": "language"
       },
       "expected": {
         "data": [
@@ -4810,7 +4810,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply operations whatlang description data.csv --new-column language --comparand \"0.03?\"",
+      "command": "qsv apply operations whatlang description data.csv --comparand \"0.03?\" --new-column language",
       "args": [
         "operations",
         "whatlang",
@@ -4818,8 +4818,8 @@
         "data.csv"
       ],
       "options": {
-        "--new-column": "language",
-        "--comparand": "0.03?"
+        "--comparand": "0.03?",
+        "--new-column": "language"
       },
       "expected": {
         "data": [

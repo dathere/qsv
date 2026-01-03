@@ -203,14 +203,14 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv stats test.csv test.csv --percentile-list 5,95 --pct-thresholds 10,90",
+      "command": "qsv stats test.csv test.csv --pct-thresholds 10,90 --percentile-list 5,95",
       "args": [
         "test.csv",
         "test.csv"
       ],
       "options": {
-        "--percentile-list": "5,95",
-        "--pct-thresholds": "10,90"
+        "--pct-thresholds": "10,90",
+        "--percentile-list": "5,95"
       }
     },
     {
@@ -543,25 +543,25 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv stats test.csv --advanced --everything test.csv",
+      "command": "qsv stats test.csv --everything test.csv --advanced",
       "args": [
         "test.csv"
       ],
       "options": {
-        "--advanced": "true",
-        "--everything": "test.csv"
+        "--everything": "test.csv",
+        "--advanced": "true"
       }
     },
     {
       "name": "moarstats_kurtosis_gini_unequal_distribution",
       "description": "Moarstats Kurtosis Gini Unequal Distribution",
-      "command": "qsv stats test.csv --advanced --everything test.csv",
+      "command": "qsv stats test.csv --everything test.csv --advanced",
       "args": [
         "test.csv"
       ],
       "options": {
-        "--advanced": "true",
-        "--everything": "test.csv"
+        "--everything": "test.csv",
+        "--advanced": "true"
       }
     },
     {
@@ -588,13 +588,13 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv stats test.csv --advanced --everything test.csv",
+      "command": "qsv stats test.csv --everything test.csv --advanced",
       "args": [
         "test.csv"
       ],
       "options": {
-        "--advanced": "true",
-        "--everything": "test.csv"
+        "--everything": "test.csv",
+        "--advanced": "true"
       }
     },
     {
@@ -959,13 +959,13 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv stats test.csv --everything test.csv --advanced",
+      "command": "qsv stats test.csv --advanced --everything test.csv",
       "args": [
         "test.csv"
       ],
       "options": {
-        "--everything": "test.csv",
-        "--advanced": "true"
+        "--advanced": "true",
+        "--everything": "test.csv"
       }
     },
     {
@@ -1012,13 +1012,13 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv stats test.csv --advanced --everything test.csv",
+      "command": "qsv stats test.csv --everything test.csv --advanced",
       "args": [
         "test.csv"
       ],
       "options": {
-        "--advanced": "true",
-        "--everything": "test.csv"
+        "--everything": "test.csv",
+        "--advanced": "true"
       }
     },
     {
@@ -1131,10 +1131,10 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv stats --everything test.csv --advanced test.csv",
+      "command": "qsv stats --advanced test.csv --everything test.csv",
       "options": {
-        "--everything": "test.csv",
-        "--advanced": "test.csv"
+        "--advanced": "test.csv",
+        "--everything": "test.csv"
       }
     },
     {
@@ -1169,22 +1169,22 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv stats test.csv --infer-boolean test.csv --advanced",
+      "command": "qsv stats test.csv --advanced --infer-boolean test.csv",
       "args": [
         "test.csv"
       ],
       "options": {
-        "--infer-boolean": "test.csv",
-        "--advanced": "true"
+        "--advanced": "true",
+        "--infer-boolean": "test.csv"
       }
     },
     {
       "name": "moarstats_bivariate_basic",
       "description": "Moarstats Bivariate Basic",
-      "command": "qsv stats --everything test.csv --bivariate test.csv",
+      "command": "qsv stats --bivariate test.csv --everything test.csv",
       "options": {
-        "--everything": "test.csv",
-        "--bivariate": "test.csv"
+        "--bivariate": "test.csv",
+        "--everything": "test.csv"
       },
       "tags": [
         "basic"
@@ -1231,10 +1231,10 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv stats --bivariate test.csv --everything test.csv",
+      "command": "qsv stats --everything test.csv --bivariate test.csv",
       "options": {
-        "--bivariate": "test.csv",
-        "--everything": "test.csv"
+        "--everything": "test.csv",
+        "--bivariate": "test.csv"
       }
     },
     {
@@ -1293,19 +1293,19 @@
     {
       "name": "moarstats_bivariate_multiple_fields",
       "description": "Moarstats Bivariate Multiple Fields",
-      "command": "qsv stats --everything test.csv --bivariate test.csv",
+      "command": "qsv stats --bivariate test.csv --everything test.csv",
       "options": {
-        "--everything": "test.csv",
-        "--bivariate": "test.csv"
+        "--bivariate": "test.csv",
+        "--everything": "test.csv"
       }
     },
     {
       "name": "moarstats_bivariate_all_statistics",
       "description": "Moarstats Bivariate All Statistics",
-      "command": "qsv stats --everything test.csv --bivariate test.csv",
+      "command": "qsv stats --bivariate test.csv --everything test.csv",
       "options": {
-        "--everything": "test.csv",
-        "--bivariate": "test.csv"
+        "--bivariate": "test.csv",
+        "--everything": "test.csv"
       }
     },
     {
@@ -1341,23 +1341,23 @@
         ],
         "filename": "secondary.csv"
       },
-      "command": "qsv stats primary.csv --everything primary.csv --join-inputs secondary.csv --join-keys id,id",
+      "command": "qsv stats primary.csv --join-keys id,id --everything primary.csv --join-inputs secondary.csv",
       "args": [
         "primary.csv"
       ],
       "options": {
+        "--join-keys": "id,id",
         "--everything": "primary.csv",
-        "--join-inputs": "secondary.csv",
-        "--join-keys": "id,id"
+        "--join-inputs": "secondary.csv"
       }
     },
     {
       "name": "moarstats_bivariate_index_auto_creation",
       "description": "Moarstats Bivariate Index Auto Creation",
-      "command": "qsv stats --bivariate test.csv --everything test.csv",
+      "command": "qsv stats --everything test.csv --bivariate test.csv",
       "options": {
-        "--bivariate": "test.csv",
-        "--everything": "test.csv"
+        "--everything": "test.csv",
+        "--bivariate": "test.csv"
       }
     },
     {
@@ -1375,13 +1375,13 @@
     {
       "name": "moarstats_bivariate_stats_multiple",
       "description": "Moarstats Bivariate Stats Multiple",
-      "command": "qsv stats test.csv --bivariate-stats pearson,covariance --everything test.csv",
+      "command": "qsv stats test.csv --everything test.csv --bivariate-stats pearson,covariance",
       "args": [
         "test.csv"
       ],
       "options": {
-        "--bivariate-stats": "pearson,covariance",
-        "--everything": "test.csv"
+        "--everything": "test.csv",
+        "--bivariate-stats": "pearson,covariance"
       }
     },
     {
@@ -1531,13 +1531,13 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv stats test.csv --xsd-gdate-scan quick --everything test.csv",
+      "command": "qsv stats test.csv --everything test.csv --xsd-gdate-scan quick",
       "args": [
         "test.csv"
       ],
       "options": {
-        "--xsd-gdate-scan": "quick",
-        "--everything": "test.csv"
+        "--everything": "test.csv",
+        "--xsd-gdate-scan": "quick"
       }
     },
     {

@@ -1,0 +1,153 @@
+{
+  "skill": "qsv-count",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "count_simple",
+      "description": "Count Simple",
+      "command": "qsv count in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "count_empty",
+      "description": "Count Empty",
+      "command": "qsv count empty.csv",
+      "args": [
+        "empty.csv"
+      ]
+    },
+    {
+      "name": "count_simple_tsv",
+      "description": "Count Simple Tsv",
+      "command": "qsv count in.tsv",
+      "args": [
+        "in.tsv"
+      ]
+    },
+    {
+      "name": "count_simple_ssv",
+      "description": "Count Simple Ssv",
+      "command": "qsv count in.ssv",
+      "args": [
+        "in.ssv"
+      ]
+    },
+    {
+      "name": "count_simple_custom_delimiter",
+      "description": "Count Simple Custom Delimiter",
+      "command": "qsv count in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "count_width",
+      "description": "Count Width",
+      "command": "qsv count ",
+      "options": {
+        "--width": "in.csv"
+      }
+    },
+    {
+      "name": "count_width_json",
+      "description": "Count Width Json",
+      "command": "qsv count ",
+      "options": {
+        "--json": "in.csv"
+      }
+    },
+    {
+      "name": "count_width_no_delims",
+      "description": "Count Width No Delims",
+      "command": "qsv count ",
+      "options": {
+        "--width-no-delims": "in.csv"
+      }
+    },
+    {
+      "name": "count_width_no_delims_human_readable",
+      "description": "Count Width No Delims Human Readable",
+      "command": "qsv count ",
+      "options": {
+        "-H": "in.csv"
+      }
+    },
+    {
+      "name": "count_width_human_readable",
+      "description": "Count Width Human Readable",
+      "command": "qsv count ",
+      "options": {
+        "-H": "in.csv"
+      }
+    },
+    {
+      "name": "count_width_custom_delimiter",
+      "description": "Count Width Custom Delimiter",
+      "command": "qsv count ",
+      "options": {
+        "--width": "in.csv"
+      }
+    },
+    {
+      "name": "count_flexible",
+      "description": "Count Flexible",
+      "command": "qsv count ",
+      "options": {
+        "--flexible": "in.csv"
+      }
+    },
+    {
+      "name": "count_comments",
+      "description": "Count Comments",
+      "input": {
+        "data": [
+          [
+            "# this is a comment",
+            ""
+          ],
+          [
+            "# next comment",
+            ""
+          ],
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "alpha",
+            "13"
+          ],
+          [
+            "beta",
+            "24"
+          ],
+          [
+            "# comment here too!",
+            "24"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv count in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "count_custom_delimiter",
+      "description": "Count Custom Delimiter",
+      "command": "qsv count in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--delimiter": ";"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    }
+  ]
+}

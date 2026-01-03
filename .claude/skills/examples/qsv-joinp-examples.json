@@ -1,0 +1,2354 @@
+{
+  "skill": "qsv-joinp",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "headers",
+      "description": "Headers",
+      "command": "qsv joinp "
+    },
+    {
+      "name": "headers",
+      "description": "Headers",
+      "command": "qsv joinp "
+    },
+    {
+      "name": "headers",
+      "description": "Headers",
+      "command": "qsv joinp "
+    },
+    {
+      "name": "headers",
+      "description": "Headers",
+      "command": "qsv joinp "
+    },
+    {
+      "name": "headers",
+      "description": "Headers",
+      "command": "qsv joinp "
+    },
+    {
+      "name": "joinp_cross",
+      "description": "Joinp Cross",
+      "input": {
+        "data": [
+          [
+            "h1",
+            "h2"
+          ],
+          [
+            "a",
+            "b"
+          ],
+          [
+            "c",
+            "d"
+          ]
+        ],
+        "filename": "letters.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--cross": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "h1",
+            "h2",
+            "h3",
+            "h4"
+          ],
+          [
+            "a",
+            "b",
+            "1",
+            "2"
+          ],
+          [
+            "a",
+            "b",
+            "3",
+            "4"
+          ],
+          [
+            "c",
+            "d",
+            "1",
+            "2"
+          ],
+          [
+            "c",
+            "d",
+            "3",
+            "4"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_cross_compress",
+      "description": "Joinp Cross Compress",
+      "input": {
+        "data": [
+          [
+            "h1",
+            "h2"
+          ],
+          [
+            "a",
+            "b"
+          ],
+          [
+            "c",
+            "d"
+          ]
+        ],
+        "filename": "letters.csv"
+      },
+      "command": "qsv joinp &out_file",
+      "args": [
+        "&out_file"
+      ],
+      "options": {
+        "--cross": "decompress"
+      },
+      "expected": {
+        "data": [
+          [
+            "h1",
+            "h2",
+            "h3",
+            "h4"
+          ],
+          [
+            "a",
+            "b",
+            "1",
+            "2"
+          ],
+          [
+            "a",
+            "b",
+            "3",
+            "4"
+          ],
+          [
+            "c",
+            "d",
+            "1",
+            "2"
+          ],
+          [
+            "c",
+            "d",
+            "3",
+            "4"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_asof_date",
+      "description": "Joinp Asof Date",
+      "input": {
+        "data": [
+          [
+            "date",
+            "gdp"
+          ],
+          [
+            "2016-01-01",
+            "4164"
+          ],
+          [
+            "2017-01-01",
+            "4411"
+          ],
+          [
+            "2018-01-01",
+            "4566"
+          ],
+          [
+            "2019-01-01",
+            "4696"
+          ]
+        ],
+        "filename": "gdp.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--asof": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "date",
+            "population",
+            "gdp"
+          ],
+          [
+            "2016-05-12",
+            "82.19",
+            "4164"
+          ],
+          [
+            "2017-05-12",
+            "82.66",
+            "4411"
+          ],
+          [
+            "2018-05-12",
+            "83.12",
+            "4566"
+          ],
+          [
+            "2019-05-12",
+            "83.52",
+            "4696"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_asof_date_compress",
+      "description": "Joinp Asof Date Compress",
+      "input": {
+        "data": [
+          [
+            "date",
+            "gdp"
+          ],
+          [
+            "2016-01-01",
+            "4164"
+          ],
+          [
+            "2017-01-01",
+            "4411"
+          ],
+          [
+            "2018-01-01",
+            "4566"
+          ],
+          [
+            "2019-01-01",
+            "4696"
+          ]
+        ],
+        "filename": "gdp.csv"
+      },
+      "command": "qsv joinp &out_file",
+      "args": [
+        "&out_file"
+      ],
+      "options": {
+        "--asof": "decompress"
+      },
+      "expected": {
+        "data": [
+          [
+            "date",
+            "population",
+            "gdp"
+          ],
+          [
+            "2016-05-12",
+            "82.19",
+            "4164"
+          ],
+          [
+            "2017-05-12",
+            "82.66",
+            "4411"
+          ],
+          [
+            "2018-05-12",
+            "83.12",
+            "4566"
+          ],
+          [
+            "2019-05-12",
+            "83.52",
+            "4696"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_asof_date_comments",
+      "description": "Joinp Asof Date Comments",
+      "input": {
+        "data": [
+          [
+            "#comment",
+            "here"
+          ],
+          [
+            "date",
+            "gdp"
+          ],
+          [
+            "2016-01-01",
+            "4164"
+          ],
+          [
+            "2017-01-01",
+            "4411"
+          ],
+          [
+            "2018-01-01",
+            "4566"
+          ],
+          [
+            "2019-01-01",
+            "4696"
+          ]
+        ],
+        "filename": "gdp.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--asof": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "date",
+            "population",
+            "gdp"
+          ],
+          [
+            "2016-05-12",
+            "82.19",
+            "4164"
+          ],
+          [
+            "2017-05-12",
+            "82.66",
+            "4411"
+          ],
+          [
+            "2018-05-12",
+            "83.12",
+            "4566"
+          ],
+          [
+            "2019-05-12",
+            "83.52",
+            "4696"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_asofby_1",
+      "description": "Joinp Asofby 1",
+      "input": {
+        "data": [
+          [
+            "time",
+            "ticker",
+            "groups_numeric",
+            "bid"
+          ],
+          [
+            "2016-01-01 12:23:00",
+            "MSFT",
+            "1",
+            "51.95"
+          ],
+          [
+            "2016-01-01 12:38:00",
+            "MSFT",
+            "1",
+            "51.95"
+          ],
+          [
+            "2016-01-01 12:48:00",
+            "GOOG",
+            "2",
+            "720.77"
+          ],
+          [
+            "2016-01-01 12:48:00",
+            "GOOG",
+            "2",
+            "720.92"
+          ],
+          [
+            "2016-01-01 12:48:00",
+            "AAPL",
+            "3",
+            "98.0"
+          ]
+        ],
+        "filename": "trades.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--asof": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "time",
+            "ticker",
+            "groups_numeric",
+            "bid",
+            "ticker_right",
+            "groups_numeric_right",
+            "bid_right"
+          ],
+          [
+            "2016-01-01 12:23",
+            "MSFT",
+            "1",
+            "51.95",
+            "",
+            "",
+            ""
+          ],
+          [
+            "2016-01-01 12:38",
+            "MSFT",
+            "1",
+            "51.95",
+            "MSFT",
+            "1",
+            "51.97"
+          ],
+          [
+            "2016-01-01 12:48",
+            "GOOG",
+            "2",
+            "720.77",
+            "MSFT",
+            "1",
+            "51.99"
+          ],
+          [
+            "2016-01-01 12:48",
+            "GOOG",
+            "2",
+            "720.92",
+            "MSFT",
+            "1",
+            "51.99"
+          ],
+          [
+            "2016-01-01 12:48",
+            "AAPL",
+            "3",
+            "98.0",
+            "MSFT",
+            "1",
+            "51.99"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_asofby_left_place_date",
+      "description": "Joinp Asofby Left Place Date",
+      "input": {
+        "data": [
+          [
+            "date",
+            "gdp",
+            "place"
+          ],
+          [
+            "2016-01-01",
+            "4164",
+            "US"
+          ],
+          [
+            "2017-01-01",
+            "4411",
+            "US"
+          ],
+          [
+            "2018-01-01",
+            "4566",
+            "Asia"
+          ],
+          [
+            "2019-01-01",
+            "4696",
+            "EU"
+          ]
+        ],
+        "filename": "gdp.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--asof": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "date",
+            "population",
+            "place",
+            "gdp",
+            "place_right"
+          ],
+          [
+            "2016-05-12",
+            "82.19",
+            "US",
+            "4164",
+            "US"
+          ],
+          [
+            "2017-05-12",
+            "82.66",
+            "US",
+            "4411",
+            "US"
+          ],
+          [
+            "2018-05-12",
+            "83.12",
+            "Asia",
+            "4566",
+            "Asia"
+          ],
+          [
+            "2018-05-12",
+            "84.12",
+            "Asia",
+            "4566",
+            "Asia"
+          ],
+          [
+            "2019-05-12",
+            "83.52",
+            "EU",
+            "4696",
+            "EU"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_asofby_right_place_date",
+      "description": "Joinp Asofby Right Place Date",
+      "input": {
+        "data": [
+          [
+            "date",
+            "gdp",
+            "place"
+          ],
+          [
+            "2016-01-01",
+            "4164",
+            "US"
+          ],
+          [
+            "2017-01-01",
+            "4411",
+            "US"
+          ],
+          [
+            "2018-01-01",
+            "4566",
+            "Asia"
+          ],
+          [
+            "2019-01-01",
+            "4696",
+            "EU"
+          ]
+        ],
+        "filename": "gdp.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--asof": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "date",
+            "population",
+            "place",
+            "gdp",
+            "place_right"
+          ],
+          [
+            "2016-05-12",
+            "82.19",
+            "US",
+            "4164",
+            "US"
+          ],
+          [
+            "2017-05-12",
+            "82.66",
+            "US",
+            "4411",
+            "US"
+          ],
+          [
+            "2018-05-12",
+            "83.12",
+            "Asia",
+            "4566",
+            "Asia"
+          ],
+          [
+            "2018-05-12",
+            "84.12",
+            "Asia",
+            "4566",
+            "Asia"
+          ],
+          [
+            "2019-05-12",
+            "83.52",
+            "EU",
+            "4696",
+            "EU"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_asofby_leftright_place_date",
+      "description": "Joinp Asofby Leftright Place Date",
+      "input": {
+        "data": [
+          [
+            "date",
+            "gdp",
+            "place"
+          ],
+          [
+            "2016-01-01",
+            "4164",
+            "US"
+          ],
+          [
+            "2017-01-01",
+            "4411",
+            "US"
+          ],
+          [
+            "2018-01-01",
+            "4566",
+            "Asia"
+          ],
+          [
+            "2019-01-01",
+            "4696",
+            "EU"
+          ]
+        ],
+        "filename": "gdp.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--asof": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "date",
+            "population",
+            "other_place",
+            "gdp",
+            "place"
+          ],
+          [
+            "2016-05-12",
+            "82.19",
+            "US",
+            "4164",
+            "US"
+          ],
+          [
+            "2017-05-12",
+            "82.66",
+            "US",
+            "4411",
+            "US"
+          ],
+          [
+            "2018-05-12",
+            "83.12",
+            "Asia",
+            "4566",
+            "Asia"
+          ],
+          [
+            "2018-05-12",
+            "84.12",
+            "Asia",
+            "4566",
+            "Asia"
+          ],
+          [
+            "2019-05-12",
+            "83.52",
+            "EU",
+            "4696",
+            "EU"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_asof_nearest_date",
+      "description": "Joinp Asof Nearest Date",
+      "input": {
+        "data": [
+          [
+            "date",
+            "gdp"
+          ],
+          [
+            "2016-01-01",
+            "4164"
+          ],
+          [
+            "2017-01-22",
+            "4422"
+          ],
+          [
+            "2017-01-10",
+            "4410"
+          ],
+          [
+            "2018-01-01",
+            "4501"
+          ],
+          [
+            "2018-01-05",
+            "4505"
+          ],
+          [
+            "2018-01-14",
+            "4514"
+          ],
+          [
+            "2019-01-01",
+            "4696"
+          ]
+        ],
+        "filename": "gdp.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--asof": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "date",
+            "population",
+            "gdp"
+          ],
+          [
+            "2016-05-12",
+            "82.19",
+            "4164"
+          ],
+          [
+            "2017-05-12",
+            "82.66",
+            "4422"
+          ],
+          [
+            "2018-05-12",
+            "83.12",
+            "4514"
+          ],
+          [
+            "2019-05-12",
+            "83.52",
+            "4696"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_asof_date_diffcolnames",
+      "description": "Joinp Asof Date Diffcolnames",
+      "input": {
+        "data": [
+          [
+            "gdp_date",
+            "gdp"
+          ],
+          [
+            "2016-01-01",
+            "4164"
+          ],
+          [
+            "2017-01-01",
+            "4411"
+          ],
+          [
+            "2018-01-01",
+            "4566"
+          ],
+          [
+            "2019-01-01",
+            "4696"
+          ]
+        ],
+        "filename": "gdp.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--asof": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "pop_date",
+            "population",
+            "gdp_date",
+            "gdp"
+          ],
+          [
+            "2016-05-12",
+            "82.19",
+            "2016-01-01",
+            "4164"
+          ],
+          [
+            "2017-05-12",
+            "82.66",
+            "2017-01-01",
+            "4411"
+          ],
+          [
+            "2018-05-12",
+            "83.12",
+            "2018-01-01",
+            "4566"
+          ],
+          [
+            "2019-05-12",
+            "83.52",
+            "2019-01-01",
+            "4696"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_asof_date_diffcolnames_sqlfilter",
+      "description": "Joinp Asof Date Diffcolnames Sqlfilter",
+      "input": {
+        "data": [
+          [
+            "gdp_date",
+            "gdp"
+          ],
+          [
+            "2016-01-01",
+            "4164"
+          ],
+          [
+            "2017-01-01",
+            "4411"
+          ],
+          [
+            "2018-01-01",
+            "4566"
+          ],
+          [
+            "2019-01-01",
+            "4696"
+          ]
+        ],
+        "filename": "gdp.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--asof": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "pop_date",
+            "gdp"
+          ],
+          [
+            "2018-05-12",
+            "4566"
+          ],
+          [
+            "2019-05-12",
+            "4696"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_ignore_case",
+      "description": "Joinp Ignore Case",
+      "input": {
+        "data": [
+          [
+            "city",
+            "state"
+          ],
+          [
+            "BOSTON",
+            "MA"
+          ],
+          [
+            "new york",
+            "NY"
+          ],
+          [
+            "San Francisco",
+            "CA"
+          ],
+          [
+            "BUFFALO",
+            "NY"
+          ]
+        ],
+        "filename": "cities_mixed.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--ignore-case": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "city",
+            "state",
+            "city_right",
+            "place"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "Boston",
+            "Logan Airport"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "boston",
+            "Boston Garden"
+          ],
+          [
+            "BUFFALO",
+            "NY",
+            "BUFFALO",
+            "Ralph Wilson Stadium"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "joinp_ignore_case_maintain_order_right",
+      "description": "Joinp Ignore Case Maintain Order Right",
+      "input": {
+        "data": [
+          [
+            "city",
+            "state"
+          ],
+          [
+            "BOSTON",
+            "MA"
+          ],
+          [
+            "new york",
+            "NY"
+          ],
+          [
+            "San Francisco",
+            "CA"
+          ],
+          [
+            "BUFFALO",
+            "NY"
+          ]
+        ],
+        "filename": "cities_mixed.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--ignore-case": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "city",
+            "state",
+            "city_right",
+            "place"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "Boston",
+            "Logan Airport"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "boston",
+            "Boston Garden"
+          ],
+          [
+            "BUFFALO",
+            "NY",
+            "BUFFALO",
+            "Ralph Wilson Stadium"
+          ],
+          [
+            "new york",
+            "NY",
+            "new York",
+            "Madison Square Garden"
+          ],
+          [
+            "San Francisco",
+            "CA",
+            "san francisco",
+            "Fisherman's Wharf"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "joinp_ignore_case_maintain_order_left",
+      "description": "Joinp Ignore Case Maintain Order Left",
+      "input": {
+        "data": [
+          [
+            "city",
+            "state"
+          ],
+          [
+            "BOSTON",
+            "MA"
+          ],
+          [
+            "new york",
+            "NY"
+          ],
+          [
+            "San Francisco",
+            "CA"
+          ],
+          [
+            "BUFFALO",
+            "NY"
+          ]
+        ],
+        "filename": "cities_mixed.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--ignore-case": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "city",
+            "state",
+            "city_right",
+            "place"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "Boston",
+            "Logan Airport"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "boston",
+            "Boston Garden"
+          ],
+          [
+            "new york",
+            "NY",
+            "new York",
+            "Madison Square Garden"
+          ],
+          [
+            "San Francisco",
+            "CA",
+            "san francisco",
+            "Fisherman's Wharf"
+          ],
+          [
+            "BUFFALO",
+            "NY",
+            "BUFFALO",
+            "Ralph Wilson Stadium"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "joinp_ignore_case_maintain_order_left_right",
+      "description": "Joinp Ignore Case Maintain Order Left Right",
+      "input": {
+        "data": [
+          [
+            "city",
+            "state"
+          ],
+          [
+            "BOSTON",
+            "MA"
+          ],
+          [
+            "new york",
+            "NY"
+          ],
+          [
+            "San Francisco",
+            "CA"
+          ],
+          [
+            "BUFFALO",
+            "NY"
+          ]
+        ],
+        "filename": "cities_mixed.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--ignore-case": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "city",
+            "state",
+            "city_right",
+            "place"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "Boston",
+            "Logan Airport"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "boston",
+            "Boston Garden"
+          ],
+          [
+            "new york",
+            "NY",
+            "new York",
+            "Madison Square Garden"
+          ],
+          [
+            "San Francisco",
+            "CA",
+            "san francisco",
+            "Fisherman's Wharf"
+          ],
+          [
+            "BUFFALO",
+            "NY",
+            "BUFFALO",
+            "Ralph Wilson Stadium"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "joinp_ignore_case_maintain_order_right_left",
+      "description": "Joinp Ignore Case Maintain Order Right Left",
+      "input": {
+        "data": [
+          [
+            "city",
+            "state"
+          ],
+          [
+            "BOSTON",
+            "MA"
+          ],
+          [
+            "new york",
+            "NY"
+          ],
+          [
+            "San Francisco",
+            "CA"
+          ],
+          [
+            "BUFFALO",
+            "NY"
+          ]
+        ],
+        "filename": "cities_mixed.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--ignore-case": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "city",
+            "state",
+            "city_right",
+            "place"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "Boston",
+            "Logan Airport"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "boston",
+            "Boston Garden"
+          ],
+          [
+            "BUFFALO",
+            "NY",
+            "BUFFALO",
+            "Ralph Wilson Stadium"
+          ],
+          [
+            "new york",
+            "NY",
+            "new York",
+            "Madison Square Garden"
+          ],
+          [
+            "San Francisco",
+            "CA",
+            "san francisco",
+            "Fisherman's Wharf"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "joinp_filter_pattern_matching",
+      "description": "Joinp Filter Pattern Matching",
+      "input": {
+        "data": [
+          [
+            "code",
+            "description"
+          ],
+          [
+            "ABC",
+            "Alpha Beta Charlie"
+          ],
+          [
+            "XYZ",
+            "X-ray Yankee Zulu"
+          ],
+          [
+            "123",
+            "One Two Three"
+          ]
+        ],
+        "filename": "prefixes.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--cross": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "code",
+            "description",
+            "id",
+            "value"
+          ],
+          [
+            "ABC",
+            "Alpha Beta Charlie",
+            "ABC123",
+            "First"
+          ],
+          [
+            "ABC",
+            "Alpha Beta Charlie",
+            "ABCDEF",
+            "Second"
+          ],
+          [
+            "XYZ",
+            "X-ray Yankee Zulu",
+            "XYZ789",
+            "Third"
+          ],
+          [
+            "123",
+            "One Two Three",
+            "123456",
+            "Fourth"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_joinp_cache_schema",
+      "description": "Test Joinp Cache Schema",
+      "input": {
+        "data": [
+          [
+            "id",
+            "has_text",
+            "col3",
+            "col4",
+            "col5"
+          ],
+          [
+            "1",
+            "1",
+            "a",
+            "b",
+            "c"
+          ],
+          [
+            "2",
+            "0",
+            "d",
+            "e",
+            "f"
+          ],
+          [
+            "3",
+            "1",
+            "g",
+            "h",
+            "i"
+          ],
+          [
+            "4",
+            "0",
+            "j",
+            "k",
+            "l"
+          ],
+          [
+            "5",
+            "1",
+            "m",
+            "n",
+            "o"
+          ]
+        ],
+        "filename": "left.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--cache-schema": "2"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "has_text",
+            "col3",
+            "col4",
+            "col5",
+            "id_right"
+          ],
+          [
+            "1",
+            "1",
+            "a",
+            "b",
+            "c",
+            "1"
+          ],
+          [
+            "2",
+            "0",
+            "d",
+            "e",
+            "f",
+            "2"
+          ],
+          [
+            "2",
+            "0",
+            "d",
+            "e",
+            "f",
+            "4"
+          ],
+          [
+            "3",
+            "1",
+            "g",
+            "h",
+            "i",
+            "1"
+          ],
+          [
+            "4",
+            "0",
+            "j",
+            "k",
+            "l",
+            "2"
+          ],
+          [
+            "4",
+            "0",
+            "j",
+            "k",
+            "l",
+            "4"
+          ],
+          [
+            "5",
+            "1",
+            "m",
+            "n",
+            "o",
+            "1"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_ignore_leading_zero",
+      "description": "Joinp Ignore Leading Zero",
+      "input": {
+        "data": [
+          [
+            "id",
+            "value"
+          ],
+          [
+            "001",
+            "a"
+          ],
+          [
+            "02",
+            "b"
+          ],
+          [
+            "3",
+            "c"
+          ]
+        ],
+        "filename": "left.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "-z": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "value",
+            "id_right",
+            "desc"
+          ],
+          [
+            "1",
+            "a",
+            "1",
+            "one"
+          ],
+          [
+            "2",
+            "b",
+            "2",
+            "two"
+          ],
+          [
+            "3",
+            "c",
+            "3",
+            "three"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_ignore_leading_zero_string_schema",
+      "description": "Joinp Ignore Leading Zero String Schema",
+      "input": {
+        "data": [
+          [
+            "id",
+            "value"
+          ],
+          [
+            "001",
+            "a"
+          ],
+          [
+            "02",
+            "b"
+          ],
+          [
+            "3",
+            "c"
+          ]
+        ],
+        "filename": "left.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "-z": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "value",
+            "id_right",
+            "desc"
+          ],
+          [
+            "001",
+            "a",
+            "1",
+            "one"
+          ],
+          [
+            "02",
+            "b",
+            "02",
+            "two"
+          ],
+          [
+            "3",
+            "c",
+            "003",
+            "three"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_ignore_leading_zero_with_non_numeric",
+      "description": "Joinp Ignore Leading Zero With Non Numeric",
+      "input": {
+        "data": [
+          [
+            "code",
+            "value"
+          ],
+          [
+            "001A",
+            "a"
+          ],
+          [
+            "02B",
+            "b"
+          ],
+          [
+            "ABC",
+            "c"
+          ]
+        ],
+        "filename": "left.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--ignore-leading-zeros": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "code",
+            "value",
+            "code_right",
+            "desc"
+          ],
+          [
+            "001A",
+            "a",
+            "1A",
+            "one"
+          ],
+          [
+            "02B",
+            "b",
+            "0002B",
+            "two"
+          ],
+          [
+            "ABC",
+            "c",
+            "ABC",
+            "three"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_ignore_leading_zero_multiple_columns",
+      "description": "Joinp Ignore Leading Zero Multiple Columns",
+      "input": {
+        "data": [
+          [
+            "id",
+            "code",
+            "value"
+          ],
+          [
+            "001",
+            "001A",
+            "a"
+          ],
+          [
+            "02",
+            "02B",
+            "b"
+          ],
+          [
+            "3",
+            "ABC",
+            "c"
+          ]
+        ],
+        "filename": "left.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--ignore-leading-zeros": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "code",
+            "value",
+            "id_right",
+            "code_right",
+            "desc"
+          ],
+          [
+            "001",
+            "001A",
+            "a",
+            "1",
+            "1A",
+            "one"
+          ],
+          [
+            "02",
+            "02B",
+            "b",
+            "002",
+            "0002B",
+            "two"
+          ],
+          [
+            "3",
+            "ABC",
+            "c",
+            "03",
+            "ABC",
+            "three"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_ignore_case_and_leading_zeros",
+      "description": "Joinp Ignore Case And Leading Zeros",
+      "input": {
+        "data": [
+          [
+            "id",
+            "code",
+            "value"
+          ],
+          [
+            "001",
+            "001abc",
+            "a"
+          ],
+          [
+            "02",
+            "02DEF",
+            "b"
+          ],
+          [
+            "3",
+            "XYZ",
+            "c"
+          ]
+        ],
+        "filename": "left.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--ignore-case": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "code",
+            "value",
+            "id_right",
+            "code_right",
+            "desc"
+          ],
+          [
+            "001",
+            "001abc",
+            "a",
+            "1",
+            "00001ABC",
+            "one"
+          ],
+          [
+            "02",
+            "02DEF",
+            "b",
+            "002",
+            "0002def",
+            "two"
+          ],
+          [
+            "3",
+            "XYZ",
+            "c",
+            "03",
+            "xyz",
+            "three"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "joinp_ignore_case_and_leading_zeros_coalesce",
+      "description": "Joinp Ignore Case And Leading Zeros Coalesce",
+      "input": {
+        "data": [
+          [
+            "id",
+            "code",
+            "value"
+          ],
+          [
+            "001",
+            "001abc",
+            "a"
+          ],
+          [
+            "02",
+            "02DEF",
+            "b"
+          ],
+          [
+            "3",
+            "XYZ",
+            "c"
+          ]
+        ],
+        "filename": "left.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--coalesce": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "code",
+            "value",
+            "desc"
+          ],
+          [
+            "001",
+            "001abc",
+            "a",
+            "one"
+          ],
+          [
+            "02",
+            "02DEF",
+            "b",
+            "two"
+          ],
+          [
+            "3",
+            "XYZ",
+            "c",
+            "three"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "joinp_non_equi_greater_than",
+      "description": "Joinp Non Equi Greater Than",
+      "command": "qsv joinp ",
+      "options": {
+        "--non-equi": "budget_right > price_left"
+      },
+      "expected": {
+        "data": [
+          [
+            "item_left",
+            "price_left",
+            "customer_right",
+            "budget_right"
+          ],
+          [
+            "apple",
+            "1.00",
+            "Bob",
+            "1.50"
+          ],
+          [
+            "apple",
+            "1.00",
+            "Alice",
+            "2.50"
+          ],
+          [
+            "apple",
+            "1.00",
+            "Carol",
+            "3.50"
+          ],
+          [
+            "banana",
+            "2.00",
+            "Alice",
+            "2.50"
+          ],
+          [
+            "banana",
+            "2.00",
+            "Carol",
+            "3.50"
+          ],
+          [
+            "orange",
+            "3.00",
+            "Carol",
+            "3.50"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_non_equi_less_than",
+      "description": "Joinp Non Equi Less Than",
+      "command": "qsv joinp ",
+      "options": {
+        "--non-equi": "date_left < deadline_right"
+      },
+      "expected": {
+        "data": [
+          [
+            "event_left",
+            "date_left",
+            "task_right",
+            "deadline_right"
+          ],
+          [
+            "meeting",
+            "2024-01-01",
+            "report",
+            "2024-03-01"
+          ],
+          [
+            "meeting",
+            "2024-01-01",
+            "presentation",
+            "2024-07-01"
+          ],
+          [
+            "meeting",
+            "2024-01-01",
+            "review",
+            "2024-12-15"
+          ],
+          [
+            "party",
+            "2024-06-15",
+            "presentation",
+            "2024-07-01"
+          ],
+          [
+            "party",
+            "2024-06-15",
+            "review",
+            "2024-12-15"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_non_equi_less_than_date_arithmetic",
+      "description": "Joinp Non Equi Less Than Date Arithmetic",
+      "command": "qsv joinp ",
+      "options": {
+        "--non-equi": "date_left  + interval '4 months' < deadline_right",
+        "--try-parsedates": "true"
+      }
+    },
+    {
+      "name": "joinp_non_equi_not_equal",
+      "description": "Joinp Non Equi Not Equal",
+      "command": "qsv joinp ",
+      "options": {
+        "--non-equi": "team_left != team_right"
+      },
+      "expected": {
+        "data": [
+          [
+            "player_left",
+            "team_left",
+            "opponent1_right",
+            "team_right"
+          ],
+          [
+            "Alice",
+            "Red",
+            "David",
+            "Green"
+          ],
+          [
+            "Alice",
+            "Red",
+            "Eve",
+            "Blue"
+          ],
+          [
+            "Bob",
+            "Blue",
+            "David",
+            "Green"
+          ],
+          [
+            "Bob",
+            "Blue",
+            "Frank",
+            "Red"
+          ],
+          [
+            "Carol",
+            "Red",
+            "David",
+            "Green"
+          ],
+          [
+            "Carol",
+            "Red",
+            "Eve",
+            "Blue"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_non_equi_invalid_operator",
+      "description": "Joinp Non Equi Invalid Operator",
+      "command": "qsv joinp ",
+      "options": {
+        "--non-equi": "col1 INVALID col2"
+      }
+    },
+    {
+      "name": "joinp_non_equi_invalid_format",
+      "description": "Joinp Non Equi Invalid Format",
+      "command": "qsv joinp ",
+      "options": {
+        "--non-equi": "invalid expression format"
+      }
+    },
+    {
+      "name": "joinp_non_equi_compound",
+      "description": "Joinp Non Equi Compound",
+      "command": "qsv joinp ",
+      "options": {
+        "--non-equi": "\n            \"salary_left >= min_salary_right AND salary_left <= max_salary_right AND \\\n             experience_left >= min_exp_right\",\n        "
+      },
+      "expected": {
+        "data": [
+          [
+            "name_left",
+            "salary_left",
+            "experience_left",
+            "position_right",
+            "min_salary_right",
+            "min_exp_right",
+            "max_salary_right"
+          ],
+          [
+            "Alice",
+            "75000",
+            "5",
+            "Junior Dev",
+            "60000",
+            "2",
+            "80000"
+          ],
+          [
+            "Carol",
+            "95000",
+            "8",
+            "Senior Dev",
+            "80000",
+            "5",
+            "100000"
+          ],
+          [
+            "Carol",
+            "95000",
+            "8",
+            "Tech Lead",
+            "90000",
+            "7",
+            "120000"
+          ],
+          [
+            "David",
+            "65000",
+            "2",
+            "Junior Dev",
+            "60000",
+            "2",
+            "80000"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_ignore_leading_zeros_issue_2424",
+      "description": "Joinp Ignore Leading Zeros Issue 2424",
+      "input": {
+        "data": [
+          [
+            "id",
+            "company_id",
+            "art_no"
+          ],
+          [
+            "1",
+            "COM1",
+            "0724"
+          ],
+          [
+            "2",
+            "cm2",
+            "002"
+          ],
+          [
+            "3",
+            "com3",
+            "78"
+          ],
+          [
+            "4",
+            "CM2",
+            "01"
+          ],
+          [
+            "5",
+            "Cp5",
+            "1"
+          ],
+          [
+            "6",
+            "CPA",
+            "000"
+          ]
+        ],
+        "filename": "file1.csv"
+      },
+      "command": "qsv joinp ",
+      "expected": {
+        "data": [
+          [
+            "id",
+            "company_id",
+            "art_no"
+          ],
+          [
+            "1",
+            "COM1",
+            "0724"
+          ],
+          [
+            "2",
+            "cm2",
+            "002"
+          ],
+          [
+            "3",
+            "com3",
+            "78"
+          ],
+          [
+            "4",
+            "CM2",
+            "01"
+          ],
+          [
+            "5",
+            "Cp5",
+            "1"
+          ],
+          [
+            "6",
+            "CPA",
+            "000"
+          ]
+        ]
+      },
+      "tags": [
+        "regression"
+      ]
+    },
+    {
+      "name": "joinp_asof_allow_exact_matches",
+      "description": "Joinp Asof Allow Exact Matches",
+      "command": "qsv joinp ",
+      "options": {
+        "--try-parsedates": "true"
+      }
+    },
+    {
+      "name": "joinp_asof_sortkey_options",
+      "description": "Joinp Asof Sortkey Options",
+      "input": {
+        "data": [
+          [
+            "time",
+            "price"
+          ],
+          [
+            "2024-01-01 10:00:10",
+            "102.0"
+          ],
+          [
+            "2024-01-01 10:00:05",
+            "101.0"
+          ],
+          [
+            "2024-01-01 10:00:00",
+            "100.0"
+          ],
+          [
+            "2024-01-01 10:00:15",
+            "103.0"
+          ],
+          [
+            "2024-01-01 10:00:12",
+            "102.5"
+          ],
+          [
+            "2024-01-01 10:00:03",
+            "100.5"
+          ],
+          [
+            "2024-01-01 10:00:08",
+            "101.5"
+          ]
+        ],
+        "filename": "trades.csv"
+      },
+      "command": "qsv joinp ",
+      "options": {
+        "--try-parsedates": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "time",
+            "price",
+            "bid"
+          ],
+          [
+            "2024-01-01 10:00:00",
+            "100.0",
+            ""
+          ],
+          [
+            "2024-01-01 10:00:03",
+            "100.5",
+            "99.5"
+          ],
+          [
+            "2024-01-01 10:00:05",
+            "101.0",
+            "99.5"
+          ],
+          [
+            "2024-01-01 10:00:08",
+            "101.5",
+            "99.5"
+          ],
+          [
+            "2024-01-01 10:00:10",
+            "102.0",
+            "99.5"
+          ],
+          [
+            "2024-01-01 10:00:12",
+            "102.5",
+            "101.5"
+          ],
+          [
+            "2024-01-01 10:00:15",
+            "103.0",
+            "101.5"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_decimal_comma_validation",
+      "description": "Joinp Decimal Comma Validation",
+      "command": "qsv joinp ",
+      "options": {
+        "--decimal-comma": "true"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "joinp_decimal_comma_validation_with_tsv_files",
+      "description": "Joinp Decimal Comma Validation With Tsv Files",
+      "command": "qsv joinp ",
+      "options": {
+        "--decimal-comma": "true"
+      }
+    },
+    {
+      "name": "joinp_decimal_comma_validation_with_ssv_files",
+      "description": "Joinp Decimal Comma Validation With Ssv Files",
+      "command": "qsv joinp ",
+      "options": {
+        "--decimal-comma": "true"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "joinp_decimal_comma_validation_with_output_file",
+      "description": "Joinp Decimal Comma Validation With Output File",
+      "command": "qsv joinp ",
+      "options": {
+        "--decimal-comma": "true"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "joinp_decimal_comma_validation_with_tsv_output",
+      "description": "Joinp Decimal Comma Validation With Tsv Output",
+      "command": "qsv joinp ",
+      "options": {
+        "--decimal-comma": "true"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "joinp_decimal_comma_validation_with_ssv_output",
+      "description": "Joinp Decimal Comma Validation With Ssv Output",
+      "command": "qsv joinp ",
+      "options": {
+        "--decimal-comma": "true"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "joinp_decimal_comma_validation_with_cross_join",
+      "description": "Joinp Decimal Comma Validation With Cross Join",
+      "command": "qsv joinp ",
+      "options": {
+        "--decimal-comma": "true"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "joinp_decimal_comma_validation_with_non_equi_join",
+      "description": "Joinp Decimal Comma Validation With Non Equi Join",
+      "command": "qsv joinp ",
+      "options": {
+        "--decimal-comma": "true",
+        "--non-equi": "value_left >= min_val_right AND value_left <= max_val_right"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "joinp_decimal_comma_validation_with_asof_join",
+      "description": "Joinp Decimal Comma Validation With Asof Join",
+      "command": "qsv joinp ",
+      "options": {
+        "--decimal-comma": "true"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "joinp_decimal_comma_validation_with_sql_filter",
+      "description": "Joinp Decimal Comma Validation With Sql Filter",
+      "command": "qsv joinp ",
+      "options": {
+        "--sql-filter": "select id, value from join_result where value > 150"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    }
+  ]
+}

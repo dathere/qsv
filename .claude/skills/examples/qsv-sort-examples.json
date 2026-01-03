@@ -1,0 +1,1300 @@
+{
+  "skill": "qsv-sort",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "sort_select",
+      "description": "Sort Select",
+      "input": {
+        "data": [
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--no-headers": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "2",
+            "a"
+          ],
+          [
+            "1",
+            "b"
+          ]
+        ]
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "sort_numeric",
+      "description": "Sort Numeric",
+      "input": {
+        "data": [
+          [
+            "N",
+            "S"
+          ],
+          [
+            "10",
+            "a"
+          ],
+          [
+            "LETTER",
+            "b"
+          ],
+          [
+            "2",
+            "c"
+          ],
+          [
+            "1",
+            "d"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "-N": "in.csv"
+      }
+    },
+    {
+      "name": "sort_numeric_faster",
+      "description": "Sort Numeric Faster",
+      "input": {
+        "data": [
+          [
+            "N",
+            "S"
+          ],
+          [
+            "10",
+            "a"
+          ],
+          [
+            "LETTER",
+            "b"
+          ],
+          [
+            "2",
+            "c"
+          ],
+          [
+            "1",
+            "d"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--faster": "in.csv"
+      }
+    },
+    {
+      "name": "sort_numeric_non_natural",
+      "description": "Sort Numeric Non Natural",
+      "input": {
+        "data": [
+          [
+            "N",
+            "S"
+          ],
+          [
+            "8.33",
+            "a"
+          ],
+          [
+            "5",
+            "b"
+          ],
+          [
+            "LETTER",
+            "c"
+          ],
+          [
+            "7.4",
+            "d"
+          ],
+          [
+            "3.33",
+            "e"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "-N": "in.csv"
+      }
+    },
+    {
+      "name": "sort_numeric_non_natural_faster",
+      "description": "Sort Numeric Non Natural Faster",
+      "input": {
+        "data": [
+          [
+            "N",
+            "S"
+          ],
+          [
+            "8.33",
+            "a"
+          ],
+          [
+            "5",
+            "b"
+          ],
+          [
+            "LETTER",
+            "c"
+          ],
+          [
+            "7.4",
+            "d"
+          ],
+          [
+            "3.33",
+            "e"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--faster": "in.csv"
+      }
+    },
+    {
+      "name": "sort_case_insensitive",
+      "description": "Sort Case Insensitive",
+      "input": {
+        "data": [
+          [
+            "col1",
+            "col2"
+          ],
+          [
+            "n",
+            "s"
+          ],
+          [
+            "Alpha",
+            "baBa"
+          ],
+          [
+            "aLPHA",
+            "BABA"
+          ],
+          [
+            "N",
+            "S"
+          ],
+          [
+            "n",
+            "S"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--ignore-case": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "col2"
+          ],
+          [
+            "Alpha",
+            "baBa"
+          ],
+          [
+            "aLPHA",
+            "BABA"
+          ],
+          [
+            "n",
+            "s"
+          ],
+          [
+            "N",
+            "S"
+          ],
+          [
+            "n",
+            "S"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "sort_case_insensitive_faster",
+      "description": "Sort Case Insensitive Faster",
+      "input": {
+        "data": [
+          [
+            "col1",
+            "col2"
+          ],
+          [
+            "n",
+            "s"
+          ],
+          [
+            "Alpha",
+            "baBa"
+          ],
+          [
+            "aLPHA",
+            "BABA"
+          ],
+          [
+            "N",
+            "S"
+          ],
+          [
+            "n",
+            "S"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--faster": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "col2"
+          ],
+          [
+            "Alpha",
+            "baBa"
+          ],
+          [
+            "aLPHA",
+            "BABA"
+          ],
+          [
+            "n",
+            "s"
+          ],
+          [
+            "N",
+            "S"
+          ],
+          [
+            "n",
+            "S"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "sort_case_sensitive",
+      "description": "Sort Case Sensitive",
+      "input": {
+        "data": [
+          [
+            "col1",
+            "col2"
+          ],
+          [
+            "n",
+            "s"
+          ],
+          [
+            "Alpha",
+            "baBa"
+          ],
+          [
+            "aLPHA",
+            "BABA"
+          ],
+          [
+            "N",
+            "S"
+          ],
+          [
+            "n",
+            "S"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "col2"
+          ],
+          [
+            "Alpha",
+            "baBa"
+          ],
+          [
+            "N",
+            "S"
+          ],
+          [
+            "aLPHA",
+            "BABA"
+          ],
+          [
+            "n",
+            "S"
+          ],
+          [
+            "n",
+            "s"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "sort_case_sensitive_faster",
+      "description": "Sort Case Sensitive Faster",
+      "input": {
+        "data": [
+          [
+            "col1",
+            "col2"
+          ],
+          [
+            "n",
+            "s"
+          ],
+          [
+            "Alpha",
+            "baBa"
+          ],
+          [
+            "aLPHA",
+            "BABA"
+          ],
+          [
+            "N",
+            "S"
+          ],
+          [
+            "n",
+            "S"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--faster": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "col2"
+          ],
+          [
+            "Alpha",
+            "baBa"
+          ],
+          [
+            "N",
+            "S"
+          ],
+          [
+            "aLPHA",
+            "BABA"
+          ],
+          [
+            "n",
+            "S"
+          ],
+          [
+            "n",
+            "s"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "sort_reverse",
+      "description": "Sort Reverse",
+      "input": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--no-headers": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "1",
+            "b"
+          ]
+        ]
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "sort_reverse_faster",
+      "description": "Sort Reverse Faster",
+      "input": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--faster": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "1",
+            "b"
+          ]
+        ]
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "sort_uniq",
+      "description": "Sort Uniq",
+      "input": {
+        "data": [
+          [
+            "number",
+            "letter"
+          ],
+          [
+            "2",
+            "c"
+          ],
+          [
+            "1",
+            "a"
+          ],
+          [
+            "3",
+            "f"
+          ],
+          [
+            "2",
+            "b"
+          ],
+          [
+            "1",
+            "d"
+          ],
+          [
+            "2",
+            "e"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "-N": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "number",
+            "letter"
+          ],
+          [
+            "1",
+            "a"
+          ],
+          [
+            "2",
+            "c"
+          ],
+          [
+            "3",
+            "f"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sort_uniq_faster",
+      "description": "Sort Uniq Faster",
+      "input": {
+        "data": [
+          [
+            "number",
+            "letter"
+          ],
+          [
+            "2",
+            "c"
+          ],
+          [
+            "1",
+            "a"
+          ],
+          [
+            "3",
+            "f"
+          ],
+          [
+            "2",
+            "b"
+          ],
+          [
+            "1",
+            "d"
+          ],
+          [
+            "2",
+            "e"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--faster": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "number",
+            "letter"
+          ],
+          [
+            "1",
+            "a"
+          ],
+          [
+            "2",
+            "c"
+          ],
+          [
+            "3",
+            "f"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sort_random",
+      "description": "Sort Random",
+      "input": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ],
+          [
+            "4",
+            "c"
+          ],
+          [
+            "5",
+            "f"
+          ],
+          [
+            "6",
+            "e"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--random": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "5",
+            "f"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "4",
+            "c"
+          ],
+          [
+            "3",
+            "d"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "6",
+            "e"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sort_random_faster",
+      "description": "Sort Random Faster",
+      "input": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ],
+          [
+            "4",
+            "c"
+          ],
+          [
+            "5",
+            "f"
+          ],
+          [
+            "6",
+            "e"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--random": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "4",
+            "c"
+          ],
+          [
+            "6",
+            "e"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "5",
+            "f"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sort_random_secure",
+      "description": "Sort Random Secure",
+      "input": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ],
+          [
+            "4",
+            "c"
+          ],
+          [
+            "5",
+            "f"
+          ],
+          [
+            "6",
+            "e"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--random": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ],
+          [
+            "6",
+            "e"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "4",
+            "c"
+          ],
+          [
+            "5",
+            "f"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sort_natural",
+      "description": "Sort Natural",
+      "input": {
+        "data": [
+          [
+            "Name",
+            "Value"
+          ],
+          [
+            "file2.txt",
+            "a"
+          ],
+          [
+            "file10.txt",
+            "b"
+          ],
+          [
+            "file1.txt",
+            "c"
+          ],
+          [
+            "file20.txt",
+            "d"
+          ],
+          [
+            "file3.txt",
+            "e"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--natural": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Name",
+            "Value"
+          ],
+          [
+            "file1.txt",
+            "c"
+          ],
+          [
+            "file2.txt",
+            "a"
+          ],
+          [
+            "file3.txt",
+            "e"
+          ],
+          [
+            "file10.txt",
+            "b"
+          ],
+          [
+            "file20.txt",
+            "d"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sort_natural_faster",
+      "description": "Sort Natural Faster",
+      "input": {
+        "data": [
+          [
+            "Name",
+            "Value"
+          ],
+          [
+            "file2.txt",
+            "a"
+          ],
+          [
+            "file10.txt",
+            "b"
+          ],
+          [
+            "file1.txt",
+            "c"
+          ],
+          [
+            "file20.txt",
+            "d"
+          ],
+          [
+            "file3.txt",
+            "e"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--faster": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Name",
+            "Value"
+          ],
+          [
+            "file1.txt",
+            "c"
+          ],
+          [
+            "file2.txt",
+            "a"
+          ],
+          [
+            "file3.txt",
+            "e"
+          ],
+          [
+            "file10.txt",
+            "b"
+          ],
+          [
+            "file20.txt",
+            "d"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sort_natural_case_insensitive",
+      "description": "Sort Natural Case Insensitive",
+      "input": {
+        "data": [
+          [
+            "Name",
+            "Value"
+          ],
+          [
+            "File2.txt",
+            "a"
+          ],
+          [
+            "file10.txt",
+            "b"
+          ],
+          [
+            "FILE1.txt",
+            "c"
+          ],
+          [
+            "file20.txt",
+            "d"
+          ],
+          [
+            "File3.txt",
+            "e"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--ignore-case": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Name",
+            "Value"
+          ],
+          [
+            "FILE1.txt",
+            "c"
+          ],
+          [
+            "File2.txt",
+            "a"
+          ],
+          [
+            "File3.txt",
+            "e"
+          ],
+          [
+            "file10.txt",
+            "b"
+          ],
+          [
+            "file20.txt",
+            "d"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "sort_natural_reverse",
+      "description": "Sort Natural Reverse",
+      "input": {
+        "data": [
+          [
+            "Name",
+            "Value"
+          ],
+          [
+            "file2.txt",
+            "a"
+          ],
+          [
+            "file10.txt",
+            "b"
+          ],
+          [
+            "file1.txt",
+            "c"
+          ],
+          [
+            "file20.txt",
+            "d"
+          ],
+          [
+            "file3.txt",
+            "e"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--reverse": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Name",
+            "Value"
+          ],
+          [
+            "file20.txt",
+            "d"
+          ],
+          [
+            "file10.txt",
+            "b"
+          ],
+          [
+            "file3.txt",
+            "e"
+          ],
+          [
+            "file2.txt",
+            "a"
+          ],
+          [
+            "file1.txt",
+            "c"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sort_natural_mixed_content",
+      "description": "Sort Natural Mixed Content",
+      "input": {
+        "data": [
+          [
+            "Name",
+            "Value"
+          ],
+          [
+            "chapter2",
+            "a"
+          ],
+          [
+            "chapter10",
+            "b"
+          ],
+          [
+            "chapter1",
+            "c"
+          ],
+          [
+            "appendix",
+            "d"
+          ],
+          [
+            "chapter3",
+            "e"
+          ],
+          [
+            "introduction",
+            "f"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--natural": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Name",
+            "Value"
+          ],
+          [
+            "appendix",
+            "d"
+          ],
+          [
+            "chapter1",
+            "c"
+          ],
+          [
+            "chapter2",
+            "a"
+          ],
+          [
+            "chapter3",
+            "e"
+          ],
+          [
+            "chapter10",
+            "b"
+          ],
+          [
+            "introduction",
+            "f"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sort_natural_vs_lexicographic",
+      "description": "Sort Natural Vs Lexicographic",
+      "input": {
+        "data": [
+          [
+            "Name",
+            "Value"
+          ],
+          [
+            "file2.txt",
+            "a"
+          ],
+          [
+            "file10.txt",
+            "b"
+          ],
+          [
+            "file1.txt",
+            "c"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--natural": "in.csv"
+      }
+    },
+    {
+      "name": "sort_natural_numeric_precedence",
+      "description": "Sort Natural Numeric Precedence",
+      "input": {
+        "data": [
+          [
+            "Name",
+            "Value"
+          ],
+          [
+            "10",
+            "a"
+          ],
+          [
+            "2",
+            "b"
+          ],
+          [
+            "1",
+            "c"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sort ",
+      "options": {
+        "--numeric": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Name",
+            "Value"
+          ],
+          [
+            "1",
+            "c"
+          ],
+          [
+            "2",
+            "b"
+          ],
+          [
+            "10",
+            "a"
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,151 @@
+{
+  "skill": "qsv-headers",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "headers_notrim",
+      "description": "Headers Notrim",
+      "input": {
+        "data": [
+          [
+            "\\\"LatD\\",
+            "\\\"LatM\\",
+            "\\\"LatS\\",
+            "\\\"NS\\",
+            "\\\"LonD\\",
+            "\\\"LonM\\",
+            "\\\"LonS\\",
+            "\\\"EW\\",
+            "\\\"City\\",
+            "\\\"State\\"
+          ],
+          [
+            "41",
+            "5",
+            "59",
+            "N",
+            "80",
+            "39",
+            "0",
+            "W",
+            "Youngstown",
+            "OH"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv headers data.csv",
+      "args": [
+        "data.csv"
+      ]
+    },
+    {
+      "name": "headers_trim",
+      "description": "Headers Trim",
+      "input": {
+        "data": [
+          [
+            "\\\"LatD\\",
+            "\\\"LatM\\",
+            "\\\"LatS\\",
+            "\\\"NS\\",
+            "\\\"LonD\\",
+            "\\\"LonM\\",
+            "\\\"LonS\\",
+            "\\\"EW\\",
+            "\\\"City\\",
+            "\\\"State\\"
+          ],
+          [
+            "41",
+            "5",
+            "59",
+            "N",
+            "80",
+            "39",
+            "0",
+            "W",
+            "Youngstown",
+            "OH"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv headers ",
+      "options": {
+        "--trim": "data.csv"
+      }
+    },
+    {
+      "name": "headers_infile",
+      "description": "Headers Infile",
+      "input": {
+        "data": [
+          [
+            "a",
+            "b",
+            "c"
+          ],
+          [
+            "1",
+            "2",
+            "3"
+          ]
+        ],
+        "filename": "in1.csv"
+      },
+      "command": "qsv headers testdata.infile-list testdata.infile-list",
+      "args": [
+        "testdata.infile-list",
+        "testdata.infile-list"
+      ],
+      "options": {
+        "--just-count": "true"
+      }
+    },
+    {
+      "name": "headers_intersect_infile",
+      "description": "Headers Intersect Infile",
+      "input": {
+        "data": [
+          [
+            "a",
+            "b",
+            "c"
+          ],
+          [
+            "1",
+            "2",
+            "3"
+          ]
+        ],
+        "filename": "in1.csv"
+      },
+      "command": "qsv headers ",
+      "options": {
+        "--intersect": "testdata.infile-list"
+      }
+    },
+    {
+      "name": "headers_stdin_explicit",
+      "description": "Headers Stdin Explicit",
+      "command": "qsv headers -",
+      "args": [
+        "-"
+      ]
+    },
+    {
+      "name": "headers_stdin_implicit",
+      "description": "Headers Stdin Implicit",
+      "command": "qsv headers "
+    },
+    {
+      "name": "headers_stdin_with_just_names",
+      "description": "Headers Stdin With Just Names",
+      "command": "qsv headers ",
+      "options": {
+        "--just-names": "true"
+      }
+    }
+  ]
+}

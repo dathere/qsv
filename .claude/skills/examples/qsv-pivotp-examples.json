@@ -1,0 +1,16 @@
+{
+  "skill": "qsv-pivotp",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "main",
+      "description": "Main",
+      "command": "qsv pivotp "
+    },
+    {
+      "name": "main",
+      "description": "Main",
+      "command": "qsv pivotp "
+    }
+  ]
+}

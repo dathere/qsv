@@ -1,0 +1,626 @@
+{
+  "skill": "qsv-safenames",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "safenames_conditional",
+      "description": "Safenames Conditional",
+      "input": {
+        "data": [
+          [
+            "col1",
+            " This is a column with invalid chars!# and leading & trailing spaces ",
+            "",
+            "this is already a Postgres Safe Column",
+            "1starts with 1",
+            "col1",
+            "col1",
+            "",
+            "",
+            ""
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34",
+            "z",
+            "42"
+          ],
+          [
+            "2",
+            "c",
+            "34",
+            "3",
+            "d",
+            "31",
+            "3",
+            "y",
+            "3.14"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv safenames in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--mode": "c"
+      },
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "this_is_a_column_with_invalid_chars___and_leading___trailing",
+            "// null column names are not allowed in postgres\n            \"unsafe_",
+            "// though this is \"safe",
+            "it's generally discouraged\n            // to have embedded spaces and mixed case column names\n            // as you will have to use quotes to refer to these columns\n            // in Postgres\n            \"this is already a Postgres Safe Column",
+            "// a column cannot start with a digit\n            \"unsafe_1starts_with_1",
+            "// duplicate cols are not allowed in one table in postgres\n            \"col1_2",
+            "col1_3",
+            "unsafe__2",
+            "unsafe__3"
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34",
+            "z",
+            "42"
+          ],
+          [
+            "2",
+            "c",
+            "34",
+            "3",
+            "d",
+            "31",
+            "3",
+            "y",
+            "3.14"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "safenames_always",
+      "description": "Safenames Always",
+      "input": {
+        "data": [
+          [
+            "col1",
+            "// not valid in postgres\n                \" This is a column with invalid chars!# and leading & trailing spaces ",
+            "",
+            "// postgres allows for embedded spaces\n                \"this is already a Postgres Safe Column",
+            "1starts with 1",
+            "col1",
+            "col1"
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34"
+          ],
+          [
+            "2",
+            "c",
+            "34",
+            "3",
+            "d",
+            "31",
+            "3"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv safenames in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--mode": "always"
+      },
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "this_is_a_column_with_invalid_chars___and_leading___trailing",
+            "unsafe_",
+            "// we were using Always mode",
+            "so even though the\n            // original header name was already valid",
+            "// we replaced spaces with _ regardless\n            \"this_is_already_a_postgres_safe_column",
+            "unsafe_1starts_with_1",
+            "col1_2",
+            "col1_3"
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34"
+          ],
+          [
+            "2",
+            "c",
+            "34",
+            "3",
+            "d",
+            "31",
+            "3"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "safenames_verify",
+      "description": "Safenames Verify",
+      "input": {
+        "data": [
+          [
+            "col1",
+            " This is a column with invalid chars!# and leading & trailing spaces ",
+            "",
+            "this is already a Postgres Safe Column",
+            "1starts with 1",
+            "col1",
+            "col1",
+            "",
+            "",
+            ""
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34",
+            "z",
+            "42"
+          ],
+          [
+            "2",
+            "c",
+            "34",
+            "3",
+            "d",
+            "31",
+            "3",
+            "y",
+            "3.14"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv safenames in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--mode": "verify"
+      }
+    },
+    {
+      "name": "safenames_verify_verbose",
+      "description": "Safenames Verify Verbose",
+      "input": {
+        "data": [
+          [
+            "col1",
+            " This is a column with invalid chars!# and leading & trailing spaces ",
+            "",
+            "this is already a Postgres Safe Column",
+            "1starts with 1",
+            "col1",
+            "col1",
+            "col1",
+            "",
+            "",
+            "",
+            "col1",
+            "_1",
+            ""
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34",
+            "z",
+            "42",
+            "3",
+            "2",
+            "1",
+            "0"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv safenames in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--mode": "V"
+      }
+    },
+    {
+      "name": "safenames_verify_verbose_pretty_json",
+      "description": "Safenames Verify Verbose Pretty Json",
+      "input": {
+        "data": [
+          [
+            "col1",
+            " This is a column with invalid chars!# and leading & trailing spaces ",
+            "",
+            "this is already a Postgres Safe Column",
+            "1starts with 1",
+            "col1",
+            "col1",
+            "col1",
+            "",
+            "",
+            "",
+            "col1",
+            "_1",
+            ""
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34",
+            "z",
+            "42",
+            "3",
+            "2",
+            "1",
+            "0"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv safenames in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--mode": "J"
+      }
+    },
+    {
+      "name": "safenames_verify_verbose_json",
+      "description": "Safenames Verify Verbose Json",
+      "input": {
+        "data": [
+          [
+            "col1",
+            " This is a column with invalid chars!# and leading & trailing spaces ",
+            "",
+            "this is already a Postgres Safe Column",
+            "1starts with 1",
+            "col1",
+            "col1",
+            "col1",
+            "",
+            "",
+            "",
+            "col1",
+            "_1",
+            ""
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34",
+            "z",
+            "42",
+            "3",
+            "2",
+            "1",
+            "0"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv safenames in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--mode": "j"
+      }
+    },
+    {
+      "name": "safenames_invalid_mode",
+      "description": "Safenames Invalid Mode",
+      "input": {
+        "data": [
+          [
+            "col1",
+            " This is a column with invalid chars!# and leading & trailing spaces ",
+            "",
+            "this is already a postgres safe column",
+            "1starts with 1",
+            "col1",
+            "col1"
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34"
+          ],
+          [
+            "2",
+            "c",
+            "34",
+            "3",
+            "d",
+            "31",
+            "3"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv safenames in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--mode": "invalidmode"
+      }
+    },
+    {
+      "name": "safenames_reserved_names_default",
+      "description": "Safenames Reserved Names Default",
+      "input": {
+        "data": [
+          [
+            "col1",
+            " This is a column with invalid chars!# and leading & trailing spaces ",
+            "_id",
+            "this is already a postgres safe column",
+            "1starts with 1",
+            "col1",
+            "col1"
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34"
+          ],
+          [
+            "2",
+            "c",
+            "34",
+            "3",
+            "d",
+            "31",
+            "3"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv safenames in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "this_is_a_column_with_invalid_chars___and_leading___trailing",
+            "reserved__id",
+            "this_is_already_a_postgres_safe_column",
+            "unsafe_1starts_with_1",
+            "col1_2",
+            "col1_3"
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34"
+          ],
+          [
+            "2",
+            "c",
+            "34",
+            "3",
+            "d",
+            "31",
+            "3"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "safenames_reserved_names_specified",
+      "description": "Safenames Reserved Names Specified",
+      "input": {
+        "data": [
+          [
+            "col1",
+            " This is a column with invalid chars!# and leading & trailing spaces ",
+            "waldo",
+            "this is already a postgres safe column",
+            "1starts with 1",
+            "col1",
+            "col1"
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34"
+          ],
+          [
+            "2",
+            "c",
+            "34",
+            "3",
+            "d",
+            "31",
+            "3"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv safenames in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--reserved": "waldo"
+      },
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "this_is_a_column_with_invalid_chars___and_leading___trailing",
+            "reserved_waldo",
+            "this_is_already_a_postgres_safe_column",
+            "unsafe_1starts_with_1",
+            "col1_2",
+            "col1_3"
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34"
+          ],
+          [
+            "2",
+            "c",
+            "34",
+            "3",
+            "d",
+            "31",
+            "3"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "safenames_reserved_names_specified_case_insensitive",
+      "description": "Safenames Reserved Names Specified Case Insensitive",
+      "input": {
+        "data": [
+          [
+            "col1",
+            " This is a column with invalid chars!# and leading & trailing spaces ",
+            "WaLdO",
+            "this is already a postgres safe column",
+            "1starts with 1",
+            "col1",
+            "col1"
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34"
+          ],
+          [
+            "2",
+            "c",
+            "34",
+            "3",
+            "d",
+            "31",
+            "3"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv safenames in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--reserved": "waldo"
+      },
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "this_is_a_column_with_invalid_chars___and_leading___trailing",
+            "reserved_waldo",
+            "this_is_already_a_postgres_safe_column",
+            "unsafe_1starts_with_1",
+            "col1_2",
+            "col1_3"
+          ],
+          [
+            "1",
+            "b",
+            "33",
+            "1",
+            "b",
+            "33",
+            "34"
+          ],
+          [
+            "2",
+            "c",
+            "34",
+            "3",
+            "d",
+            "31",
+            "3"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    }
+  ]
+}

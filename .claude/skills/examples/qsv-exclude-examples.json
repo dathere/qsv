@@ -1,0 +1,85 @@
+{
+  "skill": "qsv-exclude",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "headers",
+      "description": "Headers",
+      "command": "qsv exclude "
+    },
+    {
+      "name": "no_headers",
+      "description": "No Headers",
+      "command": "qsv exclude ",
+      "options": {
+        "--no-headers": "true"
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "exclude_utf8_issue778_aliases_posiions",
+      "description": "Exclude Utf8 Issue778 Aliases Posiions",
+      "command": "qsv exclude position aliases_file position positions_file",
+      "args": [
+        "position",
+        "aliases_file",
+        "position",
+        "positions_file"
+      ]
+    },
+    {
+      "name": "exclude_utf8_issue778_positions_aliases",
+      "description": "Exclude Utf8 Issue778 Positions Aliases",
+      "command": "qsv exclude position positions_file position aliases_file",
+      "args": [
+        "position",
+        "positions_file",
+        "position",
+        "aliases_file"
+      ]
+    },
+    {
+      "name": "exclude_1497_empty_fields",
+      "description": "Exclude 1497 Empty Fields",
+      "input": {
+        "data": [
+          [
+            "id",
+            "start",
+            "end"
+          ],
+          [
+            "1",
+            "2001",
+            "2003"
+          ],
+          [
+            "2",
+            "2004",
+            "2006"
+          ],
+          [
+            "3",
+            "2006",
+            ""
+          ],
+          [
+            "4",
+            "2007",
+            "2010"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv exclude id,end data.csv id,end skip.csv",
+      "args": [
+        "id,end",
+        "data.csv",
+        "id,end",
+        "skip.csv"
+      ]
+    }
+  ]
+}

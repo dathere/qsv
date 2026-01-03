@@ -1,0 +1,315 @@
+{
+  "skill": "qsv-pseudo",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "pseudo",
+      "description": "Pseudo",
+      "input": {
+        "data": [
+          [
+            "name",
+            "colors"
+          ],
+          [
+            "Mary",
+            "yellow"
+          ],
+          [
+            "John",
+            "blue"
+          ],
+          [
+            "Mary",
+            "purple"
+          ],
+          [
+            "Sue",
+            "orange"
+          ],
+          [
+            "John",
+            "magenta"
+          ],
+          [
+            "Mary",
+            "cyan"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv pseudo name data.csv",
+      "args": [
+        "name",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name",
+            "colors"
+          ],
+          [
+            "0",
+            "yellow"
+          ],
+          [
+            "1",
+            "blue"
+          ],
+          [
+            "0",
+            "purple"
+          ],
+          [
+            "2",
+            "orange"
+          ],
+          [
+            "1",
+            "magenta"
+          ],
+          [
+            "0",
+            "cyan"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "pseudo_no_headers",
+      "description": "Pseudo No Headers",
+      "input": {
+        "data": [
+          [
+            "Mary",
+            "yellow"
+          ],
+          [
+            "John",
+            "blue"
+          ],
+          [
+            "Mary",
+            "purple"
+          ],
+          [
+            "Sue",
+            "orange"
+          ],
+          [
+            "John",
+            "magenta"
+          ],
+          [
+            "Mary",
+            "cyan"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv pseudo 1",
+      "args": [
+        "1"
+      ],
+      "options": {
+        "--no-headers": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "0",
+            "yellow"
+          ],
+          [
+            "1",
+            "blue"
+          ],
+          [
+            "0",
+            "purple"
+          ],
+          [
+            "2",
+            "orange"
+          ],
+          [
+            "1",
+            "magenta"
+          ],
+          [
+            "0",
+            "cyan"
+          ]
+        ]
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "pseudo_formatstr",
+      "description": "Pseudo Formatstr",
+      "input": {
+        "data": [
+          [
+            "name",
+            "colors"
+          ],
+          [
+            "Mary",
+            "yellow"
+          ],
+          [
+            "John",
+            "blue"
+          ],
+          [
+            "Mary",
+            "purple"
+          ],
+          [
+            "Sue",
+            "orange"
+          ],
+          [
+            "John",
+            "magenta"
+          ],
+          [
+            "Mary",
+            "cyan"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv pseudo name",
+      "args": [
+        "name"
+      ]
+    },
+    {
+      "name": "pseudo_formatstr_increment",
+      "description": "Pseudo Formatstr Increment",
+      "input": {
+        "data": [
+          [
+            "name",
+            "colors"
+          ],
+          [
+            "Mary",
+            "yellow"
+          ],
+          [
+            "John",
+            "blue"
+          ],
+          [
+            "Mary",
+            "purple"
+          ],
+          [
+            "Sue",
+            "orange"
+          ],
+          [
+            "John",
+            "magenta"
+          ],
+          [
+            "Mary",
+            "cyan"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv pseudo name",
+      "args": [
+        "name"
+      ]
+    },
+    {
+      "name": "pseudo_formatstr_start_increment",
+      "description": "Pseudo Formatstr Start Increment",
+      "input": {
+        "data": [
+          [
+            "name",
+            "colors"
+          ],
+          [
+            "Mary",
+            "yellow"
+          ],
+          [
+            "John",
+            "blue"
+          ],
+          [
+            "Mary",
+            "purple"
+          ],
+          [
+            "Sue",
+            "orange"
+          ],
+          [
+            "John",
+            "magenta"
+          ],
+          [
+            "Mary",
+            "cyan"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv pseudo name",
+      "args": [
+        "name"
+      ]
+    },
+    {
+      "name": "pseudo_overflow",
+      "description": "Pseudo Overflow",
+      "input": {
+        "data": [
+          [
+            "name",
+            "colors"
+          ],
+          [
+            "Mary",
+            "yellow"
+          ],
+          [
+            "John",
+            "blue"
+          ],
+          [
+            "Mary",
+            "purple"
+          ],
+          [
+            "Sue",
+            "orange"
+          ],
+          [
+            "John",
+            "magenta"
+          ],
+          [
+            "Mary",
+            "cyan"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv pseudo name",
+      "args": [
+        "name"
+      ]
+    }
+  ]
+}

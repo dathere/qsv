@@ -1,0 +1,880 @@
+{
+  "skill": "qsv-frequency",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "frequency_trim",
+      "description": "Frequency Trim",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "h2",
+            "Y",
+            "2",
+            "14.28571",
+            "3"
+          ],
+          [
+            "h2",
+            "Z",
+            "2",
+            "14.28571",
+            "3"
+          ],
+          [
+            "h2",
+            "x",
+            "1",
+            "7.14286",
+            "4"
+          ],
+          [
+            "h2",
+            "y",
+            "5",
+            "35.71429",
+            "1"
+          ],
+          [
+            "h2",
+            "z",
+            "4",
+            "28.57143",
+            "2"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "frequency_no_trim",
+      "description": "Frequency No Trim",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--no-trim": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "h2",
+            "  Z   ",
+            "2",
+            "14.28571",
+            "2"
+          ],
+          [
+            "h2",
+            " Y ",
+            "1",
+            "7.14286",
+            "3"
+          ],
+          [
+            "h2",
+            " z",
+            "1",
+            "7.14286",
+            "3"
+          ],
+          [
+            "h2",
+            "Y",
+            "1",
+            "7.14286",
+            "3"
+          ],
+          [
+            "h2",
+            "x",
+            "1",
+            "7.14286",
+            "3"
+          ],
+          [
+            "h2",
+            "y",
+            "2",
+            "14.28571",
+            "2"
+          ],
+          [
+            "h2",
+            "y ",
+            "3",
+            "21.42857",
+            "1"
+          ],
+          [
+            "h2",
+            "z",
+            "3",
+            "21.42857",
+            "1"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "frequency_all_unique",
+      "description": "Frequency All Unique",
+      "command": "qsv frequency testdata",
+      "args": [
+        "testdata"
+      ],
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "case_enquiry_id",
+            "<ALL_UNIQUE>",
+            "100",
+            "100",
+            "0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "frequency_all_unique_with_stats_cache",
+      "description": "Frequency All Unique With Stats Cache",
+      "command": "qsv stats testdata.clone(",
+      "args": [
+        "testdata.clone("
+      ],
+      "options": {
+        "--stats-jsonl": "testdata"
+      },
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "case_enquiry_id",
+            "<ALL_UNIQUE>",
+            "100",
+            "100",
+            "0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "frequency_custom_null_text",
+      "description": "Frequency Custom Null Text",
+      "command": "qsv frequency testdata",
+      "args": [
+        "testdata"
+      ],
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "fire_district",
+            "3",
+            "19",
+            "19",
+            "1"
+          ],
+          [
+            "fire_district",
+            "4",
+            "16",
+            "16",
+            "2"
+          ],
+          [
+            "fire_district",
+            "7",
+            "14",
+            "14",
+            "3"
+          ],
+          [
+            "fire_district",
+            "6",
+            "13",
+            "13",
+            "4"
+          ],
+          [
+            "fire_district",
+            "8",
+            "9",
+            "9",
+            "5"
+          ],
+          [
+            "fire_district",
+            "1",
+            "8",
+            "8",
+            "6"
+          ],
+          [
+            "fire_district",
+            "12",
+            "8",
+            "8",
+            "6"
+          ],
+          [
+            "fire_district",
+            "9",
+            "7",
+            "7",
+            "7"
+          ],
+          [
+            "fire_district",
+            "11",
+            "5",
+            "5",
+            "8"
+          ],
+          [
+            "fire_district",
+            "<NADA Y MUCHO MAS>",
+            "1",
+            "1",
+            "9"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "frequency_all_unique_with_stats_cache_alt_all_unique_text",
+      "description": "Frequency All Unique With Stats Cache Alt All Unique Text",
+      "command": "qsv stats testdata.clone(",
+      "args": [
+        "testdata.clone("
+      ],
+      "options": {
+        "--stats-jsonl": "testdata"
+      },
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "case_enquiry_id",
+            "<ALLE EINZIGARTIG>",
+            "100",
+            "100",
+            "0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "frequency_all_unique_stats_cache_default",
+      "description": "Frequency All Unique Stats Cache Default",
+      "command": "qsv frequency testdata",
+      "args": [
+        "testdata"
+      ],
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "case_enquiry_id",
+            "<ALL_UNIQUE>",
+            "100",
+            "100",
+            "0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "frequency_all_unique_stats_mode_none",
+      "description": "Frequency All Unique Stats Mode None",
+      "command": "qsv stats testdata.clone(",
+      "args": [
+        "testdata.clone("
+      ],
+      "options": {
+        "--stats-jsonl": "testdata"
+      },
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "case_enquiry_id",
+            "101004113298",
+            "1",
+            "1",
+            "1"
+          ],
+          [
+            "case_enquiry_id",
+            "101004113313",
+            "1",
+            "1",
+            "1"
+          ],
+          [
+            "case_enquiry_id",
+            "101004113348",
+            "1",
+            "1",
+            "1"
+          ],
+          [
+            "case_enquiry_id",
+            "101004113363",
+            "1",
+            "1",
+            "1"
+          ],
+          [
+            "case_enquiry_id",
+            "101004113371",
+            "1",
+            "1",
+            "1"
+          ],
+          [
+            "case_enquiry_id",
+            "101004113385",
+            "1",
+            "1",
+            "1"
+          ],
+          [
+            "case_enquiry_id",
+            "101004113386",
+            "1",
+            "1",
+            "1"
+          ],
+          [
+            "case_enquiry_id",
+            "101004113391",
+            "1",
+            "1",
+            "1"
+          ],
+          [
+            "case_enquiry_id",
+            "101004113394",
+            "1",
+            "1",
+            "1"
+          ],
+          [
+            "case_enquiry_id",
+            "101004113403",
+            "1",
+            "1",
+            "1"
+          ],
+          [
+            "case_enquiry_id",
+            "Other (90)",
+            "90",
+            "90",
+            "0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "frequency_issue1962",
+      "description": "Frequency Issue1962",
+      "command": "qsv frequency testdata.clone( testdata",
+      "args": [
+        "testdata.clone(",
+        "testdata"
+      ],
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "year",
+            "2024",
+            "24",
+            "8",
+            "1"
+          ],
+          [
+            "year",
+            "2023",
+            "23",
+            "7.66667",
+            "2"
+          ],
+          [
+            "year",
+            "2022",
+            "22",
+            "7.33333",
+            "3"
+          ],
+          [
+            "year",
+            "2021",
+            "21",
+            "7",
+            "4"
+          ],
+          [
+            "year",
+            "2020",
+            "20",
+            "6.66667",
+            "5"
+          ],
+          [
+            "year",
+            "2019",
+            "19",
+            "6.33333",
+            "6"
+          ],
+          [
+            "year",
+            "2018",
+            "18",
+            "6",
+            "7"
+          ],
+          [
+            "year",
+            "2017",
+            "17",
+            "5.66667",
+            "8"
+          ],
+          [
+            "year",
+            "2016",
+            "16",
+            "5.33333",
+            "9"
+          ],
+          [
+            "year",
+            "2015",
+            "15",
+            "5",
+            "10"
+          ],
+          [
+            "year",
+            "2014",
+            "14",
+            "4.66667",
+            "11"
+          ],
+          [
+            "year",
+            "2013",
+            "13",
+            "4.33333",
+            "12"
+          ],
+          [
+            "year",
+            "2012",
+            "12",
+            "4",
+            "13"
+          ],
+          [
+            "year",
+            "2011",
+            "11",
+            "3.66667",
+            "14"
+          ],
+          [
+            "year",
+            "2010",
+            "10",
+            "3.33333",
+            "15"
+          ],
+          [
+            "year",
+            "Other (9)",
+            "45",
+            "15",
+            "0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "frequency_vis_whitespace_no_trim",
+      "description": "Frequency Vis Whitespace No Trim",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--no-trim": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "header",
+            "《→》value",
+            "2",
+            "18.18182",
+            "1"
+          ],
+          [
+            "header",
+            "《_》《_》《_》《_》《_》《_》",
+            "2",
+            "18.18182",
+            "1"
+          ],
+          [
+            "header",
+            " value",
+            "2",
+            "18.18182",
+            "1"
+          ],
+          [
+            "header",
+            "value《→》",
+            "2",
+            "18.18182",
+            "1"
+          ],
+          [
+            "header",
+            "value ",
+            "2",
+            "18.18182",
+            "1"
+          ],
+          [
+            "header",
+            "no_whitespace",
+            "1",
+            "9.09091",
+            "2"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "frequency_json_all_unique",
+      "description": "Frequency Json All Unique",
+      "command": "qsv frequency testdata.clone(",
+      "args": [
+        "testdata.clone("
+      ],
+      "options": {
+        "--json": "true"
+      }
+    },
+    {
+      "name": "frequency_json_vis_whitespace",
+      "description": "Frequency Json Vis Whitespace",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--json": "true"
+      }
+    },
+    {
+      "name": "frequency_toon_all_unique",
+      "description": "Frequency Toon All Unique",
+      "command": "qsv frequency testdata.clone(",
+      "args": [
+        "testdata.clone("
+      ],
+      "options": {
+        "--toon": "true"
+      }
+    },
+    {
+      "name": "frequency_toon_vis_whitespace",
+      "description": "Frequency Toon Vis Whitespace",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--toon": "true"
+      }
+    },
+    {
+      "name": "frequency_weight_basic",
+      "description": "Frequency Weight Basic",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "tags": [
+        "basic"
+      ]
+    },
+    {
+      "name": "frequency_weight_excludes_weight_column",
+      "description": "Frequency Weight Excludes Weight Column",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "frequency_weight_missing_weights_default_to_one",
+      "description": "Frequency Weight Missing Weights Default To One",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "frequency_weight_zero_and_negative_ignored",
+      "description": "Frequency Weight Zero And Negative Ignored",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "frequency_weight_with_limit",
+      "description": "Frequency Weight With Limit",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "frequency_weight_with_asc",
+      "description": "Frequency Weight With Asc",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--asc": "true"
+      }
+    },
+    {
+      "name": "frequency_weight_with_rank_strategy",
+      "description": "Frequency Weight With Rank Strategy",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "frequency_weight_json",
+      "description": "Frequency Weight Json",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--json": "true"
+      }
+    },
+    {
+      "name": "frequency_weight_fractional_weights",
+      "description": "Frequency Weight Fractional Weights",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "value",
+            "a",
+            "4",
+            "80",
+            "1"
+          ],
+          [
+            "value",
+            "b",
+            "1",
+            "20",
+            "2"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "frequency_weight_all_unique",
+      "description": "Frequency Weight All Unique",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "id",
+            "<ALL_UNIQUE>",
+            "6",
+            "100",
+            "0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "frequency_weight_column_not_found",
+      "description": "Frequency Weight Column Not Found",
+      "command": "qsv frequency "
+    },
+    {
+      "name": "frequency_weight_with_ignore_case",
+      "description": "Frequency Weight With Ignore Case",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--ignore-case": "true"
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "frequency_weight_with_no_nulls",
+      "description": "Frequency Weight With No Nulls",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--no-nulls": "true"
+      }
+    },
+    {
+      "name": "frequency_weight_unq_limit_with_limit_zero",
+      "description": "Frequency Weight Unq Limit With Limit Zero",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "frequency_weight_nan_values",
+      "description": "Frequency Weight Nan Values",
+      "command": "qsv frequency in.csv in.csv",
+      "args": [
+        "in.csv",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "frequency_weight_infinity_values",
+      "description": "Frequency Weight Infinity Values",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "frequency_weight_mixed_invalid_values",
+      "description": "Frequency Weight Mixed Invalid Values",
+      "command": "qsv frequency in.csv in.csv",
+      "args": [
+        "in.csv",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "frequency_weight_no_other_zero",
+      "description": "Frequency Weight No Other Zero",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ]
+    }
+  ]
+}

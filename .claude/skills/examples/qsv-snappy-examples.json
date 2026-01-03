@@ -1,0 +1,132 @@
+{
+  "skill": "qsv-snappy",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "snappy_decompress",
+      "description": "Snappy Decompress",
+      "command": "qsv snappy decompress test_file",
+      "args": [
+        "decompress",
+        "test_file"
+      ]
+    },
+    {
+      "name": "snappy_decompress_url",
+      "description": "Snappy Decompress Url",
+      "command": "qsv snappy decompress https://github.com/dathere/qsv/raw/master/resources/test/boston311-100.csv.sz",
+      "args": [
+        "decompress",
+        "https://github.com/dathere/qsv/raw/master/resources/test/boston311-100.csv.sz"
+      ]
+    },
+    {
+      "name": "snappy_compress",
+      "description": "Snappy Compress",
+      "command": "qsv snappy compress test_file decompress got_path.clone(",
+      "args": [
+        "compress",
+        "test_file",
+        "decompress",
+        "got_path.clone("
+      ]
+    },
+    {
+      "name": "snappy_check",
+      "description": "Snappy Check",
+      "command": "qsv snappy check test_file",
+      "args": [
+        "check",
+        "test_file"
+      ]
+    },
+    {
+      "name": "snappy_check_invalid",
+      "description": "Snappy Check Invalid",
+      "command": "qsv snappy check test_file",
+      "args": [
+        "check",
+        "test_file"
+      ]
+    },
+    {
+      "name": "snappy_validate",
+      "description": "Snappy Validate",
+      "command": "qsv snappy validate test_file",
+      "args": [
+        "validate",
+        "test_file"
+      ]
+    },
+    {
+      "name": "snappy_validate_invalid",
+      "description": "Snappy Validate Invalid",
+      "command": "qsv snappy validate test_file",
+      "args": [
+        "validate",
+        "test_file"
+      ]
+    },
+    {
+      "name": "snappy_automatic_decompression",
+      "description": "Snappy Automatic Decompression",
+      "command": "qsv count test_file",
+      "args": [
+        "test_file"
+      ]
+    },
+    {
+      "name": "snappy_automatic_compression",
+      "description": "Snappy Automatic Compression",
+      "command": "qsv slice test_file got_path",
+      "args": [
+        "test_file",
+        "got_path"
+      ]
+    },
+    {
+      "name": "snappy_plain_csv_with_sz_extension_fallback",
+      "description": "Snappy Plain Csv With Sz Extension Fallback",
+      "command": "qsv count plain.csv.sz",
+      "args": [
+        "plain.csv.sz"
+      ]
+    },
+    {
+      "name": "snappy_case_insensitive_extension",
+      "description": "Snappy Case Insensitive Extension",
+      "command": "qsv snappy compress test.csv test.csv.SZ",
+      "args": [
+        "compress",
+        "test.csv",
+        "test.csv.SZ"
+      ],
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "snappy_validation_prevents_corrupt_error",
+      "description": "Snappy Validation Prevents Corrupt Error",
+      "command": "qsv slice data.csv.sz",
+      "args": [
+        "data.csv.sz"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name",
+            "age"
+          ],
+          [
+            "Alice",
+            "30"
+          ]
+        ]
+      },
+      "tags": [
+        "error-handling"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1618 @@
+{
+  "skill": "qsv-excel",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "excel_open_xls",
+      "description": "Excel Open Xls",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "expected": {
+        "data": [
+          [
+            "URL",
+            "City"
+          ],
+          [
+            "http://api.zippopotam.us/us/90210",
+            "Beverly Hills"
+          ],
+          [
+            "http://api.zippopotam.us/us/94105",
+            "San Francisco"
+          ],
+          [
+            "http://api.zippopotam.us/us/92802",
+            "Anaheim"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_cellerrors",
+      "description": "Excel Cellerrors",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "col 2",
+            "column-3"
+          ],
+          [
+            "1",
+            "-50",
+            "15"
+          ],
+          [
+            "2",
+            "#DIV/0!",
+            "#NAME?"
+          ],
+          [
+            "3",
+            "50",
+            "20"
+          ],
+          [
+            "4",
+            "33.333333333333336",
+            "3"
+          ],
+          [
+            "5",
+            "25",
+            "4"
+          ],
+          [
+            "#VALUE!",
+            "#VALUE!",
+            "#VALUE!"
+          ],
+          [
+            "7",
+            "20",
+            "#NAME?"
+          ],
+          [
+            "8",
+            "Hello",
+            "hello"
+          ],
+          [
+            "9",
+            "abcd",
+            "wxyz"
+          ]
+        ]
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "excel_cellerrors_formula",
+      "description": "Excel Cellerrors Formula",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "col 2",
+            "column-3"
+          ],
+          [
+            "1",
+            "-50",
+            "15"
+          ],
+          [
+            "2",
+            "#=100/0",
+            "#=4*te"
+          ],
+          [
+            "3",
+            "50",
+            "20"
+          ],
+          [
+            "4",
+            "33.333333333333336",
+            "3"
+          ],
+          [
+            "5",
+            "25",
+            "4"
+          ],
+          [
+            "#=B7+12",
+            "#=C7+20",
+            "#=_xlfn._xlws.SORT(_xlfn.CHOOSECOLS(A3:B20",
+            "3))"
+          ],
+          [
+            "7",
+            "20",
+            "#=SUM(C2:C7)"
+          ],
+          [
+            "8",
+            "Hello",
+            "hello"
+          ],
+          [
+            "9",
+            "abcd",
+            "wxyz"
+          ]
+        ]
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "excel_cellerrors_both",
+      "description": "Excel Cellerrors Both",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "col 2",
+            "column-3"
+          ],
+          [
+            "1",
+            "-50",
+            "15"
+          ],
+          [
+            "2",
+            "#DIV/0!: =100/0",
+            "#NAME?: =4*te"
+          ],
+          [
+            "3",
+            "50",
+            "20"
+          ],
+          [
+            "4",
+            "33.333333333333336",
+            "3"
+          ],
+          [
+            "5",
+            "25",
+            "4"
+          ],
+          [
+            "#VALUE!: =B7+12",
+            "#VALUE!: =C7+20",
+            "#VALUE!: =_xlfn._xlws.SORT(_xlfn.CHOOSECOLS(A3:B20",
+            "3))"
+          ],
+          [
+            "7",
+            "20",
+            "#NAME?: =SUM(C2:C7)"
+          ],
+          [
+            "8",
+            "Hello",
+            "hello"
+          ],
+          [
+            "9",
+            "abcd",
+            "wxyz"
+          ]
+        ]
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "excel_open_xls_delimiter",
+      "description": "Excel Open Xls Delimiter",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "expected": {
+        "data": [
+          [
+            "URL;City"
+          ],
+          [
+            "http://api.zippopotam.us/us/90210;Beverly Hills"
+          ],
+          [
+            "http://api.zippopotam.us/us/94105;San Francisco"
+          ],
+          [
+            "http://api.zippopotam.us/us/92802;Anaheim"
+          ]
+        ]
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "excel_open_xlsx_readpassword",
+      "description": "Excel Open Xlsx Readpassword",
+      "command": "qsv excel xlsx_file",
+      "args": [
+        "xlsx_file"
+      ]
+    },
+    {
+      "name": "excel_open_ods_readpassword",
+      "description": "Excel Open Ods Readpassword",
+      "command": "qsv excel ods_file",
+      "args": [
+        "ods_file"
+      ]
+    },
+    {
+      "name": "excel_open_flexible_xls",
+      "description": "Excel Open Flexible Xls",
+      "command": "qsv excel ",
+      "options": {
+        "--sheet": "Flexibility Test",
+        "--flexible": "xls_file"
+      },
+      "expected": {
+        "data": [
+          [
+            "URL",
+            "City",
+            ""
+          ],
+          [
+            "http://api.zippopotam.us/us/90210",
+            "Beverly Hills",
+            ""
+          ],
+          [
+            "http://api.zippopotam.us/us/94105",
+            "San Francisco",
+            ""
+          ],
+          [
+            "http://api.zippopotam.us/us/07094",
+            "Secaucus",
+            "NJ"
+          ],
+          [
+            "http://api.zippopotam.us/us/92802",
+            "Anaheim",
+            ""
+          ],
+          [
+            "http://api.zippopotam.us/us/10001",
+            "New York",
+            ""
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_trim_xls",
+      "description": "Excel Trim Xls",
+      "command": "qsv excel ",
+      "options": {
+        "--sheet": "trim test",
+        "--trim": "xls_file"
+      },
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "col2",
+            "col3"
+          ],
+          [
+            "a",
+            "1",
+            ""
+          ],
+          [
+            "b",
+            "2",
+            "white"
+          ],
+          [
+            "c",
+            "3a",
+            "the quick brown fox jumped over the lazy dog by the zigzag quarry site"
+          ],
+          [
+            "d",
+            "line1 line2 line3",
+            "f"
+          ],
+          [
+            "e",
+            "5c",
+            "surrounded by en and em spaces"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_date_xls",
+      "description": "Excel Date Xls",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--sheet": "date test"
+      },
+      "expected": {
+        "data": [
+          [
+            "date_col",
+            "num_col",
+            "col_Petsa",
+            "just another col"
+          ],
+          [
+            "2001-12-25",
+            "1",
+            "1991-07-04",
+            "foo"
+          ],
+          [
+            "2001-09-11 08:30:00",
+            "3",
+            "2021-01-06",
+            "bar"
+          ],
+          [
+            "This is not a date and will be passed through",
+            "5",
+            "2001-09-11",
+            "was"
+          ],
+          [
+            "1970-01-01",
+            "7",
+            "2009-01-21",
+            "here"
+          ],
+          [
+            "1989-12-31",
+            "11",
+            "2016-04-01",
+            "42"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_date_xls_dateformat",
+      "description": "Excel Date Xls Dateformat",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--sheet": "date test"
+      }
+    },
+    {
+      "name": "excel_date_xlsx_date_format",
+      "description": "Excel Date Xlsx Date Format",
+      "command": "qsv excel xlsx_file",
+      "args": [
+        "xlsx_file"
+      ],
+      "options": {
+        "--sheet": "date_test"
+      },
+      "expected": {
+        "data": [
+          [
+            "date",
+            "plaincol"
+          ],
+          [
+            "Thu 1980-12-25",
+            "it will still parse the dates below as date even if plaincol is not in the default \\\n             --dates-whitelist because the cell format was set to date"
+          ],
+          [
+            "Tue 2001-09-11 08:30:00",
+            "Tue 2001-09-11"
+          ],
+          [
+            "not a date",
+            "Tue 2001-09-11 08:30:00"
+          ],
+          [
+            "Wednesday",
+            "Mar-14-2012",
+            "the date below is not parsed as a date coz we didn't explicitly set the cell format \\\n             to a date format and \\\"plaincol\\\" is not in the --dates-whitelist"
+          ],
+          [
+            "Tue 2001-09-11",
+            "9/11/01 8:30 am"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_xlsx_data_types",
+      "description": "Excel Xlsx Data Types",
+      "command": "qsv excel xlsx_file",
+      "args": [
+        "xlsx_file"
+      ],
+      "options": {
+        "--sheet": "data types"
+      },
+      "expected": {
+        "data": [
+          [
+            "int",
+            "float",
+            "bool",
+            "date",
+            "duration",
+            "string",
+            "emojis",
+            "foreign"
+          ],
+          [
+            "1",
+            "1.1",
+            "true",
+            "2001-09-11",
+            "PT37200S",
+            "The",
+            "The",
+            "敏捷的棕色狐狸在森林里奔跑"
+          ],
+          [
+            "2",
+            "1.32434354545454",
+            "false",
+            "2023-10-07",
+            "PT85523S",
+            "quick",
+            "🍔",
+            "Franz jagt im komplett verwahrlosten Taxi quer durch Bayern"
+          ],
+          [
+            "3",
+            "0.423546456564534",
+            "1",
+            "1941-12-07",
+            "PT110723S",
+            "brown",
+            "is",
+            "Le rusé goupil franchit d'un bond le chien somnolent."
+          ],
+          [
+            "4",
+            "-54545.6565756785",
+            "0",
+            "2001-09-11 08:30:00",
+            "PT84600S",
+            "fox",
+            "💩",
+            "El rápido zorro marrón"
+          ],
+          [
+            "5",
+            "-5446563454.43546",
+            "true",
+            "1945-08-06 08:15:00",
+            "PT40S",
+            "jumped",
+            "🙀",
+            "いろはにほへとちりぬるをわかよたれそつねならむうゐのおくやまけふこえてあさきゆめみしゑひもせす"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_date_xlsx",
+      "description": "Excel Date Xlsx",
+      "command": "qsv excel xlsx_file",
+      "args": [
+        "xlsx_file"
+      ],
+      "options": {
+        "--sheet": "date_test"
+      },
+      "expected": {
+        "data": [
+          [
+            "date",
+            "plaincol"
+          ],
+          [
+            "1980-12-25",
+            "it will still parse the dates below as date even if plaincol is not in the default \\\n             --dates-whitelist because the cell format was set to date"
+          ],
+          [
+            "2001-09-11 08:30:00",
+            "2001-09-11"
+          ],
+          [
+            "not a date",
+            "2001-09-11 08:30:00"
+          ],
+          [
+            "Wednesday",
+            "Mar-14-2012",
+            "the date below is not parsed as a date coz we didn't explicitly set the cell format \\\n             to a date format and \\\"plaincol\\\" is not in the --dates-whitelist"
+          ],
+          [
+            "2001-09-11",
+            "9/11/01 8:30 am"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_open_ods",
+      "description": "Excel Open Ods",
+      "command": "qsv excel ods_file",
+      "args": [
+        "ods_file"
+      ],
+      "expected": {
+        "data": [
+          [
+            "URL",
+            "City"
+          ],
+          [
+            "http://api.zippopotam.us/us/90210",
+            "Beverly Hills"
+          ],
+          [
+            "http://api.zippopotam.us/us/94105",
+            "San Francisco"
+          ],
+          [
+            "http://api.zippopotam.us/us/92802",
+            "Anaheim"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_open_xlsx",
+      "description": "Excel Open Xlsx",
+      "command": "qsv excel xlsx_file",
+      "args": [
+        "xlsx_file"
+      ],
+      "expected": {
+        "data": [
+          [
+            "URL",
+            "City",
+            "number",
+            "date"
+          ],
+          [
+            "http://api.zippopotam.us/us/90210",
+            "Beverly Hills",
+            "42",
+            "2001-09-11 08:30:00"
+          ],
+          [
+            "http://api.zippopotam.us/us/94105",
+            "San Francisco",
+            "3.14",
+            "not a date"
+          ],
+          [
+            "http://api.zippopotam.us/us/92802",
+            "Anaheim",
+            "3.14159265358979",
+            "2021-01-06"
+          ],
+          [
+            "http://api.zippopotam.us/us/10013",
+            "Manhattan",
+            "1.5",
+            "123.45"
+          ],
+          [
+            "google.com",
+            "Mountain View",
+            "20.02",
+            "2021-07-04 22:03:00"
+          ],
+          [
+            "apple.com",
+            "Cupertino",
+            "37",
+            "Wednesday",
+            "March 14",
+            "2012"
+          ],
+          [
+            "amazon.com",
+            "Seattle",
+            "14.23",
+            "2012-03-14"
+          ],
+          [
+            "microsoft.com",
+            "Redmond",
+            "14.201",
+            "2012-03-14 15:30:00"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_last_sheet",
+      "description": "Excel Last Sheet",
+      "command": "qsv excel ",
+      "options": {
+        "-1": "xls_file"
+      },
+      "expected": {
+        "data": [
+          [
+            "Last sheet col1",
+            "Last-2"
+          ],
+          [
+            "a",
+            "5"
+          ],
+          [
+            "b",
+            "4"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "d",
+            "2"
+          ],
+          [
+            "e",
+            "1"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_invalid_sheet_index",
+      "description": "Excel Invalid Sheet Index",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--sheet": "100"
+      }
+    },
+    {
+      "name": "excel_invalid_sheet_neg_index",
+      "description": "Excel Invalid Sheet Neg Index",
+      "command": "qsv excel -100",
+      "args": [
+        "-100"
+      ],
+      "options": {
+        "--sheet": "xls_file"
+      }
+    },
+    {
+      "name": "excel_sheet_name",
+      "description": "Excel Sheet Name",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--sheet": "Middle"
+      },
+      "expected": {
+        "data": [
+          [
+            "Middle sheet col1",
+            "Middle-2"
+          ],
+          [
+            "z",
+            "3.14159265358979"
+          ],
+          [
+            "y",
+            "42"
+          ],
+          [
+            "x",
+            "33"
+          ],
+          [
+            "w",
+            "7"
+          ],
+          [
+            "v",
+            "3.14159265358979"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_xls_float_handling_516",
+      "description": "Excel Xls Float Handling 516",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--sheet": "Middle"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "amount",
+            "color"
+          ],
+          [
+            "1",
+            "20.02",
+            "green"
+          ],
+          [
+            "2",
+            "37",
+            "red"
+          ],
+          [
+            "3",
+            "14.23",
+            "blue"
+          ],
+          [
+            "4",
+            "14.2",
+            "pink"
+          ],
+          [
+            "5",
+            "14.201",
+            "grey"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_case_insensitive_sheet_name",
+      "description": "Excel Case Insensitive Sheet Name",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--sheet": "miDDlE"
+      },
+      "expected": {
+        "data": [
+          [
+            "Middle sheet col1",
+            "Middle-2"
+          ],
+          [
+            "z",
+            "3.14159265358979"
+          ],
+          [
+            "y",
+            "42"
+          ],
+          [
+            "x",
+            "33"
+          ],
+          [
+            "w",
+            "7"
+          ],
+          [
+            "v",
+            "3.14159265358979"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "excel_metadata",
+      "description": "Excel Metadata",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--metadata": "csv"
+      }
+    },
+    {
+      "name": "excel_short_metadata",
+      "description": "Excel Short Metadata",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--metadata": "short"
+      },
+      "expected": {
+        "data": [
+          [
+            "index",
+            "sheet_name",
+            "type",
+            "visible"
+          ],
+          [
+            "0",
+            "First",
+            "WorkSheet",
+            "Visible"
+          ],
+          [
+            "1",
+            "Flexibility Test",
+            "WorkSheet",
+            "Visible"
+          ],
+          [
+            "2",
+            "Middle",
+            "WorkSheet",
+            "Visible"
+          ],
+          [
+            "3",
+            "Sheet1",
+            "WorkSheet",
+            "Visible"
+          ],
+          [
+            "4",
+            "trim test",
+            "WorkSheet",
+            "Visible"
+          ],
+          [
+            "5",
+            "date test",
+            "WorkSheet",
+            "Visible"
+          ],
+          [
+            "6",
+            "NoData",
+            "WorkSheet",
+            "Visible"
+          ],
+          [
+            "7",
+            "Last",
+            "WorkSheet",
+            "Visible"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_metadata_pretty_json",
+      "description": "Excel Metadata Pretty Json",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--metadata": "J"
+      }
+    },
+    {
+      "name": "excel_metadata_xlsx_ranges_tables_pretty_json",
+      "description": "Excel Metadata Xlsx Ranges Tables Pretty Json",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--metadata": "J"
+      }
+    },
+    {
+      "name": "ods_metadata",
+      "description": "Ods Metadata",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--metadata": "c"
+      }
+    },
+    {
+      "name": "ods_short_metadata",
+      "description": "Ods Short Metadata",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--metadata": "s"
+      },
+      "expected": {
+        "data": [
+          [
+            "index",
+            "sheet_name",
+            "type",
+            "visible"
+          ],
+          [
+            "0",
+            "Sheet1",
+            "WorkSheet",
+            "Visible"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "ods_metadata_pretty_json",
+      "description": "Ods Metadata Pretty Json",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--metadata": "J"
+      }
+    },
+    {
+      "name": "excel_metadata_sheet_types",
+      "description": "Excel Metadata Sheet Types",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--metadata": "csv"
+      }
+    },
+    {
+      "name": "excel_metadata_sheet_types_xlsx",
+      "description": "Excel Metadata Sheet Types Xlsx",
+      "command": "qsv excel xlsx_file",
+      "args": [
+        "xlsx_file"
+      ],
+      "options": {
+        "--metadata": "csv"
+      }
+    },
+    {
+      "name": "excel_metadata_sheet_types_xlsx_short_json",
+      "description": "Excel Metadata Sheet Types Xlsx Short Json",
+      "command": "qsv excel xlsx_file",
+      "args": [
+        "xlsx_file"
+      ],
+      "options": {
+        "--metadata": "S"
+      }
+    },
+    {
+      "name": "excel_metadata_sheet_types_xlsb",
+      "description": "Excel Metadata Sheet Types Xlsb",
+      "command": "qsv excel xlsb_file",
+      "args": [
+        "xlsb_file"
+      ],
+      "options": {
+        "--metadata": "csv"
+      }
+    },
+    {
+      "name": "excel_metadata_sheet_types_ods",
+      "description": "Excel Metadata Sheet Types Ods",
+      "command": "qsv excel ods_file",
+      "args": [
+        "ods_file"
+      ],
+      "options": {
+        "--metadata": "csv"
+      }
+    },
+    {
+      "name": "excel_message",
+      "description": "Excel Message",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--sheet": "Middle"
+      }
+    },
+    {
+      "name": "excel_empty_sheet_message",
+      "description": "Excel Empty Sheet Message",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--sheet": "nodata"
+      }
+    },
+    {
+      "name": "excel_empty_sheet2_message",
+      "description": "Excel Empty Sheet2 Message",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--sheet": "Sheet1"
+      }
+    },
+    {
+      "name": "excel_integer_headers",
+      "description": "Excel Integer Headers",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "expected": {
+        "data": [
+          [
+            "location ",
+            "2020",
+            "2021",
+            "2022"
+          ],
+          [
+            "Here",
+            "1",
+            "2",
+            "3"
+          ],
+          [
+            "There",
+            "4",
+            "5",
+            "6"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_range_cols",
+      "description": "Excel Range Cols",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--range": "a:b"
+      },
+      "expected": {
+        "data": [
+          [
+            "A",
+            "B"
+          ],
+          [
+            "2",
+            "3"
+          ],
+          [
+            "3",
+            "4"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_range_rowcols",
+      "description": "Excel Range Rowcols",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--range": "d2:e2"
+      },
+      "expected": {
+        "data": [
+          [
+            "5",
+            "6"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_range_double_letter_cols",
+      "description": "Excel Range Double Letter Cols",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--range": "z1:ab2"
+      },
+      "expected": {
+        "data": [
+          [
+            "Z",
+            "AA",
+            "AB"
+          ],
+          [
+            "27",
+            "28",
+            "29"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_neg_float",
+      "description": "Excel Neg Float",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--range": "b2:b"
+      },
+      "expected": {
+        "data": [
+          [
+            "-100.01"
+          ],
+          [
+            "-200.02"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_small_neg_float",
+      "description": "Excel Small Neg Float",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--range": "c2:c"
+      },
+      "expected": {
+        "data": [
+          [
+            "-0.01"
+          ],
+          [
+            "-0.02"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_neg_int",
+      "description": "Excel Neg Int",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--range": "d2:d"
+      },
+      "expected": {
+        "data": [
+          [
+            "-1"
+          ],
+          [
+            "-2"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_zero",
+      "description": "Excel Zero",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--range": "e2:e"
+      },
+      "expected": {
+        "data": [
+          [
+            "0"
+          ],
+          [
+            "0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_small_pos_float",
+      "description": "Excel Small Pos Float",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--range": "f2:f"
+      },
+      "expected": {
+        "data": [
+          [
+            "0.01"
+          ],
+          [
+            "0.02"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_pos_float",
+      "description": "Excel Pos Float",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--range": "g2:g"
+      },
+      "expected": {
+        "data": [
+          [
+            "100.01"
+          ],
+          [
+            "200.02"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_pos_int",
+      "description": "Excel Pos Int",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--range": "h2:h"
+      },
+      "expected": {
+        "data": [
+          [
+            "1"
+          ],
+          [
+            "2"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_large_floats",
+      "description": "Excel Large Floats",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "expected": {
+        "data": [
+          [
+            "A"
+          ],
+          [
+            "9.22337203685478e+19"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_range_empty_sheet",
+      "description": "Excel Range Empty Sheet",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "-s": "Sheet2",
+        "--range": "a2:b"
+      }
+    },
+    {
+      "name": "excel_formula_empty_string_value",
+      "description": "Excel Formula Empty String Value",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ]
+    },
+    {
+      "name": "excel_table_range",
+      "description": "Excel Table Range",
+      "command": "qsv excel xlsx_file",
+      "args": [
+        "xlsx_file"
+      ],
+      "options": {
+        "--table": "Table1"
+      },
+      "expected": {
+        "data": [
+          [
+            "tabc1",
+            "tabc2",
+            "tabc3"
+          ],
+          [
+            "a2",
+            "false",
+            "2.2"
+          ],
+          [
+            "a3",
+            "true",
+            "3.3"
+          ],
+          [
+            "a4",
+            "true",
+            "4.4"
+          ],
+          [
+            "a5",
+            "false",
+            "5.56"
+          ],
+          [
+            "a6",
+            "true",
+            "0.9999"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_named_range",
+      "description": "Excel Named Range",
+      "command": "qsv excel xlsx_file",
+      "args": [
+        "xlsx_file"
+      ],
+      "options": {
+        "--range": "TestNamedRange"
+      },
+      "expected": {
+        "data": [
+          [
+            "alpha",
+            "1",
+            "5"
+          ],
+          [
+            "beta",
+            "2.2",
+            "6"
+          ],
+          [
+            "charlie",
+            "3.3",
+            "7"
+          ],
+          [
+            "delta",
+            "4.4",
+            "8"
+          ],
+          [
+            "echo",
+            "5.5",
+            "9"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_absolute_range",
+      "description": "Excel Absolute Range",
+      "command": "qsv excel xlsx_file",
+      "args": [
+        "xlsx_file"
+      ],
+      "options": {
+        "--range": "Sheet2!A1:C3"
+      },
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "col2",
+            "col3"
+          ],
+          [
+            "1",
+            "e",
+            "1.1"
+          ],
+          [
+            "2",
+            "d",
+            "2.2"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_absolute_range2",
+      "description": "Excel Absolute Range2",
+      "command": "qsv excel xlsx_file",
+      "args": [
+        "xlsx_file"
+      ],
+      "options": {
+        "--range": "Sheet2!$A$1:$C$3"
+      },
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "col2",
+            "col3"
+          ],
+          [
+            "1",
+            "e",
+            "1.1"
+          ],
+          [
+            "2",
+            "d",
+            "2.2"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_cell_simple",
+      "description": "Excel Cell Simple",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--cell": "d2"
+      },
+      "expected": {
+        "data": [
+          [
+            "5"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_cell_sheet_qualified",
+      "description": "Excel Cell Sheet Qualified",
+      "command": "qsv excel xlsx_file",
+      "args": [
+        "xlsx_file"
+      ],
+      "options": {
+        "--cell": "Sheet2!C2"
+      },
+      "expected": {
+        "data": [
+          [
+            "1.1"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_cell_absolute",
+      "description": "Excel Cell Absolute",
+      "command": "qsv excel xlsx_file",
+      "args": [
+        "xlsx_file"
+      ],
+      "options": {
+        "--cell": "Sheet2!$C$2"
+      },
+      "expected": {
+        "data": [
+          [
+            "1.1"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_cell_double_letter_col",
+      "description": "Excel Cell Double Letter Col",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--cell": "aa2"
+      },
+      "expected": {
+        "data": [
+          [
+            "28"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "excel_cell_precedence",
+      "description": "Excel Cell Precedence",
+      "command": "qsv excel xls_file",
+      "args": [
+        "xls_file"
+      ],
+      "options": {
+        "--range": "e2:e2",
+        "--cell": "d2"
+      },
+      "expected": {
+        "data": [
+          [
+            "5"
+          ]
+        ]
+      }
+    }
+  ]
+}

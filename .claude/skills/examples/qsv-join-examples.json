@@ -1,0 +1,867 @@
+{
+  "skill": "qsv-join",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "headers",
+      "description": "Headers",
+      "command": "qsv join "
+    },
+    {
+      "name": "no_headers",
+      "description": "No Headers",
+      "command": "qsv join ",
+      "options": {
+        "--no-headers": "true"
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "headers",
+      "description": "Headers",
+      "command": "qsv join "
+    },
+    {
+      "name": "no_headers",
+      "description": "No Headers",
+      "command": "qsv join ",
+      "options": {
+        "--no-headers": "true"
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "join_inner_issue11",
+      "description": "Join Inner Issue11",
+      "command": "qsv join ",
+      "expected": {
+        "data": [
+          [
+            "1",
+            "2",
+            "2",
+            "1"
+          ],
+          [
+            "3",
+            "4",
+            "4",
+            "3"
+          ],
+          [
+            "5",
+            "6",
+            "6",
+            "5"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "join_cross",
+      "description": "Join Cross",
+      "input": {
+        "data": [
+          [
+            "h1",
+            "h2"
+          ],
+          [
+            "a",
+            "b"
+          ],
+          [
+            "c",
+            "d"
+          ]
+        ],
+        "filename": "letters.csv"
+      },
+      "command": "qsv join ",
+      "options": {
+        "--cross": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "h1",
+            "h2",
+            "h3",
+            "h4"
+          ],
+          [
+            "a",
+            "b",
+            "1",
+            "2"
+          ],
+          [
+            "a",
+            "b",
+            "3",
+            "4"
+          ],
+          [
+            "c",
+            "d",
+            "1",
+            "2"
+          ],
+          [
+            "c",
+            "d",
+            "3",
+            "4"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "join_cross_no_headers",
+      "description": "Join Cross No Headers",
+      "input": {
+        "data": [
+          [
+            "a",
+            "b"
+          ],
+          [
+            "c",
+            "d"
+          ]
+        ],
+        "filename": "letters.csv"
+      },
+      "command": "qsv join ",
+      "options": {
+        "--no-headers": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "a",
+            "b",
+            "1",
+            "2"
+          ],
+          [
+            "a",
+            "b",
+            "3",
+            "4"
+          ],
+          [
+            "c",
+            "d",
+            "1",
+            "2"
+          ],
+          [
+            "c",
+            "d",
+            "3",
+            "4"
+          ]
+        ]
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "join_keys_output_inner",
+      "description": "Join Keys Output Inner",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "value"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "b",
+            "2"
+          ],
+          [
+            "c",
+            "3"
+          ]
+        ],
+        "filename": "letters.csv"
+      },
+      "command": "qsv join ",
+      "options": {
+        "--keys-output": "keys.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "b"
+          ],
+          [
+            "c"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "join_keys_output_left_anti",
+      "description": "Join Keys Output Left Anti",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "value"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "b",
+            "2"
+          ],
+          [
+            "c",
+            "3"
+          ]
+        ],
+        "filename": "letters.csv"
+      },
+      "command": "qsv join ",
+      "options": {
+        "--keys-output": "keys.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "a"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "join_keys_output_left_semi",
+      "description": "Join Keys Output Left Semi",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "value"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "b",
+            "2"
+          ],
+          [
+            "c",
+            "3"
+          ]
+        ],
+        "filename": "letters.csv"
+      },
+      "command": "qsv join ",
+      "options": {
+        "--keys-output": "keys.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "b"
+          ],
+          [
+            "c"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "join_keys_output_full",
+      "description": "Join Keys Output Full",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "value"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "b",
+            "2"
+          ],
+          [
+            "c",
+            "3"
+          ]
+        ],
+        "filename": "letters.csv"
+      },
+      "command": "qsv join ",
+      "options": {
+        "--keys-output": "keys.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "b"
+          ],
+          [
+            "c"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "join_keys_output_multiple_columns",
+      "description": "Join Keys Output Multiple Columns",
+      "input": {
+        "data": [
+          [
+            "city",
+            "state",
+            "val"
+          ],
+          [
+            "Boston",
+            "MA",
+            "1"
+          ],
+          [
+            "New York",
+            "NY",
+            "2"
+          ],
+          [
+            "Chicago",
+            "IL",
+            "3"
+          ]
+        ],
+        "filename": "data1.csv"
+      },
+      "command": "qsv join ",
+      "options": {
+        "--keys-output": "keys.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Boston",
+            "MA"
+          ],
+          [
+            "Chicago",
+            "IL"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "join_keys_output_cross",
+      "description": "Join Keys Output Cross",
+      "input": {
+        "data": [
+          [
+            "letter"
+          ],
+          [
+            "a"
+          ],
+          [
+            "b"
+          ]
+        ],
+        "filename": "letters.csv"
+      },
+      "command": "qsv join ",
+      "options": {
+        "--keys-output": "keys.csv"
+      }
+    },
+    {
+      "name": "join_inner_zeros_casei",
+      "description": "Join Inner Zeros Casei",
+      "command": "qsv join ",
+      "options": {
+        "--ignore-case": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "value",
+            "id",
+            "info"
+          ],
+          [
+            "01NYC",
+            "data1",
+            "1NYC",
+            "info1"
+          ],
+          [
+            "01NYC",
+            "data1",
+            "01nyc",
+            "info3"
+          ],
+          [
+            "02LA",
+            "data2",
+            "2la",
+            "info2"
+          ],
+          [
+            "1nyc",
+            "data3",
+            "1NYC",
+            "info1"
+          ],
+          [
+            "1nyc",
+            "data3",
+            "01nyc",
+            "info3"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "join_nulls",
+      "description": "Join Nulls",
+      "input": {
+        "data": [
+          [
+            "id",
+            "value"
+          ],
+          [
+            "1",
+            "foo"
+          ],
+          [
+            "2",
+            ""
+          ],
+          [
+            "3",
+            "baz"
+          ],
+          [
+            "",
+            "bar"
+          ]
+        ],
+        "filename": "data1.csv"
+      },
+      "command": "qsv join ",
+      "options": {
+        "--nulls": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "value",
+            "id",
+            "info"
+          ],
+          [
+            "1",
+            "foo",
+            "1",
+            "a"
+          ],
+          [
+            "2",
+            "",
+            "2",
+            "b"
+          ],
+          [
+            "3",
+            "baz",
+            "3",
+            "c"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "join_multiple_key_columns",
+      "description": "Join Multiple Key Columns",
+      "input": {
+        "data": [
+          [
+            "city",
+            "state",
+            "value"
+          ],
+          [
+            "Boston",
+            "MA",
+            "100"
+          ],
+          [
+            "Portland",
+            "OR",
+            "200"
+          ],
+          [
+            "Portland",
+            "ME",
+            "300"
+          ]
+        ],
+        "filename": "data1.csv"
+      },
+      "command": "qsv join ",
+      "expected": {
+        "data": [
+          [
+            "city",
+            "state",
+            "value",
+            "city",
+            "state",
+            "info"
+          ],
+          [
+            "Boston",
+            "MA",
+            "100",
+            "Boston",
+            "MA",
+            "large"
+          ],
+          [
+            "Portland",
+            "OR",
+            "200",
+            "Portland",
+            "OR",
+            "medium"
+          ],
+          [
+            "Portland",
+            "ME",
+            "300",
+            "Portland",
+            "ME",
+            "small"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "join_with_duplicate_keys",
+      "description": "Join With Duplicate Keys",
+      "input": {
+        "data": [
+          [
+            "id",
+            "value"
+          ],
+          [
+            "1",
+            "a"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "c"
+          ]
+        ],
+        "filename": "data1.csv"
+      },
+      "command": "qsv join ",
+      "expected": {
+        "data": [
+          [
+            "id",
+            "value",
+            "id",
+            "info"
+          ],
+          [
+            "1",
+            "a",
+            "1",
+            "x"
+          ],
+          [
+            "1",
+            "a",
+            "1",
+            "y"
+          ],
+          [
+            "1",
+            "b",
+            "1",
+            "x"
+          ],
+          [
+            "1",
+            "b",
+            "1",
+            "y"
+          ],
+          [
+            "2",
+            "c",
+            "2",
+            "z"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "join_with_whitespace",
+      "description": "Join With Whitespace",
+      "input": {
+        "data": [
+          [
+            "id",
+            "value"
+          ],
+          [
+            "  1",
+            "a"
+          ],
+          [
+            "2  ",
+            "b"
+          ],
+          [
+            "  3  ",
+            "c"
+          ]
+        ],
+        "filename": "data1.csv"
+      },
+      "command": "qsv join ",
+      "expected": {
+        "data": [
+          [
+            "id",
+            "value",
+            "id",
+            "info"
+          ],
+          [
+            "  1",
+            "a",
+            "1  ",
+            "x"
+          ],
+          [
+            "2  ",
+            "b",
+            "  2",
+            "y"
+          ],
+          [
+            "  3  ",
+            "c",
+            "3",
+            "z"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "join_right_semi_header_order_issue_2434",
+      "description": "Join Right Semi Header Order Issue 2434",
+      "input": {
+        "data": [
+          [
+            "id",
+            "company_id",
+            "art_no"
+          ],
+          [
+            "1",
+            "A1",
+            "1"
+          ],
+          [
+            "2",
+            "A2",
+            "2"
+          ],
+          [
+            "3",
+            "A3",
+            "3"
+          ]
+        ],
+        "filename": "file1.csv"
+      },
+      "command": "qsv join ",
+      "expected": {
+        "data": [
+          [
+            "id",
+            "art_no",
+            "company_id"
+          ],
+          [
+            "1",
+            "1",
+            "B1"
+          ],
+          [
+            "2",
+            "2",
+            "B2"
+          ]
+        ]
+      },
+      "tags": [
+        "regression"
+      ]
+    },
+    {
+      "name": "join_right_semi_different_fields_issue_2437",
+      "description": "Join Right Semi Different Fields Issue 2437",
+      "input": {
+        "data": [
+          [
+            "id",
+            "PA",
+            "PB",
+            "PC",
+            "PD"
+          ],
+          [
+            "1",
+            "104",
+            "0101",
+            "",
+            ""
+          ],
+          [
+            "2",
+            "104",
+            "0101",
+            "",
+            "D"
+          ],
+          [
+            "3",
+            "104",
+            "0101",
+            "",
+            ""
+          ]
+        ],
+        "filename": "a.csv"
+      },
+      "command": "qsv join ",
+      "options": {
+        "--right-semi": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "PA",
+            "PB"
+          ],
+          [
+            "1",
+            "105",
+            "0101"
+          ],
+          [
+            "3",
+            "105",
+            "0101"
+          ]
+        ]
+      },
+      "tags": [
+        "regression"
+      ]
+    },
+    {
+      "name": "join_right_anti_different_fields_issue_2437",
+      "description": "Join Right Anti Different Fields Issue 2437",
+      "input": {
+        "data": [
+          [
+            "id",
+            "PA",
+            "PB",
+            "PC",
+            "PD"
+          ],
+          [
+            "1",
+            "104",
+            "0101",
+            "",
+            ""
+          ],
+          [
+            "2",
+            "104",
+            "0101",
+            "",
+            "D"
+          ],
+          [
+            "3",
+            "104",
+            "0101",
+            "",
+            ""
+          ]
+        ],
+        "filename": "a.csv"
+      },
+      "command": "qsv join ",
+      "options": {
+        "--right-anti": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "PA",
+            "PB"
+          ],
+          [
+            "4",
+            "105",
+            "0101"
+          ]
+        ]
+      },
+      "tags": [
+        "regression"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "skill": "qsv-geoconvert",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "geoconvert_geojson_to_csv",
+      "description": "Geoconvert Geojson To Csv",
+      "command": "qsv geoconvert txcities_geojson geojson csv txcities_csv &txcities_csv_first5",
+      "args": [
+        "txcities_geojson",
+        "geojson",
+        "csv",
+        "txcities_csv",
+        "&txcities_csv_first5"
+      ]
+    },
+    {
+      "name": "geoconvert_geojson_to_csv_max_length",
+      "description": "Geoconvert Geojson To Csv Max Length",
+      "command": "qsv geoconvert txcities_geojson geojson csv txcities_csv",
+      "args": [
+        "txcities_geojson",
+        "geojson",
+        "csv",
+        "txcities_csv"
+      ]
+    }
+  ]
+}

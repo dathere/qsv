@@ -1,0 +1,124 @@
+{
+  "skill": "qsv-foreach",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "foreach_dry_run",
+      "description": "Foreach Dry Run",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "John"
+          ],
+          [
+            "Mary"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv foreach name",
+      "args": [
+        "name"
+      ]
+    },
+    {
+      "name": "foreach_multiple_braces_dry_run",
+      "description": "Foreach Multiple Braces Dry Run",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "John"
+          ],
+          [
+            "Mary"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv foreach name",
+      "args": [
+        "name"
+      ]
+    },
+    {
+      "name": "foreach_special_chars_1171_dry_run",
+      "description": "Foreach Special Chars 1171 Dry Run",
+      "input": {
+        "data": [
+          [
+            "host"
+          ],
+          [
+            "omadhina.co.NA"
+          ],
+          [
+            "https://www.google.com"
+          ],
+          [
+            "www.apple.com"
+          ],
+          [
+            "https://civic-data-ecosystem.github.io"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv foreach host",
+      "args": [
+        "host"
+      ]
+    },
+    {
+      "name": "foreach_multiple_commands_with_shell_script_dry_run",
+      "description": "Foreach Multiple Commands With Shell Script Dry Run",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "John"
+          ],
+          [
+            "Mary"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv foreach name",
+      "args": [
+        "name"
+      ]
+    },
+    {
+      "name": "foreach_issue_2753",
+      "description": "Foreach Issue 2753",
+      "input": {
+        "data": [
+          [
+            "a",
+            "b"
+          ],
+          [
+            "1",
+            "1/"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv foreach b",
+      "args": [
+        "b"
+      ],
+      "tags": [
+        "regression"
+      ]
+    }
+  ]
+}

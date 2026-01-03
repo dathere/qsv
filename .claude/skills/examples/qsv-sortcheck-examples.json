@@ -1,0 +1,371 @@
+{
+  "skill": "qsv-sortcheck",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "sortcheck_select_notsorted",
+      "description": "Sortcheck Select Notsorted",
+      "input": {
+        "data": [
+          [
+            "1",
+            "d"
+          ],
+          [
+            "2",
+            "c"
+          ],
+          [
+            "3",
+            "b"
+          ],
+          [
+            "4",
+            "a"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sortcheck ",
+      "options": {
+        "--no-headers": "in.csv"
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "sortcheck_select_sorted",
+      "description": "Sortcheck Select Sorted",
+      "input": {
+        "data": [
+          [
+            "1",
+            "d"
+          ],
+          [
+            "2",
+            "c"
+          ],
+          [
+            "3",
+            "b"
+          ],
+          [
+            "4",
+            "a"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sortcheck ",
+      "options": {
+        "--no-headers": "in.csv"
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "sortcheck_select_unsorted",
+      "description": "Sortcheck Select Unsorted",
+      "input": {
+        "data": [
+          [
+            "1",
+            "d"
+          ],
+          [
+            "2",
+            "c"
+          ],
+          [
+            "3",
+            "b"
+          ],
+          [
+            "4",
+            "a"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sortcheck ",
+      "options": {
+        "--no-headers": "in.csv"
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "sortcheck_simple_sorted",
+      "description": "Sortcheck Simple Sorted",
+      "input": {
+        "data": [
+          [
+            "1",
+            "d"
+          ],
+          [
+            "2",
+            "c"
+          ],
+          [
+            "3",
+            "b"
+          ],
+          [
+            "4",
+            "a"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sortcheck ",
+      "options": {
+        "--no-headers": "in.csv"
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "sortcheck_simple_unsorted",
+      "description": "Sortcheck Simple Unsorted",
+      "input": {
+        "data": [
+          [
+            "col11",
+            "col2"
+          ],
+          [
+            "1",
+            "d"
+          ],
+          [
+            "5",
+            "c"
+          ],
+          [
+            "3",
+            "b"
+          ],
+          [
+            "4",
+            "a"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sortcheck in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "sortcheck_simple_all",
+      "description": "Sortcheck Simple All",
+      "input": {
+        "data": [
+          [
+            "col11",
+            "col2"
+          ],
+          [
+            "1",
+            "d"
+          ],
+          [
+            "5",
+            "c"
+          ],
+          [
+            "3",
+            "b"
+          ],
+          [
+            "4",
+            "a"
+          ],
+          [
+            "6",
+            "a"
+          ],
+          [
+            "2",
+            "y"
+          ],
+          [
+            "3",
+            "z"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sortcheck ",
+      "options": {
+        "--all": "in.csv"
+      }
+    },
+    {
+      "name": "sortcheck_simple_all_json",
+      "description": "Sortcheck Simple All Json",
+      "input": {
+        "data": [
+          [
+            "col11",
+            "col2"
+          ],
+          [
+            "1",
+            "d"
+          ],
+          [
+            "5",
+            "c"
+          ],
+          [
+            "5",
+            "c"
+          ],
+          [
+            "3",
+            "b"
+          ],
+          [
+            "4",
+            "a"
+          ],
+          [
+            "6",
+            "a"
+          ],
+          [
+            "6",
+            "a"
+          ],
+          [
+            "2",
+            "y"
+          ],
+          [
+            "3",
+            "z"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sortcheck ",
+      "options": {
+        "--json": "in.csv"
+      }
+    },
+    {
+      "name": "sortcheck_simple_json",
+      "description": "Sortcheck Simple Json",
+      "input": {
+        "data": [
+          [
+            "col11",
+            "col2"
+          ],
+          [
+            "1",
+            "d"
+          ],
+          [
+            "5",
+            "c"
+          ],
+          [
+            "5",
+            "c"
+          ],
+          [
+            "3",
+            "b"
+          ],
+          [
+            "4",
+            "a"
+          ],
+          [
+            "6",
+            "a"
+          ],
+          [
+            "6",
+            "a"
+          ],
+          [
+            "2",
+            "y"
+          ],
+          [
+            "3",
+            "z"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sortcheck ",
+      "options": {
+        "--json": "in.csv"
+      }
+    },
+    {
+      "name": "sortcheck_simple_all_json_progressbar",
+      "description": "Sortcheck Simple All Json Progressbar",
+      "input": {
+        "data": [
+          [
+            "col11",
+            "col2"
+          ],
+          [
+            "1",
+            "d"
+          ],
+          [
+            "5",
+            "c"
+          ],
+          [
+            "5",
+            "c"
+          ],
+          [
+            "3",
+            "b"
+          ],
+          [
+            "4",
+            "a"
+          ],
+          [
+            "6",
+            "a"
+          ],
+          [
+            "6",
+            "a"
+          ],
+          [
+            "2",
+            "y"
+          ],
+          [
+            "3",
+            "z"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv sortcheck ",
+      "options": {
+        "--progressbar": "in.csv"
+      }
+    }
+  ]
+}

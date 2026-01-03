@@ -1,0 +1,138 @@
+{
+  "skill": "qsv-fetch",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "test_fetch_jaq_invalid_json",
+      "description": "Test Fetch Jaq Invalid Json",
+      "input": {
+        "data": [
+          [
+            "URL"
+          ],
+          [
+            "<!doctype html><html lang=\\\"en\\\"><meta charset=utf-8><title>shortest \\\n                 html5</title>"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv fetch URL data.csv",
+      "args": [
+        "URL",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "result",
+        "--jaq": "r#\".\"places\"[0].\"place name\"\"#"
+      },
+      "expected": {
+        "data": [
+          [
+            "URL",
+            "result"
+          ],
+          [
+            "<!doctype html><html lang=\\\"en\\\"><meta charset=utf-8><title>shortest html5</title>",
+            ""
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_fetch_jaq_invalid_selector",
+      "description": "Test Fetch Jaq Invalid Selector",
+      "input": {
+        "data": [
+          [
+            "URL"
+          ],
+          [
+            "https://api.zippopotam.us/us/90210"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv fetch URL data.csv",
+      "args": [
+        "URL",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "result",
+        "--jaq": "r#\".\"place\"[0].\"place name\"\"#"
+      },
+      "expected": {
+        "data": [
+          [
+            "URL",
+            "result"
+          ],
+          [
+            "https://api.zippopotam.us/us/90210",
+            ""
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_fetch_jaq_number",
+      "description": "Test Fetch Jaq Number",
+      "input": {
+        "data": [
+          [
+            "URL"
+          ],
+          [
+            "https://api.zippopotam.us/us/90210"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv fetch URL data.csv",
+      "args": [
+        "URL",
+        "data.csv"
+      ],
+      "options": {
+        "--jaq": "r#\".\"places\"[0].\"longitude\"\"#",
+        "--new-column": "longitude"
+      },
+      "expected": {
+        "data": [
+          [
+            "URL",
+            "longitude"
+          ],
+          [
+            "https://api.zippopotam.us/us/90210",
+            "\\\"-118.4065\\"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_fetch_jaq_array",
+      "description": "Test Fetch Jaq Array",
+      "input": {
+        "data": [
+          [
+            "URL"
+          ],
+          [
+            "https://api.zippopotam.us/us/90210"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv fetch URL data.csv",
+      "args": [
+        "URL",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "coordinates",
+        "--jaq": "r#\"[ .\"places\"[0].\"longitude\", .\"places\"[0].\"latitude\" ]\"#"
+      }
+    }
+  ]
+}

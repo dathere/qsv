@@ -1,0 +1,672 @@
+{
+  "skill": "qsv-geocode",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "geocode_suggest",
+      "description": "Geocode Suggest",
+      "command": "qsv geocode suggest Location data.csv",
+      "args": [
+        "suggest",
+        "Location",
+        "data.csv"
+      ]
+    },
+    {
+      "name": "geocode_suggest_select",
+      "description": "Geocode Suggest Select",
+      "command": "qsv geocode suggest _ data.csv",
+      "args": [
+        "suggest",
+        "_",
+        "data.csv"
+      ]
+    },
+    {
+      "name": "geocode_suggestnow_default",
+      "description": "Geocode Suggestnow Default",
+      "command": "qsv geocode suggestnow Brooklyn",
+      "args": [
+        "suggestnow",
+        "Brooklyn"
+      ],
+      "expected": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "Brooklyn",
+            "New York US: 40.6501",
+            "-73.94958"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "geocode_suggestnow_formatstr_dyncols",
+      "description": "Geocode Suggestnow Formatstr Dyncols",
+      "command": "qsv geocode suggestnow Secaucus",
+      "args": [
+        "suggestnow",
+        "Secaucus"
+      ]
+    },
+    {
+      "name": "geocode_suggest_intl",
+      "description": "Geocode Suggest Intl",
+      "command": "qsv geocode suggest Location data.csv",
+      "args": [
+        "suggest",
+        "Location",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "Paris",
+            "Île-de-France Region FR"
+          ],
+          [
+            "Manila",
+            "National Capital Region PH"
+          ],
+          [
+            "London",
+            "England GB"
+          ],
+          [
+            "Berlin",
+            "State of Berlin DE"
+          ],
+          [
+            "Moscow",
+            "Moscow RU"
+          ],
+          [
+            "This is not a Location and it will not be geocoded"
+          ],
+          [
+            "Brasília",
+            "Federal District BR"
+          ],
+          [
+            "95.213424",
+            "190",
+            "1234565"
+          ],
+          [
+            "Havana",
+            "La Habana Province CU"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "geocode_suggest_intl_country_filter",
+      "description": "Geocode Suggest Intl Country Filter",
+      "command": "qsv geocode suggest Location data.csv",
+      "args": [
+        "suggest",
+        "Location",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "Paris",
+            "Texas US"
+          ],
+          [
+            "Manteca",
+            "California US"
+          ],
+          [
+            "Sterling",
+            "Virginia US"
+          ],
+          [
+            "Burlington",
+            "North Carolina US"
+          ],
+          [
+            "Moscow",
+            "Idaho US"
+          ],
+          [
+            "This is not a Location and it will not be geocoded"
+          ],
+          [
+            "Brawley",
+            "California US"
+          ],
+          [
+            "95.213424",
+            "190",
+            "1234565"
+          ],
+          [
+            "Savannah",
+            "Georgia US"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "geocode_suggest_intl_admin1_filter_error",
+      "description": "Geocode Suggest Intl Admin1 Filter Error",
+      "input": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "Paris"
+          ],
+          [
+            "Manila"
+          ],
+          [
+            "London"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv geocode suggest Location data.csv",
+      "args": [
+        "suggest",
+        "Location",
+        "data.csv"
+      ],
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "geocode_suggestnow",
+      "description": "Geocode Suggestnow",
+      "command": "qsv geocode suggestnow Paris",
+      "args": [
+        "suggestnow",
+        "Paris"
+      ],
+      "expected": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "Paris",
+            "Texas US"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "geocode_reversenow",
+      "description": "Geocode Reversenow",
+      "command": "qsv geocode reversenow (40.67, -73.94)",
+      "args": [
+        "reversenow",
+        "(40.67, -73.94)"
+      ]
+    },
+    {
+      "name": "geocode_reversenow_error",
+      "description": "Geocode Reversenow Error",
+      "command": "qsv geocode reversenow (40.67, -73.94)",
+      "args": [
+        "reversenow",
+        "(40.67, -73.94)"
+      ],
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "geocode_suggest_intl_admin1_filter_country_inferencing",
+      "description": "Geocode Suggest Intl Admin1 Filter Country Inferencing",
+      "input": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "Paris"
+          ],
+          [
+            "Manila"
+          ],
+          [
+            "London"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv geocode suggest Location data.csv",
+      "args": [
+        "suggest",
+        "Location",
+        "data.csv"
+      ]
+    },
+    {
+      "name": "geocode_suggest_intl_multi_country_filter",
+      "description": "Geocode Suggest Intl Multi Country Filter",
+      "command": "qsv geocode suggest Location data.csv",
+      "args": [
+        "suggest",
+        "Location",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "Paris",
+            "Île-de-France Region FR"
+          ],
+          [
+            "Manteca",
+            "California US"
+          ],
+          [
+            "Sterling",
+            "Virginia US"
+          ],
+          [
+            "Burlington",
+            "North Carolina US"
+          ],
+          [
+            "Moscow",
+            "Moscow RU"
+          ],
+          [
+            "This is not a Location and it will not be geocoded"
+          ],
+          [
+            "Brawley",
+            "California US"
+          ],
+          [
+            "95.213424",
+            "190",
+            "1234565"
+          ],
+          [
+            "Savannah",
+            "Georgia US"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "geocode_suggest_filter_country_admin1",
+      "description": "Geocode Suggest Filter Country Admin1",
+      "input": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "Melrose",
+            "New York"
+          ],
+          [
+            "East Flatbush",
+            "New York"
+          ],
+          [
+            "Manhattan",
+            "New York"
+          ],
+          [
+            "Brooklyn",
+            "New York"
+          ],
+          [
+            "East Harlem",
+            "New York"
+          ],
+          [
+            "This is not a Location and it will not be geocoded"
+          ],
+          [
+            "Jersey City",
+            "New Jersey"
+          ],
+          [
+            "(41.90059",
+            "-87.85673)"
+          ],
+          [
+            "Makati",
+            "Metro Manila",
+            "Philippines"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv geocode suggest Location",
+      "args": [
+        "suggest",
+        "Location"
+      ]
+    },
+    {
+      "name": "geocode_suggest_invalid",
+      "description": "Geocode Suggest Invalid",
+      "command": "qsv geocode suggest Location data.csv",
+      "args": [
+        "suggest",
+        "Location",
+        "data.csv"
+      ]
+    },
+    {
+      "name": "geocode_suggest_dynfmt",
+      "description": "Geocode Suggest Dynfmt",
+      "command": "qsv geocode suggest Location",
+      "args": [
+        "suggest",
+        "Location"
+      ],
+      "options": {
+        "--formatstr": "true"
+      }
+    },
+    {
+      "name": "geocode_suggest_pretty_json",
+      "description": "Geocode Suggest Pretty Json",
+      "command": "qsv geocode suggest Location data.csv",
+      "args": [
+        "suggest",
+        "Location",
+        "data.csv"
+      ],
+      "options": {
+        "--formatstr": "%pretty-json"
+      }
+    },
+    {
+      "name": "geocode_suggest_invalid_dynfmt",
+      "description": "Geocode Suggest Invalid Dynfmt",
+      "command": "qsv geocode suggest Location",
+      "args": [
+        "suggest",
+        "Location"
+      ],
+      "options": {
+        "--formatstr": "true"
+      }
+    },
+    {
+      "name": "geocode_suggest_fmt",
+      "description": "Geocode Suggest Fmt",
+      "input": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "Elmhurst",
+            "New York"
+          ],
+          [
+            "East Flatbush",
+            "New York"
+          ],
+          [
+            "Manhattan",
+            "New York"
+          ],
+          [
+            "East Harlem",
+            "New York"
+          ],
+          [
+            "This is not a Location and it will not be geocoded"
+          ],
+          [
+            "40.71427",
+            "-74.00597"
+          ],
+          [
+            "Makati",
+            "Metro Manila",
+            "Philippines"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv geocode suggest Location data.csv",
+      "args": [
+        "suggest",
+        "Location",
+        "data.csv"
+      ],
+      "options": {
+        "--formatstr": "%city-state-country"
+      }
+    },
+    {
+      "name": "geocode_suggest_fmt_json",
+      "description": "Geocode Suggest Fmt Json",
+      "input": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "Elmhurst",
+            "New York"
+          ],
+          [
+            "East Flatbush",
+            "New York"
+          ],
+          [
+            "Manhattan",
+            "New York"
+          ],
+          [
+            "East Harlem",
+            "New York"
+          ],
+          [
+            "This is not a Location and it will not be geocoded"
+          ],
+          [
+            "40.71427",
+            "-74.00597"
+          ],
+          [
+            "Makati",
+            "Metro Manila",
+            "Philippines"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv geocode suggest Location data.csv",
+      "args": [
+        "suggest",
+        "Location",
+        "data.csv"
+      ],
+      "options": {
+        "--formatstr": "%json"
+      }
+    },
+    {
+      "name": "geocode_suggest_fmt_cityrecord",
+      "description": "Geocode Suggest Fmt Cityrecord",
+      "input": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "Elmhurst",
+            "New York"
+          ],
+          [
+            "East Flatbush",
+            "New York"
+          ],
+          [
+            "Manhattan",
+            "New York"
+          ],
+          [
+            "East Harlem",
+            "New York"
+          ],
+          [
+            "This is not a Location and it will not be geocoded"
+          ],
+          [
+            "40.71427",
+            "-74.00597"
+          ],
+          [
+            "Makati",
+            "Metro Manila",
+            "Philippines"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv geocode suggest Location data.csv",
+      "args": [
+        "suggest",
+        "Location",
+        "data.csv"
+      ],
+      "options": {
+        "--formatstr": "%cityrecord"
+      }
+    },
+    {
+      "name": "geocode_reverse",
+      "description": "Geocode Reverse",
+      "command": "qsv geocode reverse Location data.csv",
+      "args": [
+        "reverse",
+        "Location",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "The Bronx",
+            "New York US"
+          ],
+          [
+            "Brooklyn",
+            "New York US"
+          ],
+          [
+            "Manhattan",
+            "New York US"
+          ],
+          [
+            "Cliffside Park",
+            "New Jersey US"
+          ],
+          [
+            "Cliffside Park",
+            "New Jersey US"
+          ],
+          [
+            "This is not a Location and it will not be geocoded"
+          ],
+          [
+            "Brooklyn",
+            "New York US"
+          ],
+          [
+            "95.213424",
+            "190",
+            "1234565"
+          ],
+          [
+            "The coordinates are 40.66472342 latitude",
+            "-73.93867227 longitudue. This should NOT \\\n             be geocoded."
+          ]
+        ]
+      }
+    },
+    {
+      "name": "geocode_reverse_fmtstring",
+      "description": "Geocode Reverse Fmtstring",
+      "command": "qsv geocode reverse Location data.csv",
+      "args": [
+        "reverse",
+        "Location",
+        "data.csv"
+      ],
+      "options": {
+        "--formatstr": "%city-state-country"
+      }
+    },
+    {
+      "name": "geocode_reverse_fmtstring_intl",
+      "description": "Geocode Reverse Fmtstring Intl",
+      "command": "qsv geocode reverse Location data.csv",
+      "args": [
+        "reverse",
+        "Location",
+        "data.csv"
+      ],
+      "options": {
+        "--formatstr": "%city-admin1-country"
+      }
+    },
+    {
+      "name": "geocode_reverse_fmtstring_intl_dynfmt",
+      "description": "Geocode Reverse Fmtstring Intl Dynfmt",
+      "command": "qsv geocode reverse Location",
+      "args": [
+        "reverse",
+        "Location"
+      ],
+      "options": {
+        "--formatstr": "true"
+      }
+    },
+    {
+      "name": "geocode_reverse_fmtstring_intl_invalid_dynfmt",
+      "description": "Geocode Reverse Fmtstring Intl Invalid Dynfmt",
+      "command": "qsv geocode reverse Location",
+      "args": [
+        "reverse",
+        "Location"
+      ],
+      "options": {
+        "--formatstr": "true"
+      }
+    },
+    {
+      "name": "geocode_suggest_dyncols_fmt",
+      "description": "Geocode Suggest Dyncols Fmt",
+      "command": "qsv geocode suggest Location",
+      "args": [
+        "suggest",
+        "Location"
+      ]
+    }
+  ]
+}

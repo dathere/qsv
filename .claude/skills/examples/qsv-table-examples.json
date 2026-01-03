@@ -1,0 +1,118 @@
+{
+  "skill": "qsv-table",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "table",
+      "description": "Table",
+      "command": "qsv table in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "table_tsv",
+      "description": "Table Tsv",
+      "command": "qsv table in.tsv",
+      "args": [
+        "in.tsv"
+      ]
+    },
+    {
+      "name": "table_ssv",
+      "description": "Table Ssv",
+      "command": "qsv table in.ssv",
+      "args": [
+        "in.ssv"
+      ]
+    },
+    {
+      "name": "table_default",
+      "description": "Table Default",
+      "command": "qsv table in.file",
+      "args": [
+        "in.file"
+      ]
+    },
+    {
+      "name": "table_pipe_delimiter_env",
+      "description": "Table Pipe Delimiter Env",
+      "command": "qsv table in.file",
+      "args": [
+        "in.file"
+      ]
+    },
+    {
+      "name": "table_pipe_delimiter",
+      "description": "Table Pipe Delimiter",
+      "command": "qsv table in.file",
+      "args": [
+        "in.file"
+      ],
+      "options": {
+        "--delimiter": "|"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "invalid_delimiter_len",
+      "description": "Invalid Delimiter Len",
+      "command": "qsv table in.file",
+      "args": [
+        "in.file"
+      ],
+      "options": {
+        "--delimiter": "||"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "table_right_align",
+      "description": "Table Right Align",
+      "command": "qsv table in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--align": "right"
+      }
+    },
+    {
+      "name": "table_center_align",
+      "description": "Table Center Align",
+      "command": "qsv table in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "-a": "center"
+      }
+    },
+    {
+      "name": "table_leftendtab_align",
+      "description": "Table Leftendtab Align",
+      "command": "qsv table in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--align": "leftendtab"
+      }
+    },
+    {
+      "name": "table_leftfwf_align",
+      "description": "Table Leftfwf Align",
+      "command": "qsv table in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--align": "leftfwf"
+      }
+    }
+  ]
+}

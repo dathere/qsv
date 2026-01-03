@@ -1,0 +1,66 @@
+{
+  "skill": "qsv-tojsonl",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "tojsonl_issue_1649_false_positive_tf",
+      "description": "Tojsonl Issue 1649 False Positive Tf",
+      "input": {
+        "data": [
+          [
+            "id",
+            "name"
+          ],
+          [
+            "1",
+            "François Hollande"
+          ],
+          [
+            "2",
+            "Tarja Halonen"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv tojsonl in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "tags": [
+        "regression"
+      ]
+    },
+    {
+      "name": "tojsonl_issue_1649_false_positive_tf_3recs",
+      "description": "Tojsonl Issue 1649 False Positive Tf 3recs",
+      "input": {
+        "data": [
+          [
+            "id",
+            "name"
+          ],
+          [
+            "1",
+            "Fanuel"
+          ],
+          [
+            "2",
+            "Travis"
+          ],
+          [
+            "3",
+            "Travis"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv tojsonl in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "tags": [
+        "regression"
+      ]
+    }
+  ]
+}

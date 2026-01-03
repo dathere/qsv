@@ -1,0 +1,501 @@
+{
+  "skill": "qsv-template",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "template_string",
+      "description": "Template String",
+      "command": "qsv template ",
+      "options": {
+        "--template": "true"
+      }
+    },
+    {
+      "name": "template_error_missing_template",
+      "description": "Template Error Missing Template",
+      "command": "qsv template data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "nonexistent.txt"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "template_inline",
+      "description": "Template Inline",
+      "input": {
+        "data": [
+          [
+            "name",
+            "age"
+          ],
+          [
+            "Alice",
+            "25"
+          ],
+          [
+            "Bob",
+            "30"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "true"
+      }
+    },
+    {
+      "name": "template_render_error",
+      "description": "Template Render Error",
+      "input": {
+        "data": [
+          [
+            "name",
+            "age"
+          ],
+          [
+            "Alice",
+            "25"
+          ],
+          [
+            "Bob",
+            "30"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "true"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "template_filter_error",
+      "description": "Template Filter Error",
+      "input": {
+        "data": [
+          [
+            "name",
+            "amount"
+          ],
+          [
+            "Alice",
+            "not_a_number"
+          ],
+          [
+            "Bob",
+            "123.45"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "true"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "template_contrib_filters",
+      "description": "Template Contrib Filters",
+      "input": {
+        "data": [
+          [
+            "text",
+            "num",
+            "datalist",
+            "url"
+          ],
+          [
+            "hello WORLD",
+            "12345.6789",
+            "a",
+            "b",
+            "c",
+            "https://example.com/path?q=test&lang=en"
+          ],
+          [
+            "Testing 123",
+            "-98765.4321",
+            "1",
+            "2",
+            "3",
+            "http://localhost:8080/api"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "true"
+      }
+    },
+    {
+      "name": "template_contrib_functions",
+      "description": "Template Contrib Functions",
+      "input": {
+        "data": [
+          [
+            "num_messages",
+            "date_col"
+          ],
+          [
+            "1",
+            "2023-06-24T16:37:22+00:00"
+          ],
+          [
+            "2",
+            "1999-12-24T16:37:22+12:00"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "true"
+      }
+    },
+    {
+      "name": "template_pycompat_filters",
+      "description": "Template Pycompat Filters",
+      "input": {
+        "data": [
+          [
+            "text",
+            "num",
+            "mixed"
+          ],
+          [
+            "Hello World!",
+            "123",
+            "ABC123xyz  "
+          ],
+          [
+            "TESTING",
+            "abc",
+            "  Hello  "
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "concat!(\n            // Test string methods from Python compatibility\n            \"isascii: {{text.isascii("
+      }
+    },
+    {
+      "name": "template_custom_filters_error_handling",
+      "description": "Template Custom Filters Error Handling",
+      "input": {
+        "data": [
+          [
+            "value",
+            "number"
+          ],
+          [
+            "abc",
+            "1234567.890123"
+          ],
+          [
+            "def",
+            "not_a_number"
+          ],
+          [
+            "ghi",
+            "7654321.04"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "true"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "template_to_bool_filter",
+      "description": "Template To Bool Filter",
+      "input": {
+        "data": [
+          [
+            "value"
+          ],
+          [
+            "true"
+          ],
+          [
+            "yes"
+          ],
+          [
+            "1"
+          ],
+          [
+            "0"
+          ],
+          [
+            "false"
+          ],
+          [
+            "no"
+          ],
+          [
+            "42.032"
+          ],
+          [
+            "0.0"
+          ],
+          [
+            "kinda true"
+          ],
+          [
+            "kinda false"
+          ],
+          [
+            "dunno"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "true"
+      }
+    },
+    {
+      "name": "template_substr_filter",
+      "description": "Template Substr Filter",
+      "input": {
+        "data": [
+          [
+            "text"
+          ],
+          [
+            "Hello World"
+          ],
+          [
+            "Testing 123"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "concat!(\n            \"start_only: {{text|substr(0"
+      }
+    },
+    {
+      "name": "template_lookup_filter_simple",
+      "description": "Template Lookup Filter Simple",
+      "input": {
+        "data": [
+          [
+            "id",
+            "name",
+            "description"
+          ],
+          [
+            "1",
+            "apple",
+            "A red fruit"
+          ],
+          [
+            "2",
+            "banana",
+            "A yellow fruit"
+          ],
+          [
+            "3",
+            "orange",
+            "A citrus fruit"
+          ]
+        ],
+        "filename": "lookup.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "concat!(\n            \"{% set result = register_lookup('products', 'lookup.csv'"
+      }
+    },
+    {
+      "name": "template_lookup_filter_invalid_field",
+      "description": "Template Lookup Filter Invalid Field",
+      "input": {
+        "data": [
+          [
+            "id",
+            "name",
+            "description"
+          ],
+          [
+            "1",
+            "apple",
+            "A red fruit"
+          ],
+          [
+            "2",
+            "banana",
+            "A yellow fruit"
+          ],
+          [
+            "3",
+            "orange",
+            "A citrus fruit"
+          ]
+        ],
+        "filename": "lookup.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "concat!(\n            \"{% set result = register_lookup('products', 'lookup.csv'"
+      }
+    },
+    {
+      "name": "template_lookup_filter_errors",
+      "description": "Template Lookup Filter Errors",
+      "input": {
+        "data": [
+          [
+            "id"
+          ],
+          [
+            "1"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "\"{{id|lookup('', 'name'"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "template_lookup_register_errors",
+      "description": "Template Lookup Register Errors",
+      "input": {
+        "data": [
+          [
+            "id"
+          ],
+          [
+            "1"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "concat!(\n            \"{% if register_lookup('test', 'nonexistent.csv'"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "template_lookup_case_sensitivity",
+      "description": "Template Lookup Case Sensitivity",
+      "input": {
+        "data": [
+          [
+            "code",
+            "value"
+          ],
+          [
+            "ABC",
+            "first"
+          ],
+          [
+            "def",
+            "second"
+          ],
+          [
+            "GHI",
+            "third"
+          ]
+        ],
+        "filename": "lookup.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "concat!(\n            \"{% if register_lookup('codes', 'lookup.csv'"
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "template_humanfloat_filter",
+      "description": "Template Humanfloat Filter",
+      "input": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "1234.5678"
+          ],
+          [
+            "1000000"
+          ],
+          [
+            "123456789.3145679"
+          ],
+          [
+            "0.0001"
+          ],
+          [
+            "not_a_number"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "true"
+      }
+    },
+    {
+      "name": "template_round_banker_filter",
+      "description": "Template Round Banker Filter",
+      "input": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "1.234567"
+          ],
+          [
+            "2.5467"
+          ],
+          [
+            "3.5"
+          ],
+          [
+            "not_a_number"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template ",
+      "options": {
+        "--template": "concat!(\n            \"2 places: {{number|round_banker(2"
+      }
+    }
+  ]
+}

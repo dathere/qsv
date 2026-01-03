@@ -1,0 +1,290 @@
+{
+  "skill": "qsv-select",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "headers",
+      "description": "Headers",
+      "command": "qsv select $select data.csv",
+      "args": [
+        "$select",
+        "data.csv"
+      ]
+    },
+    {
+      "name": "no_headers",
+      "description": "No Headers",
+      "command": "qsv select data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--no-headers": "$select_no_headers"
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "test_select_sort",
+      "description": "Test Select Sort",
+      "command": "qsv select 1-",
+      "args": [
+        "1-"
+      ],
+      "options": {
+        "--sort": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Alice",
+            "Bob",
+            "Fátima",
+            "Günther",
+            "Héctor",
+            "Jürgen",
+            "Çemil",
+            "Élise",
+            "Đan",
+            "İbrahim"
+          ],
+          [
+            "value2",
+            "value8",
+            "value5",
+            "value1",
+            "value6",
+            "value9",
+            "value3",
+            "value10",
+            "value4",
+            "value7"
+          ],
+          [
+            "2",
+            "8",
+            "5",
+            "1",
+            "6",
+            "9",
+            "3",
+            "10",
+            "4",
+            "7"
+          ],
+          [
+            "value9",
+            "value3",
+            "value6",
+            "value10",
+            "value5",
+            "value2",
+            "value8",
+            "value1",
+            "value7",
+            "value4"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_select_sort_subset",
+      "description": "Test Select Sort Subset",
+      "command": "qsv select 4,7-9",
+      "args": [
+        "4,7-9"
+      ],
+      "options": {
+        "--sort": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Bob",
+            "Jürgen",
+            "Đan",
+            "İbrahim"
+          ],
+          [
+            "value8",
+            "value9",
+            "value4",
+            "value7"
+          ],
+          [
+            "8",
+            "9",
+            "4",
+            "7"
+          ],
+          [
+            "value3",
+            "value2",
+            "value7",
+            "value4"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_select_random_seeded",
+      "description": "Test Select Random Seeded",
+      "command": "qsv select 1-",
+      "args": [
+        "1-"
+      ],
+      "options": {
+        "--random": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Jürgen",
+            "İbrahim",
+            "Đan",
+            "Çemil",
+            "Alice",
+            "Héctor",
+            "Élise",
+            "Bob",
+            "Fátima",
+            "Günther"
+          ],
+          [
+            "value9",
+            "value7",
+            "value4",
+            "value3",
+            "value2",
+            "value6",
+            "value10",
+            "value8",
+            "value5",
+            "value1"
+          ],
+          [
+            "9",
+            "7",
+            "4",
+            "3",
+            "2",
+            "6",
+            "10",
+            "8",
+            "5",
+            "1"
+          ],
+          [
+            "value2",
+            "value4",
+            "value7",
+            "value8",
+            "value9",
+            "value5",
+            "value1",
+            "value3",
+            "value6",
+            "value10"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_select_random_seeded_subset",
+      "description": "Test Select Random Seeded Subset",
+      "command": "qsv select 4,7-9",
+      "args": [
+        "4,7-9"
+      ],
+      "options": {
+        "--random": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "İbrahim",
+            "Đan",
+            "Jürgen",
+            "Bob"
+          ],
+          [
+            "value7",
+            "value4",
+            "value9",
+            "value8"
+          ],
+          [
+            "7",
+            "4",
+            "9",
+            "8"
+          ],
+          [
+            "value4",
+            "value7",
+            "value2",
+            "value3"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_select_semicolon_separator",
+      "description": "Test Select Semicolon Separator",
+      "command": "qsv select h1 data.csv h1 data.csv",
+      "args": [
+        "h1",
+        "data.csv",
+        "h1",
+        "data.csv"
+      ],
+      "options": {
+        "--delimiter": ";"
+      },
+      "expected": {
+        "data": [
+          [
+            "h1"
+          ],
+          [
+            "a"
+          ]
+        ]
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "test_select_out_of_bounds_indices",
+      "description": "Test Select Out Of Bounds Indices",
+      "command": "qsv select 10 data.csv",
+      "args": [
+        "10",
+        "data.csv"
+      ]
+    },
+    {
+      "name": "test_select_robustness",
+      "description": "Test Select Robustness",
+      "command": "qsv select 5 data.csv 2 data.csv",
+      "args": [
+        "5",
+        "data.csv",
+        "2",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "h2"
+          ],
+          [
+            "b"
+          ]
+        ]
+      }
+    }
+  ]
+}

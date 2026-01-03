@@ -1,0 +1,816 @@
+{
+  "skill": "qsv-input",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "test_input_comment",
+      "description": "Test Input Comment",
+      "command": "qsv input test_file",
+      "args": [
+        "test_file"
+      ],
+      "options": {
+        "--comment": "#"
+      },
+      "expected": {
+        "data": [
+          [
+            "column1",
+            "column2",
+            "column3"
+          ],
+          [
+            "a",
+            "1",
+            "alpha"
+          ],
+          [
+            "b",
+            "2",
+            "beta"
+          ],
+          [
+            "c",
+            "3",
+            "gamma"
+          ],
+          [
+            "d",
+            "4",
+            "delta"
+          ],
+          [
+            "e",
+            "5",
+            "epsilon"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_input_skiplines",
+      "description": "Test Input Skiplines",
+      "input": {
+        "data": [
+          [
+            "# test file to see how skiplines work",
+            ""
+          ],
+          [
+            "! this is another comment before the header",
+            ""
+          ],
+          [
+            "# DATA DICTIONARY",
+            ""
+          ],
+          [
+            "! column1 - alphabetic; id of the column",
+            ""
+          ],
+          [
+            "% column2 - numeric; just a number",
+            ""
+          ],
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "e",
+            "5"
+          ]
+        ],
+        "filename": "preamble.csv"
+      },
+      "command": "qsv input preamble.csv",
+      "args": [
+        "preamble.csv"
+      ],
+      "options": {
+        "--skip-lines": "5"
+      },
+      "expected": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "e",
+            "5"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_input_autoskip",
+      "description": "Test Input Autoskip",
+      "command": "qsv input ",
+      "options": {
+        "--auto-skip": "test_file"
+      },
+      "expected": {
+        "data": [
+          [
+            "h1",
+            "h2",
+            "h3",
+            "h4"
+          ],
+          [
+            "abcdefg",
+            "1",
+            "a",
+            "3.14"
+          ],
+          [
+            "a",
+            "2",
+            "z",
+            "1.2020569"
+          ],
+          [
+            "c",
+            "42",
+            "x",
+            "1.0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_input_quotestyle_nonnumeric",
+      "description": "Test Input Quotestyle Nonnumeric",
+      "input": {
+        "data": [
+          [
+            "column1",
+            "float column",
+            "int column",
+            "description"
+          ],
+          [
+            "a",
+            "1.0",
+            "1",
+            "this is a string"
+          ],
+          [
+            "c",
+            "3.5",
+            "3",
+            "this is another string"
+          ],
+          [
+            "e",
+            "3.14",
+            "42",
+            "this is a third string"
+          ]
+        ],
+        "filename": "testdata.csv"
+      },
+      "command": "qsv input testdata.csv",
+      "args": [
+        "testdata.csv"
+      ]
+    },
+    {
+      "name": "test_input_quotestyle_necessary",
+      "description": "Test Input Quotestyle Necessary",
+      "input": {
+        "data": [
+          [
+            "column1",
+            "float column",
+            "int column",
+            "description"
+          ],
+          [
+            "a",
+            "1.0",
+            "1",
+            "1",
+            "234",
+            "5678 - number with commas"
+          ],
+          [
+            "c",
+            "3.5",
+            "3",
+            "this is another string"
+          ],
+          [
+            "e",
+            "3.14",
+            "42",
+            "this is a third string"
+          ]
+        ],
+        "filename": "testdata.csv"
+      },
+      "command": "qsv input testdata.csv",
+      "args": [
+        "testdata.csv"
+      ]
+    },
+    {
+      "name": "test_input_quotestyle_all",
+      "description": "Test Input Quotestyle All",
+      "input": {
+        "data": [
+          [
+            "column1",
+            "float column",
+            "int column",
+            "description"
+          ],
+          [
+            "a",
+            "1.0",
+            "1",
+            "1",
+            "234",
+            "5678 - number with commas"
+          ],
+          [
+            "c",
+            "3.5",
+            "3",
+            "this is another string"
+          ],
+          [
+            "e",
+            "3.14",
+            "42",
+            "this is a third string"
+          ]
+        ],
+        "filename": "testdata.csv"
+      },
+      "command": "qsv input testdata.csv",
+      "args": [
+        "testdata.csv"
+      ]
+    },
+    {
+      "name": "test_input_skip_one_line",
+      "description": "Test Input Skip One Line",
+      "input": {
+        "data": [
+          [
+            "# test file to see how skiplines work",
+            ""
+          ],
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "e",
+            "5"
+          ]
+        ],
+        "filename": "preamble.csv"
+      },
+      "command": "qsv input preamble.csv",
+      "args": [
+        "preamble.csv"
+      ],
+      "options": {
+        "--skip-lines": "1"
+      },
+      "expected": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "e",
+            "5"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_input_skip_no_line",
+      "description": "Test Input Skip No Line",
+      "input": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "e",
+            "5"
+          ]
+        ],
+        "filename": "preamble.csv"
+      },
+      "command": "qsv input preamble.csv",
+      "args": [
+        "preamble.csv"
+      ],
+      "options": {
+        "--skip-lines": "0"
+      },
+      "expected": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "e",
+            "5"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_input_trim_headers",
+      "description": "Test Input Trim Headers",
+      "input": {
+        "data": [
+          [
+            "   column1   ",
+            "  column2   "
+          ],
+          [
+            "  a",
+            "1"
+          ],
+          [
+            "c  ",
+            "3"
+          ],
+          [
+            "e",
+            "5   "
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv input ",
+      "options": {
+        "--trim-headers": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "  a",
+            "1"
+          ],
+          [
+            "c  ",
+            "3"
+          ],
+          [
+            "e",
+            "5   "
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_input_trim_fields",
+      "description": "Test Input Trim Fields",
+      "input": {
+        "data": [
+          [
+            "column1   ",
+            "column2   "
+          ],
+          [
+            "   a",
+            "  1"
+          ],
+          [
+            "c   ",
+            "3  "
+          ],
+          [
+            "   e   ",
+            "  5"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv input ",
+      "options": {
+        "--trim-fields": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "e",
+            "5"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_input_trim_headers_fields",
+      "description": "Test Input Trim Headers Fields",
+      "input": {
+        "data": [
+          [
+            "   column1   ",
+            "   column2   "
+          ],
+          [
+            "   a",
+            "  1"
+          ],
+          [
+            "c   ",
+            "3  "
+          ],
+          [
+            "   e   ",
+            "  5"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv input ",
+      "options": {
+        "--trim-fields": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "e",
+            "5"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_input_skip_lastlines",
+      "description": "Test Input Skip Lastlines",
+      "input": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "b",
+            "2"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "d",
+            "4"
+          ],
+          [
+            "e",
+            "5"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv input data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--skip-lastlines": "2"
+      },
+      "expected": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "b",
+            "2"
+          ],
+          [
+            "c",
+            "3"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_input_skip_lines_both",
+      "description": "Test Input Skip Lines Both",
+      "input": {
+        "data": [
+          [
+            "#column1",
+            "column2"
+          ],
+          [
+            "! column1",
+            "column2"
+          ],
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "b",
+            "2"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "d",
+            "4"
+          ],
+          [
+            "e",
+            "5"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv input data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--skip-lines": "2",
+        "--skip-lastlines": "2"
+      },
+      "expected": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "b",
+            "2"
+          ],
+          [
+            "c",
+            "3"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "test_input_both_skip_flexible",
+      "description": "Test Input Both Skip Flexible",
+      "command": "qsv input test_file",
+      "args": [
+        "test_file"
+      ],
+      "expected": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "b",
+            "2"
+          ],
+          [
+            "c",
+            "3"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "input_noheadertrim",
+      "description": "Input Noheadertrim",
+      "input": {
+        "data": [
+          [
+            "\\\"LatD\\",
+            "\\\"LatM\\",
+            "\\\"LatS\\",
+            "\\\"NS\\",
+            "\\\"LonD\\",
+            "\\\"LonM\\",
+            "\\\"LonS\\",
+            "\\\"EW\\",
+            "\\\"City\\",
+            "\\\"State\\"
+          ],
+          [
+            "41",
+            "5",
+            "59",
+            "N",
+            "80",
+            "39",
+            "0",
+            "W",
+            "Youngstown",
+            "OH"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv input data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "\\\"LatD\\",
+            "\\\"LatM\\",
+            "\\\"LatS\\",
+            "\\\"NS\\",
+            "\\\"LonD\\",
+            "\\\"LonM\\",
+            "\\\"LonS\\",
+            "\\\"EW\\",
+            "\\\"City\\",
+            "\\\"State\\"
+          ],
+          [
+            "41",
+            "5",
+            "59",
+            "N",
+            "80",
+            "39",
+            "0",
+            "W",
+            "Youngstown",
+            "OH"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "input_headertrim",
+      "description": "Input Headertrim",
+      "input": {
+        "data": [
+          [
+            "\\\"LatD\\",
+            "\\\"LatM\\",
+            "\\\"LatS\\",
+            "\\\"NS\\",
+            "\\\"LonD\\",
+            "\\\"LonM\\",
+            "\\\"LonS\\",
+            "\\\"EW\\",
+            "\\\"City\\",
+            "\\\"State\\"
+          ],
+          [
+            "41",
+            "5",
+            "59",
+            "N",
+            "80",
+            "39",
+            "0",
+            "W",
+            "Youngstown",
+            "OH"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv input ",
+      "options": {
+        "--trim-headers": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "LatD",
+            "LatM",
+            "LatS",
+            "NS",
+            "LonD",
+            "LonM",
+            "LonS",
+            "EW",
+            "City",
+            "State"
+          ],
+          [
+            "41",
+            "5",
+            "59",
+            "N",
+            "80",
+            "39",
+            "0",
+            "W",
+            "Youngstown",
+            "OH"
+          ]
+        ]
+      }
+    }
+  ]
+}

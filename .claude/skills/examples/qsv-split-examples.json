@@ -1,0 +1,336 @@
+{
+  "skill": "qsv-split",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "split_zero",
+      "description": "Split Zero",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "split",
+      "description": "Split",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "split_chunks",
+      "description": "Split Chunks",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "split_a_lot",
+      "description": "Split A Lot",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "split_a_lot_indexed",
+      "description": "Split A Lot Indexed",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "split_padding",
+      "description": "Split Padding",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ],
+      "options": {
+        "--pad": "4"
+      }
+    },
+    {
+      "name": "split_chunks_padding",
+      "description": "Split Chunks Padding",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ],
+      "options": {
+        "--pad": "4"
+      }
+    },
+    {
+      "name": "split_idx",
+      "description": "Split Idx",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "split_chunks_idx",
+      "description": "Split Chunks Idx",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "split_no_headers",
+      "description": "Split No Headers",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ],
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "split_chunks_no_headers",
+      "description": "Split Chunks No Headers",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ],
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "split_no_headers_idx",
+      "description": "Split No Headers Idx",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ],
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "split_chunks_no_headers_idx",
+      "description": "Split Chunks No Headers Idx",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ],
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "split_one",
+      "description": "Split One",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "split_one_idx",
+      "description": "Split One Idx",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "split_uneven",
+      "description": "Split Uneven",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "split_chunks_a_lot",
+      "description": "Split Chunks A Lot",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "split_uneven_idx",
+      "description": "Split Uneven Idx",
+      "command": "qsv split &wrk.path(\".\" in.csv",
+      "args": [
+        "&wrk.path(\".\"",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "split_custom_filename",
+      "description": "Split Custom Filename",
+      "command": "qsv split "
+    },
+    {
+      "name": "split_custom_filename_padded",
+      "description": "Split Custom Filename Padded",
+      "command": "qsv split ",
+      "options": {
+        "--pad": "3"
+      }
+    },
+    {
+      "name": "split_nooutdir",
+      "description": "Split Nooutdir",
+      "command": "qsv split in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "split_kbsize_boston_5k",
+      "description": "Split Kbsize Boston 5k",
+      "command": "qsv split &wrk.path(\".\" test_file",
+      "args": [
+        "&wrk.path(\".\"",
+        "test_file"
+      ]
+    },
+    {
+      "name": "split_kbsize_boston_5k_padded",
+      "description": "Split Kbsize Boston 5k Padded",
+      "command": "qsv split &wrk.path(\".\"",
+      "args": [
+        "&wrk.path(\".\""
+      ]
+    },
+    {
+      "name": "split_kbsize_boston_5k_no_headers",
+      "description": "Split Kbsize Boston 5k No Headers",
+      "command": "qsv split &wrk.path(\".\"",
+      "args": [
+        "&wrk.path(\".\""
+      ],
+      "options": {
+        "--no-headers": "test_file"
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "split_filter_basic",
+      "description": "Split Filter Basic",
+      "command": "qsv split ",
+      "options": {
+        "--filter": "true"
+      },
+      "tags": [
+        "basic"
+      ]
+    },
+    {
+      "name": "split_filter_with_padding",
+      "description": "Split Filter With Padding",
+      "command": "qsv split ",
+      "options": {
+        "--filter": "true",
+        "--pad": "3"
+      }
+    },
+    {
+      "name": "split_filter_with_custom_filename",
+      "description": "Split Filter With Custom Filename",
+      "command": "qsv split "
+    },
+    {
+      "name": "split_filter_with_chunks",
+      "description": "Split Filter With Chunks",
+      "command": "qsv split ",
+      "options": {
+        "--filter": "true"
+      }
+    },
+    {
+      "name": "split_filter_with_kb_size",
+      "description": "Split Filter With Kb Size",
+      "command": "qsv split ",
+      "options": {
+        "--filter": "true"
+      }
+    },
+    {
+      "name": "split_filter_with_no_headers",
+      "description": "Split Filter With No Headers",
+      "command": "qsv split ",
+      "options": {
+        "--filter": "true"
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "split_filter_with_cleanup",
+      "description": "Split Filter With Cleanup",
+      "command": "qsv split ",
+      "options": {
+        "--filter": "true"
+      }
+    },
+    {
+      "name": "split_filter_without_cleanup",
+      "description": "Split Filter Without Cleanup",
+      "command": "qsv split ",
+      "options": {
+        "--filter": "true"
+      }
+    },
+    {
+      "name": "split_filter_with_cleanup_failed_command",
+      "description": "Split Filter With Cleanup Failed Command",
+      "command": "qsv split ",
+      "options": {
+        "--filter": "true"
+      }
+    },
+    {
+      "name": "split_filter_with_ignore_errors",
+      "description": "Split Filter With Ignore Errors",
+      "command": "qsv split ",
+      "options": {
+        "--filter": "true"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "split_filter_without_ignore_errors",
+      "description": "Split Filter Without Ignore Errors",
+      "command": "qsv split ",
+      "options": {
+        "--filter": "true"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    }
+  ]
+}

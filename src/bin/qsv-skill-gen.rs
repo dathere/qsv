@@ -121,8 +121,8 @@ impl UsageParser {
     /// Parse USAGE text using qsv-docopt Parser for robust parsing
     fn parse_with_docopt(&self) -> Result<(Vec<Argument>, Vec<Option_>), String> {
         // Parse USAGE text with docopt
-        let parser = Parser::new(&self.usage_text)
-            .map_err(|e| format!("Docopt parsing failed: {}", e))?;
+        let parser =
+            Parser::new(&self.usage_text).map_err(|e| format!("Docopt parsing failed: {}", e))?;
 
         let mut args = Vec::new();
         let mut options = Vec::new();
@@ -138,11 +138,14 @@ impl UsageParser {
                     let flag_str = format!("-{}", c);
 
                     // Look for corresponding long flag
-                    let long_flag = parser.descs.iter()
+                    let long_flag = parser
+                        .descs
+                        .iter()
                         .find(|(a, o)| {
                             // Check if this long flag is a synonym of the short flag
                             // by comparing pointer equality or field values
-                            matches!(a, Atom::Long(_)) && std::ptr::eq(*o as *const _, opts as *const _)
+                            matches!(a, Atom::Long(_))
+                                && std::ptr::eq(*o as *const _, opts as *const _)
                         })
                         .and_then(|(a, _)| {
                             if let Atom::Long(s) = a {
@@ -164,7 +167,8 @@ impl UsageParser {
                         DocoptArgument::Zero => "flag",
                         DocoptArgument::One(_) => {
                             // Check if it's a number type
-                            let desc = manual_descriptions.get(&primary_flag)
+                            let desc = manual_descriptions
+                                .get(&primary_flag)
                                 .or_else(|| manual_descriptions.get(&flag_str))
                                 .map(|s| s.as_str())
                                 .unwrap_or("");
@@ -173,10 +177,11 @@ impl UsageParser {
                             } else {
                                 "string"
                             }
-                        }
+                        },
                     };
 
-                    let description = manual_descriptions.get(&primary_flag)
+                    let description = manual_descriptions
+                        .get(&primary_flag)
                         .or_else(|| manual_descriptions.get(&flag_str))
                         .cloned()
                         .unwrap_or_default();
@@ -193,7 +198,7 @@ impl UsageParser {
                         description,
                         default,
                     });
-                }
+                },
                 Atom::Long(name) => {
                     let flag_str = format!("--{}", name);
 
@@ -203,9 +208,12 @@ impl UsageParser {
                     }
 
                     // Find corresponding short flag if any
-                    let short_flag = parser.descs.iter()
+                    let short_flag = parser
+                        .descs
+                        .iter()
                         .find(|(a, o)| {
-                            matches!(a, Atom::Short(_)) && std::ptr::eq(*o as *const _, opts as *const _)
+                            matches!(a, Atom::Short(_))
+                                && std::ptr::eq(*o as *const _, opts as *const _)
                         })
                         .and_then(|(a, _)| {
                             if let Atom::Short(c) = a {
@@ -218,7 +226,8 @@ impl UsageParser {
                     let option_type = match &opts.arg {
                         DocoptArgument::Zero => "flag",
                         DocoptArgument::One(_) => {
-                            let desc = manual_descriptions.get(&flag_str)
+                            let desc = manual_descriptions
+                                .get(&flag_str)
                                 .map(|s| s.as_str())
                                 .unwrap_or("");
                             if desc.contains("<number>") || desc.contains("<int>") {
@@ -226,10 +235,11 @@ impl UsageParser {
                             } else {
                                 "string"
                             }
-                        }
+                        },
                     };
 
-                    let description = manual_descriptions.get(&flag_str)
+                    let description = manual_descriptions
+                        .get(&flag_str)
                         .cloned()
                         .unwrap_or_default();
 
@@ -245,11 +255,12 @@ impl UsageParser {
                         description,
                         default,
                     });
-                }
+                },
                 Atom::Positional(name) => {
                     // Positional argument like <input>
                     let arg_name = name.clone();
-                    let description = manual_descriptions.get(&format!("<{}>", name))
+                    let description = manual_descriptions
+                        .get(&format!("<{}>", name))
                         .cloned()
                         .unwrap_or_default();
 
@@ -262,11 +273,11 @@ impl UsageParser {
                         description,
                         examples: Vec::new(),
                     });
-                }
+                },
                 Atom::Command(_) => {
                     // Skip commands - we're only interested in args/options
                     continue;
-                }
+                },
             }
         }
 
@@ -332,7 +343,10 @@ impl UsageParser {
                     let mut j = i + 1;
                     while j < lines.len() {
                         let next_line = lines[j].trim();
-                        if next_line.is_empty() || next_line.starts_with("<") || next_line.starts_with("-") {
+                        if next_line.is_empty()
+                            || next_line.starts_with("<")
+                            || next_line.starts_with("-")
+                        {
                             break;
                         }
                         if !next_line.starts_with("Usage:") {

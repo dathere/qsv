@@ -72,8 +72,9 @@ impl TestParser {
         let mut examples = Vec::new();
 
         // Find all #[test] functions
-        let test_fn_re = Regex::new(r"#\[test\]\s+fn\s+(\w+)\s*\(\s*\)\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}")
-            .map_err(|e| format!("Regex error: {}", e))?;
+        let test_fn_re =
+            Regex::new(r"#\[test\]\s+fn\s+(\w+)\s*\(\s*\)\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}")
+                .map_err(|e| format!("Regex error: {}", e))?;
 
         for cap in test_fn_re.captures_iter(&self.test_content) {
             let test_name = cap.get(1).unwrap().as_str();
@@ -141,9 +142,9 @@ impl TestParser {
 
             if !data.is_empty() {
                 return Some(TestInput {
-                    data: Some(data),
+                    data:     Some(data),
                     filename: Some(filename),
-                    content: None,
+                    content:  None,
                 });
             }
         }
@@ -151,7 +152,17 @@ impl TestParser {
         None
     }
 
-    fn extract_command(&self, body: &str) -> Result<(String, Vec<String>, std::collections::HashMap<String, String>), String> {
+    fn extract_command(
+        &self,
+        body: &str,
+    ) -> Result<
+        (
+            String,
+            Vec<String>,
+            std::collections::HashMap<String, String>,
+        ),
+        String,
+    > {
         // Match wrk.command("subcommand")
         let cmd_re = Regex::new(r#"wrk\.command\("([^"]+)"\)"#)
             .map_err(|e| format!("Regex error: {}", e))?;
@@ -215,10 +226,9 @@ impl TestParser {
 
     fn extract_expected_output(&self, body: &str) -> Option<TestOutput> {
         // Match let expected = vec![svec![...], ...]
-        let expected_re = Regex::new(
-            r#"let\s+expected\s*=\s*vec!\s*\[((?:\s*svec!\s*\[[^\]]*\]\s*,?)*)\s*\]"#,
-        )
-        .ok()?;
+        let expected_re =
+            Regex::new(r#"let\s+expected\s*=\s*vec!\s*\[((?:\s*svec!\s*\[[^\]]*\]\s*,?)*)\s*\]"#)
+                .ok()?;
 
         if let Some(cap) = expected_re.captures(body) {
             let vec_content = cap.get(1)?.as_str();
@@ -238,7 +248,7 @@ impl TestParser {
 
             if !data.is_empty() {
                 return Some(TestOutput {
-                    data: Some(data),
+                    data:   Some(data),
                     stdout: None,
                     stderr: None,
                 });
@@ -298,16 +308,72 @@ impl TestParser {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let commands = vec![
-        "apply", "applydp", "behead", "cat", "clipboard", "count", "datefmt",
-        "dedup", "describegpt", "diff", "edit", "enumerate", "excel", "exclude",
-        "explode", "extdedup", "extsort", "fetch", "fetchpost", "fill", "fixlengths",
-        "flatten", "fmt", "foreach", "frequency", "geocode", "geoconvert", "headers",
-        "index", "input", "join", "joinp", "json", "jsonl", "lens", "luau",
-        "moarstats", "partition", "pivotp", "pro", "prompt", "pseudo", "python",
-        "rename", "replace", "reverse", "safenames", "sample", "schema", "search",
-        "searchset", "select", "slice", "snappy", "sniff", "sort", "sortcheck",
-        "split", "sqlp", "stats", "table", "template", "to", "tojsonl",
-        "transpose", "validate",
+        "apply",
+        "applydp",
+        "behead",
+        "cat",
+        "clipboard",
+        "count",
+        "datefmt",
+        "dedup",
+        "describegpt",
+        "diff",
+        "edit",
+        "enumerate",
+        "excel",
+        "exclude",
+        "explode",
+        "extdedup",
+        "extsort",
+        "fetch",
+        "fetchpost",
+        "fill",
+        "fixlengths",
+        "flatten",
+        "fmt",
+        "foreach",
+        "frequency",
+        "geocode",
+        "geoconvert",
+        "headers",
+        "index",
+        "input",
+        "join",
+        "joinp",
+        "json",
+        "jsonl",
+        "lens",
+        "luau",
+        "moarstats",
+        "partition",
+        "pivotp",
+        "pro",
+        "prompt",
+        "pseudo",
+        "python",
+        "rename",
+        "replace",
+        "reverse",
+        "safenames",
+        "sample",
+        "schema",
+        "search",
+        "searchset",
+        "select",
+        "slice",
+        "snappy",
+        "sniff",
+        "sort",
+        "sortcheck",
+        "split",
+        "sqlp",
+        "stats",
+        "table",
+        "template",
+        "to",
+        "tojsonl",
+        "transpose",
+        "validate",
     ];
 
     // Create output directory
@@ -316,7 +382,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("QSV Test Examples Generator");
     println!("===========================");
-    println!("Extracting examples from {} test files...\n", commands.len());
+    println!(
+        "Extracting examples from {} test files...\n",
+        commands.len()
+    );
 
     let mut success_count = 0;
     let mut error_count = 0;

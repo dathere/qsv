@@ -6,51 +6,60 @@
   "command": {
     "binary": "qsv",
     "subcommand": "fill",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "selection",
+        "type": "string",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "-g",
-        "type": "string",
-        "description": "Group by specified columns."
-      },
-      {
-        "flag": "-f",
+        "flag": "--backfill",
         "type": "flag",
-        "description": "Fill using the first valid value of a column, instead of the latest."
+        "description": ""
       },
       {
-        "flag": "-b",
-        "type": "flag",
-        "description": "Fill initial empty values with the first valid value."
-      },
-      {
-        "flag": "-v",
+        "flag": "--default",
         "type": "string",
-        "description": "Fill using this default value."
+        "description": ""
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--first",
+        "type": "flag",
+        "description": ""
+      },
+      {
+        "flag": "--groupby",
+        "type": "string",
+        "description": ""
       },
       {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       },
       {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
         "flag": "--no-headers",
-        "short": "-n",
         "type": "flag",
         "description": "When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.)"
       },
       {
-        "flag": "--delimiter",
-        "short": "-d",
+        "flag": "--output",
         "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+        "description": "Write output to <file> instead of stdout."
       }
     ]
   },
@@ -59,5 +68,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fill.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fill.rs",
+  "examples_ref": "examples/qsv-fill-examples.json"
 }

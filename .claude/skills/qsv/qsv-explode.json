@@ -6,37 +6,51 @@
   "command": {
     "binary": "qsv",
     "subcommand": "explode",
-    "args": [],
+    "args": [
+      {
+        "name": "column",
+        "type": "string",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "separator",
+        "type": "string",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "--rename",
-        "short": "-r",
+        "flag": "--delimiter",
         "type": "string",
-        "description": "New name for the exploded column."
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       },
       {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
         "flag": "--no-headers",
-        "short": "-n",
         "type": "flag",
         "description": "When set, the first row will not be interpreted as headers."
       },
       {
-        "flag": "--delimiter",
-        "short": "-d",
+        "flag": "--output",
         "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--rename",
+        "type": "string",
+        "description": "New name for the exploded column."
       }
     ]
   },
@@ -45,5 +59,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_explode.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_explode.rs",
+  "examples_ref": "examples/qsv-explode-examples.json"
 }

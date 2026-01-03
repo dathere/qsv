@@ -1,0 +1,267 @@
+{
+  "skill": "qsv-select",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "select_reverse_sentinel",
+      "description": "Select Reverse Sentinel",
+      "command": "qsv select 1- --sort data.csv",
+      "args": [
+        "1-"
+      ],
+      "options": {
+        "--sort": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Alice",
+            "Bob",
+            "Fátima",
+            "Günther",
+            "Héctor",
+            "Jürgen",
+            "Çemil",
+            "Élise",
+            "Đan",
+            "İbrahim"
+          ],
+          [
+            "value2",
+            "value8",
+            "value5",
+            "value1",
+            "value6",
+            "value9",
+            "value3",
+            "value10",
+            "value4",
+            "value7"
+          ],
+          [
+            "2",
+            "8",
+            "5",
+            "1",
+            "6",
+            "9",
+            "3",
+            "10",
+            "4",
+            "7"
+          ],
+          [
+            "value9",
+            "value3",
+            "value6",
+            "value10",
+            "value5",
+            "value2",
+            "value8",
+            "value1",
+            "value7",
+            "value4"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "select_reverse_sentinel_2",
+      "description": "Select Reverse Sentinel 2",
+      "command": "qsv select 4,7-9 --sort data.csv",
+      "args": [
+        "4,7-9"
+      ],
+      "options": {
+        "--sort": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Bob",
+            "Jürgen",
+            "Đan",
+            "İbrahim"
+          ],
+          [
+            "value8",
+            "value9",
+            "value4",
+            "value7"
+          ],
+          [
+            "8",
+            "9",
+            "4",
+            "7"
+          ],
+          [
+            "value3",
+            "value2",
+            "value7",
+            "value4"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "select_reverse_sentinel_3",
+      "description": "Select Reverse Sentinel 3",
+      "command": "qsv select 1- --random data.csv",
+      "args": [
+        "1-"
+      ],
+      "options": {
+        "--random": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Jürgen",
+            "İbrahim",
+            "Đan",
+            "Çemil",
+            "Alice",
+            "Héctor",
+            "Élise",
+            "Bob",
+            "Fátima",
+            "Günther"
+          ],
+          [
+            "value9",
+            "value7",
+            "value4",
+            "value3",
+            "value2",
+            "value6",
+            "value10",
+            "value8",
+            "value5",
+            "value1"
+          ],
+          [
+            "9",
+            "7",
+            "4",
+            "3",
+            "2",
+            "6",
+            "10",
+            "8",
+            "5",
+            "1"
+          ],
+          [
+            "value2",
+            "value4",
+            "value7",
+            "value8",
+            "value9",
+            "value5",
+            "value1",
+            "value3",
+            "value6",
+            "value10"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "select_reverse_sentinel_4",
+      "description": "Select Reverse Sentinel 4",
+      "command": "qsv select 4,7-9 --random data.csv",
+      "args": [
+        "4,7-9"
+      ],
+      "options": {
+        "--random": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "İbrahim",
+            "Đan",
+            "Jürgen",
+            "Bob"
+          ],
+          [
+            "value7",
+            "value4",
+            "value9",
+            "value8"
+          ],
+          [
+            "7",
+            "4",
+            "9",
+            "8"
+          ],
+          [
+            "value4",
+            "value7",
+            "value2",
+            "value3"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "select_reverse_sentinel_5",
+      "description": "Select Reverse Sentinel 5",
+      "command": "qsv select h1 data.csv h1 data.csv --delimiter \";\"",
+      "args": [
+        "h1",
+        "data.csv",
+        "h1",
+        "data.csv"
+      ],
+      "options": {
+        "--delimiter": ";"
+      },
+      "expected": {
+        "data": [
+          [
+            "h1"
+          ],
+          [
+            "a"
+          ]
+        ]
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "select_reverse_sentinel_6",
+      "description": "Select Reverse Sentinel 6",
+      "command": "qsv select 10 data.csv",
+      "args": [
+        "10",
+        "data.csv"
+      ]
+    },
+    {
+      "name": "select_reverse_sentinel_7",
+      "description": "Select Reverse Sentinel 7",
+      "command": "qsv select 5 data.csv 2 data.csv",
+      "args": [
+        "5",
+        "data.csv",
+        "2",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "h2"
+          ],
+          [
+            "b"
+          ]
+        ]
+      }
+    }
+  ]
+}

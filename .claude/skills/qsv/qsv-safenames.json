@@ -6,18 +6,35 @@
   "command": {
     "binary": "qsv",
     "subcommand": "safenames",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
       {
         "flag": "--mode",
         "type": "string",
-        "description": "Rename header names to \"safe\" names - i.e. guaranteed \"database-ready\" names. It has six modes - conditional, always, verify, Verbose, with Verbose having two submodes - JSON & pretty JSON."
+        "description": "Rename header names to \"safe\" names - i.e. guaranteed \"database-ready\" names. It has six modes - conditional, always, verify, Verbose, with Verbose having two submodes - JSON & pretty JSON.",
+        "default": "Always"
       },
       {
-        "flag": "--reserved",
+        "flag": "--output",
         "type": "string",
-        "description": "Comma-delimited list of additional case-insensitive reserved names that should be considered \"unsafe.\" If a header name is found in the reserved list, it will be prefixed with \"reserved_\". [default: _id]",
-        "default": "_id"
+        "description": "Write output to <file> instead of stdout. Note that no output is generated for Verify and Verbose modes."
       },
       {
         "flag": "--prefix",
@@ -26,22 +43,10 @@
         "default": "unsafe_"
       },
       {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
+        "flag": "--reserved",
         "type": "string",
-        "description": "Write output to <file> instead of stdout. Note that no output is generated for Verify and Verbose modes."
-      },
-      {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+        "description": "Comma-delimited list of additional case-insensitive reserved names that should be considered \"unsafe.\" If a header name is found in the reserved list, it will be prefixed with \"reserved_\". [default: _id]",
+        "default": "_id"
       }
     ]
   },
@@ -67,5 +72,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_safenames.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_safenames.rs",
+  "examples_ref": "examples/qsv-safenames-examples.json"
 }

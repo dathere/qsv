@@ -6,83 +6,79 @@
   "command": {
     "binary": "qsv",
     "subcommand": "dedup",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "--select",
-        "short": "-s",
-        "type": "string",
-        "description": "Select a subset of columns to dedup. Note that the outputs will remain at the full width of the CSV. See 'qsv select --help' for the format details."
-      },
-      {
-        "flag": "--numeric",
-        "short": "-N",
-        "type": "flag",
-        "description": "Compare according to string numerical value"
-      },
-      {
-        "flag": "--ignore-case",
-        "short": "-i",
-        "type": "flag",
-        "description": "Compare strings disregarding case."
-      },
-      {
-        "flag": "--sorted",
-        "type": "flag",
-        "description": "The input is already sorted. Do not load the CSV into memory to sort it first. Meant to be used in tandem and after an extsort."
-      },
-      {
-        "flag": "--dupes-output",
-        "short": "-D",
-        "type": "string",
-        "description": "Write duplicates to <file>."
-      },
-      {
-        "flag": "--human-readable",
-        "short": "-H",
-        "type": "flag",
-        "description": "Comma separate duplicate count."
-      },
-      {
-        "flag": "--jobs",
-        "short": "-j",
-        "type": "string",
-        "description": "The number of jobs to run in parallel when sorting an unsorted CSV, before deduping. When not set, the number of jobs is set to the number of CPUs detected. Does not work with --sorted option as its not multithreaded."
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--no-headers",
-        "short": "-n",
-        "type": "flag",
-        "description": "When set, the first row will not be interpreted as headers. That is, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
-      },
-      {
         "flag": "--delimiter",
-        "short": "-d",
         "type": "string",
         "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
-        "flag": "--quiet",
-        "short": "-q",
+        "flag": "--dupes-output",
+        "type": "string",
+        "description": "Write duplicates to <file>."
+      },
+      {
+        "flag": "--help",
         "type": "flag",
-        "description": "Do not print duplicate count to stderr."
+        "description": "Display this message"
+      },
+      {
+        "flag": "--human-readable",
+        "type": "flag",
+        "description": "Comma separate duplicate count."
+      },
+      {
+        "flag": "--ignore-case",
+        "type": "flag",
+        "description": "Compare strings disregarding case."
+      },
+      {
+        "flag": "--jobs",
+        "type": "string",
+        "description": "The number of jobs to run in parallel when sorting an unsorted CSV, before deduping. When not set, the number of jobs is set to the number of CPUs detected. Does not work with --sorted option as its not multithreaded."
       },
       {
         "flag": "--memcheck",
         "type": "flag",
         "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. That is, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
+      },
+      {
+        "flag": "--numeric",
+        "type": "flag",
+        "description": "Compare according to string numerical value"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--quiet",
+        "type": "flag",
+        "description": "Do not print duplicate count to stderr."
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select a subset of columns to dedup. Note that the outputs will remain at the full width of the CSV. See 'qsv select --help' for the format details."
+      },
+      {
+        "flag": "--sorted",
+        "type": "flag",
+        "description": "The input is already sorted. Do not load the CSV into memory to sort it first. Meant to be used in tandem and after an extsort."
       }
     ]
   },
@@ -91,5 +87,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_dedup.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_dedup.rs",
+  "examples_ref": "examples/qsv-dedup-examples.json"
 }

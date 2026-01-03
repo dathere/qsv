@@ -1,0 +1,525 @@
+{
+  "skill": "qsv-rename",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "rename",
+      "description": "Rename",
+      "input": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv rename cola,colb in.csv",
+      "args": [
+        "cola,colb",
+        "in.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "cola",
+            "colb"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "rename_generic",
+      "description": "Rename Generic",
+      "input": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv rename _all_generic in.csv",
+      "args": [
+        "_all_generic",
+        "in.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "_col_1",
+            "_col_2"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "rename_noheaders",
+      "description": "Rename Noheaders",
+      "input": {
+        "data": [
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv rename cola,colb --no-headers in.csv",
+      "args": [
+        "cola,colb"
+      ],
+      "options": {
+        "--no-headers": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "cola",
+            "colb"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ]
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "rename_noheaders_generic",
+      "description": "Rename Noheaders Generic",
+      "input": {
+        "data": [
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv rename _ALL_Generic --no-headers in.csv",
+      "args": [
+        "_ALL_Generic"
+      ],
+      "options": {
+        "--no-headers": "in.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "_col_1",
+            "_col_2"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ]
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "rename_pairs",
+      "description": "Rename Pairs",
+      "input": {
+        "data": [
+          [
+            "R",
+            "S",
+            "T"
+          ],
+          [
+            "1",
+            "b",
+            "x"
+          ],
+          [
+            "2",
+            "a",
+            "y"
+          ],
+          [
+            "3",
+            "d",
+            "z"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv rename in.csv --pairwise R,cola,S,colb",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--pairwise": "R,cola,S,colb"
+      },
+      "expected": {
+        "data": [
+          [
+            "cola",
+            "colb",
+            "T"
+          ],
+          [
+            "1",
+            "b",
+            "x"
+          ],
+          [
+            "2",
+            "a",
+            "y"
+          ],
+          [
+            "3",
+            "d",
+            "z"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "rename_pairs_single",
+      "description": "Rename Pairs Single",
+      "input": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv rename in.csv --pairwise R,cola",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--pairwise": "R,cola"
+      },
+      "expected": {
+        "data": [
+          [
+            "cola",
+            "S"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "rename_pairs_multiple",
+      "description": "Rename Pairs Multiple",
+      "input": {
+        "data": [
+          [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          [
+            "1",
+            "2",
+            "3",
+            "4"
+          ],
+          [
+            "5",
+            "6",
+            "7",
+            "8"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv rename in.csv --pairwise A,alpha,C,gamma",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--pairwise": "A,alpha,C,gamma"
+      },
+      "expected": {
+        "data": [
+          [
+            "alpha",
+            "B",
+            "gamma",
+            "D"
+          ],
+          [
+            "1",
+            "2",
+            "3",
+            "4"
+          ],
+          [
+            "5",
+            "6",
+            "7",
+            "8"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "rename_pairs_no_match",
+      "description": "Rename Pairs No Match",
+      "input": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv rename X,cola,Y,colb in.csv",
+      "args": [
+        "X,cola,Y,colb",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "rename_pairs_fallback_to_original",
+      "description": "Rename Pairs Fallback To Original",
+      "input": {
+        "data": [
+          [
+            "R",
+            "S"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "2",
+            "a"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv rename cola,colb,colc in.csv",
+      "args": [
+        "cola,colb,colc",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "rename_issue_2908_fixed_behavior",
+      "description": "Rename Issue 2908 Fixed Behavior",
+      "input": {
+        "data": [
+          [
+            "id",
+            "dob"
+          ],
+          [
+            "1",
+            "1990-01-01"
+          ],
+          [
+            "2",
+            "1991-02-02"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv rename id,birthdate in.csv",
+      "args": [
+        "id,birthdate",
+        "in.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "id",
+            "birthdate"
+          ],
+          [
+            "1",
+            "1990-01-01"
+          ],
+          [
+            "2",
+            "1991-02-02"
+          ]
+        ]
+      },
+      "tags": [
+        "regression"
+      ]
+    },
+    {
+      "name": "rename_pairwise_flag",
+      "description": "Rename Pairwise Flag",
+      "input": {
+        "data": [
+          [
+            "id",
+            "dob"
+          ],
+          [
+            "1",
+            "1990-01-01"
+          ],
+          [
+            "2",
+            "1991-02-02"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv rename in.csv --pairwise id,birthdate",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--pairwise": "id,birthdate"
+      },
+      "expected": {
+        "data": [
+          [
+            "birthdate",
+            "dob"
+          ],
+          [
+            "1",
+            "1990-01-01"
+          ],
+          [
+            "2",
+            "1991-02-02"
+          ]
+        ]
+      }
+    }
+  ]
+}

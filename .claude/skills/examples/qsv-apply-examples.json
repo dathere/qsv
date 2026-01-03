@@ -1,0 +1,5152 @@
+{
+  "skill": "qsv-apply",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "apply_ops_unknown_operation",
+      "description": "Apply Ops Unknown Operation",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "b",
+            "2"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations obfuscate letter data.csv",
+      "args": [
+        "operations",
+        "obfuscate",
+        "letter",
+        "data.csv"
+      ]
+    },
+    {
+      "name": "apply_ops_upper",
+      "description": "Apply Ops Upper",
+      "input": {
+        "data": [
+          [
+            "name",
+            "surname"
+          ],
+          [
+            "John",
+            "Cena"
+          ],
+          [
+            "Mary",
+            "Jane"
+          ],
+          [
+            "Sue",
+            "Bird"
+          ],
+          [
+            "Hopkins",
+            "Jade"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations upper name,surname data.csv",
+      "args": [
+        "operations",
+        "upper",
+        "name,surname",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name",
+            "surname"
+          ],
+          [
+            "JOHN",
+            "CENA"
+          ],
+          [
+            "MARY",
+            "JANE"
+          ],
+          [
+            "SUE",
+            "BIRD"
+          ],
+          [
+            "HOPKINS",
+            "JADE"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_gender_guess",
+      "description": "Apply Ops Gender Guess",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "Peter"
+          ],
+          [
+            "Michael"
+          ],
+          [
+            "Joel"
+          ],
+          [
+            "Hussein"
+          ],
+          [
+            "Ian"
+          ],
+          [
+            "Enrique"
+          ],
+          [
+            "Ana"
+          ],
+          [
+            "Olivia"
+          ],
+          [
+            "Mackenzie"
+          ],
+          [
+            "Adair"
+          ],
+          [
+            "Aaf"
+          ],
+          [
+            "Voldemort"
+          ],
+          [
+            "Sami"
+          ],
+          [
+            "Minhaj"
+          ],
+          [
+            "Abdurrahman"
+          ],
+          [
+            "Abbe"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations gender_guess name data.csv",
+      "args": [
+        "operations",
+        "gender_guess",
+        "name",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name",
+            "Gender"
+          ],
+          [
+            "Peter",
+            "Male"
+          ],
+          [
+            "Michael",
+            "Male"
+          ],
+          [
+            "Joel",
+            "Male"
+          ],
+          [
+            "Hussein",
+            "Male"
+          ],
+          [
+            "Ian",
+            "Male"
+          ],
+          [
+            "Enrique",
+            "Male"
+          ],
+          [
+            "Ana",
+            "Female"
+          ],
+          [
+            "Olivia",
+            "Female"
+          ],
+          [
+            "Mackenzie",
+            "NotSure"
+          ],
+          [
+            "Adair",
+            "MayBeMale"
+          ],
+          [
+            "Aaf",
+            "MayBeFemale"
+          ],
+          [
+            "Voldemort",
+            "NotFound"
+          ],
+          [
+            "Sami",
+            "Male"
+          ],
+          [
+            "Minhaj",
+            "NotFound"
+          ],
+          [
+            "Abdurrahman",
+            "Male"
+          ],
+          [
+            "Abbe",
+            "NotSure"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_escape",
+      "description": "Apply Ops Escape",
+      "input": {
+        "data": [
+          [
+            "name",
+            "surname"
+          ],
+          [
+            "John😁",
+            "😡Cena"
+          ],
+          [
+            "Mary☎",
+            "Janë"
+          ],
+          [
+            "Sue",
+            "Bird🐦"
+          ],
+          [
+            "Hopękins",
+            "Jæde"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations escape name,surname data.csv",
+      "args": [
+        "operations",
+        "escape",
+        "name,surname",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name",
+            "surname"
+          ],
+          [
+            "John\\\\u{1f601}",
+            "\\\\u{1f621}Cena"
+          ],
+          [
+            "Mary\\\\u{260e}",
+            "Jan\\\\u{eb}"
+          ],
+          [
+            "Sue",
+            "Bird\\\\u{1f426}"
+          ],
+          [
+            "Hop\\\\u{119}kins",
+            "J\\\\u{e6}de"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_upper_rename",
+      "description": "Apply Ops Upper Rename",
+      "input": {
+        "data": [
+          [
+            "name",
+            "surname"
+          ],
+          [
+            "John",
+            "Cena"
+          ],
+          [
+            "Mary",
+            "Jane"
+          ],
+          [
+            "Sue",
+            "Bird"
+          ],
+          [
+            "Hopkins",
+            "Jade"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations upper name,surname data.csv --rename uname,usurname",
+      "args": [
+        "operations",
+        "upper",
+        "name,surname",
+        "data.csv"
+      ],
+      "options": {
+        "--rename": "uname,usurname"
+      },
+      "expected": {
+        "data": [
+          [
+            "uname",
+            "usurname"
+          ],
+          [
+            "JOHN",
+            "CENA"
+          ],
+          [
+            "MARY",
+            "JANE"
+          ],
+          [
+            "SUE",
+            "BIRD"
+          ],
+          [
+            "HOPKINS",
+            "JADE"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_upper_rename_invalid",
+      "description": "Apply Ops Upper Rename Invalid",
+      "input": {
+        "data": [
+          [
+            "name",
+            "surname"
+          ],
+          [
+            "John",
+            "Cena"
+          ],
+          [
+            "Mary",
+            "Jane"
+          ],
+          [
+            "Sue",
+            "Bird"
+          ],
+          [
+            "Hopkins",
+            "Jade"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations upper name,surname data.csv --rename uname",
+      "args": [
+        "operations",
+        "upper",
+        "name,surname",
+        "data.csv"
+      ],
+      "options": {
+        "--rename": "uname"
+      }
+    },
+    {
+      "name": "apply_ops_upper_index_params",
+      "description": "Apply Ops Upper Index Params",
+      "input": {
+        "data": [
+          [
+            "name",
+            "surname"
+          ],
+          [
+            "John",
+            "Cena"
+          ],
+          [
+            "Mary",
+            "Jane"
+          ],
+          [
+            "Sue",
+            "Bird"
+          ],
+          [
+            "Hopkins",
+            "Jade"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations upper 1,2 data.csv --rename uname,usurname",
+      "args": [
+        "operations",
+        "upper",
+        "1,2",
+        "data.csv"
+      ],
+      "options": {
+        "--rename": "uname,usurname"
+      },
+      "expected": {
+        "data": [
+          [
+            "uname",
+            "usurname"
+          ],
+          [
+            "JOHN",
+            "CENA"
+          ],
+          [
+            "MARY",
+            "JANE"
+          ],
+          [
+            "SUE",
+            "BIRD"
+          ],
+          [
+            "HOPKINS",
+            "JADE"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_encode62",
+      "description": "Apply Ops Encode62",
+      "input": {
+        "data": [
+          [
+            "hash",
+            "encoded_hash"
+          ],
+          [
+            "3824660653605227303",
+            "4YWz9bdwJXT"
+          ],
+          [
+            "1851770582521928574",
+            "2Cn7zXlsIM2"
+          ],
+          [
+            "7916590694040213670",
+            "9Qo4IeFuLyQ"
+          ],
+          [
+            "10903434754618017012",
+            "CzRqVIpxoUG"
+          ],
+          [
+            "7671262618974725285",
+            "98gSmJMD1XB"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations decode62 2 data.csv --new-column decoded_hash",
+      "args": [
+        "operations",
+        "decode62",
+        "2",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "decoded_hash"
+      },
+      "expected": {
+        "data": [
+          [
+            "hash",
+            "encoded_hash",
+            "decoded_hash"
+          ],
+          [
+            "3824660653605227303",
+            "4YWz9bdwJXT",
+            "3824660653605227303"
+          ],
+          [
+            "1851770582521928574",
+            "2Cn7zXlsIM2",
+            "1851770582521928574"
+          ],
+          [
+            "7916590694040213670",
+            "9Qo4IeFuLyQ",
+            "7916590694040213670"
+          ],
+          [
+            "10903434754618017012",
+            "CzRqVIpxoUG",
+            "10903434754618017012"
+          ],
+          [
+            "7671262618974725285",
+            "98gSmJMD1XB",
+            "7671262618974725285"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_decode62",
+      "description": "Apply Ops Decode62",
+      "input": {
+        "data": [
+          [
+            "hash"
+          ],
+          [
+            "3824660653605227303"
+          ],
+          [
+            "1851770582521928574"
+          ],
+          [
+            "7916590694040213670"
+          ],
+          [
+            "10903434754618017012"
+          ],
+          [
+            "7671262618974725285"
+          ],
+          [
+            "this should cause an error"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations encode62 1 data.csv --new-column encoded_hash",
+      "args": [
+        "operations",
+        "encode62",
+        "1",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "encoded_hash"
+      },
+      "expected": {
+        "data": [
+          [
+            "hash",
+            "encoded_hash"
+          ],
+          [
+            "3824660653605227303",
+            "4YWz9bdwJXT"
+          ],
+          [
+            "1851770582521928574",
+            "2Cn7zXlsIM2"
+          ],
+          [
+            "7916590694040213670",
+            "9Qo4IeFuLyQ"
+          ],
+          [
+            "10903434754618017012",
+            "CzRqVIpxoUG"
+          ],
+          [
+            "7671262618974725285",
+            "98gSmJMD1XB"
+          ],
+          [
+            "this should cause an error",
+            "encode62 error: ParseIntError { kind: InvalidDigit }"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_encode64",
+      "description": "Apply Ops Encode64",
+      "input": {
+        "data": [
+          [
+            "name",
+            "surname"
+          ],
+          [
+            "John",
+            "Cena"
+          ],
+          [
+            "Mary",
+            "Jane"
+          ],
+          [
+            "Sue",
+            "Bird"
+          ],
+          [
+            "Hopkins",
+            "Jade"
+          ],
+          [
+            "Long",
+            "the quick brown fox jumped over the lazy by the zigzag quarry site."
+          ],
+          [
+            "With extended characters",
+            "Y así mismo",
+            "aunque no son tan ágiles en el suelo como el vampiro común",
+            "son muy \\\n                 competentes al escalar por las ramas."
+          ],
+          [
+            "Japanese",
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations encode64 surname data.csv --new-column encoded_surname",
+      "args": [
+        "operations",
+        "encode64",
+        "surname",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "encoded_surname"
+      },
+      "expected": {
+        "data": [
+          [
+            "name",
+            "surname",
+            "encoded_surname"
+          ],
+          [
+            "John",
+            "Cena",
+            "Q2VuYQ=="
+          ],
+          [
+            "Mary",
+            "Jane",
+            "SmFuZQ=="
+          ],
+          [
+            "Sue",
+            "Bird",
+            "QmlyZA=="
+          ],
+          [
+            "Hopkins",
+            "Jade",
+            "SmFkZQ=="
+          ],
+          [
+            "Long",
+            "the quick brown fox jumped over the lazy by the zigzag quarry site.",
+            "dGhlIHF1aWNrIGJyb3duIGZveCBqdW1wZWQgb3ZlciB0aGUgbGF6eSBieSB0aGUgemlnemFnIHF1YXJyeSBzaXRlLg=="
+          ],
+          [
+            "With extended characters",
+            "Y así mismo",
+            "aunque no son tan ágiles en el suelo como el vampiro común",
+            "son muy competentes al escalar por las ramas.",
+            "WSBhc8OtIG1pc21vLCBhdW5xdWUgbm8gc29uIHRhbiDDoWdpbGVzIGVuIGVsIHN1ZWxvIGNvbW8gZWwgdmFtcGlybyBjb23Dum4sIHNvbiBtdXkgY29tcGV0ZW50ZXMgYWwgZXNjYWxhciBwb3IgbGFzIHJhbWFzLg=="
+          ],
+          [
+            "Japanese",
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である",
+            "UnVzdO+8iOODqeOCueODiO+8ieOBr+S4puWIl+OBi+OBpOODnuODq+ODgeODkeODqeODgOOCpOODoOOBruODl+ODreOCsOODqeODn+ODs+OCsOiogOiqnuOBp+OBguOCiw=="
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_decode64",
+      "description": "Apply Ops Decode64",
+      "input": {
+        "data": [
+          [
+            "name",
+            "surname",
+            "encoded_surname"
+          ],
+          [
+            "John",
+            "Cena",
+            "Q2VuYQ=="
+          ],
+          [
+            "Mary",
+            "Jane",
+            "SmFuZQ=="
+          ],
+          [
+            "Sue",
+            "Bird",
+            "QmlyZA=="
+          ],
+          [
+            "Hopkins",
+            "Jade",
+            "SmFkZQ=="
+          ],
+          [
+            "Long",
+            "the quick brown fox jumped over the lazy by the zigzag quarry site.",
+            "dGhlIHF1aWNrIGJyb3duIGZveCBqdW1wZWQgb3ZlciB0aGUgbGF6eSBieSB0aGUgemlnemFnIHF1YXJyeSBzaXRlLg=="
+          ],
+          [
+            "With extended characters",
+            "Y así mismo",
+            "aunque no son tan ágiles en el suelo como el vampiro común",
+            "son muy competentes al escalar por las ramas.",
+            "WSBhc8OtIG1pc21vLCBhdW5xdWUgbm8gc29uIHRhbiDDoWdpbGVzIGVuIGVsIHN1ZWxvIGNvbW8gZWwgdmFtcGlybyBjb23Dum4sIHNvbiBtdXkgY29tcGV0ZW50ZXMgYWwgZXNjYWxhciBwb3IgbGFzIHJhbWFzLg=="
+          ],
+          [
+            "Japanese",
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である",
+            "UnVzdO+8iOODqeOCueODiO+8ieOBr+S4puWIl+OBi+OBpOODnuODq+ODgeODkeODqeODgOOCpOODoOOBruODl+ODreOCsOODqeODn+ODs+OCsOiogOiqnuOBp+OBguOCiw=="
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations decode64 encoded_surname data.csv --new-column decoded_surname",
+      "args": [
+        "operations",
+        "decode64",
+        "encoded_surname",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "decoded_surname"
+      },
+      "expected": {
+        "data": [
+          [
+            "name",
+            "surname",
+            "encoded_surname",
+            "decoded_surname"
+          ],
+          [
+            "John",
+            "Cena",
+            "Q2VuYQ==",
+            "Cena"
+          ],
+          [
+            "Mary",
+            "Jane",
+            "SmFuZQ==",
+            "Jane"
+          ],
+          [
+            "Sue",
+            "Bird",
+            "QmlyZA==",
+            "Bird"
+          ],
+          [
+            "Hopkins",
+            "Jade",
+            "SmFkZQ==",
+            "Jade"
+          ],
+          [
+            "Long",
+            "the quick brown fox jumped over the lazy by the zigzag quarry site.",
+            "dGhlIHF1aWNrIGJyb3duIGZveCBqdW1wZWQgb3ZlciB0aGUgbGF6eSBieSB0aGUgemlnemFnIHF1YXJyeSBzaXRlLg==",
+            "the quick brown fox jumped over the lazy by the zigzag quarry site."
+          ],
+          [
+            "With extended characters",
+            "Y así mismo",
+            "aunque no son tan ágiles en el suelo como el vampiro común",
+            "son muy competentes al escalar por las ramas.",
+            "WSBhc8OtIG1pc21vLCBhdW5xdWUgbm8gc29uIHRhbiDDoWdpbGVzIGVuIGVsIHN1ZWxvIGNvbW8gZWwgdmFtcGlybyBjb23Dum4sIHNvbiBtdXkgY29tcGV0ZW50ZXMgYWwgZXNjYWxhciBwb3IgbGFzIHJhbWFzLg==",
+            "Y así mismo",
+            "aunque no son tan ágiles en el suelo como el vampiro común",
+            "son muy competentes al escalar por las ramas."
+          ],
+          [
+            "Japanese",
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である",
+            "UnVzdO+8iOODqeOCueODiO+8ieOBr+S4puWIl+OBi+OBpOODnuODq+ODgeODkeODqeODgOOCpOODoOOBruODl+ODreOCsOODqeODn+ODs+OCsOiogOiqnuOBp+OBguOCiw==",
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_dynfmt",
+      "description": "Apply Dynfmt",
+      "input": {
+        "data": [
+          [
+            "qty-fruit/day",
+            "1fruit",
+            "another col",
+            "unit cost usd",
+            "and another one"
+          ],
+          [
+            "20.5",
+            "mangoes",
+            "a",
+            "5",
+            "z"
+          ],
+          [
+            "10",
+            "bananas",
+            "b",
+            "20",
+            "y"
+          ],
+          [
+            "3",
+            "strawberries",
+            "c",
+            "3.50",
+            "x"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply dynfmt data.csv --new-column saying",
+      "args": [
+        "dynfmt",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "saying"
+      },
+      "expected": {
+        "data": [
+          [
+            "qty-fruit/day",
+            "1fruit",
+            "another col",
+            "unit cost usd",
+            "and another one",
+            "saying"
+          ],
+          [
+            "20.5",
+            "mangoes",
+            "a",
+            "5",
+            "z",
+            "20.5 helpings of mangoes is good for you",
+            "even if it costs $5 each. mangoes",
+            "all \\\n             20.5 - is just worth it!"
+          ],
+          [
+            "10",
+            "bananas",
+            "b",
+            "20",
+            "y",
+            "10 helpings of bananas is good for you",
+            "even if it costs $20 each. bananas",
+            "all 10 - \\\n             is just worth it!"
+          ],
+          [
+            "3",
+            "strawberries",
+            "c",
+            "3.50",
+            "x",
+            "3 helpings of strawberries is good for you",
+            "even if it costs $3.50 each. \\\n             strawberries",
+            "all 3 - is just worth it!"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_dynfmt_keepcase",
+      "description": "Apply Dynfmt Keepcase",
+      "input": {
+        "data": [
+          [
+            "qty-FRUIT/day",
+            "1fruit",
+            "another Col",
+            "unit cost USD",
+            "and another one"
+          ],
+          [
+            "20.5",
+            "mangoes",
+            "a",
+            "5",
+            "z"
+          ],
+          [
+            "10",
+            "bananas",
+            "b",
+            "20",
+            "y"
+          ],
+          [
+            "3",
+            "strawberries",
+            "c",
+            "3.50",
+            "x"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply dynfmt data.csv --new-column saying",
+      "args": [
+        "dynfmt",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "saying"
+      },
+      "expected": {
+        "data": [
+          [
+            "qty-FRUIT/day",
+            "1fruit",
+            "another Col",
+            "unit cost USD",
+            "and another one",
+            "saying"
+          ],
+          [
+            "20.5",
+            "mangoes",
+            "a",
+            "5",
+            "z",
+            "20.5 helpings of mangoes is good for you",
+            "even if it costs $5 each. mangoes",
+            "all \\\n             20.5 - is just worth it!"
+          ],
+          [
+            "10",
+            "bananas",
+            "b",
+            "20",
+            "y",
+            "10 helpings of bananas is good for you",
+            "even if it costs $20 each. bananas",
+            "all 10 - \\\n             is just worth it!"
+          ],
+          [
+            "3",
+            "strawberries",
+            "c",
+            "3.50",
+            "x",
+            "3 helpings of strawberries is good for you",
+            "even if it costs $3.50 each. \\\n             strawberries",
+            "all 3 - is just worth it!"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "apply_dynfmt_issue1458",
+      "description": "Apply Dynfmt Issue1458",
+      "input": {
+        "data": [
+          [
+            "FirstName",
+            "MI",
+            "LastName",
+            ""
+          ],
+          [
+            "Adam",
+            "B",
+            "Case"
+          ],
+          [
+            "Derek",
+            "E",
+            "Foster"
+          ],
+          [
+            "Gordon",
+            "H",
+            "Irvin"
+          ],
+          [
+            "Jack",
+            "K",
+            "Lynch"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply dynfmt data.csv --formatstr \"Sir/Madam {FirstName} {MI}. {LastName}\" -c FullName",
+      "args": [
+        "dynfmt",
+        "data.csv"
+      ],
+      "options": {
+        "--formatstr": "Sir/Madam {FirstName} {MI}. {LastName}",
+        "-c": "FullName"
+      },
+      "expected": {
+        "data": [
+          [
+            "FirstName",
+            "MI",
+            "LastName",
+            "FullName"
+          ],
+          [
+            "Adam",
+            "B",
+            "Case",
+            "Sir/Madam Adam B. Case"
+          ],
+          [
+            "Derek",
+            "E",
+            "Foster",
+            "Sir/Madam Derek E. Foster"
+          ],
+          [
+            "Gordon",
+            "H",
+            "Irvin",
+            "Sir/Madam Gordon H. Irvin"
+          ],
+          [
+            "Jack",
+            "K",
+            "Lynch",
+            "Sir/Madam Jack K. Lynch"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_regex_replace_issue1469",
+      "description": "Apply Regex Replace Issue1469",
+      "input": {
+        "data": [
+          [
+            "col1",
+            "col2",
+            "col3",
+            ""
+          ],
+          [
+            "(Adam)",
+            "B",
+            "Case(hello)Name "
+          ],
+          [
+            "Derek(foo)",
+            "(bar)E",
+            "Fos(this needs to go)ter"
+          ],
+          [
+            "Gordon",
+            "H",
+            "(cmon)Irvin"
+          ],
+          [
+            "Jack(ie)",
+            "K",
+            "Lynch(-Chan)"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations regex_replace col1,col2,col3 data.csv",
+      "args": [
+        "operations",
+        "regex_replace",
+        "col1,col2,col3",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "col1",
+            "col2",
+            "col3"
+          ],
+          [
+            "",
+            "B",
+            "CaseName "
+          ],
+          [
+            "Derek",
+            "E",
+            "Foster"
+          ],
+          [
+            "Gordon",
+            "H",
+            "Irvin"
+          ],
+          [
+            "Jack",
+            "K",
+            "Lynch"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_calcconv",
+      "description": "Apply Calcconv",
+      "input": {
+        "data": [
+          [
+            "qty-fruit/day",
+            "fruit",
+            "calories",
+            "unit cost usd"
+          ],
+          [
+            "20.5",
+            "mangoes",
+            "200",
+            "2"
+          ],
+          [
+            "10",
+            "bananas",
+            "120",
+            "0.50"
+          ],
+          [
+            "3",
+            "strawberries",
+            "20",
+            "0.10"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply calcconv data.csv --new-column watthours --formatstr \"{qty_fruit_day} * {calories} calories to watt hours\"",
+      "args": [
+        "calcconv",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "watthours",
+        "--formatstr": "{qty_fruit_day} * {calories} calories to watt hours"
+      },
+      "expected": {
+        "data": [
+          [
+            "qty-fruit/day",
+            "fruit",
+            "calories",
+            "unit cost usd",
+            "watthours",
+            ""
+          ],
+          [
+            "20.5",
+            "mangoes",
+            "200",
+            "2",
+            "4.7683000"
+          ],
+          [
+            "10",
+            "bananas",
+            "120",
+            "0.50",
+            "1.395600"
+          ],
+          [
+            "3",
+            "strawberries",
+            "20",
+            "0.10",
+            "0.069780"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_calcconv_invalid",
+      "description": "Apply Calcconv Invalid",
+      "input": {
+        "data": [
+          [
+            "qty-fruit/day",
+            "fruit",
+            "calories",
+            "unit cost usd"
+          ],
+          [
+            "20.5",
+            "mangoes",
+            "200",
+            "2"
+          ],
+          [
+            "10",
+            "bananas",
+            "120",
+            "0.50"
+          ],
+          [
+            "3",
+            "strawberries",
+            "20",
+            "0.10"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply calcconv data.csv --formatstr \"{qty_fruit_day} * {calories} calories to bitcoins per sec\" --new-column watthours",
+      "args": [
+        "calcconv",
+        "data.csv"
+      ],
+      "options": {
+        "--formatstr": "{qty_fruit_day} * {calories} calories to bitcoins per sec",
+        "--new-column": "watthours"
+      },
+      "expected": {
+        "data": [
+          [
+            "qty-fruit/day",
+            "fruit",
+            "calories",
+            "unit cost usd",
+            "watthours",
+            ""
+          ],
+          [
+            "20.5",
+            "mangoes",
+            "200",
+            "2",
+            "ERROR: Lexing error: Invalid string: bitcoins"
+          ],
+          [
+            "10",
+            "bananas",
+            "120",
+            "0.50",
+            "ERROR: Lexing error: Invalid string: bitcoins"
+          ],
+          [
+            "3",
+            "strawberries",
+            "20",
+            "0.10",
+            "ERROR: Lexing error: Invalid string: bitcoins"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_calcconv_units",
+      "description": "Apply Calcconv Units",
+      "input": {
+        "data": [
+          [
+            "qty-fruit/day",
+            "fruit",
+            "calories",
+            "unit cost usd"
+          ],
+          [
+            "20.5",
+            "mangoes",
+            "200",
+            "2"
+          ],
+          [
+            "10",
+            "bananas",
+            "120",
+            "0.50"
+          ],
+          [
+            "3",
+            "strawberries",
+            "20",
+            "0.10"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply calcconv data.csv --formatstr \"{qty_fruit_day} * {calories} calories to watt hours <UNIT>\" --new-column watthours",
+      "args": [
+        "calcconv",
+        "data.csv"
+      ],
+      "options": {
+        "--formatstr": "{qty_fruit_day} * {calories} calories to watt hours <UNIT>",
+        "--new-column": "watthours"
+      },
+      "expected": {
+        "data": [
+          [
+            "qty-fruit/day",
+            "fruit",
+            "calories",
+            "unit cost usd",
+            "watthours",
+            ""
+          ],
+          [
+            "20.5",
+            "mangoes",
+            "200",
+            "2",
+            "4.7683000 WattHour"
+          ],
+          [
+            "10",
+            "bananas",
+            "120",
+            "0.50",
+            "1.395600 WattHour"
+          ],
+          [
+            "3",
+            "strawberries",
+            "20",
+            "0.10",
+            "0.069780 WattHour"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enum_apply_calconv_issue1458",
+      "description": "Enum Apply Calconv Issue1458",
+      "input": {
+        "data": [
+          [
+            "FirstName",
+            "MI",
+            "LastName",
+            ""
+          ],
+          [
+            "Adam",
+            "B",
+            "Case"
+          ],
+          [
+            "Derek",
+            "E",
+            "Foster"
+          ],
+          [
+            "Gordon",
+            "H",
+            "Irvin"
+          ],
+          [
+            "Jack",
+            "K",
+            "Lynch"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv calcconv enum.csv -c result --formatstr \"{index} * {index}\"",
+      "args": [
+        "data.csv",
+        "calcconv",
+        "enum.csv"
+      ],
+      "options": {
+        "-c": "result",
+        "--formatstr": "{index} * {index}"
+      },
+      "expected": {
+        "data": [
+          [
+            "FirstName",
+            "MI",
+            "LastName",
+            "index"
+          ],
+          [
+            "Adam",
+            "B",
+            "Case",
+            "0"
+          ],
+          [
+            "Derek",
+            "E",
+            "Foster",
+            "1"
+          ],
+          [
+            "Gordon",
+            "H",
+            "Irvin",
+            "2"
+          ],
+          [
+            "Jack",
+            "K",
+            "Lynch",
+            "3"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_empty_shortcircuit",
+      "description": "Apply Ops Empty Shortcircuit",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "John"
+          ],
+          [
+            ""
+          ],
+          [
+            ""
+          ],
+          [
+            "Hopkins"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations len name data.csv",
+      "args": [
+        "operations",
+        "len",
+        "name",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "4"
+          ],
+          [
+            "0"
+          ],
+          [
+            "0"
+          ],
+          [
+            "7"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_titlecase",
+      "description": "Apply Ops Titlecase",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "THE quick brown fox jumped over the lazy dog."
+          ],
+          [
+            "twinkle",
+            "twinkle little star",
+            "how I wonder what you are"
+          ],
+          [
+            "a simple title to capitalize: an example"
+          ],
+          [
+            "new york city police department - NYPD"
+          ],
+          [
+            "department of human services"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations titlecase description data.csv",
+      "args": [
+        "operations",
+        "titlecase",
+        "description",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "The Quick Brown Fox Jumped Over the Lazy Dog."
+          ],
+          [
+            "Twinkle",
+            "Twinkle Little Star",
+            "How I Wonder What You Are"
+          ],
+          [
+            "A Simple Title to Capitalize: An Example"
+          ],
+          [
+            "New York City Police Department - NYPD"
+          ],
+          [
+            "Department of Human Services"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "apply_ops_censor_check",
+      "description": "Apply Ops Censor Check",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "fuck"
+          ],
+          [
+            "FUCK"
+          ],
+          [
+            "fμ¢κ you!"
+          ],
+          [
+            "F_u c_K"
+          ],
+          [
+            "fuuuuuuuck"
+          ],
+          [
+            "fluff truck"
+          ],
+          [
+            "fukushima"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations censor_check description data.csv --new-column profanity_flag",
+      "args": [
+        "operations",
+        "censor_check",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "profanity_flag"
+      },
+      "expected": {
+        "data": [
+          [
+            "description",
+            "profanity_flag"
+          ],
+          [
+            "fuck",
+            "true"
+          ],
+          [
+            "FUCK",
+            "true"
+          ],
+          [
+            "fμ¢κ you!",
+            "true"
+          ],
+          [
+            "F_u c_K",
+            "true"
+          ],
+          [
+            "fuuuuuuuck",
+            "true"
+          ],
+          [
+            "fluff truck",
+            "false"
+          ],
+          [
+            "fukushima",
+            "false"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_censor_count",
+      "description": "Apply Ops Censor Count",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "fuck"
+          ],
+          [
+            "FUCK"
+          ],
+          [
+            "fμ¢κ you!"
+          ],
+          [
+            "F_u c_K"
+          ],
+          [
+            "fuuuuuuuck"
+          ],
+          [
+            "fluff truck"
+          ],
+          [
+            "fukushima"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations censor_count description data.csv --new-column profanity_count",
+      "args": [
+        "operations",
+        "censor_count",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "profanity_count"
+      },
+      "expected": {
+        "data": [
+          [
+            "description",
+            "profanity_count"
+          ],
+          [
+            "fuck",
+            "1"
+          ],
+          [
+            "FUCK",
+            "1"
+          ],
+          [
+            "fμ¢κ you!",
+            "1"
+          ],
+          [
+            "F_u c_K",
+            "4"
+          ],
+          [
+            "fuuuuuuuck",
+            "1"
+          ],
+          [
+            "fluff truck",
+            "0"
+          ],
+          [
+            "fukushima",
+            "0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_censor",
+      "description": "Apply Ops Censor",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "fuck"
+          ],
+          [
+            "FUCK"
+          ],
+          [
+            "fμ¢κ that shit",
+            "faggot!"
+          ],
+          [
+            "F_u c_K that blowjoboobies"
+          ],
+          [
+            "fuuuuuuuck yooooouuuu"
+          ],
+          [
+            "kiss my ass!"
+          ],
+          [
+            "shittitties"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations censor description data.csv --new-column censored_text",
+      "args": [
+        "operations",
+        "censor",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "censored_text"
+      },
+      "expected": {
+        "data": [
+          [
+            "description",
+            "censored_text"
+          ],
+          [
+            "fuck",
+            "****"
+          ],
+          [
+            "FUCK",
+            "****"
+          ],
+          [
+            "fμ¢κ that shit",
+            "faggot!",
+            "**** that ****",
+            "******!"
+          ],
+          [
+            "F_u c_K that blowjoboobies",
+            "*_* *_* that *************"
+          ],
+          [
+            "fuuuuuuuck yooooouuuu",
+            "********** yooooouuuu"
+          ],
+          [
+            "kiss my ass!",
+            "kiss my ***!"
+          ],
+          [
+            "shittitties",
+            "***********"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_censor_check_addlwords",
+      "description": "Apply Ops Censor Check Addlwords",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "fuck"
+          ],
+          [
+            "FUCK"
+          ],
+          [
+            "fμ¢κ you!"
+          ],
+          [
+            "F_u c_K"
+          ],
+          [
+            "fuuuuuuuck"
+          ],
+          [
+            "fluff truck"
+          ],
+          [
+            "fukushima"
+          ],
+          [
+            "shlong dong ding"
+          ],
+          [
+            "long john silver's shlong"
+          ],
+          [
+            "Whoa! I see her cameltoe thru her athleisure!"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations censor_check description data.csv --comparand shlong,dong,cameltoe --new-column profanity_flag",
+      "args": [
+        "operations",
+        "censor_check",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "shlong,dong,cameltoe",
+        "--new-column": "profanity_flag"
+      },
+      "expected": {
+        "data": [
+          [
+            "description",
+            "profanity_flag"
+          ],
+          [
+            "fuck",
+            "true"
+          ],
+          [
+            "FUCK",
+            "true"
+          ],
+          [
+            "fμ¢κ you!",
+            "true"
+          ],
+          [
+            "F_u c_K",
+            "true"
+          ],
+          [
+            "fuuuuuuuck",
+            "true"
+          ],
+          [
+            "fluff truck",
+            "false"
+          ],
+          [
+            "fukushima",
+            "false"
+          ],
+          [
+            "shlong dong ding",
+            "true"
+          ],
+          [
+            "long john silver's shlong",
+            "true"
+          ],
+          [
+            "Whoa! I see her cameltoe thru her athleisure!",
+            "true"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_censor_addlwords",
+      "description": "Apply Ops Censor Addlwords",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "fuck"
+          ],
+          [
+            "FUCK"
+          ],
+          [
+            "fμ¢κ that shit",
+            "faggot!"
+          ],
+          [
+            "F_u c_K that blowjoboobies"
+          ],
+          [
+            "fuuuuuuuck yooooouuuu"
+          ],
+          [
+            "kiss my ass!"
+          ],
+          [
+            "shittitties"
+          ],
+          [
+            "move your shlllooooonng!!!"
+          ],
+          [
+            "that cameltoe is so penistracting!"
+          ],
+          [
+            "ding dong the bitch is dead!"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations censor description data.csv --new-column censored_text --comparand \"shlong, dong, cameltoe, bitch\"",
+      "args": [
+        "operations",
+        "censor",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "censored_text",
+        "--comparand": "shlong, dong, cameltoe, bitch"
+      },
+      "expected": {
+        "data": [
+          [
+            "description",
+            "censored_text"
+          ],
+          [
+            "fuck",
+            "****"
+          ],
+          [
+            "FUCK",
+            "****"
+          ],
+          [
+            "fμ¢κ that shit",
+            "faggot!",
+            "**** that ****",
+            "******!"
+          ],
+          [
+            "F_u c_K that blowjoboobies",
+            "*_* *_* that *************"
+          ],
+          [
+            "fuuuuuuuck yooooouuuu",
+            "********** yooooouuuu"
+          ],
+          [
+            "kiss my ass!",
+            "kiss my ***!"
+          ],
+          [
+            "shittitties",
+            "***********"
+          ],
+          [
+            "move your shlllooooonng!!!",
+            "move your *************!!!"
+          ],
+          [
+            "that cameltoe is so penistracting!",
+            "that ******** is so *****tracting!"
+          ],
+          [
+            "ding dong the bitch is dead!",
+            "ding **** the ***** is dead!"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_censor_count_addlwords",
+      "description": "Apply Ops Censor Count Addlwords",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "fuck"
+          ],
+          [
+            "FUCK"
+          ],
+          [
+            "fμ¢κ that shit",
+            "faggot!"
+          ],
+          [
+            "F_u c_K that blowjoboobies"
+          ],
+          [
+            "fuuuuuuuck yooooouuuu"
+          ],
+          [
+            "kiss my ass!"
+          ],
+          [
+            "shittitties"
+          ],
+          [
+            "move your shlllooooonng!!!"
+          ],
+          [
+            "that cameltoe is so penistracting!"
+          ],
+          [
+            "ding dong the bitch is dead!"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations censor_count description data.csv --comparand \"shlong, dong, cameltoe, bitch\" --new-column profanity_count",
+      "args": [
+        "operations",
+        "censor_count",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "shlong, dong, cameltoe, bitch",
+        "--new-column": "profanity_count"
+      },
+      "expected": {
+        "data": [
+          [
+            "description",
+            "profanity_count"
+          ],
+          [
+            "fuck",
+            "1"
+          ],
+          [
+            "FUCK",
+            "1"
+          ],
+          [
+            "fμ¢κ that shit",
+            "faggot!",
+            "3"
+          ],
+          [
+            "F_u c_K that blowjoboobies",
+            "5"
+          ],
+          [
+            "fuuuuuuuck yooooouuuu",
+            "1"
+          ],
+          [
+            "kiss my ass!",
+            "1"
+          ],
+          [
+            "shittitties",
+            "1"
+          ],
+          [
+            "move your shlllooooonng!!!",
+            "1"
+          ],
+          [
+            "that cameltoe is so penistracting!",
+            "2"
+          ],
+          [
+            "ding dong the bitch is dead!",
+            "2"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_replace",
+      "description": "Apply Ops Replace",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "THE quick brown fox jumped over the lazy dog."
+          ],
+          [
+            "twinkle",
+            "twinkle brownie star",
+            "how I wonder what you are"
+          ],
+          [
+            "a simple title to capitalize: an example"
+          ],
+          [
+            "Mr. Brown is not pleased."
+          ],
+          [
+            "this is a brownado car"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations replace description data.csv --comparand brown --replacement silver",
+      "args": [
+        "operations",
+        "replace",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "brown",
+        "--replacement": "silver"
+      },
+      "expected": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "THE quick silver fox jumped over the lazy dog."
+          ],
+          [
+            "twinkle",
+            "twinkle silverie star",
+            "how I wonder what you are"
+          ],
+          [
+            "a simple title to capitalize: an example"
+          ],
+          [
+            "Mr. Brown is not pleased."
+          ],
+          [
+            "this is a silverado car"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_replace_validation_error",
+      "description": "Apply Ops Replace Validation Error",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "THE quick brown fox jumped over the lazy dog."
+          ],
+          [
+            "twinkle",
+            "twinkle brownie star",
+            "how I wonder what you are"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations replace description data.csv --replacement silver",
+      "args": [
+        "operations",
+        "replace",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--replacement": "silver"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "apply_ops_regex_replace",
+      "description": "Apply Ops Regex Replace",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "My SSN is 078-05-1120. Please do not share it."
+          ],
+          [
+            "twinkle",
+            "twinkle brownie star",
+            "how I wonder what you are"
+          ],
+          [
+            "Somebody from Nigeria called asked for my ssn - 987-65-4320."
+          ],
+          [
+            "Won't fall for that scam!"
+          ],
+          [
+            "Just enter 987-65-4329 when prompted. Also try 987-65-1234 if it doesn't work."
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations regex_replace description data.csv --replacement SSN --comparand \"(?:\\\\\\\\d{3}-\\\\\\\\d{2}-\\\\\\\\d{4})\"",
+      "args": [
+        "operations",
+        "regex_replace",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--replacement": "SSN",
+        "--comparand": "(?:\\\\d{3}-\\\\d{2}-\\\\d{4})"
+      },
+      "expected": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "My SSN is SSN. Please do not share it."
+          ],
+          [
+            "twinkle",
+            "twinkle brownie star",
+            "how I wonder what you are"
+          ],
+          [
+            "Somebody from Nigeria called asked for my ssn - SSN."
+          ],
+          [
+            "Won't fall for that scam!"
+          ],
+          [
+            "Just enter SSN when prompted. Also try SSN if it doesn't work."
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_regex_replace_validation_error",
+      "description": "Apply Ops Regex Replace Validation Error",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "My SSN is 078-05-1120. Please do not share it."
+          ],
+          [
+            "twinkle",
+            "twinkle brownie star",
+            "how I wonder what you are"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations regex_replace description data.csv --comparand \"(?:\\\\\\\\d{3}-\\\\\\\\d{2}-\\\\\\\\d{4})\"",
+      "args": [
+        "operations",
+        "regex_replace",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "(?:\\\\d{3}-\\\\d{2}-\\\\d{4})"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "apply_ops_regex_replace_error",
+      "description": "Apply Ops Regex Replace Error",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "My SSN is 078-05-1120. Please do not share it."
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations regex_replace description data.csv --comparand \"(?:?)\" --replacement SSN",
+      "args": [
+        "operations",
+        "regex_replace",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "(?:?)",
+        "--replacement": "SSN"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "apply_ops_mtrim",
+      "description": "Apply Ops Mtrim",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "(This is in parentheses)"
+          ],
+          [
+            "(This is in parentheses",
+            "but with a period)."
+          ],
+          [
+            "(Only left paren"
+          ],
+          [
+            "Only right paren)"
+          ],
+          [
+            "(((multiple parens)))"
+          ],
+          [
+            "Embedded (((multiple parens)))"
+          ],
+          [
+            ")))reverse parens((("
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations mtrim description data.csv --comparand \"()\"",
+      "args": [
+        "operations",
+        "mtrim",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "()"
+      },
+      "expected": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "This is in parentheses"
+          ],
+          [
+            "This is in parentheses",
+            "but with a period)."
+          ],
+          [
+            "Only left paren"
+          ],
+          [
+            "Only right paren"
+          ],
+          [
+            "multiple parens"
+          ],
+          [
+            "Embedded (((multiple parens"
+          ],
+          [
+            "reverse parens"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_chain",
+      "description": "Apply Ops Chain",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "   John       Paul   "
+          ],
+          [
+            "Mary"
+          ],
+          [
+            "  Mary    Sue"
+          ],
+          [
+            "Hopkins"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations trim,upper,squeeze name data.csv",
+      "args": [
+        "operations",
+        "trim,upper,squeeze",
+        "name",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "JOHN PAUL"
+          ],
+          [
+            "MARY"
+          ],
+          [
+            "MARY SUE"
+          ],
+          [
+            "HOPKINS"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_chain_validation_error",
+      "description": "Apply Ops Chain Validation Error",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "   John       Paul   "
+          ],
+          [
+            "Mary"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations trim,upper,squeeze,simdl,simod name data.csv --comparand Joe -c new_column",
+      "args": [
+        "operations",
+        "trim,upper,squeeze,simdl,simod",
+        "name",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "Joe",
+        "-c": "new_column"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "apply_ops_chain_validation_error_missing_comparand",
+      "description": "Apply Ops Chain Validation Error Missing Comparand",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "   John       Paul   "
+          ],
+          [
+            "Mary"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations trim,upper,squeeze,simdl,simod name data.csv -c new_column",
+      "args": [
+        "operations",
+        "trim,upper,squeeze,simdl,simod",
+        "name",
+        "data.csv"
+      ],
+      "options": {
+        "-c": "new_column"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "apply_ops_chain_squeeze0",
+      "description": "Apply Ops Chain Squeeze0",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "   John       Paul   "
+          ],
+          [
+            "Mary"
+          ],
+          [
+            "  Mary    Sue"
+          ],
+          [
+            "Hopkins"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations trim,upper,squeeze0 name data.csv",
+      "args": [
+        "operations",
+        "trim,upper,squeeze0",
+        "name",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "JOHNPAUL"
+          ],
+          [
+            "MARY"
+          ],
+          [
+            "MARYSUE"
+          ],
+          [
+            "HOPKINS"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_squeeze0",
+      "description": "Apply Ops Squeeze0",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "   John   \\t    Paul   "
+          ],
+          [
+            "    Mary \\t   "
+          ],
+          [
+            "  Mary    \\n  Sue"
+          ],
+          [
+            "John\\r\\nHopkins"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations squeeze0 name data.csv",
+      "args": [
+        "operations",
+        "squeeze0",
+        "name",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "JohnPaul"
+          ],
+          [
+            "Mary"
+          ],
+          [
+            "MarySue"
+          ],
+          [
+            "JohnHopkins"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_chain_strip",
+      "description": "Apply Ops Chain Strip",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "Doctor   John       Paul   "
+          ],
+          [
+            "DocTor Mary"
+          ],
+          [
+            "  Mary    Sue"
+          ],
+          [
+            "doctor Hopkins"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations squeeze,upper,strip_prefix,trim name data.csv --comparand DOCTOR",
+      "args": [
+        "operations",
+        "squeeze,upper,strip_prefix,trim",
+        "name",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "DOCTOR"
+      },
+      "expected": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "JOHN PAUL"
+          ],
+          [
+            "MARY"
+          ],
+          [
+            "MARY SUE"
+          ],
+          [
+            "HOPKINS"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_mixed_case_chain",
+      "description": "Apply Ops Mixed Case Chain",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "   John       Paul   "
+          ],
+          [
+            "Mary"
+          ],
+          [
+            "  Mary    Sue"
+          ],
+          [
+            "Hopkins"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations Trim,UPPER,squEeZe name data.csv",
+      "args": [
+        "operations",
+        "Trim,UPPER,squEeZe",
+        "name",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "JOHN PAUL"
+          ],
+          [
+            "MARY"
+          ],
+          [
+            "MARY SUE"
+          ],
+          [
+            "HOPKINS"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "apply_no_headers",
+      "description": "Apply No Headers",
+      "input": {
+        "data": [
+          [
+            "John   "
+          ],
+          [
+            "Mary"
+          ],
+          [
+            "  Sue"
+          ],
+          [
+            "Hopkins"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations trim,upper 1 --no-headers data.csv",
+      "args": [
+        "operations",
+        "trim,upper",
+        "1"
+      ],
+      "options": {
+        "--no-headers": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "JOHN"
+          ],
+          [
+            "MARY"
+          ],
+          [
+            "SUE"
+          ],
+          [
+            "HOPKINS"
+          ]
+        ]
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "apply_rename",
+      "description": "Apply Rename",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "John"
+          ],
+          [
+            "Mary"
+          ],
+          [
+            "Sue"
+          ],
+          [
+            "Hopkins"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations upper name data.csv --rename upper_name",
+      "args": [
+        "operations",
+        "upper",
+        "name",
+        "data.csv"
+      ],
+      "options": {
+        "--rename": "upper_name"
+      },
+      "expected": {
+        "data": [
+          [
+            "upper_name"
+          ],
+          [
+            "JOHN"
+          ],
+          [
+            "MARY"
+          ],
+          [
+            "SUE"
+          ],
+          [
+            "HOPKINS"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_new_column",
+      "description": "Apply New Column",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "John"
+          ],
+          [
+            "Mary"
+          ],
+          [
+            "Sue"
+          ],
+          [
+            "Hopkins"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations upper name data.csv --new-column upper_name",
+      "args": [
+        "operations",
+        "upper",
+        "name",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "upper_name"
+      },
+      "expected": {
+        "data": [
+          [
+            "name",
+            "upper_name"
+          ],
+          [
+            "John",
+            "JOHN"
+          ],
+          [
+            "Mary",
+            "MARY"
+          ],
+          [
+            "Sue",
+            "SUE"
+          ],
+          [
+            "Hopkins",
+            "HOPKINS"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_thousands",
+      "description": "Apply Ops Thousands",
+      "input": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "123456789"
+          ],
+          [
+            "123456789.12345678"
+          ],
+          [
+            "123456789.0"
+          ],
+          [
+            "123456789.123"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "-123456789"
+          ],
+          [
+            "-123456789.12345678"
+          ],
+          [
+            "-123456789.0"
+          ],
+          [
+            "-123456789.123"
+          ],
+          [
+            "0"
+          ],
+          [
+            "-5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations thousands number data.csv",
+      "args": [
+        "operations",
+        "thousands",
+        "number",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "123",
+            "456",
+            "789"
+          ],
+          [
+            "123",
+            "456",
+            "789.12345678"
+          ],
+          [
+            "123",
+            "456",
+            "789"
+          ],
+          [
+            "123",
+            "456",
+            "789.123"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "-123",
+            "456",
+            "789"
+          ],
+          [
+            "-123",
+            "456",
+            "789.12345678"
+          ],
+          [
+            "-123",
+            "456",
+            "789"
+          ],
+          [
+            "-123",
+            "456",
+            "789.123"
+          ],
+          [
+            "0"
+          ],
+          [
+            "-5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_thousands_space",
+      "description": "Apply Ops Thousands Space",
+      "input": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "123456789"
+          ],
+          [
+            "123456789.12345678"
+          ],
+          [
+            "123456789.0"
+          ],
+          [
+            "123456789.123"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations thousands number data.csv",
+      "args": [
+        "operations",
+        "thousands",
+        "number",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "123 456 789"
+          ],
+          [
+            "123 456 789.12345678"
+          ],
+          [
+            "123 456 789"
+          ],
+          [
+            "123 456 789.123"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_thousands_indiancomma",
+      "description": "Apply Ops Thousands Indiancomma",
+      "input": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "123456789"
+          ],
+          [
+            "123456789.12345678"
+          ],
+          [
+            "123456789.0"
+          ],
+          [
+            "123456789.123"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations thousands number data.csv",
+      "args": [
+        "operations",
+        "thousands",
+        "number",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "12",
+            "34",
+            "56",
+            "789"
+          ],
+          [
+            "12",
+            "34",
+            "56",
+            "789.12345678"
+          ],
+          [
+            "12",
+            "34",
+            "56",
+            "789"
+          ],
+          [
+            "12",
+            "34",
+            "56",
+            "789.123"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_thousands_eurostyle",
+      "description": "Apply Ops Thousands Eurostyle",
+      "input": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "123456789"
+          ],
+          [
+            "123456789.12345678"
+          ],
+          [
+            "123456789.0"
+          ],
+          [
+            "123456789.123"
+          ],
+          [
+            "12345123456789.123"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations thousands number data.csv",
+      "args": [
+        "operations",
+        "thousands",
+        "number",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "123.456.789"
+          ],
+          [
+            "123.456.789",
+            "12345678"
+          ],
+          [
+            "123.456.789"
+          ],
+          [
+            "123.456.789",
+            "123"
+          ],
+          [
+            "12.345.123.456.789",
+            "123"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_thousands_hexfour",
+      "description": "Apply Ops Thousands Hexfour",
+      "input": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "123456789"
+          ],
+          [
+            "123456789.12345678"
+          ],
+          [
+            "123456789.0"
+          ],
+          [
+            "123456789.123"
+          ],
+          [
+            "12345123456789.123"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations thousands number data.csv",
+      "args": [
+        "operations",
+        "thousands",
+        "number",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "1 2345 6789"
+          ],
+          [
+            "1 2345 6789.12345678"
+          ],
+          [
+            "1 2345 6789"
+          ],
+          [
+            "1 2345 6789.123"
+          ],
+          [
+            "12 3451 2345 6789.123"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_round",
+      "description": "Apply Ops Round",
+      "input": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "123456789"
+          ],
+          [
+            "123456789.12345678"
+          ],
+          [
+            "123456789.0"
+          ],
+          [
+            "123456789.123"
+          ],
+          [
+            "123456789.12398"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "-123456789"
+          ],
+          [
+            "-123456789.12345678"
+          ],
+          [
+            "-123456789.0"
+          ],
+          [
+            "-123456789.123"
+          ],
+          [
+            "-123456789.12398"
+          ],
+          [
+            "-0"
+          ],
+          [
+            "-5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations round number data.csv",
+      "args": [
+        "operations",
+        "round",
+        "number",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "123456789"
+          ],
+          [
+            "123456789.123"
+          ],
+          [
+            "123456789"
+          ],
+          [
+            "123456789.123"
+          ],
+          [
+            "123456789.124"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "-123456789"
+          ],
+          [
+            "-123456789.123"
+          ],
+          [
+            "-123456789"
+          ],
+          [
+            "-123456789.123"
+          ],
+          [
+            "-123456789.124"
+          ],
+          [
+            "0"
+          ],
+          [
+            "-5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_round_5places",
+      "description": "Apply Ops Round 5places",
+      "input": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "123456789"
+          ],
+          [
+            "123456789.12345678"
+          ],
+          [
+            "123456789.0"
+          ],
+          [
+            "123456789.123"
+          ],
+          [
+            "123456789.1239876"
+          ],
+          [
+            "123456789.1239844"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations round number data.csv",
+      "args": [
+        "operations",
+        "round",
+        "number",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "number"
+          ],
+          [
+            "123456789"
+          ],
+          [
+            "123456789.12346"
+          ],
+          [
+            "123456789"
+          ],
+          [
+            "123456789.123"
+          ],
+          [
+            "123456789.12399"
+          ],
+          [
+            "123456789.12398"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "not a number",
+            "should be ignored"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_currencytonum",
+      "description": "Apply Ops Currencytonum",
+      "command": "qsv apply operations currencytonum money data.csv",
+      "args": [
+        "operations",
+        "currencytonum",
+        "money",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "money"
+          ],
+          [
+            "10.00"
+          ],
+          [
+            "-10.00"
+          ],
+          [
+            "12500.00"
+          ],
+          [
+            "12500.00"
+          ],
+          [
+            "1250000.00"
+          ],
+          [
+            "5.00"
+          ],
+          [
+            "0.00"
+          ],
+          [
+            "0.00"
+          ],
+          [
+            "0.00"
+          ],
+          [
+            "0.00"
+          ],
+          [
+            "0.00"
+          ],
+          [
+            "5.00"
+          ],
+          [
+            "0.25"
+          ],
+          [
+            "10.05"
+          ],
+          [
+            "10000000.00"
+          ],
+          [
+            "423.56"
+          ],
+          [
+            "120.00"
+          ],
+          [
+            "99999.50"
+          ],
+          [
+            "300999.55"
+          ],
+          [
+            "This is not money. Leave untouched."
+          ],
+          [
+            "1234567.89"
+          ],
+          [
+            "234567.89"
+          ],
+          [
+            "567.89"
+          ],
+          [
+            "567.89"
+          ],
+          [
+            "89123.00"
+          ],
+          [
+            "123456.00"
+          ],
+          [
+            "789123.00"
+          ],
+          [
+            "456.00"
+          ],
+          [
+            "123456.00"
+          ],
+          [
+            "10000.00"
+          ],
+          [
+            "1234.50"
+          ],
+          [
+            "9999999.99"
+          ],
+          [
+            "6543.21"
+          ],
+          [
+            "10.01"
+          ],
+          [
+            "10.08"
+          ],
+          [
+            "10.07"
+          ],
+          [
+            "10.87"
+          ],
+          [
+            "10.78"
+          ],
+          [
+            "10.78"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_currencytonum_strict",
+      "description": "Apply Ops Currencytonum Strict",
+      "command": "qsv apply operations currencytonum money data.csv --formatstr strict",
+      "args": [
+        "operations",
+        "currencytonum",
+        "money",
+        "data.csv"
+      ],
+      "options": {
+        "--formatstr": "strict"
+      },
+      "expected": {
+        "data": [
+          [
+            "money"
+          ],
+          [
+            "10.00"
+          ],
+          [
+            "-10.00"
+          ],
+          [
+            "12500.00"
+          ],
+          [
+            "12",
+            "500.00"
+          ],
+          [
+            "1",
+            "250",
+            "000"
+          ],
+          [
+            "5.00"
+          ],
+          [
+            "0"
+          ],
+          [
+            "0.00"
+          ],
+          [
+            "0.00"
+          ],
+          [
+            "0.00"
+          ],
+          [
+            "0.00 $"
+          ],
+          [
+            "5"
+          ],
+          [
+            "0.25"
+          ],
+          [
+            "10.05"
+          ],
+          [
+            "10000000.00"
+          ],
+          [
+            "423.56"
+          ],
+          [
+            "120.00"
+          ],
+          [
+            "99999.50"
+          ],
+          [
+            "300999.55"
+          ],
+          [
+            "This is not money. Leave untouched."
+          ],
+          [
+            "1234567.89"
+          ],
+          [
+            "234567.89"
+          ],
+          [
+            "567.89"
+          ],
+          [
+            "567.89"
+          ],
+          [
+            "89123.00"
+          ],
+          [
+            "123456.00"
+          ],
+          [
+            "789123.00"
+          ],
+          [
+            "456.00"
+          ],
+          [
+            "123",
+            "456.00 $"
+          ],
+          [
+            "10000.00"
+          ],
+          [
+            "1234.50"
+          ],
+          [
+            "9999999.99"
+          ],
+          [
+            "RMB 6543.21"
+          ],
+          [
+            "10.01"
+          ],
+          [
+            "10.08"
+          ],
+          [
+            "10.07"
+          ],
+          [
+            "10.87"
+          ],
+          [
+            "10.78"
+          ],
+          [
+            "10.78"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_numtocurrency",
+      "description": "Apply Ops Numtocurrency",
+      "input": {
+        "data": [
+          [
+            "money"
+          ],
+          [
+            "$10.00"
+          ],
+          [
+            "$-10.00"
+          ],
+          [
+            "$ 12 500.00"
+          ],
+          [
+            "$5"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "$0.25"
+          ],
+          [
+            "$ 10.05"
+          ],
+          [
+            "¥10",
+            "000",
+            "000.00"
+          ],
+          [
+            "£423.56"
+          ],
+          [
+            "€120.00"
+          ],
+          [
+            "֏99",
+            "999.50"
+          ],
+          [
+            "€300 999",
+            "55"
+          ],
+          [
+            "This is not money. Set to zero."
+          ],
+          [
+            "₱1",
+            "234",
+            "567.89"
+          ],
+          [
+            "₽234",
+            "567.89"
+          ],
+          [
+            "₪ 567.89"
+          ],
+          [
+            "₩ 567.89"
+          ],
+          [
+            "₩ 89",
+            "123.0"
+          ],
+          [
+            "ƒ 123",
+            "456.00"
+          ],
+          [
+            "฿ 789",
+            "123"
+          ],
+          [
+            "₫ 456"
+          ],
+          [
+            "123",
+            "456.00 $"
+          ],
+          [
+            "USD 10",
+            "000"
+          ],
+          [
+            "EUR 1234.50"
+          ],
+          [
+            "JPY 9",
+            "999",
+            "999.99"
+          ],
+          [
+            "RMB 6543.21"
+          ],
+          [
+            "$10.0099"
+          ],
+          [
+            "$10.0777"
+          ],
+          [
+            "$10.0723"
+          ],
+          [
+            "$10.8723"
+          ],
+          [
+            "$10.77777"
+          ],
+          [
+            "$10.777"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations numtocurrency money data.csv --comparand \"$\"",
+      "args": [
+        "operations",
+        "numtocurrency",
+        "money",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "$"
+      },
+      "expected": {
+        "data": [
+          [
+            "money"
+          ],
+          [
+            "$10.00"
+          ],
+          [
+            "-$10.00"
+          ],
+          [
+            "$12",
+            "500.00"
+          ],
+          [
+            "$5.00"
+          ],
+          [
+            "$0.00"
+          ],
+          [
+            "$5.00"
+          ],
+          [
+            "$0.25"
+          ],
+          [
+            "$10.05"
+          ],
+          [
+            "$10",
+            "000",
+            "000.00"
+          ],
+          [
+            "$423.56"
+          ],
+          [
+            "$120.00"
+          ],
+          [
+            "$99",
+            "999.50"
+          ],
+          [
+            "$300",
+            "999.55"
+          ],
+          [
+            "$0.00"
+          ],
+          [
+            "$1",
+            "234",
+            "567.89"
+          ],
+          [
+            "$234",
+            "567.89"
+          ],
+          [
+            "$567.89"
+          ],
+          [
+            "$567.89"
+          ],
+          [
+            "$89",
+            "123.00"
+          ],
+          [
+            "$123",
+            "456.00"
+          ],
+          [
+            "$789",
+            "123.00"
+          ],
+          [
+            "$456.00"
+          ],
+          [
+            "$123",
+            "456.00"
+          ],
+          [
+            "$10",
+            "000.00"
+          ],
+          [
+            "$1",
+            "234.50"
+          ],
+          [
+            "$9",
+            "999",
+            "999.99"
+          ],
+          [
+            "$6",
+            "543.21"
+          ],
+          [
+            "$10.01"
+          ],
+          [
+            "$10.08"
+          ],
+          [
+            "$10.07"
+          ],
+          [
+            "$10.87"
+          ],
+          [
+            "$10.78"
+          ],
+          [
+            "$10.78"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_numtocurrency_convert",
+      "description": "Apply Ops Numtocurrency Convert",
+      "input": {
+        "data": [
+          [
+            "money"
+          ],
+          [
+            "$10.00"
+          ],
+          [
+            "$-10.00"
+          ],
+          [
+            "$ 12 500.00"
+          ],
+          [
+            "$5"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "$0.25"
+          ],
+          [
+            "$ 10.05"
+          ],
+          [
+            "¥10",
+            "000",
+            "000.00"
+          ],
+          [
+            "£423.56"
+          ],
+          [
+            "€120.00"
+          ],
+          [
+            "֏99",
+            "999.50"
+          ],
+          [
+            "€300 999",
+            "55"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations numtocurrency money data.csv --comparand \"EUR \" --replacement 1.5",
+      "args": [
+        "operations",
+        "numtocurrency",
+        "money",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "EUR ",
+        "--replacement": "1.5"
+      },
+      "expected": {
+        "data": [
+          [
+            "money"
+          ],
+          [
+            "EUR 15.00"
+          ],
+          [
+            "-EUR 15.00"
+          ],
+          [
+            "EUR 18",
+            "750.00"
+          ],
+          [
+            "EUR 7.50"
+          ],
+          [
+            "EUR 0.00"
+          ],
+          [
+            "EUR 7.50"
+          ],
+          [
+            "EUR 0.37"
+          ],
+          [
+            "EUR 15.07"
+          ],
+          [
+            "EUR 15",
+            "000",
+            "000.00"
+          ],
+          [
+            "EUR 635.34"
+          ],
+          [
+            "EUR 180.00"
+          ],
+          [
+            "EUR 149",
+            "999.25"
+          ],
+          [
+            "EUR 451",
+            "499.32"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_numtocurrency_convert_euro_format",
+      "description": "Apply Ops Numtocurrency Convert Euro Format",
+      "input": {
+        "data": [
+          [
+            "money"
+          ],
+          [
+            "$10.00"
+          ],
+          [
+            "$-10.00"
+          ],
+          [
+            "$ 12 500.00"
+          ],
+          [
+            "$5"
+          ],
+          [
+            "0"
+          ],
+          [
+            "5"
+          ],
+          [
+            "$0.25"
+          ],
+          [
+            "$ 10.05"
+          ],
+          [
+            "¥10",
+            "000",
+            "000.00"
+          ],
+          [
+            "£423.56"
+          ],
+          [
+            "€120.00"
+          ],
+          [
+            "֏99",
+            "999.50"
+          ],
+          [
+            "€300 999",
+            "55"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations numtocurrency money data.csv --replacement 1.5 --formatstr euro -C \"EUR \"",
+      "args": [
+        "operations",
+        "numtocurrency",
+        "money",
+        "data.csv"
+      ],
+      "options": {
+        "--replacement": "1.5",
+        "--formatstr": "euro",
+        "-C": "EUR "
+      },
+      "expected": {
+        "data": [
+          [
+            "money"
+          ],
+          [
+            "EUR 15",
+            "00"
+          ],
+          [
+            "-EUR 15",
+            "00"
+          ],
+          [
+            "EUR 18.750",
+            "00"
+          ],
+          [
+            "EUR 7",
+            "50"
+          ],
+          [
+            "EUR 0",
+            "00"
+          ],
+          [
+            "EUR 7",
+            "50"
+          ],
+          [
+            "EUR 0",
+            "37"
+          ],
+          [
+            "EUR 15",
+            "07"
+          ],
+          [
+            "EUR 15.000.000",
+            "00"
+          ],
+          [
+            "EUR 635",
+            "34"
+          ],
+          [
+            "EUR 180",
+            "00"
+          ],
+          [
+            "EUR 149.999",
+            "25"
+          ],
+          [
+            "EUR 451.499",
+            "32"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_similarity",
+      "description": "Apply Ops Similarity",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "John"
+          ],
+          [
+            "Jonathan"
+          ],
+          [
+            "Edna"
+          ],
+          [
+            "Larry"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations simdln name data.csv --comparand Joe --new-column name_sim_score",
+      "args": [
+        "operations",
+        "simdln",
+        "name",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "Joe",
+        "--new-column": "name_sim_score"
+      },
+      "expected": {
+        "data": [
+          [
+            "name",
+            "name_sim_score"
+          ],
+          [
+            "John",
+            "0.5"
+          ],
+          [
+            "Jonathan",
+            "0.25"
+          ],
+          [
+            "Edna",
+            "0.0"
+          ],
+          [
+            "Larry",
+            "0.0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_similarity_eudex",
+      "description": "Apply Ops Similarity Eudex",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "John"
+          ],
+          [
+            "Jonathan"
+          ],
+          [
+            "Michelle"
+          ],
+          [
+            "Larry"
+          ],
+          [
+            "Joel"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations lower,eudex name data.csv --comparand michael --new-column eudex_flag",
+      "args": [
+        "operations",
+        "lower,eudex",
+        "name",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "michael",
+        "--new-column": "eudex_flag"
+      },
+      "expected": {
+        "data": [
+          [
+            "name",
+            "eudex_flag"
+          ],
+          [
+            "John",
+            "false"
+          ],
+          [
+            "Jonathan",
+            "false"
+          ],
+          [
+            "Michelle",
+            "true"
+          ],
+          [
+            "Larry",
+            "false"
+          ],
+          [
+            "Joel",
+            "false"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_similarity_more_eudex",
+      "description": "Apply Ops Similarity More Eudex",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "Jeuses"
+          ],
+          [
+            "Josephina"
+          ],
+          [
+            "Juan"
+          ],
+          [
+            "Juanita"
+          ],
+          [
+            "Michael"
+          ],
+          [
+            "Jingjing"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations lower,eudex name data.csv --comparand Jesus --new-column eudex_flag",
+      "args": [
+        "operations",
+        "lower,eudex",
+        "name",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "Jesus",
+        "--new-column": "eudex_flag"
+      },
+      "expected": {
+        "data": [
+          [
+            "name",
+            "eudex_flag"
+          ],
+          [
+            "Jeuses",
+            "true"
+          ],
+          [
+            "Josephina",
+            "false"
+          ],
+          [
+            "Juan",
+            "true"
+          ],
+          [
+            "Juanita",
+            "true"
+          ],
+          [
+            "Michael",
+            "false"
+          ],
+          [
+            "Jingjing",
+            "false"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_sentiment",
+      "description": "Apply Ops Sentiment",
+      "input": {
+        "data": [
+          [
+            "customer comment"
+          ],
+          [
+            "This is ridiculous! I will never buy from this company again!"
+          ],
+          [
+            "Josephina was awesome! She was very helpful and patient. I wish more customer \\\n                 service folks are like her!"
+          ],
+          [
+            "I can't believe that garbage is still out there. That is so false!"
+          ],
+          [
+            "5 stars! Highly recommended!"
+          ],
+          [
+            "What were they thinking!?!"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations sentiment \"customer comment\" data.csv --new-column sentiment_score",
+      "args": [
+        "operations",
+        "sentiment",
+        "customer comment",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "sentiment_score"
+      },
+      "expected": {
+        "data": [
+          [
+            "customer comment",
+            "sentiment_score"
+          ],
+          [
+            "This is ridiculous! I will never buy from this company again!",
+            "-0.47384376462380107"
+          ],
+          [
+            "Josephina was awesome! She was very helpful and patient. I wish more customer \\\n             service folks are like her!",
+            "0.9227060290926788"
+          ],
+          [
+            "I can't believe that garbage is still out there. That is so false!",
+            "-0.07518070500292766"
+          ],
+          [
+            "5 stars! Highly recommended!",
+            "0.3973495344831422"
+          ],
+          [
+            "What were they thinking!?!",
+            "-0.19353437967075598"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_whatlang",
+      "description": "Apply Ops Whatlang",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "Y así mismo",
+            "aunque no son tan ágiles en el suelo como el vampiro común",
+            "son muy \\\n                 competentes al escalar por las ramas."
+          ],
+          [
+            "See notes."
+          ],
+          [
+            "Aquest és l’honor més gran que he rebut a la meva vida. La pau ha estat sempre \\\n                 la meva més gran preocupació."
+          ],
+          [
+            ""
+          ],
+          [
+            "Showing that even in the modern warfare of the 1930s and 1940s",
+            "the dilapidated \\\n                 fortifications still had defensive usefulness."
+          ],
+          [
+            "民國卅八年（ 1949年 ）， 從南京經 廣州 、 香港返回 香日德。 1950年6月 \\\n                 ，受十世班禪派遣， 前往西安代表班禪向彭德懷投誠 。"
+          ],
+          [
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である"
+          ],
+          [
+            "Мой дядя самых честных правил",
+            "Когда не в шутку занемог",
+            "Он уважать себя \\\n                 заставил И лучше выдумать не мог."
+          ],
+          [
+            "Kamusta na",
+            "pare!?! Matagal na tayong di nagkita! Ilang taon na since high \\\n                 school?!"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations whatlang description data.csv --new-column language",
+      "args": [
+        "operations",
+        "whatlang",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "language"
+      },
+      "expected": {
+        "data": [
+          [
+            "description",
+            "language"
+          ],
+          [
+            "Y así mismo",
+            "aunque no son tan ágiles en el suelo como el vampiro común",
+            "son muy \\\n             competentes al escalar por las ramas.",
+            "Spa"
+          ],
+          [
+            "See notes.",
+            "Cat(0.031)?"
+          ],
+          [
+            "Aquest és l’honor més gran que he rebut a la meva vida. La pau ha estat sempre la \\\n             meva més gran preocupació.",
+            "Cat"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "Showing that even in the modern warfare of the 1930s and 1940s",
+            "the dilapidated \\\n             fortifications still had defensive usefulness.",
+            "Eng"
+          ],
+          [
+            "民國卅八年（ 1949年 ）， 從南京經 廣州 、 香港返回 香日德。 1950年6月 \\\n             ，受十世班禪派遣， 前往西安代表班禪向彭德懷投誠 。",
+            "Cmn"
+          ],
+          [
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である",
+            "Jpn"
+          ],
+          [
+            "Мой дядя самых честных правил",
+            "Когда не в шутку занемог",
+            "Он уважать себя заставил И \\\n             лучше выдумать не мог.",
+            "Rus"
+          ],
+          [
+            "Kamusta na",
+            "pare!?! Matagal na tayong di nagkita! Ilang taon na since high school?!",
+            "Tgl"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_whatlang_high_confidence_threshold",
+      "description": "Apply Ops Whatlang High Confidence Threshold",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "Y así mismo",
+            "aunque no son tan ágiles en el suelo como el vampiro común",
+            "son muy \\\n                 competentes al escalar por las ramas."
+          ],
+          [
+            "See notes."
+          ],
+          [
+            "Aquest és l’honor més gran que he rebut a la meva vida. La pau ha estat sempre \\\n                 la meva més gran preocupació."
+          ],
+          [
+            "amikor a Fafnir "
+          ],
+          [
+            "Showing that even in the modern warfare of the 1930s and 1940s",
+            "the dilapidated \\\n                 fortifications still had defensive usefulness."
+          ],
+          [
+            "民國卅八年（ 1949年 ）， 從南京經 廣州 、 香港返回 香日德。 1950年6月 \\\n                 ，受十世班禪派遣， 前往西安代表班禪向彭德懷投誠 。"
+          ],
+          [
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である"
+          ],
+          [
+            "Мой дядя самых честных правил",
+            "Когда не в шутку занемог",
+            "Он уважать себя \\\n                 заставил И лучше выдумать не мог."
+          ],
+          [
+            "Kamusta na",
+            "pare!?! Matagal na tayong di nagkita! Ilang taon na since high \\\n                 school?!"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations whatlang description data.csv --comparand \"0.95?\" --new-column language",
+      "args": [
+        "operations",
+        "whatlang",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "0.95?",
+        "--new-column": "language"
+      },
+      "expected": {
+        "data": [
+          [
+            "description",
+            "language"
+          ],
+          [
+            "Y así mismo",
+            "aunque no son tan ágiles en el suelo como el vampiro común",
+            "son muy \\\n             competentes al escalar por las ramas.",
+            "Spa(1.000)"
+          ],
+          [
+            "See notes.",
+            "Cat(0.031)?"
+          ],
+          [
+            "Aquest és l’honor més gran que he rebut a la meva vida. La pau ha estat sempre la \\\n             meva més gran preocupació.",
+            "Cat(1.000)"
+          ],
+          [
+            "amikor a Fafnir ",
+            "Cym(0.210)?"
+          ],
+          [
+            "Showing that even in the modern warfare of the 1930s and 1940s",
+            "the dilapidated \\\n             fortifications still had defensive usefulness.",
+            "Eng(1.000)"
+          ],
+          [
+            "民國卅八年（ 1949年 ）， 從南京經 廣州 、 香港返回 香日德。 1950年6月 \\\n             ，受十世班禪派遣， 前往西安代表班禪向彭德懷投誠 。",
+            "Cmn(1.000)"
+          ],
+          [
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である",
+            "Jpn(1.000)"
+          ],
+          [
+            "Мой дядя самых честных правил",
+            "Когда не в шутку занемог",
+            "Он уважать себя заставил И \\\n             лучше выдумать не мог.",
+            "Rus(1.000)"
+          ],
+          [
+            "Kamusta na",
+            "pare!?! Matagal na tayong di nagkita! Ilang taon na since high school?!",
+            "Tgl(1.000)"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_ops_whatlang_show_confidence_threshold",
+      "description": "Apply Ops Whatlang Show Confidence Threshold",
+      "input": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "Y así mismo",
+            "aunque no son tan ágiles en el suelo como el vampiro común",
+            "son muy \\\n                 competentes al escalar por las ramas."
+          ],
+          [
+            "See notes."
+          ],
+          [
+            "Aquest és l’honor més gran que he rebut a la meva vida. La pau ha estat sempre \\\n                 la meva més gran preocupació."
+          ],
+          [
+            "amikor a Fafnir "
+          ],
+          [
+            "Showing that even in the modern warfare of the 1930s and 1940s",
+            "the dilapidated \\\n                 fortifications still had defensive usefulness."
+          ],
+          [
+            "民國卅八年（ 1949年 ）， 從南京經 廣州 、 香港返回 香日德。 1950年6月 \\\n                 ，受十世班禪派遣， 前往西安代表班禪向彭德懷投誠 。"
+          ],
+          [
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である"
+          ],
+          [
+            "Мой дядя самых честных правил",
+            "Когда не в шутку занемог",
+            "Он уважать себя \\\n                 заставил И лучше выдумать не мог."
+          ],
+          [
+            "Kamusta na",
+            "pare!?! Matagal na tayong di nagkita! Ilang taon na since high \\\n                 school?!"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations whatlang description data.csv --comparand \"0.03?\" --new-column language",
+      "args": [
+        "operations",
+        "whatlang",
+        "description",
+        "data.csv"
+      ],
+      "options": {
+        "--comparand": "0.03?",
+        "--new-column": "language"
+      },
+      "expected": {
+        "data": [
+          [
+            "description",
+            "language"
+          ],
+          [
+            "Y así mismo",
+            "aunque no son tan ágiles en el suelo como el vampiro común",
+            "son muy \\\n             competentes al escalar por las ramas.",
+            "Spa(1.000)"
+          ],
+          [
+            "See notes.",
+            "Cat(0.031)"
+          ],
+          [
+            "Aquest és l’honor més gran que he rebut a la meva vida. La pau ha estat sempre la \\\n             meva més gran preocupació.",
+            "Cat(1.000)"
+          ],
+          [
+            "amikor a Fafnir ",
+            "Cym(0.210)"
+          ],
+          [
+            "Showing that even in the modern warfare of the 1930s and 1940s",
+            "the dilapidated \\\n             fortifications still had defensive usefulness.",
+            "Eng(1.000)"
+          ],
+          [
+            "民國卅八年（ 1949年 ）， 從南京經 廣州 、 香港返回 香日德。 1950年6月 \\\n             ，受十世班禪派遣， 前往西安代表班禪向彭德懷投誠 。",
+            "Cmn(1.000)"
+          ],
+          [
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である",
+            "Jpn(1.000)"
+          ],
+          [
+            "Мой дядя самых честных правил",
+            "Когда не в шутку занемог",
+            "Он уважать себя заставил И \\\n             лучше выдумать не мог.",
+            "Rus(1.000)"
+          ],
+          [
+            "Kamusta na",
+            "pare!?! Matagal na tayong di nagkita! Ilang taon na since high school?!",
+            "Tgl(1.000)"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_emptyreplace",
+      "description": "Apply Emptyreplace",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "John"
+          ],
+          [
+            " "
+          ],
+          [
+            "Sue"
+          ],
+          [
+            "Hopkins"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply emptyreplace name data.csv --replacement NA",
+      "args": [
+        "emptyreplace",
+        "name",
+        "data.csv"
+      ],
+      "options": {
+        "--replacement": "NA"
+      },
+      "expected": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "John"
+          ],
+          [
+            "NA"
+          ],
+          [
+            "Sue"
+          ],
+          [
+            "Hopkins"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_emptyreplace_multiple_columns",
+      "description": "Apply Emptyreplace Multiple Columns",
+      "input": {
+        "data": [
+          [
+            "name",
+            "age",
+            "city"
+          ],
+          [
+            "John",
+            "30",
+            "New York"
+          ],
+          [
+            " ",
+            " ",
+            "      "
+          ],
+          [
+            "Sue",
+            " ",
+            "Boston"
+          ],
+          [
+            "Hopkins",
+            "40",
+            ""
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply emptyreplace name,age,city data.csv --replacement NA",
+      "args": [
+        "emptyreplace",
+        "name,age,city",
+        "data.csv"
+      ],
+      "options": {
+        "--replacement": "NA"
+      },
+      "expected": {
+        "data": [
+          [
+            "name",
+            "age",
+            "city"
+          ],
+          [
+            "John",
+            "30",
+            "New York"
+          ],
+          [
+            "NA",
+            "NA",
+            "NA"
+          ],
+          [
+            "Sue",
+            "NA",
+            "Boston"
+          ],
+          [
+            "Hopkins",
+            "40",
+            "NA"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_emptyreplace_all_columns",
+      "description": "Apply Emptyreplace All Columns",
+      "input": {
+        "data": [
+          [
+            "name",
+            "age",
+            "city"
+          ],
+          [
+            "John",
+            "30",
+            "New York"
+          ],
+          [
+            " ",
+            " ",
+            "      "
+          ],
+          [
+            "Sue",
+            " ",
+            "Boston"
+          ],
+          [
+            "Hopkins",
+            "40",
+            ""
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply emptyreplace 1- data.csv --replacement NA",
+      "args": [
+        "emptyreplace",
+        "1-",
+        "data.csv"
+      ],
+      "options": {
+        "--replacement": "NA"
+      },
+      "expected": {
+        "data": [
+          [
+            "name",
+            "age",
+            "city"
+          ],
+          [
+            "John",
+            "30",
+            "New York"
+          ],
+          [
+            "NA",
+            "NA",
+            "NA"
+          ],
+          [
+            "Sue",
+            "NA",
+            "Boston"
+          ],
+          [
+            "Hopkins",
+            "40",
+            "NA"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_crc32",
+      "description": "Apply Crc32",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "John"
+          ],
+          [
+            "Sue"
+          ],
+          [
+            "Hopkins"
+          ],
+          [
+            "TheQuickBrownFoxJumpedOverTheLazyDogByTheZigzagQuarrySite 1234567890 &^#@09"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations crc32 name data.csv --new-column crc32_hash",
+      "args": [
+        "operations",
+        "crc32",
+        "name",
+        "data.csv"
+      ],
+      "options": {
+        "--new-column": "crc32_hash"
+      },
+      "expected": {
+        "data": [
+          [
+            "name",
+            "crc32_hash"
+          ],
+          [
+            "John",
+            "2437433000"
+          ],
+          [
+            "Sue",
+            "4264251807"
+          ],
+          [
+            "Hopkins",
+            "1940610850"
+          ],
+          [
+            "TheQuickBrownFoxJumpedOverTheLazyDogByTheZigzagQuarrySite 1234567890 &^#@09",
+            "4056627688"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "apply_empty_selection_without_new_column",
+      "description": "Apply Empty Selection Without New Column",
+      "input": {
+        "data": [
+          [
+            "id"
+          ],
+          [
+            "1"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv apply operations upper \"!id\" data.csv",
+      "args": [
+        "operations",
+        "upper",
+        "!id",
+        "data.csv"
+      ]
+    }
+  ]
+}

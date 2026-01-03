@@ -1,0 +1,121 @@
+{
+  "skill": "qsv-fixlengths",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "prop_fixlengths_all_maxlen",
+      "description": "Prop Fixlengths All Maxlen",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fixlengths_all_maxlen_trims",
+      "description": "Fixlengths All Maxlen Trims",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fixlengths_insert_negative",
+      "description": "Fixlengths Insert Negative",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fixlengths_insert_positive",
+      "description": "Fixlengths Insert Positive",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fixlengths_insert_positive_length_7",
+      "description": "Fixlengths Insert Positive Length 7",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fixlengths_insert_negative_length_7",
+      "description": "Fixlengths Insert Negative Length 7",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fixlengths_all_maxlen_trims_at_least_1",
+      "description": "Fixlengths All Maxlen Trims At Least 1",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "prop_fixlengths_explicit_len",
+      "description": "Prop Fixlengths Explicit Len",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fixlengths_remove_empty_basic",
+      "description": "Fixlengths Remove Empty Basic",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ],
+      "tags": [
+        "basic"
+      ]
+    },
+    {
+      "name": "fixlengths_remove_empty_with_length",
+      "description": "Fixlengths Remove Empty With Length",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fixlengths_remove_empty_with_insert",
+      "description": "Fixlengths Remove Empty With Insert",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fixlengths_remove_empty_with_length_and_insert",
+      "description": "Fixlengths Remove Empty With Length And Insert",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fixlengths_remove_empty_all_empty_columns",
+      "description": "Fixlengths Remove Empty All Empty Columns",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fixlengths_remove_empty_with_negative_insert",
+      "description": "Fixlengths Remove Empty With Negative Insert",
+      "command": "qsv fixlengths in.csv",
+      "args": [
+        "in.csv"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,166 @@
+{
+  "skill": "qsv-sniff",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "sniff",
+      "description": "Sniff",
+      "command": "qsv sniff in.CSV",
+      "args": [
+        "in.CSV"
+      ]
+    },
+    {
+      "name": "sniff_stats_types",
+      "description": "Sniff Stats Types",
+      "command": "qsv sniff --stats-types in.CSV",
+      "options": {
+        "--stats-types": "in.CSV"
+      }
+    },
+    {
+      "name": "sniff_url_notcsv",
+      "description": "Sniff Url Notcsv",
+      "command": "qsv sniff https://github.com/dathere/qsv/raw/master/resources/test/excel-xlsx.xlsx",
+      "args": [
+        "https://github.com/dathere/qsv/raw/master/resources/test/excel-xlsx.xlsx"
+      ]
+    },
+    {
+      "name": "sniff_notcsv",
+      "description": "Sniff Notcsv",
+      "command": "qsv sniff"
+    },
+    {
+      "name": "sniff_justmime",
+      "description": "Sniff Justmime",
+      "command": "qsv sniff --just-mime",
+      "options": {
+        "--just-mime": "true"
+      }
+    },
+    {
+      "name": "sniff_justmime_remote",
+      "description": "Sniff Justmime Remote",
+      "command": "qsv sniff --just-mime https://github.com/dathere/qsv/raw/master/resources/test/excel-xls.xls",
+      "options": {
+        "--just-mime": "https://github.com/dathere/qsv/raw/master/resources/test/excel-xls.xls"
+      }
+    },
+    {
+      "name": "sniff_url_snappy",
+      "description": "Sniff Url Snappy",
+      "command": "qsv sniff https://github.com/dathere/qsv/raw/master/resources/test/boston311-100.csv.sz",
+      "args": [
+        "https://github.com/dathere/qsv/raw/master/resources/test/boston311-100.csv.sz"
+      ]
+    },
+    {
+      "name": "sniff_url_snappy_noinfer",
+      "description": "Sniff Url Snappy Noinfer",
+      "command": "qsv sniff https://github.com/dathere/qsv/raw/master/resources/test/boston311-100.csv.sz --no-infer",
+      "args": [
+        "https://github.com/dathere/qsv/raw/master/resources/test/boston311-100.csv.sz"
+      ],
+      "options": {
+        "--no-infer": "true"
+      }
+    },
+    {
+      "name": "sniff_file_snappy",
+      "description": "Sniff File Snappy",
+      "command": "qsv sniff"
+    },
+    {
+      "name": "sniff_tab",
+      "description": "Sniff Tab",
+      "command": "qsv sniff in.TAB",
+      "args": [
+        "in.TAB"
+      ]
+    },
+    {
+      "name": "qsv_sniff_pipe_delimiter_env",
+      "description": "Qsv Sniff Pipe Delimiter Env",
+      "command": "qsv input in.file",
+      "args": [
+        "in.file"
+      ]
+    },
+    {
+      "name": "qsv_sniff_semicolon_delimiter_env",
+      "description": "Qsv Sniff Semicolon Delimiter Env",
+      "command": "qsv input in.file",
+      "args": [
+        "in.file"
+      ]
+    },
+    {
+      "name": "qsv_sniff_tab_delimiter_env",
+      "description": "Qsv Sniff Tab Delimiter Env",
+      "command": "qsv input in.file",
+      "args": [
+        "in.file"
+      ]
+    },
+    {
+      "name": "sniff_json",
+      "description": "Sniff Json",
+      "command": "qsv sniff --json",
+      "options": {
+        "--json": "true"
+      }
+    },
+    {
+      "name": "sniff_flexible_json",
+      "description": "Sniff Flexible Json",
+      "command": "qsv sniff --json",
+      "options": {
+        "--json": "true"
+      }
+    },
+    {
+      "name": "sniff_pretty_json",
+      "description": "Sniff Pretty Json",
+      "command": "qsv sniff --pretty-json",
+      "options": {
+        "--pretty-json": "true"
+      }
+    },
+    {
+      "name": "sniff_sample",
+      "description": "Sniff Sample",
+      "command": "qsv sniff --sample 0.5",
+      "options": {
+        "--sample": "0.5"
+      }
+    },
+    {
+      "name": "sniff_prefer_dmy",
+      "description": "Sniff Prefer Dmy",
+      "command": "qsv sniff --prefer-dmy",
+      "options": {
+        "--prefer-dmy": "true"
+      }
+    },
+    {
+      "name": "sniff_flaky_delimiter_guess",
+      "description": "Sniff Flaky Delimiter Guess",
+      "command": "qsv sniff --delimiter ,",
+      "options": {
+        "--delimiter": ","
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "sniff_consistent_results_issue_956",
+      "description": "Sniff Consistent Results Issue 956",
+      "command": "qsv sniff",
+      "tags": [
+        "regression"
+      ]
+    }
+  ]
+}

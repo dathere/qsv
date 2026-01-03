@@ -6,15 +6,17 @@ Complete TypeScript implementation for loading, executing, and composing qsv com
 
 This directory contains:
 
-1. **66 Auto-generated Skill Definitions** - JSON files describing all qsv commands
-2. **TypeScript Executor** - Complete implementation for running qsv skills
-3. **Pipeline Composition API** - Fluent interface for chaining operations
-4. **Working Examples** - Practical demonstrations of the system
+1. **66 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
+2. **1,279 Test-Based Examples** - Real examples extracted from CI tests with full I/O data
+3. **TypeScript Executor** - Complete implementation for running qsv skills
+4. **Pipeline Composition API** - Fluent interface for chaining operations
+5. **Working Demos** - Practical demonstrations of the system
 
 Each skill file provides:
-- **Command specification**: Binary, subcommand, arguments, and options
+- **Command specification**: Binary, subcommand, arguments, and options (parsed with qsv-docopt)
 - **Rich descriptions**: Extracted from usage text
-- **Examples**: Real usage examples from documentation (417 total)
+- **USAGE examples**: Real usage examples from documentation (417 total)
+- **Test examples reference**: Pointer to load-as-needed test examples (1,279 total from 54 skills)
 - **Type information**: Inferred parameter types and validation
 - **Performance hints**: Memory usage, streaming capability, indexing benefits
 - **Links to tests**: For additional context and validation
@@ -37,6 +39,9 @@ npm test
 
 # Pipeline composition
 npm run test-pipeline
+
+# Test-based examples (load-as-needed)
+node examples/test-examples-demo.js
 ```
 
 ## Generated Skills (66)
@@ -56,7 +61,9 @@ npm run test-pipeline
 
 **Total Statistics:**
 - **Skills**: 66 commands
-- **Examples**: 417 usage examples
+- **USAGE Examples**: 417 from documentation
+- **Test Examples**: 1,279 from CI tests (54 skills, 82% coverage)
+- **Total Examples**: 1,696
 - **Options**: 837 command-line options
 - **Arguments**: 60 positional arguments
 
@@ -65,19 +72,24 @@ npm run test-pipeline
 ```
 .claude/skills/
 ├── qsv/                    # 66 skill JSON definitions
-│   ├── qsv-select.json
+│   ├── qsv-select.json     # With examples_ref pointer
 │   ├── qsv-stats.json
 │   ├── qsv-moarstats.json
 │   └── ... (63 more)
+├── examples/               # Test-based examples (load-as-needed)
+│   ├── qsv-select-examples.json  # 40 examples with I/O data
+│   ├── qsv-stats-examples.json   # 96 examples
+│   ├── qsv-dedup-examples.json   # 11 examples
+│   ├── ... (51 more)
+│   ├── basic.js                  # Demo: basic usage
+│   ├── pipeline.js               # Demo: pipeline composition
+│   └── test-examples-demo.js     # Demo: test examples
 ├── src/                    # TypeScript source
-│   ├── types.ts           # Type definitions
-│   ├── loader.ts          # Skill loading & search
+│   ├── types.ts           # Type definitions (includes TestExample)
+│   ├── loader.ts          # Skill loading & loadTestExamples()
 │   ├── executor.ts        # qsv execution wrapper
 │   ├── pipeline.ts        # Pipeline composition API
 │   └── index.ts           # Public exports
-├── examples/               # Working examples
-│   ├── basic.js           # Skill loading & execution
-│   └── pipeline.js        # Pipeline composition
 ├── dist/                   # Compiled JavaScript (gitignored)
 ├── package.json
 ├── tsconfig.json
@@ -143,6 +155,53 @@ console.log(shell);
 //   qsv slice --start 0 --end 100
 ```
 
+### Load Test-Based Examples (On-Demand)
+
+```typescript
+import { SkillLoader } from './dist/index.js';
+
+const loader = new SkillLoader();
+await loader.loadAll();
+
+// Load test examples for a specific skill
+const dedupExamples = await loader.loadTestExamples('qsv-dedup');
+
+if (dedupExamples) {
+  console.log(`Loaded ${dedupExamples.examples.length} test examples`);
+
+  // Access first example
+  const example = dedupExamples.examples[0];
+  console.log(`Name: ${example.name}`);
+  console.log(`Description: ${example.description}`);
+  console.log(`Command: ${example.command}`);
+
+  // Get input CSV data
+  if (example.input?.data) {
+    const inputCSV = example.input.data
+      .map(row => row.join(','))
+      .join('\n');
+    console.log('Input:', inputCSV);
+  }
+
+  // Get expected output
+  if (example.expected?.data) {
+    const expectedCSV = example.expected.data
+      .map(row => row.join(','))
+      .join('\n');
+    console.log('Expected:', expectedCSV);
+  }
+
+  // Filter by tags
+  const regressionTests = dedupExamples.examples.filter(ex =>
+    ex.tags && ex.tags.includes('regression')
+  );
+}
+```
+
+**Available Tags**: basic, regression, error-handling, case-sensitivity, unicode, no-headers, custom-delimiter
+
+**Demo**: Run `node examples/test-examples-demo.js` to see test examples in action
+
 ## Skill Schema
 
 Each skill JSON file follows this structure:
@@ -186,11 +245,14 @@ Each skill JSON file follows this structure:
     "indexed": false,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_<command>.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_<command>.rs",
+  "examples_ref": "examples/qsv-<command>-examples.json"
 }
 ```
 
 ## Generation
+
+### Skill Definitions
 
 Skills are auto-generated from qsv command USAGE text using `qsv-skill-gen`:
 
@@ -201,12 +263,44 @@ cargo run --bin qsv-skill-gen --features all_features
 # Output: .claude/skills/qsv/*.json
 ```
 
-The generator:
+The generator uses **qsv-docopt Parser** (the same parser qsv uses at runtime) for robust parsing:
 1. Extracts `USAGE` static string from command source files
-2. Parses description, examples, arguments, and options
-3. Infers types from names and descriptions
-4. Detects performance hints from emoji markers (🤯 📇 🏎️ 😣)
-5. Generates structured JSON skill definitions
+2. **Parses with qsv-docopt** for accurate argument/option detection
+3. Extracts descriptions from USAGE text
+4. Infers types from names and descriptions
+5. Detects performance hints from emoji markers (🤯 📇 🏎️ 😣)
+6. Generates structured JSON skill definitions with `examples_ref` pointer
+
+### Test-Based Examples (Load-as-Needed)
+
+Rich examples are extracted from CI test files using `qsv-test-examples-gen`:
+
+```bash
+# Extract examples from test files
+cargo run --bin qsv-test-examples-gen --features all_features
+
+# Output: .claude/skills/examples/*.json
+# Result: 1,279 examples from 54 test files
+```
+
+The test examples generator:
+1. Finds all `#[test]` functions in `tests/test_*.rs` using UTF-8-safe brace counting
+2. Extracts input data from `wrk.create()` calls
+3. Parses commands from both `wrk.command()` and `cmd.arg()` patterns (string literals only)
+4. Captures expected output from assertions
+5. Infers tags (regression, basic, error-handling, etc.)
+6. Applies proper shell quoting to command strings (spaces, quotes, special chars)
+7. Deduplicates test names by appending counters to duplicates
+8. Generates JSON files with real input/output data
+
+**Benefits**:
+- ✅ Real, tested examples from CI suite
+- ✅ Full input CSV data and expected outputs
+- ✅ Shell-safe command strings with proper quoting
+- ✅ Unique test names with automatic deduplication
+- ✅ Tagged for easy filtering
+- ✅ Load-as-needed architecture (keeps skill files lightweight)
+- ✅ 1,279 examples across 54 skills (82% coverage)
 
 ## Type Inference
 
@@ -266,17 +360,22 @@ npm install
 # Build TypeScript
 npm run build
 
-# Run tests
-npm test
-npm run test-pipeline
+# Run demos
+npm test                              # Basic skill usage
+npm run test-pipeline                 # Pipeline composition
+node examples/test-examples-demo.js   # Test examples
 
-# Rebuild skills (from qsv repo root)
+# Regenerate skills (from qsv repo root)
 cargo run --bin qsv-skill-gen --features all_features
+
+# Regenerate test examples (from qsv repo root)
+cargo run --bin qsv-test-examples-gen --features all_features
 ```
 
 ## Documentation
 
 - [Complete API Documentation](./SKILLS_README.md)
+- [Test-Based Examples Guide](../../docs/AGENT_SKILLS_TEST_EXAMPLES.md)
 - [Design Document](../../docs/AGENT_SKILLS_DESIGN.md)
 - [Integration Guide](../../docs/AGENT_SKILLS_INTEGRATION.md)
 - [POC Summary](../../docs/AGENT_SKILLS_POC_SUMMARY.md)
@@ -295,7 +394,12 @@ MIT
 
 ---
 
-**Generated**: 2026-01-02
-**Generator**: `qsv-skill-gen` v12.0.0
+**Generated**: 2026-01-03
+**Generators**: `qsv-skill-gen` + `qsv-test-examples-gen` v12.0.0
 **Skills**: 66/66 commands (100%)
+**USAGE Examples**: 417 from documentation
+**Test Examples**: 1,279 from CI tests (54 skills)
+**Total Examples**: 1,696
+**Parsing**: qsv-docopt (robust, accurate)
+**Features**: Shell-safe quoting, UTF-8 support, complete command strings, automatic deduplication
 **Status**: ✅ Complete and Production Ready

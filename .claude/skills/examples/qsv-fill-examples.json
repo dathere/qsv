@@ -1,0 +1,89 @@
+{
+  "skill": "qsv-fill",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "fill_forward",
+      "description": "Fill Forward",
+      "command": "qsv fill 1 in.csv",
+      "args": [
+        "1",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fill_forward_both",
+      "description": "Fill Forward Both",
+      "command": "qsv fill 1,3 in.csv",
+      "args": [
+        "1,3",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fill_forward_groupby",
+      "description": "Fill Forward Groupby",
+      "command": "qsv fill 1 in.csv",
+      "args": [
+        "1",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "fill_first_groupby",
+      "description": "Fill First Groupby",
+      "command": "qsv fill in.csv --first 1",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--first": "1"
+      }
+    },
+    {
+      "name": "fill_first",
+      "description": "Fill First",
+      "command": "qsv fill in.csv --first 1",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--first": "1"
+      }
+    },
+    {
+      "name": "fill_backfill",
+      "description": "Fill Backfill",
+      "command": "qsv fill in.csv --backfill 1",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--backfill": "1"
+      }
+    },
+    {
+      "name": "fill_backfill_first",
+      "description": "Fill Backfill First",
+      "command": "qsv fill in.csv --first 1",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--first": "1"
+      }
+    },
+    {
+      "name": "fill_default",
+      "description": "Fill Default",
+      "command": "qsv fill 1 in.csv --default dat",
+      "args": [
+        "1",
+        "in.csv"
+      ],
+      "options": {
+        "--default": "dat"
+      }
+    }
+  ]
+}

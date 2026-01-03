@@ -1,0 +1,102 @@
+{
+  "skill": "qsv-index",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "index_outdated_count",
+      "description": "Index Outdated Count",
+      "command": "qsv count in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "index_outdated_stats",
+      "description": "Index Outdated Stats",
+      "command": "qsv stats"
+    },
+    {
+      "name": "index_outdated_index",
+      "description": "Index Outdated Index",
+      "command": "qsv slice in.csv -i 2",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "-i": "2"
+      }
+    },
+    {
+      "name": "index_autoindex_threshold_reached",
+      "description": "Index Autoindex Threshold Reached",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "b",
+            "2"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "d",
+            "4"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv slice in.csv -i 2",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "-i": "2"
+      }
+    },
+    {
+      "name": "index_autoindex_threshold_not_reached",
+      "description": "Index Autoindex Threshold Not Reached",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "b",
+            "2"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "d",
+            "4"
+          ]
+        ],
+        "filename": "in.csv"
+      },
+      "command": "qsv slice in.csv -i 2",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "-i": "2"
+      }
+    }
+  ]
+}

@@ -6,22 +6,25 @@
   "command": {
     "binary": "qsv",
     "subcommand": "diff",
-    "args": [],
+    "args": [
+      {
+        "name": "input-left",
+        "type": "file",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "input-right",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "--no-headers-left",
-        "type": "flag",
-        "description": "When set, the first row will be considered as part of the left CSV to diff. (When not set, the first row is the header row and will be skipped during the diff. It will always appear in the output.)"
-      },
-      {
-        "flag": "--no-headers-right",
-        "type": "flag",
-        "description": "When set, the first row will be considered as part of the right CSV to diff. (When not set, the first row is the header row and will be skipped during the diff. It will always appear in the output.)"
-      },
-      {
-        "flag": "--no-headers-output",
-        "type": "flag",
-        "description": "When set, the diff result won't have a header row in its output. If not set and both CSVs have no headers, headers in the result will be: _col_1,_col_2, etc."
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "Set ALL delimiters to this character. Overrides --delimiter-right, --delimiter-left and --delimiter-output."
       },
       {
         "flag": "--delimiter-left",
@@ -29,36 +32,19 @@
         "description": "The field delimiter for reading CSV data on the left. Must be a single character. (default: ,)"
       },
       {
-        "flag": "--delimiter-right",
-        "type": "string",
-        "description": "The field delimiter for reading CSV data on the right. Must be a single character. (default: ,)"
-      },
-      {
         "flag": "--delimiter-output",
         "type": "string",
         "description": "The field delimiter for writing the CSV diff result. Must be a single character. (default: ,)"
       },
       {
-        "flag": "--key",
-        "short": "-k",
+        "flag": "--delimiter-right",
         "type": "string",
-        "description": "The column indices that uniquely identify a record as a comma separated list of 0-based indices, e.g. 0,1,2 or column names, e.g. name,age. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. (default: 0)"
-      },
-      {
-        "flag": "--sort-columns",
-        "type": "string",
-        "description": "The column indices by which the diff result should be sorted as a comma separated list of indices, e.g. 0,1,2 or column names, e.g. name,age. Records in the diff result that are marked as \"modified\" (\"delete\" and \"add\" records that have the same key, but have different content) will always be kept together in the sorted diff result and so won't be sorted independently from each other. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV."
+        "description": "The field delimiter for reading CSV data on the right. Must be a single character. (default: ,)"
       },
       {
         "flag": "--drop-equal-fields",
         "type": "flag",
         "description": "Drop values of equal fields in modified rows of the CSV diff result (and replace them with the empty string). Key field values will not be dropped."
-      },
-      {
-        "flag": "--jobs",
-        "short": "-j",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
       },
       {
         "flag": "--force",
@@ -67,21 +53,43 @@
       },
       {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       },
       {
+        "flag": "--jobs",
+        "type": "string",
+        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
+      },
+      {
+        "flag": "--key",
+        "type": "string",
+        "description": "The column indices that uniquely identify a record as a comma separated list of 0-based indices, e.g. 0,1,2 or column names, e.g. name,age. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. (default: 0)"
+      },
+      {
+        "flag": "--no-headers-left",
+        "type": "flag",
+        "description": "When set, the first row will be considered as part of the left CSV to diff. (When not set, the first row is the header row and will be skipped during the diff. It will always appear in the output.)"
+      },
+      {
+        "flag": "--no-headers-output",
+        "type": "flag",
+        "description": "When set, the diff result won't have a header row in its output. If not set and both CSVs have no headers, headers in the result will be: _col_1,_col_2, etc."
+      },
+      {
+        "flag": "--no-headers-right",
+        "type": "flag",
+        "description": "When set, the first row will be considered as part of the right CSV to diff. (When not set, the first row is the header row and will be skipped during the diff. It will always appear in the output.)"
+      },
+      {
         "flag": "--output",
-        "short": "-o",
         "type": "string",
         "description": "Write output to <file> instead of stdout."
       },
       {
-        "flag": "--delimiter",
-        "short": "-d",
+        "flag": "--sort-columns",
         "type": "string",
-        "description": "Set ALL delimiters to this character. Overrides --delimiter-right, --delimiter-left and --delimiter-output."
+        "description": "The column indices by which the diff result should be sorted as a comma separated list of indices, e.g. 0,1,2 or column names, e.g. name,age. Records in the diff result that are marked as \"modified\" (\"delete\" and \"add\" records that have the same key, but have different content) will always be kept together in the sorted diff result and so won't be sorted independently from each other. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV."
       }
     ]
   },
@@ -139,5 +147,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_diff.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_diff.rs",
+  "examples_ref": "examples/qsv-diff-examples.json"
 }

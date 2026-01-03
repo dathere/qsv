@@ -1,0 +1,74 @@
+{
+  "skill": "qsv-exclude",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "include_casei",
+      "description": "Include Casei",
+      "command": "qsv exclude position position",
+      "args": [
+        "position",
+        "position"
+      ],
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "include_casei_2",
+      "description": "Include Casei 2",
+      "command": "qsv exclude position position",
+      "args": [
+        "position",
+        "position"
+      ],
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
+      "name": "include_casei_3",
+      "description": "Include Casei 3",
+      "input": {
+        "data": [
+          [
+            "id",
+            "start",
+            "end"
+          ],
+          [
+            "1",
+            "2001",
+            "2003"
+          ],
+          [
+            "2",
+            "2004",
+            "2006"
+          ],
+          [
+            "3",
+            "2006",
+            ""
+          ],
+          [
+            "4",
+            "2007",
+            "2010"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv exclude id,end data.csv id,end skip.csv",
+      "args": [
+        "id,end",
+        "data.csv",
+        "id,end",
+        "skip.csv"
+      ],
+      "tags": [
+        "case-sensitivity"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,5670 @@
+{
+  "skill": "qsv-sqlp",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "sqlp_join_outer_full",
+      "description": "Sqlp Join Outer Full",
+      "input": {
+        "data": [
+          [
+            "h1",
+            "h2"
+          ],
+          [
+            "a",
+            "b"
+          ],
+          [
+            "c",
+            "d"
+          ]
+        ],
+        "filename": "letters.csv"
+      },
+      "command": "qsv sqlp \"select * from letters cross join numbers\"",
+      "args": [
+        "select * from letters cross join numbers"
+      ],
+      "expected": {
+        "data": [
+          [
+            "h1",
+            "h2",
+            "h3",
+            "h4"
+          ],
+          [
+            "a",
+            "b",
+            "1",
+            "2"
+          ],
+          [
+            "a",
+            "b",
+            "3",
+            "4"
+          ],
+          [
+            "c",
+            "d",
+            "1",
+            "2"
+          ],
+          [
+            "c",
+            "d",
+            "3",
+            "4"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_2",
+      "description": "Sqlp Join Outer Full 2",
+      "input": {
+        "data": [
+          [
+            "id",
+            "data"
+          ],
+          [
+            "1",
+            "open"
+          ]
+        ],
+        "filename": "one.csv"
+      },
+      "command": "qsv sqlp \"SELECT _t_1.id, _t_2.data FROM _t_1 JOIN _t_2 ON _t_1.id = _t_2.id\"",
+      "args": [
+        "SELECT _t_1.id, _t_2.data FROM _t_1 JOIN _t_2 ON _t_1.id = _t_2.id"
+      ],
+      "expected": {
+        "data": [
+          [
+            "id",
+            "data"
+          ],
+          [
+            "1",
+            "closed"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_3",
+      "description": "Sqlp Join Outer Full 3",
+      "command": "qsv sqlp",
+      "expected": {
+        "data": [
+          [
+            "ward",
+            "cnt"
+          ],
+          [
+            "Ward 3",
+            "10"
+          ],
+          [
+            "Ward 6",
+            "7"
+          ],
+          [
+            "Ward 1",
+            "6"
+          ],
+          [
+            "3",
+            "5"
+          ],
+          [
+            "Ward 20",
+            "5"
+          ],
+          [
+            "Ward 4",
+            "5"
+          ],
+          [
+            "Ward 5",
+            "5"
+          ],
+          [
+            "14",
+            "4"
+          ],
+          [
+            "Ward 13",
+            "4"
+          ],
+          [
+            "Ward 16",
+            "4"
+          ],
+          [
+            "Ward 18",
+            "3"
+          ],
+          [
+            "Ward 19",
+            "3"
+          ],
+          [
+            "Ward 7",
+            "3"
+          ],
+          [
+            "Ward 8",
+            "3"
+          ],
+          [
+            "03",
+            "2"
+          ],
+          [
+            "17",
+            "2"
+          ],
+          [
+            "22",
+            "2"
+          ],
+          [
+            "Ward 11",
+            "2"
+          ],
+          [
+            "Ward 21",
+            "2"
+          ],
+          [
+            " ",
+            "1"
+          ],
+          [
+            "01",
+            "1"
+          ],
+          [
+            "02",
+            "1"
+          ],
+          [
+            "04",
+            "1"
+          ],
+          [
+            "06",
+            "1"
+          ],
+          [
+            "07",
+            "1"
+          ],
+          [
+            "1",
+            "1"
+          ],
+          [
+            "10",
+            "1"
+          ],
+          [
+            "16",
+            "1"
+          ],
+          [
+            "18",
+            "1"
+          ],
+          [
+            "19",
+            "1"
+          ],
+          [
+            "21",
+            "1"
+          ],
+          [
+            "7",
+            "1"
+          ],
+          [
+            "8",
+            "1"
+          ],
+          [
+            "9",
+            "1"
+          ],
+          [
+            "Ward 10",
+            "1"
+          ],
+          [
+            "Ward 12",
+            "1"
+          ],
+          [
+            "Ward 14",
+            "1"
+          ],
+          [
+            "Ward 15",
+            "1"
+          ],
+          [
+            "Ward 17",
+            "1"
+          ],
+          [
+            "Ward 2",
+            "1"
+          ],
+          [
+            "Ward 22",
+            "1"
+          ],
+          [
+            "Ward 9",
+            "1"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_4",
+      "description": "Sqlp Join Outer Full 4",
+      "command": "qsv sqlp",
+      "expected": {
+        "data": [
+          [
+            "ward",
+            "cnt"
+          ],
+          [
+            " ",
+            "1"
+          ],
+          [
+            "01",
+            "1"
+          ],
+          [
+            "02",
+            "1"
+          ],
+          [
+            "03",
+            "2"
+          ],
+          [
+            "04",
+            "1"
+          ],
+          [
+            "06",
+            "1"
+          ],
+          [
+            "07",
+            "1"
+          ],
+          [
+            "1",
+            "1"
+          ],
+          [
+            "10",
+            "1"
+          ],
+          [
+            "14",
+            "4"
+          ],
+          [
+            "16",
+            "1"
+          ],
+          [
+            "17",
+            "2"
+          ],
+          [
+            "18",
+            "1"
+          ],
+          [
+            "19",
+            "1"
+          ],
+          [
+            "21",
+            "1"
+          ],
+          [
+            "22",
+            "2"
+          ],
+          [
+            "3",
+            "5"
+          ],
+          [
+            "7",
+            "1"
+          ],
+          [
+            "8",
+            "1"
+          ],
+          [
+            "9",
+            "1"
+          ],
+          [
+            "Ward 1",
+            "6"
+          ],
+          [
+            "Ward 10",
+            "1"
+          ],
+          [
+            "Ward 11",
+            "2"
+          ],
+          [
+            "Ward 12",
+            "1"
+          ],
+          [
+            "Ward 13",
+            "4"
+          ],
+          [
+            "Ward 14",
+            "1"
+          ],
+          [
+            "Ward 15",
+            "1"
+          ],
+          [
+            "Ward 16",
+            "4"
+          ],
+          [
+            "Ward 17",
+            "1"
+          ],
+          [
+            "Ward 18",
+            "3"
+          ],
+          [
+            "Ward 19",
+            "3"
+          ],
+          [
+            "Ward 2",
+            "1"
+          ],
+          [
+            "Ward 20",
+            "5"
+          ],
+          [
+            "Ward 21",
+            "2"
+          ],
+          [
+            "Ward 22",
+            "1"
+          ],
+          [
+            "Ward 3",
+            "10"
+          ],
+          [
+            "Ward 4",
+            "5"
+          ],
+          [
+            "Ward 5",
+            "5"
+          ],
+          [
+            "Ward 6",
+            "7"
+          ],
+          [
+            "Ward 7",
+            "3"
+          ],
+          [
+            "Ward 8",
+            "3"
+          ],
+          [
+            "Ward 9",
+            "1"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_5",
+      "description": "Sqlp Join Outer Full 5",
+      "command": "qsv sqlp",
+      "expected": {
+        "data": [
+          [
+            "location_street_name",
+            "location_zipcode"
+          ],
+          [
+            "INTERSECTION Asticou Rd & Washington St",
+            "Not Specified"
+          ],
+          [
+            "INTERSECTION Charles River Plz & Cambridge St",
+            "Not Specified"
+          ],
+          [
+            "INTERSECTION Columbia Rd & E Cottage St",
+            "Not Specified"
+          ],
+          [
+            "INTERSECTION E Canton St & Albany St",
+            "Not Specified"
+          ],
+          [
+            "INTERSECTION Gallivan Blvd & Washington St",
+            "Not Specified"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_6",
+      "description": "Sqlp Join Outer Full 6",
+      "command": "qsv sqlp --decimal-comma \"select COD_LOCALE_PROGETTO, FINANZ_UE from _t_1\"",
+      "options": {
+        "--decimal-comma": "select COD_LOCALE_PROGETTO, FINANZ_UE from _t_1"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_7",
+      "description": "Sqlp Join Outer Full 7",
+      "input": {
+        "data": [
+          [
+            "a",
+            "b"
+          ],
+          [
+            "1",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "3",
+            "3"
+          ],
+          [
+            "6",
+            "4"
+          ],
+          [
+            "5",
+            ""
+          ]
+        ],
+        "filename": "test_null.csv"
+      },
+      "command": "qsv sqlp test_null.csv",
+      "args": [
+        "test_null.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "1_eq_unaware",
+            "2_neq_unaware",
+            "3_eq_aware",
+            "4_eq_aware",
+            "5_neq_aware"
+          ],
+          [
+            "true",
+            "false",
+            "true",
+            "true",
+            "false"
+          ],
+          [
+            "NULL",
+            "NULL",
+            "true",
+            "true",
+            "false"
+          ],
+          [
+            "true",
+            "false",
+            "true",
+            "true",
+            "false"
+          ],
+          [
+            "false",
+            "true",
+            "false",
+            "false",
+            "true"
+          ],
+          [
+            "NULL",
+            "NULL",
+            "false",
+            "false",
+            "true"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_8",
+      "description": "Sqlp Join Outer Full 8",
+      "command": "qsv sqlp test_null.csv \"SELECT * FROM test_null\"",
+      "args": [
+        "test_null.csv",
+        "SELECT * FROM test_null"
+      ],
+      "expected": {
+        "data": [
+          [
+            "a",
+            "b"
+          ],
+          [
+            "1",
+            "NULL"
+          ],
+          [
+            "2",
+            "NULL"
+          ],
+          [
+            "3",
+            "NULL"
+          ],
+          [
+            "4",
+            "4"
+          ],
+          [
+            "5",
+            "NULL"
+          ],
+          [
+            "6",
+            "6"
+          ],
+          [
+            "7",
+            "DUNNO"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_9",
+      "description": "Sqlp Join Outer Full 9",
+      "input": {
+        "data": [
+          [
+            "n",
+            "sval"
+          ],
+          [
+            "1",
+            "ABC"
+          ],
+          [
+            "2",
+            "abc"
+          ],
+          [
+            "3",
+            "000"
+          ],
+          [
+            "4",
+            "A0C"
+          ],
+          [
+            "5",
+            "a0c"
+          ]
+        ],
+        "filename": "test_regex.csv"
+      },
+      "command": "qsv sqlp test_regex.csv test_regex.csv test_regex.csv test_regex.csv",
+      "args": [
+        "test_regex.csv",
+        "test_regex.csv",
+        "test_regex.csv",
+        "test_regex.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "n",
+            "sval"
+          ],
+          [
+            "3",
+            "000"
+          ],
+          [
+            "4",
+            "A0C"
+          ],
+          [
+            "5",
+            "a0c"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_10",
+      "description": "Sqlp Join Outer Full 10",
+      "input": {
+        "data": [
+          [
+            "scol"
+          ],
+          [
+            "abcde"
+          ],
+          [
+            "abc"
+          ],
+          [
+            "a"
+          ],
+          [
+            ""
+          ]
+        ],
+        "filename": "test_regexp_like.csv"
+      },
+      "command": "qsv sqlp test_regexp_like.csv",
+      "args": [
+        "test_regexp_like.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "scol"
+          ],
+          [
+            "abcde"
+          ],
+          [
+            "abc"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_11",
+      "description": "Sqlp Join Outer Full 11",
+      "input": {
+        "data": [
+          [
+            "scol"
+          ],
+          [
+            "abcdE"
+          ],
+          [
+            "abc"
+          ],
+          [
+            "    abc"
+          ],
+          [
+            "a"
+          ],
+          [
+            "b"
+          ]
+        ],
+        "filename": "test_strings.csv"
+      },
+      "command": "qsv sqlp test_strings.csv test_strings.csv test_strings.csv test_strings.csv test_strings.csv test_strings.csv test_strings.csv test_strings.csv",
+      "args": [
+        "test_strings.csv",
+        "test_strings.csv",
+        "test_strings.csv",
+        "test_strings.csv",
+        "test_strings.csv",
+        "test_strings.csv",
+        "test_strings.csv",
+        "test_strings.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "scol"
+          ],
+          [
+            "true"
+          ],
+          [
+            "true"
+          ],
+          [
+            "false"
+          ],
+          [
+            "true"
+          ],
+          [
+            "false"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_12",
+      "description": "Sqlp Join Outer Full 12",
+      "command": "qsv sqlp --ignore-errors",
+      "options": {
+        "--ignore-errors": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "ward",
+            "avg_tat"
+          ],
+          [
+            "Ward 11",
+            "4847760000000.0"
+          ],
+          [
+            "01",
+            "4818270000000.0"
+          ],
+          [
+            "Ward 13",
+            "1518365750000.0"
+          ],
+          [
+            "Ward 15",
+            "1278926000000.0"
+          ],
+          [
+            "Ward 21",
+            "878446000000.0"
+          ],
+          [
+            "Ward 14",
+            "618933000000.0"
+          ],
+          [
+            "Ward 3",
+            "437691444444.0"
+          ],
+          [
+            "Ward 5",
+            "411909500000.0"
+          ],
+          [
+            "Ward 20",
+            "367233000000.0"
+          ],
+          [
+            "9",
+            "353495000000.0"
+          ],
+          [
+            "Ward 18",
+            "249882000000.0"
+          ],
+          [
+            "19",
+            "212566000000.0"
+          ],
+          [
+            "Ward 4",
+            "112872600000.0"
+          ],
+          [
+            "Ward 1",
+            "107850666666.0"
+          ],
+          [
+            "Ward 10",
+            "104110000000.0"
+          ],
+          [
+            "16",
+            "93557000000.0"
+          ],
+          [
+            "Ward 19",
+            "84164000000.0"
+          ],
+          [
+            "10",
+            "79101000000.0"
+          ],
+          [
+            "21",
+            "77717000000.0"
+          ],
+          [
+            "7",
+            "74611000000.0"
+          ],
+          [
+            "17",
+            "70117500000.0"
+          ],
+          [
+            "3",
+            "68836600000.0"
+          ],
+          [
+            "Ward 9",
+            "64097000000.0"
+          ],
+          [
+            "Ward 12",
+            "62930000000.0"
+          ],
+          [
+            "Ward 6",
+            "54770166666.0"
+          ],
+          [
+            "Ward 7",
+            "38346333333.0"
+          ],
+          [
+            "Ward 8",
+            "32767500000.0"
+          ],
+          [
+            "03",
+            "29810500000.0"
+          ],
+          [
+            "07",
+            "25328000000.0"
+          ],
+          [
+            "22",
+            "23919000000.0"
+          ],
+          [
+            "14",
+            "20786500000.0"
+          ],
+          [
+            "Ward 22",
+            "13524000000.0"
+          ],
+          [
+            "1",
+            "9469000000.0"
+          ],
+          [
+            "06",
+            "5290000000.0"
+          ],
+          [
+            "Ward 16",
+            "4533666666.0"
+          ],
+          [
+            "8",
+            "1757000000.0"
+          ],
+          [
+            "02",
+            "1650000000.0"
+          ],
+          [
+            "18",
+            "507000000.0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_13",
+      "description": "Sqlp Join Outer Full 13",
+      "command": "qsv sqlp --ignore-errors",
+      "options": {
+        "--ignore-errors": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "ward",
+            "avg_tat"
+          ],
+          [
+            "Ward 11",
+            "4847760000000.000"
+          ],
+          [
+            "01",
+            "4818270000000.000"
+          ],
+          [
+            "Ward 13",
+            "1518365750000.000"
+          ],
+          [
+            "Ward 15",
+            "1278926000000.000"
+          ],
+          [
+            "Ward 21",
+            "878446000000.000"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_14",
+      "description": "Sqlp Join Outer Full 14",
+      "command": "qsv sqlp --ignore-errors --try-parsedates \"select closed_dt, open_dt from _t_1 where case_status = 'Closed' limit 5\"",
+      "options": {
+        "--ignore-errors": "true",
+        "--try-parsedates": "select closed_dt, open_dt from _t_1 where case_status = 'Closed' limit 5"
+      },
+      "expected": {
+        "data": [
+          [
+            "closed_dt",
+            "open_dt"
+          ],
+          [
+            "Wed 2022-01-19 11:42:16",
+            "Wed 2022-01-19 11:18:00"
+          ],
+          [
+            "Sun 2022-01-09 06:43:06",
+            "Sat 2022-01-08 12:54:49"
+          ],
+          [
+            "Mon 2022-01-10 08:42:23",
+            "Sat 2022-01-01 00:16:00"
+          ],
+          [
+            "Thu 2022-01-20 08:45:03",
+            "Thu 2022-01-20 08:07:49"
+          ],
+          [
+            "Thu 2022-01-20 08:45:12",
+            "Thu 2022-01-20 08:15:45"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_15",
+      "description": "Sqlp Join Outer Full 15",
+      "input": {
+        "data": [
+          [
+            "# test file to see how comments work",
+            ""
+          ],
+          [
+            "# this is another comment before the header",
+            ""
+          ],
+          [
+            "# DATA DICTIONARY",
+            ""
+          ],
+          [
+            "# column1 - alphabetic; id of the column",
+            ""
+          ],
+          [
+            "# column2 - numeric; just a number",
+            ""
+          ],
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "#b",
+            "2"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "#d - this row is corrupted skip",
+            "extra col2"
+          ],
+          [
+            "e",
+            "5"
+          ]
+        ],
+        "filename": "comments.csv"
+      },
+      "command": "qsv sqlp comments.csv \"select column1, column2 from comments order by column2 desc\"",
+      "args": [
+        "comments.csv",
+        "select column1, column2 from comments order by column2 desc"
+      ],
+      "expected": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "e",
+            "5"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "a",
+            "1"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_16",
+      "description": "Sqlp Join Outer Full 16",
+      "input": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "a",
+            "1"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "e",
+            "5"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv \"select column1, column2 from data order by column2 desc\" decompress",
+      "args": [
+        "data.csv",
+        "select column1, column2 from data order by column2 desc",
+        "decompress"
+      ],
+      "expected": {
+        "data": [
+          [
+            "column1",
+            "column2"
+          ],
+          [
+            "e",
+            "5"
+          ],
+          [
+            "c",
+            "3"
+          ],
+          [
+            "a",
+            "1"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_17",
+      "description": "Sqlp Join Outer Full 17",
+      "command": "qsv sqlp --try-parsedates",
+      "options": {
+        "--try-parsedates": "true"
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_18",
+      "description": "Sqlp Join Outer Full 18",
+      "command": "qsv sqlp test.sql",
+      "args": [
+        "test.sql"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_19",
+      "description": "Sqlp Join Outer Full 19",
+      "command": "qsv sqlp test.sql",
+      "args": [
+        "test.sql"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_20",
+      "description": "Sqlp Join Outer Full 20",
+      "command": "qsv sqlp",
+      "expected": {
+        "data": [
+          [
+            "ward",
+            "cnt"
+          ],
+          [
+            "Ward 11",
+            "2"
+          ],
+          [
+            "Ward 13",
+            "2"
+          ],
+          [
+            "Ward 8",
+            "2"
+          ],
+          [
+            "14",
+            "1"
+          ],
+          [
+            "Ward 12",
+            "1"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_21",
+      "description": "Sqlp Join Outer Full 21",
+      "command": "qsv sqlp",
+      "expected": {
+        "data": [
+          [
+            "case_enquiry_id",
+            "graffiti_related"
+          ],
+          [
+            "101004143000",
+            "No"
+          ],
+          [
+            "101004155594",
+            "No"
+          ],
+          [
+            "101004154423",
+            "No"
+          ],
+          [
+            "101004141848",
+            "No"
+          ],
+          [
+            "101004113313",
+            "No"
+          ],
+          [
+            "101004113751",
+            "Yes"
+          ],
+          [
+            "101004113902",
+            "Yes"
+          ],
+          [
+            "101004113473",
+            "No"
+          ],
+          [
+            "101004113604",
+            "No"
+          ],
+          [
+            "101004114154",
+            "Yes"
+          ],
+          [
+            "101004114383",
+            "No"
+          ],
+          [
+            "101004114795",
+            "Yes"
+          ],
+          [
+            "101004118346",
+            "Yes"
+          ],
+          [
+            "101004115302",
+            "No"
+          ],
+          [
+            "101004115066",
+            "No"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_22",
+      "description": "Sqlp Join Outer Full 22",
+      "command": "qsv sqlp",
+      "expected": {
+        "data": [
+          [
+            "case_enquiry_id",
+            "graffiti_related"
+          ],
+          [
+            "101004143000",
+            "No"
+          ],
+          [
+            "101004155594",
+            "No"
+          ],
+          [
+            "101004154423",
+            "No"
+          ],
+          [
+            "101004141848",
+            "No"
+          ],
+          [
+            "101004113313",
+            "No"
+          ],
+          [
+            "101004113751",
+            "Yes"
+          ],
+          [
+            "101004113902",
+            "Yes"
+          ],
+          [
+            "101004113473",
+            "No"
+          ],
+          [
+            "101004113604",
+            "No"
+          ],
+          [
+            "101004114154",
+            "Yes"
+          ],
+          [
+            "101004114383",
+            "No"
+          ],
+          [
+            "101004114795",
+            "Yes"
+          ],
+          [
+            "101004118346",
+            "Yes"
+          ],
+          [
+            "101004115302",
+            "No"
+          ],
+          [
+            "101004115066",
+            "No"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_23",
+      "description": "Sqlp Join Outer Full 23",
+      "command": "qsv sqlp --streaming",
+      "options": {
+        "--streaming": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "case_enquiry_id",
+            "graffiti_related"
+          ],
+          [
+            "101004143000",
+            "No"
+          ],
+          [
+            "101004155594",
+            "No"
+          ],
+          [
+            "101004154423",
+            "No"
+          ],
+          [
+            "101004141848",
+            "No"
+          ],
+          [
+            "101004113313",
+            "No"
+          ],
+          [
+            "101004113751",
+            "Yes"
+          ],
+          [
+            "101004113902",
+            "Yes"
+          ],
+          [
+            "101004113473",
+            "No"
+          ],
+          [
+            "101004113604",
+            "No"
+          ],
+          [
+            "101004114154",
+            "Yes"
+          ],
+          [
+            "101004114383",
+            "No"
+          ],
+          [
+            "101004114795",
+            "Yes"
+          ],
+          [
+            "101004118346",
+            "Yes"
+          ],
+          [
+            "101004115302",
+            "No"
+          ],
+          [
+            "101004115066",
+            "No"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_24",
+      "description": "Sqlp Join Outer Full 24",
+      "command": "qsv sqlp",
+      "expected": {
+        "data": [
+          [
+            "case_enquiry_id",
+            "topic"
+          ],
+          [
+            "101004143000",
+            "Something else"
+          ],
+          [
+            "101004155594",
+            "Something else"
+          ],
+          [
+            "101004154423",
+            "Sidewalk"
+          ],
+          [
+            "101004141848",
+            "Something else"
+          ],
+          [
+            "101004113313",
+            "Something else"
+          ],
+          [
+            "101004113751",
+            "Graffitti"
+          ],
+          [
+            "101004113902",
+            "Graffitti"
+          ],
+          [
+            "101004113473",
+            "Sidewalk"
+          ],
+          [
+            "101004113604",
+            "Something else"
+          ],
+          [
+            "101004114154",
+            "Graffitti"
+          ],
+          [
+            "101004114383",
+            "Something else"
+          ],
+          [
+            "101004114795",
+            "Graffitti"
+          ],
+          [
+            "101004118346",
+            "Graffitti"
+          ],
+          [
+            "101004115302",
+            "Vehicle"
+          ],
+          [
+            "101004115066",
+            "Sidewalk"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_25",
+      "description": "Sqlp Join Outer Full 25",
+      "command": "qsv sqlp",
+      "expected": {
+        "data": [
+          [
+            "case_enquiry_id",
+            "topic"
+          ],
+          [
+            "101004143000",
+            "Something else"
+          ],
+          [
+            "101004155594",
+            "Something else"
+          ],
+          [
+            "101004154423",
+            "Sidewalk"
+          ],
+          [
+            "101004141848",
+            "Something else"
+          ],
+          [
+            "101004113313",
+            "Something else"
+          ],
+          [
+            "101004113751",
+            "Graffitti"
+          ],
+          [
+            "101004113902",
+            "Graffitti"
+          ],
+          [
+            "101004113473",
+            "Sidewalk"
+          ],
+          [
+            "101004113604",
+            "Something else"
+          ],
+          [
+            "101004114154",
+            "Graffitti"
+          ],
+          [
+            "101004114383",
+            "Something else"
+          ],
+          [
+            "101004114795",
+            "Graffitti"
+          ],
+          [
+            "101004118346",
+            "Graffitti"
+          ],
+          [
+            "101004115302",
+            "Vehicle"
+          ],
+          [
+            "101004115066",
+            "Sidewalk"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_26",
+      "description": "Sqlp Join Outer Full 26",
+      "input": {
+        "data": [
+          [
+            "idx",
+            "val"
+          ],
+          [
+            "0",
+            "ABC"
+          ],
+          [
+            "1",
+            "abc"
+          ],
+          [
+            "2",
+            "000"
+          ],
+          [
+            "3",
+            "A0C"
+          ],
+          [
+            "4",
+            "a0c"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv",
+      "args": [
+        "test.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "idx",
+            "val"
+          ],
+          [
+            "0",
+            "ABC"
+          ],
+          [
+            "2",
+            "000"
+          ],
+          [
+            "3",
+            "A0C"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_27",
+      "description": "Sqlp Join Outer Full 27",
+      "command": "qsv sqlp test.csv \"SELECT idx, val FROM test WHERE val REGEXP pat\"",
+      "args": [
+        "test.csv",
+        "SELECT idx, val FROM test WHERE val REGEXP pat"
+      ],
+      "expected": {
+        "data": [
+          [
+            "idx",
+            "val"
+          ],
+          [
+            "0",
+            "ABC"
+          ],
+          [
+            "3",
+            "A0C"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_28",
+      "description": "Sqlp Join Outer Full 28",
+      "input": {
+        "data": [
+          [
+            "idx",
+            "val"
+          ],
+          [
+            "0",
+            "ABC"
+          ],
+          [
+            "1",
+            "abc"
+          ],
+          [
+            "2",
+            "000"
+          ],
+          [
+            "3",
+            "A0C"
+          ],
+          [
+            "4",
+            "a0c"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv test2.csv",
+      "args": [
+        "test.csv",
+        "test2.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "idx",
+            "val",
+            "idx:t2",
+            "val:t2"
+          ],
+          [
+            "3",
+            "A0C",
+            "3",
+            "A0C"
+          ],
+          [
+            "4",
+            "a0c",
+            "4",
+            "a0c"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_29",
+      "description": "Sqlp Join Outer Full 29",
+      "input": {
+        "data": [
+          [
+            "name",
+            "role"
+          ],
+          [
+            "alice",
+            "admin"
+          ],
+          [
+            "bob",
+            "user"
+          ],
+          [
+            "adam",
+            "admin"
+          ],
+          [
+            "charlie",
+            "user"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv test2.csv",
+      "args": [
+        "test.csv",
+        "test2.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name",
+            "role",
+            "dept"
+          ],
+          [
+            "adam",
+            "admin",
+            "SEC"
+          ],
+          [
+            "alice",
+            "admin",
+            "IT"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_30",
+      "description": "Sqlp Join Outer Full 30",
+      "input": {
+        "data": [
+          [
+            "code",
+            "value"
+          ],
+          [
+            "HELLO",
+            "100"
+          ],
+          [
+            "WORLD",
+            "200"
+          ],
+          [
+            "FOO",
+            "300"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv test2.csv",
+      "args": [
+        "test.csv",
+        "test2.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "code1",
+            "code2",
+            "VAL"
+          ],
+          [
+            "HELLO",
+            "hello",
+            "-123.45"
+          ],
+          [
+            "WORLD",
+            "world",
+            "913.56"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_31",
+      "description": "Sqlp Join Outer Full 31",
+      "input": {
+        "data": [
+          [
+            "idx",
+            "val"
+          ],
+          [
+            "0",
+            "ABC"
+          ],
+          [
+            "1",
+            "abc"
+          ],
+          [
+            "2",
+            "000"
+          ],
+          [
+            "3",
+            "A0C"
+          ],
+          [
+            "4",
+            "a0c"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv test2.csv",
+      "args": [
+        "test.csv",
+        "test2.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "idx",
+            "val",
+            "idx:t2",
+            "val:t2"
+          ],
+          [
+            "3",
+            "A0C",
+            "3",
+            "A0C"
+          ],
+          [
+            "4",
+            "a0c",
+            "4",
+            "a0c"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_32",
+      "description": "Sqlp Join Outer Full 32",
+      "input": {
+        "data": [
+          [
+            "idx",
+            "val"
+          ],
+          [
+            "0",
+            "ABC"
+          ],
+          [
+            "1",
+            "abc"
+          ],
+          [
+            "2",
+            "000"
+          ],
+          [
+            "3",
+            "A0C"
+          ],
+          [
+            "4",
+            "a0c"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv \"SELECT * FROM test\"",
+      "args": [
+        "test.csv",
+        "SELECT * FROM test"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_33",
+      "description": "Sqlp Join Outer Full 33",
+      "input": {
+        "data": [
+          [
+            "idx",
+            "val"
+          ],
+          [
+            "0",
+            "ABC"
+          ],
+          [
+            "1",
+            "abc"
+          ],
+          [
+            "2",
+            "000"
+          ],
+          [
+            "3",
+            "A0C"
+          ],
+          [
+            "4",
+            "a0c"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv \"SELECT * FROM test\"",
+      "args": [
+        "test.csv",
+        "SELECT * FROM test"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_34",
+      "description": "Sqlp Join Outer Full 34",
+      "command": "qsv sqlp test.ssv \"SELECT * FROM test\"",
+      "args": [
+        "test.ssv",
+        "SELECT * FROM test"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_35",
+      "description": "Sqlp Join Outer Full 35",
+      "command": "qsv sqlp test.ssv \"SELECT * FROM test\" decompress",
+      "args": [
+        "test.ssv",
+        "SELECT * FROM test",
+        "decompress"
+      ],
+      "expected": {
+        "data": [
+          [
+            "id",
+            "item",
+            "price"
+          ],
+          [
+            "0",
+            "wallet",
+            "9.99"
+          ],
+          [
+            "1",
+            "comb",
+            "1.39"
+          ],
+          [
+            "2",
+            "pencil",
+            "0.49"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_36",
+      "description": "Sqlp Join Outer Full 36",
+      "input": {
+        "data": [
+          [
+            "dummy"
+          ],
+          [
+            "0"
+          ]
+        ],
+        "filename": "dummy.csv"
+      },
+      "command": "qsv sqlp dummy.csv",
+      "args": [
+        "dummy.csv"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_37",
+      "description": "Sqlp Join Outer Full 37",
+      "input": {
+        "data": [
+          [
+            "words"
+          ],
+          [
+            "Cafe"
+          ],
+          [
+            ""
+          ],
+          [
+            "東京"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv",
+      "args": [
+        "test.csv"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_38",
+      "description": "Sqlp Join Outer Full 38",
+      "input": {
+        "data": [
+          [
+            "words"
+          ],
+          [
+            "Cafe"
+          ],
+          [
+            ""
+          ],
+          [
+            "東京"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv",
+      "args": [
+        "test.csv"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_39",
+      "description": "Sqlp Join Outer Full 39",
+      "input": {
+        "data": [
+          [
+            "x",
+            "y",
+            "z"
+          ],
+          [
+            "1",
+            "5",
+            "3"
+          ],
+          [
+            "",
+            "4",
+            "4"
+          ],
+          [
+            "2",
+            "",
+            ""
+          ],
+          [
+            "3",
+            "3",
+            "3"
+          ],
+          [
+            "",
+            "",
+            "6"
+          ],
+          [
+            "4",
+            "2",
+            ""
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv",
+      "args": [
+        "test.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "coalsc",
+            "nullif x_y",
+            "nullif y_z",
+            "ifnull x_y",
+            "inullf y_z",
+            "both",
+            "x_eq_y"
+          ],
+          [
+            "1",
+            "1",
+            "5",
+            "1",
+            "5",
+            "1",
+            "ne"
+          ],
+          [
+            "4",
+            "",
+            "",
+            "4",
+            "4",
+            "",
+            "ne"
+          ],
+          [
+            "2",
+            "2",
+            "",
+            "2",
+            "-1",
+            "2",
+            "ne"
+          ],
+          [
+            "3",
+            "",
+            "",
+            "3",
+            "3",
+            "3",
+            "eq"
+          ],
+          [
+            "6",
+            "",
+            "",
+            "",
+            "-1",
+            "",
+            "ne"
+          ],
+          [
+            "4",
+            "4",
+            "2",
+            "4",
+            "2",
+            "4",
+            "ne"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_40",
+      "description": "Sqlp Join Outer Full 40",
+      "input": {
+        "data": [
+          [
+            "a",
+            "b"
+          ],
+          [
+            "10.0",
+            "-100.5"
+          ],
+          [
+            "20.0",
+            "7.0"
+          ],
+          [
+            "30.0",
+            "2.5"
+          ],
+          [
+            "40.0",
+            ""
+          ],
+          [
+            "50.0",
+            "-3.14"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv",
+      "args": [
+        "test.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "a_div_b",
+            "a_floordiv_b",
+            "b_sign"
+          ],
+          [
+            "-0.09950248756218906",
+            "-1",
+            "-1.0"
+          ],
+          [
+            "2.857142857142857",
+            "2",
+            "1.0"
+          ],
+          [
+            "12.0",
+            "12",
+            "1.0"
+          ],
+          [
+            "",
+            "",
+            ""
+          ],
+          [
+            "-15.92356687898089",
+            "-16",
+            "-1.0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_41",
+      "description": "Sqlp Join Outer Full 41",
+      "input": {
+        "data": [
+          [
+            "words"
+          ],
+          [
+            "Yemeni coffee is the best coffee"
+          ],
+          [
+            ""
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv",
+      "args": [
+        "test.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "words"
+          ],
+          [
+            "English breakfast tea is the best tea"
+          ],
+          [
+            ""
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_42",
+      "description": "Sqlp Join Outer Full 42",
+      "input": {
+        "data": [
+          [
+            "a",
+            "b"
+          ],
+          [
+            "1",
+            "1"
+          ],
+          [
+            "2",
+            "3"
+          ],
+          [
+            "3",
+            "4"
+          ],
+          [
+            "4",
+            "4"
+          ],
+          [
+            "5",
+            "5"
+          ]
+        ],
+        "filename": "test1.csv"
+      },
+      "command": "qsv sqlp --truncate-ragged-lines",
+      "options": {
+        "--truncate-ragged-lines": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "a",
+            "b",
+            "a:test2",
+            "b:test2"
+          ],
+          [
+            "2",
+            "3",
+            "2",
+            "3"
+          ],
+          [
+            "3",
+            "4",
+            "3",
+            "4"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_43",
+      "description": "Sqlp Join Outer Full 43",
+      "input": {
+        "data": [
+          [
+            "a",
+            "b"
+          ],
+          [
+            "1",
+            "1"
+          ],
+          [
+            "2",
+            "2"
+          ],
+          [
+            "3",
+            "3"
+          ],
+          [
+            "4",
+            "4"
+          ],
+          [
+            "5",
+            "5"
+          ]
+        ],
+        "filename": "test1.csv"
+      },
+      "command": "qsv sqlp --truncate-ragged-lines",
+      "options": {
+        "--truncate-ragged-lines": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "a",
+            "b",
+            "a:test2",
+            "b:test2",
+            "c"
+          ],
+          [
+            "2",
+            "2",
+            "2",
+            "2",
+            "8"
+          ],
+          [
+            "3",
+            "3",
+            "3",
+            "3",
+            "9"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_44",
+      "description": "Sqlp Join Outer Full 44",
+      "input": {
+        "data": [
+          [
+            "a",
+            "b"
+          ],
+          [
+            "1",
+            "1"
+          ],
+          [
+            "2",
+            "3"
+          ],
+          [
+            "3",
+            "4"
+          ],
+          [
+            "4",
+            "4"
+          ],
+          [
+            "5",
+            "5"
+          ]
+        ],
+        "filename": "test1.csv"
+      },
+      "command": "qsv sqlp --truncate-ragged-lines",
+      "options": {
+        "--truncate-ragged-lines": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "a",
+            "b",
+            "a:test2",
+            "b:test2",
+            "a:test3",
+            "b:test3",
+            "c"
+          ],
+          [
+            "2",
+            "3",
+            "2",
+            "3",
+            "2",
+            "3",
+            "3"
+          ],
+          [
+            "3",
+            "4",
+            "3",
+            "4",
+            "3",
+            "4",
+            "4"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_45",
+      "description": "Sqlp Join Outer Full 45",
+      "input": {
+        "data": [
+          [
+            "x",
+            "y",
+            "z"
+          ],
+          [
+            "a",
+            "d",
+            "1"
+          ],
+          [
+            "",
+            "e",
+            "2"
+          ],
+          [
+            "c",
+            "f",
+            "3"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv",
+      "args": [
+        "test.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "c4",
+            "c5",
+            "c6"
+          ],
+          [
+            "aad",
+            "ad1",
+            "aad",
+            "aad",
+            "ad2",
+            "a:d:1",
+            "a!d!1"
+          ],
+          [
+            "",
+            "",
+            "e",
+            "e",
+            "e4",
+            "e:2",
+            "e!2"
+          ],
+          [
+            "ccf",
+            "cf3",
+            "ccf",
+            "ccf",
+            "cf6",
+            "c:f:3",
+            "c!f!3"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_46",
+      "description": "Sqlp Join Outer Full 46",
+      "input": {
+        "data": [
+          [
+            "txt"
+          ],
+          [
+            "abcde"
+          ],
+          [
+            "abc"
+          ],
+          [
+            "a"
+          ],
+          [
+            ""
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv",
+      "args": [
+        "test.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "l",
+            "r",
+            "rev"
+          ],
+          [
+            "ab",
+            "de",
+            "edcba"
+          ],
+          [
+            "ab",
+            "bc",
+            "cba"
+          ],
+          [
+            "a",
+            "a",
+            "a"
+          ],
+          [
+            "",
+            "",
+            ""
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_47",
+      "description": "Sqlp Join Outer Full 47",
+      "input": {
+        "data": [
+          [
+            "a",
+            "b",
+            "c",
+            "d"
+          ],
+          [
+            "1.5",
+            "6",
+            "11",
+            "16.5"
+          ],
+          [
+            "",
+            "7",
+            "12",
+            "17.0"
+          ],
+          [
+            "3.0",
+            "8",
+            "13",
+            "18.5"
+          ],
+          [
+            "4333333333",
+            "9",
+            "14",
+            ""
+          ],
+          [
+            "5.0",
+            "10",
+            "15",
+            "20.0"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv",
+      "args": [
+        "test.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "a2",
+            "b3",
+            "c4",
+            "d55"
+          ],
+          [
+            "1.5",
+            "0.0",
+            "3.0",
+            "0.0"
+          ],
+          [
+            "",
+            "1.0",
+            "0.0",
+            "0.5"
+          ],
+          [
+            "1.0",
+            "2.0",
+            "1.0",
+            "2.0"
+          ],
+          [
+            "1.0",
+            "0.0",
+            "2.0",
+            ""
+          ],
+          [
+            "1.0",
+            "1.0",
+            "3.0",
+            "3.5"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_48",
+      "description": "Sqlp Join Outer Full 48",
+      "input": {
+        "data": [
+          [
+            "foo",
+            "bar"
+          ],
+          [
+            "65432",
+            "1999-12-31"
+          ],
+          [
+            "101010",
+            "N/A"
+          ],
+          [
+            "-3333",
+            "2024-01-01"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv",
+      "args": [
+        "test.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "foo",
+            "bar"
+          ],
+          [
+            "65432",
+            "1999-12-31"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            "2024-01-01"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_49",
+      "description": "Sqlp Join Outer Full 49",
+      "input": {
+        "data": [
+          [
+            "v1",
+            "v2",
+            "v3",
+            "v4"
+          ],
+          [
+            "-1.0",
+            "5.5",
+            "-10",
+            "-100"
+          ],
+          [
+            "0.0",
+            "0.0",
+            "",
+            "0.0"
+          ],
+          [
+            "1.0",
+            "3.0",
+            "10",
+            "-50.0"
+          ]
+        ],
+        "filename": "test.csv"
+      },
+      "command": "qsv sqlp test.csv",
+      "args": [
+        "test.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "v1_std",
+            "v2_std",
+            "v3_std",
+            "v4_std",
+            "v1_var",
+            "v2_var",
+            "v3_var",
+            "v4_var"
+          ],
+          [
+            "1.0",
+            "2.753785273643051",
+            "14.142135623730951",
+            "50.0",
+            "1.0",
+            "7.583333333333334",
+            "200.0",
+            "2500.0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_50",
+      "description": "Sqlp Join Outer Full 50",
+      "input": {
+        "data": [
+          [
+            "city"
+          ],
+          [
+            "Dubai"
+          ],
+          [
+            "Abu Dhabi"
+          ],
+          [
+            "Sharjah"
+          ],
+          [
+            "Al Ain"
+          ],
+          [
+            "Ajman"
+          ],
+          [
+            "Ras Al Khaimah"
+          ]
+        ],
+        "filename": "cities.csv"
+      },
+      "command": "qsv sqlp cities.csv",
+      "args": [
+        "cities.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "a_lc1",
+            "a_uc1",
+            "a_lc2",
+            "a_uc2"
+          ],
+          [
+            "4",
+            "0",
+            "4",
+            "0"
+          ],
+          [
+            "7",
+            "1",
+            "7",
+            "1"
+          ],
+          [
+            "3",
+            "0",
+            "3",
+            "0"
+          ],
+          [
+            "0",
+            "1",
+            "0",
+            "1"
+          ],
+          [
+            "4",
+            "1",
+            "4",
+            "1"
+          ],
+          [
+            "2",
+            "5",
+            "2",
+            "5"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_51",
+      "description": "Sqlp Join Outer Full 51",
+      "input": {
+        "data": [
+          [
+            "datecol"
+          ],
+          [
+            "20-01-2012 10:30:20"
+          ]
+        ],
+        "filename": "datestbl.csv"
+      },
+      "command": "qsv sqlp datestbl.csv --try-parsedates",
+      "args": [
+        "datestbl.csv"
+      ],
+      "options": {
+        "--try-parsedates": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "c1",
+            "c2",
+            "c3",
+            "c4",
+            "c5",
+            "c6",
+            "c61",
+            "c62",
+            "c63",
+            "c7",
+            "c8",
+            "c9",
+            "c10",
+            "c11",
+            "c12",
+            "c13",
+            "c14"
+          ],
+          [
+            "2012",
+            "1",
+            "20",
+            "10",
+            "30",
+            "20",
+            "20000.0",
+            "20000000.0",
+            "20000000000.0",
+            "3",
+            "20",
+            "5",
+            "10:30:20.000000000",
+            "201",
+            "21",
+            "3",
+            "1"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_52",
+      "description": "Sqlp Join Outer Full 52",
+      "input": {
+        "data": [
+          [
+            "datecol"
+          ],
+          [
+            "2012-01-20T10:30:20-05:00"
+          ],
+          [
+            "2012-11-05T10:30:20.1234Z"
+          ],
+          [
+            "1999-03-15T15:30:20.1234+01:00"
+          ],
+          [
+            "1978-08-05T23:30:20.1234-01:00"
+          ]
+        ],
+        "filename": "datestbl.csv"
+      },
+      "command": "qsv sqlp datestbl.csv --try-parsedates",
+      "args": [
+        "datestbl.csv"
+      ],
+      "options": {
+        "--try-parsedates": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "c1",
+            "c2",
+            "c3",
+            "c4",
+            "c5",
+            "c6",
+            "c61",
+            "c62",
+            "c63",
+            "c7",
+            "c8",
+            "c9",
+            "c10",
+            "c11",
+            "c12",
+            "c13",
+            "c14",
+            "c15",
+            "c16"
+          ],
+          [
+            "2012",
+            "1",
+            "20",
+            "15",
+            "30",
+            "20",
+            "20000.0",
+            "20000000.0",
+            "20000000000.0",
+            "3",
+            "20",
+            "5",
+            "15:30:20.000000000",
+            "201",
+            "21",
+            "3",
+            "1",
+            "0",
+            "1327073420.0"
+          ],
+          [
+            "2012",
+            "11",
+            "5",
+            "10",
+            "30",
+            "20",
+            "20123.4",
+            "20123400.0",
+            "20123400000.0",
+            "45",
+            "310",
+            "1",
+            "10:30:20.123400000",
+            "201",
+            "21",
+            "3",
+            "4",
+            "0",
+            "1352111420.1234"
+          ],
+          [
+            "1999",
+            "3",
+            "15",
+            "14",
+            "30",
+            "20",
+            "20123.4",
+            "20123400.0",
+            "20123400000.0",
+            "11",
+            "74",
+            "1",
+            "14:30:20.123400000",
+            "199",
+            "20",
+            "2",
+            "1",
+            "0",
+            "921508220.1234"
+          ],
+          [
+            "1978",
+            "8",
+            "6",
+            "0",
+            "30",
+            "20",
+            "20123.4",
+            "20123400.0",
+            "20123400000.0",
+            "31",
+            "218",
+            "0",
+            "00:30:20.123400000",
+            "197",
+            "20",
+            "2",
+            "3",
+            "0",
+            "271211420.1234"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_53",
+      "description": "Sqlp Join Outer Full 53",
+      "command": "qsv sqlp SKIP_INPUT",
+      "args": [
+        "SKIP_INPUT"
+      ],
+      "expected": {
+        "data": [
+          [
+            "c1",
+            "c2",
+            "c3"
+          ],
+          [
+            "2021-03-15",
+            "2021-03-15",
+            "2021-03-15"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_54",
+      "description": "Sqlp Join Outer Full 54",
+      "input": {
+        "data": [
+          [
+            "dtm",
+            "dt",
+            "tm"
+          ],
+          [
+            "1972-03-06 23:50:03",
+            "1978-07-05",
+            "10:10:10"
+          ],
+          [
+            "1980-09-30 01:25:50",
+            "1969-12-31",
+            "22:33:55"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv --try-parsedates",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--try-parsedates": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "s_dtm",
+            "s_dt",
+            "s_tm"
+          ],
+          [
+            "03.06.1972/23:50:03",
+            "July 05",
+            "1978",
+            "10.10.10"
+          ],
+          [
+            "09.30.1980/01:25:50",
+            "December 31",
+            "1969",
+            "55.33.22"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_55",
+      "description": "Sqlp Join Outer Full 55",
+      "command": "qsv sqlp SKIP_INPUT",
+      "args": [
+        "SKIP_INPUT"
+      ],
+      "expected": {
+        "data": [
+          [
+            "case_enquiry_id",
+            "open_dt",
+            "target_dt",
+            "closed_dt",
+            "ontime",
+            "case_status",
+            "closure_reason",
+            "case_title",
+            "subject",
+            "reason",
+            "type",
+            "queue",
+            "department",
+            "submittedphoto",
+            "closedphoto",
+            "location",
+            "fire_district",
+            "pwd_district",
+            "city_council_district",
+            "police_district",
+            "neighborhood",
+            "neighborhood_services_district",
+            "ward",
+            "precinct",
+            "location_street_name",
+            "location_zipcode",
+            "latitude",
+            "longitude",
+            "source"
+          ],
+          [
+            "101004120108",
+            "2022-01-08 12:54:49",
+            "2022-01-11 08:30:00",
+            "2022-01-09 06:43:06",
+            "ONTIME",
+            "Closed",
+            "Case Closed. Closed date : Sun Jan 09 06:43:06 EST 2022 Noted ",
+            "CE Collection",
+            "Public Works Department",
+            "Street Cleaning",
+            "CE Collection",
+            "PWDx_District 1C: Downtown",
+            "PWDx",
+            "",
+            "",
+            "198 W Springfield St  Roxbury  MA  02118",
+            "4",
+            "1C",
+            "7",
+            "D4",
+            "South End",
+            "6",
+            "Ward 9",
+            "0902",
+            "198 W Springfield St",
+            "2118",
+            "42.3401",
+            "-71.0803",
+            "City Worker App"
+          ],
+          [
+            "101004141354",
+            "2022-01-20 08:07:49",
+            "2022-01-21 08:30:00",
+            "2022-01-20 08:45:03",
+            "ONTIME",
+            "Closed",
+            "Case Closed. Closed date : Thu Jan 20 08:45:03 EST 2022 Noted ",
+            "CE Collection",
+            "Public Works Department",
+            "Street Cleaning",
+            "CE Collection",
+            "PWDx_District 1B: North End",
+            "PWDx",
+            "",
+            "",
+            "21-23 Temple St  Boston  MA  02114",
+            "3",
+            "1B",
+            "1",
+            "A1",
+            "Beacon Hill",
+            "3",
+            "Ward 3",
+            "0306",
+            "21-23 Temple St",
+            "2114",
+            "42.3606",
+            "-71.0638",
+            "City Worker App"
+          ],
+          [
+            "101004141367",
+            "2022-01-20 08:15:45",
+            "2022-01-21 08:30:00",
+            "2022-01-20 08:45:12",
+            "ONTIME",
+            "Closed",
+            "Case Closed. Closed date : Thu Jan 20 08:45:12 EST 2022 Noted ",
+            "CE Collection",
+            "Public Works Department",
+            "Street Cleaning",
+            "CE Collection",
+            "PWDx_District 1B: North End",
+            "PWDx",
+            "",
+            "",
+            "12 Derne St  Boston  MA  02114",
+            "3",
+            "1B",
+            "1",
+            "A1",
+            "Beacon Hill",
+            "3",
+            "Ward 3",
+            "0306",
+            "12 Derne St",
+            "2114",
+            "42.3596",
+            "-71.0634",
+            "City Worker App"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_56",
+      "description": "Sqlp Join Outer Full 56",
+      "input": {
+        "data": [
+          [
+            "x",
+            "y"
+          ],
+          [
+            "aaa",
+            "abc"
+          ],
+          [
+            "bbb",
+            "b"
+          ],
+          [
+            "a",
+            "aa"
+          ]
+        ],
+        "filename": "likedata.csv"
+      },
+      "command": "qsv sqlp likedata.csv",
+      "args": [
+        "likedata.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "x",
+            "x_starts_with_a",
+            "x_ends_with_b_case_insensitive",
+            "x_starts_with_y",
+            "x_ends_with_a"
+          ],
+          [
+            "aaa",
+            "true",
+            "false",
+            "false",
+            "true"
+          ],
+          [
+            "bbb",
+            "false",
+            "true",
+            "true",
+            "false"
+          ],
+          [
+            "a",
+            "true",
+            "false",
+            "false",
+            "true"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_57",
+      "description": "Sqlp Join Outer Full 57",
+      "input": {
+        "data": [
+          [
+            "CharacterID",
+            "FirstName",
+            "LastName"
+          ],
+          [
+            "1",
+            "Jerna Morat",
+            "Gurgeh"
+          ],
+          [
+            "2",
+            "Cheradenine",
+            "Zakalwe"
+          ],
+          [
+            "3",
+            "Byr",
+            "Genar-Hofoen"
+          ]
+        ],
+        "filename": "data1.csv"
+      },
+      "command": "qsv sqlp",
+      "expected": {
+        "data": [
+          [
+            "CharacterID",
+            "FirstName",
+            "LastName",
+            "Book",
+            "Ship"
+          ],
+          [
+            "1",
+            "Jerna Morat",
+            "Gurgeh",
+            "Player of Games",
+            "Limiting Factor"
+          ],
+          [
+            "2",
+            "Cheradenine",
+            "Zakalwe",
+            "Use of Weapons",
+            "Xenophobe"
+          ],
+          [
+            "3",
+            "Byr",
+            "Genar-Hofoen",
+            "Excession",
+            "Grey Area"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_58",
+      "description": "Sqlp Join Outer Full 58",
+      "input": {
+        "data": [
+          [
+            "ID",
+            "FirstName",
+            "LastName",
+            "Address",
+            "City"
+          ],
+          [
+            "333",
+            "Bruce",
+            "Wayne",
+            "The Batcave",
+            "Gotham"
+          ],
+          [
+            "666",
+            "Diana",
+            "Prince",
+            "Paradise Island",
+            "Themyscira"
+          ],
+          [
+            "999",
+            "Clark",
+            "Kent",
+            "Fortress of Solitude",
+            "Metropolis"
+          ]
+        ],
+        "filename": "starlikedata.csv"
+      },
+      "command": "qsv sqlp starlikedata.csv starlikedata.csv starlikedata.csv",
+      "args": [
+        "starlikedata.csv",
+        "starlikedata.csv",
+        "starlikedata.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "FirstName",
+            "LastName",
+            "Address"
+          ],
+          [
+            "Bruce",
+            "Wayne",
+            "The Batcave"
+          ],
+          [
+            "Clark",
+            "Kent",
+            "Fortress of Solitude"
+          ],
+          [
+            "Diana",
+            "Prince",
+            "Paradise Island"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_59",
+      "description": "Sqlp Join Outer Full 59",
+      "command": "qsv sqlp SKIP_INPUT \"SELECT 1 AS one, '2' AS two, 3.0 AS three\"",
+      "args": [
+        "SKIP_INPUT",
+        "SELECT 1 AS one, '2' AS two, 3.0 AS three"
+      ],
+      "expected": {
+        "data": [
+          [
+            "one",
+            "two",
+            "three"
+          ],
+          [
+            "1",
+            "2",
+            "3.0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_60",
+      "description": "Sqlp Join Outer Full 60",
+      "command": "qsv sqlp cities_array.tsv",
+      "args": [
+        "cities_array.tsv"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_61",
+      "description": "Sqlp Join Outer Full 61",
+      "input": {
+        "data": [
+          [
+            "country_id",
+            "description"
+          ],
+          [
+            "DB",
+            "Dubai"
+          ],
+          [
+            "IN",
+            "India"
+          ],
+          [
+            "US",
+            "United States"
+          ],
+          [
+            "UK",
+            "United Kingdom"
+          ],
+          [
+            "CN",
+            "China"
+          ],
+          [
+            "RU",
+            "Russia"
+          ],
+          [
+            "NL",
+            "Netherlands"
+          ],
+          [
+            "IT",
+            "Italy"
+          ]
+        ],
+        "filename": "cities_array.csv"
+      },
+      "command": "qsv sqlp cities_array.csv",
+      "args": [
+        "cities_array.csv"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_62",
+      "description": "Sqlp Join Outer Full 62",
+      "input": {
+        "data": [
+          [
+            "id",
+            "val"
+          ],
+          [
+            "1",
+            "cat"
+          ],
+          [
+            "2",
+            "dog"
+          ],
+          [
+            "3",
+            "bird"
+          ],
+          [
+            "4",
+            "fish"
+          ]
+        ],
+        "filename": "left.csv"
+      },
+      "command": "qsv sqlp",
+      "expected": {
+        "data": [
+          [
+            "left_val",
+            "right_val"
+          ],
+          [
+            "bird",
+            "jailbird"
+          ],
+          [
+            "cat",
+            "catalog"
+          ],
+          [
+            "cat",
+            "category"
+          ],
+          [
+            "dog",
+            "doghouse"
+          ],
+          [
+            "dog",
+            "hotdog"
+          ],
+          [
+            "fish",
+            "starfish"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_63",
+      "description": "Sqlp Join Outer Full 63",
+      "input": {
+        "data": [
+          [
+            "id",
+            "cities"
+          ],
+          [
+            "1",
+            "Dubai",
+            "Abu Dhabi",
+            "Sharjah"
+          ],
+          [
+            "2",
+            "Mumbai",
+            "Delhi",
+            "Bangalore"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv",
+      "args": [
+        "data.csv"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_64",
+      "description": "Sqlp Join Outer Full 64",
+      "input": {
+        "data": [
+          [
+            "s"
+          ],
+          [
+            "xx",
+            "yy",
+            "zz"
+          ],
+          [
+            "abc",
+            "",
+            "xyz",
+            "???",
+            "hmmm"
+          ],
+          [
+            ""
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "s+1",
+            "s+3",
+            "s-2"
+          ],
+          [
+            "xx",
+            "zz",
+            "yy"
+          ],
+          [
+            "abc",
+            "xyz",
+            "???"
+          ],
+          [
+            "",
+            "",
+            ""
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_65",
+      "description": "Sqlp Join Outer Full 65",
+      "input": {
+        "data": [
+          [
+            "foo",
+            "bar"
+          ],
+          [
+            "1",
+            "2"
+          ],
+          [
+            "2",
+            "4"
+          ],
+          [
+            "3",
+            "7"
+          ],
+          [
+            "4",
+            "5"
+          ],
+          [
+            "5",
+            "9"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv \"SELECT CORR(foo, bar) AS corr FROM data\"",
+      "args": [
+        "data.csv",
+        "SELECT CORR(foo, bar) AS corr FROM data"
+      ],
+      "expected": {
+        "data": [
+          [
+            "corr"
+          ],
+          [
+            "0.877809"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_66",
+      "description": "Sqlp Join Outer Full 66",
+      "input": {
+        "data": [
+          [
+            "foo",
+            "bar"
+          ],
+          [
+            "1",
+            "2"
+          ],
+          [
+            "2",
+            "4"
+          ],
+          [
+            "3",
+            "7"
+          ],
+          [
+            "4",
+            "5"
+          ],
+          [
+            "5",
+            "9"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv \"SELECT COVAR(foo, bar) AS covar FROM data\"",
+      "args": [
+        "data.csv",
+        "SELECT COVAR(foo, bar) AS covar FROM data"
+      ],
+      "expected": {
+        "data": [
+          [
+            "covar"
+          ],
+          [
+            "3.75"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_67",
+      "description": "Sqlp Join Outer Full 67",
+      "input": {
+        "data": [
+          [
+            "foo",
+            "bar"
+          ],
+          [
+            "1",
+            "2"
+          ],
+          [
+            "2",
+            "4"
+          ],
+          [
+            "3",
+            "7"
+          ],
+          [
+            "4",
+            "5"
+          ],
+          [
+            "5",
+            "9"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "corr",
+            "covar",
+            "covar_pop"
+          ],
+          [
+            "0.88",
+            "3.75",
+            "3.00"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_68",
+      "description": "Sqlp Join Outer Full 68",
+      "command": "qsv sqlp data.csv data.csv data.csv data.csv --decimal-comma \"select * from _t_1\"",
+      "args": [
+        "data.csv",
+        "data.csv",
+        "data.csv",
+        "data.csv"
+      ],
+      "options": {
+        "--decimal-comma": "select * from _t_1"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_69",
+      "description": "Sqlp Join Outer Full 69",
+      "command": "qsv sqlp data.tsv --decimal-comma \"select * from _t_1\"",
+      "args": [
+        "data.tsv"
+      ],
+      "options": {
+        "--decimal-comma": "select * from _t_1"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "value"
+          ],
+          [
+            "1",
+            "100",
+            "5"
+          ],
+          [
+            "2",
+            "200",
+            "75"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_70",
+      "description": "Sqlp Join Outer Full 70",
+      "command": "qsv sqlp data.ssv --decimal-comma \"select * from _t_1\"",
+      "args": [
+        "data.ssv"
+      ],
+      "options": {
+        "--decimal-comma": "select * from _t_1"
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_71",
+      "description": "Sqlp Join Outer Full 71",
+      "command": "qsv sqlp data.csv data.csv --decimal-comma \"select * from _t_1\"",
+      "args": [
+        "data.csv",
+        "data.csv"
+      ],
+      "options": {
+        "--decimal-comma": "select * from _t_1"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_72",
+      "description": "Sqlp Join Outer Full 72",
+      "command": "qsv sqlp data.csv --decimal-comma \"select * from _t_1\"",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--decimal-comma": "select * from _t_1"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_73",
+      "description": "Sqlp Join Outer Full 73",
+      "command": "qsv sqlp data.csv --decimal-comma \"select * from _t_1\"",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--decimal-comma": "select * from _t_1"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_74",
+      "description": "Sqlp Join Outer Full 74",
+      "command": "qsv sqlp SKIP_INPUT --decimal-comma \"select * from read_csv('data.csv')\"",
+      "args": [
+        "SKIP_INPUT"
+      ],
+      "options": {
+        "--decimal-comma": "select * from read_csv('data.csv')"
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_75",
+      "description": "Sqlp Join Outer Full 75",
+      "input": {
+        "data": [
+          [
+            "Value",
+            "Tag"
+          ],
+          [
+            "100",
+            "hello"
+          ],
+          [
+            "200",
+            "foo"
+          ]
+        ],
+        "filename": "df1.csv"
+      },
+      "command": "qsv sqlp",
+      "expected": {
+        "data": [
+          [
+            "Value",
+            "Tag"
+          ],
+          [
+            "100",
+            "hello"
+          ],
+          [
+            "200",
+            "foo"
+          ],
+          [
+            "300",
+            "world"
+          ],
+          [
+            "400",
+            "bar"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_76",
+      "description": "Sqlp Join Outer Full 76",
+      "input": {
+        "data": [
+          [
+            "id",
+            "data"
+          ],
+          [
+            "1",
+            "a",
+            "b",
+            "c"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv \"select first(id) as idf, unnest(string_to_array(data, ',')) as value from data\"",
+      "args": [
+        "data.csv",
+        "select first(id) as idf, unnest(string_to_array(data, ',')) as value from data"
+      ],
+      "expected": {
+        "data": [
+          [
+            "idf",
+            "value"
+          ],
+          [
+            "1",
+            "a"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "1",
+            "c"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_77",
+      "description": "Sqlp Join Outer Full 77",
+      "input": {
+        "data": [
+          [
+            "id",
+            "category",
+            "value"
+          ],
+          [
+            "1",
+            "A",
+            "20"
+          ],
+          [
+            "2",
+            "A",
+            "10"
+          ],
+          [
+            "3",
+            "A",
+            "25"
+          ],
+          [
+            "4",
+            "B",
+            "10"
+          ],
+          [
+            "5",
+            "B",
+            "40"
+          ],
+          [
+            "6",
+            "B",
+            "25"
+          ],
+          [
+            "7",
+            "C",
+            "35"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv data.csv data.csv",
+      "args": [
+        "data.csv",
+        "data.csv",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "value",
+            "row_num",
+            "rank",
+            "dense_rank"
+          ],
+          [
+            "10",
+            "6",
+            "6",
+            "6"
+          ],
+          [
+            "10",
+            "7",
+            "7",
+            "7"
+          ],
+          [
+            "20",
+            "5",
+            "5",
+            "5"
+          ],
+          [
+            "25",
+            "3",
+            "3",
+            "3"
+          ],
+          [
+            "25",
+            "4",
+            "4",
+            "4"
+          ],
+          [
+            "35",
+            "2",
+            "2",
+            "2"
+          ],
+          [
+            "40",
+            "1",
+            "1",
+            "1"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_78",
+      "description": "Sqlp Join Outer Full 78",
+      "input": {
+        "data": [
+          [
+            "id",
+            "category",
+            "value"
+          ],
+          [
+            "1",
+            "A",
+            "20"
+          ],
+          [
+            "2",
+            "A",
+            "10"
+          ],
+          [
+            "3",
+            "A",
+            "30"
+          ],
+          [
+            "4",
+            "B",
+            "15"
+          ],
+          [
+            "5",
+            "B",
+            "50"
+          ],
+          [
+            "6",
+            "B",
+            "30"
+          ],
+          [
+            "7",
+            "C",
+            "35"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv data.csv",
+      "args": [
+        "data.csv",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "category",
+            "value",
+            "w:sum",
+            "w:min",
+            "w:avg"
+          ],
+          [
+            "A",
+            "10",
+            "10",
+            "10",
+            "20.0"
+          ],
+          [
+            "A",
+            "20",
+            "30",
+            "10",
+            "20.0"
+          ],
+          [
+            "A",
+            "30",
+            "60",
+            "10",
+            "20.0"
+          ],
+          [
+            "B",
+            "15",
+            "15",
+            "15",
+            "31.666666666666668"
+          ],
+          [
+            "B",
+            "30",
+            "45",
+            "15",
+            "31.666666666666668"
+          ],
+          [
+            "B",
+            "50",
+            "95",
+            "15",
+            "31.666666666666668"
+          ],
+          [
+            "C",
+            "35",
+            "35",
+            "35",
+            "35.0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_79",
+      "description": "Sqlp Join Outer Full 79",
+      "input": {
+        "data": [
+          [
+            "a",
+            "b"
+          ],
+          [
+            "first",
+            "1"
+          ],
+          [
+            "first",
+            "1"
+          ],
+          [
+            "third",
+            "42"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "b",
+            "a2s"
+          ],
+          [
+            "1",
+            "first",
+            "first"
+          ],
+          [
+            "42",
+            "third"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_80",
+      "description": "Sqlp Join Outer Full 80",
+      "input": {
+        "data": [
+          [
+            "id",
+            "data"
+          ],
+          [
+            "1",
+            "a",
+            "b",
+            "c"
+          ],
+          [
+            "2",
+            ""
+          ],
+          [
+            "3",
+            "b",
+            "c",
+            "d"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv \"select id, unnest(string_to_array(data, ',')) as value from data\"",
+      "args": [
+        "data.csv",
+        "select id, unnest(string_to_array(data, ',')) as value from data"
+      ],
+      "expected": {
+        "data": [
+          [
+            "id",
+            "value"
+          ],
+          [
+            "1",
+            "a"
+          ],
+          [
+            "1",
+            "b"
+          ],
+          [
+            "1",
+            "c"
+          ],
+          [
+            "2",
+            ""
+          ],
+          [
+            "3",
+            "b"
+          ],
+          [
+            "3",
+            "c"
+          ],
+          [
+            "3",
+            "d"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_81",
+      "description": "Sqlp Join Outer Full 81",
+      "input": {
+        "data": [
+          [
+            "category",
+            "subcategory",
+            "value",
+            "status",
+            "score"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "20"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "active",
+            "30"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "inactive",
+            "30"
+          ],
+          [
+            "B",
+            "z",
+            "300",
+            "active",
+            "40"
+          ],
+          [
+            "C",
+            "x",
+            "400",
+            "inactive",
+            "50"
+          ],
+          [
+            "C",
+            "y",
+            "500",
+            "active",
+            "60"
+          ],
+          [
+            "",
+            "x",
+            "600",
+            "active",
+            "70"
+          ],
+          [
+            "",
+            "y",
+            "700",
+            "inactive",
+            "80"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv \"SELECT DISTINCT category FROM data ORDER BY category NULLS LAST\"",
+      "args": [
+        "data.csv",
+        "SELECT DISTINCT category FROM data ORDER BY category NULLS LAST"
+      ],
+      "expected": {
+        "data": [
+          [
+            "category"
+          ],
+          [
+            "A"
+          ],
+          [
+            "B"
+          ],
+          [
+            "C"
+          ],
+          [
+            "NULL"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_82",
+      "description": "Sqlp Join Outer Full 82",
+      "input": {
+        "data": [
+          [
+            "category",
+            "subcategory",
+            "value",
+            "status",
+            "score"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "20"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "active",
+            "30"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "inactive",
+            "30"
+          ],
+          [
+            "B",
+            "z",
+            "300",
+            "active",
+            "40"
+          ],
+          [
+            "C",
+            "x",
+            "400",
+            "inactive",
+            "50"
+          ],
+          [
+            "C",
+            "y",
+            "500",
+            "active",
+            "60"
+          ],
+          [
+            "",
+            "x",
+            "600",
+            "active",
+            "70"
+          ],
+          [
+            "",
+            "y",
+            "700",
+            "inactive",
+            "80"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "category",
+            "subcategory"
+          ],
+          [
+            "A",
+            "x"
+          ],
+          [
+            "B",
+            "y"
+          ],
+          [
+            "B",
+            "z"
+          ],
+          [
+            "C",
+            "x"
+          ],
+          [
+            "C",
+            "y"
+          ],
+          [
+            "NULL",
+            "x"
+          ],
+          [
+            "NULL",
+            "y"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_83",
+      "description": "Sqlp Join Outer Full 83",
+      "input": {
+        "data": [
+          [
+            "category",
+            "subcategory",
+            "value",
+            "status",
+            "score"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "20"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "active",
+            "30"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "inactive",
+            "30"
+          ],
+          [
+            "B",
+            "z",
+            "300",
+            "active",
+            "40"
+          ],
+          [
+            "C",
+            "x",
+            "400",
+            "inactive",
+            "50"
+          ],
+          [
+            "C",
+            "y",
+            "500",
+            "active",
+            "60"
+          ],
+          [
+            "",
+            "x",
+            "600",
+            "active",
+            "70"
+          ],
+          [
+            "",
+            "y",
+            "700",
+            "inactive",
+            "80"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv \"SELECT DISTINCT category FROM data ORDER BY category NULLS FIRST\"",
+      "args": [
+        "data.csv",
+        "SELECT DISTINCT category FROM data ORDER BY category NULLS FIRST"
+      ],
+      "expected": {
+        "data": [
+          [
+            "category"
+          ],
+          [
+            "NULL"
+          ],
+          [
+            "A"
+          ],
+          [
+            "B"
+          ],
+          [
+            "C"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_84",
+      "description": "Sqlp Join Outer Full 84",
+      "input": {
+        "data": [
+          [
+            "category",
+            "subcategory",
+            "value",
+            "status",
+            "score"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "20"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "active",
+            "30"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "inactive",
+            "30"
+          ],
+          [
+            "B",
+            "z",
+            "300",
+            "active",
+            "40"
+          ],
+          [
+            "C",
+            "x",
+            "400",
+            "inactive",
+            "50"
+          ],
+          [
+            "C",
+            "y",
+            "500",
+            "active",
+            "60"
+          ],
+          [
+            "",
+            "x",
+            "600",
+            "active",
+            "70"
+          ],
+          [
+            "",
+            "y",
+            "700",
+            "inactive",
+            "80"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "category",
+            "subcategory",
+            "value",
+            "status",
+            "score"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "20"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "active",
+            "30"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "inactive",
+            "30"
+          ],
+          [
+            "B",
+            "z",
+            "300",
+            "active",
+            "40"
+          ],
+          [
+            "C",
+            "x",
+            "400",
+            "inactive",
+            "50"
+          ],
+          [
+            "C",
+            "y",
+            "500",
+            "active",
+            "60"
+          ],
+          [
+            "NULL",
+            "x",
+            "600",
+            "active",
+            "70"
+          ],
+          [
+            "NULL",
+            "y",
+            "700",
+            "inactive",
+            "80"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_85",
+      "description": "Sqlp Join Outer Full 85",
+      "input": {
+        "data": [
+          [
+            "category",
+            "subcategory",
+            "value",
+            "status",
+            "score"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "20"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "active",
+            "30"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "inactive",
+            "30"
+          ],
+          [
+            "B",
+            "z",
+            "300",
+            "active",
+            "40"
+          ],
+          [
+            "C",
+            "x",
+            "400",
+            "inactive",
+            "50"
+          ],
+          [
+            "C",
+            "y",
+            "500",
+            "active",
+            "60"
+          ],
+          [
+            "",
+            "x",
+            "600",
+            "active",
+            "70"
+          ],
+          [
+            "",
+            "y",
+            "700",
+            "inactive",
+            "80"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "category",
+            "value",
+            "status"
+          ],
+          [
+            "A",
+            "100",
+            "active"
+          ],
+          [
+            "B",
+            "300",
+            "active"
+          ],
+          [
+            "C",
+            "500",
+            "active"
+          ],
+          [
+            "NULL",
+            "700",
+            "inactive"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_86",
+      "description": "Sqlp Join Outer Full 86",
+      "input": {
+        "data": [
+          [
+            "category",
+            "subcategory",
+            "value",
+            "status",
+            "score"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "20"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "active",
+            "30"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "inactive",
+            "30"
+          ],
+          [
+            "B",
+            "z",
+            "300",
+            "active",
+            "40"
+          ],
+          [
+            "C",
+            "x",
+            "400",
+            "inactive",
+            "50"
+          ],
+          [
+            "C",
+            "y",
+            "500",
+            "active",
+            "60"
+          ],
+          [
+            "",
+            "x",
+            "600",
+            "active",
+            "70"
+          ],
+          [
+            "",
+            "y",
+            "700",
+            "inactive",
+            "80"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "category",
+            "subcategory",
+            "value",
+            "status",
+            "score"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "20"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "active",
+            "30"
+          ],
+          [
+            "B",
+            "z",
+            "300",
+            "active",
+            "40"
+          ],
+          [
+            "C",
+            "x",
+            "400",
+            "inactive",
+            "50"
+          ],
+          [
+            "C",
+            "y",
+            "500",
+            "active",
+            "60"
+          ],
+          [
+            "NULL",
+            "x",
+            "600",
+            "active",
+            "70"
+          ],
+          [
+            "NULL",
+            "y",
+            "700",
+            "inactive",
+            "80"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_87",
+      "description": "Sqlp Join Outer Full 87",
+      "input": {
+        "data": [
+          [
+            "category",
+            "subcategory",
+            "value",
+            "status",
+            "score"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "20"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "active",
+            "30"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "inactive",
+            "30"
+          ],
+          [
+            "B",
+            "z",
+            "300",
+            "active",
+            "40"
+          ],
+          [
+            "C",
+            "x",
+            "400",
+            "inactive",
+            "50"
+          ],
+          [
+            "C",
+            "y",
+            "500",
+            "active",
+            "60"
+          ],
+          [
+            "",
+            "x",
+            "600",
+            "active",
+            "70"
+          ],
+          [
+            "",
+            "y",
+            "700",
+            "inactive",
+            "80"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv \"SELECT DISTINCT ON (category) * FROM data ORDER BY category NULLS LAST, value DESC\"",
+      "args": [
+        "data.csv",
+        "SELECT DISTINCT ON (category) * FROM data ORDER BY category NULLS LAST, value DESC"
+      ],
+      "expected": {
+        "data": [
+          [
+            "category",
+            "subcategory",
+            "value",
+            "status",
+            "score"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ],
+          [
+            "B",
+            "z",
+            "300",
+            "active",
+            "40"
+          ],
+          [
+            "C",
+            "y",
+            "500",
+            "active",
+            "60"
+          ],
+          [
+            "NULL",
+            "y",
+            "700",
+            "inactive",
+            "80"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_88",
+      "description": "Sqlp Join Outer Full 88",
+      "input": {
+        "data": [
+          [
+            "category",
+            "subcategory",
+            "value",
+            "status",
+            "score"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "20"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "active",
+            "30"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "inactive",
+            "30"
+          ],
+          [
+            "B",
+            "z",
+            "300",
+            "active",
+            "40"
+          ],
+          [
+            "C",
+            "x",
+            "400",
+            "inactive",
+            "50"
+          ],
+          [
+            "C",
+            "y",
+            "500",
+            "active",
+            "60"
+          ],
+          [
+            "",
+            "x",
+            "600",
+            "active",
+            "70"
+          ],
+          [
+            "",
+            "y",
+            "700",
+            "inactive",
+            "80"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "category",
+            "value"
+          ],
+          [
+            "A",
+            "100"
+          ],
+          [
+            "B",
+            "300"
+          ],
+          [
+            "C",
+            "500"
+          ],
+          [
+            "NULL",
+            "700"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_89",
+      "description": "Sqlp Join Outer Full 89",
+      "input": {
+        "data": [
+          [
+            "category",
+            "subcategory",
+            "value",
+            "status",
+            "score"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "20"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "active",
+            "30"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "inactive",
+            "30"
+          ],
+          [
+            "B",
+            "z",
+            "300",
+            "active",
+            "40"
+          ],
+          [
+            "C",
+            "x",
+            "400",
+            "inactive",
+            "50"
+          ],
+          [
+            "C",
+            "y",
+            "500",
+            "active",
+            "60"
+          ],
+          [
+            "",
+            "x",
+            "600",
+            "active",
+            "70"
+          ],
+          [
+            "",
+            "y",
+            "700",
+            "inactive",
+            "80"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "category",
+            "cnt"
+          ],
+          [
+            "A",
+            "3"
+          ],
+          [
+            "B",
+            "3"
+          ],
+          [
+            "C",
+            "2"
+          ],
+          [
+            "NULL",
+            "2"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "sqlp_join_outer_full_90",
+      "description": "Sqlp Join Outer Full 90",
+      "input": {
+        "data": [
+          [
+            "category",
+            "subcategory",
+            "value",
+            "status",
+            "score"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "20"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "active",
+            "30"
+          ],
+          [
+            "B",
+            "y",
+            "200",
+            "inactive",
+            "30"
+          ],
+          [
+            "B",
+            "z",
+            "300",
+            "active",
+            "40"
+          ],
+          [
+            "C",
+            "x",
+            "400",
+            "inactive",
+            "50"
+          ],
+          [
+            "C",
+            "y",
+            "500",
+            "active",
+            "60"
+          ],
+          [
+            "",
+            "x",
+            "600",
+            "active",
+            "70"
+          ],
+          [
+            "",
+            "y",
+            "700",
+            "inactive",
+            "80"
+          ],
+          [
+            "A",
+            "x",
+            "100",
+            "active",
+            "10"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv sqlp data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "category",
+            "value",
+            "status"
+          ],
+          [
+            "A",
+            "100",
+            "active"
+          ],
+          [
+            "B",
+            "300",
+            "active"
+          ],
+          [
+            "C",
+            "500",
+            "active"
+          ],
+          [
+            "NULL",
+            "700",
+            "inactive"
+          ]
+        ]
+      }
+    }
+  ]
+}

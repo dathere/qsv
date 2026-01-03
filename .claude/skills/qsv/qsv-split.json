@@ -8,55 +8,34 @@
     "subcommand": "split",
     "args": [
       {
-        "name": "outdir",
-        "type": "string",
-        "required": true,
-        "description": "The directory where the output files will be written. If it does not exist, it will be created."
-      },
-      {
         "name": "input",
         "type": "file",
         "required": true,
         "description": "The CSV file to read. If not given, input is read from STDIN."
+      },
+      {
+        "name": "outdir",
+        "type": "string",
+        "required": true,
+        "description": "The directory where the output files will be written. If it does not exist, it will be created."
       }
     ],
     "options": [
       {
-        "flag": "--size",
-        "short": "-s",
-        "type": "string",
-        "description": "The number of records to write into each chunk. [default: 500]",
-        "default": "500"
-      },
-      {
         "flag": "--chunks",
-        "short": "-c",
         "type": "string",
         "description": "The number of chunks to split the data into. This option is mutually exclusive with --size. The number of rows in each chunk is determined by the number of records in the CSV data and the number of desired chunks. If the number of records is not evenly divisible by the number of chunks, the last chunk will have fewer records."
       },
       {
-        "flag": "--kb-size",
-        "short": "-k",
+        "flag": "--delimiter",
         "type": "string",
-        "description": "The size of each chunk in kilobytes. The number of rows in each chunk may vary, but the size of each chunk will not exceed the desired size. This option is mutually exclusive with --size and --chunks."
-      },
-      {
-        "flag": "--jobs",
-        "short": "-j",
-        "type": "string",
-        "description": "The number of splitting jobs to run in parallel. This only works when the given CSV data has an index already created. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected."
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
         "flag": "--filename",
         "type": "string",
         "description": "A filename template to use when constructing the names of the output files.  The string '{}' will be replaced by the zero-based row number of the first row in the chunk. [default: {}.csv]",
         "default": "{}.csv"
-      },
-      {
-        "flag": "--pad",
-        "type": "string",
-        "description": "The zero padding width that is used in the generated filename. [default: 0]",
-        "default": "0"
       },
       {
         "flag": "--filter",
@@ -75,27 +54,40 @@
       },
       {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       },
       {
+        "flag": "--jobs",
+        "type": "string",
+        "description": "The number of splitting jobs to run in parallel. This only works when the given CSV data has an index already created. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected."
+      },
+      {
+        "flag": "--kb-size",
+        "type": "string",
+        "description": "The size of each chunk in kilobytes. The number of rows in each chunk may vary, but the size of each chunk will not exceed the desired size. This option is mutually exclusive with --size and --chunks."
+      },
+      {
         "flag": "--no-headers",
-        "short": "-n",
         "type": "flag",
         "description": "When set, the first row will NOT be interpreted as column names. Otherwise, the first row will appear in all chunks as the header row."
       },
       {
-        "flag": "--delimiter",
-        "short": "-d",
+        "flag": "--pad",
         "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+        "description": "The zero padding width that is used in the generated filename. [default: 0]",
+        "default": "0"
       },
       {
         "flag": "--quiet",
-        "short": "-q",
         "type": "flag",
         "description": "Do not display an output summary to stderr."
+      },
+      {
+        "flag": "--size",
+        "type": "string",
+        "description": "The number of records to write into each chunk. [default: 500]",
+        "default": "500"
       }
     ]
   },
@@ -141,5 +133,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_split.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_split.rs",
+  "examples_ref": "examples/qsv-split-examples.json"
 }

@@ -6,14 +6,19 @@
   "command": {
     "binary": "qsv",
     "subcommand": "fmt",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "--out-delimiter",
-        "short": "-t",
-        "type": "string",
-        "description": "The field delimiter for writing CSV data. Must be a single character. If set to \"T\", uses tab as the delimiter. [default: ,]",
-        "default": ","
+        "flag": "--ascii",
+        "type": "flag",
+        "description": "Use ASCII field and record separators. Use Substitute (U+00A1) as the quote character."
       },
       {
         "flag": "--crlf",
@@ -21,9 +26,35 @@
         "description": "Use '\\r\\n' line endings in the output."
       },
       {
-        "flag": "--ascii",
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--escape",
+        "type": "string",
+        "description": "The escape character to use. When not specified, quotes are escaped by doubling them."
+      },
+      {
+        "flag": "--help",
         "type": "flag",
-        "description": "Use ASCII field and record separators. Use Substitute (U+00A1) as the quote character."
+        "description": "Display this message"
+      },
+      {
+        "flag": "--no-final-newline",
+        "type": "flag",
+        "description": "Do not write a newline at the end of the output. This makes it easier to paste the output into Excel."
+      },
+      {
+        "flag": "--out-delimiter",
+        "type": "string",
+        "description": "The field delimiter for writing CSV data. Must be a single character. If set to \"T\", uses tab as the delimiter. [default: ,]",
+        "default": ","
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
       },
       {
         "flag": "--quote",
@@ -40,34 +71,6 @@
         "flag": "--quote-never",
         "type": "flag",
         "description": "Never put quotes around any value."
-      },
-      {
-        "flag": "--escape",
-        "type": "string",
-        "description": "The escape character to use. When not specified, quotes are escaped by doubling them."
-      },
-      {
-        "flag": "--no-final-newline",
-        "type": "flag",
-        "description": "Do not write a newline at the end of the output. This makes it easier to paste the output into Excel."
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       }
     ]
   },
@@ -76,5 +79,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fmt.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fmt.rs",
+  "examples_ref": "examples/qsv-fmt-examples.json"
 }

@@ -6,23 +6,27 @@
   "command": {
     "binary": "qsv",
     "subcommand": "behead",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--flexible",
-        "short": "-f",
         "type": "flag",
         "description": "Do not validate if the CSV has different number of fields per record, increasing performance."
       },
       {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
         "flag": "--output",
-        "short": "-o",
         "type": "string",
         "description": "Write output to <file> instead of stdout."
       }
@@ -33,5 +37,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_behead.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_behead.rs",
+  "examples_ref": "examples/qsv-behead-examples.json"
 }

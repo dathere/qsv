@@ -17,7 +17,6 @@
     "options": [
       {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       }
@@ -28,5 +27,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_pro.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_pro.rs",
+  "examples_ref": "examples/qsv-pro-examples.json"
 }

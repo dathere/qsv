@@ -6,63 +6,19 @@
   "command": {
     "binary": "qsv",
     "subcommand": "sort",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "--select",
-        "short": "-s",
+        "flag": "--delimiter",
         "type": "string",
-        "description": "Select a subset of columns to sort. See 'qsv select --help' for the format details."
-      },
-      {
-        "flag": "--numeric",
-        "short": "-N",
-        "type": "flag",
-        "description": "Compare according to string numerical value"
-      },
-      {
-        "flag": "--natural",
-        "type": "flag",
-        "description": "Compare strings using natural sort order (treats numbers within strings as actual numbers, e.g. \"data1.txt\", \"data2.txt\", \"data10.txt\", as opposed to \"data1.txt\", \"data10.txt\", \"data2.txt\" when sorting lexicographically) https://en.wikipedia.org/wiki/Natural_sort_order"
-      },
-      {
-        "flag": "--reverse",
-        "short": "-R",
-        "type": "flag",
-        "description": "Reverse order"
-      },
-      {
-        "flag": "--ignore-case",
-        "short": "-i",
-        "type": "flag",
-        "description": "Compare strings disregarding case"
-      },
-      {
-        "flag": "--unique",
-        "short": "-u",
-        "type": "flag",
-        "description": "When set, identical consecutive lines will be dropped to keep only one line per sorted value."
-      },
-      {
-        "flag": "--random",
-        "type": "flag",
-        "description": "Randomize (scramble) the data by row"
-      },
-      {
-        "flag": "--seed",
-        "type": "number",
-        "description": "Random Number Generator (RNG) seed to use if --random is set"
-      },
-      {
-        "flag": "--rng",
-        "type": "string",
-        "description": "The RNG algorithm to use if --random is set. Three RNGs are supported:"
-      },
-      {
-        "flag": "--jobs",
-        "short": "-j",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
         "flag": "--faster",
@@ -71,32 +27,74 @@
       },
       {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       },
       {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--no-headers",
-        "short": "-n",
+        "flag": "--ignore-case",
         "type": "flag",
-        "description": "When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
+        "description": "Compare strings disregarding case"
       },
       {
-        "flag": "--delimiter",
-        "short": "-d",
+        "flag": "--jobs",
         "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
       },
       {
         "flag": "--memcheck",
         "type": "flag",
         "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. Ignored if --random or --faster is set."
+      },
+      {
+        "flag": "--natural",
+        "type": "flag",
+        "description": "Compare strings using natural sort order (treats numbers within strings as actual numbers, e.g. \"data1.txt\", \"data2.txt\", \"data10.txt\", as opposed to \"data1.txt\", \"data10.txt\", \"data2.txt\" when sorting lexicographically) https://en.wikipedia.org/wiki/Natural_sort_order"
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
+      },
+      {
+        "flag": "--numeric",
+        "type": "flag",
+        "description": "Compare according to string numerical value"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--random",
+        "type": "flag",
+        "description": "Randomize (scramble) the data by row"
+      },
+      {
+        "flag": "--reverse",
+        "type": "flag",
+        "description": "Reverse order"
+      },
+      {
+        "flag": "--rng",
+        "type": "string",
+        "description": "The RNG algorithm to use if --random is set. Three RNGs are supported:",
+        "default": "standard"
+      },
+      {
+        "flag": "--seed",
+        "type": "string",
+        "description": "Random Number Generator (RNG) seed to use if --random is set"
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select a subset of columns to sort. See 'qsv select --help' for the format details."
+      },
+      {
+        "flag": "--unique",
+        "type": "flag",
+        "description": "When set, identical consecutive lines will be dropped to keep only one line per sorted value."
       }
     ]
   },
@@ -105,5 +103,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_sort.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_sort.rs",
+  "examples_ref": "examples/qsv-sort-examples.json"
 }

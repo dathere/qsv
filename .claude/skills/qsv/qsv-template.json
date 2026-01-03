@@ -17,87 +17,15 @@
         "name": "outdir",
         "type": "string",
         "required": true,
-        "description": "The directory where the output files will be written. If it does not exist, it will be created. If not set, output will be sent to stdout or the specified --output. When writing to <outdir>, files are organized into subdirectories of --outsubdir-size (default: 1000) files each to avoid filesystem navigation & performance issues. For example, with 3500 records:"
-      },
-      {
-        "name": "outdir",
-        "type": "string",
-        "required": true,
-        "description": "/0000/0001.txt through <outdir>/0000/1000.txt"
-      },
-      {
-        "name": "outdir",
-        "type": "string",
-        "required": true,
-        "description": "/0001/1001.txt through <outdir>/0001/2000.txt"
-      },
-      {
-        "name": "outdir",
-        "type": "string",
-        "required": true,
-        "description": "/0002/2001.txt through <outdir>/0002/3000.txt"
-      },
-      {
-        "name": "outdir",
-        "type": "string",
-        "required": true,
         "description": "/0003/3001.txt through <outdir>/0003/4000.txt template options:"
       }
     ],
     "options": [
       {
-        "flag": "--template",
-        "type": "string",
-        "description": "MiniJinja template string to use (alternative to --template-file)"
-      },
-      {
-        "flag": "--template-file",
-        "short": "-t",
-        "type": "string",
-        "description": "MiniJinja template file to use"
-      },
-      {
-        "flag": "--globals-json",
-        "short": "-j",
-        "type": "string",
-        "description": "A JSON file containing global variables to make available in templates. The JSON properties can be accessed in templates using the \"qsv_g\" namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}). This allows sharing common values across all template renders."
-      },
-      {
-        "flag": "--outfilename",
-        "type": "string",
-        "description": "MiniJinja template string to use to create the filename of the output files to write to <outdir>. If set to just QSV_ROWNO, the filestem is set to the current rowno of the record, padded with leading zeroes, with the \".txt\" extension (e.g. 001.txt, 002.txt, etc.) Note that all the fields, including QSV_ROWNO, are available when defining the filename template. [default: QSV_ROWNO]",
-        "default": "QSV_ROWNO"
-      },
-      {
-        "flag": "--outsubdir-size",
-        "type": "string",
-        "description": "The number of files per subdirectory in <outdir>. [default: 1000]",
-        "default": "1000"
-      },
-      {
-        "flag": "--customfilter-error",
-        "type": "string",
-        "description": "The value to return when a custom filter returns an error. Use \"<empty string>\" to return an empty string. [default: <FILTER_ERROR>]",
-        "default": "<FILTER_ERROR>"
-      },
-      {
-        "flag": "--jobs",
-        "short": "-j",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
         "flag": "--batch",
-        "short": "-b",
         "type": "string",
         "description": "The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. [default: 50000]",
         "default": "50000"
-      },
-      {
-        "flag": "--timeout",
-        "type": "string",
-        "description": "Timeout for downloading lookups on URLs. [default: 30]",
-        "default": "30"
       },
       {
         "flag": "--cache-dir",
@@ -117,22 +45,10 @@
         "description": "The CKAN API token to use. Only required if downloading private resources. If the QSV_CKAN_TOKEN envvar is set, it will be used instead."
       },
       {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
+        "flag": "--customfilter-error",
         "type": "string",
-        "description": "Write output to <file> instead of stdout"
-      },
-      {
-        "flag": "--no-headers",
-        "short": "-n",
-        "type": "flag",
-        "description": "When set, the first row will not be interpreted as headers. Templates must use numeric 1-based indices with the \"_c\" prefix.(e.g. col1: {{_c1}} col2: {{_c2}})"
+        "description": "The value to return when a custom filter returns an error. Use \"<empty string>\" to return an empty string. [default: <FILTER_ERROR>]",
+        "default": "<FILTER_ERROR>"
       },
       {
         "flag": "--delimiter",
@@ -141,10 +57,62 @@
         "default": ","
       },
       {
+        "flag": "--globals-json",
+        "type": "string",
+        "description": "A JSON file containing global variables to make available in templates. The JSON properties can be accessed in templates using the \"qsv_g\" namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}). This allows sharing common values across all template renders."
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--jobs",
+        "type": "string",
+        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. Templates must use numeric 1-based indices with the \"_c\" prefix.(e.g. col1: {{_c1}} col2: {{_c2}})"
+      },
+      {
+        "flag": "--outfilename",
+        "type": "string",
+        "description": "MiniJinja template string to use to create the filename of the output files to write to <outdir>. If set to just QSV_ROWNO, the filestem is set to the current rowno of the record, padded with leading zeroes, with the \".txt\" extension (e.g. 001.txt, 002.txt, etc.) Note that all the fields, including QSV_ROWNO, are available when defining the filename template. [default: QSV_ROWNO]",
+        "default": "QSV_ROWNO"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout"
+      },
+      {
+        "flag": "--outsubdir-size",
+        "type": "string",
+        "description": "The number of files per subdirectory in <outdir>. [default: 1000]",
+        "default": "1000"
+      },
+      {
         "flag": "--progressbar",
-        "short": "-p",
         "type": "flag",
         "description": "Show progress bars. Not valid for stdin."
+      },
+      {
+        "flag": "--template",
+        "type": "string",
+        "description": "MiniJinja template string to use (alternative to --template-file)"
+      },
+      {
+        "flag": "--template-file",
+        "type": "string",
+        "description": "MiniJinja template file to use"
+      },
+      {
+        "flag": "--timeout",
+        "type": "string",
+        "description": "Timeout for downloading lookups on URLs. [default: 30]",
+        "default": "30"
       }
     ]
   },
@@ -158,5 +126,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_template.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_template.rs",
+  "examples_ref": "examples/qsv-template-examples.json"
 }

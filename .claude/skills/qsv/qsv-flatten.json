@@ -6,44 +6,45 @@
   "command": {
     "binary": "qsv",
     "subcommand": "flatten",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
         "flag": "--condense",
-        "short": "-c",
         "type": "string",
         "description": "Limits the length of each field to the value specified. If the field is UTF-8 encoded, then <arg> refers to the number of code points. Otherwise, it refers to the number of bytes."
       },
       {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
         "flag": "--field-separator",
-        "short": "-f",
         "type": "string",
         "description": "A string of character to write between a column name and its value."
       },
       {
-        "flag": "--separator",
-        "short": "-s",
-        "type": "string",
-        "description": "A string of characters to write after each record. When non-empty, a new line is automatically appended to the separator. [default: #]",
-        "default": "#"
-      },
-      {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       },
       {
         "flag": "--no-headers",
-        "short": "-n",
         "type": "flag",
         "description": "When set, the first row will not be interpreted as headers. When set, the name of each field will be its index."
       },
       {
-        "flag": "--delimiter",
-        "short": "-d",
+        "flag": "--separator",
         "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+        "description": "A string of characters to write after each record. When non-empty, a new line is automatically appended to the separator. [default: #]",
+        "default": "#"
       }
     ]
   },
@@ -52,5 +53,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_flatten.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_flatten.rs",
+  "examples_ref": "examples/qsv-flatten-examples.json"
 }

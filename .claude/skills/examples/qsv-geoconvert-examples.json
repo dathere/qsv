@@ -1,0 +1,49 @@
+{
+  "skill": "qsv-geoconvert",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "geoconvert_geojson_to_csv_basic",
+      "description": "Geoconvert Geojson To Csv Basic",
+      "command": "qsv geoconvert data.geojson geojson csv",
+      "args": [
+        "data.geojson",
+        "geojson",
+        "csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "geometry",
+            "name"
+          ],
+          [
+            "POINT(125.6 10.1)",
+            "Dinagat Islands"
+          ]
+        ]
+      },
+      "tags": [
+        "basic"
+      ]
+    },
+    {
+      "name": "geoconvert_geojson_to_csv",
+      "description": "Geoconvert Geojson To Csv",
+      "command": "qsv geoconvert geojson csv",
+      "args": [
+        "geojson",
+        "csv"
+      ]
+    },
+    {
+      "name": "geoconvert_geojson_to_csv_max_length",
+      "description": "Geoconvert Geojson To Csv Max Length",
+      "command": "qsv geoconvert geojson csv",
+      "args": [
+        "geojson",
+        "csv"
+      ]
+    }
+  ]
+}

@@ -57,6 +57,13 @@ bench             = false
 doctest           = false
 path              = "src/bin/qsv-skill-gen.rs"
 
+[[bin]]
+name              = "qsv-test-examples-gen"
+test              = false
+bench             = false
+doctest           = false
+path              = "src/bin/qsv-test-examples-gen.rs"
+
 [[test]]
 name = "tests"
 path = "tests/tests.rs"

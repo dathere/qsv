@@ -6,13 +6,55 @@
   "command": {
     "binary": "qsv",
     "subcommand": "count",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The delimiter to use when reading CSV data. Must be a single character. [default: ,]",
+        "default": ","
+      },
+      {
+        "flag": "--flexible",
+        "type": "flag",
+        "description": "Do not validate if the CSV has different number of fields per record, increasing performance when counting without an index."
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
         "flag": "--human-readable",
-        "short": "-H",
         "type": "flag",
         "description": "Comma separate counts."
+      },
+      {
+        "flag": "--json",
+        "type": "flag",
+        "description": "Output the width stats in JSON format."
+      },
+      {
+        "flag": "--low-memory",
+        "type": "flag",
+        "description": "Use the Polars CSV Reader's low-memory mode. This mode is slower but uses less memory. If counting still fails, use --no-polars instead to use the streaming CSV reader."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will be included in the count."
+      },
+      {
+        "flag": "--no-polars",
+        "type": "flag",
+        "description": "Use the \"regular\", single-threaded, streaming CSV reader instead of the much faster multithreaded, mem-mapped Polars CSV reader. Use this when you encounter memory issues when counting with the Polars CSV reader. The streaming reader is slower but can read any valid CSV file of any size."
       },
       {
         "flag": "--width",
@@ -23,46 +65,6 @@
         "flag": "--width-no-delims",
         "type": "flag",
         "description": "Same as --width but does not count the delimiters in the width."
-      },
-      {
-        "flag": "--json",
-        "type": "flag",
-        "description": "Output the width stats in JSON format."
-      },
-      {
-        "flag": "--no-polars",
-        "type": "flag",
-        "description": "Use the \"regular\", single-threaded, streaming CSV reader instead of the much faster multithreaded, mem-mapped Polars CSV reader. Use this when you encounter memory issues when counting with the Polars CSV reader. The streaming reader is slower but can read any valid CSV file of any size."
-      },
-      {
-        "flag": "--low-memory",
-        "type": "flag",
-        "description": "Use the Polars CSV Reader's low-memory mode. This mode is slower but uses less memory. If counting still fails, use --no-polars instead to use the streaming CSV reader."
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--flexible",
-        "short": "-f",
-        "type": "flag",
-        "description": "Do not validate if the CSV has different number of fields per record, increasing performance when counting without an index."
-      },
-      {
-        "flag": "--no-headers",
-        "short": "-n",
-        "type": "flag",
-        "description": "When set, the first row will be included in the count."
-      },
-      {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The delimiter to use when reading CSV data. Must be a single character. [default: ,]",
-        "default": ","
       }
     ]
   },
@@ -71,5 +73,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_count.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_count.rs",
+  "examples_ref": "examples/qsv-count-examples.json"
 }

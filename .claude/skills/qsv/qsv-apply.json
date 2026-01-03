@@ -11,106 +11,82 @@
         "name": "column",
         "type": "string",
         "required": true,
-        "description": "The column/s to apply the transformation to. Note that the <column> argument supports multiple columns for the operations & emptyreplace subcommands. See 'qsv select --help' for the format details."
-      },
-      {
-        "name": "operations",
-        "type": "string",
-        "required": true,
-        "description": "The operation/s to apply."
-      },
-      {
-        "name": "column",
-        "type": "string",
-        "required": true,
         "description": "The column/s to apply the operations to."
-      },
-      {
-        "name": "column",
-        "type": "string",
-        "required": true,
-        "description": "The column/s to check for emptiness."
       },
       {
         "name": "input",
         "type": "file",
         "required": true,
         "description": "The input file to read from. If not specified, reads from stdin."
+      },
+      {
+        "name": "operations",
+        "type": "string",
+        "required": true,
+        "description": "The operation/s to apply."
       }
     ],
     "options": [
       {
-        "flag": "--new-column",
-        "short": "-c",
-        "type": "string",
-        "description": "Put the transformed values in a new column instead."
-      },
-      {
-        "flag": "--rename",
-        "short": "-r",
-        "type": "string",
-        "description": "New name for the transformed column."
-      },
-      {
-        "flag": "--comparand=<string>",
-        "short": "-C",
-        "type": "string",
-        "description": "The string to compare against for replace & similarity operations. Also used with numtocurrency operation to specify currency symbol."
-      },
-      {
-        "flag": "--replacement=<string>",
-        "short": "-R",
-        "type": "string",
-        "description": "The string to use for the replace & emptyreplace operations. Also used with numtocurrency operation to conversion rate."
-      },
-      {
-        "flag": "--formatstr=<string>",
-        "short": "-f",
-        "type": "string",
-        "description": "This option is used by several subcommands:"
-      },
-      {
-        "flag": "--jobs",
-        "short": "-j",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
         "flag": "--batch",
-        "short": "-b",
         "type": "string",
         "description": "The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. [default: 50000]",
         "default": "50000"
       },
       {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
+        "flag": "--comparand",
         "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--no-headers",
-        "short": "-n",
-        "type": "flag",
-        "description": "When set, the first row will not be interpreted as headers."
+        "description": ""
       },
       {
         "flag": "--delimiter",
-        "short": "-d",
         "type": "string",
         "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
+        "flag": "--formatstr",
+        "type": "string",
+        "description": ""
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--jobs",
+        "type": "string",
+        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
+      },
+      {
+        "flag": "--new-column",
+        "type": "string",
+        "description": "Put the transformed values in a new column instead."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
         "flag": "--progressbar",
-        "short": "-p",
         "type": "flag",
         "description": "Show progress bars. Not valid for stdin."
+      },
+      {
+        "flag": "--rename",
+        "type": "string",
+        "description": "New name for the transformed column."
+      },
+      {
+        "flag": "--replacement",
+        "type": "string",
+        "description": ""
       }
     ]
   },
@@ -236,5 +212,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_apply.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_apply.rs",
+  "examples_ref": "examples/qsv-apply-examples.json"
 }

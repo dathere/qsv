@@ -1,0 +1,168 @@
+{
+  "skill": "qsv-explode",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "explode",
+      "description": "Explode",
+      "input": {
+        "data": [
+          [
+            "name",
+            "colors"
+          ],
+          [
+            "Mary",
+            "yellow"
+          ],
+          [
+            "John",
+            "blue|orange"
+          ],
+          [
+            "Jack",
+            ""
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv explode colors \"|\" data.csv",
+      "args": [
+        "colors",
+        "|",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name",
+            "colors"
+          ],
+          [
+            "Mary",
+            "yellow"
+          ],
+          [
+            "John",
+            "blue"
+          ],
+          [
+            "John",
+            "orange"
+          ],
+          [
+            "Jack",
+            ""
+          ]
+        ]
+      }
+    },
+    {
+      "name": "explode_rename",
+      "description": "Explode Rename",
+      "input": {
+        "data": [
+          [
+            "name",
+            "colors"
+          ],
+          [
+            "Mary",
+            "yellow"
+          ],
+          [
+            "John",
+            "blue|orange"
+          ],
+          [
+            "Jack",
+            ""
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv explode colors \"|\" data.csv",
+      "args": [
+        "colors",
+        "|",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name",
+            "color"
+          ],
+          [
+            "Mary",
+            "yellow"
+          ],
+          [
+            "John",
+            "blue"
+          ],
+          [
+            "John",
+            "orange"
+          ],
+          [
+            "Jack",
+            ""
+          ]
+        ]
+      }
+    },
+    {
+      "name": "explode_no_headers",
+      "description": "Explode No Headers",
+      "input": {
+        "data": [
+          [
+            "Mary",
+            "yellow"
+          ],
+          [
+            "John",
+            "blue|orange"
+          ],
+          [
+            "Jack",
+            ""
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv explode 2 \"|\" --no-headers data.csv",
+      "args": [
+        "2",
+        "|"
+      ],
+      "options": {
+        "--no-headers": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "Mary",
+            "yellow"
+          ],
+          [
+            "John",
+            "blue"
+          ],
+          [
+            "John",
+            "orange"
+          ],
+          [
+            "Jack",
+            ""
+          ]
+        ]
+      },
+      "tags": [
+        "no-headers"
+      ]
+    }
+  ]
+}

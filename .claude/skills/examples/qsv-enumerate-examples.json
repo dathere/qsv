@@ -1,0 +1,1582 @@
+{
+  "skill": "qsv-enumerate",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "enumerate",
+      "description": "Enumerate",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "index"
+          ],
+          [
+            "a",
+            "13",
+            "0"
+          ],
+          [
+            "b",
+            "24",
+            "1"
+          ],
+          [
+            "c",
+            "72",
+            "2"
+          ],
+          [
+            "d",
+            "7",
+            "3"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_counter",
+      "description": "Enumerate Counter",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "index"
+          ],
+          [
+            "a",
+            "13",
+            "10"
+          ],
+          [
+            "b",
+            "24",
+            "11"
+          ],
+          [
+            "c",
+            "72",
+            "12"
+          ],
+          [
+            "d",
+            "7",
+            "13"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_counter_inc",
+      "description": "Enumerate Counter Inc",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "index"
+          ],
+          [
+            "a",
+            "13",
+            "10"
+          ],
+          [
+            "b",
+            "24",
+            "13"
+          ],
+          [
+            "c",
+            "72",
+            "16"
+          ],
+          [
+            "d",
+            "7",
+            "19"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_hash",
+      "description": "Enumerate Hash",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "random_text"
+          ],
+          [
+            "a",
+            "13",
+            "this is a test"
+          ],
+          [
+            "b",
+            "24",
+            "the quick brown fox"
+          ],
+          [
+            "c",
+            "72",
+            "jumps over the lazy dog"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "random_text",
+            "hash"
+          ],
+          [
+            "a",
+            "13",
+            "this is a test",
+            "4649922201779202190"
+          ],
+          [
+            "b",
+            "24",
+            "the quick brown fox",
+            "10788366602312130446"
+          ],
+          [
+            "c",
+            "72",
+            "jumps over the lazy dog",
+            "6378567261782451553"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "14437068658547852882"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "14437068658547852882"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_hash_intl",
+      "description": "Enumerate Hash Intl",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "random_text"
+          ],
+          [
+            "a",
+            "13",
+            "これはテストです"
+          ],
+          [
+            "b",
+            "24",
+            "el rápido zorro marrón"
+          ],
+          [
+            "c",
+            "72",
+            "跳过懒狗"
+          ],
+          [
+            "c",
+            "72",
+            "howdy"
+          ],
+          [
+            "d",
+            "7",
+            "I thiñk",
+            "therefore I am"
+          ],
+          [
+            "d",
+            "7",
+            "I thiñk",
+            "therefore I am"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "random_text",
+            "hash"
+          ],
+          [
+            "a",
+            "13",
+            "これはテストです",
+            "3824660653605227303"
+          ],
+          [
+            "b",
+            "24",
+            "el rápido zorro marrón",
+            "1851770582521928574"
+          ],
+          [
+            "c",
+            "72",
+            "跳过懒狗",
+            "7916590694040213670"
+          ],
+          [
+            "c",
+            "72",
+            "howdy",
+            "10903434754618017012"
+          ],
+          [
+            "d",
+            "7",
+            "I thiñk",
+            "therefore I am",
+            "7671262618974725285"
+          ],
+          [
+            "d",
+            "7",
+            "I thiñk",
+            "therefore I am",
+            "7671262618974725285"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_hash_replace_old_hash",
+      "description": "Enumerate Hash Replace Old Hash",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "random_text",
+            "hash"
+          ],
+          [
+            "a",
+            "13",
+            "this is a test",
+            "1"
+          ],
+          [
+            "b",
+            "24",
+            "the quick brown fox",
+            "2"
+          ],
+          [
+            "c",
+            "72",
+            "jumps over the lazy dog",
+            "3"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "4"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "5"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "random_text",
+            "hash"
+          ],
+          [
+            "a",
+            "13",
+            "this is a test",
+            "4649922201779202190"
+          ],
+          [
+            "b",
+            "24",
+            "the quick brown fox",
+            "10788366602312130446"
+          ],
+          [
+            "c",
+            "72",
+            "jumps over the lazy dog",
+            "6378567261782451553"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "14437068658547852882"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "14437068658547852882"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_hash_replace_old_hash2",
+      "description": "Enumerate Hash Replace Old Hash2",
+      "input": {
+        "data": [
+          [
+            "hash",
+            "letter",
+            "number",
+            "random_text"
+          ],
+          [
+            "1",
+            "a",
+            "13",
+            "this is a test"
+          ],
+          [
+            "2",
+            "b",
+            "24",
+            "the quick brown fox"
+          ],
+          [
+            "3",
+            "c",
+            "72",
+            "jumps over the lazy dog"
+          ],
+          [
+            "4",
+            "d",
+            "7",
+            "I think",
+            "therefore I am"
+          ],
+          [
+            "5",
+            "d",
+            "7",
+            "I think",
+            "therefore I am"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "random_text",
+            "hash"
+          ],
+          [
+            "a",
+            "13",
+            "this is a test",
+            "4649922201779202190"
+          ],
+          [
+            "b",
+            "24",
+            "the quick brown fox",
+            "10788366602312130446"
+          ],
+          [
+            "c",
+            "72",
+            "jumps over the lazy dog",
+            "6378567261782451553"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "14437068658547852882"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "14437068658547852882"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_hash_regex",
+      "description": "Enumerate Hash Regex",
+      "input": {
+        "data": [
+          [
+            "hash",
+            "letter",
+            "number",
+            "random_text"
+          ],
+          [
+            "1",
+            "a",
+            "13",
+            "this is a test"
+          ],
+          [
+            "2",
+            "b",
+            "24",
+            "the quick brown fox"
+          ],
+          [
+            "3",
+            "c",
+            "72",
+            "jumps over the lazy dog"
+          ],
+          [
+            "4",
+            "d",
+            "7",
+            "I think",
+            "therefore I am"
+          ],
+          [
+            "5",
+            "d",
+            "7",
+            "I think",
+            "therefore I am"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "random_text",
+            "hash"
+          ],
+          [
+            "a",
+            "13",
+            "this is a test",
+            "4649922201779202190"
+          ],
+          [
+            "b",
+            "24",
+            "the quick brown fox",
+            "10788366602312130446"
+          ],
+          [
+            "c",
+            "72",
+            "jumps over the lazy dog",
+            "6378567261782451553"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "14437068658547852882"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "14437068658547852882"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_hash_subset",
+      "description": "Enumerate Hash Subset",
+      "input": {
+        "data": [
+          [
+            "hash",
+            "letter",
+            "number",
+            "random_text"
+          ],
+          [
+            "1",
+            "a",
+            "13",
+            "this is a test"
+          ],
+          [
+            "2",
+            "b",
+            "24",
+            "the quick brown fox"
+          ],
+          [
+            "3",
+            "c",
+            "72",
+            "jumps over the lazy dog"
+          ],
+          [
+            "4",
+            "d",
+            "7",
+            "I think",
+            "therefore I am"
+          ],
+          [
+            "5",
+            "d",
+            "7",
+            "I think",
+            "therefore I am"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "random_text",
+            "hash"
+          ],
+          [
+            "a",
+            "13",
+            "this is a test",
+            "12940414675143957480"
+          ],
+          [
+            "b",
+            "24",
+            "the quick brown fox",
+            "13207582625528234781"
+          ],
+          [
+            "c",
+            "72",
+            "jumps over the lazy dog",
+            "17804052095358758578"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "3273771710137887128"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "3273771710137887128"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_hash_reverse",
+      "description": "Enumerate Hash Reverse",
+      "input": {
+        "data": [
+          [
+            "hash",
+            "letter",
+            "number",
+            "random_text"
+          ],
+          [
+            "1",
+            "a",
+            "13",
+            "this is a test"
+          ],
+          [
+            "2",
+            "b",
+            "24",
+            "the quick brown fox"
+          ],
+          [
+            "3",
+            "c",
+            "72",
+            "jumps over the lazy dog"
+          ],
+          [
+            "4",
+            "d",
+            "7",
+            "I think",
+            "therefore I am"
+          ],
+          [
+            "5",
+            "d",
+            "7",
+            "I think",
+            "therefore I am"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "random_text",
+            "hash"
+          ],
+          [
+            "a",
+            "13",
+            "this is a test",
+            "5686912879674292587"
+          ],
+          [
+            "b",
+            "24",
+            "the quick brown fox",
+            "10008819158968270026"
+          ],
+          [
+            "c",
+            "72",
+            "jumps over the lazy dog",
+            "6003217755542851957"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "17754472455904896405"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "17754472455904896405"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_hash_regex_not",
+      "description": "Enumerate Hash Regex Not",
+      "input": {
+        "data": [
+          [
+            "hash",
+            "letter",
+            "number",
+            "random_text"
+          ],
+          [
+            "1",
+            "a",
+            "13",
+            "this is a test"
+          ],
+          [
+            "2",
+            "b",
+            "24",
+            "the quick brown fox"
+          ],
+          [
+            "3",
+            "c",
+            "72",
+            "jumps over the lazy dog"
+          ],
+          [
+            "4",
+            "d",
+            "7",
+            "I think",
+            "therefore I am"
+          ],
+          [
+            "5",
+            "d",
+            "7",
+            "I think",
+            "therefore I am"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "random_text",
+            "hash"
+          ],
+          [
+            "a",
+            "13",
+            "this is a test",
+            "4649922201779202190"
+          ],
+          [
+            "b",
+            "24",
+            "the quick brown fox",
+            "10788366602312130446"
+          ],
+          [
+            "c",
+            "72",
+            "jumps over the lazy dog",
+            "6378567261782451553"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "14437068658547852882"
+          ],
+          [
+            "d",
+            "7",
+            "I think",
+            "therefore I am",
+            "14437068658547852882"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_column_name",
+      "description": "Enumerate Column Name",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv -c row",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "-c": "row"
+      },
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "row"
+          ],
+          [
+            "a",
+            "13",
+            "0"
+          ],
+          [
+            "b",
+            "24",
+            "1"
+          ],
+          [
+            "c",
+            "72",
+            "2"
+          ],
+          [
+            "d",
+            "7",
+            "3"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_constant",
+      "description": "Enumerate Constant",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv --constant test",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--constant": "test"
+      },
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "constant"
+          ],
+          [
+            "a",
+            "13",
+            "test"
+          ],
+          [
+            "b",
+            "24",
+            "test"
+          ],
+          [
+            "c",
+            "72",
+            "test"
+          ],
+          [
+            "d",
+            "7",
+            "test"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_constant_null",
+      "description": "Enumerate Constant Null",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv --constant \"<NULL>\"",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--constant": "<NULL>"
+      },
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "constant"
+          ],
+          [
+            "a",
+            "13",
+            ""
+          ],
+          [
+            "b",
+            "24",
+            ""
+          ],
+          [
+            "c",
+            "72",
+            ""
+          ],
+          [
+            "d",
+            "7",
+            ""
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_copy",
+      "description": "Enumerate Copy",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv --copy number",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--copy": "number"
+      },
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "number_copy"
+          ],
+          [
+            "a",
+            "13",
+            "13"
+          ],
+          [
+            "b",
+            "24",
+            "24"
+          ],
+          [
+            "c",
+            "72",
+            "72"
+          ],
+          [
+            "d",
+            "7",
+            "7"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_copy_long_to_short",
+      "description": "Enumerate Copy Long To Short",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "13 this is a long string"
+          ],
+          [
+            "b",
+            "24 a shorter one"
+          ],
+          [
+            "c",
+            "72 shorter"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv --copy number",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--copy": "number"
+      },
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "number_copy"
+          ],
+          [
+            "a",
+            "13 this is a long string",
+            "13 this is a long string"
+          ],
+          [
+            "b",
+            "24 a shorter one",
+            "24 a shorter one"
+          ],
+          [
+            "c",
+            "72 shorter",
+            "72 shorter"
+          ],
+          [
+            "d",
+            "7",
+            "7"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_copy_name",
+      "description": "Enumerate Copy Name",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv -c chiffre --copy number",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "-c": "chiffre",
+        "--copy": "number"
+      },
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "chiffre"
+          ],
+          [
+            "a",
+            "13",
+            "13"
+          ],
+          [
+            "b",
+            "24",
+            "24"
+          ],
+          [
+            "c",
+            "72",
+            "72"
+          ],
+          [
+            "d",
+            "7",
+            "7"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "enumerate_uuid7",
+      "description": "Enumerate Uuid7",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "93"
+          ],
+          [
+            "z",
+            "24"
+          ],
+          [
+            "x",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum --uuid7 data.csv",
+      "options": {
+        "--uuid7": "data.csv"
+      }
+    },
+    {
+      "name": "enumerate_constant_issue_2172_new_column",
+      "description": "Enumerate Constant Issue 2172 New Column",
+      "input": {
+        "data": [
+          [
+            "name",
+            "numcol"
+          ],
+          [
+            "Fred",
+            "0"
+          ],
+          [
+            "Joe",
+            "1"
+          ],
+          [
+            "Mary",
+            "2"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv --constant test",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--constant": "test"
+      },
+      "expected": {
+        "data": [
+          [
+            "name",
+            "numcol",
+            "constant"
+          ],
+          [
+            "Fred",
+            "0",
+            "test"
+          ],
+          [
+            "Joe",
+            "1",
+            "test"
+          ],
+          [
+            "Mary",
+            "2",
+            "test"
+          ]
+        ]
+      },
+      "tags": [
+        "regression"
+      ]
+    },
+    {
+      "name": "enumerate_copy_issue_2172_new_column",
+      "description": "Enumerate Copy Issue 2172 New Column",
+      "input": {
+        "data": [
+          [
+            "name",
+            "numcol"
+          ],
+          [
+            "Fred",
+            "0"
+          ],
+          [
+            "Joe",
+            "1"
+          ],
+          [
+            "Mary",
+            "2"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name",
+            "numcol",
+            "chiffre"
+          ],
+          [
+            "Fred",
+            "0",
+            "0"
+          ],
+          [
+            "Joe",
+            "1",
+            "1"
+          ],
+          [
+            "Mary",
+            "2",
+            "2"
+          ]
+        ]
+      },
+      "tags": [
+        "regression"
+      ]
+    },
+    {
+      "name": "enumerate_hash_issue_2172_new_column",
+      "description": "Enumerate Hash Issue 2172 New Column",
+      "input": {
+        "data": [
+          [
+            "name",
+            "hash"
+          ],
+          [
+            "Fred",
+            "0"
+          ],
+          [
+            "Joe",
+            "1"
+          ],
+          [
+            "Mary",
+            "2"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name",
+            "id"
+          ],
+          [
+            "Fred",
+            "7744023578077004230"
+          ],
+          [
+            "Joe",
+            "1162351066380295090"
+          ],
+          [
+            "Mary",
+            "13526984025446498287"
+          ]
+        ]
+      },
+      "tags": [
+        "regression"
+      ]
+    },
+    {
+      "name": "enumerate_hash_issue_2172",
+      "description": "Enumerate Hash Issue 2172",
+      "input": {
+        "data": [
+          [
+            "name",
+            "some_other_column"
+          ],
+          [
+            "Fred",
+            "0"
+          ],
+          [
+            "Joe",
+            "1"
+          ],
+          [
+            "Mary",
+            "2"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv enum data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "name",
+            "some_other_column",
+            "id"
+          ],
+          [
+            "Fred",
+            "0",
+            "7744023578077004230"
+          ],
+          [
+            "Joe",
+            "1",
+            "1162351066380295090"
+          ],
+          [
+            "Mary",
+            "2",
+            "13526984025446498287"
+          ]
+        ]
+      },
+      "tags": [
+        "regression"
+      ]
+    }
+  ]
+}

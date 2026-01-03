@@ -22,21 +22,42 @@
     ],
     "options": [
       {
-        "flag": "--new-column",
-        "short": "-c",
+        "flag": "--batch",
         "type": "string",
-        "description": "Put the transformed values in a new column instead."
+        "description": "The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. [default: 50000]",
+        "default": "50000"
       },
       {
-        "flag": "--rename",
-        "short": "-r",
+        "flag": "--default-tz",
         "type": "string",
-        "description": "New name for the transformed column."
+        "description": ""
       },
       {
-        "flag": "--prefer-dmy",
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--formatstr",
+        "type": "string",
+        "description": "",
+        "default": "%+"
+      },
+      {
+        "flag": "--help",
         "type": "flag",
-        "description": "Prefer to parse dates in dmy format. Otherwise, use mdy format."
+        "description": "Display this message"
+      },
+      {
+        "flag": "--input-tz",
+        "type": "string",
+        "description": "",
+        "default": "UTC"
+      },
+      {
+        "flag": "--jobs",
+        "type": "string",
+        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
       },
       {
         "flag": "--keep-zero-time",
@@ -44,21 +65,46 @@
         "description": "If a formatted date ends with \"T00:00:00+00:00\", keep the time instead of removing it."
       },
       {
-        "flag": "--input-tz=<string>",
+        "flag": "--new-column",
         "type": "string",
-        "description": "The timezone to use for the input date if the date does not have timezone specified. The timezone must be a valid IANA timezone name or the string \"local\" for the local timezone. See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for a list of valid timezone names. [default: UTC]",
+        "description": "Put the transformed values in a new column instead."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--output-tz",
+        "type": "string",
+        "description": "",
         "default": "UTC"
       },
       {
-        "flag": "--output-tz=<string>",
-        "type": "string",
-        "description": "The timezone to use for the output date. The timezone must be a valid IANA timezone name or the string \"local\". [default: UTC]",
-        "default": "UTC"
+        "flag": "--prefer-dmy",
+        "type": "flag",
+        "description": "Prefer to parse dates in dmy format. Otherwise, use mdy format."
       },
       {
-        "flag": "--default-tz=<string>",
+        "flag": "--progressbar",
+        "type": "flag",
+        "description": "Show progress bars. Not valid for stdin."
+      },
+      {
+        "flag": "--rename",
         "type": "string",
-        "description": "The timezone to use for BOTH input and output dates when they do have timezone. Shortcut for --input-tz and --output-tz set to the same timezone. The timezone must be a valid IANA timezone name or the string \"local\"."
+        "description": "New name for the transformed column."
+      },
+      {
+        "flag": "--ts-resolution",
+        "type": "string",
+        "description": "The resolution to use when parsing Unix timestamps. Valid values are \"sec\", \"milli\", \"micro\", \"nano\". [default: sec]",
+        "default": "sec"
       },
       {
         "flag": "--utc",
@@ -69,56 +115,6 @@
         "flag": "--zulu",
         "type": "flag",
         "description": "Shortcut for --output-tz set to UTC and --formatstr set to \"%Y-%m-%dT%H:%M:%SZ\"."
-      },
-      {
-        "flag": "--ts-resolution",
-        "short": "-R",
-        "type": "string",
-        "description": "The resolution to use when parsing Unix timestamps. Valid values are \"sec\", \"milli\", \"micro\", \"nano\". [default: sec]",
-        "default": "sec"
-      },
-      {
-        "flag": "--jobs",
-        "short": "-j",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
-        "flag": "--batch",
-        "short": "-b",
-        "type": "string",
-        "description": "The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. [default: 50000]",
-        "default": "50000"
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--no-headers",
-        "short": "-n",
-        "type": "flag",
-        "description": "When set, the first row will not be interpreted as headers."
-      },
-      {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
-      },
-      {
-        "flag": "--progressbar",
-        "short": "-p",
-        "type": "flag",
-        "description": "Show progress bars. Not valid for stdin."
       }
     ]
   },
@@ -156,5 +152,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs",
+  "examples_ref": "examples/qsv-datefmt-examples.json"
 }

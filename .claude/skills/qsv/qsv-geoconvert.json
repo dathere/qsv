@@ -29,37 +29,31 @@
     "options": [
       {
         "flag": "--geometry",
-        "short": "-g",
         "type": "string",
         "description": "The name of the column that has WKT geometry. Alternative to --latitude and --longitude."
       },
       {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
         "flag": "--latitude",
-        "short": "-y",
         "type": "string",
         "description": "The name of the column with northing values."
       },
       {
         "flag": "--longitude",
-        "short": "-x",
         "type": "string",
         "description": "The name of the column with easting values."
       },
       {
         "flag": "--max-length",
-        "short": "-l",
         "type": "string",
         "description": "The maximum column length when the output format is CSV. Oftentimes, the geometry column is too long to fit in a CSV file, causing other tools like Python & PostgreSQL to fail. If a column is too long, it will be truncated to the specified length and an ellipsis (\"...\") will be appended."
       },
       {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--output",
-        "short": "-o",
         "type": "string",
         "description": "Write output to <file> instead of stdout."
       }
@@ -87,5 +81,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_geoconvert.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_geoconvert.rs",
+  "examples_ref": "examples/qsv-geoconvert-examples.json"
 }

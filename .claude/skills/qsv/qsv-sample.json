@@ -22,34 +22,9 @@
     ],
     "options": [
       {
-        "flag": "--seed",
-        "type": "number",
-        "description": "Random Number Generator (RNG) seed."
-      },
-      {
-        "flag": "--rng",
-        "type": "string",
-        "description": "The Random Number Generator (RNG) algorithm to use. Three RNGs are supported:"
-      },
-      {
         "flag": "--bernoulli",
         "type": "flag",
         "description": "Use Bernoulli sampling instead of indexed or reservoir sampling. When this flag is set, <sample-size> must be between 0 and 1 and represents the probability of selecting each record."
-      },
-      {
-        "flag": "--systematic",
-        "type": "string",
-        "description": "Use systematic sampling (every nth record as specified by <sample-size>). If <arg> is \"random\", the starting point is randomly chosen between 0 & n. If <arg> is \"first\", the starting point is the first record. The sample size must be a whole number. Uses CONSTANT memory - O(1)."
-      },
-      {
-        "flag": "--stratified",
-        "type": "string",
-        "description": "Use stratified sampling. The strata column is specified by <col>. Can be either a column name or 0-based column index. The sample size must be a whole number. Uses MEMORY PROPORTIONAL to the number of strata (s) and samples per stratum (k) - O(s*k)."
-      },
-      {
-        "flag": "--weighted",
-        "type": "string",
-        "description": "Use weighted sampling. The weight column is specified by <col>. Can be either a column name or 0-based column index. The column will be parsed as a number. Records with non-number weights will be skipped. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k)."
       },
       {
         "flag": "--cluster",
@@ -57,20 +32,66 @@
         "description": "Use cluster sampling. The cluster column is specified by <col>. Can be either a column name or 0-based column index. Uses MEMORY PROPORTIONAL to the number of clusters (c) - O(c)."
       },
       {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading/writing CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--force",
+        "type": "flag",
+        "description": "Do not use stats cache, even if its available."
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--max-size",
+        "type": "string",
+        "description": "Maximum size of the file to download in MB before sampling. Will download the entire file if not specified. If the CSV is partially downloaded, the sample will be taken only from the downloaded portion."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will be considered as part of the population to sample from. (When not set, the first row is the header row and will always appear in the output.)"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--rng",
+        "type": "string",
+        "description": "The Random Number Generator (RNG) algorithm to use. Three RNGs are supported:",
+        "default": "standard"
+      },
+      {
+        "flag": "--seed",
+        "type": "string",
+        "description": "Random Number Generator (RNG) seed."
+      },
+      {
+        "flag": "--stratified",
+        "type": "string",
+        "description": "Use stratified sampling. The strata column is specified by <col>. Can be either a column name or 0-based column index. The sample size must be a whole number. Uses MEMORY PROPORTIONAL to the number of strata (s) and samples per stratum (k) - O(s*k)."
+      },
+      {
+        "flag": "--systematic",
+        "type": "string",
+        "description": "Use systematic sampling (every nth record as specified by <sample-size>). If <arg> is \"random\", the starting point is randomly chosen between 0 & n. If <arg> is \"first\", the starting point is the first record. The sample size must be a whole number. Uses CONSTANT memory - O(1)."
+      },
+      {
+        "flag": "--timeout",
+        "type": "string",
+        "description": "Timeout for downloading URLs in seconds. If 0, no timeout is used. [default: 30]",
+        "default": "30"
+      },
+      {
         "flag": "--timeseries",
         "type": "string",
         "description": "Use time-series sampling. The time column is specified by <col>. Can be either a column name or 0-based column index. Sorts records by the specified time column and then groups by time intervals and selects one record per interval. Supports various date formats (19 formats recognized by qsv-dateparser). Uses MEMORY PROPORTIONAL to the number of records - O(n)."
-      },
-      {
-        "flag": "--ts-interval",
-        "type": "string",
-        "description": "Time interval for grouping records. Format: <number><unit> where unit is h (hour), d (day), w (week), m (month), y (year). Examples: \"1h\", \"1d\", \"1w\", \"2d\" (every 2 days). If not specified, <sample-size> is treated as hours."
-      },
-      {
-        "flag": "--ts-start",
-        "type": "string",
-        "description": "Starting point for time-series sampling. Options: \"first\" (earliest timestamp, default), \"last\" (most recent timestamp), \"random\" (random starting point). [default: first]",
-        "default": "first"
       },
       {
         "flag": "--ts-adaptive",
@@ -89,9 +110,20 @@
         "default": "UTC"
       },
       {
+        "flag": "--ts-interval",
+        "type": "number",
+        "description": "Time interval for grouping records. Format: <number><unit> where unit is h (hour), d (day), w (week), m (month), y (year). Examples: \"1h\", \"1d\", \"1w\", \"2d\" (every 2 days). If not specified, <sample-size> is treated as hours."
+      },
+      {
         "flag": "--ts-prefer-dmy",
         "type": "flag",
         "description": "Prefer to parse dates in dmy format. Otherwise, use mdy format."
+      },
+      {
+        "flag": "--ts-start",
+        "type": "string",
+        "description": "Starting point for time-series sampling. Options: \"first\" (earliest timestamp, default), \"last\" (most recent timestamp), \"random\" (random starting point). [default: first]",
+        "default": "first"
       },
       {
         "flag": "--user-agent",
@@ -99,44 +131,9 @@
         "description": "Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent"
       },
       {
-        "flag": "--timeout",
+        "flag": "--weighted",
         "type": "string",
-        "description": "Timeout for downloading URLs in seconds. If 0, no timeout is used. [default: 30]",
-        "default": "30"
-      },
-      {
-        "flag": "--max-size",
-        "type": "string",
-        "description": "Maximum size of the file to download in MB before sampling. Will download the entire file if not specified. If the CSV is partially downloaded, the sample will be taken only from the downloaded portion."
-      },
-      {
-        "flag": "--force",
-        "type": "flag",
-        "description": "Do not use stats cache, even if its available."
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--no-headers",
-        "short": "-n",
-        "type": "flag",
-        "description": "When set, the first row will be considered as part of the population to sample from. (When not set, the first row is the header row and will always appear in the output.)"
-      },
-      {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The field delimiter for reading/writing CSV data. Must be a single character. (default: ,)"
+        "description": "Use weighted sampling. The weight column is specified by <col>. Can be either a column name or 0-based column index. The column will be parsed as a number. Records with non-number weights will be skipped. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k)."
       }
     ]
   },
@@ -150,5 +147,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_sample.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_sample.rs",
+  "examples_ref": "examples/qsv-sample-examples.json"
 }

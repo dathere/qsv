@@ -12,32 +12,39 @@
         "type": "string",
         "required": true,
         "description": "The new headers to use for the CSV. Separate multiple headers with a comma. If \"_all_generic\" is given, the headers will be renamed to generic column names, where the column name uses the format \"_col_N\" where N is the 1-based column index. Alternatively, specify pairs of old,new column names to rename only specific columns."
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
       }
     ],
     "options": [
       {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       },
       {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
         "flag": "--no-headers",
-        "short": "-n",
         "type": "flag",
         "description": "When set, the header will be inserted on top."
       },
       {
-        "flag": "--delimiter",
-        "short": "-d",
+        "flag": "--output",
         "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--pairwise",
+        "type": "flag",
+        "description": "Invoke pairwise renaming."
       }
     ]
   },
@@ -67,5 +74,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_rename.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_rename.rs",
+  "examples_ref": "examples/qsv-rename-examples.json"
 }

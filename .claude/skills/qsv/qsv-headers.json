@@ -16,16 +16,14 @@
     ],
     "options": [
       {
-        "flag": "--just-names",
-        "short": "-j",
-        "type": "flag",
-        "description": "Only show the header names (hide column index). This is automatically enabled if more than one input is given."
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
-        "flag": "--just-count",
-        "short": "-J",
+        "flag": "--help",
         "type": "flag",
-        "description": "Only show the number of headers."
+        "description": "Display this message"
       },
       {
         "flag": "--intersect",
@@ -33,21 +31,19 @@
         "description": "Shows the intersection of all headers in all of the inputs given."
       },
       {
+        "flag": "--just-count",
+        "type": "flag",
+        "description": "Only show the number of headers."
+      },
+      {
+        "flag": "--just-names",
+        "type": "flag",
+        "description": "Only show the header names (hide column index). This is automatically enabled if more than one input is given."
+      },
+      {
         "flag": "--trim",
         "type": "flag",
         "description": "Trim space & quote characters from header name."
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       }
     ]
   },
@@ -56,5 +52,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_headers.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_headers.rs",
+  "examples_ref": "examples/qsv-headers-examples.json"
 }

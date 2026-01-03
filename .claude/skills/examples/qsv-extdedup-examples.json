@@ -1,0 +1,55 @@
+{
+  "skill": "qsv-extdedup",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "extdedup_linemode",
+      "description": "Extdedup Linemode",
+      "command": "qsv extdedup boston311-100-extdeduped.csv",
+      "args": [
+        "boston311-100-extdeduped.csv"
+      ]
+    },
+    {
+      "name": "extdedup_linemode_dupesoutput",
+      "description": "Extdedup Linemode Dupesoutput",
+      "command": "qsv extdedup boston311-100-extdeduped.csv",
+      "args": [
+        "boston311-100-extdeduped.csv"
+      ]
+    },
+    {
+      "name": "extdedupe_csvmode",
+      "description": "Extdedupe Csvmode",
+      "command": "qsv extdedup boston311-100-extdeduped.csv",
+      "args": [
+        "boston311-100-extdeduped.csv"
+      ]
+    },
+    {
+      "name": "extdedupe_csvmode_dupesoutput",
+      "description": "Extdedupe Csvmode Dupesoutput",
+      "command": "qsv extdedup boston311-100-extdeduped.csv",
+      "args": [
+        "boston311-100-extdeduped.csv"
+      ]
+    },
+    {
+      "name": "extdedupe_csvmode_neighborhood",
+      "description": "Extdedupe Csvmode Neighborhood",
+      "command": "qsv extdedup boston311-100-extdeduped.csv",
+      "args": [
+        "boston311-100-extdeduped.csv"
+      ]
+    },
+    {
+      "name": "extdedup_large_memory_test",
+      "description": "Extdedup Large Memory Test",
+      "command": "qsv extdedup large_test.csv large_test_deduped.csv",
+      "args": [
+        "large_test.csv",
+        "large_test_deduped.csv"
+      ]
+    }
+  ]
+}

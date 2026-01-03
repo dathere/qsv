@@ -6,7 +6,14 @@
   "command": {
     "binary": "qsv",
     "subcommand": "moarstats",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
         "flag": "--advanced",
@@ -14,28 +21,63 @@
         "description": "Compute Kurtosis, ShannonEntropy, Bimodality Coefficient, Gini Coefficient and Atkinson Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing."
       },
       {
+        "flag": "--bivariate",
+        "type": "flag",
+        "description": "Enable bivariate statistics computation. Requires indexed CSV file (index will be auto-created if missing). Computes pairwise correlations, covariances, mutual information, and normalized mutual information between columns. Outputs to <FILESTEM>.stats.bivariate.csv."
+      },
+      {
+        "flag": "--bivariate-stats",
+        "type": "string",
+        "description": "",
+        "default": "fast"
+      },
+      {
+        "flag": "--cardinality-threshold",
+        "type": "string",
+        "description": "",
+        "default": "1000000"
+      },
+      {
         "flag": "--epsilon",
-        "short": "-e",
         "type": "string",
         "description": "The Atkinson Index Inequality Aversion parameter. Epsilon controls the sensitivity of the Atkinson Index to inequality. The higher the epsilon, the more sensitive the index is to inequality. Typical values are 0.5 (standard in economic research), 1.0 (natural boundary), or 2.0 (useful for poverty analysis). [default: 1.0]",
         "default": "1.0"
       },
       {
-        "flag": "--stats-options",
-        "type": "string",
-        "description": "Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace. [default: --infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl]",
-        "default": "--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl"
-      },
-      {
-        "flag": "--round",
-        "type": "string",
-        "description": "Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule. [default: 4]",
-        "default": "4"
-      },
-      {
-        "flag": "--use-percentiles",
+        "flag": "--force",
         "type": "flag",
-        "description": "Use percentiles instead of Q1/Q3 for winsorization/trimming. Requires percentiles to be computed in the stats CSV."
+        "description": "Force recomputing stats even if valid precomputed stats cache exists."
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--jobs",
+        "type": "string",
+        "description": "The number of jobs to run in parallel. This works only when the given CSV has an index. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected."
+      },
+      {
+        "flag": "--join-inputs",
+        "type": "string",
+        "description": ""
+      },
+      {
+        "flag": "--join-keys",
+        "type": "string",
+        "description": ""
+      },
+      {
+        "flag": "--join-type",
+        "type": "string",
+        "description": "",
+        "default": "inner"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of overwriting the stats CSV file."
       },
       {
         "flag": "--pct-thresholds",
@@ -44,45 +86,32 @@
         "default": "5,95"
       },
       {
-        "flag": "--xsd-gdate-scan",
-        "type": "string",
-        "description": "Gregorian XSD date type detection mode. \"quick\": Fast detection using min/max values. Produces types with ?? suffix (less confident). \"thorough\": Comprehensive detection checking all percentile values. Slower but ensures all values match the pattern. Produces types with ? suffix (more confident). [default: quick]",
-        "default": "quick"
-      },
-      {
-        "flag": "--bivariate",
-        "short": "-B",
-        "type": "flag",
-        "description": "Enable bivariate statistics computation. Requires indexed CSV file (index will be auto-created if missing). Computes pairwise correlations, covariances, mutual information, and normalized mutual information between columns. Outputs to <FILESTEM>.stats.bivariate.csv."
-      },
-      {
         "flag": "--progressbar",
-        "short": "-p",
         "type": "flag",
         "description": "Show progress bars when computing bivariate statistics."
       },
       {
-        "flag": "--force",
-        "type": "flag",
-        "description": "Force recomputing stats even if valid precomputed stats cache exists."
-      },
-      {
-        "flag": "--jobs",
-        "short": "-j",
+        "flag": "--round",
         "type": "string",
-        "description": "The number of jobs to run in parallel. This works only when the given CSV has an index. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected."
+        "description": "Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule. [default: 4]",
+        "default": "4"
       },
       {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
+        "flag": "--stats-options",
         "type": "string",
-        "description": "Write output to <file> instead of overwriting the stats CSV file."
+        "description": "Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace. [default: --infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl]",
+        "default": "--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl"
+      },
+      {
+        "flag": "--use-percentiles",
+        "type": "flag",
+        "description": "Use percentiles instead of Q1/Q3 for winsorization/trimming. Requires percentiles to be computed in the stats CSV."
+      },
+      {
+        "flag": "--xsd-gdate-scan",
+        "type": "string",
+        "description": "Gregorian XSD date type detection mode. \"quick\": Fast detection using min/max values. Produces types with ?? suffix (less confident). \"thorough\": Comprehensive detection checking all percentile values. Slower but ensures all values match the pattern. Produces types with ? suffix (more confident). [default: quick]",
+        "default": "quick"
       }
     ]
   },
@@ -116,5 +145,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_moarstats.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_moarstats.rs",
+  "examples_ref": "examples/qsv-moarstats-examples.json"
 }

@@ -8,6 +8,12 @@
     "subcommand": "select",
     "args": [
       {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      },
+      {
         "name": "selection",
         "type": "regex",
         "required": true,
@@ -16,45 +22,39 @@
     ],
     "options": [
       {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.)"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
         "flag": "--random",
-        "short": "-R",
         "type": "flag",
         "description": "Randomly shuffle the columns in the selection."
       },
       {
         "flag": "--seed",
-        "type": "number",
+        "type": "string",
         "description": "Seed for the random number generator."
       },
       {
         "flag": "--sort",
-        "short": "-S",
         "type": "flag",
         "description": "Sort the selected columns lexicographically, i.e. by their byte values."
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--no-headers",
-        "short": "-n",
-        "type": "flag",
-        "description": "When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.)"
-      },
-      {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       }
     ]
   },
@@ -136,5 +136,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_select.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_select.rs",
+  "examples_ref": "examples/qsv-select-examples.json"
 }

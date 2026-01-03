@@ -24,6 +24,7 @@ perf.data*
 !.claude/skills/qsv/*.json
 !.claude/skills/package.json
 !.claude/skills/package-lock.json
+!.claude/skills/examples/*.*
 *.log
 *.log.gz
 *.bak

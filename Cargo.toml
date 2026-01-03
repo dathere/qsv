@@ -327,8 +327,8 @@ csvlens = { git = "https://github.com/YS-L/csvlens", rev = "f15f55e" }
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88", optional = true }
 
-# use our patched fork until our kiddo PR is merged and geosuggest release a new version with the new kiddo
-# kiddo has a dependency on cmov crate, which was yanked due to security vulnerabilities
+# use our patched fork of geosuggest to use the latest kiddo patch (see below).
+# Though our kiddo PR has been merged, it has not been released yet.
 geosuggest-core = { git = "https://github.com/jqnatividad/geosuggest", branch = "kiddo-patch-for-cmov-dependency-security-response" }
 geosuggest-utils = { git = "https://github.com/jqnatividad/geosuggest", branch = "kiddo-patch-for-cmov-dependency-security-response" }
 

@@ -3,71 +3,74 @@
 // This tool parses USAGE text from qsv commands and generates Agent Skill
 // definitions in JSON format for use with the Claude Agent SDK.
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SkillDefinition {
-    name: String,
-    version: String,
+    name:        String,
+    version:     String,
     description: String,
-    category: String,
-    command: CommandSpec,
-    examples: Vec<Example>,
+    category:    String,
+    command:     CommandSpec,
+    examples:    Vec<Example>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    hints: Option<BehavioralHints>,
+    hints:       Option<BehavioralHints>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    test_file: Option<String>,
+    test_file:   Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct CommandSpec {
-    binary: String,
+    binary:     String,
     subcommand: String,
-    args: Vec<Argument>,
-    options: Vec<Option_>,
+    args:       Vec<Argument>,
+    options:    Vec<Option_>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Argument {
-    name: String,
+    name:        String,
     #[serde(rename = "type")]
-    arg_type: String,
-    required: bool,
+    arg_type:    String,
+    required:    bool,
     description: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    examples: Vec<String>,
+    examples:    Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Option_ {
-    flag: String,
+    flag:        String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    short: Option<String>,
+    short:       Option<String>,
     #[serde(rename = "type")]
     option_type: String,
     description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    default: Option<String>,
+    default:     Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Example {
     description: String,
-    command: String,
+    command:     String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct BehavioralHints {
     streamable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    indexed: Option<bool>,
-    memory: String,
+    indexed:    Option<bool>,
+    memory:     String,
 }
 
 struct UsageParser {
-    usage_text: String,
+    usage_text:   String,
     command_name: String,
 }
 
@@ -194,8 +197,10 @@ impl UsageParser {
                 in_options_section = false;
                 continue;
             }
-            if trimmed.ends_with("options:") || trimmed.starts_with("Options:")
-                || trimmed.starts_with("Common options:") {
+            if trimmed.ends_with("options:")
+                || trimmed.starts_with("Options:")
+                || trimmed.starts_with("Common options:")
+            {
                 in_options_section = true;
                 in_args_section = false;
                 continue;
@@ -219,7 +224,12 @@ impl UsageParser {
         Ok((args, options))
     }
 
-    fn parse_argument_line(&self, line: &str, all_lines: &[&str], index: usize) -> Option<Argument> {
+    fn parse_argument_line(
+        &self,
+        line: &str,
+        all_lines: &[&str],
+        index: usize,
+    ) -> Option<Argument> {
         // Parse format: "    <name>            Description text"
         let trimmed = line.trim();
 
@@ -318,7 +328,11 @@ impl UsageParser {
 
         Some(Option_ {
             flag: flag.clone(),
-            short: if short.is_some() && short != Some(flag) { short } else { None },
+            short: if short.is_some() && short != Some(flag) {
+                short
+            } else {
+                None
+            },
             option_type: option_type.to_string(),
             description,
             default,
@@ -331,11 +345,16 @@ impl UsageParser {
 
         if name_lower.contains("input") || name_lower.contains("file") {
             "file".to_string()
-        } else if name_lower.contains("number") || name_lower.contains("count")
-            || desc_lower.contains("number") {
+        } else if name_lower.contains("number")
+            || name_lower.contains("count")
+            || desc_lower.contains("number")
+        {
             "number".to_string()
-        } else if name_lower.contains("regex") || name_lower.contains("pattern")
-            || desc_lower.contains("regex") || desc_lower.contains("regular expression") {
+        } else if name_lower.contains("regex")
+            || name_lower.contains("pattern")
+            || desc_lower.contains("regex")
+            || desc_lower.contains("regular expression")
+        {
             "regex".to_string()
         } else if name_lower.contains("column") || name_lower.contains("selection") {
             "string".to_string()
@@ -397,21 +416,23 @@ impl UsageParser {
 }
 
 fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
-    let content = fs::read_to_string(file_path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+    let content =
+        fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {}", e))?;
 
     // Find USAGE constant - handle both r#" and r##" delimiters
-    let (usage_start, skip_len, end_delimiter) = if let Some(pos) = content.find("static USAGE: &str = r##\"") {
-        (pos, 26, "\"##;")
-    } else if let Some(pos) = content.find("static USAGE: &str = r#\"") {
-        (pos, 24, "\"#;")
-    } else {
-        return Err("USAGE constant not found".to_string());
-    };
+    let (usage_start, skip_len, end_delimiter) =
+        if let Some(pos) = content.find("static USAGE: &str = r##\"") {
+            (pos, 26, "\"##;")
+        } else if let Some(pos) = content.find("static USAGE: &str = r#\"") {
+            (pos, 24, "\"#;")
+        } else {
+            return Err("USAGE constant not found".to_string());
+        };
 
     let after_start = &content[usage_start + skip_len..];
 
-    let usage_end = after_start.find(end_delimiter)
+    let usage_end = after_start
+        .find(end_delimiter)
         .ok_or("End of USAGE constant not found")?;
 
     Ok(after_start[..usage_end].to_string())
@@ -420,15 +441,72 @@ fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get all commands from src/cmd/*.rs (excluding mod.rs and duplicates)
     let commands = vec![
-        "apply", "applydp", "behead", "cat", "clipboard", "count", "datefmt", "dedup",
-        "describegpt", "diff", "edit", "enumerate", "excel", "exclude", "explode",
-        "extdedup", "extsort", "fetch", "fetchpost", "fill", "fixlengths", "flatten",
-        "fmt", "foreach", "frequency", "geocode", "geoconvert", "headers", "index",
-        "input", "join", "joinp", "json", "jsonl", "lens", "luau", "moarstats",
-        "partition", "pivotp", "pro", "prompt", "pseudo", "python", "rename",
-        "replace", "reverse", "safenames", "sample", "schema", "search", "searchset",
-        "select", "slice", "snappy", "sniff", "sort", "sortcheck", "split", "sqlp",
-        "stats", "table", "template", "to", "tojsonl", "transpose", "validate"
+        "apply",
+        "applydp",
+        "behead",
+        "cat",
+        "clipboard",
+        "count",
+        "datefmt",
+        "dedup",
+        "describegpt",
+        "diff",
+        "edit",
+        "enumerate",
+        "excel",
+        "exclude",
+        "explode",
+        "extdedup",
+        "extsort",
+        "fetch",
+        "fetchpost",
+        "fill",
+        "fixlengths",
+        "flatten",
+        "fmt",
+        "foreach",
+        "frequency",
+        "geocode",
+        "geoconvert",
+        "headers",
+        "index",
+        "input",
+        "join",
+        "joinp",
+        "json",
+        "jsonl",
+        "lens",
+        "luau",
+        "moarstats",
+        "partition",
+        "pivotp",
+        "pro",
+        "prompt",
+        "pseudo",
+        "python",
+        "rename",
+        "replace",
+        "reverse",
+        "safenames",
+        "sample",
+        "schema",
+        "search",
+        "searchset",
+        "select",
+        "slice",
+        "snappy",
+        "sniff",
+        "sort",
+        "sortcheck",
+        "split",
+        "sqlp",
+        "stats",
+        "table",
+        "template",
+        "to",
+        "tojsonl",
+        "transpose",
+        "validate",
     ];
 
     // Create output directory
@@ -461,7 +539,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("  ❌ Failed to extract usage: {}", e);
                 error_count += 1;
                 continue;
-            }
+            },
         };
 
         // Parse into skill definition
@@ -472,7 +550,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("  ❌ Failed to parse: {}", e);
                 error_count += 1;
                 continue;
-            }
+            },
         };
 
         // Write JSON file
@@ -491,8 +569,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n✨ Skill generation complete!");
     println!("📁 Output directory: {}", output_dir.display());
-    println!("📊 Summary: {} succeeded, {} failed out of {} total",
-             success_count, error_count, commands.len());
+    println!(
+        "📊 Summary: {} succeeded, {} failed out of {} total",
+        success_count,
+        error_count,
+        commands.len()
+    );
 
     Ok(())
 }

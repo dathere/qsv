@@ -120,5 +120,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_join.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_join.rs",
+  "examples_ref": "examples/qsv-join-examples.json"
 }

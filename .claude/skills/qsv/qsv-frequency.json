@@ -160,5 +160,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_frequency.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_frequency.rs",
+  "examples_ref": "examples/qsv-frequency-examples.json"
 }

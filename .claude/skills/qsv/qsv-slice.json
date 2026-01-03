@@ -129,5 +129,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_slice.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_slice.rs",
+  "examples_ref": "examples/qsv-slice-examples.json"
 }

@@ -106,5 +106,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs",
+  "examples_ref": "examples/qsv-pivotp-examples.json"
 }

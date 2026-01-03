@@ -69,5 +69,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fixlengths.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fixlengths.rs",
+  "examples_ref": "examples/qsv-fixlengths-examples.json"
 }

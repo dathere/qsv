@@ -1,0 +1,386 @@
+// qsv-test-examples-gen: Extract examples from qsv CI test files
+//
+// This tool parses Rust test files and extracts working examples with
+// input data, commands, and expected outputs for load-as-needed documentation.
+
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+use regex::Regex;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TestExamples {
+    skill:    String,
+    version:  String,
+    examples: Vec<TestExample>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TestExample {
+    name:        String,
+    description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input:       Option<TestInput>,
+    command:     String,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    args:        Vec<String>,
+    #[serde(skip_serializing_if = "std::collections::HashMap::is_empty", default)]
+    options:     std::collections::HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expected:    Option<TestOutput>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    tags:        Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TestInput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data:     Option<Vec<Vec<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    filename: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content:  Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TestOutput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data:   Option<Vec<Vec<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stdout: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stderr: Option<String>,
+}
+
+struct TestParser {
+    command_name: String,
+    test_content: String,
+}
+
+impl TestParser {
+    fn new(command_name: String, test_content: String) -> Self {
+        Self {
+            command_name,
+            test_content,
+        }
+    }
+
+    fn parse(&self) -> Result<Vec<TestExample>, String> {
+        let mut examples = Vec::new();
+
+        // Find all #[test] functions
+        let test_fn_re = Regex::new(r"#\[test\]\s+fn\s+(\w+)\s*\(\s*\)\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}")
+            .map_err(|e| format!("Regex error: {}", e))?;
+
+        for cap in test_fn_re.captures_iter(&self.test_content) {
+            let test_name = cap.get(1).unwrap().as_str();
+            let test_body = cap.get(2).unwrap().as_str();
+
+            if let Ok(example) = self.parse_test_function(test_name, test_body) {
+                examples.push(example);
+            }
+        }
+
+        Ok(examples)
+    }
+
+    fn parse_test_function(&self, name: &str, body: &str) -> Result<TestExample, String> {
+        // Extract input data from wrk.create() calls
+        let input = self.extract_input_data(body);
+
+        // Extract command and arguments
+        let (command, args, options) = self.extract_command(body)?;
+
+        // Extract expected output
+        let expected = self.extract_expected_output(body);
+
+        // Generate description from test name
+        let description = self.generate_description(name);
+
+        // Infer tags from test name and body
+        let tags = self.infer_tags(name, body);
+
+        Ok(TestExample {
+            name: name.to_string(),
+            description,
+            input,
+            command,
+            args,
+            options,
+            expected,
+            tags,
+        })
+    }
+
+    fn extract_input_data(&self, body: &str) -> Option<TestInput> {
+        // Match wrk.create("filename", vec![svec![...], ...])
+        let create_re = Regex::new(
+            r#"wrk\.create\(\s*"([^"]+)"\s*,\s*vec!\s*\[((?:\s*svec!\s*\[[^\]]*\]\s*,?)*)\s*\]"#,
+        )
+        .ok()?;
+
+        if let Some(cap) = create_re.captures(body) {
+            let filename = cap.get(1)?.as_str().to_string();
+            let vec_content = cap.get(2)?.as_str();
+
+            // Parse svec! macro calls
+            let svec_re = Regex::new(r#"svec!\s*\[([^\]]*)\]"#).ok()?;
+            let mut data = Vec::new();
+
+            for svec_cap in svec_re.captures_iter(vec_content) {
+                let items_str = svec_cap.get(1)?.as_str();
+                let row: Vec<String> = items_str
+                    .split(',')
+                    .map(|s| s.trim().trim_matches('"').to_string())
+                    .collect();
+                data.push(row);
+            }
+
+            if !data.is_empty() {
+                return Some(TestInput {
+                    data: Some(data),
+                    filename: Some(filename),
+                    content: None,
+                });
+            }
+        }
+
+        None
+    }
+
+    fn extract_command(&self, body: &str) -> Result<(String, Vec<String>, std::collections::HashMap<String, String>), String> {
+        // Match wrk.command("subcommand")
+        let cmd_re = Regex::new(r#"wrk\.command\("([^"]+)"\)"#)
+            .map_err(|e| format!("Regex error: {}", e))?;
+
+        let subcommand = cmd_re
+            .captures(body)
+            .and_then(|c| c.get(1))
+            .ok_or("No command found")?
+            .as_str();
+
+        // Extract .arg() calls
+        let arg_re = Regex::new(r#"\.arg\("([^"]+)"\)|\.arg\(([^\)]+)\)"#)
+            .map_err(|e| format!("Regex error: {}", e))?;
+
+        let mut args = Vec::new();
+        let mut options = std::collections::HashMap::new();
+        let mut pending_option: Option<String> = None;
+
+        for cap in arg_re.captures_iter(body) {
+            let arg_value = if let Some(m) = cap.get(1) {
+                m.as_str().to_string()
+            } else if let Some(m) = cap.get(2) {
+                m.as_str().to_string()
+            } else {
+                continue;
+            };
+
+            // Skip special arguments
+            if arg_value == "--" {
+                continue;
+            }
+
+            // Check if it's an option (starts with -)
+            if arg_value.starts_with("-") {
+                // If it's a flag-style option (like -i, --no-headers)
+                if arg_value.starts_with("--") && !arg_value.contains("=") {
+                    pending_option = Some(arg_value.clone());
+                } else if arg_value.starts_with("-") && arg_value.len() == 2 {
+                    pending_option = Some(arg_value.clone());
+                } else {
+                    args.push(arg_value);
+                }
+            } else if let Some(opt) = pending_option.take() {
+                // This is the value for the previous option
+                options.insert(opt, arg_value);
+            } else {
+                // Regular argument
+                args.push(arg_value);
+            }
+        }
+
+        // If there's a pending option without a value, it's a flag
+        if let Some(opt) = pending_option {
+            options.insert(opt, "true".to_string());
+        }
+
+        let full_command = format!("qsv {} {}", subcommand, args.join(" "));
+
+        Ok((full_command, args, options))
+    }
+
+    fn extract_expected_output(&self, body: &str) -> Option<TestOutput> {
+        // Match let expected = vec![svec![...], ...]
+        let expected_re = Regex::new(
+            r#"let\s+expected\s*=\s*vec!\s*\[((?:\s*svec!\s*\[[^\]]*\]\s*,?)*)\s*\]"#,
+        )
+        .ok()?;
+
+        if let Some(cap) = expected_re.captures(body) {
+            let vec_content = cap.get(1)?.as_str();
+
+            // Parse svec! macro calls
+            let svec_re = Regex::new(r#"svec!\s*\[([^\]]*)\]"#).ok()?;
+            let mut data = Vec::new();
+
+            for svec_cap in svec_re.captures_iter(vec_content) {
+                let items_str = svec_cap.get(1)?.as_str();
+                let row: Vec<String> = items_str
+                    .split(',')
+                    .map(|s| s.trim().trim_matches('"').to_string())
+                    .collect();
+                data.push(row);
+            }
+
+            if !data.is_empty() {
+                return Some(TestOutput {
+                    data: Some(data),
+                    stdout: None,
+                    stderr: None,
+                });
+            }
+        }
+
+        None
+    }
+
+    fn generate_description(&self, test_name: &str) -> String {
+        // Convert snake_case to human readable
+        test_name
+            .replace('_', " ")
+            .split_whitespace()
+            .map(|word| {
+                let mut chars = word.chars();
+                match chars.next() {
+                    None => String::new(),
+                    Some(f) => f.to_uppercase().chain(chars).collect(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    fn infer_tags(&self, name: &str, body: &str) -> Vec<String> {
+        let mut tags = Vec::new();
+
+        // Tag from test name patterns
+        if name.contains("issue_") {
+            tags.push("regression".to_string());
+        }
+        if name.contains("error") || name.contains("err") {
+            tags.push("error-handling".to_string());
+        }
+        if name.contains("normal") || name.contains("basic") {
+            tags.push("basic".to_string());
+        }
+        if name.contains("case") {
+            tags.push("case-sensitivity".to_string());
+        }
+        if name.contains("unicode") {
+            tags.push("unicode".to_string());
+        }
+
+        // Tag from body content
+        if body.contains("--no-headers") {
+            tags.push("no-headers".to_string());
+        }
+        if body.contains("--delimiter") {
+            tags.push("custom-delimiter".to_string());
+        }
+
+        tags
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let commands = vec![
+        "apply", "applydp", "behead", "cat", "clipboard", "count", "datefmt",
+        "dedup", "describegpt", "diff", "edit", "enumerate", "excel", "exclude",
+        "explode", "extdedup", "extsort", "fetch", "fetchpost", "fill", "fixlengths",
+        "flatten", "fmt", "foreach", "frequency", "geocode", "geoconvert", "headers",
+        "index", "input", "join", "joinp", "json", "jsonl", "lens", "luau",
+        "moarstats", "partition", "pivotp", "pro", "prompt", "pseudo", "python",
+        "rename", "replace", "reverse", "safenames", "sample", "schema", "search",
+        "searchset", "select", "slice", "snappy", "sniff", "sort", "sortcheck",
+        "split", "sqlp", "stats", "table", "template", "to", "tojsonl",
+        "transpose", "validate",
+    ];
+
+    // Create output directory
+    let output_dir = PathBuf::from(".claude/skills/examples");
+    fs::create_dir_all(&output_dir)?;
+
+    println!("QSV Test Examples Generator");
+    println!("===========================");
+    println!("Extracting examples from {} test files...\n", commands.len());
+
+    let mut success_count = 0;
+    let mut error_count = 0;
+    let mut total_examples = 0;
+
+    for cmd_name in &commands {
+        println!("Processing: test_{}.rs", cmd_name);
+
+        let test_file = PathBuf::from(format!("tests/test_{}.rs", cmd_name));
+
+        if !test_file.exists() {
+            println!("  ⚠️  Test file not found, skipping");
+            continue;
+        }
+
+        let test_content = match fs::read_to_string(&test_file) {
+            Ok(content) => content,
+            Err(e) => {
+                eprintln!("  ❌ Failed to read test file: {}", e);
+                error_count += 1;
+                continue;
+            },
+        };
+
+        let parser = TestParser::new(cmd_name.to_string(), test_content);
+        let examples = match parser.parse() {
+            Ok(ex) => ex,
+            Err(e) => {
+                eprintln!("  ❌ Failed to parse tests: {}", e);
+                error_count += 1;
+                continue;
+            },
+        };
+
+        if examples.is_empty() {
+            println!("  ⚠️  No examples extracted");
+            continue;
+        }
+
+        let test_examples = TestExamples {
+            skill:    format!("qsv-{}", cmd_name),
+            version:  env!("CARGO_PKG_VERSION").to_string(),
+            examples: examples.clone(),
+        };
+
+        let output_file = output_dir.join(format!("qsv-{}-examples.json", cmd_name));
+        let json = serde_json::to_string_pretty(&test_examples)?;
+        fs::write(&output_file, json)?;
+
+        println!("  ✅ Generated: {}", output_file.display());
+        println!("     - {} test examples extracted", examples.len());
+        println!();
+
+        total_examples += examples.len();
+        success_count += 1;
+    }
+
+    println!("\n✨ Test example extraction complete!");
+    println!("📁 Output directory: {}", output_dir.display());
+    println!(
+        "📊 Summary: {} succeeded, {} failed",
+        success_count, error_count
+    );
+    println!("📚 Total examples extracted: {}", total_examples);
+
+    Ok(())
+}

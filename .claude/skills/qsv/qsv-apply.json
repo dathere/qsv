@@ -212,5 +212,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_apply.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_apply.rs",
+  "examples_ref": "examples/qsv-apply-examples.json"
 }

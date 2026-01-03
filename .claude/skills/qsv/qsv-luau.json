@@ -182,5 +182,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_luau.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_luau.rs",
+  "examples_ref": "examples/qsv-luau-examples.json"
 }

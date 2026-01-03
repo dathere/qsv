@@ -79,5 +79,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_extdedup.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_extdedup.rs",
+  "examples_ref": "examples/qsv-extdedup-examples.json"
 }

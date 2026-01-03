@@ -53,5 +53,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_flatten.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_flatten.rs",
+  "examples_ref": "examples/qsv-flatten-examples.json"
 }

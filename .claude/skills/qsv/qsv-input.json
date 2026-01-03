@@ -95,5 +95,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_input.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_input.rs",
+  "examples_ref": "examples/qsv-input-examples.json"
 }

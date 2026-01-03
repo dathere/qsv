@@ -47,5 +47,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_reverse.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_reverse.rs",
+  "examples_ref": "examples/qsv-reverse-examples.json"
 }

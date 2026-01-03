@@ -109,5 +109,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_schema.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_schema.rs",
+  "examples_ref": "examples/qsv-schema-examples.json"
 }

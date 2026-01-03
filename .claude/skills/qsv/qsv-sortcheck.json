@@ -67,5 +67,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_sortcheck.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_sortcheck.rs",
+  "examples_ref": "examples/qsv-sortcheck-examples.json"
 }

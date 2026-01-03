@@ -87,5 +87,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_dedup.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_dedup.rs",
+  "examples_ref": "examples/qsv-dedup-examples.json"
 }

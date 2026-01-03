@@ -107,5 +107,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_exclude.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_exclude.rs",
+  "examples_ref": "examples/qsv-exclude-examples.json"
 }

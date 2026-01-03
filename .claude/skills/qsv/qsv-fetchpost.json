@@ -207,5 +207,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fetchpost.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fetchpost.rs",
+  "examples_ref": "examples/qsv-fetchpost-examples.json"
 }

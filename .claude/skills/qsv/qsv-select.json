@@ -136,5 +136,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_select.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_select.rs",
+  "examples_ref": "examples/qsv-select-examples.json"
 }

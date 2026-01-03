@@ -107,5 +107,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_python.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_python.rs",
+  "examples_ref": "examples/qsv-python-examples.json"
 }

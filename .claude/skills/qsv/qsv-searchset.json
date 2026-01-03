@@ -140,5 +140,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_searchset.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_searchset.rs",
+  "examples_ref": "examples/qsv-searchset-examples.json"
 }

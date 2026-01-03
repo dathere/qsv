@@ -261,5 +261,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_joinp.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_joinp.rs",
+  "examples_ref": "examples/qsv-joinp-examples.json"
 }

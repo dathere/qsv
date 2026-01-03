@@ -72,5 +72,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_safenames.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_safenames.rs",
+  "examples_ref": "examples/qsv-safenames-examples.json"
 }

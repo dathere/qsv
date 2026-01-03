@@ -133,5 +133,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_split.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_split.rs",
+  "examples_ref": "examples/qsv-split-examples.json"
 }

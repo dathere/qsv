@@ -15,16 +15,18 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SkillDefinition {
-    name:        String,
-    version:     String,
-    description: String,
-    category:    String,
-    command:     CommandSpec,
-    examples:    Vec<Example>,
+    name:         String,
+    version:      String,
+    description:  String,
+    category:     String,
+    command:      CommandSpec,
+    examples:     Vec<Example>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    hints:       Option<BehavioralHints>,
+    hints:        Option<BehavioralHints>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    test_file:   Option<String>,
+    test_file:    Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    examples_ref: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -112,6 +114,7 @@ impl UsageParser {
                 "https://github.com/dathere/qsv/blob/master/tests/test_{}.rs",
                 self.command_name
             )),
+            examples_ref: Some(format!("examples/qsv-{}-examples.json", self.command_name)),
         })
     }
 

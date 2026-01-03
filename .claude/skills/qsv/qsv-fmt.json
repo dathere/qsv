@@ -79,5 +79,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fmt.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fmt.rs",
+  "examples_ref": "examples/qsv-fmt-examples.json"
 }

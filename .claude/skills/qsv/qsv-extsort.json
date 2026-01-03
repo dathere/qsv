@@ -70,5 +70,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_extsort.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_extsort.rs",
+  "examples_ref": "examples/qsv-extsort-examples.json"
 }

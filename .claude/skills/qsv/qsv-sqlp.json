@@ -326,5 +326,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_sqlp.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_sqlp.rs",
+  "examples_ref": "examples/qsv-sqlp-examples.json"
 }

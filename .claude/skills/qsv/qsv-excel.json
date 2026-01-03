@@ -219,5 +219,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_excel.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_excel.rs",
+  "examples_ref": "examples/qsv-excel-examples.json"
 }

@@ -71,5 +71,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_pseudo.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_pseudo.rs",
+  "examples_ref": "examples/qsv-pseudo-examples.json"
 }

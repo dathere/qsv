@@ -152,5 +152,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs",
+  "examples_ref": "examples/qsv-datefmt-examples.json"
 }

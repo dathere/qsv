@@ -32,5 +32,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_index.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_index.rs",
+  "examples_ref": "examples/qsv-index-examples.json"
 }

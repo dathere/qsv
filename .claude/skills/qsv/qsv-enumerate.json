@@ -127,5 +127,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_enumerate.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_enumerate.rs",
+  "examples_ref": "examples/qsv-enumerate-examples.json"
 }

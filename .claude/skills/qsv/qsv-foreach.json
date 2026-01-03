@@ -83,5 +83,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_foreach.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_foreach.rs",
+  "examples_ref": "examples/qsv-foreach-examples.json"
 }

@@ -147,5 +147,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_diff.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_diff.rs",
+  "examples_ref": "examples/qsv-diff-examples.json"
 }

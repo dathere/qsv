@@ -59,5 +59,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_explode.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_explode.rs",
+  "examples_ref": "examples/qsv-explode-examples.json"
 }

@@ -145,5 +145,6 @@
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_moarstats.rs"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_moarstats.rs",
+  "examples_ref": "examples/qsv-moarstats-examples.json"
 }

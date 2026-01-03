@@ -284,8 +284,8 @@
         "^Ḟoo"
       ],
       "options": {
-        "--count": "data.csv",
-        "--unicode": "true"
+        "--unicode": "true",
+        "--count": "data.csv"
       },
       "expected": {
         "data": [
@@ -403,8 +403,8 @@
         "^foo"
       ],
       "options": {
-        "--count": "data.csv",
-        "--no-headers": "true"
+        "--no-headers": "true",
+        "--count": "data.csv"
       },
       "expected": {
         "data": [
@@ -502,9 +502,9 @@
         "^foo"
       ],
       "options": {
-        "--select": "2",
+        "--count": "data.csv",
         "--no-headers": "true",
-        "--count": "data.csv"
+        "--select": "2"
       },
       "expected": {
         "data": [
@@ -554,8 +554,8 @@
         "^foo"
       ],
       "options": {
-        "--invert-match": "true",
-        "--count": "data.csv"
+        "--count": "data.csv",
+        "--invert-match": "true"
       },
       "expected": {
         "data": [
@@ -826,8 +826,8 @@
         "^foo"
       ],
       "options": {
-        "--invert-match": "true",
-        "--count": "data.csv"
+        "--count": "data.csv",
+        "--invert-match": "true"
       },
       "expected": {
         "data": [
@@ -887,7 +887,7 @@
     {
       "name": "search_preview",
       "description": "Search Preview",
-      "command": "qsv search Beacon Hill test_file",
+      "command": "qsv search \"Beacon Hill\" test_file",
       "args": [
         "Beacon Hill",
         "test_file"
@@ -1148,7 +1148,7 @@
     {
       "name": "search_preview_json",
       "description": "Search Preview Json",
-      "command": "qsv search Beacon Hill test_file",
+      "command": "qsv search \"Beacon Hill\" test_file",
       "args": [
         "Beacon Hill",
         "test_file"

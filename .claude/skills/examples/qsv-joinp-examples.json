@@ -106,7 +106,7 @@
         ],
         "filename": "letters.csv"
       },
-      "command": "qsv joinp &out_file",
+      "command": "qsv joinp \"&out_file\"",
       "args": [
         "&out_file"
       ],
@@ -238,7 +238,7 @@
         ],
         "filename": "gdp.csv"
       },
-      "command": "qsv joinp &out_file",
+      "command": "qsv joinp \"&out_file\"",
       "args": [
         "&out_file"
       ],
@@ -1927,8 +1927,8 @@
       "description": "Joinp Non Equi Less Than Date Arithmetic",
       "command": "qsv joinp ",
       "options": {
-        "--non-equi": "date_left  + interval '4 months' < deadline_right",
-        "--try-parsedates": "true"
+        "--try-parsedates": "true",
+        "--non-equi": "date_left  + interval '4 months' < deadline_right"
       }
     },
     {
@@ -2321,8 +2321,8 @@
       "description": "Joinp Decimal Comma Validation With Non Equi Join",
       "command": "qsv joinp ",
       "options": {
-        "--decimal-comma": "true",
-        "--non-equi": "value_left >= min_val_right AND value_left <= max_val_right"
+        "--non-equi": "value_left >= min_val_right AND value_left <= max_val_right",
+        "--decimal-comma": "true"
       },
       "tags": [
         "custom-delimiter"

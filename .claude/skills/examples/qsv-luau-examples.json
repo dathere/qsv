@@ -30,7 +30,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map inc number + 1 data.csv",
+      "command": "qsv luau map inc \"number + 1\" data.csv",
       "args": [
         "map",
         "inc",
@@ -129,7 +129,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map inc number * _IDX data.csv",
+      "command": "qsv luau map inc \"number * _IDX\" data.csv",
       "args": [
         "map",
         "inc",
@@ -194,7 +194,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map Total tot = (tot or 0) + Amount; return tot data.csv",
+      "command": "qsv luau map Total \"tot = (tot or 0) + Amount; return tot\" data.csv",
       "args": [
         "map",
         "Total",
@@ -259,7 +259,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map Total tot = tot + Amount; return tot data.csv",
+      "command": "qsv luau map Total \"tot = tot + Amount; return tot\" data.csv",
       "args": [
         "map",
         "Total",
@@ -514,7 +514,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map div math.floor(number / 2) data.csv",
+      "command": "qsv luau map div \"math.floor(number / 2)\" data.csv",
       "args": [
         "map",
         "div",
@@ -584,7 +584,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map days_added r#\"local date = require \"./date\";local t_date = date(date_col",
+      "command": "qsv luau map days_added \"r#\\\"local date = require \\\"./date\\\";local t_date = date(date_col\"",
       "args": [
         "map",
         "days_added",
@@ -619,7 +619,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map div math.dancefloor(number / 2) data.csv",
+      "command": "qsv luau map div \"math.dancefloor(number / 2)\" data.csv",
       "args": [
         "map",
         "div",
@@ -658,7 +658,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map r#\"div/column\"# r#\"col[\"letter-column\"] .. math.floor(col[\"number column\"] / 2 data.csv",
+      "command": "qsv luau map \"r#\\\"div/column\\\"#\" \"r#\\\"col[\\\"letter-column\\\"] .. math.floor(col[\\\"number column\\\"] / 2\" data.csv",
       "args": [
         "map",
         "r#\"div/column\"#",
@@ -719,7 +719,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map col[2] + 1",
+      "command": "qsv luau map \"col[2] + 1\"",
       "args": [
         "map",
         "col[2] + 1"
@@ -812,7 +812,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map running_total tot = (tot or 0) + x; return tot data.csv",
+      "command": "qsv luau map running_total \"tot = (tot or 0) + x; return tot\" data.csv",
       "args": [
         "map",
         "running_total",
@@ -877,7 +877,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map running_total tot = (tot or 0) + col['the number column']; return tot data.csv",
+      "command": "qsv luau map running_total \"tot = (tot or 0) + col['the number column']; return tot\" data.csv",
       "args": [
         "map",
         "running_total",
@@ -1009,7 +1009,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map test tonumber(number) > 14 data.csv",
+      "command": "qsv luau map test \"tonumber(number) > 14\" data.csv",
       "args": [
         "map",
         "test",
@@ -1074,7 +1074,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau filter tonumber(number) > 14 data.csv",
+      "command": "qsv luau filter \"tonumber(number) > 14\" data.csv",
       "args": [
         "filter",
         "tonumber(number) > 14",
@@ -1125,7 +1125,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau filter tothedancenumber(number) > 14 data.csv",
+      "command": "qsv luau filter \"tothedancenumber(number) > 14\" data.csv",
       "args": [
         "filter",
         "tothedancenumber(number) > 14",
@@ -1215,7 +1215,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau filter tonumber(number) data.csv",
+      "command": "qsv luau filter \"tonumber(number)\" data.csv",
       "args": [
         "filter",
         "tonumber(number)",
@@ -1352,7 +1352,7 @@
     {
       "name": "luau_loadjson_error_missing_file",
       "description": "Luau Loadjson Error Missing File",
-      "command": "qsv luau map result \n            r#\"\nBEGIN {\n    qsv_loadjson(\"config\", \"nonexistent.json\"",
+      "command": "qsv luau map result \"\n            r#\\\"\nBEGIN {\n    qsv_loadjson(\\\"config\\\", \\\"nonexistent.json\\\"\"",
       "args": [
         "map",
         "result",
@@ -1365,7 +1365,7 @@
     {
       "name": "luau_loadjson_error_invalid_json",
       "description": "Luau Loadjson Error Invalid Json",
-      "command": "qsv luau map result \n            r#\"\nBEGIN {\n    qsv_loadjson(\"config\", \"invalid.json\"",
+      "command": "qsv luau map result \"\n            r#\\\"\nBEGIN {\n    qsv_loadjson(\\\"config\\\", \\\"invalid.json\\\"\"",
       "args": [
         "map",
         "result",
@@ -1401,7 +1401,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map running_total r#\"qsv_cumsum(amount data.csv",
+      "command": "qsv luau map running_total \"r#\\\"qsv_cumsum(amount\" data.csv",
       "args": [
         "map",
         "running_total",
@@ -1465,7 +1465,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map revenue_total,expenses_total,profit_total \n            r#\"{\n            qsv_cumsum(revenue, \"revenue\"",
+      "command": "qsv luau map revenue_total,expenses_total,profit_total \"\n            r#\\\"{\n            qsv_cumsum(revenue, \\\"revenue\\\"\"",
       "args": [
         "map",
         "revenue_total,expenses_total,profit_total",
@@ -1498,7 +1498,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map total r#\"qsv_cumsum(value data.csv",
+      "command": "qsv luau map total \"r#\\\"qsv_cumsum(value\" data.csv",
       "args": [
         "map",
         "total",
@@ -1529,7 +1529,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map running_product r#\"qsv_cumprod(value data.csv",
+      "command": "qsv luau map running_product \"r#\\\"qsv_cumprod(value\" data.csv",
       "args": [
         "map",
         "running_product",
@@ -1587,7 +1587,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map running_max,running_min r#\"{qsv_cummax(value",
+      "command": "qsv luau map running_max,running_min \"r#\\\"{qsv_cummax(value\"",
       "args": [
         "map",
         "running_max,running_min",
@@ -1620,7 +1620,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map lag1,lag2 \n            r#\"{\n            qsv_lag(value, 1, \"0\"",
+      "command": "qsv luau map lag1,lag2 \"\n            r#\\\"{\n            qsv_lag(value, 1, \\\"0\\\"\"",
       "args": [
         "map",
         "lag1,lag2",
@@ -1653,7 +1653,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map has_zero,all_positive \n            r#\"{\n            qsv_cumany(value == \"0\"",
+      "command": "qsv luau map has_zero,all_positive \"\n            r#\\\"{\n            qsv_cumany(value == \\\"0\\\"\"",
       "args": [
         "map",
         "has_zero,all_positive",
@@ -1686,7 +1686,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map diff1,diff2 \n            r#\"{\n            qsv_diff(value",
+      "command": "qsv luau map diff1,diff2 \"\n            r#\\\"{\n            qsv_diff(value\"",
       "args": [
         "map",
         "diff1,diff2",
@@ -1716,7 +1716,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map has_empty,all_nonempty \n            r#\"{\n            qsv_cumany(value == \"\"",
+      "command": "qsv luau map has_empty,all_nonempty \"\n            r#\\\"{\n            qsv_cumany(value == \\\"\\\"\"",
       "args": [
         "map",
         "has_empty,all_nonempty",
@@ -1746,7 +1746,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map all_positive r#\"qsv_cumall(tonumber(value data.csv",
+      "command": "qsv luau map all_positive \"r#\\\"qsv_cumall(tonumber(value\" data.csv",
       "args": [
         "map",
         "all_positive",
@@ -1801,7 +1801,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map prev,prev2 \n            r#\"{\n            qsv_lag(value, 1, \"N/A\"",
+      "command": "qsv luau map prev,prev2 \"\n            r#\\\"{\n            qsv_lag(value, 1, \\\"N/A\\\"\"",
       "args": [
         "map",
         "prev,prev2",
@@ -1831,7 +1831,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map diff1,diff2,pct_change \n            r#\"{\n            qsv_diff(value",
+      "command": "qsv luau map diff1,diff2,pct_change \"\n            r#\\\"{\n            qsv_diff(value\"",
       "args": [
         "map",
         "diff1,diff2,pct_change",
@@ -1864,7 +1864,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map running_max,running_min,running_sum \n            r#\"{\n            qsv_cummax(value",
+      "command": "qsv luau map running_max,running_min,running_sum \"\n            r#\\\"{\n            qsv_cummax(value\"",
       "args": [
         "map",
         "running_max,running_min,running_sum",
@@ -1953,7 +1953,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map accumulated \n            r#\"\n-- This is the MAIN LOOP\n-- Define a custom accumulator function that keeps a weighted sum\n-- where each new value is weighted by its position\n-- we define the function inside the MAIN LOOP to access the _IDX variable\nfunction weighted_sum(acc, x data.csv",
+      "command": "qsv luau map accumulated \"\n            r#\\\"\n-- This is the MAIN LOOP\n-- Define a custom accumulator function that keeps a weighted sum\n-- where each new value is weighted by its position\n-- we define the function inside the MAIN LOOP to access the _IDX variable\nfunction weighted_sum(acc, x\" data.csv",
       "args": [
         "map",
         "accumulated",
@@ -1987,7 +1987,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map accumulated \n            r#\"\n-- This is the MAIN LOOP\n-- Define a custom accumulator function that keeps a weighted sum\n-- where each new value is weighted by its position\n-- we define the function inside the MAIN LOOP to access the _IDX variable\nfunction weighted_sum(acc, x data.csv",
+      "command": "qsv luau map accumulated \"\n            r#\\\"\n-- This is the MAIN LOOP\n-- Define a custom accumulator function that keeps a weighted sum\n-- where each new value is weighted by its position\n-- we define the function inside the MAIN LOOP to access the _IDX variable\nfunction weighted_sum(acc, x\" data.csv",
       "args": [
         "map",
         "accumulated",
@@ -2021,7 +2021,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map accumulated \n            r#\"\nBEGIN {\n\n    -- Define a custom accumulator function\n    function udf_sum(acc, x",
+      "command": "qsv luau map accumulated \"\n            r#\\\"\nBEGIN {\n\n    -- Define a custom accumulator function\n    function udf_sum(acc, x\"",
       "args": [
         "map",
         "accumulated",
@@ -2051,7 +2051,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map accumulated \n            r#\"\nBEGIN {\n\n    -- Define a custom accumulator function that resets the accumulator\n    -- if the accumulated value exceeds a threshold of 7\n    function func_with_reset(acc, x",
+      "command": "qsv luau map accumulated \"\n            r#\\\"\nBEGIN {\n\n    -- Define a custom accumulator function that resets the accumulator\n    -- if the accumulated value exceeds a threshold of 7\n    function func_with_reset(acc, x\"",
       "args": [
         "map",
         "accumulated",
@@ -2061,7 +2061,7 @@
     {
       "name": "luau_cumsum_overflow",
       "description": "Luau Cumsum Overflow",
-      "command": "qsv luau map total r#\"qsv_cumsum(value data.csv",
+      "command": "qsv luau map total \"r#\\\"qsv_cumsum(value\" data.csv",
       "args": [
         "map",
         "total",
@@ -2083,7 +2083,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map result \n            r#\"\nBEGIN {\n    local result = qsv_shellcmd(\"rm\", \"-rf /\"",
+      "command": "qsv luau map result \"\n            r#\\\"\nBEGIN {\n    local result = qsv_shellcmd(\\\"rm\\\", \\\"-rf /\\\"\"",
       "args": [
         "map",
         "result",
@@ -2118,7 +2118,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map newpoints r#\"if string.find(Name, 'DNE %(2% data.csv",
+      "command": "qsv luau map newpoints \"r#\\\"if string.find(Name, 'DNE %(2%\" data.csv",
       "args": [
         "map",
         "newpoints",
@@ -2182,7 +2182,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map newpoints r#\"if string.find(Name, 'DNE (2 data.csv",
+      "command": "qsv luau map newpoints \"r#\\\"if string.find(Name, 'DNE (2\" data.csv",
       "args": [
         "map",
         "newpoints",
@@ -2242,7 +2242,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau filter r#\"string.find(email, '.com', 1, true data.csv",
+      "command": "qsv luau filter \"r#\\\"string.find(email, '.com', 1, true\" data.csv",
       "args": [
         "filter",
         "r#\"string.find(email, '.com', 1, true",
@@ -2281,7 +2281,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau filter r#\"string.find(text, '%d%.%d' data.csv",
+      "command": "qsv luau filter \"r#\\\"string.find(text, '%d%.%d'\" data.csv",
       "args": [
         "filter",
         "r#\"string.find(text, '%d%.%d'",
@@ -2327,7 +2327,7 @@
         ],
         "filename": "a.csv"
       },
-      "command": "qsv luau map newpoints r#\"if string.find(Name,'DNE %(2% a.csv map newpoints r#\"if string.find(Name,'DNE (2 a.csv",
+      "command": "qsv luau map newpoints \"r#\\\"if string.find(Name,'DNE %(2%\" a.csv map newpoints \"r#\\\"if string.find(Name,'DNE (2\" a.csv",
       "args": [
         "map",
         "newpoints",

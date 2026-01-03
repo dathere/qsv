@@ -421,8 +421,8 @@
         "data.csv"
       ],
       "options": {
-        "--replacement": "silver",
-        "--comparand": "brown"
+        "--comparand": "brown",
+        "--replacement": "silver"
       },
       "expected": {
         "data": [
@@ -645,8 +645,8 @@
         "data.csv"
       ],
       "options": {
-        "--replacement": "SSN",
-        "--comparand": "(?:?)"
+        "--comparand": "(?:?)",
+        "--replacement": "SSN"
       },
       "tags": [
         "error-handling"

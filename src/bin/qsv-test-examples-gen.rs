@@ -219,9 +219,50 @@ impl TestParser {
             options.insert(opt, "true".to_string());
         }
 
-        let full_command = format!("qsv {} {}", subcommand, args.join(" "));
+        // Build command with proper shell quoting
+        let quoted_args: Vec<String> = args.iter().map(|arg| Self::shell_quote(arg)).collect();
+        let full_command = format!("qsv {} {}", subcommand, quoted_args.join(" "));
 
         Ok((full_command, args, options))
+    }
+
+    /// Quote a string for safe use in shell commands
+    ///
+    /// This function determines if quoting is needed and applies proper escaping.
+    fn shell_quote(arg: &str) -> String {
+        // Check if quoting is needed
+        let needs_quoting = arg.is_empty()
+            || arg.contains(' ')
+            || arg.contains('\t')
+            || arg.contains('\n')
+            || arg.contains('"')
+            || arg.contains('\'')
+            || arg.contains('\\')
+            || arg.contains('$')
+            || arg.contains('`')
+            || arg.contains('|')
+            || arg.contains('&')
+            || arg.contains(';')
+            || arg.contains('<')
+            || arg.contains('>')
+            || arg.contains('(')
+            || arg.contains(')')
+            || arg.contains('{')
+            || arg.contains('}')
+            || arg.contains('[')
+            || arg.contains(']')
+            || arg.contains('*')
+            || arg.contains('?')
+            || arg.contains('!')
+            || arg.contains('#');
+
+        if !needs_quoting {
+            return arg.to_string();
+        }
+
+        // Escape backslashes and double quotes, then wrap in double quotes
+        let escaped = arg.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"{}\"", escaped)
     }
 
     fn extract_expected_output(&self, body: &str) -> Option<TestOutput> {

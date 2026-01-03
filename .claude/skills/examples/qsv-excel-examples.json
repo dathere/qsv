@@ -275,8 +275,8 @@
       "description": "Excel Open Flexible Xls",
       "command": "qsv excel ",
       "options": {
-        "--sheet": "Flexibility Test",
-        "--flexible": "xls_file"
+        "--flexible": "xls_file",
+        "--sheet": "Flexibility Test"
       },
       "expected": {
         "data": [
@@ -318,8 +318,8 @@
       "description": "Excel Trim Xls",
       "command": "qsv excel ",
       "options": {
-        "--sheet": "trim test",
-        "--trim": "xls_file"
+        "--trim": "xls_file",
+        "--sheet": "trim test"
       },
       "expected": {
         "data": [
@@ -1366,8 +1366,8 @@
         "xls_file"
       ],
       "options": {
-        "-s": "Sheet2",
-        "--range": "a2:b"
+        "--range": "a2:b",
+        "-s": "Sheet2"
       }
     },
     {
@@ -1603,8 +1603,8 @@
         "xls_file"
       ],
       "options": {
-        "--range": "e2:e2",
-        "--cell": "d2"
+        "--cell": "d2",
+        "--range": "e2:e2"
       },
       "expected": {
         "data": [

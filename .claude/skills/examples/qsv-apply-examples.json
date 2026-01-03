@@ -1489,8 +1489,8 @@
         "data.csv"
       ],
       "options": {
-        "--comparand": "shlong,dong,cameltoe",
-        "--new-column": "profanity_flag"
+        "--new-column": "profanity_flag",
+        "--comparand": "shlong,dong,cameltoe"
       },
       "expected": {
         "data": [
@@ -3722,8 +3722,8 @@
         "data.csv"
       ],
       "options": {
-        "--replacement": "1.5",
-        "--comparand": "EUR "
+        "--comparand": "EUR ",
+        "--replacement": "1.5"
       },
       "expected": {
         "data": [
@@ -3839,9 +3839,9 @@
         "data.csv"
       ],
       "options": {
-        "--replacement": "1.5",
+        "-C": "EUR ",
         "--formatstr": "euro",
-        "-C": "EUR "
+        "--replacement": "1.5"
       },
       "expected": {
         "data": [
@@ -3996,8 +3996,8 @@
         "data.csv"
       ],
       "options": {
-        "--comparand": "michael",
-        "--new-column": "eudex_flag"
+        "--new-column": "eudex_flag",
+        "--comparand": "michael"
       },
       "expected": {
         "data": [
@@ -4065,8 +4065,8 @@
         "data.csv"
       ],
       "options": {
-        "--comparand": "Jesus",
-        "--new-column": "eudex_flag"
+        "--new-column": "eudex_flag",
+        "--comparand": "Jesus"
       },
       "expected": {
         "data": [
@@ -4127,7 +4127,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply operations sentiment customer comment data.csv",
+      "command": "qsv apply operations sentiment \"customer comment\" data.csv",
       "args": [
         "operations",
         "sentiment",
@@ -4429,8 +4429,8 @@
         "data.csv"
       ],
       "options": {
-        "--new-column": "language",
-        "--comparand": "0.03?"
+        "--comparand": "0.03?",
+        "--new-column": "language"
       },
       "expected": {
         "data": [
@@ -4751,7 +4751,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply operations upper !id data.csv",
+      "command": "qsv apply operations upper \"!id\" data.csv",
       "args": [
         "operations",
         "upper",

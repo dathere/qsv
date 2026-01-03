@@ -22,8 +22,8 @@
         "data.csv"
       ],
       "options": {
-        "--new-column": "result",
-        "--jaq": "r#\".\"places\"[0].\"place name\"\"#"
+        "--jaq": "r#\".\"places\"[0].\"place name\"\"#",
+        "--new-column": "result"
       },
       "expected": {
         "data": [
@@ -94,8 +94,8 @@
         "data.csv"
       ],
       "options": {
-        "--jaq": "r#\".\"places\"[0].\"longitude\"\"#",
-        "--new-column": "longitude"
+        "--new-column": "longitude",
+        "--jaq": "r#\".\"places\"[0].\"longitude\"\"#"
       },
       "expected": {
         "data": [
@@ -130,8 +130,8 @@
         "data.csv"
       ],
       "options": {
-        "--new-column": "coordinates",
-        "--jaq": "r#\"[ .\"places\"[0].\"longitude\", .\"places\"[0].\"latitude\" ]\"#"
+        "--jaq": "r#\"[ .\"places\"[0].\"longitude\", .\"places\"[0].\"latitude\" ]\"#",
+        "--new-column": "coordinates"
       }
     }
   ]

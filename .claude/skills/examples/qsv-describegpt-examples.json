@@ -76,9 +76,9 @@
         "test.csv"
       ],
       "options": {
-        "--no-cache": "true",
         "--base-url": "https://api.together.xyz/v1",
-        "--api-key": "test-key"
+        "--api-key": "test-key",
+        "--no-cache": "true"
       },
       "tags": [
         "regression"

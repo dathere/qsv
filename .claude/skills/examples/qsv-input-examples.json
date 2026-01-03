@@ -630,8 +630,8 @@
         "data.csv"
       ],
       "options": {
-        "--skip-lines": "2",
-        "--skip-lastlines": "2"
+        "--skip-lastlines": "2",
+        "--skip-lines": "2"
       },
       "expected": {
         "data": [

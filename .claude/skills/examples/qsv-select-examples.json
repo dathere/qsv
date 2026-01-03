@@ -5,7 +5,7 @@
     {
       "name": "headers",
       "description": "Headers",
-      "command": "qsv select $select data.csv",
+      "command": "qsv select \"$select\" data.csv",
       "args": [
         "$select",
         "data.csv"

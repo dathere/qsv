@@ -5,7 +5,7 @@
     {
       "name": "to_datapackage",
       "description": "To Datapackage",
-      "command": "qsv to datapackage generateddp_json_filename.clone( in.csv",
+      "command": "qsv to datapackage \"generateddp_json_filename.clone(\" in.csv",
       "args": [
         "datapackage",
         "generateddp_json_filename.clone(",
@@ -15,7 +15,7 @@
     {
       "name": "to_datapackage_dir",
       "description": "To Datapackage Dir",
-      "command": "qsv to datapackage dp_file_filename.clone( wrk.path(\"csvdir\"",
+      "command": "qsv to datapackage \"dp_file_filename.clone(\" \"wrk.path(\\\"csvdir\\\"\"",
       "args": [
         "datapackage",
         "dp_file_filename.clone(",
@@ -25,7 +25,7 @@
     {
       "name": "to_parquet_dir",
       "description": "To Parquet Dir",
-      "command": "qsv to parquet parquet_dirname.clone( places.csv cities.csv",
+      "command": "qsv to parquet \"parquet_dirname.clone(\" places.csv cities.csv",
       "args": [
         "parquet",
         "parquet_dirname.clone(",

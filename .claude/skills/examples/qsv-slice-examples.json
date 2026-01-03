@@ -10,8 +10,8 @@
         "test_file"
       ],
       "options": {
-        "--index": "2",
-        "--json": "true"
+        "--json": "true",
+        "--index": "2"
       }
     },
     {
@@ -22,8 +22,8 @@
         "test_file"
       ],
       "options": {
-        "--index": "2",
-        "--json": "true"
+        "--json": "true",
+        "--index": "2"
       }
     },
     {
@@ -57,8 +57,8 @@
         "test_file"
       ],
       "options": {
-        "--json": "true",
-        "--index": "2"
+        "--index": "2",
+        "--json": "true"
       }
     },
     {
@@ -69,8 +69,8 @@
         "test_file"
       ],
       "options": {
-        "--index": "2",
-        "--json": "true"
+        "--json": "true",
+        "--index": "2"
       }
     },
     {
@@ -93,8 +93,8 @@
         "test_file"
       ],
       "options": {
-        "--json": "true",
-        "--index": "2"
+        "--index": "2",
+        "--json": "true"
       }
     },
     {
@@ -129,8 +129,8 @@
         "test_file"
       ],
       "options": {
-        "--index": "2",
-        "--json": "true"
+        "--json": "true",
+        "--index": "2"
       }
     }
   ]

@@ -5,7 +5,7 @@
     {
       "name": "partition",
       "description": "Partition",
-      "command": "qsv partition state &wrk.path(\".\" in.csv",
+      "command": "qsv partition state \"&wrk.path(\\\".\\\"\" in.csv",
       "args": [
         "state",
         "&wrk.path(\".\"",
@@ -15,7 +15,7 @@
     {
       "name": "partition_drop",
       "description": "Partition Drop",
-      "command": "qsv partition &wrk.path(\".\" in.csv",
+      "command": "qsv partition \"&wrk.path(\\\".\\\"\" in.csv",
       "args": [
         "&wrk.path(\".\"",
         "in.csv"
@@ -27,7 +27,7 @@
     {
       "name": "partition_without_headers",
       "description": "Partition Without Headers",
-      "command": "qsv partition &wrk.path(\".\" in.csv",
+      "command": "qsv partition \"&wrk.path(\\\".\\\"\" in.csv",
       "args": [
         "&wrk.path(\".\"",
         "in.csv"
@@ -42,7 +42,7 @@
     {
       "name": "partition_drop_without_headers",
       "description": "Partition Drop Without Headers",
-      "command": "qsv partition &wrk.path(\".\" in.csv",
+      "command": "qsv partition \"&wrk.path(\\\".\\\"\" in.csv",
       "args": [
         "&wrk.path(\".\"",
         "in.csv"
@@ -57,7 +57,7 @@
     {
       "name": "partition_into_new_directory",
       "description": "Partition Into New Directory",
-      "command": "qsv partition state &wrk.path(\"out\" in.csv",
+      "command": "qsv partition state \"&wrk.path(\\\"out\\\"\" in.csv",
       "args": [
         "state",
         "&wrk.path(\"out\"",
@@ -77,7 +77,7 @@
     {
       "name": "partition_invalid_filename",
       "description": "Partition Invalid Filename",
-      "command": "qsv partition state &wrk.path(\".\" in.csv",
+      "command": "qsv partition state \"&wrk.path(\\\".\\\"\" in.csv",
       "args": [
         "state",
         "&wrk.path(\".\"",
@@ -87,7 +87,7 @@
     {
       "name": "partition_with_tricky_key_values",
       "description": "Partition With Tricky Key Values",
-      "command": "qsv partition key &wrk.path(\".\" in.csv",
+      "command": "qsv partition key \"&wrk.path(\\\".\\\"\" in.csv",
       "args": [
         "key",
         "&wrk.path(\".\"",
@@ -97,7 +97,7 @@
     {
       "name": "partition_with_limit",
       "description": "Partition With Limit",
-      "command": "qsv partition state &wrk.path(\".\" in.csv",
+      "command": "qsv partition state \"&wrk.path(\\\".\\\"\" in.csv",
       "args": [
         "state",
         "&wrk.path(\".\"",
@@ -107,7 +107,7 @@
     {
       "name": "partition_with_prefix_length",
       "description": "Partition With Prefix Length",
-      "command": "qsv partition state &wrk.path(\".\" in.csv",
+      "command": "qsv partition state \"&wrk.path(\\\".\\\"\" in.csv",
       "args": [
         "state",
         "&wrk.path(\".\"",
@@ -142,7 +142,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv partition state &wrk.path(\".\" in.csv",
+      "command": "qsv partition state \"&wrk.path(\\\".\\\"\" in.csv",
       "args": [
         "state",
         "&wrk.path(\".\"",
@@ -155,7 +155,7 @@
     {
       "name": "partition_stdin_pipeline",
       "description": "Partition Stdin Pipeline",
-      "command": "qsv partition state &wrk.path(\".\"",
+      "command": "qsv partition state \"&wrk.path(\\\".\\\"\"",
       "args": [
         "state",
         "&wrk.path(\".\""

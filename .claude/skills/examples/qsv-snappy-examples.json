@@ -23,7 +23,7 @@
     {
       "name": "snappy_compress",
       "description": "Snappy Compress",
-      "command": "qsv snappy compress test_file decompress got_path.clone(",
+      "command": "qsv snappy compress test_file decompress \"got_path.clone(\"",
       "args": [
         "compress",
         "test_file",

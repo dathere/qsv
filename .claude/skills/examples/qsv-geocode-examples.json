@@ -211,7 +211,7 @@
     {
       "name": "geocode_reversenow",
       "description": "Geocode Reversenow",
-      "command": "qsv geocode reversenow (40.67, -73.94)",
+      "command": "qsv geocode reversenow \"(40.67, -73.94)\"",
       "args": [
         "reversenow",
         "(40.67, -73.94)"
@@ -220,7 +220,7 @@
     {
       "name": "geocode_reversenow_error",
       "description": "Geocode Reversenow Error",
-      "command": "qsv geocode reversenow (40.67, -73.94)",
+      "command": "qsv geocode reversenow \"(40.67, -73.94)\"",
       "args": [
         "reversenow",
         "(40.67, -73.94)"

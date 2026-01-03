@@ -30,7 +30,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \\\\.0$ \"\" data.csv",
+      "command": "qsv replace \"\\\\\\\\.0$\" \"\\\"\\\"\" data.csv",
       "args": [
         "\\\\.0$",
         "\"\"",
@@ -89,7 +89,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace $low^ low",
+      "command": "qsv replace \"$low^\" low",
       "args": [
         "$low^",
         "low"
@@ -150,7 +150,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \\\\.0$ \"\" data.csv",
+      "command": "qsv replace \"\\\\\\\\.0$\" \"\\\"\\\"\" data.csv",
       "args": [
         "\\\\.0$",
         "\"\"",
@@ -185,7 +185,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \\\\.0$ \"\" data.csv",
+      "command": "qsv replace \"\\\\\\\\.0$\" \"\\\"\\\"\" data.csv",
       "args": [
         "\\\\.0$",
         "\"\"",
@@ -220,7 +220,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \\\\.0$ \"\" data.csv",
+      "command": "qsv replace \"\\\\\\\\.0$\" \"\\\"\\\"\" data.csv",
       "args": [
         "\\\\.0$",
         "\"\"",
@@ -258,7 +258,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \\\\.0$ <NULL> data.csv",
+      "command": "qsv replace \"\\\\\\\\.0$\" \"<NULL>\" data.csv",
       "args": [
         "\\\\.0$",
         "<NULL>",
@@ -325,7 +325,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace [\\\\s\\\\S]ell[\\\\s\\\\S]w Ƀellow",
+      "command": "qsv replace \"[\\\\\\\\s\\\\\\\\S]ell[\\\\\\\\s\\\\\\\\S]w\" Ƀellow",
       "args": [
         "[\\\\s\\\\S]ell[\\\\s\\\\S]w",
         "Ƀellow"
@@ -405,7 +405,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace [\\\\s\\\\S]ell[\\\\s\\\\S]w Ƀellow data.csv",
+      "command": "qsv replace \"[\\\\\\\\s\\\\\\\\S]ell[\\\\\\\\s\\\\\\\\S]w\" Ƀellow data.csv",
       "args": [
         "[\\\\s\\\\S]ell[\\\\s\\\\S]w",
         "Ƀellow",
@@ -471,7 +471,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \\\\.0$ \"\" data.csv",
+      "command": "qsv replace \"\\\\\\\\.0$\" \"\\\"\\\"\" data.csv",
       "args": [
         "\\\\.0$",
         "\"\"",
@@ -532,7 +532,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \\\\.0$ \"\" data.csv",
+      "command": "qsv replace \"\\\\\\\\.0$\" \"\\\"\\\"\" data.csv",
       "args": [
         "\\\\.0$",
         "\"\"",
@@ -594,7 +594,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \\\\d+(\\\\d)\\\\.0$ $1 data.csv",
+      "command": "qsv replace \"\\\\\\\\d+(\\\\\\\\d)\\\\\\\\.0$\" \"$1\" data.csv",
       "args": [
         "\\\\d+(\\\\d)\\\\.0$",
         "$1",
@@ -652,7 +652,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace John Bloggs data.csv",
+      "command": "qsv replace \"John Bloggs\" data.csv",
       "args": [
         "John Bloggs",
         "data.csv"
@@ -823,7 +823,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace John Bloggs data.csv",
+      "command": "qsv replace \"John Bloggs\" data.csv",
       "args": [
         "John Bloggs",
         "data.csv"

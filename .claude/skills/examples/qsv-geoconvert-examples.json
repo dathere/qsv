@@ -5,7 +5,7 @@
     {
       "name": "geoconvert_geojson_to_csv",
       "description": "Geoconvert Geojson To Csv",
-      "command": "qsv geoconvert txcities_geojson geojson csv txcities_csv &txcities_csv_first5",
+      "command": "qsv geoconvert txcities_geojson geojson csv txcities_csv \"&txcities_csv_first5\"",
       "args": [
         "txcities_geojson",
         "geojson",

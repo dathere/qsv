@@ -5,7 +5,7 @@
     {
       "name": "datefmt",
       "description": "Datefmt",
-      "command": "qsv datefmt Created Date data.csv",
+      "command": "qsv datefmt \"Created Date\" data.csv",
       "args": [
         "Created Date",
         "data.csv"
@@ -86,7 +86,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date data.csv",
+      "command": "qsv datefmt \"Created Date\" data.csv",
       "args": [
         "Created Date",
         "data.csv"
@@ -167,7 +167,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date data.csv",
+      "command": "qsv datefmt \"Created Date\" data.csv",
       "args": [
         "Created Date",
         "data.csv"
@@ -248,7 +248,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date data.csv",
+      "command": "qsv datefmt \"Created Date\" data.csv",
       "args": [
         "Created Date",
         "data.csv"
@@ -329,7 +329,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date data.csv",
+      "command": "qsv datefmt \"Created Date\" data.csv",
       "args": [
         "Created Date",
         "data.csv"
@@ -410,7 +410,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date",
+      "command": "qsv datefmt \"Created Date\"",
       "args": [
         "Created Date"
       ],
@@ -493,7 +493,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date",
+      "command": "qsv datefmt \"Created Date\"",
       "args": [
         "Created Date"
       ],
@@ -554,7 +554,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date data.csv",
+      "command": "qsv datefmt \"Created Date\" data.csv",
       "args": [
         "Created Date",
         "data.csv"
@@ -604,7 +604,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date data.csv",
+      "command": "qsv datefmt \"Created Date\" data.csv",
       "args": [
         "Created Date",
         "data.csv"
@@ -660,7 +660,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date data.csv",
+      "command": "qsv datefmt \"Created Date\" data.csv",
       "args": [
         "Created Date",
         "data.csv"
@@ -738,7 +738,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date",
+      "command": "qsv datefmt \"Created Date\"",
       "args": [
         "Created Date"
       ],
@@ -813,7 +813,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date,End Date data.csv",
+      "command": "qsv datefmt \"Created Date,End Date\" data.csv",
       "args": [
         "Created Date,End Date",
         "data.csv"
@@ -893,7 +893,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date,End Date",
+      "command": "qsv datefmt \"Created Date,End Date\"",
       "args": [
         "Created Date,End Date"
       ],
@@ -975,7 +975,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date,End Date data.csv",
+      "command": "qsv datefmt \"Created Date,End Date\" data.csv",
       "args": [
         "Created Date,End Date",
         "data.csv"
@@ -1054,7 +1054,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date",
+      "command": "qsv datefmt \"Created Date\"",
       "args": [
         "Created Date"
       ],
@@ -1099,7 +1099,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date data.csv",
+      "command": "qsv datefmt \"Created Date\" data.csv",
       "args": [
         "Created Date",
         "data.csv"
@@ -1133,7 +1133,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date data.csv",
+      "command": "qsv datefmt \"Created Date\" data.csv",
       "args": [
         "Created Date",
         "data.csv"
@@ -1192,7 +1192,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date data.csv",
+      "command": "qsv datefmt \"Created Date\" data.csv",
       "args": [
         "Created Date",
         "data.csv"
@@ -1255,7 +1255,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv datefmt Created Date data.csv",
+      "command": "qsv datefmt \"Created Date\" data.csv",
       "args": [
         "Created Date",
         "data.csv"

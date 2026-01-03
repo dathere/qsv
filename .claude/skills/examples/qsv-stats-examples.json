@@ -5,7 +5,7 @@
     {
       "name": "stats_prefer_dmy",
       "description": "Stats Prefer Dmy",
-      "command": "qsv stats !/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/ in2.csv",
+      "command": "qsv stats \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\" in2.csv",
       "args": [
         "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/",
         "in2.csv"
@@ -17,7 +17,7 @@
     {
       "name": "stats_prefer_mdy",
       "description": "Stats Prefer Mdy",
-      "command": "qsv stats !/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/ in2.csv",
+      "command": "qsv stats \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\" in2.csv",
       "args": [
         "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/",
         "in2.csv"
@@ -29,7 +29,7 @@
     {
       "name": "stats_rounding",
       "description": "Stats Rounding",
-      "command": "qsv stats test_file !/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/ in2.csv",
+      "command": "qsv stats test_file \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\" in2.csv",
       "args": [
         "test_file",
         "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/",
@@ -47,7 +47,7 @@
     {
       "name": "stats_no_date_inference",
       "description": "Stats No Date Inference",
-      "command": "qsv stats test_file !/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/ in2.csv",
+      "command": "qsv stats test_file \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\" in2.csv",
       "args": [
         "test_file",
         "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/",
@@ -83,8 +83,8 @@
       "description": "Stats With Date Inference Variance Stddev",
       "command": "qsv stats ",
       "options": {
-        "--dataset-stats": "true",
-        "--everything": "test_file"
+        "--everything": "test_file",
+        "--dataset-stats": "true"
       }
     },
     {
@@ -95,8 +95,8 @@
         "in2.csv"
       ],
       "options": {
-        "--everything": "test_file",
-        "--dataset-stats": "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/"
+        "--dataset-stats": "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/",
+        "--everything": "test_file"
       }
     },
     {
@@ -134,7 +134,7 @@
     {
       "name": "stats_cache",
       "description": "Stats Cache",
-      "command": "qsv stats !/variance|geometric_mean|harmonic_mean|stddev|sem|cv/ in2.csv",
+      "command": "qsv stats \"!/variance|geometric_mean|harmonic_mean|stddev|sem|cv/\" in2.csv",
       "args": [
         "!/variance|geometric_mean|harmonic_mean|stddev|sem|cv/",
         "in2.csv"
@@ -806,7 +806,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv out_file.clone(",
+      "command": "qsv stats data.csv \"out_file.clone(\"",
       "args": [
         "data.csv",
         "out_file.clone("
@@ -1098,8 +1098,8 @@
         "data.csv"
       ],
       "options": {
-        "--infer-dates": "true",
-        "--percentile-list": "25,50,75"
+        "--percentile-list": "25,50,75",
+        "--infer-dates": "true"
       },
       "expected": {
         "data": [
@@ -2249,8 +2249,8 @@
       "description": "Stats Infer Boolean Prefix Pattern",
       "command": "qsv stats ",
       "options": {
-        "--boolean-patterns": "t*:f*",
-        "--dataset-stats": "test_file"
+        "--dataset-stats": "test_file",
+        "--boolean-patterns": "t*:f*"
       }
     },
     {
@@ -2345,8 +2345,8 @@
       "description": "Stats Infer Boolean Missing Colon",
       "command": "qsv stats ",
       "options": {
-        "--dataset-stats": "test_file",
-        "--boolean-patterns": "truefalse"
+        "--boolean-patterns": "truefalse",
+        "--dataset-stats": "test_file"
       }
     },
     {
@@ -2354,8 +2354,8 @@
       "description": "Stats Infer Boolean Missing True Pattern",
       "command": "qsv stats ",
       "options": {
-        "--boolean-patterns": ":false",
-        "--dataset-stats": "test_file"
+        "--dataset-stats": "test_file",
+        "--boolean-patterns": ":false"
       }
     },
     {
@@ -2487,7 +2487,7 @@
     {
       "name": "stats_memory_aware_chunking_dynamic",
       "description": "Stats Memory Aware Chunking Dynamic",
-      "command": "qsv index test_file.clone(",
+      "command": "qsv index \"test_file.clone(\"",
       "args": [
         "test_file.clone("
       ],
@@ -2498,7 +2498,7 @@
     {
       "name": "stats_memory_aware_chunking_fixed_limit",
       "description": "Stats Memory Aware Chunking Fixed Limit",
-      "command": "qsv index test_file.clone(",
+      "command": "qsv index \"test_file.clone(\"",
       "args": [
         "test_file.clone("
       ],
@@ -2509,7 +2509,7 @@
     {
       "name": "stats_memory_aware_chunking_unset_streaming",
       "description": "Stats Memory Aware Chunking Unset Streaming",
-      "command": "qsv index test_file.clone( test_file",
+      "command": "qsv index \"test_file.clone(\" test_file",
       "args": [
         "test_file.clone(",
         "test_file"
@@ -2518,7 +2518,7 @@
     {
       "name": "stats_memory_aware_chunking_unset_non_streaming",
       "description": "Stats Memory Aware Chunking Unset Non Streaming",
-      "command": "qsv index test_file.clone(",
+      "command": "qsv index \"test_file.clone(\"",
       "args": [
         "test_file.clone("
       ],
@@ -2529,7 +2529,7 @@
     {
       "name": "stats_auto_index_creation_skipped_if_indexed",
       "description": "Stats Auto Index Creation Skipped If Indexed",
-      "command": "qsv index test_file.clone(",
+      "command": "qsv index \"test_file.clone(\"",
       "args": [
         "test_file.clone("
       ],
@@ -2717,8 +2717,8 @@
       },
       "command": "qsv stats ",
       "options": {
-        "--weight": "weight",
-        "--median": "data.csv"
+        "--median": "data.csv",
+        "--weight": "weight"
       }
     },
     {
@@ -3086,8 +3086,8 @@
       },
       "command": "qsv stats ",
       "options": {
-        "--mode": "data.csv",
-        "--weight": "weight"
+        "--weight": "weight",
+        "--mode": "data.csv"
       }
     },
     {
@@ -3335,8 +3335,8 @@
       "description": "Stats Weighted Negative Weights With Quartiles",
       "command": "qsv stats ",
       "options": {
-        "--weight": "weight",
-        "--quartiles": "data.csv"
+        "--quartiles": "data.csv",
+        "--weight": "weight"
       }
     },
     {

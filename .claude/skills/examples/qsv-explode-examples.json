@@ -26,7 +26,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv explode colors | data.csv",
+      "command": "qsv explode colors \"|\" data.csv",
       "args": [
         "colors",
         "|",
@@ -81,7 +81,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv explode colors | data.csv",
+      "command": "qsv explode colors \"|\" data.csv",
       "args": [
         "colors",
         "|",
@@ -132,7 +132,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv explode 2 |",
+      "command": "qsv explode 2 \"|\"",
       "args": [
         "2",
         "|"

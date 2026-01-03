@@ -163,7 +163,7 @@
     {
       "name": "frequency_all_unique_with_stats_cache",
       "description": "Frequency All Unique With Stats Cache",
-      "command": "qsv stats testdata.clone(",
+      "command": "qsv stats \"testdata.clone(\"",
       "args": [
         "testdata.clone("
       ],
@@ -281,7 +281,7 @@
     {
       "name": "frequency_all_unique_with_stats_cache_alt_all_unique_text",
       "description": "Frequency All Unique With Stats Cache Alt All Unique Text",
-      "command": "qsv stats testdata.clone(",
+      "command": "qsv stats \"testdata.clone(\"",
       "args": [
         "testdata.clone("
       ],
@@ -336,7 +336,7 @@
     {
       "name": "frequency_all_unique_stats_mode_none",
       "description": "Frequency All Unique Stats Mode None",
-      "command": "qsv stats testdata.clone(",
+      "command": "qsv stats \"testdata.clone(\"",
       "args": [
         "testdata.clone("
       ],
@@ -435,7 +435,7 @@
     {
       "name": "frequency_issue1962",
       "description": "Frequency Issue1962",
-      "command": "qsv frequency testdata.clone( testdata",
+      "command": "qsv frequency \"testdata.clone(\" testdata",
       "args": [
         "testdata.clone(",
         "testdata"
@@ -631,7 +631,7 @@
     {
       "name": "frequency_json_all_unique",
       "description": "Frequency Json All Unique",
-      "command": "qsv frequency testdata.clone(",
+      "command": "qsv frequency \"testdata.clone(\"",
       "args": [
         "testdata.clone("
       ],
@@ -653,7 +653,7 @@
     {
       "name": "frequency_toon_all_unique",
       "description": "Frequency Toon All Unique",
-      "command": "qsv frequency testdata.clone(",
+      "command": "qsv frequency \"testdata.clone(\"",
       "args": [
         "testdata.clone("
       ],

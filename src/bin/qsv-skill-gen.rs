@@ -2,12 +2,15 @@
 //
 // This tool parses USAGE text from qsv commands and generates Agent Skill
 // definitions in JSON format for use with the Claude Agent SDK.
+//
+// Uses qsv-docopt Parser for robust USAGE text parsing.
 
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
+use qsv_docopt::parse::{Argument as DocoptArgument, Atom, Parser};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -85,7 +88,10 @@ impl UsageParser {
     fn parse(&self) -> Result<SkillDefinition, String> {
         let description = self.extract_description()?;
         let examples = self.extract_examples();
-        let (args, options) = self.parse_arguments_and_options()?;
+
+        // Use qsv-docopt Parser to parse USAGE text
+        let (args, options) = self.parse_with_docopt()?;
+
         let hints = self.extract_hints();
         let category = self.infer_category();
 
@@ -107,6 +113,242 @@ impl UsageParser {
                 self.command_name
             )),
         })
+    }
+
+    /// Parse USAGE text using qsv-docopt Parser for robust parsing
+    fn parse_with_docopt(&self) -> Result<(Vec<Argument>, Vec<Option_>), String> {
+        // Parse USAGE text with docopt
+        let parser = Parser::new(&self.usage_text)
+            .map_err(|e| format!("Docopt parsing failed: {}", e))?;
+
+        let mut args = Vec::new();
+        let mut options = Vec::new();
+
+        // Also parse manually to get descriptions
+        let manual_descriptions = self.extract_descriptions_from_text();
+
+        // Iterate over parsed atoms from docopt
+        for (atom, opts) in parser.descs.iter() {
+            match atom {
+                Atom::Short(c) => {
+                    // Short flag like -d
+                    let flag_str = format!("-{}", c);
+
+                    // Look for corresponding long flag
+                    let long_flag = parser.descs.iter()
+                        .find(|(a, o)| {
+                            // Check if this long flag is a synonym of the short flag
+                            // by comparing pointer equality or field values
+                            matches!(a, Atom::Long(_)) && std::ptr::eq(*o as *const _, opts as *const _)
+                        })
+                        .and_then(|(a, _)| {
+                            if let Atom::Long(s) = a {
+                                Some(format!("--{}", s))
+                            } else {
+                                None
+                            }
+                        });
+
+                    // Use long flag as primary, or short if no long flag
+                    let primary_flag = long_flag.clone().unwrap_or_else(|| flag_str.clone());
+
+                    // Skip if we already added this as a long flag
+                    if options.iter().any(|o: &Option_| o.flag == primary_flag) {
+                        continue;
+                    }
+
+                    let option_type = match &opts.arg {
+                        DocoptArgument::Zero => "flag",
+                        DocoptArgument::One(_) => {
+                            // Check if it's a number type
+                            let desc = manual_descriptions.get(&primary_flag)
+                                .or_else(|| manual_descriptions.get(&flag_str))
+                                .map(|s| s.as_str())
+                                .unwrap_or("");
+                            if desc.contains("<number>") || desc.contains("<int>") {
+                                "number"
+                            } else {
+                                "string"
+                            }
+                        }
+                    };
+
+                    let description = manual_descriptions.get(&primary_flag)
+                        .or_else(|| manual_descriptions.get(&flag_str))
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let default = match &opts.arg {
+                        DocoptArgument::One(Some(d)) => Some(d.clone()),
+                        _ => self.extract_default_value(&description),
+                    };
+
+                    options.push(Option_ {
+                        flag: primary_flag,
+                        short: long_flag.and(Some(flag_str)),
+                        option_type: option_type.to_string(),
+                        description,
+                        default,
+                    });
+                }
+                Atom::Long(name) => {
+                    let flag_str = format!("--{}", name);
+
+                    // Skip if already processed
+                    if options.iter().any(|o| o.flag == flag_str) {
+                        continue;
+                    }
+
+                    // Find corresponding short flag if any
+                    let short_flag = parser.descs.iter()
+                        .find(|(a, o)| {
+                            matches!(a, Atom::Short(_)) && std::ptr::eq(*o as *const _, opts as *const _)
+                        })
+                        .and_then(|(a, _)| {
+                            if let Atom::Short(c) = a {
+                                Some(format!("-{}", c))
+                            } else {
+                                None
+                            }
+                        });
+
+                    let option_type = match &opts.arg {
+                        DocoptArgument::Zero => "flag",
+                        DocoptArgument::One(_) => {
+                            let desc = manual_descriptions.get(&flag_str)
+                                .map(|s| s.as_str())
+                                .unwrap_or("");
+                            if desc.contains("<number>") || desc.contains("<int>") {
+                                "number"
+                            } else {
+                                "string"
+                            }
+                        }
+                    };
+
+                    let description = manual_descriptions.get(&flag_str)
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let default = match &opts.arg {
+                        DocoptArgument::One(Some(d)) => Some(d.clone()),
+                        _ => self.extract_default_value(&description),
+                    };
+
+                    options.push(Option_ {
+                        flag: flag_str,
+                        short: short_flag,
+                        option_type: option_type.to_string(),
+                        description,
+                        default,
+                    });
+                }
+                Atom::Positional(name) => {
+                    // Positional argument like <input>
+                    let arg_name = name.clone();
+                    let description = manual_descriptions.get(&format!("<{}>", name))
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let arg_type = self.infer_argument_type(&arg_name, &description);
+
+                    args.push(Argument {
+                        name: arg_name.clone(),
+                        arg_type,
+                        required: !opts.arg.has_default(), // If it has a default, it's optional
+                        description,
+                        examples: Vec::new(),
+                    });
+                }
+                Atom::Command(_) => {
+                    // Skip commands - we're only interested in args/options
+                    continue;
+                }
+            }
+        }
+
+        // Sort for consistent output
+        args.sort_by(|a, b| a.name.cmp(&b.name));
+        options.sort_by(|a, b| a.flag.cmp(&b.flag));
+
+        Ok((args, options))
+    }
+
+    /// Extract descriptions from the usage text manually
+    /// Returns a map of flag/arg name to description
+    fn extract_descriptions_from_text(&self) -> std::collections::HashMap<String, String> {
+        let mut descriptions = std::collections::HashMap::new();
+        let lines: Vec<&str> = self.usage_text.lines().collect();
+
+        let mut i = 0;
+        while i < lines.len() {
+            let line = lines[i];
+            let trimmed = line.trim();
+
+            // Look for option lines: "    -s, --select <arg>    Description"
+            if trimmed.starts_with("-") {
+                // Extract flag and description
+                if let Some((flags_part, desc_part)) = trimmed.split_once("  ") {
+                    let mut description = desc_part.trim().to_string();
+
+                    // Collect multi-line description
+                    let mut j = i + 1;
+                    while j < lines.len() {
+                        let next_line = lines[j].trim();
+                        if next_line.is_empty() || next_line.starts_with("-") {
+                            break;
+                        }
+                        if !next_line.starts_with("Usage:") {
+                            description.push(' ');
+                            description.push_str(next_line);
+                        }
+                        j += 1;
+                    }
+
+                    // Parse flags
+                    for flag in flags_part.split(',') {
+                        let flag = flag.trim().split_whitespace().next().unwrap_or("");
+                        if flag.starts_with("--") || flag.starts_with("-") {
+                            descriptions.insert(flag.to_string(), description.clone());
+                        }
+                    }
+
+                    i = j;
+                    continue;
+                }
+            }
+            // Look for argument lines: "    <input>    Description"
+            else if trimmed.starts_with("<") && trimmed.contains(">") {
+                if let Some(close_bracket) = trimmed.find('>') {
+                    let arg_name = trimmed[..=close_bracket].trim().to_string();
+                    let desc_part = trimmed[close_bracket + 1..].trim();
+
+                    let mut description = desc_part.to_string();
+
+                    // Collect multi-line description
+                    let mut j = i + 1;
+                    while j < lines.len() {
+                        let next_line = lines[j].trim();
+                        if next_line.is_empty() || next_line.starts_with("<") || next_line.starts_with("-") {
+                            break;
+                        }
+                        if !next_line.starts_with("Usage:") {
+                            description.push(' ');
+                            description.push_str(next_line);
+                        }
+                        j += 1;
+                    }
+
+                    descriptions.insert(arg_name, description);
+                    i = j;
+                    continue;
+                }
+            }
+
+            i += 1;
+        }
+
+        descriptions
     }
 
     fn extract_description(&self) -> Result<String, String> {
@@ -180,165 +422,6 @@ impl UsageParser {
         command.to_string()
     }
 
-    fn parse_arguments_and_options(&self) -> Result<(Vec<Argument>, Vec<Option_>), String> {
-        let mut args = Vec::new();
-        let mut options = Vec::new();
-
-        let lines: Vec<&str> = self.usage_text.lines().collect();
-        let mut in_args_section = false;
-        let mut in_options_section = false;
-
-        for (i, line) in lines.iter().enumerate() {
-            let trimmed = line.trim();
-
-            // Detect section headers
-            if trimmed.ends_with("arguments:") || trimmed.starts_with("Arguments:") {
-                in_args_section = true;
-                in_options_section = false;
-                continue;
-            }
-            if trimmed.ends_with("options:")
-                || trimmed.starts_with("Options:")
-                || trimmed.starts_with("Common options:")
-            {
-                in_options_section = true;
-                in_args_section = false;
-                continue;
-            }
-
-            // Parse argument definitions
-            if in_args_section && trimmed.starts_with("<") {
-                if let Some(arg) = self.parse_argument_line(line, &lines, i) {
-                    args.push(arg);
-                }
-            }
-
-            // Parse option definitions
-            if in_options_section && trimmed.starts_with("-") {
-                if let Some(opt) = self.parse_option_line(line, &lines, i) {
-                    options.push(opt);
-                }
-            }
-        }
-
-        Ok((args, options))
-    }
-
-    fn parse_argument_line(
-        &self,
-        line: &str,
-        all_lines: &[&str],
-        index: usize,
-    ) -> Option<Argument> {
-        // Parse format: "    <name>            Description text"
-        let trimmed = line.trim();
-
-        // Extract argument name (between < and >)
-        let start = trimmed.find('<')?;
-        let end = trimmed.find('>')?;
-        let name = trimmed[start + 1..end].to_string();
-
-        // Check if optional (wrapped in [])
-        let required = !line.contains(&format!("[<{}>]", name));
-
-        // Extract description (everything after the argument name)
-        let after_name = trimmed[end + 1..].trim();
-        let mut description = after_name.to_string();
-
-        // Multi-line descriptions: collect continuation lines
-        let mut next_idx = index + 1;
-        while next_idx < all_lines.len() {
-            let next_line = all_lines[next_idx].trim();
-            if next_line.is_empty() || next_line.starts_with("<") || next_line.starts_with("-") {
-                break;
-            }
-            if !next_line.starts_with("Usage:") && !next_line.starts_with("For more") {
-                description.push(' ');
-                description.push_str(next_line);
-            }
-            next_idx += 1;
-        }
-
-        // Infer type from name and description
-        let arg_type = self.infer_argument_type(&name, &description);
-
-        Some(Argument {
-            name,
-            arg_type,
-            required,
-            description,
-            examples: Vec::new(),
-        })
-    }
-
-    fn parse_option_line(&self, line: &str, all_lines: &[&str], index: usize) -> Option<Option_> {
-        // Parse format: "    -s, --select <arg>    Description text"
-        let trimmed = line.trim();
-
-        // Extract flags
-        let parts: Vec<&str> = trimmed.splitn(2, "  ").collect();
-        if parts.len() < 2 {
-            return None;
-        }
-
-        let flag_part = parts[0].trim();
-        let mut description = parts[1].trim().to_string();
-
-        // Parse short and long flags
-        let flags: Vec<&str> = flag_part.split(',').map(|s| s.trim()).collect();
-        let mut short = None;
-        let mut long = None;
-
-        for flag in flags {
-            if flag.starts_with("--") {
-                long = Some(flag.split_whitespace().next()?.to_string());
-            } else if flag.starts_with("-") {
-                short = Some(flag.split_whitespace().next()?.to_string());
-            }
-        }
-
-        let flag = long.or_else(|| short.clone())?;
-
-        // Multi-line descriptions
-        let mut next_idx = index + 1;
-        while next_idx < all_lines.len() {
-            let next_line = all_lines[next_idx].trim();
-            if next_line.is_empty() || next_line.starts_with("-") {
-                break;
-            }
-            description.push(' ');
-            description.push_str(next_line);
-            next_idx += 1;
-        }
-
-        // Determine option type
-        let option_type = if flag_part.contains("<") {
-            // Has argument
-            if flag_part.contains("<number>") || flag_part.contains("<int>") {
-                "number"
-            } else {
-                "string"
-            }
-        } else {
-            "flag"
-        };
-
-        // Extract default value
-        let default = self.extract_default_value(&description);
-
-        Some(Option_ {
-            flag: flag.clone(),
-            short: if short.is_some() && short != Some(flag) {
-                short
-            } else {
-                None
-            },
-            option_type: option_type.to_string(),
-            description,
-            default,
-        })
-    }
-
     fn infer_argument_type(&self, name: &str, description: &str) -> String {
         let name_lower = name.to_lowercase();
         let desc_lower = description.to_lowercase();
@@ -402,16 +485,28 @@ impl UsageParser {
         match self.command_name.as_str() {
             "select" | "slice" | "take" | "sample" | "head" | "tail" => "selection",
             "search" | "searchset" | "grep" | "filter" => "filtering",
-            "apply" | "rename" | "transpose" | "reverse" | "datefmt" => "transformation",
+            "apply" | "applydp" | "rename" | "transpose" | "reverse" | "datefmt" | "replace" => {
+                "transformation"
+            },
             "stats" | "moarstats" | "frequency" | "count" | "groupby" => "aggregation",
             "join" | "joinp" => "joining",
             "schema" | "validate" | "safenames" => "validation",
             "fmt" | "fixlengths" | "table" | "align" => "formatting",
-            "to" | "input" | "excel" | "lua" | "foreach" | "python" => "conversion",
+            "to" | "input" | "excel" | "json" | "jsonl" | "tojsonl" => "conversion",
             "correlation" | "describegpt" => "analysis",
             _ => "utility",
         }
         .to_string()
+    }
+}
+
+trait HasDefault {
+    fn has_default(&self) -> bool;
+}
+
+impl HasDefault for DocoptArgument {
+    fn has_default(&self) -> bool {
+        matches!(self, DocoptArgument::One(Some(_)))
     }
 }
 
@@ -513,8 +608,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output_dir = PathBuf::from(".claude/skills/qsv");
     fs::create_dir_all(&output_dir)?;
 
-    println!("QSV Agent Skill Generator");
-    println!("=========================");
+    println!("QSV Agent Skill Generator (using qsv-docopt)");
+    println!("=============================================");
     println!("Generating {} skills...\n", commands.len());
 
     let mut success_count = 0;

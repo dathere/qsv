@@ -6,80 +6,120 @@
   "command": {
     "binary": "qsv",
     "subcommand": "to",
-    "args": [],
+    "args": [
+      {
+        "name": "datapackage",
+        "type": "string",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "ods",
+        "type": "string",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "parquet",
+        "type": "string",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "postgres",
+        "type": "string",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "sqlite",
+        "type": "string",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "xlsx",
+        "type": "string",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "-k",
+        "flag": "--all-strings",
         "type": "flag",
-        "description": "Print statistics as datapackage, by default will print field summary."
+        "description": ""
       },
       {
-        "flag": "-u",
-        "type": "flag",
-        "description": "Create database dump file for use with `psql` or `sqlite3` command line tools (postgres/sqlite only)."
-      },
-      {
-        "flag": "-a",
-        "type": "flag",
-        "description": "Produce extra statistics about the data beyond just type guessing."
-      },
-      {
-        "flag": "-c",
+        "flag": "--delimiter",
         "type": "string",
-        "description": "Output stats as CSV to specified file."
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
-        "flag": "-q",
+        "flag": "--drop",
         "type": "flag",
-        "description": "Do not print out field summary."
+        "description": ""
       },
       {
-        "flag": "-s",
-        "type": "string",
-        "description": "The schema to load the data into. (postgres only)."
-      },
-      {
-        "flag": "-d",
+        "flag": "--dump",
         "type": "flag",
-        "description": "Drop tables before loading new data into them (postgres/sqlite only)."
+        "description": ""
       },
       {
-        "flag": "-e",
+        "flag": "--evolve",
         "type": "flag",
-        "description": "If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only)."
-      },
-      {
-        "flag": "-i",
-        "type": "flag",
-        "description": "For parquet, allow piping from stdin (using `-`) or from a named pipe."
-      },
-      {
-        "flag": "-p",
-        "type": "string",
-        "description": "For xlsx, use this character to help truncate xlsx sheet names. Defaults to space."
-      },
-      {
-        "flag": "-A",
-        "type": "flag",
-        "description": "Convert all fields to strings."
-      },
-      {
-        "flag": "--jobs",
-        "short": "-j",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
+        "description": ""
       },
       {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       },
       {
-        "flag": "--delimiter",
-        "short": "-d",
+        "flag": "--jobs",
         "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
+      },
+      {
+        "flag": "--pipe",
+        "type": "flag",
+        "description": ""
+      },
+      {
+        "flag": "--print-package",
+        "type": "flag",
+        "description": ""
+      },
+      {
+        "flag": "--quiet",
+        "type": "flag",
+        "description": ""
+      },
+      {
+        "flag": "--schema",
+        "type": "string",
+        "description": ""
+      },
+      {
+        "flag": "--separator",
+        "type": "string",
+        "description": ""
+      },
+      {
+        "flag": "--stats",
+        "type": "flag",
+        "description": ""
+      },
+      {
+        "flag": "--stats-csv",
+        "type": "string",
+        "description": ""
       }
     ]
   },

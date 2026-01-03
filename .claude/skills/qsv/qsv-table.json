@@ -6,57 +6,57 @@
   "command": {
     "binary": "qsv",
     "subcommand": "table",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "--width",
-        "short": "-w",
-        "type": "string",
-        "description": "The minimum width of each column. [default: 2]",
-        "default": "2"
-      },
-      {
-        "flag": "--pad",
-        "short": "-p",
-        "type": "string",
-        "description": "The minimum number of spaces between each column. [default: 2]",
-        "default": "2"
-      },
-      {
         "flag": "--align",
-        "short": "-a",
         "type": "string",
         "description": "How entries should be aligned in a column. Options: \"left\", \"right\", \"center\". \"leftendtab\" & \"leftfwf\" \"leftendtab\" is a special alignment that similar to \"left\" but with whitespace padding ending with a tab character. The resulting output still validates as a valid TSV file, while also being more human-readable (aka \"aligned\" TSV). \"leftfwf\" is similar to \"left\" with Fixed Width Format allgnment. The first line is a comment (prefixed with \"#\") that enumerates the position (1-based, comma-separated) of each column. [default: left]",
         "default": "left"
       },
       {
         "flag": "--condense",
-        "short": "-c",
         "type": "string",
         "description": "Limits the length of each field to the value specified. If the field is UTF-8 encoded, then <arg> refers to the number of code points. Otherwise, it refers to the number of bytes."
       },
       {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
         "flag": "--delimiter",
-        "short": "-d",
         "type": "string",
         "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
       },
       {
         "flag": "--memcheck",
         "type": "flag",
         "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--pad",
+        "type": "string",
+        "description": "The minimum number of spaces between each column. [default: 2]",
+        "default": "2"
+      },
+      {
+        "flag": "--width",
+        "type": "string",
+        "description": "The minimum width of each column. [default: 2]",
+        "default": "2"
       }
     ]
   },

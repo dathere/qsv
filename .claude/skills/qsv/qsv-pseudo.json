@@ -22,22 +22,9 @@
     ],
     "options": [
       {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--start",
-        "type": "number",
-        "description": "The starting number for the incremental identifier. [default: 0]",
-        "default": "0"
-      },
-      {
-        "flag": "--increment",
-        "type": "number",
-        "description": "The increment for the incremental identifier. [default: 1]",
-        "default": "1"
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
         "flag": "--formatstr",
@@ -46,22 +33,31 @@
         "default": "{}"
       },
       {
-        "flag": "--output",
-        "short": "-o",
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--increment",
         "type": "string",
-        "description": "Write output to <file> instead of stdout."
+        "description": "The increment for the incremental identifier. [default: 1]",
+        "default": "1"
       },
       {
         "flag": "--no-headers",
-        "short": "-n",
         "type": "flag",
         "description": "When set, the first row will not be interpreted as headers."
       },
       {
-        "flag": "--delimiter",
-        "short": "-d",
+        "flag": "--output",
         "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--start",
+        "type": "string",
+        "description": "The starting number for the incremental identifier. [default: 0]",
+        "default": "0"
       }
     ]
   },

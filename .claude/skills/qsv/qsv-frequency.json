@@ -6,26 +6,55 @@
   "command": {
     "binary": "qsv",
     "subcommand": "frequency",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "--select",
-        "short": "-s",
+        "flag": "--all-unique-text",
         "type": "string",
-        "description": "Select a subset of columns to compute frequencies for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv frequency' will disable the use of indexing."
+        "description": "The text to use for the \"<ALL_UNIQUE>\" category. [default: <ALL_UNIQUE>]",
+        "default": "<ALL_UNIQUE>"
+      },
+      {
+        "flag": "--asc",
+        "type": "flag",
+        "description": "Sort the frequency tables in ascending order by count. The default is descending order. Note that this option will also reverse ranking - i.e. the LEAST frequent values will have a rank of 1."
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--ignore-case",
+        "type": "flag",
+        "description": "Ignore case when computing frequencies."
+      },
+      {
+        "flag": "--jobs",
+        "type": "string",
+        "description": "The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected."
+      },
+      {
+        "flag": "--json",
+        "type": "flag",
+        "description": "Output frequency table as nested JSON instead of CSV. The JSON output includes additional metadata: row count, field count, data type, cardinality, null count, sparsity, uniqueness_ratio and 17 additional stats (e.g. sum, min, max, range, sort_order, mean, sem, etc.)."
       },
       {
         "flag": "--limit",
-        "short": "-l",
         "type": "string",
         "description": "Limit the frequency table to the N most common items. Set to '0' to disable a limit. If negative, only return values with an occurrence count >= absolute value of the negative limit. e.g. --limit -2 will only return values with an occurrence count >= 2. [default: 10]",
-        "default": "10"
-      },
-      {
-        "flag": "--unq-limit",
-        "short": "-u",
-        "type": "string",
-        "description": "If a column has all unique values, limit the frequency table to a sample of N unique items. Set to '0' to disable a unique_limit. [default: 10]",
         "default": "10"
       },
       {
@@ -35,33 +64,24 @@
         "default": "0"
       },
       {
-        "flag": "--rank-strategy",
-        "short": "-r",
-        "type": "string",
-        "description": "The strategy to use when there are count-tied values in the frequency table. See https://en.wikipedia.org/wiki/Ranking for more info. Valid values are:"
-      },
-      {
-        "flag": "--pct-dec-places",
-        "type": "string",
-        "description": "The number of decimal places to round the percentage to. If negative, the number of decimal places will be set automatically to the minimum number of decimal places needed to represent the percentage accurately, up to the absolute value of the negative number. [default: -5]",
-        "default": "-5"
-      },
-      {
-        "flag": "--other-sorted",
+        "flag": "--memcheck",
         "type": "flag",
-        "description": "By default, the \"Other\" category is placed at the end of the frequency table for a field. If this is enabled, the \"Other\" category will be sorted with the rest of the values by count."
+        "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics."
       },
       {
-        "flag": "--other-text",
-        "type": "string",
-        "description": "The text to use for the \"Other\" category. If set to \"<NONE>\", the \"Other\" category will not be included in the frequency table. [default: Other]",
-        "default": "Other"
-      },
-      {
-        "flag": "--asc",
-        "short": "-a",
+        "flag": "--no-headers",
         "type": "flag",
-        "description": "Sort the frequency tables in ascending order by count. The default is descending order. Note that this option will also reverse ranking - i.e. the LEAST frequent values will have a rank of 1."
+        "description": "When set, the first row will NOT be included in the frequency table. Additionally, the 'field' column will be 1-based indices instead of header names."
+      },
+      {
+        "flag": "--no-nulls",
+        "type": "flag",
+        "description": "Don't include NULLs in the frequency table."
+      },
+      {
+        "flag": "--no-stats",
+        "type": "flag",
+        "description": "When using the JSON or TOON output mode, do not include the additional stats."
       },
       {
         "flag": "--no-trim",
@@ -75,37 +95,26 @@
         "default": "(NULL)"
       },
       {
-        "flag": "--no-nulls",
+        "flag": "--other-sorted",
         "type": "flag",
-        "description": "Don't include NULLs in the frequency table."
+        "description": "By default, the \"Other\" category is placed at the end of the frequency table for a field. If this is enabled, the \"Other\" category will be sorted with the rest of the values by count."
       },
       {
-        "flag": "--ignore-case",
-        "short": "-i",
-        "type": "flag",
-        "description": "Ignore case when computing frequencies."
-      },
-      {
-        "flag": "--all-unique-text",
+        "flag": "--other-text",
         "type": "string",
-        "description": "The text to use for the \"<ALL_UNIQUE>\" category. [default: <ALL_UNIQUE>]",
-        "default": "<ALL_UNIQUE>"
+        "description": "The text to use for the \"Other\" category. If set to \"<NONE>\", the \"Other\" category will not be included in the frequency table. [default: Other]",
+        "default": "Other"
       },
       {
-        "flag": "--vis-whitespace",
-        "type": "flag",
-        "description": "Visualize whitespace characters in the output. See https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers for the list of whitespace markers."
-      },
-      {
-        "flag": "--jobs",
-        "short": "-j",
+        "flag": "--output",
         "type": "string",
-        "description": "The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected."
+        "description": "Write output to <file> instead of stdout."
       },
       {
-        "flag": "--json",
-        "type": "flag",
-        "description": "Output frequency table as nested JSON instead of CSV. The JSON output includes additional metadata: row count, field count, data type, cardinality, null count, sparsity, uniqueness_ratio and 17 additional stats (e.g. sum, min, max, range, sort_order, mean, sem, etc.)."
+        "flag": "--pct-dec-places",
+        "type": "string",
+        "description": "The number of decimal places to round the percentage to. If negative, the number of decimal places will be set automatically to the minimum number of decimal places needed to represent the percentage accurately, up to the absolute value of the negative number. [default: -5]",
+        "default": "-5"
       },
       {
         "flag": "--pretty-json",
@@ -113,48 +122,36 @@
         "description": "Same as --json but pretty prints the JSON output."
       },
       {
+        "flag": "--rank-strategy",
+        "type": "string",
+        "description": "The strategy to use when there are count-tied values in the frequency table. See https://en.wikipedia.org/wiki/Ranking for more info. Valid values are:",
+        "default": "dense"
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select a subset of columns to compute frequencies for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv frequency' will disable the use of indexing."
+      },
+      {
         "flag": "--toon",
         "type": "flag",
         "description": "Output frequency table and select stats in TOON format instead of CSV. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See https://toonformat.dev/ for more info."
       },
       {
-        "flag": "--no-stats",
+        "flag": "--unq-limit",
+        "type": "string",
+        "description": "If a column has all unique values, limit the frequency table to a sample of N unique items. Set to '0' to disable a unique_limit. [default: 10]",
+        "default": "10"
+      },
+      {
+        "flag": "--vis-whitespace",
         "type": "flag",
-        "description": "When using the JSON or TOON output mode, do not include the additional stats."
+        "description": "Visualize whitespace characters in the output. See https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers for the list of whitespace markers."
       },
       {
         "flag": "--weight",
         "type": "string",
         "description": "Compute weighted frequencies using the specified column as weights. The weight column must be numeric. When specified, frequency counts are multiplied by the weight value for each row. The weight column is automatically excluded from frequency computation. Missing or unparsable weights default to 1.0. Zero, negative, NaN and infinite weights are ignored and do not contribute to frequencies."
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--no-headers",
-        "short": "-n",
-        "type": "flag",
-        "description": "When set, the first row will NOT be included in the frequency table. Additionally, the 'field' column will be 1-based indices instead of header names."
-      },
-      {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
-      },
-      {
-        "flag": "--memcheck",
-        "type": "flag",
-        "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics."
       }
     ]
   },

@@ -2,22 +2,22 @@
   "name": "qsv-replace",
   "version": "12.0.0",
   "description": "Replace occurrences of a pattern across a CSV file. You can of course match groups using parentheses and use those in the replacement string. But don't forget to escape your $ in bash by using a backslash or by wrapping the replacement string into single quotes: Returns exitcode 0 when replacements are done, returning number of replacements to stderr. Returns exitcode 1 when no replacements are done, unless the '--not-one' flag is used. When the CSV is indexed, a faster parallel replace is used. If there were any replacements, the index will be refreshed.",
-  "category": "utility",
+  "category": "transformation",
   "command": {
     "binary": "qsv",
     "subcommand": "replace",
     "args": [
       {
-        "name": "pattern",
-        "type": "regex",
-        "required": true,
-        "description": "Regular expression pattern to match. Uses Rust regex syntax. See https://docs.rs/regex/latest/regex/index.html#syntax or https://regex101.com with the Rust flavor for more info."
-      },
-      {
         "name": "input",
         "type": "file",
         "required": true,
         "description": "The CSV file to read. If not given, reads from stdin."
+      },
+      {
+        "name": "pattern",
+        "type": "regex",
+        "required": true,
+        "description": "Regular expression pattern to match. Uses Rust regex syntax. See https://docs.rs/regex/latest/regex/index.html#syntax or https://regex101.com with the Rust flavor for more info."
       },
       {
         "name": "replacement",
@@ -28,38 +28,9 @@
     ],
     "options": [
       {
-        "flag": "--ignore-case",
-        "short": "-i",
-        "type": "flag",
-        "description": "Case insensitive search. This is equivalent to prefixing the regex with '(?i)'."
-      },
-      {
-        "flag": "--literal",
-        "type": "flag",
-        "description": "Treat the regex pattern as a literal string. This allows you to search for matches that contain regex special characters."
-      },
-      {
-        "flag": "--exact",
-        "type": "flag",
-        "description": "Match the ENTIRE field exactly. Treats the pattern as a literal string (like --literal) and automatically anchors it to match the complete field value (^pattern$)."
-      },
-      {
-        "flag": "--select",
-        "short": "-s",
+        "flag": "--delimiter",
         "type": "string",
-        "description": "Select the columns to search. See 'qsv select -h' for the full syntax."
-      },
-      {
-        "flag": "--unicode",
-        "short": "-u",
-        "type": "flag",
-        "description": "Enable unicode support. When enabled, character classes will match all unicode word characters instead of only ASCII word characters. Decreases performance."
-      },
-      {
-        "flag": "--size-limit",
-        "type": "string",
-        "description": "Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned. [default: 50]",
-        "default": "50"
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
         "flag": "--dfa-size-limit",
@@ -68,51 +39,70 @@
         "default": "10"
       },
       {
+        "flag": "--exact",
+        "type": "flag",
+        "description": "Match the ENTIRE field exactly. Treats the pattern as a literal string (like --literal) and automatically anchors it to match the complete field value (^pattern$)."
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--ignore-case",
+        "type": "flag",
+        "description": "Case insensitive search. This is equivalent to prefixing the regex with '(?i)'."
+      },
+      {
+        "flag": "--jobs",
+        "type": "string",
+        "description": "The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected."
+      },
+      {
+        "flag": "--literal",
+        "type": "flag",
+        "description": "Treat the regex pattern as a literal string. This allows you to search for matches that contain regex special characters."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.)"
+      },
+      {
         "flag": "--not-one",
         "type": "flag",
         "description": "Use exit code 0 instead of 1 for no replacement found."
       },
       {
-        "flag": "--jobs",
-        "short": "-j",
-        "type": "string",
-        "description": "The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected."
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--output",
-        "short": "-o",
         "type": "string",
         "description": "Write output to <file> instead of stdout."
       },
       {
-        "flag": "--no-headers",
-        "short": "-n",
-        "type": "flag",
-        "description": "When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.)"
-      },
-      {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
-      },
-      {
         "flag": "--progressbar",
-        "short": "-p",
         "type": "flag",
         "description": "Show progress bars. Not valid for stdin."
       },
       {
         "flag": "--quiet",
-        "short": "-q",
         "type": "flag",
         "description": "Do not print number of replacements to stderr."
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select the columns to search. See 'qsv select -h' for the full syntax."
+      },
+      {
+        "flag": "--size-limit",
+        "type": "string",
+        "description": "Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned. [default: 50]",
+        "default": "50"
+      },
+      {
+        "flag": "--unicode",
+        "type": "flag",
+        "description": "Enable unicode support. When enabled, character classes will match all unicode word characters instead of only ASCII word characters. Decreases performance."
       }
     ]
   },

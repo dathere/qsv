@@ -6,19 +6,24 @@
   "command": {
     "binary": "qsv",
     "subcommand": "index",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write index to <file> instead of <input>.idx. Generally, this is not currently useful because the only way to use an index is if it is specially named <input>.idx."
-      },
-      {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write index to <file> instead of <input>.idx. Generally, this is not currently useful because the only way to use an index is if it is specially named <input>.idx."
       }
     ]
   },

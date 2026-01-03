@@ -6,29 +6,39 @@
   "command": {
     "binary": "qsv",
     "subcommand": "lens",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "Delimiter character (comma by default) \"auto\" to auto-detect the delimiter"
-      },
-      {
-        "flag": "--tab-separated",
-        "short": "-t",
+        "flag": "--auto-reload",
         "type": "flag",
-        "description": "Use tab separation. Shortcut for -d '\\t'"
-      },
-      {
-        "flag": "--no-headers",
-        "type": "flag",
-        "description": "Do not interpret the first row as headers"
+        "description": "Automatically reload the data when the file changes."
       },
       {
         "flag": "--columns",
         "type": "string",
         "description": "Use this regex to select columns to display by default. Example: \"col1|col2|col3\" to select columns \"col1\", \"col2\" and \"col3\" and also columns like \"col1_1\", \"col22\" and \"col3-more\"."
+      },
+      {
+        "flag": "--debug",
+        "type": "flag",
+        "description": "Show stats for debugging"
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "Delimiter character (comma by default) \"auto\" to auto-detect the delimiter"
+      },
+      {
+        "flag": "--echo-column",
+        "type": "string",
+        "description": "Print the value of this column to stdout for the selected row"
       },
       {
         "flag": "--filter",
@@ -41,64 +51,51 @@
         "description": "Use this regex to find and highlight matches by default. Automatically sets --monochrome to true so the matches are easier to see. The regex is matched against each cell in every column. Example: \"val1|val2\" highlights text containing \"val1\", \"val2\" or longer text like \"val1_ok\" or \"val2_error\"."
       },
       {
-        "flag": "--ignore-case",
-        "short": "-i",
-        "type": "flag",
-        "description": "Searches ignore case. Ignored if any uppercase letters are present in the search string"
-      },
-      {
         "flag": "--freeze-columns",
-        "short": "-f",
         "type": "string",
         "description": "Freeze the first N columns [default: 1]",
         "default": "1"
       },
       {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--ignore-case",
+        "type": "flag",
+        "description": "Searches ignore case. Ignored if any uppercase letters are present in the search string"
+      },
+      {
         "flag": "--monochrome",
-        "short": "-m",
         "type": "flag",
         "description": "Disable color output"
       },
       {
-        "flag": "--wrap-mode",
-        "short": "-W",
-        "type": "string",
-        "description": "Set the wrap mode for the output. Valid modes are: \"words\": Wrap at word boundaries \"chars\": Wrap at character boundaries \"disabled\": No wrapping For convenience, the first character can be used as a shortcut: qsv lens -W w data.csv // wrap at word boundaries [default: disabled]",
-        "default": "disabled"
-      },
-      {
-        "flag": "--auto-reload",
-        "short": "-A",
+        "flag": "--no-headers",
         "type": "flag",
-        "description": "Automatically reload the data when the file changes."
-      },
-      {
-        "flag": "--streaming-stdin",
-        "short": "-S",
-        "type": "flag",
-        "description": "Enable streaming stdin (load input as it's being piped in) NOTE: This option only applies to stdin input."
+        "description": "Do not interpret the first row as headers"
       },
       {
         "flag": "--prompt",
-        "short": "-P",
         "type": "string",
         "description": "Set a custom prompt in the status bar. Normally paired w/ --echo-column: qsv lens --prompt 'Select City:' --echo-column 'City' Supports ANSI escape codes for colored or styled text. When using escape codes, ensure it's properly escaped. For example, in bash/zsh, the $'...' syntax is used to do so: qsv lens --prompt $'\\033[1;5;31mBlinking red, bold text\\033[0m' see https://en.wikipedia.org/wiki/ANSI_escape_code#Colors or https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797 for more info on ANSI escape codes. Typing a complicated prompt on the command line can be tricky. If the prompt starts with \"file:\", it's interpreted as a filepath from which to load the prompt, e.g. qsv lens --prompt \"file:prompt.txt\""
       },
       {
-        "flag": "--echo-column",
+        "flag": "--streaming-stdin",
+        "type": "flag",
+        "description": "Enable streaming stdin (load input as it's being piped in) NOTE: This option only applies to stdin input."
+      },
+      {
+        "flag": "--tab-separated",
+        "type": "flag",
+        "description": "Use tab separation. Shortcut for -d '\\t'"
+      },
+      {
+        "flag": "--wrap-mode",
         "type": "string",
-        "description": "Print the value of this column to stdout for the selected row"
-      },
-      {
-        "flag": "--debug",
-        "type": "flag",
-        "description": "Show stats for debugging"
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
+        "description": "Set the wrap mode for the output. Valid modes are: \"words\": Wrap at word boundaries \"chars\": Wrap at character boundaries \"disabled\": No wrapping For convenience, the first character can be used as a shortcut: qsv lens -W w data.csv // wrap at word boundaries [default: disabled]",
+        "default": "disabled"
       }
     ]
   },

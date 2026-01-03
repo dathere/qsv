@@ -6,36 +6,39 @@
   "command": {
     "binary": "qsv",
     "subcommand": "reverse",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--no-headers",
-        "short": "-n",
-        "type": "flag",
-        "description": "When set, the first row will not be interpreted as headers. Namely, it will be reversed with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
-      },
-      {
         "flag": "--delimiter",
-        "short": "-d",
         "type": "string",
         "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
       },
       {
         "flag": "--memcheck",
         "type": "flag",
         "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. Namely, it will be reversed with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
       }
     ]
   },

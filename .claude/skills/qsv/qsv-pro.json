@@ -17,7 +17,6 @@
     "options": [
       {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       }

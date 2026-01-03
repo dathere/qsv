@@ -8,29 +8,34 @@
     "subcommand": "searchset",
     "args": [
       {
-        "name": "regexset-file",
-        "type": "file",
-        "required": true,
-        "description": "The file containing regular expressions to match, with a regular expression on each line. See https://docs.rs/regex/latest/regex/index.html#syntax or https://regex101.com with the Rust flavor for regex syntax."
-      },
-      {
         "name": "input",
         "type": "file",
         "required": true,
         "description": "The CSV file to read. If not given, reads from stdin."
+      },
+      {
+        "name": "regexset-file",
+        "type": "file",
+        "required": true,
+        "description": "The file containing regular expressions to match, with a regular expression on each line. See https://docs.rs/regex/latest/regex/index.html#syntax or https://regex101.com with the Rust flavor for regex syntax."
       }
     ],
     "options": [
       {
-        "flag": "--ignore-case",
-        "short": "-i",
+        "flag": "--count",
         "type": "flag",
-        "description": "Case insensitive search. This is equivalent to prefixing the regex with '(?i)'."
+        "description": "Return number of matches to stderr. Ignored if --json is enabled."
       },
       {
-        "flag": "--literal",
-        "type": "flag",
-        "description": "Treat the regex as a literal string. This allows you to search for matches that contain regex special characters."
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--dfa-size-limit",
+        "type": "string",
+        "description": "Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. Modify this only if you're getting regular expression compilation errors. [default: 10]",
+        "default": "10"
       },
       {
         "flag": "--exact",
@@ -38,26 +43,7 @@
         "description": "Match the ENTIRE field exactly. Treats the pattern as a literal string (like --literal) and automatically anchors it to match the complete field value (^pattern$)."
       },
       {
-        "flag": "--select",
-        "short": "-s",
-        "type": "string",
-        "description": "Select the columns to search. See 'qsv select -h' for the full syntax."
-      },
-      {
-        "flag": "--invert-match",
-        "short": "-v",
-        "type": "flag",
-        "description": "Select only rows that did not match"
-      },
-      {
-        "flag": "--unicode",
-        "short": "-u",
-        "type": "flag",
-        "description": "Enable unicode support. When enabled, character classes will match all unicode word characters instead of only ASCII word characters. Decreases performance."
-      },
-      {
         "flag": "--flag",
-        "short": "-f",
         "type": "string",
         "description": "If given, the command will not filter rows but will instead flag the found rows in a new column named <column>. For each found row, <column> is set to the row number of the row, followed by a semicolon, then a list of the matching regexes."
       },
@@ -67,27 +53,69 @@
         "description": "When --flag is enabled, only rows that match are sent to output. Rows that do not match are filtered."
       },
       {
-        "flag": "--unmatched-output",
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--ignore-case",
+        "type": "flag",
+        "description": "Case insensitive search. This is equivalent to prefixing the regex with '(?i)'."
+      },
+      {
+        "flag": "--invert-match",
+        "type": "flag",
+        "description": "Select only rows that did not match"
+      },
+      {
+        "flag": "--jobs",
         "type": "string",
-        "description": "When --flag-matches-only is enabled, output the rows that did not match to <file>."
+        "description": "The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected."
+      },
+      {
+        "flag": "--json",
+        "type": "flag",
+        "description": "Return number of matches, number of rows with matches, and number of rows to stderr in JSON format."
+      },
+      {
+        "flag": "--literal",
+        "type": "flag",
+        "description": "Treat the regex as a literal string. This allows you to search for matches that contain regex special characters."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.)"
+      },
+      {
+        "flag": "--not-one",
+        "type": "flag",
+        "description": "Use exit code 0 instead of 1 for no match found."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--progressbar",
+        "type": "flag",
+        "description": "Show progress bars. Not valid for stdin."
       },
       {
         "flag": "--quick",
-        "short": "-Q",
         "type": "flag",
         "description": "Return on first match with an exitcode of 0, returning the row number of the first match to stderr. Return exit code 1 if no match is found. No output is produced. Ignored if --json is enabled."
       },
       {
-        "flag": "--count",
-        "short": "-c",
+        "flag": "--quiet",
         "type": "flag",
-        "description": "Return number of matches to stderr. Ignored if --json is enabled."
+        "description": "Do not return number of matches to stderr."
       },
       {
-        "flag": "--json",
-        "short": "-j",
-        "type": "flag",
-        "description": "Return number of matches, number of rows with matches, and number of rows to stderr in JSON format."
+        "flag": "--select",
+        "type": "string",
+        "description": "Select the columns to search. See 'qsv select -h' for the full syntax."
       },
       {
         "flag": "--size-limit",
@@ -96,56 +124,14 @@
         "default": "50"
       },
       {
-        "flag": "--dfa-size-limit",
+        "flag": "--unicode",
+        "type": "flag",
+        "description": "Enable unicode support. When enabled, character classes will match all unicode word characters instead of only ASCII word characters. Decreases performance."
+      },
+      {
+        "flag": "--unmatched-output",
         "type": "string",
-        "description": "Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. Modify this only if you're getting regular expression compilation errors. [default: 10]",
-        "default": "10"
-      },
-      {
-        "flag": "--not-one",
-        "type": "flag",
-        "description": "Use exit code 0 instead of 1 for no match found."
-      },
-      {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected."
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--no-headers",
-        "short": "-n",
-        "type": "flag",
-        "description": "When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.)"
-      },
-      {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
-      },
-      {
-        "flag": "--progressbar",
-        "short": "-p",
-        "type": "flag",
-        "description": "Show progress bars. Not valid for stdin."
-      },
-      {
-        "flag": "--quiet",
-        "short": "-q",
-        "type": "flag",
-        "description": "Do not return number of matches to stderr."
+        "description": "When --flag-matches-only is enabled, output the rows that did not match to <file>."
       }
     ]
   },

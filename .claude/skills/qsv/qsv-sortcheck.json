@@ -6,24 +6,34 @@
   "command": {
     "binary": "qsv",
     "subcommand": "sortcheck",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
-      {
-        "flag": "--select",
-        "short": "-s",
-        "type": "string",
-        "description": "Select a subset of columns to check for sort. See 'qsv select --help' for the format details."
-      },
-      {
-        "flag": "--ignore-case",
-        "short": "-i",
-        "type": "flag",
-        "description": "Compare strings disregarding case"
-      },
       {
         "flag": "--all",
         "type": "flag",
         "description": "Check all records. Do not stop/short-circuit the check on the first unsorted record."
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--ignore-case",
+        "type": "flag",
+        "description": "Compare strings disregarding case"
       },
       {
         "flag": "--json",
@@ -31,33 +41,24 @@
         "description": "Return results in JSON format, scanning --all records. The JSON result has the following properties - sorted (boolean), record_count (number), unsorted_breaks (number) & dupe_count (number). Unsorted breaks count the number of times two consecutive rows are unsorted (i.e. n row > n+1 row). Dupe count is the number of times two consecutive rows are equal. Note that dupe count does not apply if the file is not sorted and is set to -1."
       },
       {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. That is, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
+      },
+      {
         "flag": "--pretty-json",
         "type": "flag",
         "description": "Same as --json but in pretty JSON format."
       },
       {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--no-headers",
-        "short": "-n",
-        "type": "flag",
-        "description": "When set, the first row will not be interpreted as headers. That is, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
-      },
-      {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
-      },
-      {
         "flag": "--progressbar",
-        "short": "-p",
         "type": "flag",
         "description": "Show progress bars. Not valid for stdin."
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select a subset of columns to check for sort. See 'qsv select --help' for the format details."
       }
     ]
   },

@@ -6,54 +6,19 @@
   "command": {
     "binary": "qsv",
     "subcommand": "excel",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": "The spreadsheet file to read. Use \"-\" to read from stdin. Supported formats: xls, xlsx, xlsm, xlsb, ods."
+      }
+    ],
     "options": [
-      {
-        "flag": "--sheet",
-        "short": "-s",
-        "type": "string",
-        "description": "Name (case-insensitive) or zero-based index of sheet to export. Negative indices start from the end (-1 = last sheet). If the sheet cannot be found, qsv will read the first sheet. [default: 0]",
-        "default": "0"
-      },
-      {
-        "flag": "--header-row",
-        "type": "string",
-        "description": "The header row. Set if other than the first non-empty row of the sheet."
-      },
-      {
-        "flag": "--metadata",
-        "type": "string",
-        "description": "Outputs workbook metadata in CSV or JSON format: index, sheet_name, headers, type, visible, column_count, row_count, safe_headers, safe_headers_count, unsafe_headers, unsafe_headers_count and duplicate_headers_count, names, name_count, tables, table_count. headers is a list of the first row which is presumed to be the header row. type is the sheet type (WorkSheet, DialogSheet, MacroSheet, ChartSheet, Vba). visible is the sheet visibility (Visible, Hidden, VeryHidden). row_count includes all rows, including the first row. safe_headers is a list of headers with \"safe\"(PostgreSQL-ready) names. unsafe_headers is a list of headers with \"unsafe\" names. duplicate_headers_count is a count of duplicate header names. names is a list of defined names in the workbook, with the associated formula. name_count is the number of defined names in the workbook. tables is a list of tables in the workbook, along with the sheet where the table is found, the columns and the column_count.  (XLSX only) table_count is the number of tables in the workbook.  (XLSX only)"
-      },
-      {
-        "flag": "--table",
-        "type": "string",
-        "description": "An Excel table (case-insensitive) to extract to a CSV. Only valid for XLSX files. The --sheet option is ignored as a table could be in any sheet. Overrides --range option."
-      },
-      {
-        "flag": "--range",
-        "type": "string",
-        "description": "An Excel format range - like RangeName, C:T, C3:T25 or 'Sheet1!C3:T25' to extract to the CSV. If the specified range contains the required sheet, the --sheet option is ignored. If the range is not found, qsv will exit with an error."
-      },
       {
         "flag": "--cell",
         "type": "string",
         "description": "A single cell reference - like C3 or 'Sheet1!C3' to extract. This is a convenience option equivalent to --range C3:C3. If both --cell and --range are specified, --cell takes precedence."
-      },
-      {
-        "flag": "--error-format",
-        "type": "string",
-        "description": "The format to use when formatting error cells. There are 3 formats:"
-      },
-      {
-        "flag": "--flexible",
-        "type": "flag",
-        "description": "Continue even if the number of columns is different from row to row."
-      },
-      {
-        "flag": "--trim",
-        "type": "flag",
-        "description": "Trim all fields so that leading & trailing whitespaces are removed. Also removes embedded linebreaks."
       },
       {
         "flag": "--date-format",
@@ -61,40 +26,78 @@
         "description": "Optional date format to use when formatting dates. See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for the full list of supported format specifiers. Note that if a date format is invalid, qsv will fall back and return the date as if no date-format was specified."
       },
       {
-        "flag": "--keep-zero-time",
-        "type": "flag",
-        "description": "Keep the time part of a date-time field if it is 00:00:00. By default, qsv will remove the time part if it is 00:00:00."
-      },
-      {
-        "flag": "--jobs",
-        "short": "-j",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
         "flag": "--delimiter",
-        "short": "-d",
         "type": "string",
         "description": "The delimiter to use when writing CSV data. Must be a single character. [default: ,]",
         "default": ","
       },
       {
+        "flag": "--error-format",
+        "type": "string",
+        "description": "The format to use when formatting error cells. There are 3 formats:",
+        "default": "code"
+      },
+      {
+        "flag": "--flexible",
+        "type": "flag",
+        "description": "Continue even if the number of columns is different from row to row."
+      },
+      {
+        "flag": "--header-row",
+        "type": "string",
+        "description": "The header row. Set if other than the first non-empty row of the sheet."
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--jobs",
+        "type": "string",
+        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
+      },
+      {
+        "flag": "--keep-zero-time",
+        "type": "flag",
+        "description": "Keep the time part of a date-time field if it is 00:00:00. By default, qsv will remove the time part if it is 00:00:00."
+      },
+      {
+        "flag": "--metadata",
+        "type": "string",
+        "description": "Outputs workbook metadata in CSV or JSON format: index, sheet_name, headers, type, visible, column_count, row_count, safe_headers, safe_headers_count, unsafe_headers, unsafe_headers_count and duplicate_headers_count, names, name_count, tables, table_count. headers is a list of the first row which is presumed to be the header row. type is the sheet type (WorkSheet, DialogSheet, MacroSheet, ChartSheet, Vba). visible is the sheet visibility (Visible, Hidden, VeryHidden). row_count includes all rows, including the first row. safe_headers is a list of headers with \"safe\"(PostgreSQL-ready) names. unsafe_headers is a list of headers with \"unsafe\" names. duplicate_headers_count is a count of duplicate header names. names is a list of defined names in the workbook, with the associated formula. name_count is the number of defined names in the workbook. tables is a list of tables in the workbook, along with the sheet where the table is found, the columns and the column_count.  (XLSX only) table_count is the number of tables in the workbook.  (XLSX only)",
+        "default": "none"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
         "flag": "--quiet",
-        "short": "-q",
         "type": "flag",
         "description": "Do not display export summary message."
+      },
+      {
+        "flag": "--range",
+        "type": "string",
+        "description": "An Excel format range - like RangeName, C:T, C3:T25 or 'Sheet1!C3:T25' to extract to the CSV. If the specified range contains the required sheet, the --sheet option is ignored. If the range is not found, qsv will exit with an error."
+      },
+      {
+        "flag": "--sheet",
+        "type": "string",
+        "description": "Name (case-insensitive) or zero-based index of sheet to export. Negative indices start from the end (-1 = last sheet). If the sheet cannot be found, qsv will read the first sheet. [default: 0]",
+        "default": "0"
+      },
+      {
+        "flag": "--table",
+        "type": "string",
+        "description": "An Excel table (case-insensitive) to extract to a CSV. Only valid for XLSX files. The --sheet option is ignored as a table could be in any sheet. Overrides --range option."
+      },
+      {
+        "flag": "--trim",
+        "type": "flag",
+        "description": "Trim all fields so that leading & trailing whitespaces are removed. Also removes embedded linebreaks."
       }
     ]
   },

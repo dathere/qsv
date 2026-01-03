@@ -6,24 +6,15 @@
   "command": {
     "binary": "qsv",
     "subcommand": "enumerate",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
-      {
-        "flag": "--new-column",
-        "short": "-c",
-        "type": "string",
-        "description": "Name of the column to create. Will default to \"index\"."
-      },
-      {
-        "flag": "--start",
-        "type": "string",
-        "description": "The value to start the enumeration from. Only applies in Increment mode. (default: 0)"
-      },
-      {
-        "flag": "--increment",
-        "type": "string",
-        "description": "The value to increment the enumeration by. Only applies in Increment mode. (default: 1)"
-      },
       {
         "flag": "--constant",
         "type": "string",
@@ -35,14 +26,9 @@
         "description": "Name of a column to copy. Changes the default column name to \"{column}_copy\" unless overridden by --new-column."
       },
       {
-        "flag": "--uuid4",
-        "type": "flag",
-        "description": "When set, the column will be populated with uuids (v4) instead of the incremental identifier. Changes the default column name to \"uuid4\" unless overridden by --new-column."
-      },
-      {
-        "flag": "--uuid7",
-        "type": "flag",
-        "description": "When set, the column will be populated with uuids (v7) instead of the incremental identifier. uuid v7 is a time-based uuid and is monotonically increasing. See https://buildkite.com/blog/goodbye-integers-hello-uuids Changes the default column name to \"uuid7\" unless overridden by --new-column."
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
         "flag": "--hash",
@@ -51,27 +37,43 @@
       },
       {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       },
       {
-        "flag": "--output",
-        "short": "-o",
+        "flag": "--increment",
         "type": "string",
-        "description": "Write output to <file> instead of stdout."
+        "description": "The value to increment the enumeration by. Only applies in Increment mode. (default: 1)"
+      },
+      {
+        "flag": "--new-column",
+        "type": "string",
+        "description": "Name of the column to create. Will default to \"index\"."
       },
       {
         "flag": "--no-headers",
-        "short": "-n",
         "type": "flag",
         "description": "When set, the first row will not be interpreted as headers."
       },
       {
-        "flag": "--delimiter",
-        "short": "-d",
+        "flag": "--output",
         "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--start",
+        "type": "string",
+        "description": "The value to start the enumeration from. Only applies in Increment mode. (default: 0)"
+      },
+      {
+        "flag": "--uuid4",
+        "type": "flag",
+        "description": "When set, the column will be populated with uuids (v4) instead of the incremental identifier. Changes the default column name to \"uuid4\" unless overridden by --new-column."
+      },
+      {
+        "flag": "--uuid7",
+        "type": "flag",
+        "description": "When set, the column will be populated with uuids (v7) instead of the incremental identifier. uuid v7 is a time-based uuid and is monotonically increasing. See https://buildkite.com/blog/goodbye-integers-hello-uuids Changes the default column name to \"uuid7\" unless overridden by --new-column."
       }
     ]
   },

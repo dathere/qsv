@@ -2,23 +2,35 @@
   "name": "qsv-foreach",
   "version": "12.0.0",
   "description": "Execute a shell command once per record in a given CSV file. NOTE: Windows users are recommended to use Git Bash as their terminal when running this command. Download it from https://git-scm.com/downloads. When installing, be sure to select \"Use Git from the Windows Command Prompt\" to ensure that the necessary Unix tools are available in the terminal. WARNING: This command can be dangerous. Be careful when using it with untrusted input. Or per @thadguidry: 😉 Please ensure when using foreach to use trusted arguments, variables, scripts, etc. If you don't do due diligence and blindly use untrusted parts... foreach can indeed become a footgun and possibly fry your computer, eat your lunch, and expose an entire datacenter to a cancerous virus in your unvetted batch file you grabbed from some stranger on the internet that runs...FOR EACH LINE in your CSV file. GASP!\"",
-  "category": "conversion",
+  "category": "utility",
   "command": {
     "binary": "qsv",
     "subcommand": "foreach",
-    "args": [],
-    "options": [
+    "args": [
       {
-        "flag": "--unify",
-        "short": "-u",
-        "type": "flag",
-        "description": "If the output of the executed command is a CSV, unify the result by skipping headers on each subsequent command. Does not work when --dry-run is true."
+        "name": "column",
+        "type": "string",
+        "required": true,
+        "description": ""
       },
       {
-        "flag": "--new-column",
-        "short": "-c",
+        "name": "command",
         "type": "string",
-        "description": "If unifying, add a new column with given name and copying the value of the current input file line."
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
         "flag": "--dry-run",
@@ -28,27 +40,28 @@
       },
       {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       },
       {
+        "flag": "--new-column",
+        "type": "string",
+        "description": "If unifying, add a new column with given name and copying the value of the current input file line."
+      },
+      {
         "flag": "--no-headers",
-        "short": "-n",
         "type": "flag",
         "description": "When set, the file will be considered to have no headers."
       },
       {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
-      },
-      {
         "flag": "--progressbar",
-        "short": "-p",
         "type": "flag",
         "description": "Show progress bars. Not valid for stdin."
+      },
+      {
+        "flag": "--unify",
+        "type": "flag",
+        "description": "If the output of the executed command is a CSV, unify the result by skipping headers on each subsequent command. Does not work when --dry-run is true."
       }
     ]
   },

@@ -16,26 +16,19 @@
     ],
     "options": [
       {
-        "flag": "--sample",
-        "type": "string",
-        "description": "First n rows to sample to sniff out the metadata. When sample size is between 0 and 1 exclusive, it is treated as a percentage of the CSV to sample (e.g. 0.20 is 20 percent). When it is zero, the entire file will be sampled. When the input is a URL, the sample size dictates how many lines to sample without having to download the entire file. Ignored when --no-infer is enabled. [default: 1000]",
-        "default": "1000"
-      },
-      {
-        "flag": "--prefer-dmy",
-        "type": "flag",
-        "description": "Prefer to parse dates in dmy format. Otherwise, use mdy format. Ignored when --no-infer is enabled."
-      },
-      {
         "flag": "--delimiter",
-        "short": "-d",
         "type": "string",
         "description": "The delimiter for reading CSV data. Specify this when the delimiter is known beforehand, as the delimiter inferencing algorithm can sometimes fail. Must be a single ascii character."
       },
       {
-        "flag": "--quote",
-        "type": "string",
-        "description": "The quote character for reading CSV data. Specify this when the quote character is known beforehand, as the quote char inferencing algorithm can sometimes fail. Must be a single ascii character - typically, double quote (\"), single quote ('), or backtick (`)."
+        "flag": "--harvest-mode",
+        "type": "flag",
+        "description": "This is a convenience flag when using sniff in CKAN harvesters. It is equivalent to --quick --timeout 10 --stats-types --json and --user-agent \"CKAN-harvest/$QSV_VERSION ($QSV_TARGET; $QSV_BIN_NAME)\""
+      },
+      {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
       },
       {
         "flag": "--json",
@@ -43,14 +36,55 @@
         "description": "Return results in JSON format."
       },
       {
+        "flag": "--just-mime",
+        "type": "flag",
+        "description": "Only return the file's mime type. Use this to use sniff as a general mime type detector. Synonym for --no-infer."
+      },
+      {
+        "flag": "--no-infer",
+        "type": "flag",
+        "description": "Do not infer the schema. Only return the file's mime type, size and last modified date. Use this to use sniff as a general mime type detector. Note that CSV and TSV files will only be detected as mime type plain/text in this mode."
+      },
+      {
+        "flag": "--prefer-dmy",
+        "type": "flag",
+        "description": "Prefer to parse dates in dmy format. Otherwise, use mdy format. Ignored when --no-infer is enabled."
+      },
+      {
         "flag": "--pretty-json",
         "type": "flag",
         "description": "Return results in pretty JSON format."
       },
       {
+        "flag": "--progressbar",
+        "type": "flag",
+        "description": "Show progress bars. Only valid for URL input."
+      },
+      {
+        "flag": "--quick",
+        "type": "flag",
+        "description": "When sniffing a non-CSV remote file, only download the first chunk of the file before attempting to detect the mime type. This is faster but less accurate as some mime types cannot be detected with just the first downloaded chunk."
+      },
+      {
+        "flag": "--quote",
+        "type": "string",
+        "description": "The quote character for reading CSV data. Specify this when the quote character is known beforehand, as the quote char inferencing algorithm can sometimes fail. Must be a single ascii character - typically, double quote (\"), single quote ('), or backtick (`)."
+      },
+      {
+        "flag": "--sample",
+        "type": "string",
+        "description": "First n rows to sample to sniff out the metadata. When sample size is between 0 and 1 exclusive, it is treated as a percentage of the CSV to sample (e.g. 0.20 is 20 percent). When it is zero, the entire file will be sampled. When the input is a URL, the sample size dictates how many lines to sample without having to download the entire file. Ignored when --no-infer is enabled. [default: 1000]",
+        "default": "1000"
+      },
+      {
         "flag": "--save-urlsample",
         "type": "string",
         "description": "Save the URL sample to a file. Valid only when input is a URL."
+      },
+      {
+        "flag": "--stats-types",
+        "type": "flag",
+        "description": "Use the same data type names as `stats`. (Unsigned, Signed => Integer, Text => String, everything else the same)"
       },
       {
         "flag": "--timeout",
@@ -62,44 +96,6 @@
         "flag": "--user-agent",
         "type": "string",
         "description": "Specify custom user agent to use when sniffing a CSV on a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent"
-      },
-      {
-        "flag": "--stats-types",
-        "type": "flag",
-        "description": "Use the same data type names as `stats`. (Unsigned, Signed => Integer, Text => String, everything else the same)"
-      },
-      {
-        "flag": "--no-infer",
-        "type": "flag",
-        "description": "Do not infer the schema. Only return the file's mime type, size and last modified date. Use this to use sniff as a general mime type detector. Note that CSV and TSV files will only be detected as mime type plain/text in this mode."
-      },
-      {
-        "flag": "--just-mime",
-        "type": "flag",
-        "description": "Only return the file's mime type. Use this to use sniff as a general mime type detector. Synonym for --no-infer."
-      },
-      {
-        "flag": "--quick",
-        "short": "-Q",
-        "type": "flag",
-        "description": "When sniffing a non-CSV remote file, only download the first chunk of the file before attempting to detect the mime type. This is faster but less accurate as some mime types cannot be detected with just the first downloaded chunk."
-      },
-      {
-        "flag": "--harvest-mode",
-        "type": "flag",
-        "description": "This is a convenience flag when using sniff in CKAN harvesters. It is equivalent to --quick --timeout 10 --stats-types --json and --user-agent \"CKAN-harvest/$QSV_VERSION ($QSV_TARGET; $QSV_BIN_NAME)\""
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--progressbar",
-        "short": "-p",
-        "type": "flag",
-        "description": "Show progress bars. Only valid for URL input."
       }
     ]
   },

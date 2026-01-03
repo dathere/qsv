@@ -9,16 +9,14 @@
     "args": [],
     "options": [
       {
-        "flag": "--save",
-        "short": "-s",
-        "type": "flag",
-        "description": "Save output to clipboard. Common options:"
-      },
-      {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
+      },
+      {
+        "flag": "--save",
+        "type": "flag",
+        "description": "Save output to clipboard. Common options:"
       }
     ]
   },

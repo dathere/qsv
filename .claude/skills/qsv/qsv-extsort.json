@@ -6,25 +6,62 @@
   "command": {
     "binary": "qsv",
     "subcommand": "extsort",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "output",
+        "type": "string",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
         "flag": "--delimiter",
-        "short": "-d",
         "type": "string",
         "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       },
       {
+        "flag": "--jobs",
+        "type": "string",
+        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
+      },
+      {
+        "flag": "--memory-limit",
+        "type": "string",
+        "description": "The maximum amount of memory to buffer the external merge sort. If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory. [default: 20]",
+        "default": "20"
+      },
+      {
         "flag": "--no-headers",
-        "short": "-n",
         "type": "flag",
         "description": "When set, the first row will not be interpreted as headers and will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
+      },
+      {
+        "flag": "--reverse",
+        "type": "flag",
+        "description": "Reverse order"
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select a subset of columns to sort (CSV MODE). Note that the outputs will remain at the full width of the CSV. If --select is NOT set, extsort will work in LINE MODE, sorting the input as a text file on a line-by-line basis."
+      },
+      {
+        "flag": "--tmp-dir",
+        "type": "string",
+        "description": "The directory to use for externally sorting file segments. [default: ./]",
+        "default": "./"
       }
     ]
   },

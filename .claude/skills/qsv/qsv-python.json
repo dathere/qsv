@@ -2,52 +2,64 @@
   "name": "qsv-python",
   "version": "12.0.0",
   "description": "Create a new computed column or filter rows by evaluating a Python expression on every row of a CSV file. The executed Python has 4 ways to reference cell values (as strings): 1. Directly by using column name (e.g. amount) as a local variable. If a column name has spaces and other special characters, they are replaced with underscores (e.g. \"unit cost\" -> unit_cost, \"test-units/sec\" -> test_units_sec) 2. Indexing cell value by column name as an attribute: col.amount 3. Indexing cell value by column name as a key: col[\"amount\"] 4. Indexing cell value by column position: col[0] Of course, if your input has no headers, then 4. will be the only available option. Some usage examples: Sum numeric columns 'a' and 'b' and call new column 'c' Use Python f-strings to calculate using multiple columns (qty, fruit & \"unit cost\") and format into a new column 'formatted' You can even have conditionals in your f-string: 'f\"\"\"{qty} {fruit} cost ${(float(unit_cost) * float(qty)):.2f}. Its quite {\"cheap\" if ((float(unit_cost) * float(qty)) < 20.0) else \"expensive\"}!\"\"\"' Note how we needed to use triple double quotes for the f-string, so we can use the literals \"cheap\" and \"expensive\" in the f-string expression. Strip and prefix cell values Filter some lines based on numerical filtering Load helper file with function to compute Fibonacci sequence of the column \"num_col\" Below is a detailed example of the --helper option: Use case: Need to calculate checksum/md5sum of some columns. First column (c1) is \"id\", and do md5sum of the rest of the columns (c2, c3 and c4). Given test.csv: c1,c2,c3,c4 1,a2,a3,a4 2,b2,b3,b4 3,c2,c3,c4 and hashhelper.py: import hashlib def md5hash (*args): s = \",\".join(args) return(hashlib.md5(s.encode('utf-8')).hexdigest()) with the following command: we get: c1,c2,c3,c4,hashcol 1,a2,a3,a4,cb675342ed940908eef0844d17c35fab 2,b2,b3,b4,7d594b33f82bdcbc1cfa6f924a84c4cd 3,c2,c3,c4,6eabbfdbfd9ab6ae7737fb2b82f6a1af Note that qsv with the `python` feature enabled will panic on startup even if you're not using the `py` command if Python's shared libraries are not found. Also, the following Python modules are automatically loaded and available to the user - builtins, math, random & datetime. The user can import additional modules with the --helper option, with the ability to use any Python module that's installed in the current Python virtualenv. The Python expression is evaluated on a per record basis. With \"py map\", if the expression is invalid for a record, \"<ERROR>\" is returned for that record. With \"py filter\", if the expression is invalid for a record, that record is not filtered. If any record has an invalid result, an exitcode of 1 is returned and an error count is logged. For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_py.rs.",
-  "category": "conversion",
+  "category": "utility",
   "command": {
     "binary": "qsv",
     "subcommand": "python",
-    "args": [],
-    "options": [
+    "args": [
       {
-        "flag": "--helper",
-        "short": "-f",
+        "name": "expression",
         "type": "string",
-        "description": "File containing Python code that's loaded into the qsv_uh Python module. Functions with a return statement in the file can be called with the prefix \"qsv_uh\". The returned value is used in the map or filter operation."
+        "required": true,
+        "description": "Can either be a Python expression, or if it starts with \"file:\" or ends with \".py\" - the filepath from which to load the Python expression. Note that argument expects a SINGLE expression, and not a full-blown Python script. Use the --helper option to load helper code that you can call from the expression."
       },
       {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "new-column",
+        "type": "string",
+        "required": true,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
         "flag": "--batch",
-        "short": "-b",
         "type": "string",
         "description": "The number of rows per batch to process before releasing memory and acquiring a new GILpool. Set to 0 to process the entire file in one batch. [default: 50000]",
         "default": "50000"
       },
       {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--no-headers",
-        "short": "-n",
-        "type": "flag",
-        "description": "When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
-      },
-      {
         "flag": "--delimiter",
-        "short": "-d",
         "type": "string",
         "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--helper",
+        "type": "string",
+        "description": "File containing Python code that's loaded into the qsv_uh Python module. Functions with a return statement in the file can be called with the prefix \"qsv_uh\". The returned value is used in the map or filter operation."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
         "flag": "--progressbar",
-        "short": "-p",
         "type": "flag",
         "description": "Show progress bars. Not valid for stdin."
       }

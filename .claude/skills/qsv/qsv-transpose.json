@@ -6,13 +6,24 @@
   "command": {
     "binary": "qsv",
     "subcommand": "transpose",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "--multipass",
-        "short": "-m",
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--help",
         "type": "flag",
-        "description": "Process the transpose by making multiple passes over the dataset. Consumes memory relative to the number of rows. Note that in general it is faster to process the transpose in memory. Useful for really big datasets as the default is to read the entire dataset into memory."
+        "description": "Display this message"
       },
       {
         "flag": "--long",
@@ -20,27 +31,19 @@
         "description": "Convert wide-format CSV to \"long\" format. Output format is three columns: field, attribute, value. Empty values are skipped. Mutually exclusive with --multipass."
       },
       {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
-      },
-      {
         "flag": "--memcheck",
         "type": "flag",
         "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. Ignored when --multipass or --long option is enabled."
+      },
+      {
+        "flag": "--multipass",
+        "type": "flag",
+        "description": "Process the transpose by making multiple passes over the dataset. Consumes memory relative to the number of rows. Note that in general it is faster to process the transpose in memory. Useful for really big datasets as the default is to read the entire dataset into memory."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
       }
     ]
   },

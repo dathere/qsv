@@ -6,8 +6,63 @@
   "command": {
     "binary": "qsv",
     "subcommand": "sqlp",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "sql",
+        "type": "string",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
+      {
+        "flag": "--cache-schema",
+        "type": "flag",
+        "description": "Create and cache Polars schema JSON files. If the schema file/s exists, it will load the schema instead of inferring it (ignoring --infer-len) and attempt to use it for each corresponding Polars \"table\" with the same file stem. If specified and the schema file/s do not exist, it will check if a stats cache is available. If so, it will use it to derive a Polars schema and save it. If there's no stats cache, it will infer the schema using --infer-len and save the inferred schemas. Each schema file will have the same file stem as the corresponding input file, with the extension \".pschema.json\" (data.csv's Polars schema file will be data.pschema.json) NOTE: You can edit the generated schema files to change the Polars schema and cast columns to the desired data type. For example, you can force a Float32 column to be a Float64 column by changing the \"Float32\" type to \"Float64\" in the schema file. You can also cast a Float to a Decimal with a desired precision and scale. (e.g. instead of \"Float32\", use \"{Decimal\" : [10, 3]}\") The valid types are: `Boolean`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `String`, `Date`, `Datetime`, `Duration`, `Time`, `Null`, `Categorical`, `Decimal` and `Enum`."
+      },
+      {
+        "flag": "--compress-level",
+        "type": "string",
+        "description": "The compression level to use when using zstd or gzip compression. When using zstd, valid values are -7 to 22, with -7 being the lowest compression level and 22 being the highest compression level. When using gzip, valid values are 1-9, with 1 being the lowest compression level and 9 being the highest compression level. Higher compression levels are slower. The zstd default is 3, and the gzip default is 6."
+      },
+      {
+        "flag": "--compression",
+        "type": "string",
+        "description": "The compression codec to use when writing arrow or parquet files. For Arrow, valid values are: zstd, lz4, uncompressed For Avro, valid values are: deflate, snappy, uncompressed (default) For Parquet, valid values are: zstd, lz4raw, gzip, snappy, uncompressed [default: zstd]",
+        "default": "zstd"
+      },
+      {
+        "flag": "--date-format",
+        "type": "string",
+        "description": "The date format to use writing dates."
+      },
+      {
+        "flag": "--datetime-format",
+        "type": "string",
+        "description": "The datetime format to use writing datetimes. See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for the list of valid format specifiers."
+      },
+      {
+        "flag": "--decimal-comma",
+        "type": "flag",
+        "description": "Use comma as the decimal separator when parsing & writing CSVs. Otherwise, use period as the decimal separator. Note that you'll need to set --delimiter to an alternate delimiter other than the default comma if you are using this option."
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading and writing CSV data. Must be a single character. [default: ,]",
+        "default": ","
+      },
+      {
+        "flag": "--float-precision",
+        "type": "string",
+        "description": "The number of digits of precision to use when writing floats."
+      },
       {
         "flag": "--format",
         "type": "string",
@@ -15,25 +70,20 @@
         "default": "csv"
       },
       {
-        "flag": "--try-parsedates",
+        "flag": "--help",
         "type": "flag",
-        "description": "Automatically try to parse dates/datetimes and time. If parsing fails, columns remain as strings. Note that if dates are not well-formatted in your CSV, that you may want to try to set `--ignore-errors` to relax the CSV parsing of dates."
+        "description": "Display this message"
+      },
+      {
+        "flag": "--ignore-errors",
+        "type": "flag",
+        "description": "Ignore errors when parsing CSVs. If set, rows with errors will be skipped. If not set, the query will fail. Only use this when debugging queries, as Polars does batched parsing and will skip the entire batch where the error occurred. To get more detailed error messages, set the environment variable POLARS_BACKTRACE_IN_ERR=1 before running the query."
       },
       {
         "flag": "--infer-len",
         "type": "string",
         "description": "The number of rows to scan when inferring the schema of the CSV. Set to 0 to do a full table scan (warning: can be slow). [default: 10000]",
         "default": "10000"
-      },
-      {
-        "flag": "--cache-schema",
-        "type": "flag",
-        "description": "Create and cache Polars schema JSON files. If the schema file/s exists, it will load the schema instead of inferring it (ignoring --infer-len) and attempt to use it for each corresponding Polars \"table\" with the same file stem. If specified and the schema file/s do not exist, it will check if a stats cache is available. If so, it will use it to derive a Polars schema and save it. If there's no stats cache, it will infer the schema using --infer-len and save the inferred schemas. Each schema file will have the same file stem as the corresponding input file, with the extension \".pschema.json\" (data.csv's Polars schema file will be data.pschema.json) NOTE: You can edit the generated schema files to change the Polars schema and cast columns to the desired data type. For example, you can force a Float32 column to be a Float64 column by changing the \"Float32\" type to \"Float64\" in the schema file. You can also cast a Float to a Decimal with a desired precision and scale. (e.g. instead of \"Float32\", use \"{Decimal\" : [10, 3]}\") The valid types are: `Boolean`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `String`, `Date`, `Datetime`, `Duration`, `Time`, `Null`, `Categorical`, `Decimal` and `Enum`."
-      },
-      {
-        "flag": "--streaming",
-        "type": "flag",
-        "description": "Use streaming mode when parsing CSVs. This will use less memory but will be slower. Only use this when you get out of memory errors."
       },
       {
         "flag": "--low-memory",
@@ -46,14 +96,14 @@
         "description": "Disable non-default query optimizations. This will make queries slower. Use this when you get query errors or to force CSV parsing when there is only one input file, no CSV parsing options are used and its not a SQL script."
       },
       {
-        "flag": "--truncate-ragged-lines",
-        "type": "flag",
-        "description": "Truncate ragged lines when parsing CSVs. If set, rows with more columns than the header will be truncated. If not set, the query will fail. Use this only when you get an error about ragged lines."
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
       },
       {
-        "flag": "--ignore-errors",
+        "flag": "--quiet",
         "type": "flag",
-        "description": "Ignore errors when parsing CSVs. If set, rows with errors will be skipped. If not set, the query will fail. Only use this when debugging queries, as Polars does batched parsing and will skip the entire batch where the error occurred. To get more detailed error messages, set the environment variable POLARS_BACKTRACE_IN_ERR=1 before running the query."
+        "description": "Do not return result shape to stderr."
       },
       {
         "flag": "--rnull-values",
@@ -62,19 +112,14 @@
         "default": "<empty string>"
       },
       {
-        "flag": "--decimal-comma",
+        "flag": "--statistics",
         "type": "flag",
-        "description": "Use comma as the decimal separator when parsing & writing CSVs. Otherwise, use period as the decimal separator. Note that you'll need to set --delimiter to an alternate delimiter other than the default comma if you are using this option."
+        "description": "Compute column statistics when writing parquet files."
       },
       {
-        "flag": "--datetime-format",
-        "type": "string",
-        "description": "The datetime format to use writing datetimes. See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for the list of valid format specifiers."
-      },
-      {
-        "flag": "--date-format",
-        "type": "string",
-        "description": "The date format to use writing dates."
+        "flag": "--streaming",
+        "type": "flag",
+        "description": "Use streaming mode when parsing CSVs. This will use less memory but will be slower. Only use this when you get out of memory errors."
       },
       {
         "flag": "--time-format",
@@ -82,56 +127,20 @@
         "description": "The time format to use writing times."
       },
       {
-        "flag": "--float-precision",
-        "type": "string",
-        "description": "The number of digits of precision to use when writing floats."
+        "flag": "--truncate-ragged-lines",
+        "type": "flag",
+        "description": "Truncate ragged lines when parsing CSVs. If set, rows with more columns than the header will be truncated. If not set, the query will fail. Use this only when you get an error about ragged lines."
+      },
+      {
+        "flag": "--try-parsedates",
+        "type": "flag",
+        "description": "Automatically try to parse dates/datetimes and time. If parsing fails, columns remain as strings. Note that if dates are not well-formatted in your CSV, that you may want to try to set `--ignore-errors` to relax the CSV parsing of dates."
       },
       {
         "flag": "--wnull-value",
         "type": "string",
         "description": "The string to use when WRITING null values. [default: <empty string>]",
         "default": "<empty string>"
-      },
-      {
-        "flag": "--compression",
-        "type": "string",
-        "description": "The compression codec to use when writing arrow or parquet files. For Arrow, valid values are: zstd, lz4, uncompressed For Avro, valid values are: deflate, snappy, uncompressed (default) For Parquet, valid values are: zstd, lz4raw, gzip, snappy, uncompressed [default: zstd]",
-        "default": "zstd"
-      },
-      {
-        "flag": "--compress-level",
-        "type": "string",
-        "description": "The compression level to use when using zstd or gzip compression. When using zstd, valid values are -7 to 22, with -7 being the lowest compression level and 22 being the highest compression level. When using gzip, valid values are 1-9, with 1 being the lowest compression level and 9 being the highest compression level. Higher compression levels are slower. The zstd default is 3, and the gzip default is 6."
-      },
-      {
-        "flag": "--statistics",
-        "type": "flag",
-        "description": "Compute column statistics when writing parquet files."
-      },
-      {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--delimiter",
-        "short": "-d",
-        "type": "string",
-        "description": "The field delimiter for reading and writing CSV data. Must be a single character. [default: ,]",
-        "default": ","
-      },
-      {
-        "flag": "--quiet",
-        "short": "-q",
-        "type": "flag",
-        "description": "Do not return result shape to stderr."
       }
     ]
   },

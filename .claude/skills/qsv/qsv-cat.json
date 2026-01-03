@@ -16,10 +16,9 @@
     ],
     "options": [
       {
-        "flag": "--pad",
-        "short": "-p",
-        "type": "flag",
-        "description": "When concatenating columns, this flag will cause all records to appear. It will pad each row if other CSV data isn't long enough."
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
         "flag": "--flexible",
@@ -28,41 +27,35 @@
       },
       {
         "flag": "--group",
-        "short": "-g",
         "type": "string",
         "description": "When concatenating with rowskey, you can specify a grouping value which will be used as the first column in the output. This is useful when you want to know which file a row came from. Valid values are 'fullpath', 'parentdirfname', 'parentdirfstem', 'fname', 'fstem' and 'none'. A new column will be added to the beginning of each row using --group-name. If 'none' is specified, no grouping column will be added. [default: none]",
         "default": "none"
       },
       {
         "flag": "--group-name",
-        "short": "-N",
         "type": "string",
         "description": "When concatenating with rowskey, this flag provides the name for the new grouping column. [default: file]",
         "default": "file"
       },
       {
         "flag": "--help",
-        "short": "-h",
         "type": "flag",
         "description": "Display this message"
       },
       {
-        "flag": "--output",
-        "short": "-o",
-        "type": "string",
-        "description": "Write output to <file> instead of stdout."
-      },
-      {
         "flag": "--no-headers",
-        "short": "-n",
         "type": "flag",
         "description": "When set, the first row will NOT be interpreted as column names. Note that this has no effect when concatenating columns."
       },
       {
-        "flag": "--delimiter",
-        "short": "-d",
+        "flag": "--output",
         "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--pad",
+        "type": "flag",
+        "description": "When concatenating columns, this flag will cause all records to appear. It will pad each row if other CSV data isn't long enough."
       }
     ]
   },

@@ -16,9 +16,29 @@
     ],
     "options": [
       {
-        "flag": "--user-agent",
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--jobs",
         "type": "string",
-        "description": "Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent"
+        "description": "The number of jobs to run in parallel when compressing. When not set, its set to the number of CPUs - 1"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <output> instead of stdout."
+      },
+      {
+        "flag": "--progressbar",
+        "type": "flag",
+        "description": "Show download progress bars. Only valid for URL input."
+      },
+      {
+        "flag": "--quiet",
+        "type": "flag",
+        "description": "Suppress status messages to stderr."
       },
       {
         "flag": "--timeout",
@@ -27,34 +47,9 @@
         "default": "60"
       },
       {
-        "flag": "--help",
-        "short": "-h",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
-        "flag": "--output",
-        "short": "-o",
+        "flag": "--user-agent",
         "type": "string",
-        "description": "Write output to <output> instead of stdout."
-      },
-      {
-        "flag": "--jobs",
-        "short": "-j",
-        "type": "string",
-        "description": "The number of jobs to run in parallel when compressing. When not set, its set to the number of CPUs - 1"
-      },
-      {
-        "flag": "--quiet",
-        "short": "-q",
-        "type": "flag",
-        "description": "Suppress status messages to stderr."
-      },
-      {
-        "flag": "--progressbar",
-        "short": "-p",
-        "type": "flag",
-        "description": "Show download progress bars. Only valid for URL input."
+        "description": "Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent"
       }
     ]
   },

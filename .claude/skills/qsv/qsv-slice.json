@@ -6,36 +6,34 @@
   "command": {
     "binary": "qsv",
     "subcommand": "slice",
-    "args": [],
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
     "options": [
       {
-        "flag": "--start",
-        "short": "-s",
+        "flag": "--delimiter",
         "type": "string",
-        "description": "The index of the record to slice from. If negative, starts from the last record."
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
         "flag": "--end",
-        "short": "-e",
         "type": "string",
         "description": "The index of the record to slice to."
       },
       {
-        "flag": "--len",
-        "short": "-l",
-        "type": "string",
-        "description": "The length of the slice (can be used instead of --end)."
+        "flag": "--help",
+        "type": "flag",
+        "description": "Display this message"
       },
       {
         "flag": "--index",
-        "short": "-i",
         "type": "string",
         "description": "Slice a single record (shortcut for -s N -l 1). If negative, starts from the last record."
-      },
-      {
-        "flag": "--json",
-        "type": "flag",
-        "description": "Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based)."
       },
       {
         "flag": "--invert",
@@ -43,28 +41,29 @@
         "description": "slice all records EXCEPT those in the specified range."
       },
       {
-        "flag": "--help",
-        "short": "-h",
+        "flag": "--json",
         "type": "flag",
-        "description": "Display this message"
+        "description": "Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based)."
       },
       {
-        "flag": "--output",
-        "short": "-o",
+        "flag": "--len",
         "type": "string",
-        "description": "Write output to <file> instead of stdout."
+        "description": "The length of the slice (can be used instead of --end)."
       },
       {
         "flag": "--no-headers",
-        "short": "-n",
         "type": "flag",
         "description": "When set, the first row will not be interpreted as headers. Otherwise, the first row will always appear in the output as the header row."
       },
       {
-        "flag": "--delimiter",
-        "short": "-d",
+        "flag": "--output",
         "type": "string",
-        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--start",
+        "type": "string",
+        "description": "The index of the record to slice from. If negative, starts from the last record."
       }
     ]
   },

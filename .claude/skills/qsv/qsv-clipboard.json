@@ -1,0 +1,40 @@
+{
+  "name": "qsv-clipboard",
+  "version": "12.0.0",
+  "description": "Provide input from the clipboard or save output to the clipboard. Note when saving to clipboard on Windows, line breaks may be represented as \\r\\n (CRLF). Meanwhile on Linux and macOS, they may be represented as \\n (LF).",
+  "category": "utility",
+  "command": {
+    "binary": "qsv",
+    "subcommand": "clipboard",
+    "args": [],
+    "options": [
+      {
+        "flag": "--save",
+        "short": "-s",
+        "type": "flag",
+        "description": "Save output to clipboard. Common options:"
+      },
+      {
+        "flag": "--help",
+        "short": "-h",
+        "type": "flag",
+        "description": "Display this message"
+      }
+    ]
+  },
+  "examples": [
+    {
+      "description": "| qsv stats | qsv table",
+      "command": "qsv clipboard | qsv stats | qsv table"
+    },
+    {
+      "description": "| qsv stats | qsv clipboard -s",
+      "command": "qsv clipboard | qsv stats | qsv clipboard -s"
+    }
+  ],
+  "hints": {
+    "streamable": true,
+    "memory": "constant"
+  },
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_clipboard.rs"
+}

@@ -1,0 +1,91 @@
+{
+  "name": "qsv-geoconvert",
+  "version": "12.0.0",
+  "description": "Convert between various spatial formats and CSV/SVG including GeoJSON, SHP, and more. For example to convert a GeoJSON file into CSV data: To use stdin as input instead of a file path, use a dash \"-\": To convert a CSV file into GeoJSON data, specify the WKT geometry column with the --geometry flag: Alternatively specify the latitude and longitude columns with the --latitude and --longitude flags:",
+  "category": "utility",
+  "command": {
+    "binary": "qsv",
+    "subcommand": "geoconvert",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": "The spatial file to convert. To use stdin instead, use a dash \"-\". Note: SHP input must be a path to a .shp file and cannot use stdin."
+      },
+      {
+        "name": "input-format",
+        "type": "file",
+        "required": true,
+        "description": "Valid values are \"geojson\", \"shp\", and \"csv\""
+      },
+      {
+        "name": "output-format",
+        "type": "string",
+        "required": true,
+        "description": "Valid values are:"
+      }
+    ],
+    "options": [
+      {
+        "flag": "--geometry",
+        "short": "-g",
+        "type": "string",
+        "description": "The name of the column that has WKT geometry. Alternative to --latitude and --longitude."
+      },
+      {
+        "flag": "--latitude",
+        "short": "-y",
+        "type": "string",
+        "description": "The name of the column with northing values."
+      },
+      {
+        "flag": "--longitude",
+        "short": "-x",
+        "type": "string",
+        "description": "The name of the column with easting values."
+      },
+      {
+        "flag": "--max-length",
+        "short": "-l",
+        "type": "string",
+        "description": "The maximum column length when the output format is CSV. Oftentimes, the geometry column is too long to fit in a CSV file, causing other tools like Python & PostgreSQL to fail. If a column is too long, it will be truncated to the specified length and an ellipsis (\"...\") will be appended."
+      },
+      {
+        "flag": "--help",
+        "short": "-h",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--output",
+        "short": "-o",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      }
+    ]
+  },
+  "examples": [
+    {
+      "description": "file.geojson geojson csv",
+      "command": "qsv geoconvert file.geojson geojson csv"
+    },
+    {
+      "description": "qsv prompt -m \"Choose a GeoJSON file\" -F geojson | qsv geoconvert - geojson csv",
+      "command": "qsv prompt -m \"Choose a GeoJSON file\" -F geojson | qsv geoconvert - geojson csv"
+    },
+    {
+      "description": "file.csv csv geojson --geometry geometry",
+      "command": "qsv geoconvert file.csv csv geojson --geometry geometry"
+    },
+    {
+      "description": "file.csv csv geojson --latitude lat --longitude lon",
+      "command": "qsv geoconvert file.csv csv geojson --latitude lat --longitude lon"
+    }
+  ],
+  "hints": {
+    "streamable": true,
+    "memory": "constant"
+  },
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_geoconvert.rs"
+}

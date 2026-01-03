@@ -20,6 +20,10 @@ src/.DS_Store
 *.svg
 perf.data*
 *.json
+# Exception: allow skill definition JSON files and npm config
+!.claude/skills/qsv/*.json
+!.claude/skills/package.json
+!.claude/skills/package-lock.json
 *.log
 *.log.gz
 *.bak

@@ -1,0 +1,72 @@
+{
+  "name": "qsv-snappy",
+  "version": "12.0.0",
+  "description": "Does streaming compression/decompression of the input using the Snappy framing format. https://github.com/google/snappy/blob/main/framing_format.txt It has four subcommands: compress:   Compress the input (multithreaded). decompress: Decompress the input (single-threaded). check:      Quickly check if the input is a Snappy file by inspecting the first 50 bytes of the input is valid Snappy data. Returns exitcode 0 if the first 50 bytes is valid Snappy data, exitcode 1 otherwise. validate:   Validate if the ENTIRE input is a valid Snappy file. Returns exitcode 0 if valid, exitcode 1 otherwise. Note that most qsv commands already automatically decompresses Snappy files if the input file has an \".sz\" extension. It will also automatically compress the output file (though only single-threaded) if the --output file has an \".sz\" extension. This command's multithreaded compression is 5-6x faster than qsv's automatic single-threaded compression. Also, this command is not specific to CSV data, it can compress/decompress ANY file. For examples, see https://github.com/dathere/qsv/blob/master/tests/test_snappy.rs.",
+  "category": "utility",
+  "command": {
+    "binary": "qsv",
+    "subcommand": "snappy",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": "The input file to compress/decompress. This can be a local file, stdin, or a URL (http and https schemes supported)."
+      }
+    ],
+    "options": [
+      {
+        "flag": "--user-agent",
+        "type": "string",
+        "description": "Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent"
+      },
+      {
+        "flag": "--timeout",
+        "type": "string",
+        "description": "Timeout for downloading URLs in seconds. [default: 60]",
+        "default": "60"
+      },
+      {
+        "flag": "--help",
+        "short": "-h",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--output",
+        "short": "-o",
+        "type": "string",
+        "description": "Write output to <output> instead of stdout."
+      },
+      {
+        "flag": "--jobs",
+        "short": "-j",
+        "type": "string",
+        "description": "The number of jobs to run in parallel when compressing. When not set, its set to the number of CPUs - 1"
+      },
+      {
+        "flag": "--quiet",
+        "short": "-q",
+        "type": "flag",
+        "description": "Suppress status messages to stderr."
+      },
+      {
+        "flag": "--progressbar",
+        "short": "-p",
+        "type": "flag",
+        "description": "Show download progress bars. Only valid for URL input."
+      }
+    ]
+  },
+  "examples": [
+    {
+      "description": "QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.",
+      "command": "QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND."
+    }
+  ],
+  "hints": {
+    "streamable": true,
+    "memory": "constant"
+  },
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_snappy.rs"
+}

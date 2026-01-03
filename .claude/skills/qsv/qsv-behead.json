@@ -1,0 +1,37 @@
+{
+  "name": "qsv-behead",
+  "version": "12.0.0",
+  "description": "Drop a CSV file's header.",
+  "category": "utility",
+  "command": {
+    "binary": "qsv",
+    "subcommand": "behead",
+    "args": [],
+    "options": [
+      {
+        "flag": "--help",
+        "short": "-h",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--flexible",
+        "short": "-f",
+        "type": "flag",
+        "description": "Do not validate if the CSV has different number of fields per record, increasing performance."
+      },
+      {
+        "flag": "--output",
+        "short": "-o",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      }
+    ]
+  },
+  "examples": [],
+  "hints": {
+    "streamable": true,
+    "memory": "constant"
+  },
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_behead.rs"
+}

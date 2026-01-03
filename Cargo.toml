@@ -50,6 +50,13 @@ doctest           = false
 path              = "src/maindp.rs"
 required-features = ["datapusher_plus"]
 
+[[bin]]
+name              = "qsv-skill-gen"
+test              = false
+bench             = false
+doctest           = false
+path              = "src/bin/qsv-skill-gen.rs"
+
 [[test]]
 name = "tests"
 path = "tests/tests.rs"

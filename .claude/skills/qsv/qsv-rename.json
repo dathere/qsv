@@ -1,0 +1,71 @@
+{
+  "name": "qsv-rename",
+  "version": "12.0.0",
+  "description": "Rename the columns of a CSV efficiently. It has two modes of operation: Positional mode (default): The new column names are given as a comma-separated list of names. The number of column names given MUST match the number of columns in the CSV unless \"_all_generic\" is used. Pairwise mode: The new column names are given as a comma-separated list of pairs of old and new column names. The format is \"old1,new1,old2,new2,...\".",
+  "category": "transformation",
+  "command": {
+    "binary": "qsv",
+    "subcommand": "rename",
+    "args": [
+      {
+        "name": "headers",
+        "type": "string",
+        "required": true,
+        "description": "The new headers to use for the CSV. Separate multiple headers with a comma. If \"_all_generic\" is given, the headers will be renamed to generic column names, where the column name uses the format \"_col_N\" where N is the 1-based column index. Alternatively, specify pairs of old,new column names to rename only specific columns."
+      }
+    ],
+    "options": [
+      {
+        "flag": "--help",
+        "short": "-h",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--output",
+        "short": "-o",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--no-headers",
+        "short": "-n",
+        "type": "flag",
+        "description": "When set, the header will be inserted on top."
+      },
+      {
+        "flag": "--delimiter",
+        "short": "-d",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      }
+    ]
+  },
+  "examples": [
+    {
+      "description": "id,name,title",
+      "command": "qsv rename id,name,title"
+    },
+    {
+      "description": "--pairwise oldname,newname,oldcol,newcol",
+      "command": "qsv rename --pairwise oldname,newname,oldcol,newcol"
+    },
+    {
+      "description": "_all_generic",
+      "command": "qsv rename _all_generic"
+    },
+    {
+      "description": "_all_generic --no-headers",
+      "command": "qsv rename _all_generic --no-headers"
+    },
+    {
+      "description": "'\"Date - Opening\",\"Date - Actual Closing\"'",
+      "command": "qsv rename '\"Date - Opening\",\"Date - Actual Closing\"'"
+    }
+  ],
+  "hints": {
+    "streamable": true,
+    "memory": "constant"
+  },
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_rename.rs"
+}

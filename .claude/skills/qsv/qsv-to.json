@@ -1,0 +1,217 @@
+{
+  "name": "qsv-to",
+  "version": "12.0.0",
+  "description": "Convert CSV files to PostgreSQL, SQLite, Excel XLSX, ODS, Parquet and Data Package. POSTGRESQL ========== To convert to postgres you need to supply connection string. The format is described here - https://docs.rs/postgres/latest/postgres/config/struct.Config.html#examples-1. Additionally you can use `env=MY_ENV_VAR` and qsv will get the connection string from the environment variable `MY_ENV_VAR`. If using the `--dump` option instead of a connection string put a name of a file or `-` for stdout.",
+  "category": "conversion",
+  "command": {
+    "binary": "qsv",
+    "subcommand": "to",
+    "args": [],
+    "options": [
+      {
+        "flag": "-k",
+        "type": "flag",
+        "description": "Print statistics as datapackage, by default will print field summary."
+      },
+      {
+        "flag": "-u",
+        "type": "flag",
+        "description": "Create database dump file for use with `psql` or `sqlite3` command line tools (postgres/sqlite only)."
+      },
+      {
+        "flag": "-a",
+        "type": "flag",
+        "description": "Produce extra statistics about the data beyond just type guessing."
+      },
+      {
+        "flag": "-c",
+        "type": "string",
+        "description": "Output stats as CSV to specified file."
+      },
+      {
+        "flag": "-q",
+        "type": "flag",
+        "description": "Do not print out field summary."
+      },
+      {
+        "flag": "-s",
+        "type": "string",
+        "description": "The schema to load the data into. (postgres only)."
+      },
+      {
+        "flag": "-d",
+        "type": "flag",
+        "description": "Drop tables before loading new data into them (postgres/sqlite only)."
+      },
+      {
+        "flag": "-e",
+        "type": "flag",
+        "description": "If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only)."
+      },
+      {
+        "flag": "-i",
+        "type": "flag",
+        "description": "For parquet, allow piping from stdin (using `-`) or from a named pipe."
+      },
+      {
+        "flag": "-p",
+        "type": "string",
+        "description": "For xlsx, use this character to help truncate xlsx sheet names. Defaults to space."
+      },
+      {
+        "flag": "-A",
+        "type": "flag",
+        "description": "Convert all fields to strings."
+      },
+      {
+        "flag": "--jobs",
+        "short": "-j",
+        "type": "string",
+        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
+      },
+      {
+        "flag": "--help",
+        "short": "-h",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--delimiter",
+        "short": "-d",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      }
+    ]
+  },
+  "examples": [
+    {
+      "description": "postgres 'postgres://testuser:pass@localhost/test' file1.csv file2.csv",
+      "command": "qsv to postgres 'postgres://testuser:pass@localhost/test' file1.csv file2.csv"
+    },
+    {
+      "description": "postgres 'postgres://testuser:pass@localhost/test' --schema=myschema file1.csv file2.csv",
+      "command": "qsv to postgres 'postgres://testuser:pass@localhost/test' --schema=myschema file1.csv file2.csv"
+    },
+    {
+      "description": "postgres 'env=DATABASE_URL' file1.csv file2.csv",
+      "command": "qsv to postgres 'env=DATABASE_URL' file1.csv file2.csv"
+    },
+    {
+      "description": "postgres 'postgres://testuser:pass@localhost/test' dir1",
+      "command": "qsv to postgres 'postgres://testuser:pass@localhost/test' dir1"
+    },
+    {
+      "description": "postgres 'postgres://testuser:pass@localhost/test' input.infile-list",
+      "command": "qsv to postgres 'postgres://testuser:pass@localhost/test' input.infile-list"
+    },
+    {
+      "description": "postgres 'postgres://testuser:pass@localhost/test' --drop file1.csv file2.csv",
+      "command": "qsv to postgres 'postgres://testuser:pass@localhost/test' --drop file1.csv file2.csv"
+    },
+    {
+      "description": "postgres 'postgres://testuser:pass@localhost/test' --evolve file1.csv file2.csv",
+      "command": "qsv to postgres 'postgres://testuser:pass@localhost/test' --evolve file1.csv file2.csv"
+    },
+    {
+      "description": "postgres --dump dumpfile.sql file1.csv file2.csv",
+      "command": "qsv to postgres --dump dumpfile.sql file1.csv file2.csv"
+    },
+    {
+      "description": "postgres --dump - file1.csv file2.csv",
+      "command": "qsv to postgres --dump - file1.csv file2.csv"
+    },
+    {
+      "description": "sqlite test.db file1.csv file2.csv",
+      "command": "qsv to sqlite test.db file1.csv file2.csv"
+    },
+    {
+      "description": "sqlite test.db dir",
+      "command": "qsv to sqlite test.db dir"
+    },
+    {
+      "description": "sqlite test.db mydata.infile-list",
+      "command": "qsv to sqlite test.db mydata.infile-list"
+    },
+    {
+      "description": "sqlite test.db --drop file1.csv file2.csv",
+      "command": "qsv to sqlite test.db --drop file1.csv file2.csv"
+    },
+    {
+      "description": "sqlite test.db --evolve file1.csv file2.csv",
+      "command": "qsv to sqlite test.db --evolve file1.csv file2.csv"
+    },
+    {
+      "description": "sqlite --dump dumpfile.sql file1.csv file2.csv",
+      "command": "qsv to sqlite --dump dumpfile.sql file1.csv file2.csv"
+    },
+    {
+      "description": "sqlite --dump - file1.csv file2.csv",
+      "command": "qsv to sqlite --dump - file1.csv file2.csv"
+    },
+    {
+      "description": "xlsx output.xlsx file1.csv file2.csv",
+      "command": "qsv to xlsx output.xlsx file1.csv file2.csv"
+    },
+    {
+      "description": "xlsx output.xlsx dir1",
+      "command": "qsv to xlsx output.xlsx dir1"
+    },
+    {
+      "description": "xlsx output.xlsx ourdata.infile-list",
+      "command": "qsv to xlsx output.xlsx ourdata.infile-list"
+    },
+    {
+      "description": "ods output.ods file1.csv file2.csv",
+      "command": "qsv to ods output.ods file1.csv file2.csv"
+    },
+    {
+      "description": "ods output.ods dir1",
+      "command": "qsv to ods output.ods dir1"
+    },
+    {
+      "description": "ods output.ods ourdata.infile-list",
+      "command": "qsv to ods output.ods ourdata.infile-list"
+    },
+    {
+      "description": "parquet mydir file1.csv file2.csv",
+      "command": "qsv to parquet mydir file1.csv file2.csv"
+    },
+    {
+      "description": "parquet --pipe mydir -",
+      "command": "qsv to parquet --pipe mydir -"
+    },
+    {
+      "description": "parquet myparquetdir dir1",
+      "command": "qsv to parquet myparquetdir dir1"
+    },
+    {
+      "description": "parquet myparquetdir data.infile-list",
+      "command": "qsv to parquet myparquetdir data.infile-list"
+    },
+    {
+      "description": "datapackage datapackage.json file1.csv file2.csv",
+      "command": "qsv to datapackage datapackage.json file1.csv file2.csv"
+    },
+    {
+      "description": "datapackage datapackage.json --stats file1.csv file2.csv",
+      "command": "qsv to datapackage datapackage.json --stats file1.csv file2.csv"
+    },
+    {
+      "description": "datapackage datapackage.json dir1",
+      "command": "qsv to datapackage datapackage.json dir1"
+    },
+    {
+      "description": "datapackage datapackage.json data.infile-list",
+      "command": "qsv to datapackage datapackage.json data.infile-list"
+    },
+    {
+      "description": "xlsx datapackage.xlsx --stats --print-package file1.csv file2.csv",
+      "command": "qsv to xlsx datapackage.xlsx --stats --print-package file1.csv file2.csv"
+    }
+  ],
+  "hints": {
+    "streamable": true,
+    "memory": "constant"
+  },
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_to.rs"
+}

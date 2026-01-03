@@ -1,0 +1,95 @@
+{
+  "name": "qsv-input",
+  "version": "12.0.0",
+  "description": "Read CSV data with special commenting, quoting, trimming, line-skipping & non UTF-8 encoding rules and transforms it to a \"normalized\", UTF-8 encoded CSV. Generally, all qsv commands support basic options like specifying the delimiter used in CSV data. However, this does not cover all possible types of CSV data. For example, some CSV files don't use '\"' for quotes or use different escaping styles. Also, CSVs with preamble lines can have them skipped with the --skip-lines & --auto-skip options. Similarly, --skip-lastlines allows epilogue lines to be skipped. Finally, non UTF-8 encoded files are \"lossy\" saved to UTF-8 by default, replacing all invalid UTF-8 sequences with �. Note though that this is not true transcoding. If you need to properly transcode non UTF-8 files, you'll need to use a tool like `iconv` before processing it with qsv - e.g. to convert an ISO-8859-1 encoded file to UTF-8: `iconv -f ISO-8859-1 -t UTF-8 input.csv -o utf8_output.csv`. You can change this behavior with the --encoding-errors option. See https://github.com/dathere/qsv#utf-8-encoding for more details. This command is typically used at the beginning of a data pipeline (thus the name `input`) to normalize & prepare CSVs for further processing with other qsv commands. For examples, see https://github.com/dathere/qsv/blob/master/tests/test_input.rs.",
+  "category": "conversion",
+  "command": {
+    "binary": "qsv",
+    "subcommand": "input",
+    "args": [],
+    "options": [
+      {
+        "flag": "--quote",
+        "type": "string",
+        "description": "The quote character to use. [default: \"]",
+        "default": "\""
+      },
+      {
+        "flag": "--escape",
+        "type": "string",
+        "description": "The escape character to use. When not specified, quotes are escaped by doubling them."
+      },
+      {
+        "flag": "--no-quoting",
+        "type": "flag",
+        "description": "Disable quoting completely when reading CSV data."
+      },
+      {
+        "flag": "--quote-style",
+        "type": "string",
+        "description": "The quoting style to use when writing CSV data. Possible values: all, necessary, nonnumeric and never. All: Quotes all fields. Necessary: Quotes fields only when necessary - when fields contain a quote, delimiter or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field). NonNumeric: Quotes all fields that are non-numeric. Never: Never write quotes. Even if it produces invalid CSV. [default: necessary]",
+        "default": "necessary"
+      },
+      {
+        "flag": "--skip-lines",
+        "type": "string",
+        "description": "The number of preamble lines to skip."
+      },
+      {
+        "flag": "--auto-skip",
+        "type": "flag",
+        "description": "Sniffs a CSV for preamble lines and automatically skips them. Takes precedence over --skip-lines option. Does not work with <stdin>."
+      },
+      {
+        "flag": "--skip-lastlines",
+        "type": "string",
+        "description": "The number of epilogue lines to skip."
+      },
+      {
+        "flag": "--trim-headers",
+        "type": "flag",
+        "description": "Trim leading & trailing whitespace & quotes from header values."
+      },
+      {
+        "flag": "--trim-fields",
+        "type": "flag",
+        "description": "Trim leading & trailing whitespace from field values."
+      },
+      {
+        "flag": "--comment",
+        "type": "string",
+        "description": "The comment character to use. When set, lines starting with this character will be skipped."
+      },
+      {
+        "flag": "--encoding-errors",
+        "type": "string",
+        "description": "How to handle UTF-8 encoding errors. Possible values: replace, skip, strict. replace: Replace invalid UTF-8 sequences with �. skip: Fields with encoding errors are \"<SKIPPED>\". strict: Fail on any encoding errors. [default: replace]",
+        "default": "replace"
+      },
+      {
+        "flag": "--help",
+        "short": "-h",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--output",
+        "short": "-o",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--delimiter",
+        "short": "-d",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      }
+    ]
+  },
+  "examples": [],
+  "hints": {
+    "streamable": true,
+    "memory": "constant"
+  },
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_input.rs"
+}

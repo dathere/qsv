@@ -1,0 +1,182 @@
+{
+  "name": "qsv-applydp",
+  "version": "12.0.0",
+  "description": "applydp is a slimmed-down version of apply specifically created for Datapusher+. It \"applies\" a series of transformation functions to given CSV column/s. This can be used to perform typical data-wrangling tasks and/or to harmonize some values, etc. It has three subcommands: 1. operations*   - 18 string, format & regex operators. 2. emptyreplace* - replace empty cells with <--replacement> string. 3. dynfmt        - Dynamically constructs a new column from other columns using the <--formatstr> template. * subcommand is multi-column capable. OPERATIONS (multi-column capable) Multiple operations can be applied, with the comma-delimited operation series applied in order: trim => Trim the cell trim,upper => Trim the cell, then transform to uppercase Operations support multi-column transformations. Just make sure the number of transformed columns with the --rename option is the same. e.g.: It has 18 supported operations: * len: Return string length * lower: Transform to lowercase * upper: Transform to uppercase * squeeze: Compress consecutive whitespaces * squeeze0: Remove whitespace * trim: Trim (drop whitespace left & right of the string) * ltrim: Left trim whitespace * rtrim: Right trim whitespace * mtrim: Trims --comparand matches left & right of the string (Rust trim_matches) * mltrim: Left trim --comparand matches (Rust trim_start_matches) * mrtrim: Right trim --comparand matches (Rust trim_end_matches) * strip_prefix: Removes specified prefix in --comparand * strip_suffix: Remove specified suffix in --comparand * escape - escape (Rust escape_default) * replace: Replace all matches of a pattern (using --comparand) with a string (using --replacement) (Rust replace) * regex_replace: Replace all regex matches in --comparand w/ --replacement. Specify <NULL> as --replacement to remove matches. * round: Round numeric values to the specified number of decimal places using Midpoint Nearest Even Rounding Strategy AKA \"Bankers Rounding.\" Specify the number of decimal places with --formatstr (default: 3). * copy: Mark a column for copying",
+  "category": "utility",
+  "command": {
+    "binary": "qsv",
+    "subcommand": "applydp",
+    "args": [
+      {
+        "name": "column",
+        "type": "string",
+        "required": true,
+        "description": "The column/s to apply the transformation to. Note that the <column> argument supports multiple columns for the operations & emptyreplace subcommands. See 'qsv select --help' for the format details."
+      },
+      {
+        "name": "operations",
+        "type": "string",
+        "required": true,
+        "description": "The operation/s to apply."
+      },
+      {
+        "name": "column",
+        "type": "string",
+        "required": true,
+        "description": "The column/s to apply the operations to."
+      },
+      {
+        "name": "column",
+        "type": "string",
+        "required": true,
+        "description": "The column/s to check for emptiness."
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": "The input file to read from. If not specified, reads from stdin."
+      }
+    ],
+    "options": [
+      {
+        "flag": "--new-column",
+        "short": "-c",
+        "type": "string",
+        "description": "Put the transformed values in a new column instead."
+      },
+      {
+        "flag": "--rename",
+        "short": "-r",
+        "type": "string",
+        "description": "New name for the transformed column."
+      },
+      {
+        "flag": "--comparand=<string>",
+        "short": "-C",
+        "type": "string",
+        "description": "The string to compare against for replace & similarity operations."
+      },
+      {
+        "flag": "--replacement=<string>",
+        "short": "-R",
+        "type": "string",
+        "description": "The string to use for the replace & emptyreplace operations."
+      },
+      {
+        "flag": "--formatstr=<string>",
+        "short": "-f",
+        "type": "string",
+        "description": "This option is used by several subcommands:"
+      },
+      {
+        "flag": "--jobs",
+        "short": "-j",
+        "type": "string",
+        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
+      },
+      {
+        "flag": "--batch",
+        "short": "-b",
+        "type": "string",
+        "description": "The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. [default: 50000]",
+        "default": "50000"
+      },
+      {
+        "flag": "--help",
+        "short": "-h",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--output",
+        "short": "-o",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--no-headers",
+        "short": "-n",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers."
+      },
+      {
+        "flag": "--delimiter",
+        "short": "-d",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      }
+    ]
+  },
+  "examples": [
+    {
+      "description": "operations trim,upper col1,col2,col3 -r newcol1,newcol2,newcol3 file.csv",
+      "command": "qsv applydp operations trim,upper col1,col2,col3 -r newcol1,newcol2,newcol3 file.csv"
+    },
+    {
+      "description": "operations trim,upper surname file.csv",
+      "command": "qsv applydp operations trim,upper surname file.csv"
+    },
+    {
+      "description": "operations trim,upper surname -r uppercase_clean_surname file.csv",
+      "command": "qsv applydp operations trim,upper surname -r uppercase_clean_surname file.csv"
+    },
+    {
+      "description": "operations trim,upper surname -c uppercase_clean_surname file.csv",
+      "command": "qsv applydp operations trim,upper surname -c uppercase_clean_surname file.csv"
+    },
+    {
+      "description": "operations trim,squeeze,upper \\_name$\\ file.csv",
+      "command": "qsv applydp operations trim,squeeze,upper \\_name$\\ file.csv"
+    },
+    {
+      "description": "operations trim,upper firstname,surname -r ufirstname,usurname file.csv",
+      "command": "qsv applydp operations trim,upper firstname,surname -r ufirstname,usurname file.csv"
+    },
+    {
+      "description": "operations mtrim description --comparand '()<>' file.csv",
+      "command": "qsv applydp operations mtrim description --comparand '()<>' file.csv"
+    },
+    {
+      "description": "replace description --comparand ' and ' --replacement ' & ' file.csv",
+      "command": "qsv applydp replace description --comparand ' and ' --replacement ' & ' file.csv"
+    },
+    {
+      "description": "operations copy col_to_copy -c col_copy file.csv",
+      "command": "qsv applydp operations copy col_to_copy -c col_copy file.csv"
+    },
+    {
+      "description": "emptyreplace Measurement --replacement None file.csv",
+      "command": "qsv applydp emptyreplace Measurement --replacement None file.csv"
+    },
+    {
+      "description": "emptyreplace Measurement --replacement 'Unknown Measurement' file.csv",
+      "command": "qsv applydp emptyreplace Measurement --replacement 'Unknown Measurement' file.csv"
+    },
+    {
+      "description": "emptyreplace M1,M2,M3 --replacement None file.csv",
+      "command": "qsv applydp emptyreplace M1,M2,M3 --replacement None file.csv"
+    },
+    {
+      "description": "emptyreplace '/^Measurement/' --replacement None file.csv",
+      "command": "qsv applydp emptyreplace '/^Measurement/' --replacement None file.csv"
+    },
+    {
+      "description": "emptyreplace --replacement None '/(?i)^observation/' file.csv",
+      "command": "qsv applydp emptyreplace --replacement None '/(?i)^observation/' file.csv"
+    },
+    {
+      "description": "dynfmt --formatstr '{house_number} {street}, {city} {zip_code} USA' -c 'mailing address' file.csv",
+      "command": "qsv applydp dynfmt --formatstr '{house_number} {street}, {city} {zip_code} USA' -c 'mailing address' file.csv"
+    },
+    {
+      "description": "dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullName file.csv",
+      "command": "qsv applydp dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullName file.csv"
+    }
+  ],
+  "hints": {
+    "streamable": true,
+    "memory": "constant"
+  },
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_applydp.rs"
+}

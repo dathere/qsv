@@ -135,7 +135,7 @@ impl UsageParser {
             match atom {
                 Atom::Short(c) => {
                     // Short flag like -d
-                    let flag_str = format!("-{}", c);
+                    let flag_str = format!("-{c}");
 
                     // Look for corresponding long flag
                     let long_flag = parser
@@ -149,7 +149,7 @@ impl UsageParser {
                         })
                         .and_then(|(a, _)| {
                             if let Atom::Long(s) = a {
-                                Some(format!("--{}", s))
+                                Some(format!("--{s}"))
                             } else {
                                 None
                             }
@@ -200,7 +200,7 @@ impl UsageParser {
                     });
                 },
                 Atom::Long(name) => {
-                    let flag_str = format!("--{}", name);
+                    let flag_str = format!("--{name}");
 
                     // Skip if already processed
                     if options.iter().any(|o| o.flag == flag_str) {
@@ -217,7 +217,7 @@ impl UsageParser {
                         })
                         .and_then(|(a, _)| {
                             if let Atom::Short(c) = a {
-                                Some(format!("-{}", c))
+                                Some(format!("-{c}"))
                             } else {
                                 None
                             }
@@ -260,7 +260,7 @@ impl UsageParser {
                     // Positional argument like <input>
                     let arg_name = name.clone();
                     let description = manual_descriptions
-                        .get(&format!("<{}>", name))
+                        .get(&format!("<{name}>"))
                         .cloned()
                         .unwrap_or_default();
 
@@ -300,7 +300,7 @@ impl UsageParser {
             let trimmed = line.trim();
 
             // Look for option lines: "    -s, --select <arg>    Description"
-            if trimmed.starts_with("-") {
+            if trimmed.starts_with('-') {
                 // Extract flag and description
                 if let Some((flags_part, desc_part)) = trimmed.split_once("  ") {
                     let mut description = desc_part.trim().to_string();
@@ -309,7 +309,7 @@ impl UsageParser {
                     let mut j = i + 1;
                     while j < lines.len() {
                         let next_line = lines[j].trim();
-                        if next_line.is_empty() || next_line.starts_with("-") {
+                        if next_line.is_empty() || next_line.starts_with('-') {
                             break;
                         }
                         if !next_line.starts_with("Usage:") {
@@ -321,8 +321,8 @@ impl UsageParser {
 
                     // Parse flags
                     for flag in flags_part.split(',') {
-                        let flag = flag.trim().split_whitespace().next().unwrap_or("");
-                        if flag.starts_with("--") || flag.starts_with("-") {
+                        let flag = flag.split_whitespace().next().unwrap_or("");
+                        if flag.starts_with("--") || flag.starts_with('-') {
                             descriptions.insert(flag.to_string(), description.clone());
                         }
                     }
@@ -332,34 +332,35 @@ impl UsageParser {
                 }
             }
             // Look for argument lines: "    <input>    Description"
-            else if trimmed.starts_with("<") && trimmed.contains(">") {
-                if let Some(close_bracket) = trimmed.find('>') {
-                    let arg_name = trimmed[..=close_bracket].trim().to_string();
-                    let desc_part = trimmed[close_bracket + 1..].trim();
+            else if trimmed.starts_with('<')
+                && trimmed.contains('>')
+                && let Some(close_bracket) = trimmed.find('>')
+            {
+                let arg_name = trimmed[..=close_bracket].trim().to_string();
+                let desc_part = trimmed[close_bracket + 1..].trim();
 
-                    let mut description = desc_part.to_string();
+                let mut description = desc_part.to_string();
 
-                    // Collect multi-line description
-                    let mut j = i + 1;
-                    while j < lines.len() {
-                        let next_line = lines[j].trim();
-                        if next_line.is_empty()
-                            || next_line.starts_with("<")
-                            || next_line.starts_with("-")
-                        {
-                            break;
-                        }
-                        if !next_line.starts_with("Usage:") {
-                            description.push(' ');
-                            description.push_str(next_line);
-                        }
-                        j += 1;
+                // Collect multi-line description
+                let mut j = i + 1;
+                while j < lines.len() {
+                    let next_line = lines[j].trim();
+                    if next_line.is_empty()
+                        || next_line.starts_with('<')
+                        || next_line.starts_with('-')
+                    {
+                        break;
                     }
-
-                    descriptions.insert(arg_name, description);
-                    i = j;
-                    continue;
+                    if !next_line.starts_with("Usage:") {
+                        description.push(' ');
+                        description.push_str(next_line);
+                    }
+                    j += 1;
                 }
+
+                descriptions.insert(arg_name, description);
+                i = j;
+                continue;
             }
 
             i += 1;
@@ -381,7 +382,7 @@ impl UsageParser {
             if trimmed.starts_with("For more examples,") || trimmed.starts_with("Examples:") {
                 break;
             }
-            if !trimmed.is_empty() && !trimmed.starts_with("$") && !trimmed.starts_with("#") {
+            if !trimmed.is_empty() && !trimmed.starts_with('$') && !trimmed.starts_with('#') {
                 description_lines.push(trimmed);
             }
         }
@@ -402,19 +403,19 @@ impl UsageParser {
             let trimmed = line.trim();
 
             // Comments are descriptions for the next example
-            if trimmed.starts_with("#") {
+            if trimmed.starts_with('#') {
                 current_description = trimmed.trim_start_matches('#').trim().to_string();
             }
             // Commands start with $
-            else if trimmed.starts_with("$") {
+            else if trimmed.starts_with('$') {
                 let command = trimmed.trim_start_matches('$').trim().to_string();
 
                 // Use comment as description, or extract from command
-                let description = if !current_description.is_empty() {
-                    current_description.clone()
-                } else {
+                let description = if current_description.is_empty() {
                     // Try to infer description from command
                     self.infer_example_description(&command)
+                } else {
+                    current_description.clone()
                 };
 
                 examples.push(Example {
@@ -431,10 +432,10 @@ impl UsageParser {
 
     fn infer_example_description(&self, command: &str) -> String {
         // Simple heuristic: use the command itself as description
-        if let Some(after_subcommand) = command.strip_prefix("qsv ") {
-            if let Some(rest) = after_subcommand.strip_prefix(&format!("{} ", self.command_name)) {
-                return rest.to_string();
-            }
+        if let Some(after_subcommand) = command.strip_prefix("qsv ")
+            && let Some(rest) = after_subcommand.strip_prefix(&format!("{} ", self.command_name))
+        {
+            return rest.to_string();
         }
         command.to_string()
     }
@@ -465,11 +466,11 @@ impl UsageParser {
 
     fn extract_default_value(&self, description: &str) -> Option<String> {
         // Look for [default: value] pattern
-        if let Some(start) = description.find("[default:") {
-            if let Some(end) = description[start..].find(']') {
-                let default_str = &description[start + 9..start + end];
-                return Some(default_str.trim().to_string());
-            }
+        if let Some(start) = description.find("[default:")
+            && let Some(end) = description[start..].find(']')
+        {
+            let default_str = &description[start + 9..start + end];
+            return Some(default_str.trim().to_string());
         }
         None
     }
@@ -528,8 +529,7 @@ impl HasDefault for DocoptArgument {
 }
 
 fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
-    let content =
-        fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {}", e))?;
+    let content = fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {e}"))?;
 
     // Find USAGE constant - handle both r#" and r##" delimiters
     let (usage_start, skip_len, end_delimiter) =
@@ -633,10 +633,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut error_count = 0;
 
     for cmd_name in &commands {
-        println!("Processing: {}", cmd_name);
+        println!("Processing: {cmd_name}");
 
         // Find command file
-        let cmd_file = PathBuf::from(format!("src/cmd/{}.rs", cmd_name));
+        let cmd_file = PathBuf::from(format!("src/cmd/{cmd_name}.rs"));
 
         if !cmd_file.exists() {
             eprintln!("  ❌ File not found: {}", cmd_file.display());
@@ -648,7 +648,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let usage_text = match extract_usage_from_file(&cmd_file) {
             Ok(text) => text,
             Err(e) => {
-                eprintln!("  ❌ Failed to extract usage: {}", e);
+                eprintln!("  ❌ Failed to extract usage: {e}");
                 error_count += 1;
                 continue;
             },
@@ -659,7 +659,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let skill = match parser.parse() {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("  ❌ Failed to parse: {}", e);
+                eprintln!("  ❌ Failed to parse: {e}");
                 error_count += 1;
                 continue;
             },

@@ -1,0 +1,48 @@
+{
+  "name": "qsv-reverse",
+  "version": "12.0.0",
+  "description": "Reverses rows of CSV data. Useful for cases when there is no column that can be used for sorting in reverse order, or when keys are not unique and order of rows with the same key needs to be preserved. Note that if the CSV is not indexed, this operation will require reading all of the CSV data into memory",
+  "category": "transformation",
+  "command": {
+    "binary": "qsv",
+    "subcommand": "reverse",
+    "args": [],
+    "options": [
+      {
+        "flag": "--help",
+        "short": "-h",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--output",
+        "short": "-o",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--no-headers",
+        "short": "-n",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. Namely, it will be reversed with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
+      },
+      {
+        "flag": "--delimiter",
+        "short": "-d",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--memcheck",
+        "type": "flag",
+        "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics."
+      }
+    ]
+  },
+  "examples": [],
+  "hints": {
+    "streamable": true,
+    "memory": "constant"
+  },
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_reverse.rs"
+}

@@ -1,0 +1,117 @@
+{
+  "name": "qsv-pivotp",
+  "version": "12.0.0",
+  "description": "Pivots CSV data using the Polars engine. The pivot operation consists of: - One or more index columns (these will be the new rows) - A column that will be pivoted (this will create the new columns) - A values column that will be aggregated - An aggregation function to apply. Features \"smart\" aggregation auto-selection. For examples, see https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs.",
+  "category": "utility",
+  "command": {
+    "binary": "qsv",
+    "subcommand": "pivotp",
+    "args": [
+      {
+        "name": "on-cols",
+        "type": "string",
+        "required": true,
+        "description": "The column(s) to pivot on (creates new columns)."
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": "is the input CSV file. The file must have headers. If the file has a pschema.json file, it will be used to inform the pivot operation unless --infer-len is explicitly set to a value other than the default of 10,000 rows. Stdin is not supported."
+      }
+    ],
+    "options": [
+      {
+        "flag": "--index",
+        "short": "-i",
+        "type": "string",
+        "description": "The column(s) to use as the index (row labels). Specify multiple columns by separating them with a comma. The output will have one row for each unique combination of the index's values. If None, all remaining columns not specified on --on and --values will be used. At least one of --index and --values must be specified."
+      },
+      {
+        "flag": "--values",
+        "short": "-v",
+        "type": "string",
+        "description": "The column(s) containing values to aggregate. If an aggregation is specified, these are the values on which the aggregation will be computed. If None, all remaining columns not specified on --on and --index will be used. At least one of --index and --values must be specified."
+      },
+      {
+        "flag": "--agg",
+        "short": "-a",
+        "type": "string",
+        "description": "The aggregation function to use: first - First value encountered last - Last value encountered sum - Sum of values min - Minimum value max - Maximum value mean - Average value median - Median value len - Count of values item - Get single value from group. Raises error if there are multiple values. smart - use value column data type & statistics to pick an aggregation. Will only work if there is one value column, otherwise it falls back to `first` [default: smart]",
+        "default": "smart"
+      },
+      {
+        "flag": "--sort-columns",
+        "type": "flag",
+        "description": "Sort the transposed columns by name."
+      },
+      {
+        "flag": "--maintain-order",
+        "type": "flag",
+        "description": "Maintain the order of the input columns."
+      },
+      {
+        "flag": "--col-separator",
+        "type": "string",
+        "description": "The separator in generated column names in case of multiple --values columns. [default: _]",
+        "default": "_"
+      },
+      {
+        "flag": "--validate",
+        "type": "flag",
+        "description": "Validate a pivot by checking the pivot column(s)' cardinality."
+      },
+      {
+        "flag": "--try-parsedates",
+        "type": "flag",
+        "description": "When set, will attempt to parse columns as dates."
+      },
+      {
+        "flag": "--infer-len",
+        "type": "string",
+        "description": "Number of rows to scan when inferring schema. Set to 0 to scan entire file. [default: 10000]",
+        "default": "10000"
+      },
+      {
+        "flag": "--decimal-comma",
+        "type": "flag",
+        "description": "Use comma as decimal separator when READING the input. Note that you will need to specify an alternate --delimiter."
+      },
+      {
+        "flag": "--ignore-errors",
+        "type": "flag",
+        "description": "Skip rows that can't be parsed."
+      },
+      {
+        "flag": "--help",
+        "short": "-h",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--output",
+        "short": "-o",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--delimiter",
+        "short": "-d",
+        "type": "string",
+        "description": "The field delimiter for reading/writing CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--quiet",
+        "short": "-q",
+        "type": "flag",
+        "description": "Do not return smart aggregation chosen nor pivot result shape to stderr."
+      }
+    ]
+  },
+  "examples": [],
+  "hints": {
+    "streamable": true,
+    "memory": "constant"
+  },
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs"
+}

@@ -1,0 +1,140 @@
+{
+  "name": "qsv-select",
+  "version": "12.0.0",
+  "description": "Select columns from CSV data efficiently. This command lets you manipulate the columns in CSV data. You can re-order, duplicate, reverse or drop them. Columns can be referenced by index or by name if there is a header row (duplicate column names can be disambiguated with more indexing). Column ranges can also be specified. Finally, columns can be selected using regular expressions. Select the first and fourth columns: Select the first 4 columns (by index and by name): Ignore the first 2 columns (by range and by omission): Select the third column named 'Foo': Select the first and last columns, _ is a special character for the last column: Reverse the order of columns: Sort the columns lexicographically (i.e. by their byte values) Select some columns and then sort them: Randomly shuffle the columns: Select some columns and then shuffle them with a seed: Select columns using a regex using '/<regex>/': Re-order and duplicate columns arbitrarily using different types of selectors: Quote column names that conflict with selector syntax:",
+  "category": "selection",
+  "command": {
+    "binary": "qsv",
+    "subcommand": "select",
+    "args": [
+      {
+        "name": "selection",
+        "type": "regex",
+        "required": true,
+        "description": "The columns to select. You can select columns by index, by name, by range, by regex and any combination of these. If the first character is '!', the selection will be inverted. If the selection contains embedded spaces or characters that conflict with selector syntax, it must be quoted. See examples above."
+      }
+    ],
+    "options": [
+      {
+        "flag": "--random",
+        "short": "-R",
+        "type": "flag",
+        "description": "Randomly shuffle the columns in the selection."
+      },
+      {
+        "flag": "--seed",
+        "type": "number",
+        "description": "Seed for the random number generator."
+      },
+      {
+        "flag": "--sort",
+        "short": "-S",
+        "type": "flag",
+        "description": "Sort the selected columns lexicographically, i.e. by their byte values."
+      },
+      {
+        "flag": "--help",
+        "short": "-h",
+        "type": "flag",
+        "description": "Display this message"
+      },
+      {
+        "flag": "--output",
+        "short": "-o",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--no-headers",
+        "short": "-n",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.)"
+      },
+      {
+        "flag": "--delimiter",
+        "short": "-d",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      }
+    ]
+  },
+  "examples": [
+    {
+      "description": "1,4",
+      "command": "qsv select 1,4"
+    },
+    {
+      "description": "1-4",
+      "command": "qsv select 1-4"
+    },
+    {
+      "description": "Header1-Header4",
+      "command": "qsv select Header1-Header4"
+    },
+    {
+      "description": "3-",
+      "command": "qsv select 3-"
+    },
+    {
+      "description": "'!1-2'",
+      "command": "qsv select '!1-2'"
+    },
+    {
+      "description": "'Foo[2]'",
+      "command": "qsv select 'Foo[2]'"
+    },
+    {
+      "description": "1,_",
+      "command": "qsv select 1,_"
+    },
+    {
+      "description": "_-1",
+      "command": "qsv select _-1"
+    },
+    {
+      "description": "1- --sort",
+      "command": "qsv select 1- --sort"
+    },
+    {
+      "description": "1,4,5-7 --sort",
+      "command": "qsv select 1,4,5-7 --sort"
+    },
+    {
+      "description": "1- --random",
+      "command": "qsv select 1- --random"
+    },
+    {
+      "description": "with a seed",
+      "command": "qsv select 1- --random --seed 42"
+    },
+    {
+      "description": "1,4,5-7 --random --seed 42",
+      "command": "qsv select 1,4,5-7 --random --seed 42"
+    },
+    {
+      "description": "select columns starting with 'a'",
+      "command": "qsv select /^a/"
+    },
+    {
+      "description": "select columns with a digit",
+      "command": "qsv select '/^.*\\d.*$/'"
+    },
+    {
+      "description": "remove SSN, account_no and password columns",
+      "command": "qsv select '!/SSN|account_no|password/'"
+    },
+    {
+      "description": "3-1,Header3-Header1,Header1,Foo[2],Header1",
+      "command": "qsv select 3-1,Header3-Header1,Header1,Foo[2],Header1"
+    },
+    {
+      "description": "'\\\"Date - Opening\\\",\\\"Date - Actual Closing\\\"'",
+      "command": "qsv select '\\\"Date - Opening\\\",\\\"Date - Actual Closing\\\"'"
+    }
+  ],
+  "hints": {
+    "streamable": true,
+    "memory": "constant"
+  },
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_select.rs"
+}

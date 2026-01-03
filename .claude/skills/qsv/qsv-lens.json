@@ -1,0 +1,192 @@
+{
+  "name": "qsv-lens",
+  "version": "12.0.0",
+  "description": "Explore tabular data files interactively using the csvlens (https://github.com/YS-L/csvlens) engine. If the polars feature is enabled, lens can browse tabular data in Arrow, Avro/IPC, Parquet, JSON (JSON Array) and JSONL files. It also automatically decompresses csv/tsv/tab/ssv files using the gz,zlib & zst compression formats (e.g. data.csv.gz, data.tsv.zlib, data.tab.gz & data.ssv.zst). If the polars feature is not enabled, lens can only browse CSV dialects (CSV, TSV, Tab, SSV) and its snappy-compressed variants (CSV.sz, TSV.sz, Tab.sz & SSV.sz). Press 'q' to exit. Press '?' for help.",
+  "category": "utility",
+  "command": {
+    "binary": "qsv",
+    "subcommand": "lens",
+    "args": [],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "short": "-d",
+        "type": "string",
+        "description": "Delimiter character (comma by default) \"auto\" to auto-detect the delimiter"
+      },
+      {
+        "flag": "--tab-separated",
+        "short": "-t",
+        "type": "flag",
+        "description": "Use tab separation. Shortcut for -d '\\t'"
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "Do not interpret the first row as headers"
+      },
+      {
+        "flag": "--columns",
+        "type": "string",
+        "description": "Use this regex to select columns to display by default. Example: \"col1|col2|col3\" to select columns \"col1\", \"col2\" and \"col3\" and also columns like \"col1_1\", \"col22\" and \"col3-more\"."
+      },
+      {
+        "flag": "--filter",
+        "type": "string",
+        "description": "Use this regex to filter rows to display by default. The regex is matched against each cell in every column. Example: \"val1|val2\" filters rows with any cells containing \"val1\", \"val2\" or text like \"my_val1\" or \"val234\"."
+      },
+      {
+        "flag": "--find",
+        "type": "string",
+        "description": "Use this regex to find and highlight matches by default. Automatically sets --monochrome to true so the matches are easier to see. The regex is matched against each cell in every column. Example: \"val1|val2\" highlights text containing \"val1\", \"val2\" or longer text like \"val1_ok\" or \"val2_error\"."
+      },
+      {
+        "flag": "--ignore-case",
+        "short": "-i",
+        "type": "flag",
+        "description": "Searches ignore case. Ignored if any uppercase letters are present in the search string"
+      },
+      {
+        "flag": "--freeze-columns",
+        "short": "-f",
+        "type": "string",
+        "description": "Freeze the first N columns [default: 1]",
+        "default": "1"
+      },
+      {
+        "flag": "--monochrome",
+        "short": "-m",
+        "type": "flag",
+        "description": "Disable color output"
+      },
+      {
+        "flag": "--wrap-mode",
+        "short": "-W",
+        "type": "string",
+        "description": "Set the wrap mode for the output. Valid modes are: \"words\": Wrap at word boundaries \"chars\": Wrap at character boundaries \"disabled\": No wrapping For convenience, the first character can be used as a shortcut: qsv lens -W w data.csv // wrap at word boundaries [default: disabled]",
+        "default": "disabled"
+      },
+      {
+        "flag": "--auto-reload",
+        "short": "-A",
+        "type": "flag",
+        "description": "Automatically reload the data when the file changes."
+      },
+      {
+        "flag": "--streaming-stdin",
+        "short": "-S",
+        "type": "flag",
+        "description": "Enable streaming stdin (load input as it's being piped in) NOTE: This option only applies to stdin input."
+      },
+      {
+        "flag": "--prompt",
+        "short": "-P",
+        "type": "string",
+        "description": "Set a custom prompt in the status bar. Normally paired w/ --echo-column: qsv lens --prompt 'Select City:' --echo-column 'City' Supports ANSI escape codes for colored or styled text. When using escape codes, ensure it's properly escaped. For example, in bash/zsh, the $'...' syntax is used to do so: qsv lens --prompt $'\\033[1;5;31mBlinking red, bold text\\033[0m' see https://en.wikipedia.org/wiki/ANSI_escape_code#Colors or https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797 for more info on ANSI escape codes. Typing a complicated prompt on the command line can be tricky. If the prompt starts with \"file:\", it's interpreted as a filepath from which to load the prompt, e.g. qsv lens --prompt \"file:prompt.txt\""
+      },
+      {
+        "flag": "--echo-column",
+        "type": "string",
+        "description": "Print the value of this column to stdout for the selected row"
+      },
+      {
+        "flag": "--debug",
+        "type": "flag",
+        "description": "Show stats for debugging"
+      },
+      {
+        "flag": "--help",
+        "short": "-h",
+        "type": "flag",
+        "description": "Display this message"
+      }
+    ]
+  },
+  "examples": [
+    {
+      "description": "data.csv // comma-separated",
+      "command": "qsv lens data.csv // comma-separated"
+    },
+    {
+      "description": "data.tsv // Tab-separated",
+      "command": "qsv lens data.tsv // Tab-separated"
+    },
+    {
+      "description": "data.tab // Tab-separated",
+      "command": "qsv lens data.tab // Tab-separated"
+    },
+    {
+      "description": "data.ssv // Semicolon-separated",
+      "command": "qsv lens data.ssv // Semicolon-separated"
+    },
+    {
+      "description": "custom delimiter",
+      "command": "qsv lens --delimiter '|' data.csv"
+    },
+    {
+      "description": "data.csv.sz // Snappy-compressed CSV",
+      "command": "qsv lens data.csv.sz // Snappy-compressed CSV"
+    },
+    {
+      "description": "data.tsv.sz // Snappy-compressed Tab-separated",
+      "command": "qsv lens data.tsv.sz // Snappy-compressed Tab-separated"
+    },
+    {
+      "description": "additional compression formats below require polars feature",
+      "command": "qsv lens data.csv.gz // Gzipped CSV"
+    },
+    {
+      "description": "data.tsv.zlib // Zlib-compressed Tab-separated",
+      "command": "qsv lens data.tsv.zlib // Zlib-compressed Tab-separated"
+    },
+    {
+      "description": "data.tab.zst // Zstd-compressed Tab-separated",
+      "command": "qsv lens data.tab.zst // Zstd-compressed Tab-separated"
+    },
+    {
+      "description": "data.ssv.zst // Zstd-compressed Semicolon-separated",
+      "command": "qsv lens data.ssv.zst // Zstd-compressed Semicolon-separated"
+    },
+    {
+      "description": "data.parquet // Parquet",
+      "command": "qsv lens data.parquet // Parquet"
+    },
+    {
+      "description": "data.jsonl // JSON Lines",
+      "command": "qsv lens data.jsonl // JSON Lines"
+    },
+    {
+      "description": "data.json // JSON - will only work with a JSON Array",
+      "command": "qsv lens data.json // JSON - will only work with a JSON Array"
+    },
+    {
+      "description": "data.avro // Avro",
+      "command": "qsv lens data.avro // Avro"
+    },
+    {
+      "description": "--prompt 'Select City:' --echo-column 'City' data.csv",
+      "command": "qsv lens --prompt 'Select City:' --echo-column 'City' data.csv"
+    },
+    {
+      "description": "--filter NYPD data.csv",
+      "command": "qsv lens --filter NYPD data.csv"
+    },
+    {
+      "description": "Show rows that contain \"nois\" case insensitive (for noise, noisy, noisier, etc.)",
+      "command": "qsv lens --filter nois --ignore-case data.csv"
+    },
+    {
+      "description": "--find 'New York' data.csv",
+      "command": "qsv lens --find 'New York' data.csv"
+    },
+    {
+      "description": "--find '^\\d+$' data.csv",
+      "command": "qsv lens --find '^\\d+$' data.csv"
+    }
+  ],
+  "hints": {
+    "streamable": true,
+    "memory": "constant"
+  },
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_lens.rs"
+}

@@ -50,7 +50,30 @@
       "args": [
         "suggestnow",
         "Secaucus"
-      ]
+      ],
+      "expected": {
+        "data": [
+          [
+            "Location",
+            "population",
+            "state",
+            "county",
+            "state_fips",
+            "county_fips",
+            "timezone",
+            ""
+          ],
+          [
+            "Secaucus",
+            "19104",
+            "New Jersey",
+            "Hudson",
+            "34",
+            "017",
+            "America/New_York"
+          ]
+        ]
+      }
     },
     {
       "name": "geocode_suggest_intl",
@@ -215,7 +238,19 @@
       "args": [
         "reversenow",
         "(40.67, -73.94)"
-      ]
+      ],
+      "expected": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "Brooklyn",
+            "Kings County",
+            "New York - 2736074 America/New_York"
+          ]
+        ]
+      }
     },
     {
       "name": "geocode_reversenow_error",
@@ -356,10 +391,11 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv geocode suggest Location",
+      "command": "qsv geocode suggest Location data.csv",
       "args": [
         "suggest",
-        "Location"
+        "Location",
+        "data.csv"
       ]
     },
     {
@@ -375,19 +411,19 @@
     {
       "name": "geocode_suggest_dynfmt",
       "description": "Geocode Suggest Dynfmt",
-      "command": "qsv geocode suggest Location",
+      "command": "qsv geocode suggest Location --formatstr data.csv",
       "args": [
         "suggest",
         "Location"
       ],
       "options": {
-        "--formatstr": "true"
+        "--formatstr": "data.csv"
       }
     },
     {
       "name": "geocode_suggest_pretty_json",
       "description": "Geocode Suggest Pretty Json",
-      "command": "qsv geocode suggest Location data.csv",
+      "command": "qsv geocode suggest Location data.csv --formatstr %pretty-json",
       "args": [
         "suggest",
         "Location",
@@ -395,18 +431,304 @@
       ],
       "options": {
         "--formatstr": "%pretty-json"
+      },
+      "expected": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "{\\n  \\\"cityrecord\\\":{\\n  \\\"id\\\": 4901868",
+            "\\\"name\\\": \\\"Melrose Park\\",
+            "\\\"latitude\\\": \\\n             41.90058898925781",
+            "\\\"longitude\\\": -87.85672760009766",
+            "\\\"country\\\": {\\n    \\\"id\\\": \\\n             6252001",
+            "\\\"code\\\": \\\"US\\",
+            "\\\"name\\\": \\\"United States\\\"\\n  }",
+            "\\\"admin_division\\\": {\\n    \\\n             \\\"id\\\": 4896861",
+            "\\\"code\\\": \\\"US.IL\\",
+            "\\\"name\\\": \\\"Illinois\\\"\\n  }",
+            "\\\"admin2_division\\\": \\\n             {\\n    \\\"id\\\": 4888671",
+            "\\\"code\\\": \\\"US.IL.031\\",
+            "\\\"name\\\": \\\"Cook County\\\"\\n  \\\n             }",
+            "\\\"timezone\\\": \\\"America/Chicago\\",
+            "\\\"names\\\": {\\n    \\\"en\\\": \\\"Melrose Park\\\"\\n  \\\n             }",
+            "\\\"country_names\\\": {\\n    \\\"en\\\": \\\"United States\\\"\\n  }",
+            "\\\"admin1_names\\\": {\\n    \\\n             \\\"en\\\": \\\"Illinois\\\"\\n  }",
+            "\\\"admin2_names\\\": {\\n    \\\"en\\\": \\\"Cook\\\"\\n  \\\n             }",
+            "\\\"population\\\": 25379\\n}",
+            "\\n  \\\"countryrecord\\\":{\\n  \\\"info\\\": {\\n    \\\"iso\\\": \\\n             \\\"US\\",
+            "\\\"iso3\\\": \\\"USA\\",
+            "\\\"iso_numeric\\\": \\\"840\\",
+            "\\\"fips\\\": \\\"US\\",
+            "\\\"name\\\": \\\n             \\\"United States\\",
+            "\\\"capital\\\": \\\"Washington\\",
+            "\\\"area\\\": \\\"9629091\\",
+            "\\\"population\\\": \\\n             327167434",
+            "\\\"continent\\\": \\\"NA\\",
+            "\\\"tld\\\": \\\".us\\",
+            "\\\"currency_code\\\": \\\n             \\\"USD\\",
+            "\\\"currency_name\\\": \\\"Dollar\\",
+            "\\\"phone\\\": \\\"1\\",
+            "\\\"postal_code_format\\\": \\\n             \\\"#####-####\\",
+            "\\\"postal_code_regex\\\": \\\"^\\\\\\\\d{5}(-\\\\\\\\d{4})?$\\",
+            "\\\"languages\\\": \\\n             \\\"en-US",
+            "es-US",
+            "haw",
+            "fr\\",
+            "\\\"geonameid\\\": 6252001",
+            "\\\"neighbours\\\": \\\n             \\\"CA",
+            "MX",
+            "CU\\",
+            "\\\"equivalent_fips_code\\\": \\\"\\\"\\n  }",
+            "\\\"names\\\": {\\n    \\\"en\\\": \\\"United \\\n             States\\\"\\n  }",
+            "\\\"capital_names\\\": {\\n    \\\"en\\\": \\\"Washington D.C.\\\"\\n  }\\n}\\n \\\n             \\\"us_fips_codes\\\":{\\n  \\\"us_state_code\\\": \\\"IL\\",
+            "\\n  \\\"us_state_name\\\": \\\n             \\\"Illinois\\",
+            "\\n  \\\"us_state_fips_code\\\": \\\"17\\",
+            "\\n  \\\"us_county\\\": \\\"Cook\\",
+            "\\n  \\\n             \\\"us_county_fips_code\\\": \\\"031\\\"\\n}\\n}"
+          ],
+          [
+            "{\\n  \\\"cityrecord\\\":{\\n  \\\"id\\\": 4154008",
+            "\\\"name\\\": \\\"East Lake\\",
+            "\\\"latitude\\\": \\\n             28.110849380493164",
+            "\\\"longitude\\\": -82.69481658935547",
+            "\\\"country\\\": {\\n    \\\"id\\\": \\\n             6252001",
+            "\\\"code\\\": \\\"US\\",
+            "\\\"name\\\": \\\"United States\\\"\\n  }",
+            "\\\"admin_division\\\": {\\n    \\\n             \\\"id\\\": 4155751",
+            "\\\"code\\\": \\\"US.FL\\",
+            "\\\"name\\\": \\\"Florida\\\"\\n  }",
+            "\\\"admin2_division\\\": \\\n             {\\n    \\\"id\\\": 4168618",
+            "\\\"code\\\": \\\"US.FL.103\\",
+            "\\\"name\\\": \\\"Pinellas County\\\"\\n  \\\n             }",
+            "\\\"timezone\\\": \\\"America/New_York\\",
+            "\\\"names\\\": null",
+            "\\\"country_names\\\": {\\n    \\\n             \\\"en\\\": \\\"United States\\\"\\n  }",
+            "\\\"admin1_names\\\": {\\n    \\\"en\\\": \\\"Florida\\\"\\n  \\\n             }",
+            "\\\"admin2_names\\\": {\\n    \\\"en\\\": \\\"Pinellas\\\"\\n  }",
+            "\\\"population\\\": 30962\\n}",
+            "\\n  \\\n             \\\"countryrecord\\\":{\\n  \\\"info\\\": {\\n    \\\"iso\\\": \\\"US\\",
+            "\\\"iso3\\\": \\\n             \\\"USA\\",
+            "\\\"iso_numeric\\\": \\\"840\\",
+            "\\\"fips\\\": \\\"US\\",
+            "\\\"name\\\": \\\"United \\\n             States\\",
+            "\\\"capital\\\": \\\"Washington\\",
+            "\\\"area\\\": \\\"9629091\\",
+            "\\\"population\\\": \\\n             327167434",
+            "\\\"continent\\\": \\\"NA\\",
+            "\\\"tld\\\": \\\".us\\",
+            "\\\"currency_code\\\": \\\n             \\\"USD\\",
+            "\\\"currency_name\\\": \\\"Dollar\\",
+            "\\\"phone\\\": \\\"1\\",
+            "\\\"postal_code_format\\\": \\\n             \\\"#####-####\\",
+            "\\\"postal_code_regex\\\": \\\"^\\\\\\\\d{5}(-\\\\\\\\d{4})?$\\",
+            "\\\"languages\\\": \\\n             \\\"en-US",
+            "es-US",
+            "haw",
+            "fr\\",
+            "\\\"geonameid\\\": 6252001",
+            "\\\"neighbours\\\": \\\n             \\\"CA",
+            "MX",
+            "CU\\",
+            "\\\"equivalent_fips_code\\\": \\\"\\\"\\n  }",
+            "\\\"names\\\": {\\n    \\\"en\\\": \\\"United \\\n             States\\\"\\n  }",
+            "\\\"capital_names\\\": {\\n    \\\"en\\\": \\\"Washington D.C.\\\"\\n  }\\n}\\n \\\n             \\\"us_fips_codes\\\":{\\n  \\\"us_state_code\\\": \\\"FL\\",
+            "\\n  \\\"us_state_name\\\": \\\n             \\\"Florida\\",
+            "\\n  \\\"us_state_fips_code\\\": \\\"12\\",
+            "\\n  \\\"us_county\\\": \\\"Pinellas\\",
+            "\\n  \\\n             \\\"us_county_fips_code\\\": \\\"003\\\"\\n}\\n}"
+          ],
+          [
+            "{\\n  \\\"cityrecord\\\":{\\n  \\\"id\\\": 5128581",
+            "\\\"name\\\": \\\"New York City\\",
+            "\\\"latitude\\\": \\\n             40.714271545410156",
+            "\\\"longitude\\\": -74.00596618652344",
+            "\\\"country\\\": {\\n    \\\"id\\\": \\\n             6252001",
+            "\\\"code\\\": \\\"US\\",
+            "\\\"name\\\": \\\"United States\\\"\\n  }",
+            "\\\"admin_division\\\": {\\n    \\\n             \\\"id\\\": 5128638",
+            "\\\"code\\\": \\\"US.NY\\",
+            "\\\"name\\\": \\\"New York\\\"\\n  }",
+            "\\\"admin2_division\\\": \\\n             null",
+            "\\\"timezone\\\": \\\"America/New_York\\",
+            "\\\"names\\\": {\\n    \\\"en\\\": \\\"New York\\\"\\n  \\\n             }",
+            "\\\"country_names\\\": {\\n    \\\"en\\\": \\\"United States\\\"\\n  }",
+            "\\\"admin1_names\\\": {\\n    \\\n             \\\"en\\\": \\\"New York\\\"\\n  }",
+            "\\\"admin2_names\\\": null",
+            "\\\"population\\\": 8804190\\n}",
+            "\\n  \\\n             \\\"countryrecord\\\":{\\n  \\\"info\\\": {\\n    \\\"iso\\\": \\\"US\\",
+            "\\\"iso3\\\": \\\n             \\\"USA\\",
+            "\\\"iso_numeric\\\": \\\"840\\",
+            "\\\"fips\\\": \\\"US\\",
+            "\\\"name\\\": \\\"United \\\n             States\\",
+            "\\\"capital\\\": \\\"Washington\\",
+            "\\\"area\\\": \\\"9629091\\",
+            "\\\"population\\\": \\\n             327167434",
+            "\\\"continent\\\": \\\"NA\\",
+            "\\\"tld\\\": \\\".us\\",
+            "\\\"currency_code\\\": \\\n             \\\"USD\\",
+            "\\\"currency_name\\\": \\\"Dollar\\",
+            "\\\"phone\\\": \\\"1\\",
+            "\\\"postal_code_format\\\": \\\n             \\\"#####-####\\",
+            "\\\"postal_code_regex\\\": \\\"^\\\\\\\\d{5}(-\\\\\\\\d{4})?$\\",
+            "\\\"languages\\\": \\\n             \\\"en-US",
+            "es-US",
+            "haw",
+            "fr\\",
+            "\\\"geonameid\\\": 6252001",
+            "\\\"neighbours\\\": \\\n             \\\"CA",
+            "MX",
+            "CU\\",
+            "\\\"equivalent_fips_code\\\": \\\"\\\"\\n  }",
+            "\\\"names\\\": {\\n    \\\"en\\\": \\\"United \\\n             States\\\"\\n  }",
+            "\\\"capital_names\\\": {\\n    \\\"en\\\": \\\"Washington D.C.\\\"\\n  }\\n}\\n \\\n             \\\"us_fips_codes\\\":{\\n  \\\"us_state_code\\\": \\\"NY\\",
+            "\\n  \\\"us_state_name\\\": \\\"New \\\n             York\\",
+            "\\n  \\\"us_state_fips_code\\\": \\\"36\\",
+            "\\n  \\\"us_county\\\": \\\"\\",
+            "\\n  \\\n             \\\"us_county_fips_code\\\": \\\"\\\"\\n}\\n}"
+          ],
+          [
+            "{\\n  \\\"cityrecord\\\":{\\n  \\\"id\\\": 4833425",
+            "\\\"name\\\": \\\"East Haven\\",
+            "\\\"latitude\\\": \\\n             41.27621078491211",
+            "\\\"longitude\\\": -72.8684310913086",
+            "\\\"country\\\": {\\n    \\\"id\\\": \\\n             6252001",
+            "\\\"code\\\": \\\"US\\",
+            "\\\"name\\\": \\\"United States\\\"\\n  }",
+            "\\\"admin_division\\\": {\\n    \\\n             \\\"id\\\": 4831725",
+            "\\\"code\\\": \\\"US.CT\\",
+            "\\\"name\\\": \\\"Connecticut\\\"\\n  \\\n             }",
+            "\\\"admin2_division\\\": {\\n    \\\"id\\\": 12809023",
+            "\\\"code\\\": \\\"US.CT.170\\",
+            "\\\"name\\\": \\\n             \\\"South Central Connecticut Planning Region\\\"\\n  }",
+            "\\\"timezone\\\": \\\n             \\\"America/New_York\\",
+            "\\\"names\\\": {\\n    \\\"en\\\": \\\"East Haven\\\"\\n  \\\n             }",
+            "\\\"country_names\\\": {\\n    \\\"en\\\": \\\"United States\\\"\\n  }",
+            "\\\"admin1_names\\\": {\\n    \\\n             \\\"en\\\": \\\"Connecticut\\\"\\n  }",
+            "\\\"admin2_names\\\": null",
+            "\\\"population\\\": 29257\\n}",
+            "\\n  \\\n             \\\"countryrecord\\\":{\\n  \\\"info\\\": {\\n    \\\"iso\\\": \\\"US\\",
+            "\\\"iso3\\\": \\\n             \\\"USA\\",
+            "\\\"iso_numeric\\\": \\\"840\\",
+            "\\\"fips\\\": \\\"US\\",
+            "\\\"name\\\": \\\"United \\\n             States\\",
+            "\\\"capital\\\": \\\"Washington\\",
+            "\\\"area\\\": \\\"9629091\\",
+            "\\\"population\\\": \\\n             327167434",
+            "\\\"continent\\\": \\\"NA\\",
+            "\\\"tld\\\": \\\".us\\",
+            "\\\"currency_code\\\": \\\n             \\\"USD\\",
+            "\\\"currency_name\\\": \\\"Dollar\\",
+            "\\\"phone\\\": \\\"1\\",
+            "\\\"postal_code_format\\\": \\\n             \\\"#####-####\\",
+            "\\\"postal_code_regex\\\": \\\"^\\\\\\\\d{5}(-\\\\\\\\d{4})?$\\",
+            "\\\"languages\\\": \\\n             \\\"en-US",
+            "es-US",
+            "haw",
+            "fr\\",
+            "\\\"geonameid\\\": 6252001",
+            "\\\"neighbours\\\": \\\n             \\\"CA",
+            "MX",
+            "CU\\",
+            "\\\"equivalent_fips_code\\\": \\\"\\\"\\n  }",
+            "\\\"names\\\": {\\n    \\\"en\\\": \\\"United \\\n             States\\\"\\n  }",
+            "\\\"capital_names\\\": {\\n    \\\"en\\\": \\\"Washington D.C.\\\"\\n  }\\n}\\n \\\n             \\\"us_fips_codes\\\":{\\n  \\\"us_state_code\\\": \\\"CT\\",
+            "\\n  \\\"us_state_name\\\": \\\n             \\\"Connecticut\\",
+            "\\n  \\\"us_state_fips_code\\\": \\\"09\\",
+            "\\n  \\\"us_county\\\": \\\"\\",
+            "\\n  \\\n             \\\"us_county_fips_code\\\": \\\"070\\\"\\n}\\n}"
+          ],
+          [
+            "This is not a Location and it will not be geocoded"
+          ],
+          [
+            "95.213424",
+            "190",
+            "1234565"
+          ],
+          [
+            "{\\n  \\\"cityrecord\\\":{\\n  \\\"id\\\": 1703417",
+            "\\\"name\\\": \\\"Makati City\\",
+            "\\\"latitude\\\": \\\n             14.550270080566406",
+            "\\\"longitude\\\": 121.0326919555664",
+            "\\\"country\\\": {\\n    \\\"id\\\": \\\n             1694008",
+            "\\\"code\\\": \\\"PH\\",
+            "\\\"name\\\": \\\"Philippines\\\"\\n  }",
+            "\\\"admin_division\\\": {\\n    \\\n             \\\"id\\\": 7521311",
+            "\\\"code\\\": \\\"PH.NCR\\",
+            "\\\"name\\\": \\\"National Capital Region\\\"\\n  \\\n             }",
+            "\\\"admin2_division\\\": {\\n    \\\"id\\\": 11395838",
+            "\\\"code\\\": \\\n             \\\"PH.NCR.137600000\\",
+            "\\\"name\\\": \\\"Southern Manila District\\\"\\n  }",
+            "\\\"timezone\\\": \\\n             \\\"Asia/Manila\\",
+            "\\\"names\\\": {\\n    \\\"en\\\": \\\"Makati City\\\"\\n  }",
+            "\\\"country_names\\\": \\\n             {\\n    \\\"en\\\": \\\"Philippines\\\"\\n  }",
+            "\\\"admin1_names\\\": {\\n    \\\"en\\\": \\\"National \\\n             Capital Region\\\"\\n  }",
+            "\\\"admin2_names\\\": null",
+            "\\\"population\\\": 510383\\n}",
+            "\\n  \\\n             \\\"countryrecord\\\":{\\n  \\\"info\\\": {\\n    \\\"iso\\\": \\\"PH\\",
+            "\\\"iso3\\\": \\\n             \\\"PHL\\",
+            "\\\"iso_numeric\\\": \\\"608\\",
+            "\\\"fips\\\": \\\"RP\\",
+            "\\\"name\\\": \\\n             \\\"Philippines\\",
+            "\\\"capital\\\": \\\"Manila\\",
+            "\\\"area\\\": \\\"300000\\",
+            "\\\"population\\\": \\\n             106651922",
+            "\\\"continent\\\": \\\"AS\\",
+            "\\\"tld\\\": \\\".ph\\",
+            "\\\"currency_code\\\": \\\n             \\\"PHP\\",
+            "\\\"currency_name\\\": \\\"Peso\\",
+            "\\\"phone\\\": \\\"63\\",
+            "\\\"postal_code_format\\\": \\\n             \\\"####\\",
+            "\\\"postal_code_regex\\\": \\\"^(\\\\\\\\d{4})$\\",
+            "\\\"languages\\\": \\\n             \\\"tl",
+            "en-PH",
+            "fil",
+            "ceb",
+            "ilo",
+            "hil",
+            "war",
+            "pam",
+            "bik",
+            "bcl",
+            "pag",
+            "mrw",
+            "tsg",
+            "mdh",
+            "cbk",
+            "krj",
+            "sgd",
+            "msb",
+            "akl",
+            "ibg",
+            "\\\n             yka",
+            "mta",
+            "abx\\",
+            "\\\"geonameid\\\": 1694008",
+            "\\\"neighbours\\\": \\\"\\",
+            "\\\"equivalent_fips_code\\\": \\\n             \\\"\\\"\\n  }",
+            "\\\"names\\\": {\\n    \\\"en\\\": \\\"Philippines\\\"\\n  }",
+            "\\\"capital_names\\\": {\\n    \\\n             \\\"en\\\": \\\"Manila\\\"\\n  }\\n}\\n \\\"us_fips_codes\\\":{\\n  \\\"us_state_code\\\": \\\"\\",
+            "\\n  \\\n             \\\"us_state_name\\\": \\\"National Capital Region\\",
+            "\\n  \\\"us_state_fips_code\\\": \\\n             \\\"null\\",
+            "\\n  \\\"us_county\\\": \\\"\\",
+            "\\n  \\\"us_county_fips_code\\\": \\\"\\\"\\n}\\n}"
+          ]
+        ]
       }
     },
     {
       "name": "geocode_suggest_invalid_dynfmt",
       "description": "Geocode Suggest Invalid Dynfmt",
-      "command": "qsv geocode suggest Location",
+      "command": "qsv geocode suggest Location data.csv --formatstr \"{latitude}:{longitude} - {name}, {admin1} {invalid_field}\"",
       "args": [
         "suggest",
-        "Location"
+        "Location",
+        "data.csv"
       ],
       "options": {
-        "--formatstr": "true"
+        "--formatstr": "{latitude}:{longitude} - {name}, {admin1} {invalid_field}"
       }
     },
     {
@@ -448,7 +770,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv geocode suggest Location data.csv",
+      "command": "qsv geocode suggest Location data.csv --formatstr %city-state-country",
       "args": [
         "suggest",
         "Location",
@@ -497,7 +819,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv geocode suggest Location data.csv",
+      "command": "qsv geocode suggest Location data.csv --formatstr %json",
       "args": [
         "suggest",
         "Location",
@@ -546,7 +868,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv geocode suggest Location data.csv",
+      "command": "qsv geocode suggest Location data.csv --formatstr %cityrecord",
       "args": [
         "suggest",
         "Location",
@@ -554,6 +876,123 @@
       ],
       "options": {
         "--formatstr": "%cityrecord"
+      },
+      "expected": {
+        "data": [
+          [
+            "Location"
+          ],
+          [
+            "ArchivedCitiesRecord { id: 4891010",
+            "name: \\\"Elmhurst\\",
+            "latitude: 41.89947",
+            "\\\n             longitude: -87.94034",
+            "country: Some(ArchivedCountry { id: 6252001",
+            "code: \\\"US\\",
+            "\\\n             name: \\\"United States\\\" })",
+            "admin_division: Some(ArchivedAdminDivision { id: \\\n             4896861",
+            "code: \\\"US.IL\\",
+            "name: \\\"Illinois\\\" })",
+            "admin2_division: \\\n             Some(ArchivedAdminDivision { id: 4890213",
+            "code: \\\"US.IL.043\\",
+            "name: \\\"DuPage \\\n             County\\\" })",
+            "timezone: \\\"America/Chicago\\",
+            "names: Some({\\\"en\\\": \\\"Elmhurst\\\"})",
+            "\\\n             country_names: Some({\\\"en\\\": \\\"United States\\\"})",
+            "admin1_names: Some({\\\"en\\\": \\\n             \\\"Illinois\\\"})",
+            "admin2_names: Some({\\\"en\\\": \\\"DuPage County\\\"})",
+            "population: 45957 }"
+          ],
+          [
+            "ArchivedCitiesRecord { id: 4154008",
+            "name: \\\"East Lake\\",
+            "latitude: 28.11085",
+            "\\\n             longitude: -82.69482",
+            "country: Some(ArchivedCountry { id: 6252001",
+            "code: \\\"US\\",
+            "\\\n             name: \\\"United States\\\" })",
+            "admin_division: Some(ArchivedAdminDivision { id: \\\n             4155751",
+            "code: \\\"US.FL\\",
+            "name: \\\"Florida\\\" })",
+            "admin2_division: \\\n             Some(ArchivedAdminDivision { id: 4168618",
+            "code: \\\"US.FL.103\\",
+            "name: \\\"Pinellas \\\n             County\\\" })",
+            "timezone: \\\"America/New_York\\",
+            "names: None",
+            "country_names: \\\n             Some({\\\"en\\\": \\\"United States\\\"})",
+            "admin1_names: Some({\\\"en\\\": \\\"Florida\\\"})",
+            "\\\n             admin2_names: Some({\\\"en\\\": \\\"Pinellas\\\"})",
+            "population: 30962 }"
+          ],
+          [
+            "ArchivedCitiesRecord { id: 5128581",
+            "name: \\\"New York City\\",
+            "latitude: 40.71427",
+            "\\\n             longitude: -74.00597",
+            "country: Some(ArchivedCountry { id: 6252001",
+            "code: \\\"US\\",
+            "\\\n             name: \\\"United States\\\" })",
+            "admin_division: Some(ArchivedAdminDivision { id: \\\n             5128638",
+            "code: \\\"US.NY\\",
+            "name: \\\"New York\\\" })",
+            "admin2_division: None",
+            "timezone: \\\n             \\\"America/New_York\\",
+            "names: Some({\\\"en\\\": \\\"New York\\\"})",
+            "country_names: \\\n             Some({\\\"en\\\": \\\"United States\\\"})",
+            "admin1_names: Some({\\\"en\\\": \\\"New York\\\"})",
+            "\\\n             admin2_names: None",
+            "population: 8804190 }"
+          ],
+          [
+            "ArchivedCitiesRecord { id: 4833425",
+            "name: \\\"East Haven\\",
+            "latitude: 41.27621",
+            "\\\n             longitude: -72.86843",
+            "country: Some(ArchivedCountry { id: 6252001",
+            "code: \\\"US\\",
+            "\\\n             name: \\\"United States\\\" })",
+            "admin_division: Some(ArchivedAdminDivision { id: \\\n             4831725",
+            "code: \\\"US.CT\\",
+            "name: \\\"Connecticut\\\" })",
+            "admin2_division: \\\n             Some(ArchivedAdminDivision { id: 12809023",
+            "code: \\\"US.CT.170\\",
+            "name: \\\"South \\\n             Central Connecticut Planning Region\\\" })",
+            "timezone: \\\"America/New_York\\",
+            "names: \\\n             Some({\\\"en\\\": \\\"East Haven\\\"})",
+            "country_names: Some({\\\"en\\\": \\\"United States\\\"})",
+            "\\\n             admin1_names: Some({\\\"en\\\": \\\"Connecticut\\\"})",
+            "admin2_names: None",
+            "population: 29257 \\\n             }"
+          ],
+          [
+            "This is not a Location and it will not be geocoded"
+          ],
+          [
+            "40.71427",
+            "-74.00597"
+          ],
+          [
+            "ArchivedCitiesRecord { id: 1703417",
+            "name: \\\"Makati City\\",
+            "latitude: 14.55027",
+            "\\\n             longitude: 121.03269",
+            "country: Some(ArchivedCountry { id: 1694008",
+            "code: \\\"PH\\",
+            "\\\n             name: \\\"Philippines\\\" })",
+            "admin_division: Some(ArchivedAdminDivision { id: 7521311",
+            "\\\n             code: \\\"PH.NCR\\",
+            "name: \\\"National Capital Region\\\" })",
+            "admin2_division: \\\n             Some(ArchivedAdminDivision { id: 11395838",
+            "code: \\\"PH.NCR.137600000\\",
+            "name: \\\n             \\\"Southern Manila District\\\" })",
+            "timezone: \\\"Asia/Manila\\",
+            "names: Some({\\\"en\\\": \\\n             \\\"Makati City\\\"})",
+            "country_names: Some({\\\"en\\\": \\\"Philippines\\\"})",
+            "admin1_names: \\\n             Some({\\\"en\\\": \\\"National Capital Region\\\"})",
+            "admin2_names: None",
+            "population: 510383 }"
+          ]
+        ]
       }
     },
     {
@@ -612,7 +1051,7 @@
     {
       "name": "geocode_reverse_fmtstring",
       "description": "Geocode Reverse Fmtstring",
-      "command": "qsv geocode reverse Location data.csv",
+      "command": "qsv geocode reverse Location data.csv --formatstr %city-state-country",
       "args": [
         "reverse",
         "Location",
@@ -625,7 +1064,7 @@
     {
       "name": "geocode_reverse_fmtstring_intl",
       "description": "Geocode Reverse Fmtstring Intl",
-      "command": "qsv geocode reverse Location data.csv",
+      "command": "qsv geocode reverse Location data.csv --formatstr %city-admin1-country",
       "args": [
         "reverse",
         "Location",
@@ -638,35 +1077,142 @@
     {
       "name": "geocode_reverse_fmtstring_intl_dynfmt",
       "description": "Geocode Reverse Fmtstring Intl Dynfmt",
-      "command": "qsv geocode reverse Location",
+      "command": "qsv geocode reverse Location data.csv --formatstr \"pop: {population} tz: {timezone}\"",
       "args": [
         "reverse",
-        "Location"
+        "Location",
+        "data.csv"
       ],
       "options": {
-        "--formatstr": "true"
+        "--formatstr": "pop: {population} tz: {timezone}"
       }
     },
     {
       "name": "geocode_reverse_fmtstring_intl_invalid_dynfmt",
       "description": "Geocode Reverse Fmtstring Intl Invalid Dynfmt",
-      "command": "qsv geocode reverse Location",
+      "command": "qsv geocode reverse Location data.csv --formatstr \"pop: {population} tz: {timezone} {doesnotexistfield}\"",
       "args": [
         "reverse",
-        "Location"
+        "Location",
+        "data.csv"
       ],
       "options": {
-        "--formatstr": "true"
+        "--formatstr": "pop: {population} tz: {timezone} {doesnotexistfield}"
       }
     },
     {
       "name": "geocode_suggest_dyncols_fmt",
       "description": "Geocode Suggest Dyncols Fmt",
-      "command": "qsv geocode suggest Location",
+      "command": "qsv geocode suggest Location data.csv",
       "args": [
         "suggest",
-        "Location"
-      ]
+        "Location",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "Location",
+            "city_col",
+            "state_col",
+            "county_col",
+            "country_col",
+            "continent_col",
+            "currency_col"
+          ],
+          [
+            "Melrose",
+            "New York",
+            "Melrose Park",
+            "Illinois",
+            "Cook",
+            "US",
+            "NA",
+            "USD"
+          ],
+          [
+            "East Flatbush",
+            "New York",
+            "East Lake",
+            "Florida",
+            "Pinellas",
+            "US",
+            "NA",
+            "USD"
+          ],
+          [
+            "Manhattan",
+            "New York",
+            "New York",
+            "New York",
+            "",
+            "US",
+            "NA",
+            "USD"
+          ],
+          [
+            "Brooklyn",
+            "New York",
+            "Brooklyn Park",
+            "Minnesota",
+            "Hennepin",
+            "US",
+            "NA",
+            "USD"
+          ],
+          [
+            "East Harlem",
+            "New York",
+            "East Haven",
+            "Connecticut",
+            "",
+            "US",
+            "NA",
+            "USD"
+          ],
+          [
+            "This is not a Location and it will not be geocoded",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ],
+          [
+            "Jersey City",
+            "New Jersey",
+            "Jersey City",
+            "New Jersey",
+            "Hudson",
+            "US",
+            "NA",
+            "USD"
+          ],
+          [
+            "95.213424",
+            "190",
+            "1234565",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ],
+          [
+            "Makati",
+            "Metro Manila",
+            "Philippines",
+            "Makati City",
+            "National Capital Region",
+            "",
+            "PH",
+            "AS",
+            "PHP"
+          ]
+        ]
+      }
     }
   ]
 }

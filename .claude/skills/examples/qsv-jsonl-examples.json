@@ -1,0 +1,205 @@
+{
+  "skill": "qsv-jsonl",
+  "version": "12.0.0",
+  "examples": [
+    {
+      "name": "jsonl_simple",
+      "description": "Jsonl Simple",
+      "command": "qsv jsonl data.jsonl",
+      "args": [
+        "data.jsonl"
+      ],
+      "expected": {
+        "data": [
+          [
+            "id",
+            "father",
+            "mother",
+            "oldest_child",
+            "boy"
+          ],
+          [
+            "1",
+            "Mark",
+            "Charlotte",
+            "Tom",
+            "true"
+          ],
+          [
+            "2",
+            "John",
+            "Ann",
+            "Jessika",
+            "false"
+          ],
+          [
+            "3",
+            "Bob",
+            "Monika",
+            "Jerry",
+            "true"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "jsonl_simple_delimiter",
+      "description": "Jsonl Simple Delimiter",
+      "command": "qsv jsonl data.jsonl",
+      "args": [
+        "data.jsonl"
+      ],
+      "expected": {
+        "data": [
+          [
+            "id;father;mother;oldest_child;boy"
+          ],
+          [
+            "1;Mark;Charlotte;Tom;true"
+          ],
+          [
+            "2;John;Ann;Jessika;false"
+          ],
+          [
+            "3;Bob;Monika;Jerry;true"
+          ]
+        ]
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "jsonl_simple_error",
+      "description": "Jsonl Simple Error",
+      "command": "qsv jsonl data.jsonl",
+      "args": [
+        "data.jsonl"
+      ],
+      "expected": {
+        "data": [
+          [
+            "id",
+            "father",
+            "mother",
+            "oldest_child",
+            "boy"
+          ],
+          [
+            "1",
+            "Mark",
+            "Charlotte",
+            "Tom",
+            "true"
+          ],
+          [
+            "2",
+            "John",
+            "Ann",
+            "Jessika",
+            "false"
+          ],
+          [
+            "3",
+            "Bob",
+            "Monika",
+            "Jerry",
+            "true"
+          ]
+        ]
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "jsonl_simple_ignore_error",
+      "description": "Jsonl Simple Ignore Error",
+      "command": "qsv jsonl --ignore-errors data.jsonl",
+      "options": {
+        "--ignore-errors": "data.jsonl"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "father",
+            "mother",
+            "oldest_child",
+            "boy"
+          ],
+          [
+            "1",
+            "Mark",
+            "Charlotte",
+            "Tom",
+            "true"
+          ],
+          [
+            "2",
+            "John",
+            "Ann",
+            "Jessika",
+            "false"
+          ],
+          [
+            "3",
+            "Bob",
+            "Monika",
+            "Jerry",
+            "true"
+          ],
+          [
+            "5",
+            "Donald",
+            "Melania",
+            "Ivanka",
+            "false"
+          ]
+        ]
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "jsonl_nested",
+      "description": "Jsonl Nested",
+      "command": "qsv jsonl data.jsonl",
+      "args": [
+        "data.jsonl"
+      ],
+      "expected": {
+        "data": [
+          [
+            "id",
+            "father",
+            "mother",
+            "children"
+          ],
+          [
+            "1",
+            "Mark",
+            "Charlotte",
+            "\\\"Tom\\"
+          ],
+          [
+            "2",
+            "John",
+            "Ann",
+            "\\\"Jessika\\",
+            "\\\"Antony\\",
+            "\\\"Jack\\"
+          ],
+          [
+            "3",
+            "Bob",
+            "Monika",
+            "\\\"Jerry\\",
+            "\\\"Karol\\"
+          ]
+        ]
+      }
+    }
+  ]
+}

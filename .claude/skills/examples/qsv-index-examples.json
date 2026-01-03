@@ -13,12 +13,12 @@
     {
       "name": "index_outdated_stats",
       "description": "Index Outdated Stats",
-      "command": "qsv stats "
+      "command": "qsv stats"
     },
     {
       "name": "index_outdated_index",
       "description": "Index Outdated Index",
-      "command": "qsv slice in.csv",
+      "command": "qsv slice in.csv -i 2",
       "args": [
         "in.csv"
       ],
@@ -54,7 +54,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv slice in.csv",
+      "command": "qsv slice in.csv -i 2",
       "args": [
         "in.csv"
       ],
@@ -90,7 +90,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv slice in.csv",
+      "command": "qsv slice in.csv -i 2",
       "args": [
         "in.csv"
       ],

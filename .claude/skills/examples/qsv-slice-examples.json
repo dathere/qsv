@@ -5,10 +5,7 @@
     {
       "name": "slice_from_json",
       "description": "Slice From Json",
-      "command": "qsv slice test_file",
-      "args": [
-        "test_file"
-      ],
+      "command": "qsv slice --json --index 2",
       "options": {
         "--json": "true",
         "--index": "2"
@@ -17,10 +14,7 @@
     {
       "name": "slice_from_jsonl",
       "description": "Slice From Jsonl",
-      "command": "qsv slice test_file",
-      "args": [
-        "test_file"
-      ],
+      "command": "qsv slice --json --index 2",
       "options": {
         "--json": "true",
         "--index": "2"
@@ -29,10 +23,7 @@
     {
       "name": "slice_from_avro",
       "description": "Slice From Avro",
-      "command": "qsv slice test_file",
-      "args": [
-        "test_file"
-      ],
+      "command": "qsv slice --index 2",
       "options": {
         "--index": "2"
       }
@@ -40,22 +31,16 @@
     {
       "name": "slice_from_arrow",
       "description": "Slice From Arrow",
-      "command": "qsv slice test_file",
-      "args": [
-        "test_file"
-      ],
+      "command": "qsv slice --json --index 2",
       "options": {
-        "--index": "2",
-        "--json": "true"
+        "--json": "true",
+        "--index": "2"
       }
     },
     {
       "name": "slice_from_csvgz",
       "description": "Slice From Csvgz",
-      "command": "qsv slice test_file",
-      "args": [
-        "test_file"
-      ],
+      "command": "qsv slice --index 2 --json",
       "options": {
         "--index": "2",
         "--json": "true"
@@ -64,10 +49,7 @@
     {
       "name": "slice_from_csvzst",
       "description": "Slice From Csvzst",
-      "command": "qsv slice test_file",
-      "args": [
-        "test_file"
-      ],
+      "command": "qsv slice --json --index 2",
       "options": {
         "--json": "true",
         "--index": "2"
@@ -76,10 +58,7 @@
     {
       "name": "slice_from_csvzlib",
       "description": "Slice From Csvzlib",
-      "command": "qsv slice test_file",
-      "args": [
-        "test_file"
-      ],
+      "command": "qsv slice --index 2 --json",
       "options": {
         "--index": "2",
         "--json": "true"
@@ -88,22 +67,16 @@
     {
       "name": "slice_from_tsvgz",
       "description": "Slice From Tsvgz",
-      "command": "qsv slice test_file",
-      "args": [
-        "test_file"
-      ],
+      "command": "qsv slice --json --index 2",
       "options": {
-        "--index": "2",
-        "--json": "true"
+        "--json": "true",
+        "--index": "2"
       }
     },
     {
       "name": "slice_from_tsvzst",
       "description": "Slice From Tsvzst",
-      "command": "qsv slice test_file",
-      "args": [
-        "test_file"
-      ],
+      "command": "qsv slice --json --index 2",
       "options": {
         "--json": "true",
         "--index": "2"
@@ -112,10 +85,7 @@
     {
       "name": "slice_from_tsvzlib",
       "description": "Slice From Tsvzlib",
-      "command": "qsv slice test_file",
-      "args": [
-        "test_file"
-      ],
+      "command": "qsv slice --json --index 2",
       "options": {
         "--json": "true",
         "--index": "2"
@@ -124,13 +94,112 @@
     {
       "name": "slice_from_tsv",
       "description": "Slice From Tsv",
-      "command": "qsv slice test_file",
-      "args": [
-        "test_file"
-      ],
+      "command": "qsv slice --json --index 2",
       "options": {
         "--json": "true",
         "--index": "2"
+      }
+    },
+    {
+      "name": "slice_float_precision",
+      "description": "Slice Float Precision",
+      "command": "qsv sqlp \"select * from float_data\" --json",
+      "args": [
+        "select * from float_data"
+      ],
+      "options": {
+        "--json": "true"
+      }
+    },
+    {
+      "name": "slice_from_json_with_pschema",
+      "description": "Slice From Json With Pschema",
+      "command": "qsv slice test.json --json --index 1",
+      "args": [
+        "test.json"
+      ],
+      "options": {
+        "--json": "true",
+        "--index": "1"
+      }
+    },
+    {
+      "name": "slice_from_jsonl_with_pschema",
+      "description": "Slice From Jsonl With Pschema",
+      "command": "qsv slice test.jsonl --index 1 --json",
+      "args": [
+        "test.jsonl"
+      ],
+      "options": {
+        "--index": "1",
+        "--json": "true"
+      }
+    },
+    {
+      "name": "slice_from_csvgz_with_pschema",
+      "description": "Slice From Csvgz With Pschema",
+      "command": "qsv slice test.csv.gz --json --index 1",
+      "args": [
+        "test.csv.gz"
+      ],
+      "options": {
+        "--json": "true",
+        "--index": "1"
+      }
+    },
+    {
+      "name": "slice_from_csvzst_with_pschema",
+      "description": "Slice From Csvzst With Pschema",
+      "command": "qsv slice test.csv.zst --json --index 1",
+      "args": [
+        "test.csv.zst"
+      ],
+      "options": {
+        "--json": "true",
+        "--index": "1"
+      }
+    },
+    {
+      "name": "slice_from_csvzlib_with_pschema",
+      "description": "Slice From Csvzlib With Pschema",
+      "command": "qsv slice --json -c test.csv.zlib --index 1",
+      "options": {
+        "--json": "true",
+        "-c": "test.csv.zlib",
+        "--index": "1"
+      }
+    },
+    {
+      "name": "slice_from_jsonl_with_decimal_precision",
+      "description": "Slice From Jsonl With Decimal Precision",
+      "command": "qsv slice test.jsonl --json",
+      "args": [
+        "test.jsonl"
+      ],
+      "options": {
+        "--json": "true"
+      }
+    },
+    {
+      "name": "slice_from_tsvgz_with_decimal_precision",
+      "description": "Slice From Tsvgz With Decimal Precision",
+      "command": "qsv slice test.tsv.gz --json",
+      "args": [
+        "test.tsv.gz"
+      ],
+      "options": {
+        "--json": "true"
+      }
+    },
+    {
+      "name": "slice_from_jsonl_with_decimal_precision_vs_float",
+      "description": "Slice From Jsonl With Decimal Precision Vs Float",
+      "command": "qsv slice test.jsonl --json",
+      "args": [
+        "test.jsonl"
+      ],
+      "options": {
+        "--json": "true"
       }
     }
   ]

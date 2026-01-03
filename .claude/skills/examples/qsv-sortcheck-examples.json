@@ -26,7 +26,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sortcheck ",
+      "command": "qsv sortcheck --no-headers in.csv",
       "options": {
         "--no-headers": "in.csv"
       },
@@ -58,7 +58,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sortcheck ",
+      "command": "qsv sortcheck --no-headers in.csv",
       "options": {
         "--no-headers": "in.csv"
       },
@@ -90,7 +90,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sortcheck ",
+      "command": "qsv sortcheck --no-headers in.csv",
       "options": {
         "--no-headers": "in.csv"
       },
@@ -122,7 +122,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sortcheck ",
+      "command": "qsv sortcheck --no-headers in.csv",
       "options": {
         "--no-headers": "in.csv"
       },
@@ -203,7 +203,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sortcheck ",
+      "command": "qsv sortcheck --all in.csv",
       "options": {
         "--all": "in.csv"
       }
@@ -256,7 +256,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sortcheck ",
+      "command": "qsv sortcheck --json in.csv",
       "options": {
         "--json": "in.csv"
       }
@@ -309,7 +309,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sortcheck ",
+      "command": "qsv sortcheck --json in.csv",
       "options": {
         "--json": "in.csv"
       }
@@ -362,7 +362,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sortcheck ",
+      "command": "qsv sortcheck --progressbar in.csv",
       "options": {
         "--progressbar": "in.csv"
       }

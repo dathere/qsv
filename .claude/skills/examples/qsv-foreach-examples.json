@@ -19,9 +19,11 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv foreach name",
+      "command": "qsv foreach name \"echo 'NAME = {}'\" data.csv",
       "args": [
-        "name"
+        "name",
+        "echo 'NAME = {}'",
+        "data.csv"
       ]
     },
     {
@@ -41,9 +43,11 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv foreach name",
+      "command": "qsv foreach name \"echo 'NAME = {}, {}, {}'\" data.csv",
       "args": [
-        "name"
+        "name",
+        "echo 'NAME = {}, {}, {}'",
+        "data.csv"
       ]
     },
     {
@@ -69,9 +73,11 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv foreach host",
+      "command": "qsv foreach host \"echo 'dig +short {} a'\" data.csv",
       "args": [
-        "host"
+        "host",
+        "echo 'dig +short {} a'",
+        "data.csv"
       ]
     },
     {
@@ -91,9 +97,11 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv foreach name",
+      "command": "qsv foreach name \"sh multiple_commands.sh {}\" data.csv",
       "args": [
-        "name"
+        "name",
+        "sh multiple_commands.sh {}",
+        "data.csv"
       ]
     },
     {
@@ -112,9 +120,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv foreach b",
+      "command": "qsv foreach b \"echo {}test\" data.csv b data.csv",
       "args": [
-        "b"
+        "b",
+        "echo {}test",
+        "data.csv",
+        "b",
+        "data.csv"
       ],
       "tags": [
         "regression"

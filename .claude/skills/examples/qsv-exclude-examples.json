@@ -3,46 +3,32 @@
   "version": "12.0.0",
   "examples": [
     {
-      "name": "headers",
-      "description": "Headers",
-      "command": "qsv exclude "
-    },
-    {
-      "name": "no_headers",
-      "description": "No Headers",
-      "command": "qsv exclude ",
-      "options": {
-        "--no-headers": "true"
-      },
+      "name": "include_casei",
+      "description": "Include Casei",
+      "command": "qsv exclude position position",
+      "args": [
+        "position",
+        "position"
+      ],
       "tags": [
-        "no-headers"
+        "case-sensitivity"
       ]
     },
     {
-      "name": "exclude_utf8_issue778_aliases_posiions",
-      "description": "Exclude Utf8 Issue778 Aliases Posiions",
-      "command": "qsv exclude position aliases_file position positions_file",
+      "name": "include_casei_2",
+      "description": "Include Casei 2",
+      "command": "qsv exclude position position",
       "args": [
         "position",
-        "aliases_file",
-        "position",
-        "positions_file"
+        "position"
+      ],
+      "tags": [
+        "case-sensitivity"
       ]
     },
     {
-      "name": "exclude_utf8_issue778_positions_aliases",
-      "description": "Exclude Utf8 Issue778 Positions Aliases",
-      "command": "qsv exclude position positions_file position aliases_file",
-      "args": [
-        "position",
-        "positions_file",
-        "position",
-        "aliases_file"
-      ]
-    },
-    {
-      "name": "exclude_1497_empty_fields",
-      "description": "Exclude 1497 Empty Fields",
+      "name": "include_casei_3",
+      "description": "Include Casei 3",
       "input": {
         "data": [
           [
@@ -79,6 +65,9 @@
         "data.csv",
         "id,end",
         "skip.csv"
+      ],
+      "tags": [
+        "case-sensitivity"
       ]
     }
   ]

@@ -191,7 +191,7 @@
         ],
         "filename": "in1.csv"
       },
-      "command": "qsv cat rows in2.csv in3.csv",
+      "command": "qsv cat rows in2.csv in3.csv --flexible in1.csv",
       "args": [
         "rows",
         "in2.csv",
@@ -271,7 +271,7 @@
         ],
         "filename": "in1.csv"
       },
-      "command": "qsv cat rows",
+      "command": "qsv cat rows --flexible testdata.infile-list",
       "args": [
         "rows"
       ],
@@ -440,7 +440,7 @@
         ],
         "filename": "in1.csv"
       },
-      "command": "qsv cat rowskey in2.csv in3.csv",
+      "command": "qsv cat rowskey in2.csv in3.csv --no-headers in1.csv",
       "args": [
         "rowskey",
         "in2.csv",
@@ -995,7 +995,7 @@
         ],
         "filename": "in1.csv"
       },
-      "command": "qsv cat rowskey in2.csv in3.csv",
+      "command": "qsv cat rowskey in2.csv in3.csv --no-headers in1.csv",
       "args": [
         "rowskey",
         "in2.csv",
@@ -1086,7 +1086,7 @@
         ],
         "filename": "test/valid.csv"
       },
-      "command": "qsv cat rows",
+      "command": "qsv cat rows --no-headers test",
       "args": [
         "rows"
       ],
@@ -1100,7 +1100,7 @@
     {
       "name": "cat_rows_directory_skip_format_check_only_unsupported",
       "description": "Cat Rows Directory Skip Format Check Only Unsupported",
-      "command": "qsv cat rows",
+      "command": "qsv cat rows --no-headers test",
       "args": [
         "rows"
       ],

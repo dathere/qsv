@@ -5,10 +5,8 @@
     {
       "name": "diff_sort_diff_result_on_first_column_with_qsv_sort_cmd",
       "description": "Diff Sort Diff Result On First Column With Qsv Sort Cmd",
-      "command": "qsv diff test_file test_file2 in2.csv",
+      "command": "qsv diff in2.csv --select 2",
       "args": [
-        "test_file",
-        "test_file2",
         "in2.csv"
       ],
       "options": {
@@ -18,39 +16,30 @@
     {
       "name": "diff_original_left_and_diff_right_sort_diff_result_by_lines_by_default",
       "description": "Diff Original Left And Diff Right Sort Diff Result By Lines By Default",
-      "command": "qsv diff test_file test_file2 1- diff_result_file_name",
+      "command": "qsv diff 1-",
       "args": [
-        "test_file",
-        "test_file2",
-        "1-",
-        "diff_result_file_name"
+        "1-"
       ]
     },
     {
       "name": "diff_diff_left_and_original_right_sort_diff_result_by_lines_by_default",
       "description": "Diff Diff Left And Original Right Sort Diff Result By Lines By Default",
-      "command": "qsv diff test_file test_file2 1- diff_result_file_name",
+      "command": "qsv diff 1-",
       "args": [
-        "test_file",
-        "test_file2",
-        "1-",
-        "diff_result_file_name"
+        "1-"
       ]
     },
     {
       "name": "diff_sort_diff_result_by_lines_by_default_modified_rows_interleaved",
       "description": "Diff Sort Diff Result By Lines By Default Modified Rows Interleaved",
-      "command": "qsv diff "
+      "command": "qsv diff"
     },
     {
       "name": "diff_sort_diff_result_by_first_column",
       "description": "Diff Sort Diff Result By First Column",
-      "command": "qsv diff test_file test_file2 1- diff_result_file_name",
+      "command": "qsv diff 1- --sort-columns 0",
       "args": [
-        "test_file",
-        "test_file2",
-        "1-",
-        "diff_result_file_name"
+        "1-"
       ],
       "options": {
         "--sort-columns": "0"
@@ -59,12 +48,9 @@
     {
       "name": "diff_sort_diff_result_by_first_column_name",
       "description": "Diff Sort Diff Result By First Column Name",
-      "command": "qsv diff test_file test_file2 1- diff_result_file_name",
+      "command": "qsv diff 1- --sort-columns case_enquiry_id",
       "args": [
-        "test_file",
-        "test_file2",
-        "1-",
-        "diff_result_file_name"
+        "1-"
       ],
       "options": {
         "--sort-columns": "case_enquiry_id"
@@ -73,10 +59,9 @@
     {
       "name": "diff_different_delimiters_sort_diff_result_by_first_column",
       "description": "Diff Different Delimiters Sort Diff Result By First Column",
-      "command": "qsv diff 1- diff_result_file_name",
+      "command": "qsv diff 1-",
       "args": [
-        "1-",
-        "diff_result_file_name"
+        "1-"
       ],
       "tags": [
         "custom-delimiter"
@@ -85,7 +70,7 @@
     {
       "name": "diff_with_no_headers_in_result",
       "description": "Diff With No Headers In Result",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "expected": {
         "data": [
           [
@@ -111,7 +96,7 @@
     {
       "name": "diff_no_diff_with_no_headers_in_result",
       "description": "Diff No Diff With No Headers In Result",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "tags": [
         "no-headers"
       ]
@@ -119,12 +104,12 @@
     {
       "name": "diff_key_sort_by_column_name",
       "description": "Diff Key Sort By Column Name",
-      "command": "qsv diff "
+      "command": "qsv diff"
     },
     {
       "name": "diff_key_by_column_name_columns_have_different_order_error",
       "description": "Diff Key By Column Name Columns Have Different Order Error",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "tags": [
         "error-handling"
       ]
@@ -132,7 +117,7 @@
     {
       "name": "diff_sort_by_column_name_columns_have_different_order_error",
       "description": "Diff Sort By Column Name Columns Have Different Order Error",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "tags": [
         "error-handling"
       ]
@@ -140,7 +125,7 @@
     {
       "name": "diff_only_left_has_headers_headers_in_result",
       "description": "Diff Only Left Has Headers Headers In Result",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "expected": {
         "data": [
           [
@@ -172,7 +157,7 @@
     {
       "name": "diff_only_right_has_headers_headers_in_result",
       "description": "Diff Only Right Has Headers Headers In Result",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "expected": {
         "data": [
           [
@@ -204,7 +189,7 @@
     {
       "name": "diff_with_generic_headers_in_result",
       "description": "Diff With Generic Headers In Result",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "expected": {
         "data": [
           [
@@ -237,7 +222,7 @@
     {
       "name": "diff_with_no_left_no_right_and_no_headers_in_result",
       "description": "Diff With No Left No Right And No Headers In Result",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "expected": {
         "data": [
           [
@@ -263,7 +248,7 @@
     {
       "name": "diff_no_diff_with_generic_headers_in_result",
       "description": "Diff No Diff With Generic Headers In Result",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "expected": {
         "data": [
           [
@@ -282,12 +267,12 @@
     {
       "name": "diff_no_diff_and_zero_columns_flag_true_for_headers_in_result_but_none_are_in_result",
       "description": "Diff No Diff And Zero Columns Flag True For Headers In Result But None Are In Result",
-      "command": "qsv diff "
+      "command": "qsv diff"
     },
     {
       "name": "diff_left_has_one_column_right_has_none_headers_in_result",
       "description": "Diff Left Has One Column Right Has None Headers In Result",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "expected": {
         "data": [
           [
@@ -303,12 +288,12 @@
     {
       "name": "diff_with_default_delimiter_in_result",
       "description": "Diff With Default Delimiter In Result",
-      "command": "qsv diff "
+      "command": "qsv diff"
     },
     {
       "name": "diff_with_different_delimiter_in_result",
       "description": "Diff With Different Delimiter In Result",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "tags": [
         "custom-delimiter"
       ]
@@ -316,27 +301,27 @@
     {
       "name": "diff_drop_equal_fields_flag_on_modified_rows_one_row_modified",
       "description": "Diff Drop Equal Fields Flag On Modified Rows One Row Modified",
-      "command": "qsv diff "
+      "command": "qsv diff"
     },
     {
       "name": "diff_drop_equal_fields_flag_on_modified_rows_multiple_fields_on_one_row_equal",
       "description": "Diff Drop Equal Fields Flag On Modified Rows Multiple Fields On One Row Equal",
-      "command": "qsv diff "
+      "command": "qsv diff"
     },
     {
       "name": "diff_drop_equal_fields_flag_on_modified_rows_multiple_rows_modified_in_different_columns",
       "description": "Diff Drop Equal Fields Flag On Modified Rows Multiple Rows Modified In Different Columns",
-      "command": "qsv diff "
+      "command": "qsv diff"
     },
     {
       "name": "diff_drop_equal_fields_flag_on_modified_rows_multiple_key_fields_far_apart",
       "description": "Diff Drop Equal Fields Flag On Modified Rows Multiple Key Fields Far Apart",
-      "command": "qsv diff "
+      "command": "qsv diff"
     },
     {
       "name": "diff_with_delimiter_overrides_all_delimiters",
       "description": "Diff With Delimiter Overrides All Delimiters",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "tags": [
         "error-handling",
         "custom-delimiter"
@@ -345,7 +330,7 @@
     {
       "name": "diff_with_tab_delimiter",
       "description": "Diff With Tab Delimiter",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "tags": [
         "custom-delimiter"
       ]
@@ -353,7 +338,7 @@
     {
       "name": "diff_with_mixed_delimiters",
       "description": "Diff With Mixed Delimiters",
-      "command": "qsv diff ",
+      "command": "qsv diff",
       "tags": [
         "custom-delimiter"
       ]

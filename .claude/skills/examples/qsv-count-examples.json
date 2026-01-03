@@ -45,7 +45,7 @@
     {
       "name": "count_width",
       "description": "Count Width",
-      "command": "qsv count ",
+      "command": "qsv count --width in.csv",
       "options": {
         "--width": "in.csv"
       }
@@ -53,7 +53,7 @@
     {
       "name": "count_width_json",
       "description": "Count Width Json",
-      "command": "qsv count ",
+      "command": "qsv count --json in.csv",
       "options": {
         "--json": "in.csv"
       }
@@ -61,7 +61,7 @@
     {
       "name": "count_width_no_delims",
       "description": "Count Width No Delims",
-      "command": "qsv count ",
+      "command": "qsv count --width-no-delims in.csv",
       "options": {
         "--width-no-delims": "in.csv"
       }
@@ -69,7 +69,7 @@
     {
       "name": "count_width_no_delims_human_readable",
       "description": "Count Width No Delims Human Readable",
-      "command": "qsv count ",
+      "command": "qsv count -H in.csv",
       "options": {
         "-H": "in.csv"
       }
@@ -77,7 +77,7 @@
     {
       "name": "count_width_human_readable",
       "description": "Count Width Human Readable",
-      "command": "qsv count ",
+      "command": "qsv count -H in.csv",
       "options": {
         "-H": "in.csv"
       }
@@ -85,7 +85,7 @@
     {
       "name": "count_width_custom_delimiter",
       "description": "Count Width Custom Delimiter",
-      "command": "qsv count ",
+      "command": "qsv count --width in.csv",
       "options": {
         "--width": "in.csv"
       }
@@ -93,7 +93,7 @@
     {
       "name": "count_flexible",
       "description": "Count Flexible",
-      "command": "qsv count ",
+      "command": "qsv count --flexible in.csv",
       "options": {
         "--flexible": "in.csv"
       }
@@ -138,7 +138,7 @@
     {
       "name": "count_custom_delimiter",
       "description": "Count Custom Delimiter",
-      "command": "qsv count in.csv",
+      "command": "qsv count in.csv --delimiter \";\"",
       "args": [
         "in.csv"
       ],
@@ -147,6 +147,28 @@
       },
       "tags": [
         "custom-delimiter"
+      ]
+    },
+    {
+      "name": "count_stdin_schema_inference_issue_3103",
+      "description": "Count Stdin Schema Inference Issue 3103",
+      "command": "qsv count -",
+      "args": [
+        "-"
+      ],
+      "tags": [
+        "regression"
+      ]
+    },
+    {
+      "name": "count_file_schema_inference_issue_3103",
+      "description": "Count File Schema Inference Issue 3103",
+      "command": "qsv count test_data.csv",
+      "args": [
+        "test_data.csv"
+      ],
+      "tags": [
+        "regression"
       ]
     }
   ]

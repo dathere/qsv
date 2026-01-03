@@ -3,13 +3,8 @@
   "version": "12.0.0",
   "examples": [
     {
-      "name": "headers",
-      "description": "Headers",
-      "command": "qsv sqlp "
-    },
-    {
-      "name": "sqlp_join_cross",
-      "description": "Sqlp Join Cross",
+      "name": "sqlp_join_outer_full",
+      "description": "Sqlp Join Outer Full",
       "input": {
         "data": [
           [
@@ -67,8 +62,8 @@
       }
     },
     {
-      "name": "sqlp_join_same_colname_1820",
-      "description": "Sqlp Join Same Colname 1820",
+      "name": "sqlp_join_outer_full_2",
+      "description": "Sqlp Join Outer Full 2",
       "input": {
         "data": [
           [
@@ -100,13 +95,9 @@
       }
     },
     {
-      "name": "sqlp_boston311_groupby_orderby",
-      "description": "Sqlp Boston311 Groupby Orderby",
-      "command": "qsv sqlp \"&test_file\" \"r#\\\"select ward, count(*\"",
-      "args": [
-        "&test_file",
-        "r#\"select ward, count(*"
-      ],
+      "name": "sqlp_join_outer_full_3",
+      "description": "Sqlp Join Outer Full 3",
+      "command": "qsv sqlp",
       "expected": {
         "data": [
           [
@@ -285,13 +276,9 @@
       }
     },
     {
-      "name": "sqlp_boston311_groupby_orderby_all",
-      "description": "Sqlp Boston311 Groupby Orderby All",
-      "command": "qsv sqlp \"&test_file\" \"r#\\\"select ward, count(*\"",
-      "args": [
-        "&test_file",
-        "r#\"select ward, count(*"
-      ],
+      "name": "sqlp_join_outer_full_4",
+      "description": "Sqlp Join Outer Full 4",
+      "command": "qsv sqlp",
       "expected": {
         "data": [
           [
@@ -470,13 +457,9 @@
       }
     },
     {
-      "name": "sqlp_boston311_wnull_value",
-      "description": "Sqlp Boston311 Wnull Value",
-      "command": "qsv sqlp \"&test_file\" \"\n            \\\"select location_street_name, location_zipcode from _t_1 where location_zipcode is \\\\\n             null order by location_street_name limit 5\\\",\n        \"",
-      "args": [
-        "&test_file",
-        "\n            \"select location_street_name, location_zipcode from _t_1 where location_zipcode is \\\n             null order by location_street_name limit 5\",\n        "
-      ],
+      "name": "sqlp_join_outer_full_5",
+      "description": "Sqlp Join Outer Full 5",
+      "command": "qsv sqlp",
       "expected": {
         "data": [
           [
@@ -507,23 +490,19 @@
       }
     },
     {
-      "name": "sqlp_decimal_comma_issue_1050",
-      "description": "Sqlp Decimal Comma Issue 1050",
-      "command": "qsv sqlp \"&test_file\"",
-      "args": [
-        "&test_file"
-      ],
+      "name": "sqlp_join_outer_full_6",
+      "description": "Sqlp Join Outer Full 6",
+      "command": "qsv sqlp --decimal-comma \"select COD_LOCALE_PROGETTO, FINANZ_UE from _t_1\"",
       "options": {
         "--decimal-comma": "select COD_LOCALE_PROGETTO, FINANZ_UE from _t_1"
       },
       "tags": [
-        "regression",
         "custom-delimiter"
       ]
     },
     {
-      "name": "sqlp_null_aware_equality_checks",
-      "description": "Sqlp Null Aware Equality Checks",
+      "name": "sqlp_join_outer_full_7",
+      "description": "Sqlp Join Outer Full 7",
       "input": {
         "data": [
           [
@@ -553,10 +532,9 @@
         ],
         "filename": "test_null.csv"
       },
-      "command": "qsv sqlp test_null.csv \"\n            r#\\\"SELECT (a = b\"",
+      "command": "qsv sqlp test_null.csv",
       "args": [
-        "test_null.csv",
-        "\n            r#\"SELECT (a = b"
+        "test_null.csv"
       ],
       "expected": {
         "data": [
@@ -606,8 +584,8 @@
       }
     },
     {
-      "name": "sqlp_rnull_values_wnull_value",
-      "description": "Sqlp Rnull Values Wnull Value",
+      "name": "sqlp_join_outer_full_8",
+      "description": "Sqlp Join Outer Full 8",
       "command": "qsv sqlp test_null.csv \"SELECT * FROM test_null\"",
       "args": [
         "test_null.csv",
@@ -651,8 +629,8 @@
       }
     },
     {
-      "name": "sqlp_regex_operators",
-      "description": "Sqlp Regex Operators",
+      "name": "sqlp_join_outer_full_9",
+      "description": "Sqlp Join Outer Full 9",
       "input": {
         "data": [
           [
@@ -682,16 +660,12 @@
         ],
         "filename": "test_regex.csv"
       },
-      "command": "qsv sqlp test_regex.csv \"r#\\\"SELECT * FROM test_regex WHERE sval ~ '\\\\d'\\\"#\" test_regex.csv \"r#\\\"SELECT * FROM test_regex WHERE sval ~* '^a0'\\\"#\" test_regex.csv \"r#\\\"SELECT * FROM test_regex WHERE sval !~ '^a0'\\\"#\" test_regex.csv \"r#\\\"SELECT * FROM test_regex WHERE sval !~* '^a0'\\\"#\"",
+      "command": "qsv sqlp test_regex.csv test_regex.csv test_regex.csv test_regex.csv",
       "args": [
         "test_regex.csv",
-        "r#\"SELECT * FROM test_regex WHERE sval ~ '\\d'\"#",
         "test_regex.csv",
-        "r#\"SELECT * FROM test_regex WHERE sval ~* '^a0'\"#",
         "test_regex.csv",
-        "r#\"SELECT * FROM test_regex WHERE sval !~ '^a0'\"#",
-        "test_regex.csv",
-        "r#\"SELECT * FROM test_regex WHERE sval !~* '^a0'\"#"
+        "test_regex.csv"
       ],
       "expected": {
         "data": [
@@ -715,8 +689,8 @@
       }
     },
     {
-      "name": "sqlp_regexp_like",
-      "description": "Sqlp Regexp Like",
+      "name": "sqlp_join_outer_full_10",
+      "description": "Sqlp Join Outer Full 10",
       "input": {
         "data": [
           [
@@ -737,10 +711,9 @@
         ],
         "filename": "test_regexp_like.csv"
       },
-      "command": "qsv sqlp test_regexp_like.csv \"r#\\\"SELECT scol FROM test_regexp_like where REGEXP_LIKE(scol,'(C|D\"",
+      "command": "qsv sqlp test_regexp_like.csv",
       "args": [
-        "test_regexp_like.csv",
-        "r#\"SELECT scol FROM test_regexp_like where REGEXP_LIKE(scol,'(C|D"
+        "test_regexp_like.csv"
       ],
       "expected": {
         "data": [
@@ -757,8 +730,8 @@
       }
     },
     {
-      "name": "sqlp_string_functions",
-      "description": "Sqlp String Functions",
+      "name": "sqlp_join_outer_full_11",
+      "description": "Sqlp Join Outer Full 11",
       "input": {
         "data": [
           [
@@ -782,24 +755,16 @@
         ],
         "filename": "test_strings.csv"
       },
-      "command": "qsv sqlp test_strings.csv \"r#\\\"SELECT starts_with(scol, 'a'\" test_strings.csv \"r#\\\"SELECT ends_with(scol, 'c'\" test_strings.csv \"r#\\\"SELECT left(scol, 3\" test_strings.csv \"r#\\\"SELECT substr(scol, 2, 2\" test_strings.csv \"r#\\\"SELECT upper(scol\" test_strings.csv \"r#\\\"SELECT lower(scol\" test_strings.csv \"r#\\\"SELECT length(scol\" test_strings.csv \"r#\\\"SELECT octet_length(scol\"",
+      "command": "qsv sqlp test_strings.csv test_strings.csv test_strings.csv test_strings.csv test_strings.csv test_strings.csv test_strings.csv test_strings.csv",
       "args": [
         "test_strings.csv",
-        "r#\"SELECT starts_with(scol, 'a'",
         "test_strings.csv",
-        "r#\"SELECT ends_with(scol, 'c'",
         "test_strings.csv",
-        "r#\"SELECT left(scol, 3",
         "test_strings.csv",
-        "r#\"SELECT substr(scol, 2, 2",
         "test_strings.csv",
-        "r#\"SELECT upper(scol",
         "test_strings.csv",
-        "r#\"SELECT lower(scol",
         "test_strings.csv",
-        "r#\"SELECT length(scol",
-        "test_strings.csv",
-        "r#\"SELECT octet_length(scol"
+        "test_strings.csv"
       ],
       "expected": {
         "data": [
@@ -825,15 +790,11 @@
       }
     },
     {
-      "name": "sqlp_boston311_try_parsedates",
-      "description": "Sqlp Boston311 Try Parsedates",
-      "command": "qsv sqlp \"&test_file\"",
-      "args": [
-        "&test_file"
-      ],
+      "name": "sqlp_join_outer_full_12",
+      "description": "Sqlp Join Outer Full 12",
+      "command": "qsv sqlp --ignore-errors",
       "options": {
-        "--ignore-errors": "true",
-        "--try-parsedates": "\n            \"select ward, cast(avg(closed_dt - open_dt"
+        "--ignore-errors": "true"
       },
       "expected": {
         "data": [
@@ -997,15 +958,11 @@
       }
     },
     {
-      "name": "sqlp_boston311_try_parsedates_precision",
-      "description": "Sqlp Boston311 Try Parsedates Precision",
-      "command": "qsv sqlp \"&test_file\"",
-      "args": [
-        "&test_file"
-      ],
+      "name": "sqlp_join_outer_full_13",
+      "description": "Sqlp Join Outer Full 13",
+      "command": "qsv sqlp --ignore-errors",
       "options": {
-        "--ignore-errors": "true",
-        "--try-parsedates": "\n            \"select ward, cast(avg(closed_dt - open_dt"
+        "--ignore-errors": "true"
       },
       "expected": {
         "data": [
@@ -1037,15 +994,12 @@
       }
     },
     {
-      "name": "sqlp_boston311_try_parsedates_format",
-      "description": "Sqlp Boston311 Try Parsedates Format",
-      "command": "qsv sqlp \"&test_file\"",
-      "args": [
-        "&test_file"
-      ],
+      "name": "sqlp_join_outer_full_14",
+      "description": "Sqlp Join Outer Full 14",
+      "command": "qsv sqlp --ignore-errors --try-parsedates \"select closed_dt, open_dt from _t_1 where case_status = 'Closed' limit 5\"",
       "options": {
-        "--try-parsedates": "select closed_dt, open_dt from _t_1 where case_status = 'Closed' limit 5",
-        "--ignore-errors": "true"
+        "--ignore-errors": "true",
+        "--try-parsedates": "select closed_dt, open_dt from _t_1 where case_status = 'Closed' limit 5"
       },
       "expected": {
         "data": [
@@ -1077,8 +1031,8 @@
       }
     },
     {
-      "name": "sqlp_comments",
-      "description": "Sqlp Comments",
+      "name": "sqlp_join_outer_full_15",
+      "description": "Sqlp Join Outer Full 15",
       "input": {
         "data": [
           [
@@ -1155,8 +1109,8 @@
       }
     },
     {
-      "name": "sqlp_compress",
-      "description": "Sqlp Compress",
+      "name": "sqlp_join_outer_full_16",
+      "description": "Sqlp Join Outer Full 16",
       "input": {
         "data": [
           [
@@ -1178,12 +1132,11 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"select column1, column2 from data order by column2 desc\" decompress out_file",
+      "command": "qsv sqlp data.csv \"select column1, column2 from data order by column2 desc\" decompress",
       "args": [
         "data.csv",
         "select column1, column2 from data order by column2 desc",
-        "decompress",
-        "out_file"
+        "decompress"
       ],
       "expected": {
         "data": [
@@ -1207,33 +1160,33 @@
       }
     },
     {
-      "name": "sqlp_boston311_explain",
-      "description": "Sqlp Boston311 Explain",
-      "command": "qsv sqlp \"&test_file\"",
-      "args": [
-        "&test_file"
-      ],
+      "name": "sqlp_join_outer_full_17",
+      "description": "Sqlp Join Outer Full 17",
+      "command": "qsv sqlp --try-parsedates",
       "options": {
-        "--try-parsedates": "\n        \"explain select ward, cast(avg(closed_dt - open_dt"
+        "--try-parsedates": "true"
       }
     },
     {
-      "name": "sqlp_boston311_sql_script_jsonl_cache_schema",
-      "description": "Sqlp Boston311 Sql Script Jsonl Cache Schema",
-      "command": "qsv sqlp \"&test_file\" test.sql",
+      "name": "sqlp_join_outer_full_18",
+      "description": "Sqlp Join Outer Full 18",
+      "command": "qsv sqlp test.sql",
       "args": [
-        "&test_file",
         "test.sql"
       ]
     },
     {
-      "name": "sqlp_boston311_cte_gz",
-      "description": "Sqlp Boston311 Cte Gz",
-      "command": "qsv sqlp \"&test_file\" \"\n        r#\\\"with boston311_roxbury as (select * from read_csv('boston311-100.csv.gz'\"",
+      "name": "sqlp_join_outer_full_19",
+      "description": "Sqlp Join Outer Full 19",
+      "command": "qsv sqlp test.sql",
       "args": [
-        "&test_file",
-        "\n        r#\"with boston311_roxbury as (select * from read_csv('boston311-100.csv.gz'"
-      ],
+        "test.sql"
+      ]
+    },
+    {
+      "name": "sqlp_join_outer_full_20",
+      "description": "Sqlp Join Outer Full 20",
+      "command": "qsv sqlp",
       "expected": {
         "data": [
           [
@@ -1264,13 +1217,9 @@
       }
     },
     {
-      "name": "sqlp_boston311_case_expression",
-      "description": "Sqlp Boston311 Case Expression",
-      "command": "qsv sqlp \"&test_file\" \"\n        r#\\\"SELECT case_enquiry_id, \n           CASE closed_dt is null and case_title ~* 'graffiti' \n              WHEN True THEN 'Yes' \n              WHEN False THEN 'No' \n              ELSE 'N/A'\n           END as graffiti_related\n           from _t_1\n           where case_status = 'Open'\\\"#,\n    \"",
-      "args": [
-        "&test_file",
-        "\n        r#\"SELECT case_enquiry_id, \n           CASE closed_dt is null and case_title ~* 'graffiti' \n              WHEN True THEN 'Yes' \n              WHEN False THEN 'No' \n              ELSE 'N/A'\n           END as graffiti_related\n           from _t_1\n           where case_status = 'Open'\"#,\n    "
-      ],
+      "name": "sqlp_join_outer_full_21",
+      "description": "Sqlp Join Outer Full 21",
+      "command": "qsv sqlp",
       "expected": {
         "data": [
           [
@@ -1338,19 +1287,12 @@
             "No"
           ]
         ]
-      },
-      "tags": [
-        "case-sensitivity"
-      ]
+      }
     },
     {
-      "name": "sqlp_boston311_case_expression_zlib",
-      "description": "Sqlp Boston311 Case Expression Zlib",
-      "command": "qsv sqlp \"&test_file\" \"\n        r#\\\"SELECT case_enquiry_id, \n           CASE closed_dt is null and case_title ~* 'graffiti' \n              WHEN True THEN 'Yes' \n              WHEN False THEN 'No' \n              ELSE 'N/A'\n           END as graffiti_related\n           from read_csv('boston311-100.csv.zlib'\"",
-      "args": [
-        "&test_file",
-        "\n        r#\"SELECT case_enquiry_id, \n           CASE closed_dt is null and case_title ~* 'graffiti' \n              WHEN True THEN 'Yes' \n              WHEN False THEN 'No' \n              ELSE 'N/A'\n           END as graffiti_related\n           from read_csv('boston311-100.csv.zlib'"
-      ],
+      "name": "sqlp_join_outer_full_22",
+      "description": "Sqlp Join Outer Full 22",
+      "command": "qsv sqlp",
       "expected": {
         "data": [
           [
@@ -1418,19 +1360,12 @@
             "No"
           ]
         ]
-      },
-      "tags": [
-        "case-sensitivity"
-      ]
+      }
     },
     {
-      "name": "sqlp_boston311_case_expression_streaming",
-      "description": "Sqlp Boston311 Case Expression Streaming",
-      "command": "qsv sqlp \"&test_file\" \"\n            r#\\\"SELECT case_enquiry_id, \n           CASE closed_dt is null and case_title ~* 'graffiti' \n              WHEN True THEN 'Yes' \n              WHEN False THEN 'No' \n              ELSE 'N/A'\n           END as graffiti_related\n           from _t_1\n           where case_status = 'Open'\\\"#,\n        \"",
-      "args": [
-        "&test_file",
-        "\n            r#\"SELECT case_enquiry_id, \n           CASE closed_dt is null and case_title ~* 'graffiti' \n              WHEN True THEN 'Yes' \n              WHEN False THEN 'No' \n              ELSE 'N/A'\n           END as graffiti_related\n           from _t_1\n           where case_status = 'Open'\"#,\n        "
-      ],
+      "name": "sqlp_join_outer_full_23",
+      "description": "Sqlp Join Outer Full 23",
+      "command": "qsv sqlp --streaming",
       "options": {
         "--streaming": "true"
       },
@@ -1501,19 +1436,12 @@
             "No"
           ]
         ]
-      },
-      "tags": [
-        "case-sensitivity"
-      ]
+      }
     },
     {
-      "name": "sqlp_boston311_case",
-      "description": "Sqlp Boston311 Case",
-      "command": "qsv sqlp \"&test_file\" \"\n        r#\\\"SELECT case_enquiry_id, \n           CASE \n              WHEN case_title ~* 'graffiti' THEN 'Graffitti' \n              WHEN case_title ~* 'vehicle' THEN 'Vehicle'\n              WHEN case_title ~* 'sidewalk' THEN 'Sidewalk'\n              ELSE 'Something else'\n           END as topic\n           from _t_1\n           where case_status = 'Open'\\\"#,\n    \"",
-      "args": [
-        "&test_file",
-        "\n        r#\"SELECT case_enquiry_id, \n           CASE \n              WHEN case_title ~* 'graffiti' THEN 'Graffitti' \n              WHEN case_title ~* 'vehicle' THEN 'Vehicle'\n              WHEN case_title ~* 'sidewalk' THEN 'Sidewalk'\n              ELSE 'Something else'\n           END as topic\n           from _t_1\n           where case_status = 'Open'\"#,\n    "
-      ],
+      "name": "sqlp_join_outer_full_24",
+      "description": "Sqlp Join Outer Full 24",
+      "command": "qsv sqlp",
       "expected": {
         "data": [
           [
@@ -1581,19 +1509,12 @@
             "Sidewalk"
           ]
         ]
-      },
-      "tags": [
-        "case-sensitivity"
-      ]
+      }
     },
     {
-      "name": "sqlp_boston311_case_zstd",
-      "description": "Sqlp Boston311 Case Zstd",
-      "command": "qsv sqlp \"&test_file\" \"\n        r#\\\"SELECT case_enquiry_id, \n           CASE \n              WHEN case_title ~* 'graffiti' THEN 'Graffitti' \n              WHEN case_title ~* 'vehicle' THEN 'Vehicle'\n              WHEN case_title ~* 'sidewalk' THEN 'Sidewalk'\n              ELSE 'Something else'\n           END as topic\n           from read_csv('boston311-100.csv.zst'\"",
-      "args": [
-        "&test_file",
-        "\n        r#\"SELECT case_enquiry_id, \n           CASE \n              WHEN case_title ~* 'graffiti' THEN 'Graffitti' \n              WHEN case_title ~* 'vehicle' THEN 'Vehicle'\n              WHEN case_title ~* 'sidewalk' THEN 'Sidewalk'\n              ELSE 'Something else'\n           END as topic\n           from read_csv('boston311-100.csv.zst'"
-      ],
+      "name": "sqlp_join_outer_full_25",
+      "description": "Sqlp Join Outer Full 25",
+      "command": "qsv sqlp",
       "expected": {
         "data": [
           [
@@ -1661,14 +1582,11 @@
             "Sidewalk"
           ]
         ]
-      },
-      "tags": [
-        "case-sensitivity"
-      ]
+      }
     },
     {
-      "name": "sqlp_literal_pattern_match",
-      "description": "Sqlp Literal Pattern Match",
+      "name": "sqlp_join_outer_full_26",
+      "description": "Sqlp Join Outer Full 26",
       "input": {
         "data": [
           [
@@ -1698,10 +1616,9 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv \"r#\\\"SELECT * FROM test WHERE val NOT REGEXP '.*c$'\\\"#\"",
+      "command": "qsv sqlp test.csv",
       "args": [
-        "test.csv",
-        "r#\"SELECT * FROM test WHERE val NOT REGEXP '.*c$'\"#"
+        "test.csv"
       ],
       "expected": {
         "data": [
@@ -1725,8 +1642,8 @@
       }
     },
     {
-      "name": "sqlp_expression_pattern_match",
-      "description": "Sqlp Expression Pattern Match",
+      "name": "sqlp_join_outer_full_27",
+      "description": "Sqlp Join Outer Full 27",
       "command": "qsv sqlp test.csv \"SELECT idx, val FROM test WHERE val REGEXP pat\"",
       "args": [
         "test.csv",
@@ -1750,8 +1667,8 @@
       }
     },
     {
-      "name": "sqlp_sql_join_on_subquery",
-      "description": "Sqlp Sql Join On Subquery",
+      "name": "sqlp_join_outer_full_28",
+      "description": "Sqlp Join Outer Full 28",
       "input": {
         "data": [
           [
@@ -1781,11 +1698,10 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv test2.csv \"\n        \\\"SELECT * FROM test t1 JOIN (SELECT idx, val FROM test2 WHERE idx > 2\"",
+      "command": "qsv sqlp test.csv test2.csv",
       "args": [
         "test.csv",
-        "test2.csv",
-        "\n        \"SELECT * FROM test t1 JOIN (SELECT idx, val FROM test2 WHERE idx > 2"
+        "test2.csv"
       ],
       "expected": {
         "data": [
@@ -1811,8 +1727,8 @@
       }
     },
     {
-      "name": "sqlp_sql_join_on_literal_string_comparison",
-      "description": "Sqlp Sql Join On Literal String Comparison",
+      "name": "sqlp_join_outer_full_29",
+      "description": "Sqlp Join Outer Full 29",
       "input": {
         "data": [
           [
@@ -1838,11 +1754,10 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv test2.csv \"\n        \\\"SELECT t1.name, t1.role, t2.dept FROM test t1 INNER JOIN test2 t2 ON t1.name = t2.name \\\\\n         AND t1.role = 'admin' ORDER BY t1.name\\\",\n    \"",
+      "command": "qsv sqlp test.csv test2.csv",
       "args": [
         "test.csv",
-        "test2.csv",
-        "\n        \"SELECT t1.name, t1.role, t2.dept FROM test t1 INNER JOIN test2 t2 ON t1.name = t2.name \\\n         AND t1.role = 'admin' ORDER BY t1.name\",\n    "
+        "test2.csv"
       ],
       "expected": {
         "data": [
@@ -1865,8 +1780,8 @@
       }
     },
     {
-      "name": "sqlp_sql_join_on_expression_comparison",
-      "description": "Sqlp Sql Join On Expression Comparison",
+      "name": "sqlp_join_outer_full_30",
+      "description": "Sqlp Join Outer Full 30",
       "input": {
         "data": [
           [
@@ -1888,11 +1803,10 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv test2.csv \"\n            \\\"SELECT t1.code AS code1, t2.code AS code2, (t1.value * t2.value\"",
+      "command": "qsv sqlp test.csv test2.csv",
       "args": [
         "test.csv",
-        "test2.csv",
-        "\n            \"SELECT t1.code AS code1, t2.code AS code2, (t1.value * t2.value"
+        "test2.csv"
       ],
       "expected": {
         "data": [
@@ -1915,8 +1829,8 @@
       }
     },
     {
-      "name": "sqlp_sql_from_subquery",
-      "description": "Sqlp Sql From Subquery",
+      "name": "sqlp_join_outer_full_31",
+      "description": "Sqlp Join Outer Full 31",
       "input": {
         "data": [
           [
@@ -1946,11 +1860,10 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv test2.csv \"\n        \\\"SELECT * FROM (SELECT idx, val FROM test WHERE idx > 2\"",
+      "command": "qsv sqlp test.csv test2.csv",
       "args": [
         "test.csv",
-        "test2.csv",
-        "\n        \"SELECT * FROM (SELECT idx, val FROM test WHERE idx > 2"
+        "test2.csv"
       ],
       "expected": {
         "data": [
@@ -1976,8 +1889,8 @@
       }
     },
     {
-      "name": "sqlp_sql_tsv",
-      "description": "Sqlp Sql Tsv",
+      "name": "sqlp_join_outer_full_32",
+      "description": "Sqlp Join Outer Full 32",
       "input": {
         "data": [
           [
@@ -2014,8 +1927,8 @@
       ]
     },
     {
-      "name": "sqlp_sql_ssv",
-      "description": "Sqlp Sql Ssv",
+      "name": "sqlp_join_outer_full_33",
+      "description": "Sqlp Join Outer Full 33",
       "input": {
         "data": [
           [
@@ -2052,8 +1965,8 @@
       ]
     },
     {
-      "name": "sqlp_sql_ssv_output",
-      "description": "Sqlp Sql Ssv Output",
+      "name": "sqlp_join_outer_full_34",
+      "description": "Sqlp Join Outer Full 34",
       "command": "qsv sqlp test.ssv \"SELECT * FROM test\"",
       "args": [
         "test.ssv",
@@ -2061,16 +1974,13 @@
       ]
     },
     {
-      "name": "sqlp_issue2014",
-      "description": "Sqlp Issue2014",
-      "command": "qsv sqlp test.ssv \"SELECT * FROM test\" decompress \"output_file.clone(\" \"output_file.clone(\" output_file",
+      "name": "sqlp_join_outer_full_35",
+      "description": "Sqlp Join Outer Full 35",
+      "command": "qsv sqlp test.ssv \"SELECT * FROM test\" decompress",
       "args": [
         "test.ssv",
         "SELECT * FROM test",
-        "decompress",
-        "output_file.clone(",
-        "output_file.clone(",
-        "output_file"
+        "decompress"
       ],
       "expected": {
         "data": [
@@ -2098,8 +2008,8 @@
       }
     },
     {
-      "name": "sqlp_binary_functions",
-      "description": "Sqlp Binary Functions",
+      "name": "sqlp_join_outer_full_36",
+      "description": "Sqlp Join Outer Full 36",
       "input": {
         "data": [
           [
@@ -2111,15 +2021,14 @@
         ],
         "filename": "dummy.csv"
       },
-      "command": "qsv sqlp dummy.csv \"\n            r#\\\"\n        SELECT *,\n          -- bit strings\n          b''                 AS b0,\n          b'1001'             AS b1,\n          b'11101011'         AS b2,\n          b'1111110100110010' AS b3,\n          -- hex strings\n          x''                 AS x0,\n          x'FF'               AS x1,\n          x'4142'             AS x2,\n          x'DeadBeef'         AS x3,\n        FROM dummy\n        \\\"#,\n        \"",
+      "command": "qsv sqlp dummy.csv",
       "args": [
-        "dummy.csv",
-        "\n            r#\"\n        SELECT *,\n          -- bit strings\n          b''                 AS b0,\n          b'1001'             AS b1,\n          b'11101011'         AS b2,\n          b'1111110100110010' AS b3,\n          -- hex strings\n          x''                 AS x0,\n          x'FF'               AS x1,\n          x'4142'             AS x2,\n          x'DeadBeef'         AS x3,\n        FROM dummy\n        \"#,\n        "
+        "dummy.csv"
       ]
     },
     {
-      "name": "sqlp_length_fns",
-      "description": "Sqlp Length Fns",
+      "name": "sqlp_join_outer_full_37",
+      "description": "Sqlp Join Outer Full 37",
       "input": {
         "data": [
           [
@@ -2137,15 +2046,14 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv \"\n        r#\\\"\n        SELECT\n              words,\n              LENGTH(words\"",
+      "command": "qsv sqlp test.csv",
       "args": [
-        "test.csv",
-        "\n        r#\"\n        SELECT\n              words,\n              LENGTH(words"
+        "test.csv"
       ]
     },
     {
-      "name": "sqlp_length_fns_rnull_set_to_null",
-      "description": "Sqlp Length Fns Rnull Set To Null",
+      "name": "sqlp_join_outer_full_38",
+      "description": "Sqlp Join Outer Full 38",
       "input": {
         "data": [
           [
@@ -2163,15 +2071,14 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv \"\n            r#\\\"\n        SELECT\n              words,\n              LENGTH(words\"",
+      "command": "qsv sqlp test.csv",
       "args": [
-        "test.csv",
-        "\n            r#\"\n        SELECT\n              words,\n              LENGTH(words"
+        "test.csv"
       ]
     },
     {
-      "name": "sqlp_control_flow",
-      "description": "Sqlp Control Flow",
+      "name": "sqlp_join_outer_full_39",
+      "description": "Sqlp Join Outer Full 39",
       "input": {
         "data": [
           [
@@ -2212,10 +2119,9 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv \"\n        r#\\\"\n        SELECT\n          COALESCE(x,y,z\"",
+      "command": "qsv sqlp test.csv",
       "args": [
-        "test.csv",
-        "\n        r#\"\n        SELECT\n          COALESCE(x,y,z"
+        "test.csv"
       ],
       "expected": {
         "data": [
@@ -2286,8 +2192,8 @@
       }
     },
     {
-      "name": "sqlp_div_sign",
-      "description": "Sqlp Div Sign",
+      "name": "sqlp_join_outer_full_40",
+      "description": "Sqlp Join Outer Full 40",
       "input": {
         "data": [
           [
@@ -2317,10 +2223,9 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv \"\n        r#\\\"\n        SELECT\n            a / b AS a_div_b,\n            a // b AS a_floordiv_b,\n            SIGN(b\"",
+      "command": "qsv sqlp test.csv",
       "args": [
-        "test.csv",
-        "\n        r#\"\n        SELECT\n            a / b AS a_div_b,\n            a // b AS a_floordiv_b,\n            SIGN(b"
+        "test.csv"
       ],
       "expected": {
         "data": [
@@ -2358,8 +2263,8 @@
       }
     },
     {
-      "name": "sqlp_string_replace",
-      "description": "Sqlp String Replace",
+      "name": "sqlp_join_outer_full_41",
+      "description": "Sqlp Join Outer Full 41",
       "input": {
         "data": [
           [
@@ -2374,10 +2279,9 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv \"\n            r#\\\"\n        SELECT\n        REPLACE(\n          REPLACE(words, 'coffee', 'tea'\"",
+      "command": "qsv sqlp test.csv",
       "args": [
-        "test.csv",
-        "\n            r#\"\n        SELECT\n        REPLACE(\n          REPLACE(words, 'coffee', 'tea'"
+        "test.csv"
       ],
       "expected": {
         "data": [
@@ -2394,8 +2298,8 @@
       }
     },
     {
-      "name": "sqlp_compound_join_basic",
-      "description": "Sqlp Compound Join Basic",
+      "name": "sqlp_join_outer_full_42",
+      "description": "Sqlp Join Outer Full 42",
       "input": {
         "data": [
           [
@@ -2425,10 +2329,7 @@
         ],
         "filename": "test1.csv"
       },
-      "command": "qsv sqlp \"\n            r#\\\"\n        SELECT * FROM test1\n         INNER JOIN test2 ON test1.a = test2.a AND test1.b = test2.b\n\\\"#,\n        \"",
-      "args": [
-        "\n            r#\"\n        SELECT * FROM test1\n         INNER JOIN test2 ON test1.a = test2.a AND test1.b = test2.b\n\"#,\n        "
-      ],
+      "command": "qsv sqlp --truncate-ragged-lines",
       "options": {
         "--truncate-ragged-lines": "true"
       },
@@ -2453,14 +2354,11 @@
             "4"
           ]
         ]
-      },
-      "tags": [
-        "basic"
-      ]
+      }
     },
     {
-      "name": "sqlp_compound_join_diff_colnames",
-      "description": "Sqlp Compound Join Diff Colnames",
+      "name": "sqlp_join_outer_full_43",
+      "description": "Sqlp Join Outer Full 43",
       "input": {
         "data": [
           [
@@ -2490,10 +2388,7 @@
         ],
         "filename": "test1.csv"
       },
-      "command": "qsv sqlp \"\n            r#\\\"\n        SELECT * FROM test1\n         INNER JOIN test2 ON test1.a = test2.b AND test1.b = test2.a\n\\\"#,\n        \"",
-      "args": [
-        "\n            r#\"\n        SELECT * FROM test1\n         INNER JOIN test2 ON test1.a = test2.b AND test1.b = test2.a\n\"#,\n        "
-      ],
+      "command": "qsv sqlp --truncate-ragged-lines",
       "options": {
         "--truncate-ragged-lines": "true"
       },
@@ -2524,8 +2419,8 @@
       }
     },
     {
-      "name": "sqlp_compound_join_three_tables",
-      "description": "Sqlp Compound Join Three Tables",
+      "name": "sqlp_join_outer_full_44",
+      "description": "Sqlp Join Outer Full 44",
       "input": {
         "data": [
           [
@@ -2555,10 +2450,7 @@
         ],
         "filename": "test1.csv"
       },
-      "command": "qsv sqlp \"\n            r#\\\"\n            SELECT * FROM test1\n            INNER JOIN test2\n                ON test1.a = test2.a AND test1.b = test2.b\n            INNER JOIN test3\n                ON test1.a = test3.a AND test1.b = test3.b\n\\\"#,\n        \"",
-      "args": [
-        "\n            r#\"\n            SELECT * FROM test1\n            INNER JOIN test2\n                ON test1.a = test2.a AND test1.b = test2.b\n            INNER JOIN test3\n                ON test1.a = test3.a AND test1.b = test3.b\n\"#,\n        "
-      ],
+      "command": "qsv sqlp --truncate-ragged-lines",
       "options": {
         "--truncate-ragged-lines": "true"
       },
@@ -2595,8 +2487,8 @@
       }
     },
     {
-      "name": "sqlp_string_concat",
-      "description": "Sqlp String Concat",
+      "name": "sqlp_join_outer_full_45",
+      "description": "Sqlp Join Outer Full 45",
       "input": {
         "data": [
           [
@@ -2622,10 +2514,9 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv \"\n        r#\\\"\n        SELECT\n           (\\\"x\\\" || \\\"x\\\" || \\\"y\\\"\"",
+      "command": "qsv sqlp test.csv",
       "args": [
-        "test.csv",
-        "\n        r#\"\n        SELECT\n           (\"x\" || \"x\" || \"y\""
+        "test.csv"
       ],
       "expected": {
         "data": [
@@ -2669,8 +2560,8 @@
       }
     },
     {
-      "name": "sqlp_string_right_reverse",
-      "description": "Sqlp String Right Reverse",
+      "name": "sqlp_join_outer_full_46",
+      "description": "Sqlp Join Outer Full 46",
       "input": {
         "data": [
           [
@@ -2691,10 +2582,9 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv \"\n        r#\\\"\n        SELECT\n           LEFT(txt,2\"",
+      "command": "qsv sqlp test.csv",
       "args": [
-        "test.csv",
-        "\n        r#\"\n        SELECT\n           LEFT(txt,2"
+        "test.csv"
       ],
       "expected": {
         "data": [
@@ -2727,8 +2617,8 @@
       }
     },
     {
-      "name": "sqlp_modulo",
-      "description": "Sqlp Modulo",
+      "name": "sqlp_join_outer_full_47",
+      "description": "Sqlp Join Outer Full 47",
       "input": {
         "data": [
           [
@@ -2770,10 +2660,9 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv \"\n        r#\\\"\n        SELECT\n            cast(a as float\"",
+      "command": "qsv sqlp test.csv",
       "args": [
-        "test.csv",
-        "\n        r#\"\n        SELECT\n            cast(a as float"
+        "test.csv"
       ],
       "expected": {
         "data": [
@@ -2817,8 +2706,8 @@
       }
     },
     {
-      "name": "sqlp_try_cast",
-      "description": "Sqlp Try Cast",
+      "name": "sqlp_join_outer_full_48",
+      "description": "Sqlp Join Outer Full 48",
       "input": {
         "data": [
           [
@@ -2840,10 +2729,9 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv \"\n        r#\\\"\n        SELECT\n            try_cast(foo as uint2\"",
+      "command": "qsv sqlp test.csv",
       "args": [
-        "test.csv",
-        "\n        r#\"\n        SELECT\n            try_cast(foo as uint2"
+        "test.csv"
       ],
       "expected": {
         "data": [
@@ -2867,8 +2755,8 @@
       }
     },
     {
-      "name": "sqlp_stddev_variance",
-      "description": "Sqlp Stddev Variance",
+      "name": "sqlp_join_outer_full_49",
+      "description": "Sqlp Join Outer Full 49",
       "input": {
         "data": [
           [
@@ -2898,10 +2786,9 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv sqlp test.csv \"\n        r#\\\"\n        SELECT\n            STDEV(v1\"",
+      "command": "qsv sqlp test.csv",
       "args": [
-        "test.csv",
-        "\n        r#\"\n        SELECT\n            STDEV(v1"
+        "test.csv"
       ],
       "expected": {
         "data": [
@@ -2929,8 +2816,8 @@
       }
     },
     {
-      "name": "sqlp_string_position",
-      "description": "Sqlp String Position",
+      "name": "sqlp_join_outer_full_50",
+      "description": "Sqlp Join Outer Full 50",
       "input": {
         "data": [
           [
@@ -2957,10 +2844,9 @@
         ],
         "filename": "cities.csv"
       },
-      "command": "qsv sqlp cities.csv \"\n        r#\\\"\n        SELECT\n        POSITION('a' IN city\"",
+      "command": "qsv sqlp cities.csv",
       "args": [
-        "cities.csv",
-        "\n        r#\"\n        SELECT\n        POSITION('a' IN city"
+        "cities.csv"
       ],
       "expected": {
         "data": [
@@ -3010,8 +2896,8 @@
       }
     },
     {
-      "name": "sqlp_date_part",
-      "description": "Sqlp Date Part",
+      "name": "sqlp_join_outer_full_51",
+      "description": "Sqlp Join Outer Full 51",
       "input": {
         "data": [
           [
@@ -3023,10 +2909,9 @@
         ],
         "filename": "datestbl.csv"
       },
-      "command": "qsv sqlp datestbl.csv \"\n            r#\\\"\n        SELECT \n            DATE_PART('isoyear', datecol\"",
+      "command": "qsv sqlp datestbl.csv --try-parsedates",
       "args": [
-        "datestbl.csv",
-        "\n            r#\"\n        SELECT \n            DATE_PART('isoyear', datecol"
+        "datestbl.csv"
       ],
       "options": {
         "--try-parsedates": "true"
@@ -3075,8 +2960,8 @@
       }
     },
     {
-      "name": "sqlp_date_part_tz",
-      "description": "Sqlp Date Part Tz",
+      "name": "sqlp_join_outer_full_52",
+      "description": "Sqlp Join Outer Full 52",
       "input": {
         "data": [
           [
@@ -3097,10 +2982,9 @@
         ],
         "filename": "datestbl.csv"
       },
-      "command": "qsv sqlp datestbl.csv \"\n            r#\\\"\n        SELECT\n            DATE_PART('isoyear', datecol\"",
+      "command": "qsv sqlp datestbl.csv --try-parsedates",
       "args": [
-        "datestbl.csv",
-        "\n            r#\"\n        SELECT\n            DATE_PART('isoyear', datecol"
+        "datestbl.csv"
       ],
       "options": {
         "--try-parsedates": "true"
@@ -3216,12 +3100,11 @@
       }
     },
     {
-      "name": "sqlp_date",
-      "description": "Sqlp Date",
-      "command": "qsv sqlp SKIP_INPUT \"\n        r#\\\"\n        SELECT \n            DATE('2021-03-15'\"",
+      "name": "sqlp_join_outer_full_53",
+      "description": "Sqlp Join Outer Full 53",
+      "command": "qsv sqlp SKIP_INPUT",
       "args": [
-        "SKIP_INPUT",
-        "\n        r#\"\n        SELECT \n            DATE('2021-03-15'"
+        "SKIP_INPUT"
       ],
       "expected": {
         "data": [
@@ -3239,8 +3122,8 @@
       }
     },
     {
-      "name": "sqlp_date_strftime",
-      "description": "Sqlp Date Strftime",
+      "name": "sqlp_join_outer_full_54",
+      "description": "Sqlp Join Outer Full 54",
       "input": {
         "data": [
           [
@@ -3261,10 +3144,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n            r#\\\"\n        SELECT\n      STRFTIME(dtm,'%m.%d.%Y/%T'\"",
+      "command": "qsv sqlp data.csv --try-parsedates",
       "args": [
-        "data.csv",
-        "\n            r#\"\n        SELECT\n      STRFTIME(dtm,'%m.%d.%Y/%T'"
+        "data.csv"
       ],
       "options": {
         "--try-parsedates": "true"
@@ -3292,16 +3174,144 @@
       }
     },
     {
-      "name": "sqlp_read_jsonl",
-      "description": "Sqlp Read Jsonl",
+      "name": "sqlp_join_outer_full_55",
+      "description": "Sqlp Join Outer Full 55",
       "command": "qsv sqlp SKIP_INPUT",
       "args": [
         "SKIP_INPUT"
-      ]
+      ],
+      "expected": {
+        "data": [
+          [
+            "case_enquiry_id",
+            "open_dt",
+            "target_dt",
+            "closed_dt",
+            "ontime",
+            "case_status",
+            "closure_reason",
+            "case_title",
+            "subject",
+            "reason",
+            "type",
+            "queue",
+            "department",
+            "submittedphoto",
+            "closedphoto",
+            "location",
+            "fire_district",
+            "pwd_district",
+            "city_council_district",
+            "police_district",
+            "neighborhood",
+            "neighborhood_services_district",
+            "ward",
+            "precinct",
+            "location_street_name",
+            "location_zipcode",
+            "latitude",
+            "longitude",
+            "source"
+          ],
+          [
+            "101004120108",
+            "2022-01-08 12:54:49",
+            "2022-01-11 08:30:00",
+            "2022-01-09 06:43:06",
+            "ONTIME",
+            "Closed",
+            "Case Closed. Closed date : Sun Jan 09 06:43:06 EST 2022 Noted ",
+            "CE Collection",
+            "Public Works Department",
+            "Street Cleaning",
+            "CE Collection",
+            "PWDx_District 1C: Downtown",
+            "PWDx",
+            "",
+            "",
+            "198 W Springfield St  Roxbury  MA  02118",
+            "4",
+            "1C",
+            "7",
+            "D4",
+            "South End",
+            "6",
+            "Ward 9",
+            "0902",
+            "198 W Springfield St",
+            "2118",
+            "42.3401",
+            "-71.0803",
+            "City Worker App"
+          ],
+          [
+            "101004141354",
+            "2022-01-20 08:07:49",
+            "2022-01-21 08:30:00",
+            "2022-01-20 08:45:03",
+            "ONTIME",
+            "Closed",
+            "Case Closed. Closed date : Thu Jan 20 08:45:03 EST 2022 Noted ",
+            "CE Collection",
+            "Public Works Department",
+            "Street Cleaning",
+            "CE Collection",
+            "PWDx_District 1B: North End",
+            "PWDx",
+            "",
+            "",
+            "21-23 Temple St  Boston  MA  02114",
+            "3",
+            "1B",
+            "1",
+            "A1",
+            "Beacon Hill",
+            "3",
+            "Ward 3",
+            "0306",
+            "21-23 Temple St",
+            "2114",
+            "42.3606",
+            "-71.0638",
+            "City Worker App"
+          ],
+          [
+            "101004141367",
+            "2022-01-20 08:15:45",
+            "2022-01-21 08:30:00",
+            "2022-01-20 08:45:12",
+            "ONTIME",
+            "Closed",
+            "Case Closed. Closed date : Thu Jan 20 08:45:12 EST 2022 Noted ",
+            "CE Collection",
+            "Public Works Department",
+            "Street Cleaning",
+            "CE Collection",
+            "PWDx_District 1B: North End",
+            "PWDx",
+            "",
+            "",
+            "12 Derne St  Boston  MA  02114",
+            "3",
+            "1B",
+            "1",
+            "A1",
+            "Beacon Hill",
+            "3",
+            "Ward 3",
+            "0306",
+            "12 Derne St",
+            "2114",
+            "42.3596",
+            "-71.0634",
+            "City Worker App"
+          ]
+        ]
+      }
     },
     {
-      "name": "sqlp_string_like_ops",
-      "description": "Sqlp String Like Ops",
+      "name": "sqlp_join_outer_full_56",
+      "description": "Sqlp Join Outer Full 56",
       "input": {
         "data": [
           [
@@ -3323,10 +3333,9 @@
         ],
         "filename": "likedata.csv"
       },
-      "command": "qsv sqlp likedata.csv \"\n        r#\\\"\n        SELECT\n            x,\n            x ^@ 'a' AS x_starts_with_a,\n            x ~~* '%B' AS x_ends_with_b_case_insensitive,\n            x ^@ y AS x_starts_with_y,\n            x ~~ '%a' AS x_ends_with_a\n        FROM likedata\\\"#,\n    \"",
+      "command": "qsv sqlp likedata.csv",
       "args": [
-        "likedata.csv",
-        "\n        r#\"\n        SELECT\n            x,\n            x ^@ 'a' AS x_starts_with_a,\n            x ~~* '%B' AS x_ends_with_b_case_insensitive,\n            x ^@ y AS x_starts_with_y,\n            x ~~ '%a' AS x_ends_with_a\n        FROM likedata\"#,\n    "
+        "likedata.csv"
       ],
       "expected": {
         "data": [
@@ -3362,8 +3371,8 @@
       }
     },
     {
-      "name": "sqlp_natural_join",
-      "description": "Sqlp Natural Join",
+      "name": "sqlp_join_outer_full_57",
+      "description": "Sqlp Join Outer Full 57",
       "input": {
         "data": [
           [
@@ -3389,10 +3398,7 @@
         ],
         "filename": "data1.csv"
       },
-      "command": "qsv sqlp \"\n        r#\\\"SELECT COLUMNS('^[^:]+$'\"",
-      "args": [
-        "\n        r#\"SELECT COLUMNS('^[^:]+$'"
-      ],
+      "command": "qsv sqlp",
       "expected": {
         "data": [
           [
@@ -3427,8 +3433,8 @@
       }
     },
     {
-      "name": "sqlp_star_ilike",
-      "description": "Sqlp Star Ilike",
+      "name": "sqlp_join_outer_full_58",
+      "description": "Sqlp Join Outer Full 58",
       "input": {
         "data": [
           [
@@ -3462,14 +3468,11 @@
         ],
         "filename": "starlikedata.csv"
       },
-      "command": "qsv sqlp starlikedata.csv \"\n        r#\\\"\n        SELECT * ILIKE '%a%e%'\n  FROM starlikedata\n  ORDER BY FirstName\\\"#,\n    \" starlikedata.csv \"\n        r#\\\"\n        SELECT * ILIKE '%I%' RENAME (FirstName AS Name\" starlikedata.csv \"\n        r#\\\"\n        SELECT * EXCLUDE (ID, City, LastName\"",
+      "command": "qsv sqlp starlikedata.csv starlikedata.csv starlikedata.csv",
       "args": [
         "starlikedata.csv",
-        "\n        r#\"\n        SELECT * ILIKE '%a%e%'\n  FROM starlikedata\n  ORDER BY FirstName\"#,\n    ",
         "starlikedata.csv",
-        "\n        r#\"\n        SELECT * ILIKE '%I%' RENAME (FirstName AS Name",
-        "starlikedata.csv",
-        "\n        r#\"\n        SELECT * EXCLUDE (ID, City, LastName"
+        "starlikedata.csv"
       ],
       "expected": {
         "data": [
@@ -3497,8 +3500,8 @@
       }
     },
     {
-      "name": "sqlp_skip_input",
-      "description": "Sqlp Skip Input",
+      "name": "sqlp_join_outer_full_59",
+      "description": "Sqlp Join Outer Full 59",
       "command": "qsv sqlp SKIP_INPUT \"SELECT 1 AS one, '2' AS two, 3.0 AS three\"",
       "args": [
         "SKIP_INPUT",
@@ -3520,17 +3523,16 @@
       }
     },
     {
-      "name": "sqlp_autotab_delim",
-      "description": "Sqlp Autotab Delim",
-      "command": "qsv sqlp cities_array.tsv \"\n            r#\\\"\n            SELECT \n                countryid, cities\n            FROM cities_array\n    \\\"#,\n        \"",
+      "name": "sqlp_join_outer_full_60",
+      "description": "Sqlp Join Outer Full 60",
+      "command": "qsv sqlp cities_array.tsv",
       "args": [
-        "cities_array.tsv",
-        "\n            r#\"\n            SELECT \n                countryid, cities\n            FROM cities_array\n    \"#,\n        "
+        "cities_array.tsv"
       ]
     },
     {
-      "name": "sqlp_dollar_quoting_string_literals",
-      "description": "Sqlp Dollar Quoting String Literals",
+      "name": "sqlp_join_outer_full_61",
+      "description": "Sqlp Join Outer Full 61",
       "input": {
         "data": [
           [
@@ -3572,15 +3574,14 @@
         ],
         "filename": "cities_array.csv"
       },
-      "command": "qsv sqlp cities_array.csv \"\n            r#\\\"SELECT country_id, $$This is a literal $,%,',\\\"$$ AS complex_literal FROM cities_array\\\"#,\n        \"",
+      "command": "qsv sqlp cities_array.csv",
       "args": [
-        "cities_array.csv",
-        "\n            r#\"SELECT country_id, $$This is a literal $,%,',\"$$ AS complex_literal FROM cities_array\"#,\n        "
+        "cities_array.csv"
       ]
     },
     {
-      "name": "sqlp_string_function_joins",
-      "description": "Sqlp String Function Joins",
+      "name": "sqlp_join_outer_full_62",
+      "description": "Sqlp Join Outer Full 62",
       "input": {
         "data": [
           [
@@ -3606,13 +3607,7 @@
         ],
         "filename": "left.csv"
       },
-      "command": "qsv sqlp \"\n        \\\"SELECT l.val as left_val, r.val as right_val FROM left l CROSS JOIN right r WHERE \\\\\n         STRPOS(r.val, l.val\" \"\n        \\\"SELECT l.val as left_val, r.val as right_val FROM left l CROSS JOIN right r WHERE \\\\\n         STARTS_WITH(r.val, l.val\" \"\n        \\\"SELECT l.val as left_val, r.val as right_val FROM left l CROSS JOIN right r WHERE \\\\\n         ENDS_WITH(r.val, l.val\" \"\n        \\\"SELECT l.val as left_val, r.val as right_val FROM left l CROSS JOIN right r WHERE \\\\\n         STRPOS(l.val, r.val\"",
-      "args": [
-        "\n        \"SELECT l.val as left_val, r.val as right_val FROM left l CROSS JOIN right r WHERE \\\n         STRPOS(r.val, l.val",
-        "\n        \"SELECT l.val as left_val, r.val as right_val FROM left l CROSS JOIN right r WHERE \\\n         STARTS_WITH(r.val, l.val",
-        "\n        \"SELECT l.val as left_val, r.val as right_val FROM left l CROSS JOIN right r WHERE \\\n         ENDS_WITH(r.val, l.val",
-        "\n        \"SELECT l.val as left_val, r.val as right_val FROM left l CROSS JOIN right r WHERE \\\n         STRPOS(l.val, r.val"
-      ],
+      "command": "qsv sqlp",
       "expected": {
         "data": [
           [
@@ -3647,8 +3642,8 @@
       }
     },
     {
-      "name": "sqlp_string_to_array",
-      "description": "Sqlp String To Array",
+      "name": "sqlp_join_outer_full_63",
+      "description": "Sqlp Join Outer Full 63",
       "input": {
         "data": [
           [
@@ -3670,15 +3665,14 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n            r#\\\"\n        SELECT id, STRING_TO_ARRAY(cities, ','\"",
+      "command": "qsv sqlp data.csv",
       "args": [
-        "data.csv",
-        "\n            r#\"\n        SELECT id, STRING_TO_ARRAY(cities, ','"
+        "data.csv"
       ]
     },
     {
-      "name": "sqlp_split_part",
-      "description": "Sqlp Split Part",
+      "name": "sqlp_join_outer_full_64",
+      "description": "Sqlp Join Outer Full 64",
       "input": {
         "data": [
           [
@@ -3702,10 +3696,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n        r#\\\"\n        SELECT\n          SPLIT_PART(s,',',1\"",
+      "command": "qsv sqlp data.csv",
       "args": [
-        "data.csv",
-        "\n        r#\"\n        SELECT\n          SPLIT_PART(s,',',1"
+        "data.csv"
       ],
       "expected": {
         "data": [
@@ -3733,8 +3726,8 @@
       }
     },
     {
-      "name": "sqlp_corr",
-      "description": "Sqlp Corr",
+      "name": "sqlp_join_outer_full_65",
+      "description": "Sqlp Join Outer Full 65",
       "input": {
         "data": [
           [
@@ -3781,8 +3774,8 @@
       }
     },
     {
-      "name": "sqlp_covar_pop",
-      "description": "Sqlp Covar Pop",
+      "name": "sqlp_join_outer_full_66",
+      "description": "Sqlp Join Outer Full 66",
       "input": {
         "data": [
           [
@@ -3829,8 +3822,8 @@
       }
     },
     {
-      "name": "sqlp_corr_covar_covar_pop",
-      "description": "Sqlp Corr Covar Covar Pop",
+      "name": "sqlp_join_outer_full_67",
+      "description": "Sqlp Join Outer Full 67",
       "input": {
         "data": [
           [
@@ -3860,10 +3853,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n            \\\"SELECT CORR(foo, bar\"",
+      "command": "qsv sqlp data.csv",
       "args": [
-        "data.csv",
-        "\n            \"SELECT CORR(foo, bar"
+        "data.csv"
       ],
       "expected": {
         "data": [
@@ -3881,9 +3873,9 @@
       }
     },
     {
-      "name": "sqlp_decimal_comma_validation",
-      "description": "Sqlp Decimal Comma Validation",
-      "command": "qsv sqlp data.csv data.csv data.csv data.csv",
+      "name": "sqlp_join_outer_full_68",
+      "description": "Sqlp Join Outer Full 68",
+      "command": "qsv sqlp data.csv data.csv data.csv data.csv --decimal-comma \"select * from _t_1\"",
       "args": [
         "data.csv",
         "data.csv",
@@ -3898,9 +3890,9 @@
       ]
     },
     {
-      "name": "sqlp_decimal_comma_validation_with_tsv_file",
-      "description": "Sqlp Decimal Comma Validation With Tsv File",
-      "command": "qsv sqlp data.tsv",
+      "name": "sqlp_join_outer_full_69",
+      "description": "Sqlp Join Outer Full 69",
+      "command": "qsv sqlp data.tsv --decimal-comma \"select * from _t_1\"",
       "args": [
         "data.tsv"
       ],
@@ -3927,9 +3919,9 @@
       }
     },
     {
-      "name": "sqlp_decimal_comma_validation_with_ssv_file",
-      "description": "Sqlp Decimal Comma Validation With Ssv File",
-      "command": "qsv sqlp data.ssv",
+      "name": "sqlp_join_outer_full_70",
+      "description": "Sqlp Join Outer Full 70",
+      "command": "qsv sqlp data.ssv --decimal-comma \"select * from _t_1\"",
       "args": [
         "data.ssv"
       ],
@@ -3938,9 +3930,9 @@
       }
     },
     {
-      "name": "sqlp_decimal_comma_validation_with_output_file",
-      "description": "Sqlp Decimal Comma Validation With Output File",
-      "command": "qsv sqlp data.csv data.csv",
+      "name": "sqlp_join_outer_full_71",
+      "description": "Sqlp Join Outer Full 71",
+      "command": "qsv sqlp data.csv data.csv --decimal-comma \"select * from _t_1\"",
       "args": [
         "data.csv",
         "data.csv"
@@ -3953,9 +3945,9 @@
       ]
     },
     {
-      "name": "sqlp_decimal_comma_validation_with_tsv_output",
-      "description": "Sqlp Decimal Comma Validation With Tsv Output",
-      "command": "qsv sqlp data.csv",
+      "name": "sqlp_join_outer_full_72",
+      "description": "Sqlp Join Outer Full 72",
+      "command": "qsv sqlp data.csv --decimal-comma \"select * from _t_1\"",
       "args": [
         "data.csv"
       ],
@@ -3967,9 +3959,9 @@
       ]
     },
     {
-      "name": "sqlp_decimal_comma_validation_with_ssv_output",
-      "description": "Sqlp Decimal Comma Validation With Ssv Output",
-      "command": "qsv sqlp data.csv",
+      "name": "sqlp_join_outer_full_73",
+      "description": "Sqlp Join Outer Full 73",
+      "command": "qsv sqlp data.csv --decimal-comma \"select * from _t_1\"",
       "args": [
         "data.csv"
       ],
@@ -3981,9 +3973,9 @@
       ]
     },
     {
-      "name": "sqlp_decimal_comma_validation_with_skip_input",
-      "description": "Sqlp Decimal Comma Validation With Skip Input",
-      "command": "qsv sqlp SKIP_INPUT",
+      "name": "sqlp_join_outer_full_74",
+      "description": "Sqlp Join Outer Full 74",
+      "command": "qsv sqlp SKIP_INPUT --decimal-comma \"select * from read_csv('data.csv')\"",
       "args": [
         "SKIP_INPUT"
       ],
@@ -3992,8 +3984,8 @@
       }
     },
     {
-      "name": "sqlp_union_positional",
-      "description": "Sqlp Union Positional",
+      "name": "sqlp_join_outer_full_75",
+      "description": "Sqlp Join Outer Full 75",
       "input": {
         "data": [
           [
@@ -4011,10 +4003,7 @@
         ],
         "filename": "df1.csv"
       },
-      "command": "qsv sqlp \"\n        r#\\\"SELECT u.* FROM (\n            SELECT * FROM df1\n            UNION\n            SELECT * FROM df2\n        \"",
-      "args": [
-        "\n        r#\"SELECT u.* FROM (\n            SELECT * FROM df1\n            UNION\n            SELECT * FROM df2\n        "
-      ],
+      "command": "qsv sqlp",
       "expected": {
         "data": [
           [
@@ -4041,8 +4030,8 @@
       }
     },
     {
-      "name": "sqlp_unnest_issue_3108_first",
-      "description": "Sqlp Unnest Issue 3108 First",
+      "name": "sqlp_join_outer_full_76",
+      "description": "Sqlp Join Outer Full 76",
       "input": {
         "data": [
           [
@@ -4082,14 +4071,11 @@
             "c"
           ]
         ]
-      },
-      "tags": [
-        "regression"
-      ]
+      }
     },
     {
-      "name": "sqlp_rank_funcs",
-      "description": "Sqlp Rank Funcs",
+      "name": "sqlp_join_outer_full_77",
+      "description": "Sqlp Join Outer Full 77",
       "input": {
         "data": [
           [
@@ -4135,14 +4121,11 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n        r#\\\"SELECT\n            value,\n            ROW_NUMBER(\" data.csv \"\n        r#\\\"SELECT\n            value,\n            ROW_NUMBER(\" data.csv \"\n        r#\\\"SELECT\n            category,\n            value,\n            ROW_NUMBER(\"",
+      "command": "qsv sqlp data.csv data.csv data.csv",
       "args": [
         "data.csv",
-        "\n        r#\"SELECT\n            value,\n            ROW_NUMBER(",
         "data.csv",
-        "\n        r#\"SELECT\n            value,\n            ROW_NUMBER(",
-        "data.csv",
-        "\n        r#\"SELECT\n            category,\n            value,\n            ROW_NUMBER("
+        "data.csv"
       ],
       "expected": {
         "data": [
@@ -4198,8 +4181,8 @@
       }
     },
     {
-      "name": "sqlp_named_window_references",
-      "description": "Sqlp Named Window References",
+      "name": "sqlp_join_outer_full_78",
+      "description": "Sqlp Join Outer Full 78",
       "input": {
         "data": [
           [
@@ -4245,12 +4228,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n        r#\\\"SELECT\n        category,\n        value,\n        SUM(value\" data.csv \"\n        r#\\\"SELECT\n        category,\n        value,\n        AVG(value\"",
+      "command": "qsv sqlp data.csv data.csv",
       "args": [
         "data.csv",
-        "\n        r#\"SELECT\n        category,\n        value,\n        SUM(value",
-        "data.csv",
-        "\n        r#\"SELECT\n        category,\n        value,\n        AVG(value"
+        "data.csv"
       ],
       "expected": {
         "data": [
@@ -4314,8 +4295,8 @@
       }
     },
     {
-      "name": "sqlp_array_to_string",
-      "description": "Sqlp Array To String",
+      "name": "sqlp_join_outer_full_79",
+      "description": "Sqlp Join Outer Full 79",
       "input": {
         "data": [
           [
@@ -4337,10 +4318,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n        r#\\\"\n        SELECT b, ARRAY_TO_STRING(\\\"a\\\",', '\"",
+      "command": "qsv sqlp data.csv",
       "args": [
-        "data.csv",
-        "\n        r#\"\n        SELECT b, ARRAY_TO_STRING(\"a\",', '"
+        "data.csv"
       ],
       "expected": {
         "data": [
@@ -4361,8 +4341,8 @@
       }
     },
     {
-      "name": "sqlp_unnest_issue_3108",
-      "description": "Sqlp Unnest Issue 3108",
+      "name": "sqlp_join_outer_full_80",
+      "description": "Sqlp Join Outer Full 80",
       "input": {
         "data": [
           [
@@ -4428,14 +4408,11 @@
             "d"
           ]
         ]
-      },
-      "tags": [
-        "regression"
-      ]
+      }
     },
     {
-      "name": "sqlp_distinct_basic",
-      "description": "Sqlp Distinct Basic",
+      "name": "sqlp_join_outer_full_81",
+      "description": "Sqlp Join Outer Full 81",
       "input": {
         "data": [
           [
@@ -4541,14 +4518,11 @@
             "NULL"
           ]
         ]
-      },
-      "tags": [
-        "basic"
-      ]
+      }
     },
     {
-      "name": "sqlp_distinct_multiple_columns",
-      "description": "Sqlp Distinct Multiple Columns",
+      "name": "sqlp_join_outer_full_82",
+      "description": "Sqlp Join Outer Full 82",
       "input": {
         "data": [
           [
@@ -4631,10 +4605,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n            \\\"SELECT DISTINCT category, subcategory FROM data ORDER BY category NULLS LAST, \\\\\n             subcategory\\\",\n        \"",
+      "command": "qsv sqlp data.csv",
       "args": [
-        "data.csv",
-        "\n            \"SELECT DISTINCT category, subcategory FROM data ORDER BY category NULLS LAST, \\\n             subcategory\",\n        "
+        "data.csv"
       ],
       "expected": {
         "data": [
@@ -4674,8 +4647,8 @@
       }
     },
     {
-      "name": "sqlp_distinct_with_nulls",
-      "description": "Sqlp Distinct With Nulls",
+      "name": "sqlp_join_outer_full_83",
+      "description": "Sqlp Join Outer Full 83",
       "input": {
         "data": [
           [
@@ -4784,8 +4757,8 @@
       }
     },
     {
-      "name": "sqlp_distinct_all_columns",
-      "description": "Sqlp Distinct All Columns",
+      "name": "sqlp_join_outer_full_84",
+      "description": "Sqlp Join Outer Full 84",
       "input": {
         "data": [
           [
@@ -4868,10 +4841,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n            \\\"SELECT DISTINCT * FROM data ORDER BY category NULLS LAST, subcategory, value, \\\\\n             status, score\\\",\n        \"",
+      "command": "qsv sqlp data.csv",
       "args": [
-        "data.csv",
-        "\n            \"SELECT DISTINCT * FROM data ORDER BY category NULLS LAST, subcategory, value, \\\n             status, score\",\n        "
+        "data.csv"
       ],
       "expected": {
         "data": [
@@ -4949,8 +4921,8 @@
       }
     },
     {
-      "name": "sqlp_distinct_on_basic",
-      "description": "Sqlp Distinct On Basic",
+      "name": "sqlp_join_outer_full_85",
+      "description": "Sqlp Join Outer Full 85",
       "input": {
         "data": [
           [
@@ -5033,10 +5005,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n            \\\"SELECT DISTINCT ON (category\"",
+      "command": "qsv sqlp data.csv",
       "args": [
-        "data.csv",
-        "\n            \"SELECT DISTINCT ON (category"
+        "data.csv"
       ],
       "expected": {
         "data": [
@@ -5066,14 +5037,11 @@
             "inactive"
           ]
         ]
-      },
-      "tags": [
-        "basic"
-      ]
+      }
     },
     {
-      "name": "sqlp_distinct_on_multiple_keys",
-      "description": "Sqlp Distinct On Multiple Keys",
+      "name": "sqlp_join_outer_full_86",
+      "description": "Sqlp Join Outer Full 86",
       "input": {
         "data": [
           [
@@ -5156,10 +5124,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n            \\\"SELECT DISTINCT ON (category, subcategory\"",
+      "command": "qsv sqlp data.csv",
       "args": [
-        "data.csv",
-        "\n            \"SELECT DISTINCT ON (category, subcategory"
+        "data.csv"
       ],
       "expected": {
         "data": [
@@ -5223,8 +5190,8 @@
       }
     },
     {
-      "name": "sqlp_distinct_on_with_nulls",
-      "description": "Sqlp Distinct On With Nulls",
+      "name": "sqlp_join_outer_full_87",
+      "description": "Sqlp Join Outer Full 87",
       "input": {
         "data": [
           [
@@ -5353,8 +5320,8 @@
       }
     },
     {
-      "name": "sqlp_distinct_on_expression",
-      "description": "Sqlp Distinct On Expression",
+      "name": "sqlp_join_outer_full_88",
+      "description": "Sqlp Join Outer Full 88",
       "input": {
         "data": [
           [
@@ -5437,10 +5404,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n            \\\"SELECT DISTINCT ON (category\"",
+      "command": "qsv sqlp data.csv",
       "args": [
-        "data.csv",
-        "\n            \"SELECT DISTINCT ON (category"
+        "data.csv"
       ],
       "expected": {
         "data": [
@@ -5468,8 +5434,8 @@
       }
     },
     {
-      "name": "sqlp_distinct_with_aggregation",
-      "description": "Sqlp Distinct With Aggregation",
+      "name": "sqlp_join_outer_full_89",
+      "description": "Sqlp Join Outer Full 89",
       "input": {
         "data": [
           [
@@ -5552,10 +5518,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n            \\\"SELECT DISTINCT category, COUNT(*\"",
+      "command": "qsv sqlp data.csv",
       "args": [
-        "data.csv",
-        "\n            \"SELECT DISTINCT category, COUNT(*"
+        "data.csv"
       ],
       "expected": {
         "data": [
@@ -5583,8 +5548,8 @@
       }
     },
     {
-      "name": "sqlp_distinct_on_complex_ordering",
-      "description": "Sqlp Distinct On Complex Ordering",
+      "name": "sqlp_join_outer_full_90",
+      "description": "Sqlp Join Outer Full 90",
       "input": {
         "data": [
           [
@@ -5667,10 +5632,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv sqlp data.csv \"\n            \\\"SELECT DISTINCT ON (category\"",
+      "command": "qsv sqlp data.csv",
       "args": [
-        "data.csv",
-        "\n            \"SELECT DISTINCT ON (category"
+        "data.csv"
       ],
       "expected": {
         "data": [

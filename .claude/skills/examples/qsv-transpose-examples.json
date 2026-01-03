@@ -113,7 +113,7 @@
     {
       "name": "transpose_long_multipass_mutually_exclusive",
       "description": "Transpose Long Multipass Mutually Exclusive",
-      "command": "qsv transpose ",
+      "command": "qsv transpose --multipass in.csv",
       "options": {
         "--multipass": "in.csv"
       }

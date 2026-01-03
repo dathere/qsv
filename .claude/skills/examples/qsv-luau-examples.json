@@ -95,11 +95,52 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map newcol1,newcol2,newcol3",
+      "command": "qsv luau map newcol1,newcol2,newcol3 \"{number + 1, number + 2, number + 3}\" data.csv",
       "args": [
         "map",
-        "newcol1,newcol2,newcol3"
-      ]
+        "newcol1,newcol2,newcol3",
+        "{number + 1, number + 2, number + 3}",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "newcol1",
+            "newcol2",
+            "newcol3"
+          ],
+          [
+            "a",
+            "13",
+            "14",
+            "15",
+            "16"
+          ],
+          [
+            "b",
+            "24",
+            "25",
+            "26",
+            "27"
+          ],
+          [
+            "c",
+            "72",
+            "73",
+            "74",
+            "75"
+          ],
+          [
+            "d",
+            "7",
+            "8",
+            "9",
+            "10"
+          ]
+        ]
+      }
     },
     {
       "name": "luau_map_idx",
@@ -259,7 +300,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map Total \"tot = tot + Amount; return tot\" data.csv",
+      "command": "qsv luau map Total \"tot = tot + Amount; return tot\" data.csv --begin \"tot = 0\"",
       "args": [
         "map",
         "Total",
@@ -327,13 +368,44 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map Total",
+      "command": "qsv luau map Total \"amt_array[_IDX] = Amount; tot = tot + Amount; gtotal = gtotal + tot; return tot\" --begin \"tot = 0; gtotal = 0; amt_array = {}\" --end data.csv",
       "args": [
         "map",
-        "Total"
+        "Total",
+        "amt_array[_IDX] = Amount; tot = tot + Amount; gtotal = gtotal + tot; return tot"
       ],
       "options": {
-        "--begin": "true"
+        "--begin": "tot = 0; gtotal = 0; amt_array = {}",
+        "--end": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Total"
+          ],
+          [
+            "a",
+            "13",
+            "13"
+          ],
+          [
+            "b",
+            "24",
+            "37"
+          ],
+          [
+            "c",
+            "72",
+            "109"
+          ],
+          [
+            "d",
+            "7",
+            "116"
+          ]
+        ]
       }
     },
     {
@@ -364,11 +436,928 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map Total",
+      "command": "qsv luau map Total data.csv",
       "args": [
         "map",
-        "Total"
+        "Total",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Total"
+          ],
+          [
+            "a",
+            "13",
+            "13"
+          ],
+          [
+            "b",
+            "24",
+            "37"
+          ],
+          [
+            "c",
+            "72",
+            "109"
+          ],
+          [
+            "d",
+            "7",
+            "116"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_aggregation_with_embedded_begin_end_using_file",
+      "description": "Luau Aggregation With Embedded Begin End Using File",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "Amount"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map \"Running Total\" file:testbeginend.luau data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "file:testbeginend.luau",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Running Total"
+          ],
+          [
+            "a",
+            "13",
+            "13"
+          ],
+          [
+            "b",
+            "24",
+            "37"
+          ],
+          [
+            "c",
+            "72",
+            "109"
+          ],
+          [
+            "d",
+            "7",
+            "116"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_register_lookup_table",
+      "description": "Luau Register Lookup Table",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "Amount"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map \"Running Total\" file:testlookup.luau data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "file:testlookup.luau",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Running Total"
+          ],
+          [
+            "d",
+            "7",
+            "7.28"
+          ],
+          [
+            "c",
+            "72",
+            "82.16"
+          ],
+          [
+            "b",
+            "24",
+            "107.12"
+          ],
+          [
+            "a",
+            "13",
+            "120.64"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_register_lookup_table_on_url",
+      "description": "Luau Register Lookup Table On Url",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "Amount"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map \"Running Total\" file:testlookup.luau data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "file:testlookup.luau",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Running Total"
+          ],
+          [
+            "d",
+            "7",
+            "7.28"
+          ],
+          [
+            "c",
+            "72",
+            "82.16"
+          ],
+          [
+            "b",
+            "24",
+            "107.12"
+          ],
+          [
+            "a",
+            "13",
+            "120.64"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_register_lookup_table_on_dathere_url",
+      "description": "Luau Register Lookup Table On Dathere Url",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "Amount"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map \"Running Total\" file:testlookup.luau data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "file:testlookup.luau",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Running Total"
+          ],
+          [
+            "d",
+            "7",
+            "7.28"
+          ],
+          [
+            "c",
+            "72",
+            "82.16"
+          ],
+          [
+            "b",
+            "24",
+            "107.12"
+          ],
+          [
+            "a",
+            "13",
+            "120.64"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_writefile",
+      "description": "Luau Writefile",
+      "input": {
+        "data": [
+          [
+            "metric_name",
+            "target_score"
+          ],
+          [
+            "POTHOLE ON-TIME %",
+            "0.6"
+          ],
+          [
+            "ON-TIME PERMIT REVIEWS",
+            "0.6"
+          ],
+          [
+            "BFD RESPONSE TIME",
+            "0.6"
+          ],
+          [
+            "BPS ATTENDANCE",
+            "0.6"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map new_target file:testwrite.luau data.csv",
+      "args": [
+        "map",
+        "new_target",
+        "file:testwrite.luau",
+        "data.csv"
       ]
+    },
+    {
+      "name": "luau_qsv_break",
+      "description": "Luau Qsv Break",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "Amount"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map \"Running Total\" testbreak.lua data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "testbreak.lua",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Running Total"
+          ],
+          [
+            "a",
+            "13",
+            "13"
+          ],
+          [
+            "b",
+            "24",
+            "37"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_qsv_skip",
+      "description": "Luau Qsv Skip",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "Amount"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map \"Running Total\" testbreak.LUAU data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "testbreak.LUAU",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Running Total"
+          ],
+          [
+            "a",
+            "13",
+            "13"
+          ],
+          [
+            "b",
+            "24",
+            "37"
+          ],
+          [
+            "d",
+            "7",
+            "44"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_qsv_loadcsv",
+      "description": "Luau Qsv Loadcsv",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "Amount"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map description test_loadcsv.LUAU data.csv",
+      "args": [
+        "map",
+        "description",
+        "test_loadcsv.LUAU",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "description"
+          ],
+          [
+            "a",
+            "13",
+            "alpha"
+          ],
+          [
+            "b",
+            "24",
+            "bravo"
+          ],
+          [
+            "c",
+            "72",
+            "charlie"
+          ],
+          [
+            "d",
+            "7",
+            "delta"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_qsv_cmd",
+      "description": "Luau Qsv Cmd",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "Amount"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map \"Running Total\" testqsvcmd.Lua data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "testqsvcmd.Lua",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Running Total"
+          ],
+          [
+            "a",
+            "13",
+            "13"
+          ],
+          [
+            "b",
+            "24",
+            "37"
+          ],
+          [
+            "c",
+            "72",
+            "109"
+          ],
+          [
+            "d",
+            "7",
+            "116"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_qsv_invalid_shellcmd",
+      "description": "Luau Qsv Invalid Shellcmd",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "Amount"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map \"Running Total\" file:testqsvcmd.luau data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "file:testqsvcmd.luau",
+        "data.csv"
+      ]
+    },
+    {
+      "name": "luau_qsv_shellcmd",
+      "description": "Luau Qsv Shellcmd",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "Amount"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map \"Running Total\" file:testqsvcmd.luau data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "file:testqsvcmd.luau",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Running Total"
+          ],
+          [
+            "a",
+            "13",
+            "13"
+          ],
+          [
+            "b",
+            "24",
+            "37"
+          ],
+          [
+            "c",
+            "72",
+            "109"
+          ],
+          [
+            "d",
+            "7",
+            "116"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_insertrecord",
+      "description": "Luau Insertrecord",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "Amount"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map \"Running Total\" file:testbeginend.luau data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "file:testbeginend.luau",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Running Total"
+          ],
+          [
+            "a",
+            "13",
+            "13"
+          ],
+          [
+            "a1",
+            "131",
+            "13"
+          ],
+          [
+            "b",
+            "24",
+            "37"
+          ],
+          [
+            "b2",
+            "242",
+            "50"
+          ],
+          [
+            "c",
+            "72",
+            "109"
+          ],
+          [
+            "c3",
+            "723",
+            "159"
+          ],
+          [
+            "d",
+            "7",
+            "116"
+          ],
+          [
+            "d4",
+            "74",
+            "275"
+          ],
+          [
+            "Grand Total",
+            "",
+            "275"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_insertrecord_random_access",
+      "description": "Luau Insertrecord Random Access",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "Amount"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map \"Running Total\" file:testrandominsertrecord.luau data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "file:testrandominsertrecord.luau",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Running Total"
+          ],
+          [
+            "d",
+            "7",
+            "7"
+          ],
+          [
+            "d3",
+            "73",
+            "7"
+          ],
+          [
+            "c",
+            "72",
+            "79"
+          ],
+          [
+            "c2",
+            "722",
+            "86"
+          ],
+          [
+            "b",
+            "24",
+            "103"
+          ],
+          [
+            "b1",
+            "241",
+            "189"
+          ],
+          [
+            "a",
+            "13",
+            "116"
+          ],
+          [
+            "a0",
+            "130",
+            "305"
+          ],
+          [
+            "Grand Total",
+            "",
+            "305"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_test_string_interpolation_feature",
+      "description": "Luau Test String Interpolation Feature",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "code digit"
+          ],
+          [
+            "a",
+            "2"
+          ],
+          [
+            "b",
+            "7"
+          ],
+          [
+            "c",
+            "1"
+          ],
+          [
+            "d",
+            "5"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map \"Running Total\" file:testbeginend.luau data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "file:testbeginend.luau",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "code digit",
+            "Running Total"
+          ],
+          [
+            "a",
+            "2",
+            "2"
+          ],
+          [
+            "b",
+            "7",
+            "9"
+          ],
+          [
+            "c",
+            "1",
+            "10"
+          ],
+          [
+            "d",
+            "5",
+            "15"
+          ]
+        ]
+      }
     },
     {
       "name": "luau_aggregation_with_embedded_begin_end_and_beginend_options",
@@ -398,13 +1387,193 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map Total",
+      "command": "qsv luau map Total --end data.csv --begin \"tot = 1; gtotal = 0; amt_array = {}\"",
       "args": [
         "map",
         "Total"
       ],
       "options": {
-        "--begin": "true"
+        "--end": "data.csv",
+        "--begin": "tot = 1; gtotal = 0; amt_array = {}"
+      },
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Total"
+          ],
+          [
+            "a",
+            "13",
+            "14"
+          ],
+          [
+            "b",
+            "24",
+            "38"
+          ],
+          [
+            "c",
+            "72",
+            "110"
+          ],
+          [
+            "d",
+            "7",
+            "117"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_aggregation_with_embedded_begin_end_using_file_random_access",
+      "description": "Luau Aggregation With Embedded Begin End Using File Random Access",
+      "command": "qsv luau map \"Running Total\" file:testbeginend.luau data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "file:testbeginend.luau",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Running Total"
+          ],
+          [
+            "d",
+            "7",
+            "7"
+          ],
+          [
+            "c",
+            "72",
+            "79"
+          ],
+          [
+            "b",
+            "24",
+            "103"
+          ],
+          [
+            "a",
+            "13",
+            "116"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_aggregation_with_embedded_begin_end_using_file_random_access_with_qsv_autoindex",
+      "description": "Luau Aggregation With Embedded Begin End Using File Random Access With Qsv Autoindex",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "Amount"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "7"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map \"Running Total\" file:testbeginend.luau data.csv",
+      "args": [
+        "map",
+        "Running Total",
+        "file:testbeginend.luau",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Running Total"
+          ],
+          [
+            "d",
+            "7",
+            "7"
+          ],
+          [
+            "c",
+            "72",
+            "79"
+          ],
+          [
+            "b",
+            "24",
+            "103"
+          ],
+          [
+            "a",
+            "13",
+            "116"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_aggregation_with_embedded_begin_end_using_file_random_access_multiple_columns",
+      "description": "Luau Aggregation With Embedded Begin End Using File Random Access Multiple Columns",
+      "command": "qsv luau map \"Running Total, Running Total with 10%\" file:testbeginend.luau data.csv",
+      "args": [
+        "map",
+        "Running Total, Running Total with 10%",
+        "file:testbeginend.luau",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Running Total",
+            "Running Total with 10%"
+          ],
+          [
+            "d",
+            "7",
+            "7",
+            "7.7"
+          ],
+          [
+            "c",
+            "72",
+            "79",
+            "86.9"
+          ],
+          [
+            "b",
+            "24",
+            "103",
+            "113.3"
+          ],
+          [
+            "a",
+            "13",
+            "116",
+            "127.6"
+          ]
+        ]
       }
     },
     {
@@ -435,13 +1604,44 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map Total",
+      "command": "qsv luau map Total \"amt_array[_IDX] = Amount; tot += if tonumber(Amount) < 0 then Amount * -1 else Amount; gtotal += tot; return tot\" --begin \"tot = 0; gtotal = 0; amt_array = {}\" --end data.csv",
       "args": [
         "map",
-        "Total"
+        "Total",
+        "amt_array[_IDX] = Amount; tot += if tonumber(Amount) < 0 then Amount * -1 else Amount; gtotal += tot; return tot"
       ],
       "options": {
-        "--begin": "true"
+        "--begin": "tot = 0; gtotal = 0; amt_array = {}",
+        "--end": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "Amount",
+            "Total"
+          ],
+          [
+            "a",
+            "13",
+            "13"
+          ],
+          [
+            "b",
+            "-24",
+            "37"
+          ],
+          [
+            "c",
+            "-72",
+            "109"
+          ],
+          [
+            "d",
+            "7",
+            "116"
+          ]
+        ]
       }
     },
     {
@@ -477,13 +1677,38 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map id,name",
+      "command": "qsv luau map id,name data.csv --remap \"{id,qsv_coalesce(name_right,name)}\"",
       "args": [
         "map",
-        "id,name"
+        "id,name",
+        "data.csv"
       ],
       "options": {
-        "--remap": "\"{id,qsv_coalesce(name_right,name"
+        "--remap": "{id,qsv_coalesce(name_right,name)}"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "name"
+          ],
+          [
+            "1",
+            "Artur A. Mosiyan"
+          ],
+          [
+            "2",
+            "Eduard A. Aghabekyan"
+          ],
+          [
+            "3",
+            "Aramais E. Aghabekyan"
+          ],
+          [
+            "4",
+            "Eleonora V. Avanesyan"
+          ]
+        ]
       }
     },
     {
@@ -584,12 +1809,120 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map days_added \"r#\\\"local date = require \\\"./date\\\";local t_date = date(date_col\"",
+      "command": "qsv luau map days_added data.csv",
       "args": [
         "map",
         "days_added",
-        "r#\"local date = require \"./date\";local t_date = date(date_col"
-      ]
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number",
+            "date_col",
+            "days_added"
+          ],
+          [
+            "a",
+            "13",
+            "2001-09-11",
+            "2001-09-24T00:00:00"
+          ],
+          [
+            "b",
+            "24",
+            "1989-11-09",
+            "1989-12-03T00:00:00"
+          ],
+          [
+            "c",
+            "72",
+            "2008-11-04",
+            "2009-01-15T00:00:00"
+          ],
+          [
+            "d",
+            "7",
+            "2020-03-11",
+            "2020-03-18T00:00:00"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_map_require",
+      "description": "Luau Map Require",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number1",
+            "number2"
+          ],
+          [
+            "a",
+            "13",
+            "43"
+          ],
+          [
+            "b",
+            "24",
+            "3.14"
+          ],
+          [
+            "c",
+            "72",
+            "42"
+          ],
+          [
+            "d",
+            "7",
+            "6.5"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map min data.csv",
+      "args": [
+        "map",
+        "min",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number1",
+            "number2",
+            "min"
+          ],
+          [
+            "a",
+            "13",
+            "43",
+            "13"
+          ],
+          [
+            "b",
+            "24",
+            "3.14",
+            "3.14"
+          ],
+          [
+            "c",
+            "72",
+            "42",
+            "42"
+          ],
+          [
+            "d",
+            "7",
+            "6.5",
+            "6.5"
+          ]
+        ]
+      }
     },
     {
       "name": "luau_map_error",
@@ -658,11 +1991,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map \"r#\\\"div/column\\\"#\" \"r#\\\"col[\\\"letter-column\\\"] .. math.floor(col[\\\"number column\\\"] / 2\" data.csv",
+      "command": "qsv luau map data.csv",
       "args": [
         "map",
-        "r#\"div/column\"#",
-        "r#\"col[\"letter-column\"] .. math.floor(col[\"number column\"] / 2",
         "data.csv"
       ],
       "expected": {
@@ -719,7 +2050,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map \"col[2] + 1\"",
+      "command": "qsv luau map \"col[2] + 1\" --no-headers data.csv",
       "args": [
         "map",
         "col[2] + 1"
@@ -779,9 +2110,48 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map",
+      "command": "qsv luau map \"{col[2] + 1, col[2] + 2, col[2] + 3}\" --no-headers data.csv",
       "args": [
-        "map"
+        "map",
+        "{col[2] + 1, col[2] + 2, col[2] + 3}"
+      ],
+      "options": {
+        "--no-headers": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "a",
+            "13",
+            "14",
+            "15",
+            "16"
+          ],
+          [
+            "b",
+            "24",
+            "25",
+            "26",
+            "27"
+          ],
+          [
+            "c",
+            "72",
+            "73",
+            "74",
+            "75"
+          ],
+          [
+            "d",
+            "7",
+            "8",
+            "9",
+            "10"
+          ]
+        ]
+      },
+      "tags": [
+        "no-headers"
       ]
     },
     {
@@ -942,7 +2312,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map z data.csv",
+      "command": "qsv luau map z data.csv --colindex \"(x or col[1]) + 1\"",
       "args": [
         "map",
         "z",
@@ -1263,6 +2633,93 @@
       }
     },
     {
+      "name": "luau_envvars",
+      "description": "Luau Envvars",
+      "input": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "d",
+            "-7"
+          ],
+          [
+            "e",
+            "0"
+          ],
+          [
+            "f",
+            "42"
+          ],
+          [
+            "g",
+            "0.0"
+          ],
+          [
+            "h",
+            "3.14"
+          ],
+          [
+            "i",
+            "0.000123"
+          ],
+          [
+            "j",
+            "-7.01"
+          ],
+          [
+            "k",
+            "0.0000"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau filter file:testenvvar.luau data.csv",
+      "args": [
+        "filter",
+        "file:testenvvar.luau",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "letter",
+            "number"
+          ],
+          [
+            "a",
+            "13"
+          ],
+          [
+            "b",
+            "24"
+          ],
+          [
+            "c",
+            "72"
+          ],
+          [
+            "f",
+            "42"
+          ]
+        ]
+      }
+    },
+    {
       "name": "luau_envvars_external",
       "description": "Luau Envvars External",
       "input": {
@@ -1350,29 +2807,119 @@
       }
     },
     {
-      "name": "luau_loadjson_error_missing_file",
-      "description": "Luau Loadjson Error Missing File",
-      "command": "qsv luau map result \"\n            r#\\\"\nBEGIN {\n    qsv_loadjson(\\\"config\\\", \\\"nonexistent.json\\\"\"",
+      "name": "luau_loadjson",
+      "description": "Luau Loadjson",
+      "input": {
+        "data": [
+          [
+            "a"
+          ],
+          [
+            "b"
+          ],
+          [
+            "c"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map result --no-headers data.csv",
       "args": [
         "map",
-        "result",
-        "\n            r#\"\nBEGIN {\n    qsv_loadjson(\"config\", \"nonexistent.json\""
+        "result"
       ],
+      "options": {
+        "--no-headers": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "a",
+            "hello value 42"
+          ],
+          [
+            "b",
+            "hello value 42"
+          ],
+          [
+            "c",
+            "hello value 42"
+          ]
+        ]
+      },
       "tags": [
-        "error-handling"
+        "no-headers"
       ]
     },
     {
-      "name": "luau_loadjson_error_invalid_json",
-      "description": "Luau Loadjson Error Invalid Json",
-      "command": "qsv luau map result \"\n            r#\\\"\nBEGIN {\n    qsv_loadjson(\\\"config\\\", \\\"invalid.json\\\"\"",
+      "name": "luau_loadjson_array",
+      "description": "Luau Loadjson Array",
+      "input": {
+        "data": [
+          [
+            "x"
+          ],
+          [
+            "1"
+          ],
+          [
+            "2"
+          ],
+          [
+            "3"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map name data.csv",
       "args": [
         "map",
-        "result",
-        "\n            r#\"\nBEGIN {\n    qsv_loadjson(\"config\", \"invalid.json\""
+        "name",
+        "data.csv"
       ],
+      "expected": {
+        "data": [
+          [
+            "x",
+            "name"
+          ],
+          [
+            "1",
+            "Alice"
+          ],
+          [
+            "2",
+            "Bob"
+          ],
+          [
+            "3",
+            "Charlie"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "luau_loadjson_error_missing_file",
+      "description": "Luau Loadjson Error Missing File",
+      "input": {
+        "data": [
+          [
+            "a"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv luau map result --no-headers data.csv",
+      "args": [
+        "map",
+        "result"
+      ],
+      "options": {
+        "--no-headers": "data.csv"
+      },
       "tags": [
-        "error-handling"
+        "error-handling",
+        "no-headers"
       ]
     },
     {
@@ -1401,11 +2948,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map running_total \"r#\\\"qsv_cumsum(amount\" data.csv",
+      "command": "qsv luau map running_total data.csv",
       "args": [
         "map",
         "running_total",
-        "r#\"qsv_cumsum(amount",
         "data.csv"
       ],
       "expected": {
@@ -1465,12 +3011,51 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map revenue_total,expenses_total,profit_total \"\n            r#\\\"{\n            qsv_cumsum(revenue, \\\"revenue\\\"\"",
+      "command": "qsv luau map revenue_total,expenses_total,profit_total data.csv",
       "args": [
         "map",
         "revenue_total,expenses_total,profit_total",
-        "\n            r#\"{\n            qsv_cumsum(revenue, \"revenue\""
-      ]
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "revenue",
+            "expenses",
+            "revenue_total",
+            "expenses_total",
+            "profit_total"
+          ],
+          [
+            "100",
+            "50",
+            "100",
+            "50",
+            "50"
+          ],
+          [
+            "200",
+            "75",
+            "300",
+            "125",
+            "175"
+          ],
+          [
+            "150",
+            "80",
+            "450",
+            "205",
+            "245"
+          ],
+          [
+            "300",
+            "100",
+            "750",
+            "305",
+            "445"
+          ]
+        ]
+      }
     },
     {
       "name": "luau_cumsum_invalid_input",
@@ -1498,11 +3083,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map total \"r#\\\"qsv_cumsum(value\" data.csv",
+      "command": "qsv luau map total data.csv",
       "args": [
         "map",
         "total",
-        "r#\"qsv_cumsum(value",
         "data.csv"
       ]
     },
@@ -1529,11 +3113,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map running_product \"r#\\\"qsv_cumprod(value\" data.csv",
+      "command": "qsv luau map running_product data.csv",
       "args": [
         "map",
         "running_product",
-        "r#\"qsv_cumprod(value",
         "data.csv"
       ],
       "expected": {
@@ -1587,12 +3170,46 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map running_max,running_min \"r#\\\"{qsv_cummax(value\"",
+      "command": "qsv luau map running_max,running_min data.csv",
       "args": [
         "map",
         "running_max,running_min",
-        "r#\"{qsv_cummax(value"
-      ]
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "value",
+            "running_max",
+            "running_min"
+          ],
+          [
+            "10",
+            "10",
+            "10"
+          ],
+          [
+            "5",
+            "10",
+            "5"
+          ],
+          [
+            "15",
+            "15",
+            "5"
+          ],
+          [
+            "3",
+            "15",
+            "3"
+          ],
+          [
+            "12",
+            "15",
+            "3"
+          ]
+        ]
+      }
     },
     {
       "name": "luau_lag",
@@ -1620,12 +3237,46 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map lag1,lag2 \"\n            r#\\\"{\n            qsv_lag(value, 1, \\\"0\\\"\"",
+      "command": "qsv luau map lag1,lag2 data.csv",
       "args": [
         "map",
         "lag1,lag2",
-        "\n            r#\"{\n            qsv_lag(value, 1, \"0\""
-      ]
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "value",
+            "lag1",
+            "lag2"
+          ],
+          [
+            "10",
+            "0",
+            "0"
+          ],
+          [
+            "20",
+            "10",
+            "0"
+          ],
+          [
+            "30",
+            "20",
+            "10"
+          ],
+          [
+            "40",
+            "30",
+            "20"
+          ],
+          [
+            "50",
+            "40",
+            "30"
+          ]
+        ]
+      }
     },
     {
       "name": "luau_cumany_cumall",
@@ -1653,12 +3304,46 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map has_zero,all_positive \"\n            r#\\\"{\n            qsv_cumany(value == \\\"0\\\"\"",
+      "command": "qsv luau map has_zero,all_positive data.csv",
       "args": [
         "map",
         "has_zero,all_positive",
-        "\n            r#\"{\n            qsv_cumany(value == \"0\""
-      ]
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "value",
+            "has_zero",
+            "all_positive"
+          ],
+          [
+            "10",
+            "false",
+            "true"
+          ],
+          [
+            "0",
+            "true",
+            "false"
+          ],
+          [
+            "15",
+            "true",
+            "false"
+          ],
+          [
+            "0",
+            "true",
+            "false"
+          ],
+          [
+            "20",
+            "true",
+            "false"
+          ]
+        ]
+      }
     },
     {
       "name": "luau_diff",
@@ -1686,12 +3371,46 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map diff1,diff2 \"\n            r#\\\"{\n            qsv_diff(value\"",
+      "command": "qsv luau map diff1,diff2 data.csv",
       "args": [
         "map",
         "diff1,diff2",
-        "\n            r#\"{\n            qsv_diff(value"
-      ]
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "value",
+            "diff1",
+            "diff2"
+          ],
+          [
+            "10",
+            "0",
+            "0"
+          ],
+          [
+            "15",
+            "5",
+            "0"
+          ],
+          [
+            "13",
+            "-2",
+            "3"
+          ],
+          [
+            "20",
+            "7",
+            "5"
+          ],
+          [
+            "18",
+            "-2",
+            "5"
+          ]
+        ]
+      }
     },
     {
       "name": "luau_cumany_cumall_with_strings",
@@ -1716,12 +3435,41 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map has_empty,all_nonempty \"\n            r#\\\"{\n            qsv_cumany(value == \\\"\\\"\"",
+      "command": "qsv luau map has_empty,all_nonempty data.csv",
       "args": [
         "map",
         "has_empty,all_nonempty",
-        "\n            r#\"{\n            qsv_cumany(value == \"\""
-      ]
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "value",
+            "has_empty",
+            "all_nonempty"
+          ],
+          [
+            "hello",
+            "false",
+            "true"
+          ],
+          [
+            "",
+            "true",
+            "false"
+          ],
+          [
+            "world",
+            "true",
+            "false"
+          ],
+          [
+            "",
+            "true",
+            "false"
+          ]
+        ]
+      }
     },
     {
       "name": "luau_cumall_with_numbers",
@@ -1746,11 +3494,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map all_positive \"r#\\\"qsv_cumall(tonumber(value\" data.csv",
+      "command": "qsv luau map all_positive data.csv",
       "args": [
         "map",
         "all_positive",
-        "r#\"qsv_cumall(tonumber(value",
         "data.csv"
       ],
       "expected": {
@@ -1801,12 +3548,41 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map prev,prev2 \"\n            r#\\\"{\n            qsv_lag(value, 1, \\\"N/A\\\"\"",
+      "command": "qsv luau map prev,prev2 data.csv",
       "args": [
         "map",
         "prev,prev2",
-        "\n            r#\"{\n            qsv_lag(value, 1, \"N/A\""
-      ]
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "value",
+            "prev",
+            "prev2"
+          ],
+          [
+            "10",
+            "N/A",
+            "N/A"
+          ],
+          [
+            "20",
+            "10",
+            "N/A"
+          ],
+          [
+            "30",
+            "20",
+            "10"
+          ],
+          [
+            "40",
+            "30",
+            "20"
+          ]
+        ]
+      }
     },
     {
       "name": "luau_diff_with_lag",
@@ -1831,11 +3607,11 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map diff1,diff2,pct_change \"\n            r#\\\"{\n            qsv_diff(value\"",
+      "command": "qsv luau map diff1,diff2,pct_change data.csv",
       "args": [
         "map",
         "diff1,diff2,pct_change",
-        "\n            r#\"{\n            qsv_diff(value"
+        "data.csv"
       ]
     },
     {
@@ -1864,12 +3640,52 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map running_max,running_min,running_sum \"\n            r#\\\"{\n            qsv_cummax(value\"",
+      "command": "qsv luau map running_max,running_min,running_sum data.csv",
       "args": [
         "map",
         "running_max,running_min,running_sum",
-        "\n            r#\"{\n            qsv_cummax(value"
-      ]
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "value",
+            "running_max",
+            "running_min",
+            "running_sum"
+          ],
+          [
+            "15",
+            "15",
+            "15",
+            "15"
+          ],
+          [
+            "10",
+            "15",
+            "10",
+            "25"
+          ],
+          [
+            "25",
+            "25",
+            "10",
+            "50"
+          ],
+          [
+            "5",
+            "25",
+            "5",
+            "55"
+          ],
+          [
+            "20",
+            "25",
+            "5",
+            "75"
+          ]
+        ]
+      }
     },
     {
       "name": "luau_writejson_simple",
@@ -1899,10 +3715,11 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map result",
+      "command": "qsv luau map result data.csv",
       "args": [
         "map",
-        "result"
+        "result",
+        "data.csv"
       ]
     },
     {
@@ -1921,10 +3738,11 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map result",
+      "command": "qsv luau map result data.csv",
       "args": [
         "map",
-        "result"
+        "result",
+        "data.csv"
       ]
     },
     {
@@ -1953,11 +3771,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map accumulated \"\n            r#\\\"\n-- This is the MAIN LOOP\n-- Define a custom accumulator function that keeps a weighted sum\n-- where each new value is weighted by its position\n-- we define the function inside the MAIN LOOP to access the _IDX variable\nfunction weighted_sum(acc, x\" data.csv",
+      "command": "qsv luau map accumulated data.csv",
       "args": [
         "map",
         "accumulated",
-        "\n            r#\"\n-- This is the MAIN LOOP\n-- Define a custom accumulator function that keeps a weighted sum\n-- where each new value is weighted by its position\n-- we define the function inside the MAIN LOOP to access the _IDX variable\nfunction weighted_sum(acc, x",
         "data.csv"
       ]
     },
@@ -1987,11 +3804,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map accumulated \"\n            r#\\\"\n-- This is the MAIN LOOP\n-- Define a custom accumulator function that keeps a weighted sum\n-- where each new value is weighted by its position\n-- we define the function inside the MAIN LOOP to access the _IDX variable\nfunction weighted_sum(acc, x\" data.csv",
+      "command": "qsv luau map accumulated data.csv",
       "args": [
         "map",
         "accumulated",
-        "\n            r#\"\n-- This is the MAIN LOOP\n-- Define a custom accumulator function that keeps a weighted sum\n-- where each new value is weighted by its position\n-- we define the function inside the MAIN LOOP to access the _IDX variable\nfunction weighted_sum(acc, x",
         "data.csv"
       ]
     },
@@ -2021,11 +3837,11 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map accumulated \"\n            r#\\\"\nBEGIN {\n\n    -- Define a custom accumulator function\n    function udf_sum(acc, x\"",
+      "command": "qsv luau map accumulated data.csv",
       "args": [
         "map",
         "accumulated",
-        "\n            r#\"\nBEGIN {\n\n    -- Define a custom accumulator function\n    function udf_sum(acc, x"
+        "data.csv"
       ]
     },
     {
@@ -2051,21 +3867,20 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map accumulated \"\n            r#\\\"\nBEGIN {\n\n    -- Define a custom accumulator function that resets the accumulator\n    -- if the accumulated value exceeds a threshold of 7\n    function func_with_reset(acc, x\"",
+      "command": "qsv luau map accumulated data.csv",
       "args": [
         "map",
         "accumulated",
-        "\n            r#\"\nBEGIN {\n\n    -- Define a custom accumulator function that resets the accumulator\n    -- if the accumulated value exceeds a threshold of 7\n    function func_with_reset(acc, x"
+        "data.csv"
       ]
     },
     {
       "name": "luau_cumsum_overflow",
       "description": "Luau Cumsum Overflow",
-      "command": "qsv luau map total \"r#\\\"qsv_cumsum(value\" data.csv",
+      "command": "qsv luau map total data.csv",
       "args": [
         "map",
         "total",
-        "r#\"qsv_cumsum(value",
         "data.csv"
       ]
     },
@@ -2083,11 +3898,11 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map result \"\n            r#\\\"\nBEGIN {\n    local result = qsv_shellcmd(\\\"rm\\\", \\\"-rf /\\\"\"",
+      "command": "qsv luau map result data.csv",
       "args": [
         "map",
         "result",
-        "\n            r#\"\nBEGIN {\n    local result = qsv_shellcmd(\"rm\", \"-rf /\""
+        "data.csv"
       ]
     },
     {
@@ -2118,11 +3933,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map newpoints \"r#\\\"if string.find(Name, 'DNE %(2%\" data.csv",
+      "command": "qsv luau map newpoints data.csv",
       "args": [
         "map",
         "newpoints",
-        "r#\"if string.find(Name, 'DNE %(2%",
         "data.csv"
       ],
       "expected": {
@@ -2182,11 +3996,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map newpoints \"r#\\\"if string.find(Name, 'DNE (2\" data.csv",
+      "command": "qsv luau map newpoints data.csv",
       "args": [
         "map",
         "newpoints",
-        "r#\"if string.find(Name, 'DNE (2",
         "data.csv"
       ],
       "expected": {
@@ -2242,10 +4055,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau filter \"r#\\\"string.find(email, '.com', 1, true\" data.csv",
+      "command": "qsv luau filter data.csv",
       "args": [
         "filter",
-        "r#\"string.find(email, '.com', 1, true",
         "data.csv"
       ],
       "expected": {
@@ -2281,10 +4093,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau filter \"r#\\\"string.find(text, '%d%.%d'\" data.csv",
+      "command": "qsv luau filter data.csv",
       "args": [
         "filter",
-        "r#\"string.find(text, '%d%.%d'",
         "data.csv"
       ],
       "expected": {
@@ -2327,15 +4138,13 @@
         ],
         "filename": "a.csv"
       },
-      "command": "qsv luau map newpoints \"r#\\\"if string.find(Name,'DNE %(2%\" a.csv map newpoints \"r#\\\"if string.find(Name,'DNE (2\" a.csv",
+      "command": "qsv luau map newpoints a.csv map newpoints a.csv",
       "args": [
         "map",
         "newpoints",
-        "r#\"if string.find(Name,'DNE %(2%",
         "a.csv",
         "map",
         "newpoints",
-        "r#\"if string.find(Name,'DNE (2",
         "a.csv"
       ],
       "expected": {

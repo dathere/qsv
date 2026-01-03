@@ -5,10 +5,7 @@
     {
       "name": "excel_open_xls",
       "description": "Excel Open Xls",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel",
       "expected": {
         "data": [
           [
@@ -33,10 +30,7 @@
     {
       "name": "excel_cellerrors",
       "description": "Excel Cellerrors",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel",
       "expected": {
         "data": [
           [
@@ -98,10 +92,7 @@
     {
       "name": "excel_cellerrors_formula",
       "description": "Excel Cellerrors Formula",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel",
       "expected": {
         "data": [
           [
@@ -164,10 +155,7 @@
     {
       "name": "excel_cellerrors_both",
       "description": "Excel Cellerrors Both",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel",
       "expected": {
         "data": [
           [
@@ -230,10 +218,7 @@
     {
       "name": "excel_open_xls_delimiter",
       "description": "Excel Open Xls Delimiter",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel",
       "expected": {
         "data": [
           [
@@ -257,26 +242,20 @@
     {
       "name": "excel_open_xlsx_readpassword",
       "description": "Excel Open Xlsx Readpassword",
-      "command": "qsv excel xlsx_file",
-      "args": [
-        "xlsx_file"
-      ]
+      "command": "qsv excel"
     },
     {
       "name": "excel_open_ods_readpassword",
       "description": "Excel Open Ods Readpassword",
-      "command": "qsv excel ods_file",
-      "args": [
-        "ods_file"
-      ]
+      "command": "qsv excel"
     },
     {
       "name": "excel_open_flexible_xls",
       "description": "Excel Open Flexible Xls",
-      "command": "qsv excel ",
+      "command": "qsv excel --sheet \"Flexibility Test\" --flexible",
       "options": {
-        "--flexible": "xls_file",
-        "--sheet": "Flexibility Test"
+        "--sheet": "Flexibility Test",
+        "--flexible": "true"
       },
       "expected": {
         "data": [
@@ -316,10 +295,10 @@
     {
       "name": "excel_trim_xls",
       "description": "Excel Trim Xls",
-      "command": "qsv excel ",
+      "command": "qsv excel --sheet \"trim test\" --trim",
       "options": {
-        "--trim": "xls_file",
-        "--sheet": "trim test"
+        "--sheet": "trim test",
+        "--trim": "true"
       },
       "expected": {
         "data": [
@@ -359,10 +338,7 @@
     {
       "name": "excel_date_xls",
       "description": "Excel Date Xls",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --sheet \"date test\"",
       "options": {
         "--sheet": "date test"
       },
@@ -410,10 +386,7 @@
     {
       "name": "excel_date_xls_dateformat",
       "description": "Excel Date Xls Dateformat",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --sheet \"date test\"",
       "options": {
         "--sheet": "date test"
       }
@@ -421,10 +394,7 @@
     {
       "name": "excel_date_xlsx_date_format",
       "description": "Excel Date Xlsx Date Format",
-      "command": "qsv excel xlsx_file",
-      "args": [
-        "xlsx_file"
-      ],
+      "command": "qsv excel --sheet date_test",
       "options": {
         "--sheet": "date_test"
       },
@@ -461,10 +431,7 @@
     {
       "name": "excel_xlsx_data_types",
       "description": "Excel Xlsx Data Types",
-      "command": "qsv excel xlsx_file",
-      "args": [
-        "xlsx_file"
-      ],
+      "command": "qsv excel --sheet \"data types\"",
       "options": {
         "--sheet": "data types"
       },
@@ -536,10 +503,7 @@
     {
       "name": "excel_date_xlsx",
       "description": "Excel Date Xlsx",
-      "command": "qsv excel xlsx_file",
-      "args": [
-        "xlsx_file"
-      ],
+      "command": "qsv excel --sheet date_test",
       "options": {
         "--sheet": "date_test"
       },
@@ -576,10 +540,7 @@
     {
       "name": "excel_open_ods",
       "description": "Excel Open Ods",
-      "command": "qsv excel ods_file",
-      "args": [
-        "ods_file"
-      ],
+      "command": "qsv excel",
       "expected": {
         "data": [
           [
@@ -604,10 +565,7 @@
     {
       "name": "excel_open_xlsx",
       "description": "Excel Open Xlsx",
-      "command": "qsv excel xlsx_file",
-      "args": [
-        "xlsx_file"
-      ],
+      "command": "qsv excel",
       "expected": {
         "data": [
           [
@@ -672,9 +630,9 @@
     {
       "name": "excel_last_sheet",
       "description": "Excel Last Sheet",
-      "command": "qsv excel ",
+      "command": "qsv excel -1",
       "options": {
-        "-1": "xls_file"
+        "-1": "true"
       },
       "expected": {
         "data": [
@@ -708,10 +666,7 @@
     {
       "name": "excel_invalid_sheet_index",
       "description": "Excel Invalid Sheet Index",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --sheet 100",
       "options": {
         "--sheet": "100"
       }
@@ -719,21 +674,18 @@
     {
       "name": "excel_invalid_sheet_neg_index",
       "description": "Excel Invalid Sheet Neg Index",
-      "command": "qsv excel -100",
+      "command": "qsv excel -100 --sheet",
       "args": [
         "-100"
       ],
       "options": {
-        "--sheet": "xls_file"
+        "--sheet": "true"
       }
     },
     {
       "name": "excel_sheet_name",
       "description": "Excel Sheet Name",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --sheet Middle",
       "options": {
         "--sheet": "Middle"
       },
@@ -769,10 +721,7 @@
     {
       "name": "excel_xls_float_handling_516",
       "description": "Excel Xls Float Handling 516",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --sheet Middle",
       "options": {
         "--sheet": "Middle"
       },
@@ -814,10 +763,7 @@
     {
       "name": "excel_case_insensitive_sheet_name",
       "description": "Excel Case Insensitive Sheet Name",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --sheet miDDlE",
       "options": {
         "--sheet": "miDDlE"
       },
@@ -856,10 +802,7 @@
     {
       "name": "excel_metadata",
       "description": "Excel Metadata",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --metadata csv",
       "options": {
         "--metadata": "csv"
       }
@@ -867,10 +810,7 @@
     {
       "name": "excel_short_metadata",
       "description": "Excel Short Metadata",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --metadata short",
       "options": {
         "--metadata": "short"
       },
@@ -936,10 +876,7 @@
     {
       "name": "excel_metadata_pretty_json",
       "description": "Excel Metadata Pretty Json",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --metadata J",
       "options": {
         "--metadata": "J"
       }
@@ -947,10 +884,7 @@
     {
       "name": "excel_metadata_xlsx_ranges_tables_pretty_json",
       "description": "Excel Metadata Xlsx Ranges Tables Pretty Json",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --metadata J",
       "options": {
         "--metadata": "J"
       }
@@ -958,10 +892,7 @@
     {
       "name": "ods_metadata",
       "description": "Ods Metadata",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --metadata c",
       "options": {
         "--metadata": "c"
       }
@@ -969,10 +900,7 @@
     {
       "name": "ods_short_metadata",
       "description": "Ods Short Metadata",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --metadata s",
       "options": {
         "--metadata": "s"
       },
@@ -996,10 +924,7 @@
     {
       "name": "ods_metadata_pretty_json",
       "description": "Ods Metadata Pretty Json",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --metadata J",
       "options": {
         "--metadata": "J"
       }
@@ -1007,10 +932,7 @@
     {
       "name": "excel_metadata_sheet_types",
       "description": "Excel Metadata Sheet Types",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --metadata csv",
       "options": {
         "--metadata": "csv"
       }
@@ -1018,10 +940,7 @@
     {
       "name": "excel_metadata_sheet_types_xlsx",
       "description": "Excel Metadata Sheet Types Xlsx",
-      "command": "qsv excel xlsx_file",
-      "args": [
-        "xlsx_file"
-      ],
+      "command": "qsv excel --metadata csv",
       "options": {
         "--metadata": "csv"
       }
@@ -1029,10 +948,7 @@
     {
       "name": "excel_metadata_sheet_types_xlsx_short_json",
       "description": "Excel Metadata Sheet Types Xlsx Short Json",
-      "command": "qsv excel xlsx_file",
-      "args": [
-        "xlsx_file"
-      ],
+      "command": "qsv excel --metadata S",
       "options": {
         "--metadata": "S"
       }
@@ -1040,10 +956,7 @@
     {
       "name": "excel_metadata_sheet_types_xlsb",
       "description": "Excel Metadata Sheet Types Xlsb",
-      "command": "qsv excel xlsb_file",
-      "args": [
-        "xlsb_file"
-      ],
+      "command": "qsv excel --metadata csv",
       "options": {
         "--metadata": "csv"
       }
@@ -1051,10 +964,7 @@
     {
       "name": "excel_metadata_sheet_types_ods",
       "description": "Excel Metadata Sheet Types Ods",
-      "command": "qsv excel ods_file",
-      "args": [
-        "ods_file"
-      ],
+      "command": "qsv excel --metadata csv",
       "options": {
         "--metadata": "csv"
       }
@@ -1062,10 +972,7 @@
     {
       "name": "excel_message",
       "description": "Excel Message",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --sheet Middle",
       "options": {
         "--sheet": "Middle"
       }
@@ -1073,10 +980,7 @@
     {
       "name": "excel_empty_sheet_message",
       "description": "Excel Empty Sheet Message",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --sheet nodata",
       "options": {
         "--sheet": "nodata"
       }
@@ -1084,10 +988,7 @@
     {
       "name": "excel_empty_sheet2_message",
       "description": "Excel Empty Sheet2 Message",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --sheet Sheet1",
       "options": {
         "--sheet": "Sheet1"
       }
@@ -1095,10 +996,7 @@
     {
       "name": "excel_integer_headers",
       "description": "Excel Integer Headers",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel",
       "expected": {
         "data": [
           [
@@ -1125,10 +1023,7 @@
     {
       "name": "excel_range_cols",
       "description": "Excel Range Cols",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --range a:b",
       "options": {
         "--range": "a:b"
       },
@@ -1152,10 +1047,7 @@
     {
       "name": "excel_range_rowcols",
       "description": "Excel Range Rowcols",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --range d2:e2",
       "options": {
         "--range": "d2:e2"
       },
@@ -1171,10 +1063,7 @@
     {
       "name": "excel_range_double_letter_cols",
       "description": "Excel Range Double Letter Cols",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --range z1:ab2",
       "options": {
         "--range": "z1:ab2"
       },
@@ -1196,10 +1085,7 @@
     {
       "name": "excel_neg_float",
       "description": "Excel Neg Float",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --range b2:b",
       "options": {
         "--range": "b2:b"
       },
@@ -1217,10 +1103,7 @@
     {
       "name": "excel_small_neg_float",
       "description": "Excel Small Neg Float",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --range c2:c",
       "options": {
         "--range": "c2:c"
       },
@@ -1238,10 +1121,7 @@
     {
       "name": "excel_neg_int",
       "description": "Excel Neg Int",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --range d2:d",
       "options": {
         "--range": "d2:d"
       },
@@ -1259,10 +1139,7 @@
     {
       "name": "excel_zero",
       "description": "Excel Zero",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --range e2:e",
       "options": {
         "--range": "e2:e"
       },
@@ -1280,10 +1157,7 @@
     {
       "name": "excel_small_pos_float",
       "description": "Excel Small Pos Float",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --range f2:f",
       "options": {
         "--range": "f2:f"
       },
@@ -1301,10 +1175,7 @@
     {
       "name": "excel_pos_float",
       "description": "Excel Pos Float",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --range g2:g",
       "options": {
         "--range": "g2:g"
       },
@@ -1322,10 +1193,7 @@
     {
       "name": "excel_pos_int",
       "description": "Excel Pos Int",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --range h2:h",
       "options": {
         "--range": "h2:h"
       },
@@ -1343,10 +1211,7 @@
     {
       "name": "excel_large_floats",
       "description": "Excel Large Floats",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel",
       "expected": {
         "data": [
           [
@@ -1361,10 +1226,7 @@
     {
       "name": "excel_range_empty_sheet",
       "description": "Excel Range Empty Sheet",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --range a2:b -s Sheet2",
       "options": {
         "--range": "a2:b",
         "-s": "Sheet2"
@@ -1373,18 +1235,12 @@
     {
       "name": "excel_formula_empty_string_value",
       "description": "Excel Formula Empty String Value",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ]
+      "command": "qsv excel"
     },
     {
       "name": "excel_table_range",
       "description": "Excel Table Range",
-      "command": "qsv excel xlsx_file",
-      "args": [
-        "xlsx_file"
-      ],
+      "command": "qsv excel --table Table1",
       "options": {
         "--table": "Table1"
       },
@@ -1426,10 +1282,7 @@
     {
       "name": "excel_named_range",
       "description": "Excel Named Range",
-      "command": "qsv excel xlsx_file",
-      "args": [
-        "xlsx_file"
-      ],
+      "command": "qsv excel --range TestNamedRange",
       "options": {
         "--range": "TestNamedRange"
       },
@@ -1466,10 +1319,7 @@
     {
       "name": "excel_absolute_range",
       "description": "Excel Absolute Range",
-      "command": "qsv excel xlsx_file",
-      "args": [
-        "xlsx_file"
-      ],
+      "command": "qsv excel --range \"Sheet2!A1:C3\"",
       "options": {
         "--range": "Sheet2!A1:C3"
       },
@@ -1496,10 +1346,7 @@
     {
       "name": "excel_absolute_range2",
       "description": "Excel Absolute Range2",
-      "command": "qsv excel xlsx_file",
-      "args": [
-        "xlsx_file"
-      ],
+      "command": "qsv excel --range \"Sheet2!$A$1:$C$3\"",
       "options": {
         "--range": "Sheet2!$A$1:$C$3"
       },
@@ -1526,10 +1373,7 @@
     {
       "name": "excel_cell_simple",
       "description": "Excel Cell Simple",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --cell d2",
       "options": {
         "--cell": "d2"
       },
@@ -1544,10 +1388,7 @@
     {
       "name": "excel_cell_sheet_qualified",
       "description": "Excel Cell Sheet Qualified",
-      "command": "qsv excel xlsx_file",
-      "args": [
-        "xlsx_file"
-      ],
+      "command": "qsv excel --cell \"Sheet2!C2\"",
       "options": {
         "--cell": "Sheet2!C2"
       },
@@ -1562,10 +1403,7 @@
     {
       "name": "excel_cell_absolute",
       "description": "Excel Cell Absolute",
-      "command": "qsv excel xlsx_file",
-      "args": [
-        "xlsx_file"
-      ],
+      "command": "qsv excel --cell \"Sheet2!$C$2\"",
       "options": {
         "--cell": "Sheet2!$C$2"
       },
@@ -1580,10 +1418,7 @@
     {
       "name": "excel_cell_double_letter_col",
       "description": "Excel Cell Double Letter Col",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --cell aa2",
       "options": {
         "--cell": "aa2"
       },
@@ -1598,10 +1433,7 @@
     {
       "name": "excel_cell_precedence",
       "description": "Excel Cell Precedence",
-      "command": "qsv excel xls_file",
-      "args": [
-        "xls_file"
-      ],
+      "command": "qsv excel --cell d2 --range e2:e2",
       "options": {
         "--cell": "d2",
         "--range": "e2:e2"

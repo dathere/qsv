@@ -122,7 +122,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv rename cola,colb",
+      "command": "qsv rename cola,colb --no-headers in.csv",
       "args": [
         "cola,colb"
       ],
@@ -173,7 +173,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv rename _ALL_Generic",
+      "command": "qsv rename _ALL_Generic --no-headers in.csv",
       "args": [
         "_ALL_Generic"
       ],
@@ -232,7 +232,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv rename in.csv",
+      "command": "qsv rename in.csv --pairwise R,cola,S,colb",
       "args": [
         "in.csv"
       ],
@@ -288,7 +288,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv rename in.csv",
+      "command": "qsv rename in.csv --pairwise R,cola",
       "args": [
         "in.csv"
       ],
@@ -342,7 +342,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv rename in.csv",
+      "command": "qsv rename in.csv --pairwise A,alpha,C,gamma",
       "args": [
         "in.csv"
       ],
@@ -497,7 +497,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv rename in.csv",
+      "command": "qsv rename in.csv --pairwise id,birthdate",
       "args": [
         "in.csv"
       ],

@@ -45,7 +45,7 @@
     {
       "name": "table_pipe_delimiter",
       "description": "Table Pipe Delimiter",
-      "command": "qsv table in.file",
+      "command": "qsv table in.file --delimiter \"|\"",
       "args": [
         "in.file"
       ],
@@ -59,7 +59,7 @@
     {
       "name": "invalid_delimiter_len",
       "description": "Invalid Delimiter Len",
-      "command": "qsv table in.file",
+      "command": "qsv table in.file --delimiter \"||\"",
       "args": [
         "in.file"
       ],
@@ -73,7 +73,7 @@
     {
       "name": "table_right_align",
       "description": "Table Right Align",
-      "command": "qsv table in.csv",
+      "command": "qsv table in.csv --align right",
       "args": [
         "in.csv"
       ],
@@ -84,7 +84,7 @@
     {
       "name": "table_center_align",
       "description": "Table Center Align",
-      "command": "qsv table in.csv",
+      "command": "qsv table in.csv -a center",
       "args": [
         "in.csv"
       ],
@@ -95,7 +95,7 @@
     {
       "name": "table_leftendtab_align",
       "description": "Table Leftendtab Align",
-      "command": "qsv table in.csv",
+      "command": "qsv table in.csv --align leftendtab",
       "args": [
         "in.csv"
       ],
@@ -106,7 +106,7 @@
     {
       "name": "table_leftfwf_align",
       "description": "Table Leftfwf Align",
-      "command": "qsv table in.csv",
+      "command": "qsv table in.csv --align leftfwf",
       "args": [
         "in.csv"
       ],

@@ -59,7 +59,7 @@
     {
       "name": "frequency_no_trim",
       "description": "Frequency No Trim",
-      "command": "qsv frequency in.csv",
+      "command": "qsv frequency in.csv --no-trim",
       "args": [
         "in.csv"
       ],
@@ -137,10 +137,7 @@
     {
       "name": "frequency_all_unique",
       "description": "Frequency All Unique",
-      "command": "qsv frequency testdata",
-      "args": [
-        "testdata"
-      ],
+      "command": "qsv frequency",
       "expected": {
         "data": [
           [
@@ -163,12 +160,9 @@
     {
       "name": "frequency_all_unique_with_stats_cache",
       "description": "Frequency All Unique With Stats Cache",
-      "command": "qsv stats \"testdata.clone(\"",
-      "args": [
-        "testdata.clone("
-      ],
+      "command": "qsv stats --stats-jsonl",
       "options": {
-        "--stats-jsonl": "testdata"
+        "--stats-jsonl": "true"
       },
       "expected": {
         "data": [
@@ -192,10 +186,7 @@
     {
       "name": "frequency_custom_null_text",
       "description": "Frequency Custom Null Text",
-      "command": "qsv frequency testdata",
-      "args": [
-        "testdata"
-      ],
+      "command": "qsv frequency",
       "expected": {
         "data": [
           [
@@ -281,12 +272,9 @@
     {
       "name": "frequency_all_unique_with_stats_cache_alt_all_unique_text",
       "description": "Frequency All Unique With Stats Cache Alt All Unique Text",
-      "command": "qsv stats \"testdata.clone(\"",
-      "args": [
-        "testdata.clone("
-      ],
+      "command": "qsv stats --stats-jsonl",
       "options": {
-        "--stats-jsonl": "testdata"
+        "--stats-jsonl": "true"
       },
       "expected": {
         "data": [
@@ -310,10 +298,7 @@
     {
       "name": "frequency_all_unique_stats_cache_default",
       "description": "Frequency All Unique Stats Cache Default",
-      "command": "qsv frequency testdata",
-      "args": [
-        "testdata"
-      ],
+      "command": "qsv frequency",
       "expected": {
         "data": [
           [
@@ -336,12 +321,9 @@
     {
       "name": "frequency_all_unique_stats_mode_none",
       "description": "Frequency All Unique Stats Mode None",
-      "command": "qsv stats \"testdata.clone(\"",
-      "args": [
-        "testdata.clone("
-      ],
+      "command": "qsv stats --stats-jsonl",
       "options": {
-        "--stats-jsonl": "testdata"
+        "--stats-jsonl": "true"
       },
       "expected": {
         "data": [
@@ -435,11 +417,7 @@
     {
       "name": "frequency_issue1962",
       "description": "Frequency Issue1962",
-      "command": "qsv frequency \"testdata.clone(\" testdata",
-      "args": [
-        "testdata.clone(",
-        "testdata"
-      ],
+      "command": "qsv frequency",
       "expected": {
         "data": [
           [
@@ -565,9 +543,108 @@
       }
     },
     {
+      "name": "frequency_vis_whitespace",
+      "description": "Frequency Vis Whitespace",
+      "command": "qsv frequency in.csv --vis-whitespace",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--vis-whitespace": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "header",
+            "value",
+            "8",
+            "44.44444",
+            "1"
+          ],
+          [
+            "header",
+            "(NULL)",
+            "1",
+            "5.55556",
+            "2"
+          ],
+          [
+            "header",
+            "no_whitespace",
+            "1",
+            "5.55556",
+            "2"
+          ],
+          [
+            "header",
+            "value《⍽》",
+            "1",
+            "5.55556",
+            "2"
+          ],
+          [
+            "header",
+            "value《emsp》",
+            "1",
+            "5.55556",
+            "2"
+          ],
+          [
+            "header",
+            "value《figsp》",
+            "1",
+            "5.55556",
+            "2"
+          ],
+          [
+            "header",
+            "value《zwsp》",
+            "1",
+            "5.55556",
+            "2"
+          ],
+          [
+            "header",
+            "《⍽》value",
+            "1",
+            "5.55556",
+            "2"
+          ],
+          [
+            "header",
+            "《emsp》value",
+            "1",
+            "5.55556",
+            "2"
+          ],
+          [
+            "header",
+            "《figsp》value",
+            "1",
+            "5.55556",
+            "2"
+          ],
+          [
+            "header",
+            "《zwsp》value",
+            "1",
+            "5.55556",
+            "2"
+          ]
+        ]
+      }
+    },
+    {
       "name": "frequency_vis_whitespace_no_trim",
       "description": "Frequency Vis Whitespace No Trim",
-      "command": "qsv frequency in.csv",
+      "command": "qsv frequency in.csv --no-trim",
       "args": [
         "in.csv"
       ],
@@ -629,12 +706,76 @@
       }
     },
     {
+      "name": "frequency_vis_whitespace_ignore_case",
+      "description": "Frequency Vis Whitespace Ignore Case",
+      "command": "qsv frequency in.csv --ignore-case",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--ignore-case": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "field",
+            "value",
+            "count",
+            "percentage",
+            "rank"
+          ],
+          [
+            "header",
+            "value",
+            "12",
+            "70.58824",
+            "1"
+          ],
+          [
+            "header",
+            "(NULL)",
+            "1",
+            "5.88235",
+            "2"
+          ],
+          [
+            "header",
+            "no_whitespace",
+            "1",
+            "5.88235",
+            "2"
+          ],
+          [
+            "header",
+            "value《zwsp》",
+            "1",
+            "5.88235",
+            "2"
+          ],
+          [
+            "header",
+            "value《␎》",
+            "1",
+            "5.88235",
+            "2"
+          ],
+          [
+            "header",
+            "value《␏》",
+            "1",
+            "5.88235",
+            "2"
+          ]
+        ]
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
+    },
+    {
       "name": "frequency_json_all_unique",
       "description": "Frequency Json All Unique",
-      "command": "qsv frequency \"testdata.clone(\"",
-      "args": [
-        "testdata.clone("
-      ],
+      "command": "qsv frequency --json",
       "options": {
         "--json": "true"
       }
@@ -642,7 +783,7 @@
     {
       "name": "frequency_json_vis_whitespace",
       "description": "Frequency Json Vis Whitespace",
-      "command": "qsv frequency in.csv",
+      "command": "qsv frequency in.csv --json",
       "args": [
         "in.csv"
       ],
@@ -653,10 +794,7 @@
     {
       "name": "frequency_toon_all_unique",
       "description": "Frequency Toon All Unique",
-      "command": "qsv frequency \"testdata.clone(\"",
-      "args": [
-        "testdata.clone("
-      ],
+      "command": "qsv frequency --toon",
       "options": {
         "--toon": "true"
       }
@@ -664,7 +802,7 @@
     {
       "name": "frequency_toon_vis_whitespace",
       "description": "Frequency Toon Vis Whitespace",
-      "command": "qsv frequency in.csv",
+      "command": "qsv frequency in.csv --toon",
       "args": [
         "in.csv"
       ],
@@ -718,7 +856,7 @@
     {
       "name": "frequency_weight_with_asc",
       "description": "Frequency Weight With Asc",
-      "command": "qsv frequency in.csv",
+      "command": "qsv frequency in.csv --asc",
       "args": [
         "in.csv"
       ],
@@ -737,7 +875,7 @@
     {
       "name": "frequency_weight_json",
       "description": "Frequency Weight Json",
-      "command": "qsv frequency in.csv",
+      "command": "qsv frequency in.csv --json",
       "args": [
         "in.csv"
       ],
@@ -807,12 +945,12 @@
     {
       "name": "frequency_weight_column_not_found",
       "description": "Frequency Weight Column Not Found",
-      "command": "qsv frequency "
+      "command": "qsv frequency"
     },
     {
       "name": "frequency_weight_with_ignore_case",
       "description": "Frequency Weight With Ignore Case",
-      "command": "qsv frequency in.csv",
+      "command": "qsv frequency in.csv --ignore-case",
       "args": [
         "in.csv"
       ],
@@ -826,13 +964,48 @@
     {
       "name": "frequency_weight_with_no_nulls",
       "description": "Frequency Weight With No Nulls",
-      "command": "qsv frequency in.csv",
+      "command": "qsv frequency in.csv --no-nulls",
       "args": [
         "in.csv"
       ],
       "options": {
         "--no-nulls": "true"
       }
+    },
+    {
+      "name": "frequency_weight_parallel_merge",
+      "description": "Frequency Weight Parallel Merge",
+      "command": "qsv frequency in.csv in.csv in.csv",
+      "args": [
+        "in.csv",
+        "in.csv",
+        "in.csv"
+      ]
+    },
+    {
+      "name": "frequency_weight_with_unq_limit_all_unique",
+      "description": "Frequency Weight With Unq Limit All Unique",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "frequency_weight_with_unq_limit_and_limit",
+      "description": "Frequency Weight With Unq Limit And Limit",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
+      "name": "frequency_weight_unq_limit_vs_unweighted",
+      "description": "Frequency Weight Unq Limit Vs Unweighted",
+      "command": "qsv frequency in.csv in.csv",
+      "args": [
+        "in.csv",
+        "in.csv"
+      ]
     },
     {
       "name": "frequency_weight_unq_limit_with_limit_zero",
@@ -860,6 +1033,14 @@
       ]
     },
     {
+      "name": "frequency_weight_extremely_large_values",
+      "description": "Frequency Weight Extremely Large Values",
+      "command": "qsv frequency in.csv",
+      "args": [
+        "in.csv"
+      ]
+    },
+    {
       "name": "frequency_weight_mixed_invalid_values",
       "description": "Frequency Weight Mixed Invalid Values",
       "command": "qsv frequency in.csv in.csv",
@@ -871,8 +1052,9 @@
     {
       "name": "frequency_weight_no_other_zero",
       "description": "Frequency Weight No Other Zero",
-      "command": "qsv frequency in.csv",
+      "command": "qsv frequency in.csv in.csv",
       "args": [
+        "in.csv",
         "in.csv"
       ]
     }

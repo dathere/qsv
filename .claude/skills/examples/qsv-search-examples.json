@@ -30,7 +30,7 @@
     {
       "name": "search_indexed_parallel",
       "description": "Search Indexed Parallel",
-      "command": "qsv search Charlestown data.csv data.csv Charlestown data.csv",
+      "command": "qsv search Charlestown data.csv data.csv Charlestown data.csv --jobs 2",
       "args": [
         "Charlestown",
         "data.csv",
@@ -45,20 +45,22 @@
     {
       "name": "search_indexed_parallel_json",
       "description": "Search Indexed Parallel Json",
-      "command": "qsv search Charlestown data.csv",
+      "command": "qsv search Charlestown data.csv Charlestown data.csv --json --jobs 2",
       "args": [
+        "Charlestown",
+        "data.csv",
         "Charlestown",
         "data.csv"
       ],
       "options": {
-        "--jobs": "2",
-        "--json": "true"
+        "--json": "true",
+        "--jobs": "2"
       }
     },
     {
       "name": "search_json",
       "description": "Search Json",
-      "command": "qsv search ^foo data.csv",
+      "command": "qsv search ^foo data.csv --json",
       "args": [
         "^foo",
         "data.csv"
@@ -70,7 +72,7 @@
     {
       "name": "search_matchonly_json",
       "description": "Search Matchonly Json",
-      "command": "qsv search ^foo data.csv",
+      "command": "qsv search ^foo data.csv --json",
       "args": [
         "^foo",
         "data.csv"
@@ -107,7 +109,7 @@
     {
       "name": "search_match_json",
       "description": "Search Match Json",
-      "command": "qsv search ^foo data.csv",
+      "command": "qsv search ^foo data.csv --json",
       "args": [
         "^foo",
         "data.csv"
@@ -119,7 +121,7 @@
     {
       "name": "search_match_with_count",
       "description": "Search Match With Count",
-      "command": "qsv search ^foo",
+      "command": "qsv search ^foo --count data.csv",
       "args": [
         "^foo"
       ],
@@ -146,7 +148,7 @@
     {
       "name": "search_match_quick",
       "description": "Search Match Quick",
-      "command": "qsv search ^a",
+      "command": "qsv search ^a --quick data.csv",
       "args": [
         "^a"
       ],
@@ -175,7 +177,7 @@
     {
       "name": "search_empty_no_headers",
       "description": "Search Empty No Headers",
-      "command": "qsv search xxx data.csv",
+      "command": "qsv search xxx data.csv --no-headers",
       "args": [
         "xxx",
         "data.csv"
@@ -190,7 +192,7 @@
     {
       "name": "search_ignore_case",
       "description": "Search Ignore Case",
-      "command": "qsv search ^FoO data.csv",
+      "command": "qsv search ^FoO data.csv --ignore-case",
       "args": [
         "^FoO",
         "data.csv"
@@ -221,13 +223,13 @@
     {
       "name": "search_ignore_case_count",
       "description": "Search Ignore Case Count",
-      "command": "qsv search ^FoO",
+      "command": "qsv search ^FoO --ignore-case --count data.csv",
       "args": [
         "^FoO"
       ],
       "options": {
-        "--count": "data.csv",
-        "--ignore-case": "true"
+        "--ignore-case": "true",
+        "--count": "data.csv"
       },
       "expected": {
         "data": [
@@ -252,7 +254,7 @@
     {
       "name": "search_unicode",
       "description": "Search Unicode",
-      "command": "qsv search ^Ḟoo data.csv",
+      "command": "qsv search ^Ḟoo data.csv --unicode",
       "args": [
         "^Ḟoo",
         "data.csv"
@@ -279,7 +281,7 @@
     {
       "name": "search_unicode_count",
       "description": "Search Unicode Count",
-      "command": "qsv search ^Ḟoo",
+      "command": "qsv search ^Ḟoo --unicode --count data.csv",
       "args": [
         "^Ḟoo"
       ],
@@ -330,7 +332,7 @@
     {
       "name": "search_unicode_envvar_count",
       "description": "Search Unicode Envvar Count",
-      "command": "qsv search ^Ḟoo",
+      "command": "qsv search ^Ḟoo --count data.csv",
       "args": [
         "^Ḟoo"
       ],
@@ -356,7 +358,7 @@
     {
       "name": "search_no_headers",
       "description": "Search No Headers",
-      "command": "qsv search ^foo data.csv",
+      "command": "qsv search ^foo data.csv --no-headers",
       "args": [
         "^foo",
         "data.csv"
@@ -383,7 +385,7 @@
     {
       "name": "search_no_headers_json",
       "description": "Search No Headers Json",
-      "command": "qsv search ^foo data.csv",
+      "command": "qsv search ^foo data.csv --no-headers",
       "args": [
         "^foo",
         "data.csv"
@@ -398,13 +400,13 @@
     {
       "name": "search_no_headers_count",
       "description": "Search No Headers Count",
-      "command": "qsv search ^foo",
+      "command": "qsv search ^foo --count data.csv --no-headers",
       "args": [
         "^foo"
       ],
       "options": {
-        "--no-headers": "true",
-        "--count": "data.csv"
+        "--count": "data.csv",
+        "--no-headers": "true"
       },
       "expected": {
         "data": [
@@ -425,7 +427,7 @@
     {
       "name": "search_select",
       "description": "Search Select",
-      "command": "qsv search ^foo data.csv",
+      "command": "qsv search ^foo data.csv --select h2",
       "args": [
         "^foo",
         "data.csv"
@@ -449,13 +451,13 @@
     {
       "name": "search_select_count",
       "description": "Search Select Count",
-      "command": "qsv search ^foo",
+      "command": "qsv search ^foo --count data.csv --select h2",
       "args": [
         "^foo"
       ],
       "options": {
-        "--select": "h2",
-        "--count": "data.csv"
+        "--count": "data.csv",
+        "--select": "h2"
       },
       "expected": {
         "data": [
@@ -473,14 +475,14 @@
     {
       "name": "search_select_no_headers",
       "description": "Search Select No Headers",
-      "command": "qsv search ^foo data.csv",
+      "command": "qsv search ^foo data.csv --select 2 --no-headers",
       "args": [
         "^foo",
         "data.csv"
       ],
       "options": {
-        "--no-headers": "true",
-        "--select": "2"
+        "--select": "2",
+        "--no-headers": "true"
       },
       "expected": {
         "data": [
@@ -497,14 +499,14 @@
     {
       "name": "search_select_no_headers_count",
       "description": "Search Select No Headers Count",
-      "command": "qsv search ^foo",
+      "command": "qsv search ^foo --count data.csv --select 2 --no-headers",
       "args": [
         "^foo"
       ],
       "options": {
         "--count": "data.csv",
-        "--no-headers": "true",
-        "--select": "2"
+        "--select": "2",
+        "--no-headers": "true"
       },
       "expected": {
         "data": [
@@ -521,7 +523,7 @@
     {
       "name": "search_invert_match",
       "description": "Search Invert Match",
-      "command": "qsv search ^foo data.csv",
+      "command": "qsv search ^foo data.csv --invert-match",
       "args": [
         "^foo",
         "data.csv"
@@ -549,13 +551,13 @@
     {
       "name": "search_invert_match_count",
       "description": "Search Invert Match Count",
-      "command": "qsv search ^foo",
+      "command": "qsv search ^foo --invert-match --count data.csv",
       "args": [
         "^foo"
       ],
       "options": {
-        "--count": "data.csv",
-        "--invert-match": "true"
+        "--invert-match": "true",
+        "--count": "data.csv"
       },
       "expected": {
         "data": [
@@ -577,7 +579,7 @@
     {
       "name": "search_invert_match_no_headers",
       "description": "Search Invert Match No Headers",
-      "command": "qsv search ^foo data.csv",
+      "command": "qsv search ^foo data.csv --no-headers",
       "args": [
         "^foo",
         "data.csv"
@@ -604,7 +606,7 @@
     {
       "name": "search_invert_match_no_headers_count",
       "description": "Search Invert Match No Headers Count",
-      "command": "qsv search ^foo",
+      "command": "qsv search ^foo --count data.csv --no-headers",
       "args": [
         "^foo"
       ],
@@ -669,7 +671,7 @@
     {
       "name": "search_flag_no_headers",
       "description": "Search Flag No Headers",
-      "command": "qsv search ^foo data.csv",
+      "command": "qsv search ^foo data.csv --no-headers",
       "args": [
         "^foo",
         "data.csv"
@@ -730,7 +732,7 @@
     {
       "name": "search_flag_match_only_no_headers",
       "description": "Search Flag Match Only No Headers",
-      "command": "qsv search ^foo data.csv",
+      "command": "qsv search ^foo data.csv --no-headers",
       "args": [
         "^foo",
         "data.csv"
@@ -755,7 +757,7 @@
     {
       "name": "search_flag_invert_match",
       "description": "Search Flag Invert Match",
-      "command": "qsv search ^foo data.csv",
+      "command": "qsv search ^foo data.csv --invert-match",
       "args": [
         "^foo",
         "data.csv"
@@ -796,7 +798,7 @@
     {
       "name": "search_flag_invert_match_matchonly",
       "description": "Search Flag Invert Match Matchonly",
-      "command": "qsv search ^foo data.csv",
+      "command": "qsv search ^foo data.csv --invert-match",
       "args": [
         "^foo",
         "data.csv"
@@ -821,7 +823,7 @@
     {
       "name": "search_flag_invert_match_count",
       "description": "Search Flag Invert Match Count",
-      "command": "qsv search ^foo",
+      "command": "qsv search ^foo --count data.csv --invert-match",
       "args": [
         "^foo"
       ],
@@ -862,13 +864,13 @@
     {
       "name": "search_flag_invert_matchonly_count",
       "description": "Search Flag Invert Matchonly Count",
-      "command": "qsv search ^foo",
+      "command": "qsv search ^foo --count data.csv --invert-match",
       "args": [
         "^foo"
       ],
       "options": {
-        "--invert-match": "true",
-        "--count": "data.csv"
+        "--count": "data.csv",
+        "--invert-match": "true"
       },
       "expected": {
         "data": [
@@ -887,10 +889,9 @@
     {
       "name": "search_preview",
       "description": "Search Preview",
-      "command": "qsv search \"Beacon Hill\" test_file",
+      "command": "qsv search \"Beacon Hill\"",
       "args": [
-        "Beacon Hill",
-        "test_file"
+        "Beacon Hill"
       ],
       "expected": {
         "data": [
@@ -1148,10 +1149,9 @@
     {
       "name": "search_preview_json",
       "description": "Search Preview Json",
-      "command": "qsv search \"Beacon Hill\" test_file",
+      "command": "qsv search \"Beacon Hill\" --quiet",
       "args": [
-        "Beacon Hill",
-        "test_file"
+        "Beacon Hill"
       ],
       "options": {
         "--quiet": "true"
@@ -1160,7 +1160,7 @@
     {
       "name": "search_literal",
       "description": "Search Literal",
-      "command": "qsv search ^bar data.csv",
+      "command": "qsv search ^bar data.csv --literal",
       "args": [
         "^bar",
         "data.csv"
@@ -1184,7 +1184,7 @@
     {
       "name": "search_exact",
       "description": "Search Exact",
-      "command": "qsv search data.csv",
+      "command": "qsv search data.csv --exact \"J. Bloggs\"",
       "args": [
         "data.csv"
       ],
@@ -1207,7 +1207,7 @@
     {
       "name": "search_exact_with_special_chars",
       "description": "Search Exact With Special Chars",
-      "command": "qsv search data.csv",
+      "command": "qsv search data.csv --exact foo^bar",
       "args": [
         "data.csv"
       ],
@@ -1230,7 +1230,7 @@
     {
       "name": "search_exact_no_match_substring",
       "description": "Search Exact No Match Substring",
-      "command": "qsv search data.csv",
+      "command": "qsv search data.csv --exact \"J. Bloggs\"",
       "args": [
         "data.csv"
       ],
@@ -1253,7 +1253,7 @@
     {
       "name": "search_exact_case_insensitive",
       "description": "Search Exact Case Insensitive",
-      "command": "qsv search data.csv",
+      "command": "qsv search data.csv --ignore-case \"j. bloggs\"",
       "args": [
         "data.csv"
       ],

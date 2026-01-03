@@ -38,18 +38,12 @@
     {
       "name": "validate_good_tab",
       "description": "Validate Good Tab",
-      "command": "qsv validate tabfile",
-      "args": [
-        "tabfile"
-      ]
+      "command": "qsv validate"
     },
     {
       "name": "validate_bad_tsv",
       "description": "Validate Bad Tsv",
-      "command": "qsv validate tabfile",
-      "args": [
-        "tabfile"
-      ]
+      "command": "qsv validate"
     },
     {
       "name": "validate_good_csv_msg",
@@ -130,7 +124,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv validate ",
+      "command": "qsv validate --pretty-json data.csv",
       "options": {
         "--pretty-json": "data.csv"
       }
@@ -163,7 +157,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv validate ",
+      "command": "qsv validate --json data.csv",
       "options": {
         "--json": "data.csv"
       }
@@ -297,7 +291,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv validate ",
+      "command": "qsv validate --pretty-json data.csv",
       "options": {
         "--pretty-json": "data.csv"
       }
@@ -803,7 +797,7 @@
     {
       "name": "validate_with_schema_noheader",
       "description": "Validate With Schema Noheader",
-      "command": "qsv validate data.csv schema.json",
+      "command": "qsv validate data.csv schema.json --no-headers",
       "args": [
         "data.csv",
         "schema.json"
@@ -825,12 +819,456 @@
       ]
     },
     {
+      "name": "validate_dynenum_with_column",
+      "description": "Validate Dynenum With Column",
+      "input": {
+        "data": [
+          [
+            "code",
+            "name",
+            "category"
+          ],
+          [
+            "A1",
+            "Apple",
+            "fruit"
+          ],
+          [
+            "B2",
+            "Banana",
+            "fruit"
+          ],
+          [
+            "C3",
+            "Carrot",
+            "vegetable"
+          ]
+        ],
+        "filename": "lookup.csv"
+      },
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_dynenum_with_column_index",
+      "description": "Validate Dynenum With Column Index",
+      "input": {
+        "data": [
+          [
+            "code",
+            "name",
+            "category"
+          ],
+          [
+            "A1",
+            "Apple",
+            "fruit"
+          ],
+          [
+            "B2",
+            "Banana",
+            "fruit"
+          ],
+          [
+            "C3",
+            "Carrot",
+            "vegetable"
+          ]
+        ],
+        "filename": "lookup.csv"
+      },
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_dynenum_with_invalid_column",
+      "description": "Validate Dynenum With Invalid Column",
+      "input": {
+        "data": [
+          [
+            "code",
+            "name"
+          ],
+          [
+            "A1",
+            "Apple"
+          ],
+          [
+            "B2",
+            "Banana"
+          ]
+        ],
+        "filename": "lookup.csv"
+      },
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_dynenum_with_remote_csv",
+      "description": "Validate Dynenum With Remote Csv",
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_lite_dynenum_combinations",
+      "description": "Validate Lite Dynenum Combinations",
+      "input": {
+        "data": [
+          [
+            "id",
+            "name",
+            "category"
+          ],
+          [
+            "1",
+            "Apple",
+            "fruit"
+          ],
+          [
+            "2",
+            "Banana",
+            "fruit"
+          ],
+          [
+            "3",
+            "Carrot",
+            "vegetable"
+          ]
+        ],
+        "filename": "lookup.csv"
+      },
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_unique_combined_with",
+      "description": "Validate Unique Combined With",
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_unique_combined_with_indices",
+      "description": "Validate Unique Combined With Indices",
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_unique_combined_with_both_names_and_indices",
+      "description": "Validate Unique Combined With Both Names And Indices",
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_unique_combined_with_empty_values",
+      "description": "Validate Unique Combined With Empty Values",
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_unique_combined_with_special_chars",
+      "description": "Validate Unique Combined With Special Chars",
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_dynenum_with_multiple_columns",
+      "description": "Validate Dynenum With Multiple Columns",
+      "input": {
+        "data": [
+          [
+            "code",
+            "name",
+            "category",
+            "status"
+          ],
+          [
+            "A1",
+            "Apple",
+            "fruit",
+            "active"
+          ],
+          [
+            "B2",
+            "Banana",
+            "fruit",
+            "active"
+          ],
+          [
+            "C3",
+            "Carrot",
+            "vegetable",
+            "inactive"
+          ],
+          [
+            "D4",
+            "Dragon Fruit",
+            "fruit",
+            "active"
+          ]
+        ],
+        "filename": "lookup.csv"
+      },
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_dynenum_with_caching",
+      "description": "Validate Dynenum With Caching",
+      "input": {
+        "data": [
+          [
+            "code",
+            "name"
+          ],
+          [
+            "A1",
+            "Apple"
+          ],
+          [
+            "B2",
+            "Banana"
+          ],
+          [
+            "C3",
+            "Carrot"
+          ]
+        ],
+        "filename": "lookup.csv"
+      },
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_dynenum_with_invalid_uri",
+      "description": "Validate Dynenum With Invalid Uri",
+      "input": {
+        "data": [
+          [
+            "id",
+            "product"
+          ],
+          [
+            "1",
+            "Apple"
+          ],
+          [
+            "2",
+            "Banana"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_unique_combined_with_mixed_names_and_indices",
+      "description": "Validate Unique Combined With Mixed Names And Indices",
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_no_format_validation",
+      "description": "Validate No Format Validation",
+      "command": "qsv validate data.csv schema.json schema.json --no-format-validation data.csv",
+      "args": [
+        "data.csv",
+        "schema.json",
+        "schema.json"
+      ],
+      "options": {
+        "--no-format-validation": "data.csv"
+      }
+    },
+    {
+      "name": "validate_json_schema_file",
+      "description": "Validate Json Schema File",
+      "command": "qsv validate schema schema.json",
+      "args": [
+        "schema",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_invalid_json_schema_file",
+      "description": "Validate Invalid Json Schema File",
+      "command": "qsv validate schema schema.json schema schema2.json",
+      "args": [
+        "schema",
+        "schema.json",
+        "schema",
+        "schema2.json"
+      ]
+    },
+    {
+      "name": "validate_with_fancy_regex",
+      "description": "Validate With Fancy Regex",
+      "command": "qsv validate data.csv schema.json data.csv schema.json --fancy-regex",
+      "args": [
+        "data.csv",
+        "schema.json",
+        "data.csv",
+        "schema.json"
+      ],
+      "options": {
+        "--fancy-regex": "true"
+      }
+    },
+    {
+      "name": "validate_schema_subcommand_valid_schema",
+      "description": "Validate Schema Subcommand Valid Schema",
+      "command": "qsv validate schema schema.json",
+      "args": [
+        "schema",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_schema_subcommand_invalid_schema",
+      "description": "Validate Schema Subcommand Invalid Schema",
+      "command": "qsv validate schema schema.json",
+      "args": [
+        "schema",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_schema_subcommand_invalid_draft",
+      "description": "Validate Schema Subcommand Invalid Draft",
+      "command": "qsv validate schema schema.json",
+      "args": [
+        "schema",
+        "schema.json"
+      ]
+    },
+    {
       "name": "validate_schema_subcommand_no_schema_file",
       "description": "Validate Schema Subcommand No Schema File",
       "command": "qsv validate schema",
       "args": [
         "schema"
       ]
+    },
+    {
+      "name": "validate_schema_subcommand_with_no_format_validation",
+      "description": "Validate Schema Subcommand With No Format Validation",
+      "command": "qsv validate schema --no-format-validation schema.json",
+      "args": [
+        "schema"
+      ],
+      "options": {
+        "--no-format-validation": "schema.json"
+      }
+    },
+    {
+      "name": "validate_with_no_format_validation_success",
+      "description": "Validate With No Format Validation Success",
+      "input": {
+        "data": [
+          [
+            "id",
+            "name",
+            "email",
+            "website",
+            "currency"
+          ],
+          [
+            "1",
+            "John Doe",
+            "not-an-email",
+            "not-a-url",
+            "not-currency"
+          ],
+          [
+            "2",
+            "Jane Smith",
+            "also-not-email",
+            "also-not-url",
+            "also-not-currency"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv validate data.csv schema.json schema.json --no-format-validation data.csv",
+      "args": [
+        "data.csv",
+        "schema.json",
+        "schema.json"
+      ],
+      "options": {
+        "--no-format-validation": "data.csv"
+      }
+    },
+    {
+      "name": "validate_with_no_format_validation_mixed_errors",
+      "description": "Validate With No Format Validation Mixed Errors",
+      "command": "qsv validate data.csv schema.json schema.json --no-format-validation data.csv",
+      "args": [
+        "data.csv",
+        "schema.json",
+        "schema.json"
+      ],
+      "options": {
+        "--no-format-validation": "data.csv"
+      },
+      "tags": [
+        "error-handling"
+      ]
+    },
+    {
+      "name": "validate_schema_subcommand_with_invalid_format_validation",
+      "description": "Validate Schema Subcommand With Invalid Format Validation",
+      "command": "qsv validate schema schema.json schema --no-format-validation schema.json",
+      "args": [
+        "schema",
+        "schema.json",
+        "schema"
+      ],
+      "options": {
+        "--no-format-validation": "schema.json"
+      }
     },
     {
       "name": "validate_schema_subcommand_with_url_schema",
@@ -849,6 +1287,36 @@
         "schema",
         "https://raw.githubusercontent.com/dathere/qsv/master/nonexistent-schema.json"
       ]
+    },
+    {
+      "name": "validate_with_no_format_validation_and_dynamic_enum",
+      "description": "Validate With No Format Validation And Dynamic Enum",
+      "input": {
+        "data": [
+          [
+            "code",
+            "name"
+          ],
+          [
+            "A1",
+            "Apple"
+          ],
+          [
+            "B2",
+            "Banana"
+          ]
+        ],
+        "filename": "lookup.csv"
+      },
+      "command": "qsv validate data.csv schema.json schema.json --no-format-validation data.csv",
+      "args": [
+        "data.csv",
+        "schema.json",
+        "schema.json"
+      ],
+      "options": {
+        "--no-format-validation": "data.csv"
+      }
     },
     {
       "name": "validate_multiple_files_rfc4180",
@@ -976,40 +1444,12 @@
         ],
         "filename": "file1.csv"
       },
-      "command": "qsv validate file2.csv",
+      "command": "qsv validate file2.csv --json file1.csv",
       "args": [
         "file2.csv"
       ],
       "options": {
         "--json": "file1.csv"
-      }
-    },
-    {
-      "name": "validate_multiple_files_pretty_json_output",
-      "description": "Validate Multiple Files Pretty Json Output",
-      "input": {
-        "data": [
-          [
-            "id",
-            "name"
-          ],
-          [
-            "1",
-            "John"
-          ],
-          [
-            "2",
-            "Jane"
-          ]
-        ],
-        "filename": "file1.csv"
-      },
-      "command": "qsv validate file2.csv",
-      "args": [
-        "file2.csv"
-      ],
-      "options": {
-        "--pretty-json": "file1.csv"
       }
     },
     {
@@ -1032,7 +1472,7 @@
         ],
         "filename": "file1.csv"
       },
-      "command": "qsv validate file2.csv",
+      "command": "qsv validate file2.csv --quiet file1.csv",
       "args": [
         "file2.csv"
       ],
@@ -1087,7 +1527,7 @@
         ],
         "filename": "file1.csv"
       },
-      "command": "qsv validate file2.csv",
+      "command": "qsv validate file2.csv --no-headers file1.csv",
       "args": [
         "file2.csv"
       ],
@@ -1135,6 +1575,116 @@
       ],
       "tags": [
         "error-handling"
+      ]
+    },
+    {
+      "name": "validate_json_schema_still_single_file",
+      "description": "Validate Json Schema Still Single File",
+      "input": {
+        "data": [
+          [
+            "id",
+            "name",
+            "age"
+          ],
+          [
+            "1",
+            "John",
+            "25"
+          ],
+          [
+            "2",
+            "Jane",
+            "30"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_json_schema_rejects_multiple_files",
+      "description": "Validate Json Schema Rejects Multiple Files",
+      "input": {
+        "data": [
+          [
+            "id",
+            "name"
+          ],
+          [
+            "1",
+            "John"
+          ]
+        ],
+        "filename": "file1.csv"
+      },
+      "command": "qsv validate file1.csv file2.csv schema.json",
+      "args": [
+        "file1.csv",
+        "file2.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_with_email_format_strict_default",
+      "description": "Validate With Email Format Strict Default",
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_with_email_format_strict_email_options",
+      "description": "Validate With Email Format Strict Email Options",
+      "command": "qsv validate schema.json schema.json --email-domain-literal data.csv --email-required-tld data.csv",
+      "args": [
+        "schema.json",
+        "schema.json"
+      ],
+      "options": {
+        "--email-domain-literal": "data.csv",
+        "--email-required-tld": "data.csv"
+      }
+    },
+    {
+      "name": "validate_with_hostname_format_strict",
+      "description": "Validate With Hostname Format Strict",
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_with_ipv4_format_strict",
+      "description": "Validate With Ipv4 Format Strict",
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_with_ipv6_format_strict",
+      "description": "Validate With Ipv6 Format Strict",
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
+      ]
+    },
+    {
+      "name": "validate_with_multiple_formats_strict",
+      "description": "Validate With Multiple Formats Strict",
+      "command": "qsv validate data.csv schema.json",
+      "args": [
+        "data.csv",
+        "schema.json"
       ]
     }
   ]

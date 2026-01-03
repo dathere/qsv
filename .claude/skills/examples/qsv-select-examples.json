@@ -3,32 +3,9 @@
   "version": "12.0.0",
   "examples": [
     {
-      "name": "headers",
-      "description": "Headers",
-      "command": "qsv select \"$select\" data.csv",
-      "args": [
-        "$select",
-        "data.csv"
-      ]
-    },
-    {
-      "name": "no_headers",
-      "description": "No Headers",
-      "command": "qsv select data.csv",
-      "args": [
-        "data.csv"
-      ],
-      "options": {
-        "--no-headers": "$select_no_headers"
-      },
-      "tags": [
-        "no-headers"
-      ]
-    },
-    {
-      "name": "test_select_sort",
-      "description": "Test Select Sort",
-      "command": "qsv select 1-",
+      "name": "select_reverse_sentinel",
+      "description": "Select Reverse Sentinel",
+      "command": "qsv select 1- --sort data.csv",
       "args": [
         "1-"
       ],
@@ -89,9 +66,9 @@
       }
     },
     {
-      "name": "test_select_sort_subset",
-      "description": "Test Select Sort Subset",
-      "command": "qsv select 4,7-9",
+      "name": "select_reverse_sentinel_2",
+      "description": "Select Reverse Sentinel 2",
+      "command": "qsv select 4,7-9 --sort data.csv",
       "args": [
         "4,7-9"
       ],
@@ -128,9 +105,9 @@
       }
     },
     {
-      "name": "test_select_random_seeded",
-      "description": "Test Select Random Seeded",
-      "command": "qsv select 1-",
+      "name": "select_reverse_sentinel_3",
+      "description": "Select Reverse Sentinel 3",
+      "command": "qsv select 1- --random data.csv",
       "args": [
         "1-"
       ],
@@ -191,9 +168,9 @@
       }
     },
     {
-      "name": "test_select_random_seeded_subset",
-      "description": "Test Select Random Seeded Subset",
-      "command": "qsv select 4,7-9",
+      "name": "select_reverse_sentinel_4",
+      "description": "Select Reverse Sentinel 4",
+      "command": "qsv select 4,7-9 --random data.csv",
       "args": [
         "4,7-9"
       ],
@@ -230,9 +207,9 @@
       }
     },
     {
-      "name": "test_select_semicolon_separator",
-      "description": "Test Select Semicolon Separator",
-      "command": "qsv select h1 data.csv h1 data.csv",
+      "name": "select_reverse_sentinel_5",
+      "description": "Select Reverse Sentinel 5",
+      "command": "qsv select h1 data.csv h1 data.csv --delimiter \";\"",
       "args": [
         "h1",
         "data.csv",
@@ -257,8 +234,8 @@
       ]
     },
     {
-      "name": "test_select_out_of_bounds_indices",
-      "description": "Test Select Out Of Bounds Indices",
+      "name": "select_reverse_sentinel_6",
+      "description": "Select Reverse Sentinel 6",
       "command": "qsv select 10 data.csv",
       "args": [
         "10",
@@ -266,8 +243,8 @@
       ]
     },
     {
-      "name": "test_select_robustness",
-      "description": "Test Select Robustness",
+      "name": "select_reverse_sentinel_7",
+      "description": "Select Reverse Sentinel 7",
       "command": "qsv select 5 data.csv 2 data.csv",
       "args": [
         "5",

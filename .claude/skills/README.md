@@ -7,7 +7,7 @@ Complete TypeScript implementation for loading, executing, and composing qsv com
 This directory contains:
 
 1. **66 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
-2. **1,180 Test-Based Examples** - Real examples extracted from CI tests with full I/O data
+2. **1,279 Test-Based Examples** - Real examples extracted from CI tests with full I/O data
 3. **TypeScript Executor** - Complete implementation for running qsv skills
 4. **Pipeline Composition API** - Fluent interface for chaining operations
 5. **Working Demos** - Practical demonstrations of the system
@@ -16,7 +16,7 @@ Each skill file provides:
 - **Command specification**: Binary, subcommand, arguments, and options (parsed with qsv-docopt)
 - **Rich descriptions**: Extracted from usage text
 - **USAGE examples**: Real usage examples from documentation (417 total)
-- **Test examples reference**: Pointer to load-as-needed test examples (1,180 total from 54 skills)
+- **Test examples reference**: Pointer to load-as-needed test examples (1,279 total from 54 skills)
 - **Type information**: Inferred parameter types and validation
 - **Performance hints**: Memory usage, streaming capability, indexing benefits
 - **Links to tests**: For additional context and validation
@@ -62,8 +62,8 @@ node examples/test-examples-demo.js
 **Total Statistics:**
 - **Skills**: 66 commands
 - **USAGE Examples**: 417 from documentation
-- **Test Examples**: 1,180 from CI tests (54 skills, 82% coverage)
-- **Total Examples**: 1,597
+- **Test Examples**: 1,279 from CI tests (54 skills, 82% coverage)
+- **Total Examples**: 1,696
 - **Options**: 837 command-line options
 - **Arguments**: 60 positional arguments
 
@@ -280,23 +280,27 @@ Rich examples are extracted from CI test files using `qsv-test-examples-gen`:
 cargo run --bin qsv-test-examples-gen --features all_features
 
 # Output: .claude/skills/examples/*.json
-# Result: 1,180 examples from 54 test files
+# Result: 1,279 examples from 54 test files
 ```
 
 The test examples generator:
-1. Finds all `#[test]` functions in `tests/test_*.rs`
+1. Finds all `#[test]` functions in `tests/test_*.rs` using UTF-8-safe brace counting
 2. Extracts input data from `wrk.create()` calls
-3. Parses commands from `wrk.command()` and `.arg()` chains
+3. Parses commands from both `wrk.command()` and `cmd.arg()` patterns (string literals only)
 4. Captures expected output from assertions
 5. Infers tags (regression, basic, error-handling, etc.)
-6. Generates JSON files with real input/output data
+6. Applies proper shell quoting to command strings (spaces, quotes, special chars)
+7. Deduplicates test names by appending counters to duplicates
+8. Generates JSON files with real input/output data
 
 **Benefits**:
 - ✅ Real, tested examples from CI suite
 - ✅ Full input CSV data and expected outputs
+- ✅ Shell-safe command strings with proper quoting
+- ✅ Unique test names with automatic deduplication
 - ✅ Tagged for easy filtering
 - ✅ Load-as-needed architecture (keeps skill files lightweight)
-- ✅ 1,180 examples across 54 skills (82% coverage)
+- ✅ 1,279 examples across 54 skills (82% coverage)
 
 ## Type Inference
 
@@ -394,7 +398,8 @@ MIT
 **Generators**: `qsv-skill-gen` + `qsv-test-examples-gen` v12.0.0
 **Skills**: 66/66 commands (100%)
 **USAGE Examples**: 417 from documentation
-**Test Examples**: 1,180 from CI tests (54 skills)
-**Total Examples**: 1,597
+**Test Examples**: 1,279 from CI tests (54 skills)
+**Total Examples**: 1,696
 **Parsing**: qsv-docopt (robust, accurate)
+**Features**: Shell-safe quoting, UTF-8 support, complete command strings, automatic deduplication
 **Status**: ✅ Complete and Production Ready

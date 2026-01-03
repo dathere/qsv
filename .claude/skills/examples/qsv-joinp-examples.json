@@ -3,33 +3,8 @@
   "version": "12.0.0",
   "examples": [
     {
-      "name": "headers",
-      "description": "Headers",
-      "command": "qsv joinp "
-    },
-    {
-      "name": "headers",
-      "description": "Headers",
-      "command": "qsv joinp "
-    },
-    {
-      "name": "headers",
-      "description": "Headers",
-      "command": "qsv joinp "
-    },
-    {
-      "name": "headers",
-      "description": "Headers",
-      "command": "qsv joinp "
-    },
-    {
-      "name": "headers",
-      "description": "Headers",
-      "command": "qsv joinp "
-    },
-    {
-      "name": "joinp_cross",
-      "description": "Joinp Cross",
+      "name": "joinp_left_anti",
+      "description": "Joinp Left Anti",
       "input": {
         "data": [
           [
@@ -47,7 +22,7 @@
         ],
         "filename": "letters.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --cross",
       "options": {
         "--cross": "true"
       },
@@ -87,8 +62,8 @@
       }
     },
     {
-      "name": "joinp_cross_compress",
-      "description": "Joinp Cross Compress",
+      "name": "joinp_left_anti_2",
+      "description": "Joinp Left Anti 2",
       "input": {
         "data": [
           [
@@ -106,10 +81,7 @@
         ],
         "filename": "letters.csv"
       },
-      "command": "qsv joinp \"&out_file\"",
-      "args": [
-        "&out_file"
-      ],
+      "command": "qsv joinp --cross decompress",
       "options": {
         "--cross": "decompress"
       },
@@ -149,8 +121,8 @@
       }
     },
     {
-      "name": "joinp_asof_date",
-      "description": "Joinp Asof Date",
+      "name": "joinp_left_anti_3",
+      "description": "Joinp Left Anti 3",
       "input": {
         "data": [
           [
@@ -176,7 +148,7 @@
         ],
         "filename": "gdp.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --asof",
       "options": {
         "--asof": "true"
       },
@@ -211,8 +183,8 @@
       }
     },
     {
-      "name": "joinp_asof_date_compress",
-      "description": "Joinp Asof Date Compress",
+      "name": "joinp_left_anti_4",
+      "description": "Joinp Left Anti 4",
       "input": {
         "data": [
           [
@@ -238,10 +210,7 @@
         ],
         "filename": "gdp.csv"
       },
-      "command": "qsv joinp \"&out_file\"",
-      "args": [
-        "&out_file"
-      ],
+      "command": "qsv joinp --asof decompress",
       "options": {
         "--asof": "decompress"
       },
@@ -276,8 +245,8 @@
       }
     },
     {
-      "name": "joinp_asof_date_comments",
-      "description": "Joinp Asof Date Comments",
+      "name": "joinp_left_anti_5",
+      "description": "Joinp Left Anti 5",
       "input": {
         "data": [
           [
@@ -307,7 +276,7 @@
         ],
         "filename": "gdp.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --asof",
       "options": {
         "--asof": "true"
       },
@@ -342,8 +311,8 @@
       }
     },
     {
-      "name": "joinp_asofby_1",
-      "description": "Joinp Asofby 1",
+      "name": "joinp_left_anti_6",
+      "description": "Joinp Left Anti 6",
       "input": {
         "data": [
           [
@@ -385,7 +354,7 @@
         ],
         "filename": "trades.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --asof",
       "options": {
         "--asof": "true"
       },
@@ -449,8 +418,8 @@
       }
     },
     {
-      "name": "joinp_asofby_left_place_date",
-      "description": "Joinp Asofby Left Place Date",
+      "name": "joinp_left_anti_7",
+      "description": "Joinp Left Anti 7",
       "input": {
         "data": [
           [
@@ -481,7 +450,7 @@
         ],
         "filename": "gdp.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --asof",
       "options": {
         "--asof": "true"
       },
@@ -533,8 +502,8 @@
       }
     },
     {
-      "name": "joinp_asofby_right_place_date",
-      "description": "Joinp Asofby Right Place Date",
+      "name": "joinp_left_anti_8",
+      "description": "Joinp Left Anti 8",
       "input": {
         "data": [
           [
@@ -565,7 +534,7 @@
         ],
         "filename": "gdp.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --asof",
       "options": {
         "--asof": "true"
       },
@@ -617,8 +586,8 @@
       }
     },
     {
-      "name": "joinp_asofby_leftright_place_date",
-      "description": "Joinp Asofby Leftright Place Date",
+      "name": "joinp_left_anti_9",
+      "description": "Joinp Left Anti 9",
       "input": {
         "data": [
           [
@@ -649,7 +618,7 @@
         ],
         "filename": "gdp.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --asof",
       "options": {
         "--asof": "true"
       },
@@ -701,8 +670,8 @@
       }
     },
     {
-      "name": "joinp_asof_nearest_date",
-      "description": "Joinp Asof Nearest Date",
+      "name": "joinp_left_anti_10",
+      "description": "Joinp Left Anti 10",
       "input": {
         "data": [
           [
@@ -740,7 +709,7 @@
         ],
         "filename": "gdp.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --asof",
       "options": {
         "--asof": "true"
       },
@@ -775,8 +744,8 @@
       }
     },
     {
-      "name": "joinp_asof_date_diffcolnames",
-      "description": "Joinp Asof Date Diffcolnames",
+      "name": "joinp_left_anti_11",
+      "description": "Joinp Left Anti 11",
       "input": {
         "data": [
           [
@@ -802,7 +771,7 @@
         ],
         "filename": "gdp.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --asof",
       "options": {
         "--asof": "true"
       },
@@ -842,8 +811,8 @@
       }
     },
     {
-      "name": "joinp_asof_date_diffcolnames_sqlfilter",
-      "description": "Joinp Asof Date Diffcolnames Sqlfilter",
+      "name": "joinp_left_anti_12",
+      "description": "Joinp Left Anti 12",
       "input": {
         "data": [
           [
@@ -869,7 +838,7 @@
         ],
         "filename": "gdp.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --asof",
       "options": {
         "--asof": "true"
       },
@@ -891,8 +860,8 @@
       }
     },
     {
-      "name": "joinp_ignore_case",
-      "description": "Joinp Ignore Case",
+      "name": "joinp_left_anti_13",
+      "description": "Joinp Left Anti 13",
       "input": {
         "data": [
           [
@@ -918,7 +887,7 @@
         ],
         "filename": "cities_mixed.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --ignore-case",
       "options": {
         "--ignore-case": "true"
       },
@@ -949,14 +918,11 @@
             "Ralph Wilson Stadium"
           ]
         ]
-      },
-      "tags": [
-        "case-sensitivity"
-      ]
+      }
     },
     {
-      "name": "joinp_ignore_case_maintain_order_right",
-      "description": "Joinp Ignore Case Maintain Order Right",
+      "name": "joinp_left_anti_14",
+      "description": "Joinp Left Anti 14",
       "input": {
         "data": [
           [
@@ -982,235 +948,7 @@
         ],
         "filename": "cities_mixed.csv"
       },
-      "command": "qsv joinp ",
-      "options": {
-        "--ignore-case": "true"
-      },
-      "expected": {
-        "data": [
-          [
-            "city",
-            "state",
-            "city_right",
-            "place"
-          ],
-          [
-            "BOSTON",
-            "MA",
-            "Boston",
-            "Logan Airport"
-          ],
-          [
-            "BOSTON",
-            "MA",
-            "boston",
-            "Boston Garden"
-          ],
-          [
-            "BUFFALO",
-            "NY",
-            "BUFFALO",
-            "Ralph Wilson Stadium"
-          ],
-          [
-            "new york",
-            "NY",
-            "new York",
-            "Madison Square Garden"
-          ],
-          [
-            "San Francisco",
-            "CA",
-            "san francisco",
-            "Fisherman's Wharf"
-          ]
-        ]
-      },
-      "tags": [
-        "case-sensitivity"
-      ]
-    },
-    {
-      "name": "joinp_ignore_case_maintain_order_left",
-      "description": "Joinp Ignore Case Maintain Order Left",
-      "input": {
-        "data": [
-          [
-            "city",
-            "state"
-          ],
-          [
-            "BOSTON",
-            "MA"
-          ],
-          [
-            "new york",
-            "NY"
-          ],
-          [
-            "San Francisco",
-            "CA"
-          ],
-          [
-            "BUFFALO",
-            "NY"
-          ]
-        ],
-        "filename": "cities_mixed.csv"
-      },
-      "command": "qsv joinp ",
-      "options": {
-        "--ignore-case": "true"
-      },
-      "expected": {
-        "data": [
-          [
-            "city",
-            "state",
-            "city_right",
-            "place"
-          ],
-          [
-            "BOSTON",
-            "MA",
-            "Boston",
-            "Logan Airport"
-          ],
-          [
-            "BOSTON",
-            "MA",
-            "boston",
-            "Boston Garden"
-          ],
-          [
-            "new york",
-            "NY",
-            "new York",
-            "Madison Square Garden"
-          ],
-          [
-            "San Francisco",
-            "CA",
-            "san francisco",
-            "Fisherman's Wharf"
-          ],
-          [
-            "BUFFALO",
-            "NY",
-            "BUFFALO",
-            "Ralph Wilson Stadium"
-          ]
-        ]
-      },
-      "tags": [
-        "case-sensitivity"
-      ]
-    },
-    {
-      "name": "joinp_ignore_case_maintain_order_left_right",
-      "description": "Joinp Ignore Case Maintain Order Left Right",
-      "input": {
-        "data": [
-          [
-            "city",
-            "state"
-          ],
-          [
-            "BOSTON",
-            "MA"
-          ],
-          [
-            "new york",
-            "NY"
-          ],
-          [
-            "San Francisco",
-            "CA"
-          ],
-          [
-            "BUFFALO",
-            "NY"
-          ]
-        ],
-        "filename": "cities_mixed.csv"
-      },
-      "command": "qsv joinp ",
-      "options": {
-        "--ignore-case": "true"
-      },
-      "expected": {
-        "data": [
-          [
-            "city",
-            "state",
-            "city_right",
-            "place"
-          ],
-          [
-            "BOSTON",
-            "MA",
-            "Boston",
-            "Logan Airport"
-          ],
-          [
-            "BOSTON",
-            "MA",
-            "boston",
-            "Boston Garden"
-          ],
-          [
-            "new york",
-            "NY",
-            "new York",
-            "Madison Square Garden"
-          ],
-          [
-            "San Francisco",
-            "CA",
-            "san francisco",
-            "Fisherman's Wharf"
-          ],
-          [
-            "BUFFALO",
-            "NY",
-            "BUFFALO",
-            "Ralph Wilson Stadium"
-          ]
-        ]
-      },
-      "tags": [
-        "case-sensitivity"
-      ]
-    },
-    {
-      "name": "joinp_ignore_case_maintain_order_right_left",
-      "description": "Joinp Ignore Case Maintain Order Right Left",
-      "input": {
-        "data": [
-          [
-            "city",
-            "state"
-          ],
-          [
-            "BOSTON",
-            "MA"
-          ],
-          [
-            "new york",
-            "NY"
-          ],
-          [
-            "San Francisco",
-            "CA"
-          ],
-          [
-            "BUFFALO",
-            "NY"
-          ]
-        ],
-        "filename": "cities_mixed.csv"
-      },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --ignore-case",
       "options": {
         "--ignore-case": "true"
       },
@@ -1253,14 +991,230 @@
             "Fisherman's Wharf"
           ]
         ]
-      },
-      "tags": [
-        "case-sensitivity"
-      ]
+      }
     },
     {
-      "name": "joinp_filter_pattern_matching",
-      "description": "Joinp Filter Pattern Matching",
+      "name": "joinp_left_anti_15",
+      "description": "Joinp Left Anti 15",
+      "input": {
+        "data": [
+          [
+            "city",
+            "state"
+          ],
+          [
+            "BOSTON",
+            "MA"
+          ],
+          [
+            "new york",
+            "NY"
+          ],
+          [
+            "San Francisco",
+            "CA"
+          ],
+          [
+            "BUFFALO",
+            "NY"
+          ]
+        ],
+        "filename": "cities_mixed.csv"
+      },
+      "command": "qsv joinp --ignore-case",
+      "options": {
+        "--ignore-case": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "city",
+            "state",
+            "city_right",
+            "place"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "Boston",
+            "Logan Airport"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "boston",
+            "Boston Garden"
+          ],
+          [
+            "new york",
+            "NY",
+            "new York",
+            "Madison Square Garden"
+          ],
+          [
+            "San Francisco",
+            "CA",
+            "san francisco",
+            "Fisherman's Wharf"
+          ],
+          [
+            "BUFFALO",
+            "NY",
+            "BUFFALO",
+            "Ralph Wilson Stadium"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_left_anti_16",
+      "description": "Joinp Left Anti 16",
+      "input": {
+        "data": [
+          [
+            "city",
+            "state"
+          ],
+          [
+            "BOSTON",
+            "MA"
+          ],
+          [
+            "new york",
+            "NY"
+          ],
+          [
+            "San Francisco",
+            "CA"
+          ],
+          [
+            "BUFFALO",
+            "NY"
+          ]
+        ],
+        "filename": "cities_mixed.csv"
+      },
+      "command": "qsv joinp --ignore-case",
+      "options": {
+        "--ignore-case": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "city",
+            "state",
+            "city_right",
+            "place"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "Boston",
+            "Logan Airport"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "boston",
+            "Boston Garden"
+          ],
+          [
+            "new york",
+            "NY",
+            "new York",
+            "Madison Square Garden"
+          ],
+          [
+            "San Francisco",
+            "CA",
+            "san francisco",
+            "Fisherman's Wharf"
+          ],
+          [
+            "BUFFALO",
+            "NY",
+            "BUFFALO",
+            "Ralph Wilson Stadium"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_left_anti_17",
+      "description": "Joinp Left Anti 17",
+      "input": {
+        "data": [
+          [
+            "city",
+            "state"
+          ],
+          [
+            "BOSTON",
+            "MA"
+          ],
+          [
+            "new york",
+            "NY"
+          ],
+          [
+            "San Francisco",
+            "CA"
+          ],
+          [
+            "BUFFALO",
+            "NY"
+          ]
+        ],
+        "filename": "cities_mixed.csv"
+      },
+      "command": "qsv joinp --ignore-case",
+      "options": {
+        "--ignore-case": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "city",
+            "state",
+            "city_right",
+            "place"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "Boston",
+            "Logan Airport"
+          ],
+          [
+            "BOSTON",
+            "MA",
+            "boston",
+            "Boston Garden"
+          ],
+          [
+            "BUFFALO",
+            "NY",
+            "BUFFALO",
+            "Ralph Wilson Stadium"
+          ],
+          [
+            "new york",
+            "NY",
+            "new York",
+            "Madison Square Garden"
+          ],
+          [
+            "San Francisco",
+            "CA",
+            "san francisco",
+            "Fisherman's Wharf"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_left_anti_18",
+      "description": "Joinp Left Anti 18",
       "input": {
         "data": [
           [
@@ -1282,7 +1236,7 @@
         ],
         "filename": "prefixes.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --cross",
       "options": {
         "--cross": "true"
       },
@@ -1322,8 +1276,8 @@
       }
     },
     {
-      "name": "test_joinp_cache_schema",
-      "description": "Test Joinp Cache Schema",
+      "name": "joinp_left_anti_19",
+      "description": "Joinp Left Anti 19",
       "input": {
         "data": [
           [
@@ -1371,7 +1325,7 @@
         ],
         "filename": "left.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --cache-schema 2",
       "options": {
         "--cache-schema": "2"
       },
@@ -1445,8 +1399,8 @@
       }
     },
     {
-      "name": "joinp_ignore_leading_zero",
-      "description": "Joinp Ignore Leading Zero",
+      "name": "joinp_right_anti",
+      "description": "Joinp Right Anti",
       "input": {
         "data": [
           [
@@ -1468,7 +1422,7 @@
         ],
         "filename": "left.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp -z",
       "options": {
         "-z": "true"
       },
@@ -1502,8 +1456,8 @@
       }
     },
     {
-      "name": "joinp_ignore_leading_zero_string_schema",
-      "description": "Joinp Ignore Leading Zero String Schema",
+      "name": "joinp_right_anti_2",
+      "description": "Joinp Right Anti 2",
       "input": {
         "data": [
           [
@@ -1525,7 +1479,7 @@
         ],
         "filename": "left.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp -z",
       "options": {
         "-z": "true"
       },
@@ -1559,8 +1513,8 @@
       }
     },
     {
-      "name": "joinp_ignore_leading_zero_with_non_numeric",
-      "description": "Joinp Ignore Leading Zero With Non Numeric",
+      "name": "joinp_right_anti_3",
+      "description": "Joinp Right Anti 3",
       "input": {
         "data": [
           [
@@ -1582,7 +1536,7 @@
         ],
         "filename": "left.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --ignore-leading-zeros",
       "options": {
         "--ignore-leading-zeros": "true"
       },
@@ -1616,8 +1570,8 @@
       }
     },
     {
-      "name": "joinp_ignore_leading_zero_multiple_columns",
-      "description": "Joinp Ignore Leading Zero Multiple Columns",
+      "name": "joinp_right_anti_4",
+      "description": "Joinp Right Anti 4",
       "input": {
         "data": [
           [
@@ -1643,7 +1597,7 @@
         ],
         "filename": "left.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --ignore-leading-zeros",
       "options": {
         "--ignore-leading-zeros": "true"
       },
@@ -1685,8 +1639,8 @@
       }
     },
     {
-      "name": "joinp_ignore_case_and_leading_zeros",
-      "description": "Joinp Ignore Case And Leading Zeros",
+      "name": "joinp_right_anti_5",
+      "description": "Joinp Right Anti 5",
       "input": {
         "data": [
           [
@@ -1712,7 +1666,7 @@
         ],
         "filename": "left.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --ignore-case",
       "options": {
         "--ignore-case": "true"
       },
@@ -1751,14 +1705,11 @@
             "three"
           ]
         ]
-      },
-      "tags": [
-        "case-sensitivity"
-      ]
+      }
     },
     {
-      "name": "joinp_ignore_case_and_leading_zeros_coalesce",
-      "description": "Joinp Ignore Case And Leading Zeros Coalesce",
+      "name": "joinp_right_anti_6",
+      "description": "Joinp Right Anti 6",
       "input": {
         "data": [
           [
@@ -1784,7 +1735,7 @@
         ],
         "filename": "left.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --coalesce",
       "options": {
         "--coalesce": "true"
       },
@@ -1815,15 +1766,12 @@
             "three"
           ]
         ]
-      },
-      "tags": [
-        "case-sensitivity"
-      ]
+      }
     },
     {
-      "name": "joinp_non_equi_greater_than",
-      "description": "Joinp Non Equi Greater Than",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_7",
+      "description": "Joinp Right Anti 7",
+      "command": "qsv joinp --non-equi \"budget_right > price_left\"",
       "options": {
         "--non-equi": "budget_right > price_left"
       },
@@ -1875,9 +1823,9 @@
       }
     },
     {
-      "name": "joinp_non_equi_less_than",
-      "description": "Joinp Non Equi Less Than",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_8",
+      "description": "Joinp Right Anti 8",
+      "command": "qsv joinp --non-equi \"date_left < deadline_right\"",
       "options": {
         "--non-equi": "date_left < deadline_right"
       },
@@ -1923,18 +1871,18 @@
       }
     },
     {
-      "name": "joinp_non_equi_less_than_date_arithmetic",
-      "description": "Joinp Non Equi Less Than Date Arithmetic",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_9",
+      "description": "Joinp Right Anti 9",
+      "command": "qsv joinp --non-equi \"date_left  + interval '4 months' < deadline_right\" --try-parsedates",
       "options": {
-        "--try-parsedates": "true",
-        "--non-equi": "date_left  + interval '4 months' < deadline_right"
+        "--non-equi": "date_left  + interval '4 months' < deadline_right",
+        "--try-parsedates": "true"
       }
     },
     {
-      "name": "joinp_non_equi_not_equal",
-      "description": "Joinp Non Equi Not Equal",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_10",
+      "description": "Joinp Right Anti 10",
+      "command": "qsv joinp --non-equi \"team_left != team_right\"",
       "options": {
         "--non-equi": "team_left != team_right"
       },
@@ -1986,27 +1934,27 @@
       }
     },
     {
-      "name": "joinp_non_equi_invalid_operator",
-      "description": "Joinp Non Equi Invalid Operator",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_11",
+      "description": "Joinp Right Anti 11",
+      "command": "qsv joinp --non-equi \"col1 INVALID col2\"",
       "options": {
         "--non-equi": "col1 INVALID col2"
       }
     },
     {
-      "name": "joinp_non_equi_invalid_format",
-      "description": "Joinp Non Equi Invalid Format",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_12",
+      "description": "Joinp Right Anti 12",
+      "command": "qsv joinp --non-equi \"invalid expression format\"",
       "options": {
         "--non-equi": "invalid expression format"
       }
     },
     {
-      "name": "joinp_non_equi_compound",
-      "description": "Joinp Non Equi Compound",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_13",
+      "description": "Joinp Right Anti 13",
+      "command": "qsv joinp --non-equi",
       "options": {
-        "--non-equi": "\n            \"salary_left >= min_salary_right AND salary_left <= max_salary_right AND \\\n             experience_left >= min_exp_right\",\n        "
+        "--non-equi": "true"
       },
       "expected": {
         "data": [
@@ -2059,8 +2007,8 @@
       }
     },
     {
-      "name": "joinp_ignore_leading_zeros_issue_2424",
-      "description": "Joinp Ignore Leading Zeros Issue 2424",
+      "name": "joinp_right_anti_14",
+      "description": "Joinp Right Anti 14",
       "input": {
         "data": [
           [
@@ -2101,7 +2049,7 @@
         ],
         "filename": "file1.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp",
       "expected": {
         "data": [
           [
@@ -2140,22 +2088,159 @@
             "000"
           ]
         ]
-      },
-      "tags": [
-        "regression"
-      ]
+      }
     },
     {
-      "name": "joinp_asof_allow_exact_matches",
-      "description": "Joinp Asof Allow Exact Matches",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_15",
+      "description": "Joinp Right Anti 15",
+      "command": "qsv joinp",
+      "expected": {
+        "data": [
+          [
+            "name",
+            "value",
+            "name_right",
+            "desc"
+          ],
+          [
+            "cafe\\u{301}",
+            "a",
+            "café",
+            "one"
+          ],
+          [
+            "café",
+            "b",
+            "café",
+            "one"
+          ],
+          [
+            "cafe\\u{301}",
+            "a",
+            "cafe\\u{301}",
+            "two"
+          ],
+          [
+            "café",
+            "b",
+            "cafe\\u{301}",
+            "two"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_right_anti_16",
+      "description": "Joinp Right Anti 16",
+      "input": {
+        "data": [
+          [
+            "id",
+            "name",
+            "value"
+          ],
+          [
+            "001",
+            "CAFÉ",
+            "a"
+          ],
+          [
+            "02",
+            "cafe\\u{0301}",
+            "b"
+          ]
+        ],
+        "filename": "left.csv"
+      },
+      "command": "qsv joinp --ignore-case",
+      "options": {
+        "--ignore-case": "true"
+      },
+      "expected": {
+        "data": [
+          [
+            "id",
+            "name",
+            "value",
+            "id_right",
+            "name_right",
+            "desc"
+          ],
+          [
+            "001",
+            "CAFÉ",
+            "a",
+            "1",
+            "café",
+            "one"
+          ],
+          [
+            "02",
+            "cafe\\u{0301}",
+            "b",
+            "002",
+            "CAFE\\u{0301}",
+            "two"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_right_anti_17",
+      "description": "Joinp Right Anti 17",
+      "command": "qsv joinp",
+      "expected": {
+        "data": [
+          [
+            "name",
+            "value",
+            "name_right",
+            "desc"
+          ],
+          [
+            "ﬁle",
+            "b",
+            "file",
+            "plain"
+          ],
+          [
+            "file",
+            "c",
+            "file",
+            "plain"
+          ],
+          [
+            "oﬃce",
+            "d",
+            "office",
+            "plain"
+          ],
+          [
+            "oﬃce",
+            "e",
+            "office",
+            "plain"
+          ],
+          [
+            "office",
+            "f",
+            "office",
+            "plain"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "joinp_right_anti_18",
+      "description": "Joinp Right Anti 18",
+      "command": "qsv joinp --try-parsedates",
       "options": {
         "--try-parsedates": "true"
       }
     },
     {
-      "name": "joinp_asof_sortkey_options",
-      "description": "Joinp Asof Sortkey Options",
+      "name": "joinp_right_anti_19",
+      "description": "Joinp Right Anti 19",
       "input": {
         "data": [
           [
@@ -2193,7 +2278,7 @@
         ],
         "filename": "trades.csv"
       },
-      "command": "qsv joinp ",
+      "command": "qsv joinp --try-parsedates",
       "options": {
         "--try-parsedates": "true"
       },
@@ -2243,9 +2328,9 @@
       }
     },
     {
-      "name": "joinp_decimal_comma_validation",
-      "description": "Joinp Decimal Comma Validation",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_20",
+      "description": "Joinp Right Anti 20",
+      "command": "qsv joinp --decimal-comma",
       "options": {
         "--decimal-comma": "true"
       },
@@ -2254,17 +2339,17 @@
       ]
     },
     {
-      "name": "joinp_decimal_comma_validation_with_tsv_files",
-      "description": "Joinp Decimal Comma Validation With Tsv Files",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_21",
+      "description": "Joinp Right Anti 21",
+      "command": "qsv joinp --decimal-comma",
       "options": {
         "--decimal-comma": "true"
       }
     },
     {
-      "name": "joinp_decimal_comma_validation_with_ssv_files",
-      "description": "Joinp Decimal Comma Validation With Ssv Files",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_22",
+      "description": "Joinp Right Anti 22",
+      "command": "qsv joinp --decimal-comma",
       "options": {
         "--decimal-comma": "true"
       },
@@ -2273,9 +2358,9 @@
       ]
     },
     {
-      "name": "joinp_decimal_comma_validation_with_output_file",
-      "description": "Joinp Decimal Comma Validation With Output File",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_23",
+      "description": "Joinp Right Anti 23",
+      "command": "qsv joinp --decimal-comma",
       "options": {
         "--decimal-comma": "true"
       },
@@ -2284,9 +2369,9 @@
       ]
     },
     {
-      "name": "joinp_decimal_comma_validation_with_tsv_output",
-      "description": "Joinp Decimal Comma Validation With Tsv Output",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_24",
+      "description": "Joinp Right Anti 24",
+      "command": "qsv joinp --decimal-comma",
       "options": {
         "--decimal-comma": "true"
       },
@@ -2295,9 +2380,9 @@
       ]
     },
     {
-      "name": "joinp_decimal_comma_validation_with_ssv_output",
-      "description": "Joinp Decimal Comma Validation With Ssv Output",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_25",
+      "description": "Joinp Right Anti 25",
+      "command": "qsv joinp --decimal-comma",
       "options": {
         "--decimal-comma": "true"
       },
@@ -2306,9 +2391,9 @@
       ]
     },
     {
-      "name": "joinp_decimal_comma_validation_with_cross_join",
-      "description": "Joinp Decimal Comma Validation With Cross Join",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_26",
+      "description": "Joinp Right Anti 26",
+      "command": "qsv joinp --decimal-comma",
       "options": {
         "--decimal-comma": "true"
       },
@@ -2317,11 +2402,22 @@
       ]
     },
     {
-      "name": "joinp_decimal_comma_validation_with_non_equi_join",
-      "description": "Joinp Decimal Comma Validation With Non Equi Join",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_27",
+      "description": "Joinp Right Anti 27",
+      "command": "qsv joinp --decimal-comma --non-equi \"value_left >= min_val_right AND value_left <= max_val_right\"",
       "options": {
-        "--non-equi": "value_left >= min_val_right AND value_left <= max_val_right",
+        "--decimal-comma": "true",
+        "--non-equi": "value_left >= min_val_right AND value_left <= max_val_right"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "joinp_right_anti_28",
+      "description": "Joinp Right Anti 28",
+      "command": "qsv joinp --decimal-comma",
+      "options": {
         "--decimal-comma": "true"
       },
       "tags": [
@@ -2329,20 +2425,9 @@
       ]
     },
     {
-      "name": "joinp_decimal_comma_validation_with_asof_join",
-      "description": "Joinp Decimal Comma Validation With Asof Join",
-      "command": "qsv joinp ",
-      "options": {
-        "--decimal-comma": "true"
-      },
-      "tags": [
-        "custom-delimiter"
-      ]
-    },
-    {
-      "name": "joinp_decimal_comma_validation_with_sql_filter",
-      "description": "Joinp Decimal Comma Validation With Sql Filter",
-      "command": "qsv joinp ",
+      "name": "joinp_right_anti_29",
+      "description": "Joinp Right Anti 29",
+      "command": "qsv joinp --sql-filter \"select id, value from join_result where value > 150\"",
       "options": {
         "--sql-filter": "select id, value from join_result where value > 150"
       },

@@ -132,7 +132,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv explode 2 \"|\"",
+      "command": "qsv explode 2 \"|\" --no-headers data.csv",
       "args": [
         "2",
         "|"

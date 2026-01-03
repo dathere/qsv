@@ -18,7 +18,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --no-headers in.csv",
       "options": {
         "--no-headers": "in.csv"
       },
@@ -66,7 +66,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort -N in.csv",
       "options": {
         "-N": "in.csv"
       }
@@ -99,7 +99,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --faster in.csv",
       "options": {
         "--faster": "in.csv"
       }
@@ -136,7 +136,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort -N in.csv",
       "options": {
         "-N": "in.csv"
       }
@@ -173,7 +173,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --faster in.csv",
       "options": {
         "--faster": "in.csv"
       }
@@ -210,7 +210,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --ignore-case in.csv",
       "options": {
         "--ignore-case": "in.csv"
       },
@@ -278,7 +278,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --faster in.csv",
       "options": {
         "--faster": "in.csv"
       },
@@ -414,7 +414,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --faster in.csv",
       "options": {
         "--faster": "in.csv"
       },
@@ -470,7 +470,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --no-headers in.csv",
       "options": {
         "--no-headers": "in.csv"
       },
@@ -514,7 +514,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --faster in.csv",
       "options": {
         "--faster": "in.csv"
       },
@@ -574,7 +574,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort -N in.csv",
       "options": {
         "-N": "in.csv"
       },
@@ -635,7 +635,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --faster in.csv",
       "options": {
         "--faster": "in.csv"
       },
@@ -696,7 +696,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --random in.csv",
       "options": {
         "--random": "in.csv"
       },
@@ -769,7 +769,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --random in.csv",
       "options": {
         "--random": "in.csv"
       },
@@ -842,7 +842,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --random in.csv",
       "options": {
         "--random": "in.csv"
       },
@@ -911,7 +911,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --natural in.csv",
       "options": {
         "--natural": "in.csv"
       },
@@ -976,7 +976,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --faster in.csv",
       "options": {
         "--faster": "in.csv"
       },
@@ -1041,7 +1041,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --ignore-case in.csv",
       "options": {
         "--ignore-case": "in.csv"
       },
@@ -1109,7 +1109,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --reverse in.csv",
       "options": {
         "--reverse": "in.csv"
       },
@@ -1178,7 +1178,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --natural in.csv",
       "options": {
         "--natural": "in.csv"
       },
@@ -1239,7 +1239,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort in.csv",
+      "command": "qsv sort in.csv --natural in.csv",
       "args": [
         "in.csv"
       ],
@@ -1271,7 +1271,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sort ",
+      "command": "qsv sort --numeric in.csv",
       "options": {
         "--numeric": "in.csv"
       },

@@ -55,7 +55,7 @@
     {
       "name": "searchset_match_count",
       "description": "Searchset Match Count",
-      "command": "qsv searchset regexset.txt",
+      "command": "qsv searchset regexset.txt --count data.csv",
       "args": [
         "regexset.txt"
       ],
@@ -66,7 +66,7 @@
     {
       "name": "searchset_quick",
       "description": "Searchset Quick",
-      "command": "qsv searchset regexset.txt",
+      "command": "qsv searchset regexset.txt --quick data.csv",
       "args": [
         "regexset.txt"
       ],
@@ -86,7 +86,7 @@
     {
       "name": "searchset_quick_nomatch",
       "description": "Searchset Quick Nomatch",
-      "command": "qsv searchset regexset.txt",
+      "command": "qsv searchset regexset.txt --quick data.csv",
       "args": [
         "regexset.txt"
       ],
@@ -97,7 +97,7 @@
     {
       "name": "searchset_unicode",
       "description": "Searchset Unicode",
-      "command": "qsv searchset regexset_unicode.txt data.csv",
+      "command": "qsv searchset regexset_unicode.txt data.csv --unicode",
       "args": [
         "regexset_unicode.txt",
         "data.csv"
@@ -181,7 +181,7 @@
     {
       "name": "searchset_empty_no_headers",
       "description": "Searchset Empty No Headers",
-      "command": "qsv searchset emptyregexset.txt data.csv",
+      "command": "qsv searchset emptyregexset.txt data.csv --no-headers",
       "args": [
         "emptyregexset.txt",
         "data.csv"
@@ -196,7 +196,7 @@
     {
       "name": "searchset_ignore_case",
       "description": "Searchset Ignore Case",
-      "command": "qsv searchset regexset.txt data.csv",
+      "command": "qsv searchset regexset.txt data.csv --ignore-case",
       "args": [
         "regexset.txt",
         "data.csv"
@@ -236,13 +236,13 @@
     {
       "name": "searchset_ignore_case_count",
       "description": "Searchset Ignore Case Count",
-      "command": "qsv searchset regexset.txt",
+      "command": "qsv searchset regexset.txt --ignore-case --count data.csv",
       "args": [
         "regexset.txt"
       ],
       "options": {
-        "--count": "data.csv",
-        "--ignore-case": "true"
+        "--ignore-case": "true",
+        "--count": "data.csv"
       },
       "expected": {
         "data": [
@@ -276,7 +276,7 @@
     {
       "name": "searchset_no_headers",
       "description": "Searchset No Headers",
-      "command": "qsv searchset regexset.txt data.csv",
+      "command": "qsv searchset regexset.txt data.csv --no-headers",
       "args": [
         "regexset.txt",
         "data.csv"
@@ -307,7 +307,7 @@
     {
       "name": "searchset_select",
       "description": "Searchset Select",
-      "command": "qsv searchset regexset.txt data.csv",
+      "command": "qsv searchset regexset.txt data.csv --select h2",
       "args": [
         "regexset.txt",
         "data.csv"
@@ -331,7 +331,7 @@
     {
       "name": "searchset_select_no_headers",
       "description": "Searchset Select No Headers",
-      "command": "qsv searchset regexset.txt data.csv",
+      "command": "qsv searchset regexset.txt data.csv --select 2 --no-headers",
       "args": [
         "regexset.txt",
         "data.csv"
@@ -355,7 +355,7 @@
     {
       "name": "searchset_invert_match",
       "description": "Searchset Invert Match",
-      "command": "qsv searchset regexset.txt data.csv",
+      "command": "qsv searchset regexset.txt data.csv --invert-match",
       "args": [
         "regexset.txt",
         "data.csv"
@@ -388,7 +388,7 @@
     {
       "name": "searchset_invert_match_no_headers",
       "description": "Searchset Invert Match No Headers",
-      "command": "qsv searchset regexset.txt data.csv",
+      "command": "qsv searchset regexset.txt data.csv --no-headers",
       "args": [
         "regexset.txt",
         "data.csv"
@@ -471,7 +471,7 @@
     {
       "name": "searchset_flag_invert_match",
       "description": "Searchset Flag Invert Match",
-      "command": "qsv searchset regexset.txt data.csv",
+      "command": "qsv searchset regexset.txt data.csv --invert-match",
       "args": [
         "regexset.txt",
         "data.csv"
@@ -523,11 +523,7 @@
     {
       "name": "searchset_flag_complex",
       "description": "Searchset Flag Complex",
-      "command": "qsv searchset regex_file test_file",
-      "args": [
-        "regex_file",
-        "test_file"
-      ],
+      "command": "qsv searchset --json",
       "options": {
         "--json": "true"
       }
@@ -535,20 +531,16 @@
     {
       "name": "searchset_flag_complex_unmatched_output",
       "description": "Searchset Flag Complex Unmatched Output",
-      "command": "qsv searchset regex_file test_file",
-      "args": [
-        "regex_file",
-        "test_file"
-      ],
+      "command": "qsv searchset --json --unmatched-output unmatched.csv",
       "options": {
-        "--unmatched-output": "unmatched.csv",
-        "--json": "true"
+        "--json": "true",
+        "--unmatched-output": "unmatched.csv"
       }
     },
     {
       "name": "searchset_literal",
       "description": "Searchset Literal",
-      "command": "qsv searchset regexset.txt data.csv",
+      "command": "qsv searchset regexset.txt data.csv --literal",
       "args": [
         "regexset.txt",
         "data.csv"
@@ -560,7 +552,7 @@
     {
       "name": "searchset_exact",
       "description": "Searchset Exact",
-      "command": "qsv searchset regexset.txt data.csv",
+      "command": "qsv searchset regexset.txt data.csv --exact",
       "args": [
         "regexset.txt",
         "data.csv"
@@ -572,7 +564,7 @@
     {
       "name": "searchset_exact_with_dots",
       "description": "Searchset Exact With Dots",
-      "command": "qsv searchset regexset.txt data.csv",
+      "command": "qsv searchset regexset.txt data.csv --exact",
       "args": [
         "regexset.txt",
         "data.csv"
@@ -604,7 +596,7 @@
         ],
         "filename": "regexset.txt"
       },
-      "command": "qsv searchset regexset.txt data.csv",
+      "command": "qsv searchset regexset.txt data.csv --ignore-case",
       "args": [
         "regexset.txt",
         "data.csv"
@@ -631,7 +623,7 @@
     {
       "name": "searchset_exact_no_match_substring",
       "description": "Searchset Exact No Match Substring",
-      "command": "qsv searchset regexset.txt data.csv",
+      "command": "qsv searchset regexset.txt data.csv --exact",
       "args": [
         "regexset.txt",
         "data.csv"

@@ -5,10 +5,7 @@
     {
       "name": "test_input_comment",
       "description": "Test Input Comment",
-      "command": "qsv input test_file",
-      "args": [
-        "test_file"
-      ],
+      "command": "qsv input --comment \"#\"",
       "options": {
         "--comment": "#"
       },
@@ -91,7 +88,7 @@
         ],
         "filename": "preamble.csv"
       },
-      "command": "qsv input preamble.csv",
+      "command": "qsv input preamble.csv --skip-lines 5",
       "args": [
         "preamble.csv"
       ],
@@ -122,9 +119,9 @@
     {
       "name": "test_input_autoskip",
       "description": "Test Input Autoskip",
-      "command": "qsv input ",
+      "command": "qsv input --auto-skip",
       "options": {
-        "--auto-skip": "test_file"
+        "--auto-skip": "true"
       },
       "expected": {
         "data": [
@@ -298,7 +295,7 @@
         ],
         "filename": "preamble.csv"
       },
-      "command": "qsv input preamble.csv",
+      "command": "qsv input preamble.csv --skip-lines 1",
       "args": [
         "preamble.csv"
       ],
@@ -350,7 +347,7 @@
         ],
         "filename": "preamble.csv"
       },
-      "command": "qsv input preamble.csv",
+      "command": "qsv input preamble.csv --skip-lines 0",
       "args": [
         "preamble.csv"
       ],
@@ -402,7 +399,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv input ",
+      "command": "qsv input --trim-headers data.csv",
       "options": {
         "--trim-headers": "data.csv"
       },
@@ -451,7 +448,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv input ",
+      "command": "qsv input --trim-fields data.csv",
       "options": {
         "--trim-fields": "data.csv"
       },
@@ -500,7 +497,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv input ",
+      "command": "qsv input --trim-fields data.csv",
       "options": {
         "--trim-fields": "data.csv"
       },
@@ -557,7 +554,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv input data.csv",
+      "command": "qsv input data.csv --skip-lastlines 2",
       "args": [
         "data.csv"
       ],
@@ -625,13 +622,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv input data.csv",
+      "command": "qsv input data.csv --skip-lines 2 --skip-lastlines 2",
       "args": [
         "data.csv"
       ],
       "options": {
-        "--skip-lastlines": "2",
-        "--skip-lines": "2"
+        "--skip-lines": "2",
+        "--skip-lastlines": "2"
       },
       "expected": {
         "data": [
@@ -657,10 +654,7 @@
     {
       "name": "test_input_both_skip_flexible",
       "description": "Test Input Both Skip Flexible",
-      "command": "qsv input test_file",
-      "args": [
-        "test_file"
-      ],
+      "command": "qsv input",
       "expected": {
         "data": [
           [
@@ -779,7 +773,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv input ",
+      "command": "qsv input --trim-headers data.csv",
       "options": {
         "--trim-headers": "data.csv"
       },

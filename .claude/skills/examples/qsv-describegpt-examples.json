@@ -3,9 +3,20 @@
   "version": "12.0.0",
   "examples": [
     {
+      "name": "describegpt_invalid_api_key",
+      "description": "Describegpt Invalid Api Key",
+      "command": "qsv describegpt in.csv --no-cache",
+      "args": [
+        "in.csv"
+      ],
+      "options": {
+        "--no-cache": "true"
+      }
+    },
+    {
       "name": "describegpt_no_input_file",
       "description": "Describegpt No Input File",
-      "command": "qsv describegpt ",
+      "command": "qsv describegpt --no-cache",
       "options": {
         "--no-cache": "true"
       }
@@ -21,7 +32,7 @@
     {
       "name": "describegpt_all_with_other_flags",
       "description": "Describegpt All With Other Flags",
-      "command": "qsv describegpt in.csv",
+      "command": "qsv describegpt in.csv --description",
       "args": [
         "in.csv"
       ],
@@ -32,7 +43,7 @@
     {
       "name": "describegpt_nonexistent_prompt_file",
       "description": "Describegpt Nonexistent Prompt File",
-      "command": "qsv describegpt in.csv",
+      "command": "qsv describegpt in.csv --description",
       "args": [
         "in.csv"
       ],
@@ -43,7 +54,7 @@
     {
       "name": "describegpt_invalid_prompt_file_toml",
       "description": "Describegpt Invalid Prompt File Toml",
-      "command": "qsv describegpt in.csv",
+      "command": "qsv describegpt in.csv --description",
       "args": [
         "in.csv"
       ],
@@ -71,14 +82,14 @@
         ],
         "filename": "test.csv"
       },
-      "command": "qsv describegpt test.csv",
+      "command": "qsv describegpt test.csv --no-cache --base-url https://api.together.xyz/v1 --api-key test-key",
       "args": [
         "test.csv"
       ],
       "options": {
+        "--no-cache": "true",
         "--base-url": "https://api.together.xyz/v1",
-        "--api-key": "test-key",
-        "--no-cache": "true"
+        "--api-key": "test-key"
       },
       "tags": [
         "regression"

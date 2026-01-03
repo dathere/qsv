@@ -3,41 +3,9 @@
   "version": "12.0.0",
   "examples": [
     {
-      "name": "headers",
-      "description": "Headers",
-      "command": "qsv join "
-    },
-    {
-      "name": "no_headers",
-      "description": "No Headers",
-      "command": "qsv join ",
-      "options": {
-        "--no-headers": "true"
-      },
-      "tags": [
-        "no-headers"
-      ]
-    },
-    {
-      "name": "headers",
-      "description": "Headers",
-      "command": "qsv join "
-    },
-    {
-      "name": "no_headers",
-      "description": "No Headers",
-      "command": "qsv join ",
-      "options": {
-        "--no-headers": "true"
-      },
-      "tags": [
-        "no-headers"
-      ]
-    },
-    {
-      "name": "join_inner_issue11",
-      "description": "Join Inner Issue11",
-      "command": "qsv join ",
+      "name": "join_left_anti",
+      "description": "Join Left Anti",
+      "command": "qsv join",
       "expected": {
         "data": [
           [
@@ -62,8 +30,8 @@
       }
     },
     {
-      "name": "join_cross",
-      "description": "Join Cross",
+      "name": "join_left_anti_2",
+      "description": "Join Left Anti 2",
       "input": {
         "data": [
           [
@@ -81,7 +49,7 @@
         ],
         "filename": "letters.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join --cross",
       "options": {
         "--cross": "true"
       },
@@ -121,8 +89,8 @@
       }
     },
     {
-      "name": "join_cross_no_headers",
-      "description": "Join Cross No Headers",
+      "name": "join_left_anti_3",
+      "description": "Join Left Anti 3",
       "input": {
         "data": [
           [
@@ -136,7 +104,7 @@
         ],
         "filename": "letters.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join --no-headers",
       "options": {
         "--no-headers": "true"
       },
@@ -173,8 +141,8 @@
       ]
     },
     {
-      "name": "join_keys_output_inner",
-      "description": "Join Keys Output Inner",
+      "name": "join_right_anti_casei",
+      "description": "Join Right Anti Casei",
       "input": {
         "data": [
           [
@@ -196,7 +164,7 @@
         ],
         "filename": "letters.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join --keys-output keys.csv",
       "options": {
         "--keys-output": "keys.csv"
       },
@@ -209,11 +177,14 @@
             "c"
           ]
         ]
-      }
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
     },
     {
-      "name": "join_keys_output_left_anti",
-      "description": "Join Keys Output Left Anti",
+      "name": "join_right_anti_casei_2",
+      "description": "Join Right Anti Casei 2",
       "input": {
         "data": [
           [
@@ -235,7 +206,7 @@
         ],
         "filename": "letters.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join --keys-output keys.csv",
       "options": {
         "--keys-output": "keys.csv"
       },
@@ -245,11 +216,14 @@
             "a"
           ]
         ]
-      }
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
     },
     {
-      "name": "join_keys_output_left_semi",
-      "description": "Join Keys Output Left Semi",
+      "name": "join_right_anti_casei_3",
+      "description": "Join Right Anti Casei 3",
       "input": {
         "data": [
           [
@@ -271,7 +245,7 @@
         ],
         "filename": "letters.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join --keys-output keys.csv",
       "options": {
         "--keys-output": "keys.csv"
       },
@@ -284,11 +258,14 @@
             "c"
           ]
         ]
-      }
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
     },
     {
-      "name": "join_keys_output_full",
-      "description": "Join Keys Output Full",
+      "name": "join_right_anti_casei_4",
+      "description": "Join Right Anti Casei 4",
       "input": {
         "data": [
           [
@@ -310,7 +287,7 @@
         ],
         "filename": "letters.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join --keys-output keys.csv",
       "options": {
         "--keys-output": "keys.csv"
       },
@@ -323,11 +300,14 @@
             "c"
           ]
         ]
-      }
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
     },
     {
-      "name": "join_keys_output_multiple_columns",
-      "description": "Join Keys Output Multiple Columns",
+      "name": "join_right_anti_casei_5",
+      "description": "Join Right Anti Casei 5",
       "input": {
         "data": [
           [
@@ -353,7 +333,7 @@
         ],
         "filename": "data1.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join --keys-output keys.csv",
       "options": {
         "--keys-output": "keys.csv"
       },
@@ -368,11 +348,14 @@
             "IL"
           ]
         ]
-      }
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
     },
     {
-      "name": "join_keys_output_cross",
-      "description": "Join Keys Output Cross",
+      "name": "join_right_anti_casei_6",
+      "description": "Join Right Anti Casei 6",
       "input": {
         "data": [
           [
@@ -387,15 +370,18 @@
         ],
         "filename": "letters.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join --keys-output keys.csv",
       "options": {
         "--keys-output": "keys.csv"
-      }
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
     },
     {
-      "name": "join_inner_zeros_casei",
-      "description": "Join Inner Zeros Casei",
-      "command": "qsv join ",
+      "name": "join_right_anti_casei_7",
+      "description": "Join Right Anti Casei 7",
+      "command": "qsv join --ignore-case",
       "options": {
         "--ignore-case": "true"
       },
@@ -444,8 +430,8 @@
       ]
     },
     {
-      "name": "join_nulls",
-      "description": "Join Nulls",
+      "name": "join_right_anti_casei_8",
+      "description": "Join Right Anti Casei 8",
       "input": {
         "data": [
           [
@@ -471,7 +457,7 @@
         ],
         "filename": "data1.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join --nulls",
       "options": {
         "--nulls": "true"
       },
@@ -502,11 +488,14 @@
             "c"
           ]
         ]
-      }
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
     },
     {
-      "name": "join_multiple_key_columns",
-      "description": "Join Multiple Key Columns",
+      "name": "join_right_anti_casei_9",
+      "description": "Join Right Anti Casei 9",
       "input": {
         "data": [
           [
@@ -532,7 +521,7 @@
         ],
         "filename": "data1.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join",
       "expected": {
         "data": [
           [
@@ -568,11 +557,14 @@
             "small"
           ]
         ]
-      }
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
     },
     {
-      "name": "join_with_duplicate_keys",
-      "description": "Join With Duplicate Keys",
+      "name": "join_right_anti_casei_10",
+      "description": "Join Right Anti Casei 10",
       "input": {
         "data": [
           [
@@ -594,7 +586,7 @@
         ],
         "filename": "data1.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join",
       "expected": {
         "data": [
           [
@@ -634,11 +626,14 @@
             "z"
           ]
         ]
-      }
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
     },
     {
-      "name": "join_with_whitespace",
-      "description": "Join With Whitespace",
+      "name": "join_right_anti_casei_11",
+      "description": "Join Right Anti Casei 11",
       "input": {
         "data": [
           [
@@ -660,7 +655,7 @@
         ],
         "filename": "data1.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join",
       "expected": {
         "data": [
           [
@@ -688,11 +683,14 @@
             "z"
           ]
         ]
-      }
+      },
+      "tags": [
+        "case-sensitivity"
+      ]
     },
     {
-      "name": "join_right_semi_header_order_issue_2434",
-      "description": "Join Right Semi Header Order Issue 2434",
+      "name": "join_right_anti_casei_12",
+      "description": "Join Right Anti Casei 12",
       "input": {
         "data": [
           [
@@ -718,7 +716,7 @@
         ],
         "filename": "file1.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join",
       "expected": {
         "data": [
           [
@@ -739,12 +737,12 @@
         ]
       },
       "tags": [
-        "regression"
+        "case-sensitivity"
       ]
     },
     {
-      "name": "join_right_semi_different_fields_issue_2437",
-      "description": "Join Right Semi Different Fields Issue 2437",
+      "name": "join_right_anti_casei_13",
+      "description": "Join Right Anti Casei 13",
       "input": {
         "data": [
           [
@@ -778,7 +776,7 @@
         ],
         "filename": "a.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join --right-semi",
       "options": {
         "--right-semi": "true"
       },
@@ -802,12 +800,12 @@
         ]
       },
       "tags": [
-        "regression"
+        "case-sensitivity"
       ]
     },
     {
-      "name": "join_right_anti_different_fields_issue_2437",
-      "description": "Join Right Anti Different Fields Issue 2437",
+      "name": "join_right_anti_casei_14",
+      "description": "Join Right Anti Casei 14",
       "input": {
         "data": [
           [
@@ -841,7 +839,7 @@
         ],
         "filename": "a.csv"
       },
-      "command": "qsv join ",
+      "command": "qsv join --right-anti",
       "options": {
         "--right-anti": "true"
       },
@@ -860,7 +858,7 @@
         ]
       },
       "tags": [
-        "regression"
+        "case-sensitivity"
       ]
     }
   ]

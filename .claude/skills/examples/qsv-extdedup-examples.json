@@ -5,45 +5,40 @@
     {
       "name": "extdedup_linemode",
       "description": "Extdedup Linemode",
-      "command": "qsv extdedup test_file boston311-100-extdeduped.csv",
+      "command": "qsv extdedup boston311-100-extdeduped.csv",
       "args": [
-        "test_file",
         "boston311-100-extdeduped.csv"
       ]
     },
     {
       "name": "extdedup_linemode_dupesoutput",
       "description": "Extdedup Linemode Dupesoutput",
-      "command": "qsv extdedup test_file boston311-100-extdeduped.csv",
+      "command": "qsv extdedup boston311-100-extdeduped.csv",
       "args": [
-        "test_file",
         "boston311-100-extdeduped.csv"
       ]
     },
     {
       "name": "extdedupe_csvmode",
       "description": "Extdedupe Csvmode",
-      "command": "qsv extdedup test_file boston311-100-extdeduped.csv",
+      "command": "qsv extdedup boston311-100-extdeduped.csv",
       "args": [
-        "test_file",
         "boston311-100-extdeduped.csv"
       ]
     },
     {
       "name": "extdedupe_csvmode_dupesoutput",
       "description": "Extdedupe Csvmode Dupesoutput",
-      "command": "qsv extdedup test_file boston311-100-extdeduped.csv",
+      "command": "qsv extdedup boston311-100-extdeduped.csv",
       "args": [
-        "test_file",
         "boston311-100-extdeduped.csv"
       ]
     },
     {
       "name": "extdedupe_csvmode_neighborhood",
       "description": "Extdedupe Csvmode Neighborhood",
-      "command": "qsv extdedup test_file boston311-100-extdeduped.csv",
+      "command": "qsv extdedup boston311-100-extdeduped.csv",
       "args": [
-        "test_file",
         "boston311-100-extdeduped.csv"
       ]
     },

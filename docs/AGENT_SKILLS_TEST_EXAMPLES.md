@@ -16,7 +16,9 @@ In addition to the examples extracted from USAGE text, we now generate comprehen
 ✅ **Load-as-needed** - Examples are stored separately, keeping skill JSON files lightweight
 ✅ **Real, tested code** - Every example comes from working CI tests
 ✅ **Rich metadata** - Input/output data, tags, descriptions
-✅ **1,180+ examples** - Extracted from 54 test files across 66 commands
+✅ **Shell-safe commands** - Proper quoting for spaces, quotes, and special characters
+✅ **Unique test names** - Automatic deduplication with counter suffixes
+✅ **1,279+ examples** - Extracted from 54 test files across 66 commands
 ✅ **Automatic updates** - Regenerate when tests change
 
 ## Architecture
@@ -30,7 +32,7 @@ In addition to the examples extracted from USAGE text, we now generate comprehen
 └── examples/                     # Test-based examples (load-as-needed)
     ├── qsv-select-examples.json  # 40 examples, 12KB
     ├── qsv-stats-examples.json   # 96 examples, 45KB
-    └── ...                       # 54 files, 1,180 examples
+    └── ...                       # 54 files, 1,279 examples
 ```
 
 ## Example Structure
@@ -145,12 +147,14 @@ cargo run --bin qsv-test-examples-gen --features all_features
 ### Parsing Logic
 
 The generator:
-1. Finds all `#[test]` functions in `tests/test_*.rs`
+1. Finds all `#[test]` functions in `tests/test_*.rs` using UTF-8-safe brace counting
 2. Extracts input data from `wrk.create()` calls
-3. Parses command invocations from `wrk.command()` and `.arg()` chains
+3. Parses command invocations from both `wrk.command()` and `cmd.arg()` patterns (string literals only)
 4. Captures expected output from `let expected = vec![...]`
 5. Infers tags from test names and content
-6. Generates structured JSON with full metadata
+6. Applies proper shell quoting to command strings (spaces, quotes, special characters)
+7. Deduplicates test names by appending counters to duplicates (e.g., main, main_2, main_3)
+8. Generates structured JSON with full metadata and complete command strings
 
 ### Example Tags
 
@@ -170,9 +174,9 @@ Tags are automatically inferred:
 
 - **Total Skills**: 66
 - **Skills with Examples**: 54 (82%)
-- **Total Examples**: 1,180
+- **Total Examples**: 1,279
 - **Largest**: qsv-sqlp (90 examples)
-- **Average**: 22 examples per skill
+- **Average**: 24 examples per skill
 
 ### Top Skills by Example Count
 
@@ -230,5 +234,6 @@ const dedupExamples = await loader.loadTestExamples('qsv-dedup');
 
 **Generated**: 2026-01-03
 **Generator**: `qsv-test-examples-gen` v12.0.0
-**Examples**: 1,180 from 54 test files
+**Examples**: 1,279 from 54 test files
+**Features**: Shell-safe quoting, UTF-8 support, complete command strings, automatic deduplication
 **Status**: ✅ Production Ready

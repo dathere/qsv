@@ -3,6 +3,31 @@
   "version": "12.0.0",
   "examples": [
     {
+      "name": "fetchpost_disk_cache",
+      "description": "Fetchpost Disk Cache",
+      "input": {
+        "data": [
+          [
+            "URL",
+            "col1"
+          ],
+          [
+            "https://httpbin.org/post",
+            "test"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv fetchpost URL col1 --jaq data.csv",
+      "args": [
+        "URL",
+        "col1"
+      ],
+      "options": {
+        "--jaq": "data.csv"
+      }
+    },
+    {
       "name": "test_fetch_jaq_invalid_json",
       "description": "Test Fetch Jaq Invalid Json",
       "input": {
@@ -16,14 +41,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv fetch URL data.csv",
+      "command": "qsv fetch URL --new-column result --jaq data.csv",
       "args": [
-        "URL",
-        "data.csv"
+        "URL"
       ],
       "options": {
-        "--jaq": "r#\".\"places\"[0].\"place name\"\"#",
-        "--new-column": "result"
+        "--new-column": "result",
+        "--jaq": "data.csv"
       },
       "expected": {
         "data": [
@@ -52,14 +76,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv fetch URL data.csv",
+      "command": "qsv fetch URL --jaq data.csv --new-column result",
       "args": [
-        "URL",
-        "data.csv"
+        "URL"
       ],
       "options": {
-        "--new-column": "result",
-        "--jaq": "r#\".\"place\"[0].\"place name\"\"#"
+        "--jaq": "data.csv",
+        "--new-column": "result"
       },
       "expected": {
         "data": [
@@ -88,14 +111,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv fetch URL data.csv",
+      "command": "qsv fetch URL --new-column longitude --jaq data.csv",
       "args": [
-        "URL",
-        "data.csv"
+        "URL"
       ],
       "options": {
         "--new-column": "longitude",
-        "--jaq": "r#\".\"places\"[0].\"longitude\"\"#"
+        "--jaq": "data.csv"
       },
       "expected": {
         "data": [
@@ -124,14 +146,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv fetch URL data.csv",
+      "command": "qsv fetch URL --new-column coordinates --jaq data.csv",
       "args": [
-        "URL",
-        "data.csv"
+        "URL"
       ],
       "options": {
-        "--jaq": "r#\"[ .\"places\"[0].\"longitude\", .\"places\"[0].\"latitude\" ]\"#",
-        "--new-column": "coordinates"
+        "--new-column": "coordinates",
+        "--jaq": "data.csv"
       }
     }
   ]

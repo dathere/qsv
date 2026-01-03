@@ -30,10 +30,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \"\\\\\\\\.0$\" \"\\\"\\\"\" data.csv",
+      "command": "qsv replace \"\\\\\\\\.0$\" data.csv",
       "args": [
         "\\\\.0$",
-        "\"\"",
         "data.csv"
       ],
       "expected": {
@@ -89,7 +88,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \"$low^\" low",
+      "command": "qsv replace \"$low^\" low --literal data.csv",
       "args": [
         "$low^",
         "low"
@@ -150,10 +149,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \"\\\\\\\\.0$\" \"\\\"\\\"\" data.csv",
+      "command": "qsv replace \"\\\\\\\\.0$\" data.csv",
       "args": [
         "\\\\.0$",
-        "\"\"",
         "data.csv"
       ]
     },
@@ -185,10 +183,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \"\\\\\\\\.0$\" \"\\\"\\\"\" data.csv",
+      "command": "qsv replace \"\\\\\\\\.0$\" data.csv",
       "args": [
         "\\\\.0$",
-        "\"\"",
         "data.csv"
       ]
     },
@@ -220,10 +217,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \"\\\\\\\\.0$\" \"\\\"\\\"\" data.csv",
+      "command": "qsv replace \"\\\\\\\\.0$\" data.csv --not-one",
       "args": [
         "\\\\.0$",
-        "\"\"",
         "data.csv"
       ],
       "options": {
@@ -325,7 +321,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \"[\\\\\\\\s\\\\\\\\S]ell[\\\\\\\\s\\\\\\\\S]w\" Ƀellow",
+      "command": "qsv replace \"[\\\\\\\\s\\\\\\\\S]ell[\\\\\\\\s\\\\\\\\S]w\" Ƀellow --unicode data.csv",
       "args": [
         "[\\\\s\\\\S]ell[\\\\s\\\\S]w",
         "Ƀellow"
@@ -471,10 +467,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \"\\\\\\\\.0$\" \"\\\"\\\"\" data.csv",
+      "command": "qsv replace \"\\\\\\\\.0$\" data.csv --select 1",
       "args": [
         "\\\\.0$",
-        "\"\"",
         "data.csv"
       ],
       "options": {
@@ -532,10 +527,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \"\\\\\\\\.0$\" \"\\\"\\\"\" data.csv",
+      "command": "qsv replace \"\\\\\\\\.0$\" data.csv --select identifier",
       "args": [
         "\\\\.0$",
-        "\"\"",
         "data.csv"
       ],
       "options": {
@@ -594,7 +588,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \"\\\\\\\\d+(\\\\\\\\d)\\\\\\\\.0$\" \"$1\" data.csv",
+      "command": "qsv replace \"\\\\\\\\d+(\\\\\\\\d)\\\\\\\\.0$\" \"$1\" data.csv --select identifier",
       "args": [
         "\\\\d+(\\\\d)\\\\.0$",
         "$1",
@@ -652,7 +646,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \"John Bloggs\" data.csv",
+      "command": "qsv replace \"John Bloggs\" data.csv --exact \"J. Bloggs\"",
       "args": [
         "John Bloggs",
         "data.csv"
@@ -709,7 +703,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace yellow data.csv",
+      "command": "qsv replace yellow data.csv --exact \"yel$low^\"",
       "args": [
         "yellow",
         "data.csv"
@@ -766,7 +760,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace REPLACED data.csv",
+      "command": "qsv replace REPLACED data.csv --exact \"J. Bloggs\"",
       "args": [
         "REPLACED",
         "data.csv"
@@ -823,7 +817,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace \"John Bloggs\" data.csv",
+      "command": "qsv replace \"John Bloggs\" data.csv --ignore-case \"j. bloggs\"",
       "args": [
         "John Bloggs",
         "data.csv"
@@ -887,7 +881,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace test REPLACED data.csv",
+      "command": "qsv replace test REPLACED data.csv --select name",
       "args": [
         "test",
         "REPLACED",
@@ -953,12 +947,44 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv replace "
+      "command": "qsv replace \"<EMAIL>\" data.csv",
+      "args": [
+        "<EMAIL>",
+        "data.csv"
+      ],
+      "expected": {
+        "data": [
+          [
+            "email"
+          ],
+          [
+            "<EMAIL>"
+          ],
+          [
+            "<EMAIL>"
+          ],
+          [
+            "<EMAIL>"
+          ],
+          [
+            "NOT an email"
+          ],
+          [
+            "<EMAIL>"
+          ],
+          [
+            "<EMAIL>"
+          ],
+          [
+            "hello world"
+          ]
+        ]
+      }
     },
     {
       "name": "replace_indexed_parallel",
       "description": "Replace Indexed Parallel",
-      "command": "qsv replace Police Pulisya data.csv data.csv Police Pulisya data.csv",
+      "command": "qsv replace Police Pulisya data.csv data.csv Police Pulisya data.csv --jobs 2",
       "args": [
         "Police",
         "Pulisya",

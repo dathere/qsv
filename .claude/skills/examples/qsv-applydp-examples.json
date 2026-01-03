@@ -124,7 +124,31 @@
         "escape",
         "name,surname",
         "data.csv"
-      ]
+      ],
+      "expected": {
+        "data": [
+          [
+            "name",
+            "surname"
+          ],
+          [
+            "John\\\\u{1f601}",
+            "\\\\u{1f621}Cena"
+          ],
+          [
+            "Mary\\\\u{260e}",
+            "Jan\\\\u{eb}"
+          ],
+          [
+            "Sue",
+            "Bird\\\\u{1f426}"
+          ],
+          [
+            "Hop\\\\u{119}kins",
+            "J\\\\u{e6}de"
+          ]
+        ]
+      }
     },
     {
       "name": "applydp_ops_upper_rename",
@@ -154,7 +178,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations upper name,surname data.csv",
+      "command": "qsv applydp operations upper name,surname data.csv --rename uname,usurname",
       "args": [
         "operations",
         "upper",
@@ -217,7 +241,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations upper name,surname data.csv",
+      "command": "qsv applydp operations upper name,surname data.csv --rename uname",
       "args": [
         "operations",
         "upper",
@@ -256,7 +280,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations upper 1,2 data.csv",
+      "command": "qsv applydp operations upper 1,2 data.csv --rename uname,usurname",
       "args": [
         "operations",
         "upper",
@@ -327,12 +351,55 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp dynfmt",
+      "command": "qsv applydp dynfmt data.csv --new-column saying",
       "args": [
-        "dynfmt"
+        "dynfmt",
+        "data.csv"
       ],
       "options": {
-        "--formatstr": "true"
+        "--new-column": "saying"
+      },
+      "expected": {
+        "data": [
+          [
+            "qty-fruit/day",
+            "1fruit",
+            "another col",
+            "unit cost usd",
+            "and another one",
+            "saying"
+          ],
+          [
+            "20.5",
+            "mangoes",
+            "a",
+            "5",
+            "z",
+            "20.5 helpings of mangoes is good for you",
+            "even if it costs $5 each. mangoes",
+            "all \\\n             20.5 - is just worth it!"
+          ],
+          [
+            "10",
+            "bananas",
+            "b",
+            "20",
+            "y",
+            "10 helpings of bananas is good for you",
+            "even if it costs $20 each. bananas",
+            "all 10 - \\\n             is just worth it!"
+          ],
+          [
+            "3",
+            "strawberries",
+            "c",
+            "3.50",
+            "x",
+            "3 helpings of strawberries is good for you",
+            "even if it costs $3.50 each. \\\n             strawberries",
+            "all 3 - is just worth it!"
+          ]
+        ]
       }
     },
     {
@@ -413,7 +480,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations replace description data.csv",
+      "command": "qsv applydp operations replace description data.csv --comparand brown --replacement silver",
       "args": [
         "operations",
         "replace",
@@ -468,7 +535,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations replace description data.csv",
+      "command": "qsv applydp operations replace description data.csv --replacement silver",
       "args": [
         "operations",
         "replace",
@@ -510,14 +577,40 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations regex_replace description",
+      "command": "qsv applydp operations regex_replace description data.csv --comparand \"(?:\\\\\\\\d{3}-\\\\\\\\d{2}-\\\\\\\\d{4})\" --replacement SSN",
       "args": [
         "operations",
         "regex_replace",
-        "description"
+        "description",
+        "data.csv"
       ],
       "options": {
-        "--comparand": "true"
+        "--comparand": "(?:\\\\d{3}-\\\\d{2}-\\\\d{4})",
+        "--replacement": "SSN"
+      },
+      "expected": {
+        "data": [
+          [
+            "description"
+          ],
+          [
+            "My SSN is SSN. Please do not share it."
+          ],
+          [
+            "twinkle",
+            "twinkle brownie star",
+            "how I wonder what you are"
+          ],
+          [
+            "Somebody from Nigeria called asked for my ssn - SSN."
+          ],
+          [
+            "Won't fall for that scam!"
+          ],
+          [
+            "Just enter SSN when prompted. Also try SSN if it doesn't work."
+          ]
+        ]
       }
     },
     {
@@ -610,14 +703,15 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations regex_replace description",
+      "command": "qsv applydp operations regex_replace description data.csv --comparand \"(?:\\\\\\\\d{3}-\\\\\\\\d{2}-\\\\\\\\d{4})\"",
       "args": [
         "operations",
         "regex_replace",
-        "description"
+        "description",
+        "data.csv"
       ],
       "options": {
-        "--comparand": "true"
+        "--comparand": "(?:\\\\d{3}-\\\\d{2}-\\\\d{4})"
       },
       "tags": [
         "error-handling"
@@ -637,7 +731,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations regex_replace description data.csv",
+      "command": "qsv applydp operations regex_replace description data.csv --replacement SSN --comparand \"(?:?)\"",
       "args": [
         "operations",
         "regex_replace",
@@ -645,8 +739,8 @@
         "data.csv"
       ],
       "options": {
-        "--comparand": "(?:?)",
-        "--replacement": "SSN"
+        "--replacement": "SSN",
+        "--comparand": "(?:?)"
       },
       "tags": [
         "error-handling"
@@ -685,7 +779,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations mtrim description data.csv",
+      "command": "qsv applydp operations mtrim description data.csv --comparand \"()\"",
       "args": [
         "operations",
         "mtrim",
@@ -950,7 +1044,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations trim,strip_prefix,upper,squeeze,strip_suffix name data.csv",
+      "command": "qsv applydp operations trim,strip_prefix,upper,squeeze,strip_suffix name data.csv --comparand Joe -c new_column",
       "args": [
         "operations",
         "trim,strip_prefix,upper,squeeze,strip_suffix",
@@ -982,7 +1076,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations trim,upper,squeeze,strip_prefix name data.csv",
+      "command": "qsv applydp operations trim,upper,squeeze,strip_prefix name data.csv -c new_column",
       "args": [
         "operations",
         "trim,upper,squeeze,strip_prefix",
@@ -1119,7 +1213,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations squeeze,upper,strip_prefix,trim name data.csv",
+      "command": "qsv applydp operations squeeze,upper,strip_prefix,trim name data.csv --comparand DOCTOR",
       "args": [
         "operations",
         "squeeze,upper,strip_prefix,trim",
@@ -1222,7 +1316,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations trim,upper 1",
+      "command": "qsv applydp operations trim,upper 1 --no-headers data.csv",
       "args": [
         "operations",
         "trim,upper",
@@ -1274,7 +1368,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations upper name data.csv",
+      "command": "qsv applydp operations upper name data.csv --rename upper_name",
       "args": [
         "operations",
         "upper",
@@ -1327,7 +1421,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations upper name data.csv",
+      "command": "qsv applydp operations upper name data.csv --new-column upper_name",
       "args": [
         "operations",
         "upper",
@@ -1385,7 +1479,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp emptyreplace name data.csv",
+      "command": "qsv applydp emptyreplace name data.csv --replacement NA",
       "args": [
         "emptyreplace",
         "name",
@@ -1447,7 +1541,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp emptyreplace name,age,city data.csv",
+      "command": "qsv applydp emptyreplace name,age,city data.csv --replacement NA",
       "args": [
         "emptyreplace",
         "name,age,city",
@@ -1519,7 +1613,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp emptyreplace 1- data.csv",
+      "command": "qsv applydp emptyreplace 1- data.csv --replacement NA",
       "args": [
         "emptyreplace",
         "1-",

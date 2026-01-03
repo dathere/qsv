@@ -5,33 +5,30 @@
     {
       "name": "stats_prefer_dmy",
       "description": "Stats Prefer Dmy",
-      "command": "qsv stats \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\" in2.csv",
+      "command": "qsv stats in2.csv --dataset-stats \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\"",
       "args": [
-        "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/",
         "in2.csv"
       ],
       "options": {
-        "--dataset-stats": "test_file"
+        "--dataset-stats": "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/"
       }
     },
     {
       "name": "stats_prefer_mdy",
       "description": "Stats Prefer Mdy",
-      "command": "qsv stats \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\" in2.csv",
+      "command": "qsv stats in2.csv --dataset-stats \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\"",
       "args": [
-        "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/",
         "in2.csv"
       ],
       "options": {
-        "--dataset-stats": "test_file"
+        "--dataset-stats": "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/"
       }
     },
     {
       "name": "stats_rounding",
       "description": "Stats Rounding",
-      "command": "qsv stats test_file \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\" in2.csv",
+      "command": "qsv stats \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\" in2.csv",
       "args": [
-        "test_file",
         "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/",
         "in2.csv"
       ]
@@ -39,17 +36,16 @@
     {
       "name": "stats_no_rounding",
       "description": "Stats No Rounding",
-      "command": "qsv stats ",
+      "command": "qsv stats --everything",
       "options": {
-        "--everything": "test_file"
+        "--everything": "true"
       }
     },
     {
       "name": "stats_no_date_inference",
       "description": "Stats No Date Inference",
-      "command": "qsv stats test_file \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\" in2.csv",
+      "command": "qsv stats \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\" in2.csv",
       "args": [
-        "test_file",
         "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/",
         "in2.csv"
       ]
@@ -57,21 +53,19 @@
     {
       "name": "stats_with_date_inference",
       "description": "Stats With Date Inference",
-      "command": "qsv stats in2.csv",
+      "command": "qsv stats in2.csv --dataset-stats \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\"",
       "args": [
         "in2.csv"
       ],
       "options": {
-        "--dataset-stats": "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/",
-        "--everything": "test_file"
+        "--dataset-stats": "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/"
       }
     },
     {
       "name": "stats_with_date_inference_default_whitelist",
       "description": "Stats With Date Inference Default Whitelist",
-      "command": "qsv stats test_file in2.csv",
+      "command": "qsv stats in2.csv --infer-dates \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\"",
       "args": [
-        "test_file",
         "in2.csv"
       ],
       "options": {
@@ -81,116 +75,110 @@
     {
       "name": "stats_with_date_inference_variance_stddev",
       "description": "Stats With Date Inference Variance Stddev",
-      "command": "qsv stats ",
+      "command": "qsv stats --dataset-stats",
       "options": {
-        "--everything": "test_file",
         "--dataset-stats": "true"
       }
     },
     {
       "name": "stats_with_date_type",
       "description": "Stats With Date Type",
-      "command": "qsv stats in2.csv",
+      "command": "qsv stats in2.csv --dataset-stats \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\"",
       "args": [
         "in2.csv"
       ],
       "options": {
-        "--dataset-stats": "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/",
-        "--everything": "test_file"
+        "--dataset-stats": "!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/"
       }
     },
     {
       "name": "stats_typesonly",
       "description": "Stats Typesonly",
-      "command": "qsv stats test_file",
-      "args": [
-        "test_file"
-      ]
+      "command": "qsv stats"
     },
     {
       "name": "stats_typesonly_with_dates",
       "description": "Stats Typesonly With Dates",
-      "command": "qsv stats ",
+      "command": "qsv stats --infer-dates",
       "options": {
-        "--infer-dates": "test_file"
+        "--infer-dates": "true"
       }
     },
     {
       "name": "stats_typesonly_cache_threshold_zero",
       "description": "Stats Typesonly Cache Threshold Zero",
-      "command": "qsv stats ",
+      "command": "qsv stats --infer-dates",
       "options": {
-        "--infer-dates": "test_file"
+        "--infer-dates": "true"
       }
     },
     {
       "name": "stats_typesonly_cache",
       "description": "Stats Typesonly Cache",
-      "command": "qsv stats ",
+      "command": "qsv stats --infer-dates",
       "options": {
-        "--infer-dates": "test_file"
+        "--infer-dates": "true"
       }
     },
     {
       "name": "stats_cache",
       "description": "Stats Cache",
-      "command": "qsv stats \"!/variance|geometric_mean|harmonic_mean|stddev|sem|cv/\" in2.csv",
+      "command": "qsv stats in2.csv --dataset-stats \"!/variance|geometric_mean|harmonic_mean|stddev|sem|cv/\"",
       "args": [
-        "!/variance|geometric_mean|harmonic_mean|stddev|sem|cv/",
         "in2.csv"
       ],
       "options": {
-        "--dataset-stats": "test_file"
+        "--dataset-stats": "!/variance|geometric_mean|harmonic_mean|stddev|sem|cv/"
       }
     },
     {
       "name": "stats_cache_negative_threshold_unmet",
       "description": "Stats Cache Negative Threshold Unmet",
-      "command": "qsv stats ",
+      "command": "qsv stats in2.csv --dataset-stats \"!/variance|geometric_mean|harmonic_mean|stddev|sem|cv/\"",
+      "args": [
+        "in2.csv"
+      ],
       "options": {
-        "--dataset-stats": "test_file.clone("
+        "--dataset-stats": "!/variance|geometric_mean|harmonic_mean|stddev|sem|cv/"
       }
     },
     {
       "name": "stats_antimodes_len_500",
       "description": "Stats Antimodes Len 500",
-      "command": "qsv stats test_file",
-      "args": [
-        "test_file"
-      ]
+      "command": "qsv stats"
     },
     {
       "name": "stats_infer_boolean_1_0",
       "description": "Stats Infer Boolean 1 0",
-      "command": "qsv stats ",
+      "command": "qsv stats --dataset-stats",
       "options": {
-        "--dataset-stats": "test_file"
+        "--dataset-stats": "true"
       }
     },
     {
       "name": "stats_infer_boolean_t_f",
       "description": "Stats Infer Boolean T F",
-      "command": "qsv stats ",
+      "command": "qsv stats --dataset-stats",
       "options": {
-        "--dataset-stats": "test_file"
+        "--dataset-stats": "true"
       }
     },
     {
       "name": "stats_infer_boolean_true_false",
       "description": "Stats Infer Boolean True False",
-      "command": "qsv stats ",
+      "command": "qsv stats --boolean-patterns true:false --dataset-stats",
       "options": {
         "--boolean-patterns": "true:false",
-        "--dataset-stats": "test_file"
+        "--dataset-stats": "true"
       }
     },
     {
       "name": "stats_infer_boolean_true_false_error",
       "description": "Stats Infer Boolean True False Error",
-      "command": "qsv stats ",
+      "command": "qsv stats --boolean-patterns true:falsy --dataset-stats",
       "options": {
         "--boolean-patterns": "true:falsy",
-        "--dataset-stats": "test_file"
+        "--dataset-stats": "true"
       },
       "tags": [
         "error-handling"
@@ -199,10 +187,10 @@
     {
       "name": "stats_infer_boolean_true_false_error_pattern_mismatch",
       "description": "Stats Infer Boolean True False Error Pattern Mismatch",
-      "command": "qsv stats ",
+      "command": "qsv stats --boolean-patterns true:no --dataset-stats",
       "options": {
-        "--dataset-stats": "test_file",
-        "--boolean-patterns": "true:no"
+        "--boolean-patterns": "true:no",
+        "--dataset-stats": "true"
       },
       "tags": [
         "error-handling"
@@ -211,34 +199,33 @@
     {
       "name": "stats_typesonly_infer_boolean_t_f",
       "description": "Stats Typesonly Infer Boolean T F",
-      "command": "qsv stats ",
+      "command": "qsv stats --dataset-stats",
       "options": {
-        "--dataset-stats": "test_file"
+        "--dataset-stats": "true"
       }
     },
     {
       "name": "stats_typesonly_infer_boolean_t_f_infer_dates",
       "description": "Stats Typesonly Infer Boolean T F Infer Dates",
-      "command": "qsv stats ",
+      "command": "qsv stats --dataset-stats",
       "options": {
-        "--dataset-stats": "test_file"
+        "--dataset-stats": "true"
       }
     },
     {
       "name": "stats_infer_boolean_invalid_pattern",
       "description": "Stats Infer Boolean Invalid Pattern",
-      "command": "qsv stats ",
+      "command": "qsv stats --dataset-stats --boolean-patterns :false,yep:,1:0",
       "options": {
-        "--dataset-stats": "test_file",
+        "--dataset-stats": "true",
         "--boolean-patterns": ":false,yep:,1:0"
       }
     },
     {
       "name": "stats_is_ascii",
       "description": "Stats Is Ascii",
-      "command": "qsv stats test_file in2.csv",
+      "command": "qsv stats in2.csv --force \"!/stddev_length|variance_length|cv_length|variance|geometric_mean|harmonic_mean|stddev|sem|cv/\"",
       "args": [
-        "test_file",
         "in2.csv"
       ],
       "options": {
@@ -248,9 +235,9 @@
     {
       "name": "stats_everything_utf8_japanese_issue817",
       "description": "Stats Everything Utf8 Japanese Issue817",
-      "command": "qsv stats ",
+      "command": "qsv stats --everything",
       "options": {
-        "--everything": "test_file"
+        "--everything": "true"
       }
     },
     {
@@ -291,7 +278,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats ",
+      "command": "qsv stats --dataset-stats data.csv",
       "options": {
         "--dataset-stats": "data.csv"
       },
@@ -376,7 +363,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --dataset-stats",
       "args": [
         "data.csv"
       ],
@@ -714,7 +701,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --dataset-stats",
       "args": [
         "data.csv"
       ],
@@ -760,7 +747,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --dataset-stats",
       "args": [
         "data.csv"
       ],
@@ -806,13 +793,432 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv \"out_file.clone(\"",
+      "command": "qsv stats data.csv --dataset-stats decompress",
       "args": [
-        "data.csv",
-        "out_file.clone("
+        "data.csv"
       ],
       "options": {
         "--dataset-stats": "decompress"
+      }
+    },
+    {
+      "name": "stats_vis_whitespace",
+      "description": "Stats Vis Whitespace",
+      "command": "qsv stats --dataset-stats data.csv",
+      "options": {
+        "--dataset-stats": "data.csv"
+      },
+      "expected": {
+        "data": [
+          [
+            "field",
+            "type",
+            "is_ascii",
+            "sum",
+            "min",
+            "max",
+            "range",
+            "sort_order",
+            "sortiness",
+            "min_length",
+            "max_length",
+            "sum_length",
+            "avg_length",
+            "stddev_length",
+            "variance_length",
+            "cv_length",
+            "mean",
+            "sem",
+            "geometric_mean",
+            "harmonic_mean",
+            "stddev",
+            "variance",
+            "cv",
+            "nullcount",
+            "n_negative",
+            "n_zero",
+            "n_positive",
+            "max_precision",
+            "sparsity",
+            "mad",
+            "lower_outer_fence",
+            "lower_inner_fence",
+            "q1",
+            "q2_median",
+            "q3",
+            "iqr",
+            "upper_inner_fence",
+            "upper_outer_fence",
+            "skewness",
+            "cardinality",
+            "uniqueness_ratio",
+            "mode",
+            "mode_count",
+            "mode_occurrences",
+            "antimode",
+            "antimode_count",
+            "antimode_occurrences",
+            "percentiles",
+            "qsv__value"
+          ],
+          [
+            "col1",
+            "String",
+            "false",
+            "",
+            "no_whitespace",
+            "z obscure whitespace 《⋮》 《␌》 《→》 《␤》 《␎》 《␏》 《␊》 《␍》 are also visible",
+            "",
+            "Unsorted",
+            "0.3333",
+            "6",
+            "62",
+            "152",
+            "21.7143",
+            "22.883",
+            "523.6327",
+            "1.0538",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "0",
+            "",
+            "",
+            "",
+            "",
+            "0",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6",
+            "0.8571",
+            "value《¶》",
+            "1",
+            "2",
+            "no_whitespace|the spaces in this field are visible as normal spaces|value《→》|value《⏎》|z obscure whitespa...",
+            "5",
+            "1",
+            "",
+            ""
+          ],
+          [
+            "col2",
+            "String",
+            "true",
+            "",
+            "《→》value",
+            "also_none",
+            "",
+            "Unsorted",
+            "0.2",
+            "0",
+            "9",
+            "37",
+            "5.2857",
+            "2.5475",
+            "6.4898",
+            "0.482",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "1",
+            "",
+            "",
+            "",
+            "",
+            "0.1429",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6",
+            "0.8571",
+            "《¶》value",
+            "1",
+            "2",
+            "NULL|《→》value|《⏎》value|    |also_none",
+            "5",
+            "1",
+            "",
+            ""
+          ],
+          [
+            "col3",
+            "String",
+            "true",
+            "",
+            "《→》value《→》",
+            "the trailing spaces are left alone   ",
+            "",
+            "Unsorted",
+            "0.3333",
+            "5",
+            "37",
+            "80",
+            "11.4286",
+            "10.5269",
+            "110.8163",
+            "0.9211",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "0",
+            "",
+            "",
+            "",
+            "",
+            "0",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "6",
+            "0.8571",
+            "《¶》value《¶》",
+            "1",
+            "2",
+            "《→》value《→》|《⏎》value《⏎》|          |clean|the trailing spaces are left alone   ",
+            "5",
+            "1",
+            "",
+            ""
+          ],
+          [
+            "qsv__rowcount",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "7"
+          ],
+          [
+            "qsv__columncount",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "3"
+          ],
+          [
+            "qsv__filesize_bytes",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "323"
+          ],
+          [
+            "qsv__fingerprint_hash",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "04b6264caa1763c923b7fd9826a023b29135e96c33921b89a95b554fcbefccfa"
+          ]
+        ]
       }
     },
     {
@@ -856,7 +1262,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list 10,25,50,75,90",
       "args": [
         "data.csv"
       ],
@@ -990,7 +1396,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list 10.5,25.25,50.75,75.6,90.1",
       "args": [
         "data.csv"
       ],
@@ -1093,7 +1499,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list 25,50,75 --infer-dates",
       "args": [
         "data.csv"
       ],
@@ -1198,7 +1604,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list 25,50,75",
       "args": [
         "data.csv"
       ],
@@ -1302,7 +1708,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list 25,50,75",
       "args": [
         "data.csv"
       ],
@@ -1406,7 +1812,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list 10,25,50,75,90",
       "args": [
         "data.csv"
       ],
@@ -1527,7 +1933,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list 1,5,33.3,66.6,95,99",
       "args": [
         "data.csv"
       ],
@@ -1619,7 +2025,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list 25,50,75",
       "args": [
         "data.csv"
       ],
@@ -1738,7 +2144,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list deciles",
       "args": [
         "data.csv"
       ],
@@ -1790,7 +2196,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list DECILES",
       "args": [
         "data.csv"
       ],
@@ -1842,7 +2248,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list DeCiLeS",
       "args": [
         "data.csv"
       ],
@@ -1894,7 +2300,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list quintiles",
       "args": [
         "data.csv"
       ],
@@ -1946,7 +2352,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list QUINTILES",
       "args": [
         "data.csv"
       ],
@@ -1998,7 +2404,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list QuInTiLeS",
       "args": [
         "data.csv"
       ],
@@ -2080,7 +2486,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list deciles",
       "args": [
         "data.csv"
       ],
@@ -2159,7 +2565,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list quintiles",
       "args": [
         "data.csv"
       ],
@@ -2208,7 +2614,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list 25,50,75",
       "args": [
         "data.csv"
       ],
@@ -2236,7 +2642,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list 10,twenty,30,40,50,60,70,80,90,100",
       "args": [
         "data.csv"
       ],
@@ -2247,28 +2653,28 @@
     {
       "name": "stats_infer_boolean_prefix_pattern",
       "description": "Stats Infer Boolean Prefix Pattern",
-      "command": "qsv stats ",
+      "command": "qsv stats --dataset-stats --boolean-patterns \"t*:f*\"",
       "options": {
-        "--dataset-stats": "test_file",
+        "--dataset-stats": "true",
         "--boolean-patterns": "t*:f*"
       }
     },
     {
       "name": "stats_infer_boolean_multiple_patterns",
       "description": "Stats Infer Boolean Multiple Patterns",
-      "command": "qsv stats ",
+      "command": "qsv stats --dataset-stats --boolean-patterns \"true:false,t*:f*,y*:n*\"",
       "options": {
-        "--dataset-stats": "test_file",
+        "--dataset-stats": "true",
         "--boolean-patterns": "true:false,t*:f*,y*:n*"
       }
     },
     {
       "name": "stats_infer_boolean_case_insensitive",
       "description": "Stats Infer Boolean Case Insensitive",
-      "command": "qsv stats ",
+      "command": "qsv stats --boolean-patterns TRUE:FALSE --dataset-stats",
       "options": {
-        "--dataset-stats": "test_file",
-        "--boolean-patterns": "TRUE:FALSE"
+        "--boolean-patterns": "TRUE:FALSE",
+        "--dataset-stats": "true"
       },
       "tags": [
         "case-sensitivity"
@@ -2297,7 +2703,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats ",
+      "command": "qsv stats --boolean-patterns truthy:falsy --dataset-stats data.csv",
       "options": {
         "--boolean-patterns": "truthy:falsy",
         "--dataset-stats": "data.csv"
@@ -2323,7 +2729,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --boolean-patterns \"true*:false*\"",
       "args": [
         "data.csv"
       ],
@@ -2334,36 +2740,35 @@
     {
       "name": "stats_infer_boolean_empty_pattern",
       "description": "Stats Infer Boolean Empty Pattern",
-      "command": "qsv stats ",
+      "command": "qsv stats --dataset-stats",
       "options": {
-        "--boolean-patterns": "\"\"",
-        "--dataset-stats": "test_file"
+        "--dataset-stats": "true"
       }
     },
     {
       "name": "stats_infer_boolean_missing_colon",
       "description": "Stats Infer Boolean Missing Colon",
-      "command": "qsv stats ",
+      "command": "qsv stats --boolean-patterns truefalse --dataset-stats",
       "options": {
         "--boolean-patterns": "truefalse",
-        "--dataset-stats": "test_file"
+        "--dataset-stats": "true"
       }
     },
     {
       "name": "stats_infer_boolean_missing_true_pattern",
       "description": "Stats Infer Boolean Missing True Pattern",
-      "command": "qsv stats ",
+      "command": "qsv stats --boolean-patterns :false --dataset-stats",
       "options": {
-        "--dataset-stats": "test_file",
-        "--boolean-patterns": ":false"
+        "--boolean-patterns": ":false",
+        "--dataset-stats": "true"
       }
     },
     {
       "name": "stats_infer_boolean_missing_false_pattern",
       "description": "Stats Infer Boolean Missing False Pattern",
-      "command": "qsv stats ",
+      "command": "qsv stats --dataset-stats --boolean-patterns true:",
       "options": {
-        "--dataset-stats": "test_file",
+        "--dataset-stats": "true",
         "--boolean-patterns": "true:"
       }
     },
@@ -2479,62 +2884,48 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv data.csv data.csv",
       "args": [
+        "data.csv",
+        "data.csv",
         "data.csv"
       ]
     },
     {
       "name": "stats_memory_aware_chunking_dynamic",
       "description": "Stats Memory Aware Chunking Dynamic",
-      "command": "qsv index \"test_file.clone(\"",
-      "args": [
-        "test_file.clone("
-      ],
+      "command": "qsv index --everything",
       "options": {
-        "--everything": "test_file"
+        "--everything": "true"
       }
     },
     {
       "name": "stats_memory_aware_chunking_fixed_limit",
       "description": "Stats Memory Aware Chunking Fixed Limit",
-      "command": "qsv index \"test_file.clone(\"",
-      "args": [
-        "test_file.clone("
-      ],
+      "command": "qsv index --everything",
       "options": {
-        "--everything": "test_file"
+        "--everything": "true"
       }
     },
     {
       "name": "stats_memory_aware_chunking_unset_streaming",
       "description": "Stats Memory Aware Chunking Unset Streaming",
-      "command": "qsv index \"test_file.clone(\" test_file",
-      "args": [
-        "test_file.clone(",
-        "test_file"
-      ]
+      "command": "qsv index"
     },
     {
       "name": "stats_memory_aware_chunking_unset_non_streaming",
       "description": "Stats Memory Aware Chunking Unset Non Streaming",
-      "command": "qsv index \"test_file.clone(\"",
-      "args": [
-        "test_file.clone("
-      ],
+      "command": "qsv index --cardinality",
       "options": {
-        "--cardinality": "test_file"
+        "--cardinality": "true"
       }
     },
     {
       "name": "stats_auto_index_creation_skipped_if_indexed",
       "description": "Stats Auto Index Creation Skipped If Indexed",
-      "command": "qsv index \"test_file.clone(\"",
-      "args": [
-        "test_file.clone("
-      ],
+      "command": "qsv index --everything",
       "options": {
-        "--everything": "test_file"
+        "--everything": "true"
       }
     },
     {
@@ -2561,9 +2952,31 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats ",
+      "command": "qsv stats --everything",
       "options": {
         "--everything": "true"
+      }
+    },
+    {
+      "name": "stats_memory_aware_chunking_empty_samples",
+      "description": "Stats Memory Aware Chunking Empty Samples",
+      "command": "qsv index data.csv --cardinality data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--cardinality": "data.csv"
+      }
+    },
+    {
+      "name": "stats_memory_aware_chunking_small_records",
+      "description": "Stats Memory Aware Chunking Small Records",
+      "command": "qsv index data.csv --cardinality data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--cardinality": "data.csv"
       }
     },
     {
@@ -2586,7 +2999,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv index data.csv",
+      "command": "qsv index data.csv --cardinality data.csv",
       "args": [
         "data.csv"
       ],
@@ -2618,7 +3031,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -2650,7 +3063,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv data.csv",
+      "command": "qsv stats data.csv data.csv --weight weight",
       "args": [
         "data.csv",
         "data.csv"
@@ -2683,7 +3096,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -2715,10 +3128,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats ",
+      "command": "qsv stats --weight weight --median data.csv",
       "options": {
-        "--median": "data.csv",
-        "--weight": "weight"
+        "--weight": "weight",
+        "--median": "data.csv"
       }
     },
     {
@@ -2753,7 +3166,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats ",
+      "command": "qsv stats --quartiles data.csv --weight weight",
       "options": {
         "--quartiles": "data.csv",
         "--weight": "weight"
@@ -2783,10 +3196,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats ",
+      "command": "qsv stats --mad data.csv --weight weight",
       "options": {
-        "--weight": "weight",
-        "--mad": "data.csv"
+        "--mad": "data.csv",
+        "--weight": "weight"
       }
     },
     {
@@ -2821,13 +3234,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --percentile-list 10,50,90 --weight weight",
       "args": [
         "data.csv"
       ],
       "options": {
-        "--weight": "weight",
-        "--percentile-list": "10,50,90"
+        "--percentile-list": "10,50,90",
+        "--weight": "weight"
       }
     },
     {
@@ -2854,7 +3267,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -2882,7 +3295,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -2914,7 +3327,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -2942,7 +3355,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -2974,7 +3387,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -3006,7 +3419,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -3046,10 +3459,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats ",
+      "command": "qsv stats --weight weight --mode data.csv",
       "options": {
-        "--mode": "data.csv",
-        "--weight": "weight"
+        "--weight": "weight",
+        "--mode": "data.csv"
       }
     },
     {
@@ -3084,7 +3497,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats ",
+      "command": "qsv stats --weight weight --mode data.csv",
       "options": {
         "--weight": "weight",
         "--mode": "data.csv"
@@ -3114,7 +3527,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats ",
+      "command": "qsv stats --weight weight --mode data.csv",
       "options": {
         "--weight": "weight",
         "--mode": "data.csv"
@@ -3137,7 +3550,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight nonexistent",
       "args": [
         "data.csv"
       ],
@@ -3148,7 +3561,7 @@
     {
       "name": "stats_weighted_invalid_weights_default_to_one",
       "description": "Stats Weighted Invalid Weights Default To One",
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -3176,12 +3589,24 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
       "options": {
         "--weight": "weight"
+      }
+    },
+    {
+      "name": "stats_weighted_parallel_processing",
+      "description": "Stats Weighted Parallel Processing",
+      "command": "qsv index data.csv --weight weight --everything data.csv",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--weight": "weight",
+        "--everything": "data.csv"
       }
     },
     {
@@ -3204,7 +3629,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -3236,7 +3661,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv data.csv",
+      "command": "qsv stats data.csv data.csv --weight weight",
       "args": [
         "data.csv",
         "data.csv"
@@ -3269,7 +3694,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -3280,7 +3705,7 @@
     {
       "name": "stats_weighted_negative_weights",
       "description": "Stats Weighted Negative Weights",
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -3291,7 +3716,7 @@
     {
       "name": "stats_weighted_mixed_zero_and_nonzero_weights",
       "description": "Stats Weighted Mixed Zero And Nonzero Weights",
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -3302,7 +3727,7 @@
     {
       "name": "stats_weighted_nan_weights",
       "description": "Stats Weighted Nan Weights",
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -3313,7 +3738,7 @@
     {
       "name": "stats_weighted_infinity_weights",
       "description": "Stats Weighted Infinity Weights",
-      "command": "qsv stats data.csv",
+      "command": "qsv stats data.csv --weight weight",
       "args": [
         "data.csv"
       ],
@@ -3324,7 +3749,7 @@
     {
       "name": "stats_weighted_zero_weights_with_modes",
       "description": "Stats Weighted Zero Weights With Modes",
-      "command": "qsv stats ",
+      "command": "qsv stats --weight weight --mode data.csv",
       "options": {
         "--weight": "weight",
         "--mode": "data.csv"
@@ -3333,19 +3758,19 @@
     {
       "name": "stats_weighted_negative_weights_with_quartiles",
       "description": "Stats Weighted Negative Weights With Quartiles",
-      "command": "qsv stats ",
+      "command": "qsv stats --weight weight --quartiles data.csv",
       "options": {
-        "--quartiles": "data.csv",
-        "--weight": "weight"
+        "--weight": "weight",
+        "--quartiles": "data.csv"
       }
     },
     {
       "name": "stats_weighted_mixed_edge_cases",
       "description": "Stats Weighted Mixed Edge Cases",
-      "command": "qsv stats ",
+      "command": "qsv stats --mad data.csv --weight weight",
       "options": {
-        "--weight": "weight",
-        "--mad": "data.csv"
+        "--mad": "data.csv",
+        "--weight": "weight"
       },
       "tags": [
         "case-sensitivity"

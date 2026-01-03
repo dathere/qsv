@@ -71,7 +71,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv headers ",
+      "command": "qsv headers --trim data.csv",
       "options": {
         "--trim": "data.csv"
       }
@@ -94,7 +94,7 @@
         ],
         "filename": "in1.csv"
       },
-      "command": "qsv headers testdata.infile-list testdata.infile-list",
+      "command": "qsv headers testdata.infile-list testdata.infile-list --just-count",
       "args": [
         "testdata.infile-list",
         "testdata.infile-list"
@@ -121,7 +121,7 @@
         ],
         "filename": "in1.csv"
       },
-      "command": "qsv headers ",
+      "command": "qsv headers --intersect testdata.infile-list",
       "options": {
         "--intersect": "testdata.infile-list"
       }
@@ -137,12 +137,12 @@
     {
       "name": "headers_stdin_implicit",
       "description": "Headers Stdin Implicit",
-      "command": "qsv headers "
+      "command": "qsv headers"
     },
     {
       "name": "headers_stdin_with_just_names",
       "description": "Headers Stdin With Just Names",
-      "command": "qsv headers ",
+      "command": "qsv headers --just-names",
       "options": {
         "--just-names": "true"
       }

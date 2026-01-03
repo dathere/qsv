@@ -86,7 +86,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv dedup ",
+      "command": "qsv dedup -i in.csv",
       "options": {
         "-i": "in.csv"
       },
@@ -130,7 +130,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv dedup ",
+      "command": "qsv dedup -i in.csv",
       "options": {
         "-i": "in.csv"
       },
@@ -177,7 +177,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv dedup ",
+      "command": "qsv dedup -N in.csv",
       "options": {
         "-N": "in.csv"
       },
@@ -256,10 +256,7 @@
     {
       "name": "dedup_select_issue774",
       "description": "Dedup Select Issue774",
-      "command": "qsv dedup test_file",
-      "args": [
-        "test_file"
-      ]
+      "command": "qsv dedup"
     },
     {
       "name": "dedup_sorted",
@@ -301,7 +298,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv dedup ",
+      "command": "qsv dedup --sorted in.csv",
       "options": {
         "--sorted": "in.csv"
       },
@@ -394,7 +391,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv dedup ",
+      "command": "qsv dedup --ignore-case in.csv",
       "options": {
         "--ignore-case": "in.csv"
       },
@@ -486,7 +483,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv dedup ",
+      "command": "qsv dedup --ignore-case in.csv",
       "options": {
         "--ignore-case": "in.csv"
       },
@@ -554,7 +551,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv dedup ",
+      "command": "qsv dedup --sorted in.csv",
       "options": {
         "--sorted": "in.csv"
       }
@@ -591,7 +588,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv dedup ",
+      "command": "qsv dedup --sorted in.csv",
       "options": {
         "--sorted": "in.csv"
       }

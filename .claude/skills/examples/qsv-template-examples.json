@@ -3,17 +3,118 @@
   "version": "12.0.0",
   "examples": [
     {
+      "name": "template_basic",
+      "description": "Template Basic",
+      "command": "qsv template data.csv --template-file template.txt",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "template.txt"
+      },
+      "tags": [
+        "basic"
+      ]
+    },
+    {
+      "name": "template_no_headers",
+      "description": "Template No Headers",
+      "command": "qsv template data.csv --template-file template.txt --no-headers",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "template.txt",
+        "--no-headers": "true"
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
       "name": "template_string",
       "description": "Template String",
-      "command": "qsv template ",
+      "command": "qsv template data.csv --template \"{{name}} is {{age}} years old\\\\n\\\\n\"",
+      "args": [
+        "data.csv"
+      ],
       "options": {
-        "--template": "true"
+        "--template": "{{name}} is {{age}} years old\\n\\n"
+      }
+    },
+    {
+      "name": "template_custom_delimiter",
+      "description": "Template Custom Delimiter",
+      "command": "qsv template data.csv --template-file template.txt",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "template.txt"
+      },
+      "tags": [
+        "custom-delimiter"
+      ]
+    },
+    {
+      "name": "template_with_filters",
+      "description": "Template With Filters",
+      "command": "qsv template data.csv --template-file template.txt",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "template.txt"
+      }
+    },
+    {
+      "name": "template_with_conditionals",
+      "description": "Template With Conditionals",
+      "command": "qsv template data.csv --template-file template.txt",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "template.txt"
+      }
+    },
+    {
+      "name": "template_missing_field",
+      "description": "Template Missing Field",
+      "command": "qsv template data.csv --template-file template.txt",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "template.txt"
+      }
+    },
+    {
+      "name": "template_empty_input",
+      "description": "Template Empty Input",
+      "command": "qsv template data.csv --template-file template.txt",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "template.txt"
+      }
+    },
+    {
+      "name": "template_with_loops",
+      "description": "Template With Loops",
+      "command": "qsv template data.csv --template-file template.txt",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "template.txt"
       }
     },
     {
       "name": "template_error_missing_template",
       "description": "Template Error Missing Template",
-      "command": "qsv template data.csv",
+      "command": "qsv template data.csv --template-file nonexistent.txt",
       "args": [
         "data.csv"
       ],
@@ -23,6 +124,98 @@
       "tags": [
         "error-handling"
       ]
+    },
+    {
+      "name": "template_with_whitespace_control",
+      "description": "Template With Whitespace Control",
+      "command": "qsv template data.csv --template-file template.txt",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "template.txt"
+      }
+    },
+    {
+      "name": "template_output_file",
+      "description": "Template Output File",
+      "command": "qsv template --template-file template.txt --output data.csv",
+      "options": {
+        "--template-file": "template.txt",
+        "--output": "data.csv"
+      }
+    },
+    {
+      "name": "template_output_directory",
+      "description": "Template Output Directory",
+      "command": "qsv template data.csv --template-file template.txt",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "template.txt"
+      }
+    },
+    {
+      "name": "template_output_custom_filename",
+      "description": "Template Output Custom Filename",
+      "command": "qsv template data.csv --template-file template.txt --outfilename \"{{name}}_greeting-{{ QSV_ROWNO }}.txt\"",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "template.txt",
+        "--outfilename": "{{name}}_greeting-{{ QSV_ROWNO }}.txt"
+      }
+    },
+    {
+      "name": "template_output_directory_no_headers",
+      "description": "Template Output Directory No Headers",
+      "command": "qsv template --no-headers data.csv --template-file template.txt",
+      "options": {
+        "--no-headers": "data.csv",
+        "--template-file": "template.txt"
+      },
+      "tags": [
+        "no-headers"
+      ]
+    },
+    {
+      "name": "template_custom_filters",
+      "description": "Template Custom Filters",
+      "input": {
+        "data": [
+          [
+            "name",
+            "amount",
+            "bytes",
+            "score",
+            "active"
+          ],
+          [
+            "John",
+            "1234567",
+            "1048576",
+            "3.14159265358979323846",
+            "yes"
+          ],
+          [
+            "Jane",
+            "7654321.04",
+            "1073741824",
+            "2.71828",
+            "no"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template data.csv --template-file template.txt",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "template.txt"
+      }
     },
     {
       "name": "template_inline",
@@ -44,9 +237,40 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template data.csv --template \"Hello {{name}}, you are {{age}} years old!\\\\n\\\\n\"",
+      "args": [
+        "data.csv"
+      ],
       "options": {
-        "--template": "true"
+        "--template": "Hello {{name}}, you are {{age}} years old!\\n\\n"
+      }
+    },
+    {
+      "name": "template_conditional",
+      "description": "Template Conditional",
+      "input": {
+        "data": [
+          [
+            "name",
+            "age"
+          ],
+          [
+            "Alice",
+            "17"
+          ],
+          [
+            "Bob",
+            "21"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template data.csv --template-file template.txt",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template-file": "template.txt"
       }
     },
     {
@@ -69,9 +293,12 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template data.csv --template \"Hello {{name}, invalid syntax!\"",
+      "args": [
+        "data.csv"
+      ],
       "options": {
-        "--template": "true"
+        "--template": "Hello {{name}, invalid syntax!"
       },
       "tags": [
         "error-handling"
@@ -97,9 +324,15 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template data.csv data.csv data.csv --template \"{{name}}: {{amount|format_float(2)}}\\\\n\\\\n\" --customfilter-error \"<empty string>\"",
+      "args": [
+        "data.csv",
+        "data.csv",
+        "data.csv"
+      ],
       "options": {
-        "--template": "true"
+        "--template": "{{name}}: {{amount|format_float(2)}}\\n\\n",
+        "--customfilter-error": "<empty string>"
       },
       "tags": [
         "error-handling"
@@ -135,9 +368,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template --template data.csv",
       "options": {
-        "--template": "true"
+        "--template": "data.csv"
       }
     },
     {
@@ -160,9 +393,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template --template data.csv",
       "options": {
-        "--template": "true"
+        "--template": "data.csv"
       }
     },
     {
@@ -188,9 +421,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template --template data.csv",
       "options": {
-        "--template": "concat!(\n            // Test string methods from Python compatibility\n            \"isascii: {{text.isascii("
+        "--template": "data.csv"
       }
     },
     {
@@ -217,9 +450,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template data.csv data.csv --customfilter-error \"<empty string>\"",
+      "args": [
+        "data.csv",
+        "data.csv"
+      ],
       "options": {
-        "--template": "true"
+        "--customfilter-error": "<empty string>"
       },
       "tags": [
         "error-handling"
@@ -269,9 +506,12 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template data.csv --template \"{% if value|to_bool %}true{% else %}false{% endif %}\\\\n\\\\n\"",
+      "args": [
+        "data.csv"
+      ],
       "options": {
-        "--template": "true"
+        "--template": "{% if value|to_bool %}true{% else %}false{% endif %}\\n\\n"
       }
     },
     {
@@ -291,9 +531,12 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template data.csv --customfilter-error ERROR",
+      "args": [
+        "data.csv"
+      ],
       "options": {
-        "--template": "concat!(\n            \"start_only: {{text|substr(0"
+        "--customfilter-error": "ERROR"
       }
     },
     {
@@ -324,9 +567,12 @@
         ],
         "filename": "lookup.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template data.csv --customfilter-error \"<not found>\"",
+      "args": [
+        "data.csv"
+      ],
       "options": {
-        "--template": "concat!(\n            \"{% set result = register_lookup('products', 'lookup.csv'"
+        "--customfilter-error": "<not found>"
       }
     },
     {
@@ -357,9 +603,12 @@
         ],
         "filename": "lookup.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template data.csv --customfilter-error \"<not found>\"",
+      "args": [
+        "data.csv"
+      ],
       "options": {
-        "--template": "concat!(\n            \"{% set result = register_lookup('products', 'lookup.csv'"
+        "--customfilter-error": "<not found>"
       }
     },
     {
@@ -376,9 +625,14 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template data.csv data.csv data.csv --template \"{{id|lookup('non_existent lookup', 'name')}}\"",
+      "args": [
+        "data.csv",
+        "data.csv",
+        "data.csv"
+      ],
       "options": {
-        "--template": "\"{{id|lookup('', 'name'"
+        "--template": "{{id|lookup('non_existent lookup', 'name')}}"
       },
       "tags": [
         "error-handling"
@@ -398,9 +652,9 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template --template data.csv",
       "options": {
-        "--template": "concat!(\n            \"{% if register_lookup('test', 'nonexistent.csv'"
+        "--template": "data.csv"
       },
       "tags": [
         "error-handling"
@@ -430,9 +684,9 @@
         ],
         "filename": "lookup.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template --template data.csv",
       "options": {
-        "--template": "concat!(\n            \"{% if register_lookup('codes', 'lookup.csv'"
+        "--template": "data.csv"
       },
       "tags": [
         "case-sensitivity"
@@ -464,9 +718,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template data.csv --customfilter-error ERROR --template \"{{number|human_float_count}}\\\\n\\\\n\"",
+      "args": [
+        "data.csv"
+      ],
       "options": {
-        "--template": "true"
+        "--customfilter-error": "ERROR",
+        "--template": "{{number|human_float_count}}\\n\\n"
       }
     },
     {
@@ -492,9 +750,63 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template ",
+      "command": "qsv template data.csv --customfilter-error ERROR",
+      "args": [
+        "data.csv"
+      ],
       "options": {
-        "--template": "concat!(\n            \"2 places: {{number|round_banker(2"
+        "--customfilter-error": "ERROR"
+      }
+    },
+    {
+      "name": "template_globals_json",
+      "description": "Template Globals Json",
+      "input": {
+        "data": [
+          [
+            "name",
+            "score"
+          ],
+          [
+            "Alice",
+            "85"
+          ],
+          [
+            "Bob",
+            "92"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template data.csv --globals-json globals.json",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--globals-json": "globals.json"
+      }
+    },
+    {
+      "name": "template_globals_json_invalid",
+      "description": "Template Globals Json Invalid",
+      "input": {
+        "data": [
+          [
+            "name"
+          ],
+          [
+            "test"
+          ]
+        ],
+        "filename": "data.csv"
+      },
+      "command": "qsv template data.csv --template \"{{name}}\\\\n\" --globals-json invalid.json",
+      "args": [
+        "data.csv"
+      ],
+      "options": {
+        "--template": "{{name}}\\n",
+        "--globals-json": "invalid.json"
       }
     }
   ]

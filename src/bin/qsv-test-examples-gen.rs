@@ -70,22 +70,157 @@ impl TestParser {
 
     fn parse(&self) -> Result<Vec<TestExample>, String> {
         let mut examples = Vec::new();
+        let mut name_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
 
-        // Find all #[test] functions
-        let test_fn_re =
-            Regex::new(r"#\[test\]\s+fn\s+(\w+)\s*\(\s*\)\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}")
-                .map_err(|e| format!("Regex error: {}", e))?;
+        // First, try to extract macro-generated tests
+        examples.extend(self.parse_macro_tests()?);
 
-        for cap in test_fn_re.captures_iter(&self.test_content) {
+        // Find all #[test] function headers
+        let test_header_re = Regex::new(r"#\[test\]\s+fn\s+(\w+)\s*\(\s*\)\s*\{")
+            .map_err(|e| format!("Regex error: {}", e))?;
+
+        for cap in test_header_re.captures_iter(&self.test_content) {
             let test_name = cap.get(1).unwrap().as_str();
-            let test_body = cap.get(2).unwrap().as_str();
+            let match_start = cap.get(0).unwrap().start();
+            let start_pos = cap.get(0).unwrap().end();
 
-            if let Ok(example) = self.parse_test_function(test_name, test_body) {
-                examples.push(example);
+            // Skip if this test is inside a macro definition
+            if self.is_inside_macro_definition(match_start) {
+                continue;
+            }
+
+            // Try to find the module name by looking backwards
+            let qualified_name = self.get_qualified_test_name(match_start, test_name);
+
+            // Deduplicate by adding counter if name already exists
+            let unique_name = if let Some(count) = name_counts.get_mut(&qualified_name) {
+                *count += 1;
+                format!("{}_{}", qualified_name, count)
+            } else {
+                name_counts.insert(qualified_name.clone(), 1);
+                qualified_name.clone()
+            };
+
+            // Extract body by counting braces
+            if let Some(test_body) = self.extract_function_body(start_pos) {
+                if let Ok(example) = self.parse_test_function(&unique_name, &test_body) {
+                    examples.push(example);
+                }
             }
         }
 
         Ok(examples)
+    }
+
+    /// Parse macro-generated tests (e.g., pivotp_test!(name, |wrk, cmd| { ... }))
+    fn parse_macro_tests(&self) -> Result<Vec<TestExample>, String> {
+        let mut examples = Vec::new();
+
+        // Match: macro_name!(test_name, |params| { body })
+        // Simple pattern to match test macro invocations
+        let macro_re =
+            Regex::new(r#"_test!\s*\(\s*(\w+)"#).map_err(|e| format!("Regex error: {}", e))?;
+
+        for cap in macro_re.captures_iter(&self.test_content) {
+            let test_name = cap.get(1).unwrap().as_str();
+
+            // Find the opening brace of the closure after the test name
+            let match_end = cap.get(0).unwrap().end();
+            if let Some(brace_pos) = self.test_content[match_end..].find('{') {
+                let start_pos = match_end + brace_pos + 1;
+
+                // Extract closure body by counting braces
+                if let Some(test_body) = self.extract_function_body(start_pos) {
+                    if let Ok(example) = self.parse_test_function(test_name, &test_body) {
+                        examples.push(example);
+                    }
+                }
+            }
+        }
+
+        Ok(examples)
+    }
+
+    /// Check if a test position is inside a macro_rules! definition
+    fn is_inside_macro_definition(&self, test_pos: usize) -> bool {
+        let before_test = &self.test_content[..test_pos];
+
+        // Look backwards for macro_rules! - if we find it before any closing brace at column 0,
+        // then we're inside a macro definition
+        let lines: Vec<&str> = before_test.lines().collect();
+
+        for line in lines.iter().rev() {
+            // If we hit a closing brace at the start of a line, we've left any macro scope
+            if line.trim_start().starts_with('}') && line.starts_with('}') {
+                return false;
+            }
+            // If we find macro_rules!, we're inside a macro definition
+            if line.contains("macro_rules!") {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Extract module-qualified test name by looking backwards from test position
+    fn get_qualified_test_name(&self, test_pos: usize, test_name: &str) -> String {
+        let before_test = &self.test_content[..test_pos];
+
+        // First try to find a macro invocation pattern like "macro_name!(test_name,"
+        // This handles macro-generated tests
+        let macro_re = Regex::new(r"(\w+_test!)\s*\(\s*(\w+)\s*,").unwrap();
+
+        // Look for the last macro invocation before this test
+        if let Some(cap) = macro_re.captures_iter(before_test).last() {
+            if let Some(module_name) = cap.get(2) {
+                // Use the macro parameter as the module name (what the macro expands to)
+                return module_name.as_str().to_string();
+            }
+        }
+
+        // Otherwise look for a regular "mod module_name {" before this test
+        let mod_re = Regex::new(r"mod\s+(\w+)\s*\{[^}]*$").unwrap();
+
+        if let Some(cap) = mod_re.captures(before_test) {
+            if let Some(module_name) = cap.get(1) {
+                // Return module::function format if within a module
+                return format!("{}::{}", module_name.as_str(), test_name);
+            }
+        }
+
+        // If no module or macro found, just return the test name
+        test_name.to_string()
+    }
+
+    /// Extract function body by counting braces from start position
+    fn extract_function_body(&self, start_pos: usize) -> Option<String> {
+        let remaining = &self.test_content[start_pos..];
+        let mut brace_count = 1; // We already have the opening brace
+        let mut chars_collected = Vec::new();
+
+        for ch in remaining.chars() {
+            match ch {
+                '{' => {
+                    brace_count += 1;
+                    chars_collected.push(ch);
+                },
+                '}' => {
+                    brace_count -= 1;
+                    if brace_count == 0 {
+                        // Found the matching closing brace
+                        return Some(chars_collected.into_iter().collect());
+                    }
+                    chars_collected.push(ch);
+                },
+                _ => {
+                    chars_collected.push(ch);
+                },
+            }
+        }
+
+        None
     }
 
     fn parse_test_function(&self, name: &str, body: &str) -> Result<TestExample, String> {
@@ -173,8 +308,9 @@ impl TestParser {
             .ok_or("No command found")?
             .as_str();
 
-        // Extract .arg() calls
-        let arg_re = Regex::new(r#"\.arg\("([^"]+)"\)|\.arg\(([^\)]+)\)"#)
+        // Extract .arg() calls - only match string literals, skip variable references
+        // Match both .arg("...") for method chaining and cmd.arg("...") for variable calls
+        let arg_re = Regex::new(r#"(?:cmd|wrk)?\.?arg\("([^"]+)"\)"#)
             .map_err(|e| format!("Regex error: {}", e))?;
 
         let mut args = Vec::new();
@@ -182,13 +318,7 @@ impl TestParser {
         let mut pending_option: Option<String> = None;
 
         for cap in arg_re.captures_iter(body) {
-            let arg_value = if let Some(m) = cap.get(1) {
-                m.as_str().to_string()
-            } else if let Some(m) = cap.get(2) {
-                m.as_str().to_string()
-            } else {
-                continue;
-            };
+            let arg_value = cap.get(1).unwrap().as_str().to_string();
 
             // Skip special arguments
             if arg_value == "--" {
@@ -220,8 +350,23 @@ impl TestParser {
         }
 
         // Build command with proper shell quoting
-        let quoted_args: Vec<String> = args.iter().map(|arg| Self::shell_quote(arg)).collect();
-        let full_command = format!("qsv {} {}", subcommand, quoted_args.join(" "));
+        let mut command_parts = vec![subcommand.to_string()];
+
+        // Add positional args
+        for arg in &args {
+            command_parts.push(Self::shell_quote(arg));
+        }
+
+        // Add options
+        for (flag, value) in &options {
+            command_parts.push(flag.clone());
+            if value != "true" {
+                // Not a boolean flag, add the value
+                command_parts.push(Self::shell_quote(value));
+            }
+        }
+
+        let full_command = format!("qsv {}", command_parts.join(" "));
 
         Ok((full_command, args, options))
     }

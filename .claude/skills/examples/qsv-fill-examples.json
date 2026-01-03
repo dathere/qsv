@@ -32,7 +32,7 @@
     {
       "name": "fill_first_groupby",
       "description": "Fill First Groupby",
-      "command": "qsv fill in.csv",
+      "command": "qsv fill in.csv --first 1",
       "args": [
         "in.csv"
       ],
@@ -43,7 +43,7 @@
     {
       "name": "fill_first",
       "description": "Fill First",
-      "command": "qsv fill in.csv",
+      "command": "qsv fill in.csv --first 1",
       "args": [
         "in.csv"
       ],
@@ -54,7 +54,7 @@
     {
       "name": "fill_backfill",
       "description": "Fill Backfill",
-      "command": "qsv fill in.csv",
+      "command": "qsv fill in.csv --backfill 1",
       "args": [
         "in.csv"
       ],
@@ -65,7 +65,7 @@
     {
       "name": "fill_backfill_first",
       "description": "Fill Backfill First",
-      "command": "qsv fill in.csv",
+      "command": "qsv fill in.csv --first 1",
       "args": [
         "in.csv"
       ],
@@ -76,7 +76,7 @@
     {
       "name": "fill_default",
       "description": "Fill Default",
-      "command": "qsv fill 1 in.csv",
+      "command": "qsv fill 1 in.csv --default dat",
       "args": [
         "1",
         "in.csv"

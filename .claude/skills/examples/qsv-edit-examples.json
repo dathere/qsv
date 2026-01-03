@@ -61,7 +61,7 @@
     {
       "name": "edit_first_header",
       "description": "Edit First Header",
-      "command": "qsv edit data.csv letter 0 character",
+      "command": "qsv edit data.csv letter 0 character --no-headers",
       "args": [
         "data.csv",
         "letter",
@@ -134,7 +134,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv edit data.csv number 0 3",
+      "command": "qsv edit data.csv number 0 3 --in-place",
       "args": [
         "data.csv",
         "number",

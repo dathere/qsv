@@ -3,12 +3,21 @@
   "version": "12.0.0",
   "examples": [
     {
+      "name": "snappy_roundtrip",
+      "description": "Snappy Roundtrip",
+      "command": "qsv snappy compress in.csv decompress",
+      "args": [
+        "compress",
+        "in.csv",
+        "decompress"
+      ]
+    },
+    {
       "name": "snappy_decompress",
       "description": "Snappy Decompress",
-      "command": "qsv snappy decompress test_file",
+      "command": "qsv snappy decompress",
       "args": [
-        "decompress",
-        "test_file"
+        "decompress"
       ]
     },
     {
@@ -23,66 +32,53 @@
     {
       "name": "snappy_compress",
       "description": "Snappy Compress",
-      "command": "qsv snappy compress test_file decompress \"got_path.clone(\"",
+      "command": "qsv snappy compress decompress",
       "args": [
         "compress",
-        "test_file",
-        "decompress",
-        "got_path.clone("
+        "decompress"
       ]
     },
     {
       "name": "snappy_check",
       "description": "Snappy Check",
-      "command": "qsv snappy check test_file",
+      "command": "qsv snappy check",
       "args": [
-        "check",
-        "test_file"
+        "check"
       ]
     },
     {
       "name": "snappy_check_invalid",
       "description": "Snappy Check Invalid",
-      "command": "qsv snappy check test_file",
+      "command": "qsv snappy check",
       "args": [
-        "check",
-        "test_file"
+        "check"
       ]
     },
     {
       "name": "snappy_validate",
       "description": "Snappy Validate",
-      "command": "qsv snappy validate test_file",
+      "command": "qsv snappy validate",
       "args": [
-        "validate",
-        "test_file"
+        "validate"
       ]
     },
     {
       "name": "snappy_validate_invalid",
       "description": "Snappy Validate Invalid",
-      "command": "qsv snappy validate test_file",
+      "command": "qsv snappy validate",
       "args": [
-        "validate",
-        "test_file"
+        "validate"
       ]
     },
     {
       "name": "snappy_automatic_decompression",
       "description": "Snappy Automatic Decompression",
-      "command": "qsv count test_file",
-      "args": [
-        "test_file"
-      ]
+      "command": "qsv count"
     },
     {
       "name": "snappy_automatic_compression",
       "description": "Snappy Automatic Compression",
-      "command": "qsv slice test_file got_path",
-      "args": [
-        "test_file",
-        "got_path"
-      ]
+      "command": "qsv slice"
     },
     {
       "name": "snappy_plain_csv_with_sz_extension_fallback",

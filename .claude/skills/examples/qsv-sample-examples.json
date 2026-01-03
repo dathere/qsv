@@ -547,7 +547,7 @@
     {
       "name": "sample_percentage_negative_sample_size_error",
       "description": "Sample Percentage Negative Sample Size Error",
-      "command": "qsv sample ",
+      "command": "qsv sample -5 in.csv",
       "options": {
         "-5": "in.csv"
       },
@@ -1704,7 +1704,7 @@
         ],
         "filename": "in.csv"
       },
-      "command": "qsv sample 0 in.csv",
+      "command": "qsv sample 0 in.csv -2 in.csv",
       "args": [
         "0",
         "in.csv"
@@ -1935,19 +1935,17 @@
     {
       "name": "sample_remote_bernoulli_streaming_standard_rng",
       "description": "Sample Remote Bernoulli Streaming Standard Rng",
-      "command": "qsv sample 0.3 test_url",
+      "command": "qsv sample 0.3",
       "args": [
-        "0.3",
-        "test_url"
+        "0.3"
       ]
     },
     {
       "name": "sample_remote_bernoulli_streaming_cryptosecure",
       "description": "Sample Remote Bernoulli Streaming Cryptosecure",
-      "command": "qsv sample 0.3 test_url",
+      "command": "qsv sample 0.3",
       "args": [
-        "0.3",
-        "test_url"
+        "0.3"
       ]
     },
     {

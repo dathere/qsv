@@ -959,7 +959,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv enum data.csv",
+      "command": "qsv enum data.csv -c row",
       "args": [
         "data.csv"
       ],
@@ -1024,7 +1024,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv enum data.csv",
+      "command": "qsv enum data.csv --constant test",
       "args": [
         "data.csv"
       ],
@@ -1089,7 +1089,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv enum data.csv",
+      "command": "qsv enum data.csv --constant \"<NULL>\"",
       "args": [
         "data.csv"
       ],
@@ -1154,7 +1154,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv enum data.csv",
+      "command": "qsv enum data.csv --copy number",
       "args": [
         "data.csv"
       ],
@@ -1219,7 +1219,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv enum data.csv",
+      "command": "qsv enum data.csv --copy number",
       "args": [
         "data.csv"
       ],
@@ -1284,13 +1284,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv enum data.csv",
+      "command": "qsv enum data.csv -c chiffre --copy number",
       "args": [
         "data.csv"
       ],
       "options": {
-        "--copy": "number",
-        "-c": "chiffre"
+        "-c": "chiffre",
+        "--copy": "number"
       },
       "expected": {
         "data": [
@@ -1350,7 +1350,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv enum ",
+      "command": "qsv enum --uuid7 data.csv",
       "options": {
         "--uuid7": "data.csv"
       }
@@ -1379,7 +1379,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv enum data.csv",
+      "command": "qsv enum data.csv --constant test",
       "args": [
         "data.csv"
       ],

@@ -1,6 +1,6 @@
 # QSV Agent Skills
 
-Complete TypeScript implementation for loading, executing, and composing qsv command pipelines with the Claude Agent SDK.
+Complete TypeScript implementation for loading, executing, and composing qsv command pipelines with the Claude Agent SDK and Claude Desktop (MCP).
 
 ## Overview
 
@@ -10,7 +10,8 @@ This directory contains:
 2. **1,279 Test-Based Examples** - Real examples extracted from CI tests with full I/O data
 3. **TypeScript Executor** - Complete implementation for running qsv skills
 4. **Pipeline Composition API** - Fluent interface for chaining operations
-5. **Working Demos** - Practical demonstrations of the system
+5. **MCP Server** - Model Context Protocol server for Claude Desktop integration
+6. **Working Demos** - Practical demonstrations of the system
 
 Each skill file provides:
 - **Command specification**: Binary, subcommand, arguments, and options (parsed with qsv-docopt)
@@ -85,16 +86,24 @@ node examples/test-examples-demo.js
 │   ├── pipeline.js               # Demo: pipeline composition
 │   └── test-examples-demo.js     # Demo: test examples
 ├── src/                    # TypeScript source
-│   ├── types.ts           # Type definitions (includes TestExample)
+│   ├── types.ts           # Type definitions (includes TestExample + MCP types)
 │   ├── loader.ts          # Skill loading & loadTestExamples()
 │   ├── executor.ts        # qsv execution wrapper
 │   ├── pipeline.ts        # Pipeline composition API
+│   ├── mcp-server.ts      # MCP server implementation
+│   ├── mcp-tools.ts       # MCP tool definitions
+│   ├── mcp-resources.ts   # MCP resource provider
+│   ├── mcp-pipeline.ts    # MCP pipeline tool
 │   └── index.ts           # Public exports
+├── scripts/
+│   └── install-mcp.js     # MCP installation helper
 ├── dist/                   # Compiled JavaScript (gitignored)
 ├── package.json
 ├── tsconfig.json
-├── README.md              # This file
-└── SKILLS_README.md       # Complete API documentation
+├── mcp-config.json         # Claude Desktop config template
+├── README.md               # This file
+├── README-MCP.md           # MCP server documentation
+└── SKILLS_README.md        # Complete API documentation
 ```
 
 ## Usage
@@ -351,6 +360,66 @@ await agent.chat("Remove duplicates from sales.csv");
 // Agent automatically finds and invokes qsv-dedup
 ```
 
+## Integration with Claude Desktop (MCP Server)
+
+The QSV MCP Server exposes all 66 qsv commands to Claude Desktop through the Model Context Protocol.
+
+### Quick Start
+
+```bash
+# Install and configure
+cd .claude/skills
+npm install
+npm run mcp:install
+```
+
+This will:
+1. Build the MCP server
+2. Update Claude Desktop configuration
+3. Enable qsv tools in Claude Desktop
+
+### Manual Configuration
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "qsv": {
+      "command": "node",
+      "args": ["/path/to/qsv/.claude/skills/dist/mcp-server.js"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop to load the server.
+
+### Usage
+
+Once configured, use natural language in Claude Desktop:
+
+```
+"Select columns 1-5 from data.csv"
+"Calculate statistics for the price column in sales.csv"
+"Remove duplicates from data.csv and sort by revenue"
+"Show me an example of joining two CSV files"
+```
+
+Claude will automatically:
+- Select the appropriate qsv tool
+- Execute the command
+- Return results or explanations
+
+### What's Available
+
+- **22 MCP Tools**: 20 common commands + generic fallback + pipeline tool
+- **1,279 Example Resources**: Real test examples with input/output data
+- **File-Based Processing**: Works with your local CSV files
+- **Natural Language Interface**: No command syntax needed
+
+For complete MCP documentation, see [README-MCP.md](./README-MCP.md).
+
 ## Development
 
 ```bash
@@ -374,6 +443,7 @@ cargo run --bin qsv-test-examples-gen --features all_features
 
 ## Documentation
 
+- [MCP Server Guide](./README-MCP.md) - Claude Desktop integration
 - [Complete API Documentation](./SKILLS_README.md)
 - [Test-Based Examples Guide](../../docs/AGENT_SKILLS_TEST_EXAMPLES.md)
 - [Design Document](../../docs/AGENT_SKILLS_DESIGN.md)

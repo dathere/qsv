@@ -5,10 +5,15 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "qsv-mcp-server": "./dist/mcp-server.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "node examples/basic.js",
-    "test-pipeline": "node examples/pipeline.js"
+    "test-pipeline": "node examples/pipeline.js",
+    "mcp:start": "node dist/mcp-server.js",
+    "mcp:install": "node scripts/install-mcp.js"
   },
   "keywords": [
     "qsv",
@@ -24,7 +29,9 @@
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.1"
+  },
   "engines": {
     "node": ">=18.0.0"
   }

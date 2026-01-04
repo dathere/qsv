@@ -190,7 +190,7 @@ class QsvMcpServer {
           return {
             content: [{
               type: 'text' as const,
-              text: `Found ${result.resources.length} CSV files:\n\n${fileList}\n\nUse these file paths (relative or absolute) in qsv commands via the input_file parameter.`,
+              text: `Found ${result.resources.length} tabular data files:\n\n${fileList}\n\nUse these file paths (relative or absolute) in qsv commands via the input_file parameter.`,
             }],
           };
         }

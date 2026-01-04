@@ -120,7 +120,7 @@ struct UsageParser {
 }
 
 impl UsageParser {
-    fn new(usage_text: String, command_name: String) -> Self {
+    const fn new(usage_text: String, command_name: String) -> Self {
         Self {
             usage_text,
             command_name,

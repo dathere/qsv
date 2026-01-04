@@ -106,7 +106,7 @@ struct TestParser {
 }
 
 impl TestParser {
-    fn new(command_name: String, test_content: String) -> Self {
+    const fn new(command_name: String, test_content: String) -> Self {
         Self {
             command_name,
             test_content,

@@ -61,6 +61,7 @@ export class ExampleResourceProvider {
         }
       } catch (error) {
         // Skip skills with errors loading examples
+        console.warn(`Failed to load examples for ${skill.name}:`, error instanceof Error ? error.message : String(error));
         continue;
       }
     }
@@ -187,8 +188,9 @@ export class ExampleResourceProvider {
           totalExamples += examples.examples.length;
           examplesBySkill[skill.name] = examples.examples.length;
         }
-      } catch {
+      } catch (error) {
         // Skip on error
+        console.warn(`Failed to load examples for ${skill.name} during statistics:`, error instanceof Error ? error.message : String(error));
       }
     }
 

@@ -93,7 +93,7 @@ async function buildTypeScript() {
     return true;
   } catch (err) {
     error('Failed to build TypeScript');
-    console.error(err.message);
+    console.error(err instanceof Error ? err.message : String(err));
     return false;
   }
 }
@@ -166,7 +166,7 @@ async function updateClaudeConfig() {
     return true;
   } catch (err) {
     error('Failed to write Claude Desktop config');
-    console.error(err.message);
+    console.error(err instanceof Error ? err.message : String(err));
     return false;
   }
 }

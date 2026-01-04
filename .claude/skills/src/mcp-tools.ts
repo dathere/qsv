@@ -166,6 +166,11 @@ export async function handleToolCall(
     const args: Record<string, any> = {};
     const options: Record<string, any> = {};
 
+    // Add input file as 'input' argument if the skill expects it
+    if (skill.command.args.some(a => a.name === 'input')) {
+      args.input = inputFile;
+    }
+
     for (const [key, value] of Object.entries(params)) {
       if (key === 'input_file' || key === 'output_file') {
         continue;
@@ -182,11 +187,15 @@ export async function handleToolCall(
       }
     }
 
+    // Add output file option if provided
+    if (outputFile) {
+      options['--output'] = outputFile;
+    }
+
     // Execute the skill
     const result = await executor.execute(skill, {
       args,
       options,
-      inputFile,
     });
 
     // Format result

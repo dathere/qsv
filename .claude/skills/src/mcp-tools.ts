@@ -129,6 +129,7 @@ export async function handleToolCall(
   params: Record<string, unknown>,
   executor: SkillExecutor,
   loader: SkillLoader,
+  filesystemProvider?: { resolvePath: (path: string) => string },
 ) {
   try {
     // Extract command name from tool name (qsv_select -> select)
@@ -156,8 +157,8 @@ export async function handleToolCall(
     }
 
     // Extract input_file and output_file
-    const inputFile = params.input_file as string | undefined;
-    const outputFile = params.output_file as string | undefined;
+    let inputFile = params.input_file as string | undefined;
+    let outputFile = params.output_file as string | undefined;
 
     if (!inputFile) {
       return {
@@ -167,6 +168,24 @@ export async function handleToolCall(
         }],
         isError: true,
       };
+    }
+
+    // Resolve file paths using filesystem provider if available
+    if (filesystemProvider) {
+      try {
+        inputFile = filesystemProvider.resolvePath(inputFile);
+        if (outputFile) {
+          outputFile = filesystemProvider.resolvePath(outputFile);
+        }
+      } catch (error) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Error resolving file path: ${error instanceof Error ? error.message : String(error)}`,
+          }],
+          isError: true,
+        };
+      }
     }
 
     // Build args and options

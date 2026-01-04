@@ -18,6 +18,7 @@ import {
 import { SkillLoader } from './loader.js';
 import { SkillExecutor } from './executor.js';
 import { ExampleResourceProvider } from './mcp-resources.js';
+import { FilesystemResourceProvider } from './mcp-filesystem.js';
 import type { McpToolResult } from './types.js';
 import {
   COMMON_COMMANDS,
@@ -39,6 +40,7 @@ class QsvMcpServer {
   private loader: SkillLoader;
   private executor: SkillExecutor;
   private resourceProvider: ExampleResourceProvider;
+  private filesystemProvider: FilesystemResourceProvider;
 
   constructor() {
     this.server = new Server(
@@ -57,6 +59,17 @@ class QsvMcpServer {
     this.loader = new SkillLoader();
     this.executor = new SkillExecutor();
     this.resourceProvider = new ExampleResourceProvider(this.loader);
+
+    // Initialize filesystem provider with configurable directories
+    const workingDir = process.env.QSV_WORKING_DIR || process.cwd();
+    const allowedDirs = process.env.QSV_ALLOWED_DIRS
+      ? process.env.QSV_ALLOWED_DIRS.split(':')
+      : [];
+
+    this.filesystemProvider = new FilesystemResourceProvider({
+      workingDirectory: workingDir,
+      allowedDirectories: allowedDirs,
+    });
   }
 
   /**
@@ -103,6 +116,49 @@ class QsvMcpServer {
       // Add pipeline tool
       tools.push(createPipelineToolDefinition());
 
+      // Add filesystem tools
+      tools.push({
+        name: 'qsv_list_files',
+        description: 'List CSV files in a directory. Use this to browse available files before processing them.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            directory: {
+              type: 'string',
+              description: 'Directory path (absolute or relative to working directory). Defaults to current working directory.',
+            },
+            recursive: {
+              type: 'boolean',
+              description: 'Recursively scan subdirectories (default: false)',
+            },
+          },
+        },
+      });
+
+      tools.push({
+        name: 'qsv_set_working_dir',
+        description: 'Set the working directory for relative file paths. All subsequent file operations will be relative to this directory.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            directory: {
+              type: 'string',
+              description: 'New working directory path',
+            },
+          },
+          required: ['directory'],
+        },
+      });
+
+      tools.push({
+        name: 'qsv_get_working_dir',
+        description: 'Get the current working directory',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      });
+
       console.error(`Registered ${tools.length} tools`);
 
       return { tools };
@@ -115,6 +171,49 @@ class QsvMcpServer {
       console.error(`Tool called: ${name}`);
 
       try {
+        // Handle filesystem tools
+        if (name === 'qsv_list_files') {
+          const directory = args?.directory as string | undefined;
+          const recursive = args?.recursive as boolean | undefined;
+
+          const result = await this.filesystemProvider.listFiles(
+            directory,
+            recursive || false,
+          );
+
+          const fileList = result.resources
+            .map(r => `- ${r.name} (${r.description})`)
+            .join('\n');
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Found ${result.resources.length} CSV files:\n\n${fileList}\n\nUse these file paths (relative or absolute) in qsv commands via the input_file parameter.`,
+            }],
+          };
+        }
+
+        if (name === 'qsv_set_working_dir') {
+          const directory = args?.directory as string;
+          this.filesystemProvider.setWorkingDirectory(directory);
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Working directory set to: ${this.filesystemProvider.getWorkingDirectory()}\n\nAll relative file paths will now be resolved from this directory.`,
+            }],
+          };
+        }
+
+        if (name === 'qsv_get_working_dir') {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Current working directory: ${this.filesystemProvider.getWorkingDirectory()}`,
+            }],
+          };
+        }
+
         // Handle pipeline tool
         if (name === 'qsv_pipeline') {
           return await executePipeline(args || {}, this.loader);
@@ -136,6 +235,7 @@ class QsvMcpServer {
             args || {},
             this.executor,
             this.loader,
+            this.filesystemProvider,
           );
         }
 
@@ -175,16 +275,25 @@ class QsvMcpServer {
         console.error(`Pagination cursor: ${cursor}`);
       }
 
-      const result = await this.resourceProvider.listResources(undefined, cursor);
+      // Combine example resources and filesystem resources
+      const exampleResult = await this.resourceProvider.listResources(undefined, cursor);
+      const filesystemResult = await this.filesystemProvider.listFiles(undefined, false);
+
+      // Merge resources - filesystem files first, then examples
+      const allResources = [
+        ...filesystemResult.resources,
+        ...exampleResult.resources,
+      ];
 
       console.error(
-        `Returning ${result.resources.length} resources` +
-        (result.nextCursor ? ` (more available, cursor: ${result.nextCursor})` : ' (no more resources)'),
+        `Returning ${allResources.length} resources ` +
+        `(${filesystemResult.resources.length} files, ${exampleResult.resources.length} examples)` +
+        (exampleResult.nextCursor ? ` (more examples available)` : ''),
       );
 
       return {
-        resources: result.resources,
-        nextCursor: result.nextCursor,
+        resources: allResources,
+        nextCursor: exampleResult.nextCursor,
       };
     });
 
@@ -195,7 +304,15 @@ class QsvMcpServer {
       console.error(`Reading resource: ${uri}`);
 
       try {
-        const resource = await this.resourceProvider.getResource(uri);
+        let resource;
+
+        // Check if it's a file:/// URI (filesystem resource)
+        if (uri.startsWith('file:///')) {
+          resource = await this.filesystemProvider.getFileContent(uri);
+        } else {
+          // Otherwise, it's an example resource
+          resource = await this.resourceProvider.getResource(uri);
+        }
 
         if (!resource) {
           throw new Error(`Resource not found: ${uri}`);

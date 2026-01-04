@@ -16,6 +16,7 @@ import { existsSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir, platform } from 'os';
+import * as readline from 'readline';
 
 const execAsync = promisify(exec);
 
@@ -53,6 +54,100 @@ function error(msg) {
 
 function header(msg) {
   console.log(`\n${colors.bright}${msg}${colors.reset}\n`);
+}
+
+/**
+ * Prompt user for input with a default value
+ */
+function promptUser(question, defaultValue) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    rl.question(`${question} [${defaultValue}]: `, (answer) => {
+      rl.close();
+      resolve(answer.trim() || defaultValue);
+    });
+  });
+}
+
+/**
+ * Get platform-specific default directories
+ */
+function getPlatformDefaults() {
+  const os = platform();
+  const home = homedir();
+
+  switch (os) {
+    case 'darwin': // macOS
+      return {
+        workingDir: join(home, 'Downloads'),
+        allowedDirs: [
+          join(home, 'Downloads'),
+          join(home, 'Documents'),
+          join(home, 'Desktop'),
+        ].join(':'),
+        delimiter: ':',
+      };
+    case 'win32': // Windows
+      return {
+        workingDir: join(home, 'Downloads'),
+        allowedDirs: [
+          join(home, 'Downloads'),
+          join(home, 'Documents'),
+          join(home, 'Desktop'),
+        ].join(';'),
+        delimiter: ';',
+      };
+    case 'linux':
+      return {
+        workingDir: join(home, 'Downloads'),
+        allowedDirs: [
+          join(home, 'Downloads'),
+          join(home, 'Documents'),
+        ].join(':'),
+        delimiter: ':',
+      };
+    default:
+      // Fallback for other Unix-like systems
+      return {
+        workingDir: join(home, 'Downloads'),
+        allowedDirs: [
+          join(home, 'Downloads'),
+          join(home, 'Documents'),
+        ].join(':'),
+        delimiter: ':',
+      };
+  }
+}
+
+/**
+ * Prompt for environment variable configuration
+ */
+async function promptForEnvVars() {
+  const defaults = getPlatformDefaults();
+
+  console.log('\nConfiguring environment variables for QSV MCP Server...\n');
+  info(`Platform detected: ${platform()}`);
+  info(`Directory delimiter: '${defaults.delimiter}'\n`);
+
+  // Prompt for QSV_WORKING_DIR
+  console.log(`${colors.cyan}QSV_WORKING_DIR${colors.reset}`);
+  console.log('  Default working directory for relative file paths');
+  const workingDir = await promptUser('Enter working directory', defaults.workingDir);
+
+  // Prompt for QSV_ALLOWED_DIRS
+  console.log(`\n${colors.cyan}QSV_ALLOWED_DIRS${colors.reset}`);
+  console.log(`  Allowed directories (separated by '${defaults.delimiter}')`);
+  console.log('  Files outside these directories cannot be accessed');
+  const allowedDirs = await promptUser('Enter allowed directories', defaults.allowedDirs);
+
+  return {
+    QSV_WORKING_DIR: workingDir,
+    QSV_ALLOWED_DIRS: allowedDirs,
+  };
 }
 
 /**
@@ -145,7 +240,7 @@ function getClaudeConfigPath() {
 /**
  * Update Claude Desktop configuration
  */
-async function updateClaudeConfig() {
+async function updateClaudeConfig(envVars) {
   const configPath = getClaudeConfigPath();
   const mcpServerPath = resolve(SKILLS_DIR, 'dist', 'mcp-server.js');
 
@@ -186,6 +281,7 @@ async function updateClaudeConfig() {
     args: [mcpServerPath],
     env: {
       QSV_BIN_PATH: qsvPath,
+      ...envVars,
     },
   };
 
@@ -204,20 +300,31 @@ async function updateClaudeConfig() {
 /**
  * Print verification steps
  */
-function printVerificationSteps() {
+function printVerificationSteps(envVars) {
   header('Installation Complete! 🎉');
+
+  console.log('Configuration summary:\n');
+  if (envVars) {
+    console.log(`  Working Directory: ${envVars.QSV_WORKING_DIR}`);
+    console.log(`  Allowed Directories: ${envVars.QSV_ALLOWED_DIRS}\n`);
+  }
 
   console.log('Next steps:\n');
   console.log('1. Restart Claude Desktop');
   console.log('2. Check that qsv tools are available:');
   console.log('   - Look for tools like "qsv_select", "qsv_stats", etc. in Claude\n');
-  console.log('3. Try a command:');
-  console.log('   "Select columns 1-5 from my data.csv"\n');
-  console.log('4. Explore examples:');
+  console.log('3. Try filesystem commands:');
+  console.log('   "List CSV files in my working directory"');
+  console.log('   "What CSV files are available?"\n');
+  console.log('4. Try a data command:');
+  console.log('   "Show me the columns in data.csv"');
+  console.log('   "Get statistics for sales.csv"\n');
+  console.log('5. Explore examples:');
   console.log('   "Show me an example of joining two CSV files"\n');
 
   info('For troubleshooting, check Claude Desktop logs');
   info('MCP Server location: ' + resolve(SKILLS_DIR, 'dist', 'mcp-server.js'));
+  info('Config location: ' + getClaudeConfigPath());
 }
 
 /**
@@ -238,14 +345,18 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 3: Update Claude Desktop config
-  header('Step 3: Updating Claude Desktop configuration...');
-  if (!(await updateClaudeConfig())) {
+  // Step 3: Configure environment variables
+  header('Step 3: Configuring environment variables...');
+  const envVars = await promptForEnvVars();
+
+  // Step 4: Update Claude Desktop config
+  header('Step 4: Updating Claude Desktop configuration...');
+  if (!(await updateClaudeConfig(envVars))) {
     process.exit(1);
   }
 
-  // Step 4: Print verification steps
-  printVerificationSteps();
+  // Step 5: Print verification steps
+  printVerificationSteps(envVars);
 }
 
 // Run installer

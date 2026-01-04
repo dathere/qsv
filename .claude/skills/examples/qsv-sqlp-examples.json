@@ -996,10 +996,10 @@
     {
       "name": "sqlp_join_outer_full_14",
       "description": "Sqlp Join Outer Full 14",
-      "command": "qsv sqlp --ignore-errors --try-parsedates \"select closed_dt, open_dt from _t_1 where case_status = 'Closed' limit 5\"",
+      "command": "qsv sqlp --try-parsedates \"select closed_dt, open_dt from _t_1 where case_status = 'Closed' limit 5\" --ignore-errors",
       "options": {
-        "--ignore-errors": "true",
-        "--try-parsedates": "select closed_dt, open_dt from _t_1 where case_status = 'Closed' limit 5"
+        "--try-parsedates": "select closed_dt, open_dt from _t_1 where case_status = 'Closed' limit 5",
+        "--ignore-errors": "true"
       },
       "expected": {
         "data": [

@@ -731,7 +731,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations regex_replace description data.csv --replacement SSN --comparand \"(?:?)\"",
+      "command": "qsv applydp operations regex_replace description data.csv --comparand \"(?:?)\" --replacement SSN",
       "args": [
         "operations",
         "regex_replace",
@@ -739,8 +739,8 @@
         "data.csv"
       ],
       "options": {
-        "--replacement": "SSN",
-        "--comparand": "(?:?)"
+        "--comparand": "(?:?)",
+        "--replacement": "SSN"
       },
       "tags": [
         "error-handling"
@@ -1044,7 +1044,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv applydp operations trim,strip_prefix,upper,squeeze,strip_suffix name data.csv -c new_column --comparand Joe",
+      "command": "qsv applydp operations trim,strip_prefix,upper,squeeze,strip_suffix name data.csv --comparand Joe -c new_column",
       "args": [
         "operations",
         "trim,strip_prefix,upper,squeeze,strip_suffix",
@@ -1052,8 +1052,8 @@
         "data.csv"
       ],
       "options": {
-        "-c": "new_column",
-        "--comparand": "Joe"
+        "--comparand": "Joe",
+        "-c": "new_column"
       },
       "tags": [
         "error-handling"

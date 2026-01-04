@@ -1641,14 +1641,14 @@
     {
       "name": "validate_with_email_format_strict_email_options",
       "description": "Validate With Email Format Strict Email Options",
-      "command": "qsv validate schema.json schema.json --email-required-tld data.csv --email-domain-literal data.csv",
+      "command": "qsv validate schema.json schema.json --email-domain-literal data.csv --email-required-tld data.csv",
       "args": [
         "schema.json",
         "schema.json"
       ],
       "options": {
-        "--email-required-tld": "data.csv",
-        "--email-domain-literal": "data.csv"
+        "--email-domain-literal": "data.csv",
+        "--email-required-tld": "data.csv"
       }
     },
     {

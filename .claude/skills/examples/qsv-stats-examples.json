@@ -175,10 +175,10 @@
     {
       "name": "stats_infer_boolean_true_false_error",
       "description": "Stats Infer Boolean True False Error",
-      "command": "qsv stats --dataset-stats --boolean-patterns true:falsy",
+      "command": "qsv stats --boolean-patterns true:falsy --dataset-stats",
       "options": {
-        "--dataset-stats": "true",
-        "--boolean-patterns": "true:falsy"
+        "--boolean-patterns": "true:falsy",
+        "--dataset-stats": "true"
       },
       "tags": [
         "error-handling"
@@ -1499,13 +1499,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats data.csv --infer-dates --percentile-list 25,50,75",
+      "command": "qsv stats data.csv --percentile-list 25,50,75 --infer-dates",
       "args": [
         "data.csv"
       ],
       "options": {
-        "--infer-dates": "true",
-        "--percentile-list": "25,50,75"
+        "--percentile-list": "25,50,75",
+        "--infer-dates": "true"
       },
       "expected": {
         "data": [
@@ -2662,19 +2662,19 @@
     {
       "name": "stats_infer_boolean_multiple_patterns",
       "description": "Stats Infer Boolean Multiple Patterns",
-      "command": "qsv stats --dataset-stats --boolean-patterns \"true:false,t*:f*,y*:n*\"",
+      "command": "qsv stats --boolean-patterns \"true:false,t*:f*,y*:n*\" --dataset-stats",
       "options": {
-        "--dataset-stats": "true",
-        "--boolean-patterns": "true:false,t*:f*,y*:n*"
+        "--boolean-patterns": "true:false,t*:f*,y*:n*",
+        "--dataset-stats": "true"
       }
     },
     {
       "name": "stats_infer_boolean_case_insensitive",
       "description": "Stats Infer Boolean Case Insensitive",
-      "command": "qsv stats --dataset-stats --boolean-patterns TRUE:FALSE",
+      "command": "qsv stats --boolean-patterns TRUE:FALSE --dataset-stats",
       "options": {
-        "--dataset-stats": "true",
-        "--boolean-patterns": "TRUE:FALSE"
+        "--boolean-patterns": "TRUE:FALSE",
+        "--dataset-stats": "true"
       },
       "tags": [
         "case-sensitivity"
@@ -2703,10 +2703,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats --dataset-stats data.csv --boolean-patterns truthy:falsy",
+      "command": "qsv stats --boolean-patterns truthy:falsy --dataset-stats data.csv",
       "options": {
-        "--dataset-stats": "data.csv",
-        "--boolean-patterns": "truthy:falsy"
+        "--boolean-patterns": "truthy:falsy",
+        "--dataset-stats": "data.csv"
       }
     },
     {
@@ -2748,10 +2748,10 @@
     {
       "name": "stats_infer_boolean_missing_colon",
       "description": "Stats Infer Boolean Missing Colon",
-      "command": "qsv stats --dataset-stats --boolean-patterns truefalse",
+      "command": "qsv stats --boolean-patterns truefalse --dataset-stats",
       "options": {
-        "--dataset-stats": "true",
-        "--boolean-patterns": "truefalse"
+        "--boolean-patterns": "truefalse",
+        "--dataset-stats": "true"
       }
     },
     {
@@ -3128,10 +3128,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats --median data.csv --weight weight",
+      "command": "qsv stats --weight weight --median data.csv",
       "options": {
-        "--median": "data.csv",
-        "--weight": "weight"
+        "--weight": "weight",
+        "--median": "data.csv"
       }
     },
     {
@@ -3166,10 +3166,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats --quartiles data.csv --weight weight",
+      "command": "qsv stats --weight weight --quartiles data.csv",
       "options": {
-        "--quartiles": "data.csv",
-        "--weight": "weight"
+        "--weight": "weight",
+        "--quartiles": "data.csv"
       }
     },
     {
@@ -3497,10 +3497,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats --mode data.csv --weight weight",
+      "command": "qsv stats --weight weight --mode data.csv",
       "options": {
-        "--mode": "data.csv",
-        "--weight": "weight"
+        "--weight": "weight",
+        "--mode": "data.csv"
       }
     },
     {
@@ -3527,10 +3527,10 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv stats --mode data.csv --weight weight",
+      "command": "qsv stats --weight weight --mode data.csv",
       "options": {
-        "--mode": "data.csv",
-        "--weight": "weight"
+        "--weight": "weight",
+        "--mode": "data.csv"
       }
     },
     {
@@ -3758,19 +3758,19 @@
     {
       "name": "stats_weighted_negative_weights_with_quartiles",
       "description": "Stats Weighted Negative Weights With Quartiles",
-      "command": "qsv stats --quartiles data.csv --weight weight",
+      "command": "qsv stats --weight weight --quartiles data.csv",
       "options": {
-        "--quartiles": "data.csv",
-        "--weight": "weight"
+        "--weight": "weight",
+        "--quartiles": "data.csv"
       }
     },
     {
       "name": "stats_weighted_mixed_edge_cases",
       "description": "Stats Weighted Mixed Edge Cases",
-      "command": "qsv stats --mad data.csv --weight weight",
+      "command": "qsv stats --weight weight --mad data.csv",
       "options": {
-        "--mad": "data.csv",
-        "--weight": "weight"
+        "--weight": "weight",
+        "--mad": "data.csv"
       },
       "tags": [
         "case-sensitivity"

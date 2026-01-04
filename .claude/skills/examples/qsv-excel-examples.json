@@ -1226,10 +1226,10 @@
     {
       "name": "excel_range_empty_sheet",
       "description": "Excel Range Empty Sheet",
-      "command": "qsv excel -s Sheet2 --range a2:b",
+      "command": "qsv excel --range a2:b -s Sheet2",
       "options": {
-        "-s": "Sheet2",
-        "--range": "a2:b"
+        "--range": "a2:b",
+        "-s": "Sheet2"
       }
     },
     {

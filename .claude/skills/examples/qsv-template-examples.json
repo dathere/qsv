@@ -139,10 +139,10 @@
     {
       "name": "template_output_file",
       "description": "Template Output File",
-      "command": "qsv template --output data.csv --template-file template.txt",
+      "command": "qsv template --template-file template.txt --output data.csv",
       "options": {
-        "--output": "data.csv",
-        "--template-file": "template.txt"
+        "--template-file": "template.txt",
+        "--output": "data.csv"
       }
     },
     {
@@ -800,13 +800,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv template data.csv --globals-json invalid.json --template \"{{name}}\\\\n\"",
+      "command": "qsv template data.csv --template \"{{name}}\\\\n\" --globals-json invalid.json",
       "args": [
         "data.csv"
       ],
       "options": {
-        "--globals-json": "invalid.json",
-        "--template": "{{name}}\\n"
+        "--template": "{{name}}\\n",
+        "--globals-json": "invalid.json"
       }
     }
   ]

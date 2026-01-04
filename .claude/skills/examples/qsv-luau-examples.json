@@ -368,15 +368,15 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map Total \"amt_array[_IDX] = Amount; tot = tot + Amount; gtotal = gtotal + tot; return tot\" --end data.csv --begin \"tot = 0; gtotal = 0; amt_array = {}\"",
+      "command": "qsv luau map Total \"amt_array[_IDX] = Amount; tot = tot + Amount; gtotal = gtotal + tot; return tot\" --begin \"tot = 0; gtotal = 0; amt_array = {}\" --end data.csv",
       "args": [
         "map",
         "Total",
         "amt_array[_IDX] = Amount; tot = tot + Amount; gtotal = gtotal + tot; return tot"
       ],
       "options": {
-        "--end": "data.csv",
-        "--begin": "tot = 0; gtotal = 0; amt_array = {}"
+        "--begin": "tot = 0; gtotal = 0; amt_array = {}",
+        "--end": "data.csv"
       },
       "expected": {
         "data": [
@@ -1387,14 +1387,14 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map Total --end data.csv --begin \"tot = 1; gtotal = 0; amt_array = {}\"",
+      "command": "qsv luau map Total --begin \"tot = 1; gtotal = 0; amt_array = {}\" --end data.csv",
       "args": [
         "map",
         "Total"
       ],
       "options": {
-        "--end": "data.csv",
-        "--begin": "tot = 1; gtotal = 0; amt_array = {}"
+        "--begin": "tot = 1; gtotal = 0; amt_array = {}",
+        "--end": "data.csv"
       },
       "expected": {
         "data": [
@@ -1604,15 +1604,15 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv luau map Total \"amt_array[_IDX] = Amount; tot += if tonumber(Amount) < 0 then Amount * -1 else Amount; gtotal += tot; return tot\" --end data.csv --begin \"tot = 0; gtotal = 0; amt_array = {}\"",
+      "command": "qsv luau map Total \"amt_array[_IDX] = Amount; tot += if tonumber(Amount) < 0 then Amount * -1 else Amount; gtotal += tot; return tot\" --begin \"tot = 0; gtotal = 0; amt_array = {}\" --end data.csv",
       "args": [
         "map",
         "Total",
         "amt_array[_IDX] = Amount; tot += if tonumber(Amount) < 0 then Amount * -1 else Amount; gtotal += tot; return tot"
       ],
       "options": {
-        "--end": "data.csv",
-        "--begin": "tot = 0; gtotal = 0; amt_array = {}"
+        "--begin": "tot = 0; gtotal = 0; amt_array = {}",
+        "--end": "data.csv"
       },
       "expected": {
         "data": [

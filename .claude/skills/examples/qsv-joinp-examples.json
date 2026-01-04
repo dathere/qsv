@@ -1873,10 +1873,10 @@
     {
       "name": "joinp_right_anti_9",
       "description": "Joinp Right Anti 9",
-      "command": "qsv joinp --try-parsedates --non-equi \"date_left  + interval '4 months' < deadline_right\"",
+      "command": "qsv joinp --non-equi \"date_left  + interval '4 months' < deadline_right\" --try-parsedates",
       "options": {
-        "--try-parsedates": "true",
-        "--non-equi": "date_left  + interval '4 months' < deadline_right"
+        "--non-equi": "date_left  + interval '4 months' < deadline_right",
+        "--try-parsedates": "true"
       }
     },
     {
@@ -2404,10 +2404,10 @@
     {
       "name": "joinp_right_anti_27",
       "description": "Joinp Right Anti 27",
-      "command": "qsv joinp --decimal-comma --non-equi \"value_left >= min_val_right AND value_left <= max_val_right\"",
+      "command": "qsv joinp --non-equi \"value_left >= min_val_right AND value_left <= max_val_right\" --decimal-comma",
       "options": {
-        "--decimal-comma": "true",
-        "--non-equi": "value_left >= min_val_right AND value_left <= max_val_right"
+        "--non-equi": "value_left >= min_val_right AND value_left <= max_val_right",
+        "--decimal-comma": "true"
       },
       "tags": [
         "custom-delimiter"

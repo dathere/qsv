@@ -223,13 +223,13 @@
     {
       "name": "search_ignore_case_count",
       "description": "Search Ignore Case Count",
-      "command": "qsv search ^FoO --ignore-case --count data.csv",
+      "command": "qsv search ^FoO --count data.csv --ignore-case",
       "args": [
         "^FoO"
       ],
       "options": {
-        "--ignore-case": "true",
-        "--count": "data.csv"
+        "--count": "data.csv",
+        "--ignore-case": "true"
       },
       "expected": {
         "data": [
@@ -451,13 +451,13 @@
     {
       "name": "search_select_count",
       "description": "Search Select Count",
-      "command": "qsv search ^foo --select h2 --count data.csv",
+      "command": "qsv search ^foo --count data.csv --select h2",
       "args": [
         "^foo"
       ],
       "options": {
-        "--select": "h2",
-        "--count": "data.csv"
+        "--count": "data.csv",
+        "--select": "h2"
       },
       "expected": {
         "data": [
@@ -499,14 +499,14 @@
     {
       "name": "search_select_no_headers_count",
       "description": "Search Select No Headers Count",
-      "command": "qsv search ^foo --no-headers --select 2 --count data.csv",
+      "command": "qsv search ^foo --count data.csv --select 2 --no-headers",
       "args": [
         "^foo"
       ],
       "options": {
-        "--no-headers": "true",
+        "--count": "data.csv",
         "--select": "2",
-        "--count": "data.csv"
+        "--no-headers": "true"
       },
       "expected": {
         "data": [
@@ -606,13 +606,13 @@
     {
       "name": "search_invert_match_no_headers_count",
       "description": "Search Invert Match No Headers Count",
-      "command": "qsv search ^foo --no-headers --count data.csv",
+      "command": "qsv search ^foo --count data.csv --no-headers",
       "args": [
         "^foo"
       ],
       "options": {
-        "--no-headers": "true",
-        "--count": "data.csv"
+        "--count": "data.csv",
+        "--no-headers": "true"
       },
       "expected": {
         "data": [
@@ -823,13 +823,13 @@
     {
       "name": "search_flag_invert_match_count",
       "description": "Search Flag Invert Match Count",
-      "command": "qsv search ^foo --invert-match --count data.csv",
+      "command": "qsv search ^foo --count data.csv --invert-match",
       "args": [
         "^foo"
       ],
       "options": {
-        "--invert-match": "true",
-        "--count": "data.csv"
+        "--count": "data.csv",
+        "--invert-match": "true"
       },
       "expected": {
         "data": [

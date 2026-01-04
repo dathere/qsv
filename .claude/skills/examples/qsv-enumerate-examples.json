@@ -1284,13 +1284,13 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv enum data.csv -c chiffre --copy number",
+      "command": "qsv enum data.csv --copy number -c chiffre",
       "args": [
         "data.csv"
       ],
       "options": {
-        "-c": "chiffre",
-        "--copy": "number"
+        "--copy": "number",
+        "-c": "chiffre"
       },
       "expected": {
         "data": [

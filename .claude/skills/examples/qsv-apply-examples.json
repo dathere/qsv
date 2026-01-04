@@ -1177,14 +1177,14 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply calcconv data.csv --new-column watthours --formatstr \"{qty_fruit_day} * {calories} calories to watt hours\"",
+      "command": "qsv apply calcconv data.csv --formatstr \"{qty_fruit_day} * {calories} calories to watt hours\" --new-column watthours",
       "args": [
         "calcconv",
         "data.csv"
       ],
       "options": {
-        "--new-column": "watthours",
-        "--formatstr": "{qty_fruit_day} * {calories} calories to watt hours"
+        "--formatstr": "{qty_fruit_day} * {calories} calories to watt hours",
+        "--new-column": "watthours"
       },
       "expected": {
         "data": [
@@ -1404,15 +1404,15 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv enum data.csv calcconv enum.csv -c result --formatstr \"{index} * {index}\"",
+      "command": "qsv enum data.csv calcconv enum.csv --formatstr \"{index} * {index}\" -c result",
       "args": [
         "data.csv",
         "calcconv",
         "enum.csv"
       ],
       "options": {
-        "-c": "result",
-        "--formatstr": "{index} * {index}"
+        "--formatstr": "{index} * {index}",
+        "-c": "result"
       },
       "expected": {
         "data": [
@@ -1945,7 +1945,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply operations censor description data.csv --new-column censored_text --comparand \"shlong, dong, cameltoe, bitch\"",
+      "command": "qsv apply operations censor description data.csv --comparand \"shlong, dong, cameltoe, bitch\" --new-column censored_text",
       "args": [
         "operations",
         "censor",
@@ -1953,8 +1953,8 @@
         "data.csv"
       ],
       "options": {
-        "--new-column": "censored_text",
-        "--comparand": "shlong, dong, cameltoe, bitch"
+        "--comparand": "shlong, dong, cameltoe, bitch",
+        "--new-column": "censored_text"
       },
       "expected": {
         "data": [
@@ -2235,7 +2235,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply operations regex_replace description data.csv --replacement SSN --comparand \"(?:\\\\\\\\d{3}-\\\\\\\\d{2}-\\\\\\\\d{4})\"",
+      "command": "qsv apply operations regex_replace description data.csv --comparand \"(?:\\\\\\\\d{3}-\\\\\\\\d{2}-\\\\\\\\d{4})\" --replacement SSN",
       "args": [
         "operations",
         "regex_replace",
@@ -2243,8 +2243,8 @@
         "data.csv"
       ],
       "options": {
-        "--replacement": "SSN",
-        "--comparand": "(?:\\\\d{3}-\\\\d{2}-\\\\d{4})"
+        "--comparand": "(?:\\\\d{3}-\\\\d{2}-\\\\d{4})",
+        "--replacement": "SSN"
       },
       "expected": {
         "data": [
@@ -4220,7 +4220,7 @@
         ],
         "filename": "data.csv"
       },
-      "command": "qsv apply operations numtocurrency money data.csv --replacement 1.5 --formatstr euro -C \"EUR \"",
+      "command": "qsv apply operations numtocurrency money data.csv -C \"EUR \" --replacement 1.5 --formatstr euro",
       "args": [
         "operations",
         "numtocurrency",
@@ -4228,9 +4228,9 @@
         "data.csv"
       ],
       "options": {
+        "-C": "EUR ",
         "--replacement": "1.5",
-        "--formatstr": "euro",
-        "-C": "EUR "
+        "--formatstr": "euro"
       },
       "expected": {
         "data": [

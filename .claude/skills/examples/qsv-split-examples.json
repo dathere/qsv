@@ -290,10 +290,10 @@
     {
       "name": "split_filter_with_cleanup",
       "description": "Split Filter With Cleanup",
-      "command": "qsv split --filter-cleanup in.csv --filter \"cp $FILE {}.bak\"",
+      "command": "qsv split --filter \"cp $FILE {}.bak\" --filter-cleanup in.csv",
       "options": {
-        "--filter-cleanup": "in.csv",
-        "--filter": "cp $FILE {}.bak"
+        "--filter": "cp $FILE {}.bak",
+        "--filter-cleanup": "in.csv"
       }
     },
     {
@@ -320,10 +320,10 @@
     {
       "name": "split_filter_with_ignore_errors",
       "description": "Split Filter With Ignore Errors",
-      "command": "qsv split --filter \"nonexistent_command $FILE {}.bak\" --filter-ignore-errors in.csv",
+      "command": "qsv split --filter-ignore-errors in.csv --filter \"nonexistent_command $FILE {}.bak\"",
       "options": {
-        "--filter": "nonexistent_command $FILE {}.bak",
-        "--filter-ignore-errors": "in.csv"
+        "--filter-ignore-errors": "in.csv",
+        "--filter": "nonexistent_command $FILE {}.bak"
       },
       "tags": [
         "error-handling"

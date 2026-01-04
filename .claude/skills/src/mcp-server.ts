@@ -121,7 +121,7 @@ class QsvMcpServer {
       // Add filesystem tools
       tools.push({
         name: 'qsv_list_files',
-        description: 'List CSV files in a directory. Use this to browse available files before processing them.',
+        description: 'List tabular data files (CSV, TSV, etc.) in a directory. Use this to browse available files before processing them.',
         inputSchema: {
           type: 'object',
           properties: {

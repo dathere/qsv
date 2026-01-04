@@ -92,7 +92,12 @@ qsv_headers with input_file: "allegheny_county_property_sale_transactions.csv"
 You can also use absolute paths:
 
 ```
-Analyze /Users/joelnatividad/data/sales.csv
+Analyze /Users/your-username/data/sales.csv
+```
+
+Or on Windows:
+```
+Analyze C:\Users\YourName\data\sales.csv
 ```
 
 ### Change Working Directory Mid-Session
@@ -103,7 +108,7 @@ Set working directory to ~/Documents/data
 
 Claude will use the `qsv_set_working_dir` tool:
 ```
-Working directory set to: /Users/joelnatividad/Documents/data
+Working directory set to: /Users/your-username/Documents/data
 
 All relative file paths will now be resolved from this directory.
 ```
@@ -165,14 +170,28 @@ Here's a complete example of working with local files:
 ## Security Features
 
 ### Path Validation
-- All file paths are validated against allowed directories
+**What is validated:**
+- All `input_file` and `output_file` parameters in qsv command tools
+- Working directory changes via `qsv_set_working_dir`
+- File browsing via `qsv_list_files` (with recursive subdirectory validation)
+- File preview requests in resource browser
+
+**How validation works:**
+- Paths are canonicalized using `fs.realpath()` to resolve symlinks
+- Canonical paths are checked against allowed directories
 - Attempts to access files outside allowed directories are rejected
 - Prevents directory traversal attacks (e.g., `../../etc/passwd`)
+
+**Important limitations:**
+- The `qsv_pipeline` tool currently bypasses filesystem validation
+- Validation only applies when tools receive the filesystem provider
+- Server runs with same permissions as Node.js process
 
 ### Default Restrictions
 - Only CSV-related files are listed (`.csv`, `.tsv`, `.tab`, `.ssv`, `.txt`, `.sz`)
 - Maximum preview size: 1MB
 - Preview limited to first 20 lines
+- Hidden directories (starting with `.`) are skipped during recursive scans
 
 ### Allowed Directories
 Configure `QSV_ALLOWED_DIRS` to explicitly whitelist directories:
@@ -184,6 +203,12 @@ Configure `QSV_ALLOWED_DIRS` to explicitly whitelist directories:
   }
 }
 ```
+
+**Security recommendations:**
+- Only whitelist directories containing data you want Claude to access
+- Avoid whitelisting broad directories like `/Users/your-username` or `C:\`
+- Be aware that users with filesystem access can read any file within whitelisted directories
+- Symlinks within allowed directories pointing outside those directories may pose risks
 
 ## Resources Browser
 
@@ -315,16 +340,16 @@ The server resolves symlinks and aliases to their real paths, then validates aga
 ```
 User: Set working directory to ~/Downloads
 
-Claude: Working directory set to: /Users/joelnatividad/Downloads
+Claude: Working directory set to: /Users/your-username/Downloads
 
 User: List CSV files
 
 Claude: Found 3 CSV files:
-- allegheny_county_property_sale_transactions.csv
+- property_sales.csv
 - sales_2024.csv
 - customers.csv
 
-User: What are the columns in allegheny_county_property_sale_transactions.csv?
+User: What are the columns in property_sales.csv?
 
 Claude: [Uses qsv_headers tool with the file path]
 The file has these columns:

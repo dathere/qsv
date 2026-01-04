@@ -278,26 +278,42 @@ class QsvMcpServer {
         console.error(`Pagination cursor: ${cursor}`);
       }
 
-      // Combine example resources and filesystem resources
-      const exampleResult = await this.resourceProvider.listResources(undefined, cursor);
-      const filesystemResult = await this.filesystemProvider.listFiles(undefined, false);
+      // When pagination is active, only return examples (which support pagination)
+      // When no cursor, return filesystem files + first page of examples
+      if (cursor) {
+        // Pagination active - only return examples
+        const exampleResult = await this.resourceProvider.listResources(undefined, cursor);
 
-      // Merge resources - filesystem files first, then examples
-      const allResources = [
-        ...filesystemResult.resources,
-        ...exampleResult.resources,
-      ];
+        console.error(
+          `Returning ${exampleResult.resources.length} example resources` +
+          (exampleResult.nextCursor ? ` (more available)` : ' (last page)'),
+        );
 
-      console.error(
-        `Returning ${allResources.length} resources ` +
-        `(${filesystemResult.resources.length} files, ${exampleResult.resources.length} examples)` +
-        (exampleResult.nextCursor ? ` (more examples available)` : ''),
-      );
+        return {
+          resources: exampleResult.resources,
+          nextCursor: exampleResult.nextCursor,
+        };
+      } else {
+        // First page - return filesystem files + first page of examples
+        const filesystemResult = await this.filesystemProvider.listFiles(undefined, false);
+        const exampleResult = await this.resourceProvider.listResources(undefined, undefined);
 
-      return {
-        resources: allResources,
-        nextCursor: exampleResult.nextCursor,
-      };
+        const allResources = [
+          ...filesystemResult.resources,
+          ...exampleResult.resources,
+        ];
+
+        console.error(
+          `Returning ${allResources.length} resources ` +
+          `(${filesystemResult.resources.length} files, ${exampleResult.resources.length} examples)` +
+          (exampleResult.nextCursor ? ` (more examples available)` : ''),
+        );
+
+        return {
+          resources: allResources,
+          nextCursor: exampleResult.nextCursor,
+        };
+      }
     });
 
     // Read resource handler

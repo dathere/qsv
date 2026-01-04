@@ -78,7 +78,8 @@ export class FilesystemResourceProvider {
     // Validate that new working directory is within allowed directories
     const isAllowed = this.allowedDirs.some(allowedDir => {
       const rel = relative(allowedDir, newDir);
-      return !rel.startsWith('..') && !resolve(allowedDir, rel).startsWith('..');
+      // Path is allowed if it doesn't escape to parent (doesn't start with '..')
+      return !rel.startsWith('..');
     });
 
     if (!isAllowed) {
@@ -122,8 +123,12 @@ export class FilesystemResourceProvider {
     // Security check: ensure canonical path is within allowed directories
     const isAllowed = this.allowedDirs.some(allowedDir => {
       const rel = relative(allowedDir, canonical);
-      // Path is allowed if it doesn't start with '..' (not a parent escape)
-      return rel && !rel.startsWith('..') && !rel.startsWith('/');
+      // Path is allowed if:
+      // 1. It's empty (file is directly in allowed dir), OR
+      // 2. It doesn't start with '..' (not a parent escape) AND
+      // 3. It doesn't start with path separator (not absolute escape)
+      if (rel === '') return true; // File directly in allowed directory
+      return !rel.startsWith('..') && !rel.startsWith('/') && !rel.startsWith('\\');
     });
 
     if (!isAllowed) {
@@ -174,7 +179,15 @@ export class FilesystemResourceProvider {
 
         if (entry.isDirectory()) {
           if (recursive && !entry.name.startsWith('.')) {
-            await this.scanDirectory(fullPath, resources, recursive);
+            // Validate subdirectory is within allowed directories before recursing
+            // This prevents following symlinks to unauthorized locations
+            try {
+              await this.resolvePath(relative(this.workingDir, fullPath));
+              await this.scanDirectory(fullPath, resources, recursive);
+            } catch (error) {
+              // Subdirectory is outside allowed directories or inaccessible
+              console.error(`Skipping unauthorized directory: ${fullPath}`);
+            }
           }
         } else if (entry.isFile()) {
           const ext = extname(entry.name).toLowerCase();
@@ -269,6 +282,7 @@ export class FilesystemResourceProvider {
   /**
    * Convert a filesystem path to a file:/// URI
    * Handles both Windows and Unix paths correctly
+   * Returns RFC 8089 compliant file URIs with three slashes
    */
   private pathToFileUri(filePath: string): string {
     // Normalize path separators to forward slashes
@@ -282,7 +296,8 @@ export class FilesystemResourceProvider {
     // URL encode special characters
     const encoded = encodeURI(normalized);
 
-    return `file://${encoded}`;
+    // RFC 8089: file URIs should use three slashes (file:///)
+    return `file:///${encoded}`;
   }
 
   /**
@@ -311,8 +326,11 @@ export class FilesystemResourceProvider {
     if (bytes === 0) return '0 Bytes';
 
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    const i = Math.min(
+      Math.floor(Math.log(bytes) / Math.log(k)),
+      sizes.length - 1,
+    );
 
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
   }

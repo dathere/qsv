@@ -198,7 +198,7 @@ export class FilesystemResourceProvider {
             resources.push({
               uri,
               name: relativePath,
-              description: `CSV file: ${entry.name}`,
+              description: `Tabular data file: ${entry.name}`,
               mimeType: this.getMimeType(ext),
             });
           }

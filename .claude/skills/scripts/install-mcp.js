@@ -79,12 +79,12 @@ async function checkQsvBinary() {
 async function getQsvBinaryPath() {
   try {
     // Try 'which' command (Unix/macOS/Linux)
-    const { stdout } = await execAsync('which qsv');
+    const { stdout } = await execAsync('which qsv', { timeout: 5000 });
     return stdout.trim();
   } catch {
     try {
       // Try 'where' command (Windows)
-      const { stdout } = await execAsync('where qsv');
+      const { stdout } = await execAsync('where qsv', { timeout: 5000 });
       // 'where' returns all matches, take first one
       return stdout.trim().split('\n')[0];
     } catch {

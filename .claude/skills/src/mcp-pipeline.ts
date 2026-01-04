@@ -57,11 +57,12 @@ export function createPipelineToolDefinition(): McpToolDefinition {
 export async function executePipeline(
   params: Record<string, unknown>,
   loader: SkillLoader,
+  filesystemProvider?: { resolvePath: (path: string) => Promise<string> },
 ) {
   try {
-    const inputFile = params.input_file as string | undefined;
+    let inputFile = params.input_file as string | undefined;
+    let outputFile = params.output_file as string | undefined;
     const steps = params.steps as McpPipelineStep[] | undefined;
-    const outputFile = params.output_file as string | undefined;
 
     // Validate required parameters
     if (!inputFile) {
@@ -72,6 +73,24 @@ export async function executePipeline(
         }],
         isError: true,
       };
+    }
+
+    // Resolve file paths using filesystem provider if available
+    if (filesystemProvider) {
+      try {
+        inputFile = await filesystemProvider.resolvePath(inputFile);
+        if (outputFile) {
+          outputFile = await filesystemProvider.resolvePath(outputFile);
+        }
+      } catch (error) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Error resolving file path: ${error instanceof Error ? error.message : String(error)}`,
+          }],
+          isError: true,
+        };
+      }
     }
 
     if (!steps || !Array.isArray(steps) || steps.length === 0) {

@@ -2,6 +2,20 @@
 
 Complete TypeScript implementation for loading, executing, and composing qsv command pipelines with the Claude Agent SDK and Claude Desktop (MCP).
 
+## 🎯 NEW: Work with Local CSV Files Without Uploading!
+
+The QSV MCP Server now supports **direct access to local CSV files**. No more uploading files to Claude Desktop!
+
+**Quick Start**: See [QUICK_START_LOCAL_FILES.md](./QUICK_START_LOCAL_FILES.md)
+**Full Guide**: See [FILESYSTEM_USAGE.md](./FILESYSTEM_USAGE.md)
+
+### Key Features:
+- ✅ Browse CSV files in your directories
+- ✅ Process files without uploading
+- ✅ No file size limits
+- ✅ Instant access
+- ✅ Secure path validation
+
 ## Overview
 
 This directory contains:
@@ -10,7 +24,7 @@ This directory contains:
 2. **1,279 Test-Based Examples** - Real examples extracted from CI tests with full I/O data
 3. **TypeScript Executor** - Complete implementation for running qsv skills
 4. **Pipeline Composition API** - Fluent interface for chaining operations
-5. **MCP Server** - Model Context Protocol server for Claude Desktop integration
+5. **MCP Server with Filesystem Access** - Model Context Protocol server for Claude Desktop integration
 6. **Working Demos** - Practical demonstrations of the system
 
 Each skill file provides:

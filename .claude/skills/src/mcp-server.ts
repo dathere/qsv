@@ -18,6 +18,7 @@ import {
 import { SkillLoader } from './loader.js';
 import { SkillExecutor } from './executor.js';
 import { ExampleResourceProvider } from './mcp-resources.js';
+import { FilesystemResourceProvider } from './mcp-filesystem.js';
 import type { McpToolResult } from './types.js';
 import {
   COMMON_COMMANDS,
@@ -39,6 +40,7 @@ class QsvMcpServer {
   private loader: SkillLoader;
   private executor: SkillExecutor;
   private resourceProvider: ExampleResourceProvider;
+  private filesystemProvider: FilesystemResourceProvider;
 
   constructor() {
     this.server = new Server(
@@ -57,6 +59,19 @@ class QsvMcpServer {
     this.loader = new SkillLoader();
     this.executor = new SkillExecutor();
     this.resourceProvider = new ExampleResourceProvider(this.loader);
+
+    // Initialize filesystem provider with configurable directories
+    const workingDir = process.env.QSV_WORKING_DIR || process.cwd();
+    // Use platform-appropriate delimiter: semicolon on Windows, colon on Unix
+    const pathDelimiter = process.platform === 'win32' ? ';' : ':';
+    const allowedDirs = process.env.QSV_ALLOWED_DIRS
+      ? process.env.QSV_ALLOWED_DIRS.split(pathDelimiter)
+      : [];
+
+    this.filesystemProvider = new FilesystemResourceProvider({
+      workingDirectory: workingDir,
+      allowedDirectories: allowedDirs,
+    });
   }
 
   /**
@@ -103,6 +118,49 @@ class QsvMcpServer {
       // Add pipeline tool
       tools.push(createPipelineToolDefinition());
 
+      // Add filesystem tools
+      tools.push({
+        name: 'qsv_list_files',
+        description: 'List tabular data files (CSV, TSV, etc.) in a directory. Use this to browse available files before processing them.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            directory: {
+              type: 'string',
+              description: 'Directory path (absolute or relative to working directory). Defaults to current working directory.',
+            },
+            recursive: {
+              type: 'boolean',
+              description: 'Recursively scan subdirectories (default: false)',
+            },
+          },
+        },
+      });
+
+      tools.push({
+        name: 'qsv_set_working_dir',
+        description: 'Set the working directory for relative file paths. All subsequent file operations will be relative to this directory.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            directory: {
+              type: 'string',
+              description: 'New working directory path',
+            },
+          },
+          required: ['directory'],
+        },
+      });
+
+      tools.push({
+        name: 'qsv_get_working_dir',
+        description: 'Get the current working directory',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      });
+
       console.error(`Registered ${tools.length} tools`);
 
       return { tools };
@@ -115,9 +173,52 @@ class QsvMcpServer {
       console.error(`Tool called: ${name}`);
 
       try {
+        // Handle filesystem tools
+        if (name === 'qsv_list_files') {
+          const directory = args?.directory as string | undefined;
+          const recursive = args?.recursive as boolean | undefined;
+
+          const result = await this.filesystemProvider.listFiles(
+            directory,
+            recursive || false,
+          );
+
+          const fileList = result.resources
+            .map(r => `- ${r.name} (${r.description})`)
+            .join('\n');
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Found ${result.resources.length} tabular data files:\n\n${fileList}\n\nUse these file paths (relative or absolute) in qsv commands via the input_file parameter.`,
+            }],
+          };
+        }
+
+        if (name === 'qsv_set_working_dir') {
+          const directory = args?.directory as string;
+          this.filesystemProvider.setWorkingDirectory(directory);
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Working directory set to: ${this.filesystemProvider.getWorkingDirectory()}\n\nAll relative file paths will now be resolved from this directory.`,
+            }],
+          };
+        }
+
+        if (name === 'qsv_get_working_dir') {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Current working directory: ${this.filesystemProvider.getWorkingDirectory()}`,
+            }],
+          };
+        }
+
         // Handle pipeline tool
         if (name === 'qsv_pipeline') {
-          return await executePipeline(args || {}, this.loader);
+          return await executePipeline(args || {}, this.loader, this.filesystemProvider);
         }
 
         // Handle generic command tool
@@ -126,6 +227,7 @@ class QsvMcpServer {
             args || {},
             this.executor,
             this.loader,
+            this.filesystemProvider,
           );
         }
 
@@ -136,6 +238,7 @@ class QsvMcpServer {
             args || {},
             this.executor,
             this.loader,
+            this.filesystemProvider,
           );
         }
 
@@ -175,17 +278,42 @@ class QsvMcpServer {
         console.error(`Pagination cursor: ${cursor}`);
       }
 
-      const result = await this.resourceProvider.listResources(undefined, cursor);
+      // When pagination is active, only return examples (which support pagination)
+      // When no cursor, return filesystem files + first page of examples
+      if (cursor) {
+        // Pagination active - only return examples
+        const exampleResult = await this.resourceProvider.listResources(undefined, cursor);
 
-      console.error(
-        `Returning ${result.resources.length} resources` +
-        (result.nextCursor ? ` (more available, cursor: ${result.nextCursor})` : ' (no more resources)'),
-      );
+        console.error(
+          `Returning ${exampleResult.resources.length} example resources` +
+          (exampleResult.nextCursor ? ` (more available)` : ' (last page)'),
+        );
 
-      return {
-        resources: result.resources,
-        nextCursor: result.nextCursor,
-      };
+        return {
+          resources: exampleResult.resources,
+          nextCursor: exampleResult.nextCursor,
+        };
+      } else {
+        // First page - return filesystem files + first page of examples
+        const filesystemResult = await this.filesystemProvider.listFiles(undefined, false);
+        const exampleResult = await this.resourceProvider.listResources(undefined, undefined);
+
+        const allResources = [
+          ...filesystemResult.resources,
+          ...exampleResult.resources,
+        ];
+
+        console.error(
+          `Returning ${allResources.length} resources ` +
+          `(${filesystemResult.resources.length} files, ${exampleResult.resources.length} examples)` +
+          (exampleResult.nextCursor ? ` (more examples available)` : ''),
+        );
+
+        return {
+          resources: allResources,
+          nextCursor: exampleResult.nextCursor,
+        };
+      }
     });
 
     // Read resource handler
@@ -195,7 +323,15 @@ class QsvMcpServer {
       console.error(`Reading resource: ${uri}`);
 
       try {
-        const resource = await this.resourceProvider.getResource(uri);
+        let resource;
+
+        // Check if it's a file:/// URI (filesystem resource)
+        if (uri.startsWith('file:///')) {
+          resource = await this.filesystemProvider.getFileContent(uri);
+        } else {
+          // Otherwise, it's an example resource
+          resource = await this.resourceProvider.getResource(uri);
+        }
 
         if (!resource) {
           throw new Error(`Resource not found: ${uri}`);

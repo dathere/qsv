@@ -78,9 +78,12 @@ export class FilesystemResourceProvider {
     // Validate that new working directory is within allowed directories
     const isAllowed = this.allowedDirs.some(allowedDir => {
       const rel = relative(allowedDir, newDir);
-      // Path is allowed if it's the same as allowed dir (empty string)
-      // or a subdirectory (doesn't start with '..')
-      return !rel.startsWith('..');
+      // Path is allowed if:
+      // 1. It's empty (same as allowed dir), OR
+      // 2. It doesn't start with '..' (not a parent escape) AND
+      // 3. It doesn't start with path separator (not absolute/cross-drive escape)
+      if (rel === '') return true; // Same as allowed directory
+      return !rel.startsWith('..') && !rel.startsWith('/') && !rel.startsWith('\\');
     });
 
     if (!isAllowed) {
@@ -215,7 +218,13 @@ export class FilesystemResourceProvider {
   async getFileContent(uri: string): Promise<McpResourceContent | null> {
     try {
       // Parse file:/// URI and decode URL encoding
-      const filePath = decodeURIComponent(uri.replace(/^file:\/\/\//, ''));
+      // Handle both file:///path (Unix) and file:///C:/path (Windows)
+      let filePath = uri.replace(/^file:\/\//, '');
+      // Remove leading slash only on Windows when followed by drive letter
+      if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(filePath)) {
+        filePath = filePath.substring(1);
+      }
+      filePath = decodeURIComponent(filePath);
       const resolved = await this.resolvePath(filePath);
 
       // Get file stats

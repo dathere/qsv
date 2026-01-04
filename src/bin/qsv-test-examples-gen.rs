@@ -1,3 +1,43 @@
+#![cfg_attr(
+    clippy,
+    allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        // things are often more readable this way
+        clippy::needless_raw_string_hashes,
+        clippy::cast_lossless,
+        clippy::module_name_repetitions,
+        clippy::type_complexity,
+        clippy::zero_prefixed_literal,
+        clippy::unused_self,
+        clippy::if_same_then_else,
+        clippy::needless_continue,
+        // correctly used
+        clippy::enum_glob_use,
+        clippy::result_unit_err,
+        // not practical
+        clippy::similar_names,
+        clippy::too_many_lines,
+        clippy::struct_excessive_bools,
+        // preference
+        clippy::doc_markdown,
+        clippy::unnecessary_wraps,
+        clippy::ref_as_ptr,
+        // false positive
+        clippy::needless_doctest_main,
+        // noisy
+        clippy::missing_errors_doc,
+        clippy::use_self,
+        clippy::cognitive_complexity,
+        clippy::option_if_let_else,
+        clippy::implicit_clone,
+    ),
+    warn(
+        clippy::missing_asserts_for_indexing,
+    )
+)]
+
 // qsv-test-examples-gen: Extract examples from qsv CI test files
 //
 // This tool parses Rust test files and extracts working examples with
@@ -5,6 +45,7 @@
 
 use std::{fs, path::PathBuf};
 
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 macro_rules! regex_oncelock {
@@ -30,8 +71,8 @@ struct TestExample {
     command:     String,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     args:        Vec<String>,
-    #[serde(skip_serializing_if = "std::collections::HashMap::is_empty", default)]
-    options:     std::collections::HashMap<String, String>,
+    #[serde(skip_serializing_if = "IndexMap::is_empty", default)]
+    options:     IndexMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     expected:    Option<TestOutput>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -59,6 +100,7 @@ struct TestOutput {
 }
 
 struct TestParser {
+    #[allow(unused)]
     command_name: String,
     test_content: String,
 }
@@ -73,8 +115,7 @@ impl TestParser {
 
     fn parse(&self) -> Result<Vec<TestExample>, String> {
         let mut examples = Vec::new();
-        let mut name_counts: std::collections::HashMap<String, usize> =
-            std::collections::HashMap::new();
+        let mut name_counts: IndexMap<String, usize> = IndexMap::new();
 
         // First, try to extract macro-generated tests
         examples.extend(self.parse_macro_tests()?);
@@ -115,13 +156,13 @@ impl TestParser {
         Ok(examples)
     }
 
-    /// Parse macro-generated tests (e.g., pivotp_test!(name, |wrk, cmd| { ... }))
+    /// Parse macro-generated tests (e.g., `pivotp_test!(name, |wrk, cmd| { ... })`)
     fn parse_macro_tests(&self) -> Result<Vec<TestExample>, String> {
         let mut examples = Vec::new();
 
         // Match: macro_name!(test_name, |params| { body })
         // Simple pattern to match test macro invocations
-        let macro_re = regex_oncelock!(r#"_test!\s*\(\s*(\w+)"#);
+        let macro_re = regex_oncelock!(r"_test!\s*\(\s*(\w+)");
 
         for cap in macro_re.captures_iter(&self.test_content) {
             let test_name = cap.get(1).unwrap().as_str();
@@ -143,7 +184,7 @@ impl TestParser {
         Ok(examples)
     }
 
-    /// Check if a test position is inside a macro_rules! definition
+    /// Check if a test position is inside a `macro_rules!` definition
     fn is_inside_macro_definition(&self, test_pos: usize) -> bool {
         let before_test = &self.test_content[..test_pos];
 
@@ -263,7 +304,7 @@ impl TestParser {
             let vec_content = cap.get(2)?.as_str();
 
             // Parse svec! macro calls
-            let svec_re = regex_oncelock!(r#"svec!\s*\[([^\]]*)\]"#);
+            let svec_re = regex_oncelock!(r"svec!\s*\[([^\]]*)\]");
             let mut data = Vec::new();
 
             for svec_cap in svec_re.captures_iter(vec_content) {
@@ -290,14 +331,7 @@ impl TestParser {
     fn extract_command(
         &self,
         body: &str,
-    ) -> Result<
-        (
-            String,
-            Vec<String>,
-            std::collections::HashMap<String, String>,
-        ),
-        String,
-    > {
+    ) -> Result<(String, Vec<String>, IndexMap<String, String>), String> {
         // Match wrk.command("subcommand")
         let cmd_re = regex_oncelock!(r#"wrk\.command\("([^"]+)"\)"#);
 
@@ -312,7 +346,7 @@ impl TestParser {
         let arg_re = regex_oncelock!(r#"(?:cmd|wrk)?\.?arg\("([^"]+)"\)"#);
 
         let mut args = Vec::new();
-        let mut options = std::collections::HashMap::new();
+        let mut options = IndexMap::new();
         let mut pending_option: Option<String> = None;
 
         for cap in arg_re.captures_iter(body) {
@@ -411,14 +445,14 @@ impl TestParser {
     fn extract_expected_output(&self, body: &str) -> Option<TestOutput> {
         // Match let expected = vec![svec![...], ...]
         let expected_re = regex_oncelock!(
-            r#"let\s+expected\s*=\s*vec!\s*\[((?:\s*svec!\s*\[[^\]]*\]\s*,?)*)\s*\]"#
+            r"let\s+expected\s*=\s*vec!\s*\[((?:\s*svec!\s*\[[^\]]*\]\s*,?)*)\s*\]"
         );
 
         if let Some(cap) = expected_re.captures(body) {
             let vec_content = cap.get(1)?.as_str();
 
             // Parse svec! macro calls
-            let svec_re = regex_oncelock!(r#"svec!\s*\[([^\]]*)\]"#);
+            let svec_re = regex_oncelock!(r"svec!\s*\[([^\]]*)\]");
             let mut data = Vec::new();
 
             for svec_cap in svec_re.captures_iter(vec_content) {

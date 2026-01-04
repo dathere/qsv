@@ -1,3 +1,43 @@
+#![cfg_attr(
+    clippy,
+    allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        // things are often more readable this way
+        clippy::needless_raw_string_hashes,
+        clippy::cast_lossless,
+        clippy::module_name_repetitions,
+        clippy::type_complexity,
+        clippy::zero_prefixed_literal,
+        clippy::unused_self,
+        clippy::if_same_then_else,
+        clippy::needless_continue,
+        // correctly used
+        clippy::enum_glob_use,
+        clippy::result_unit_err,
+        // not practical
+        clippy::similar_names,
+        clippy::too_many_lines,
+        clippy::struct_excessive_bools,
+        // preference
+        clippy::doc_markdown,
+        clippy::unnecessary_wraps,
+        clippy::ref_as_ptr,
+        // false positive
+        clippy::needless_doctest_main,
+        // noisy
+        clippy::missing_errors_doc,
+        clippy::use_self,
+        clippy::cognitive_complexity,
+        clippy::option_if_let_else,
+        clippy::implicit_clone,
+    ),
+    warn(
+        clippy::missing_asserts_for_indexing,
+    )
+)]
+
 // qsv-skill-gen: Generate Agent Skills from qsv command USAGE text
 //
 // This tool parses USAGE text from qsv commands and generates Agent Skill
@@ -122,7 +162,7 @@ impl UsageParser {
     fn parse_with_docopt(&self) -> Result<(Vec<Argument>, Vec<Option_>), String> {
         // Parse USAGE text with docopt
         let parser =
-            Parser::new(&self.usage_text).map_err(|e| format!("Docopt parsing failed: {}", e))?;
+            Parser::new(&self.usage_text).map_err(|e| format!("Docopt parsing failed: {e}"))?;
 
         let mut args = Vec::new();
         let mut options = Vec::new();
@@ -170,8 +210,7 @@ impl UsageParser {
                             let desc = manual_descriptions
                                 .get(&primary_flag)
                                 .or_else(|| manual_descriptions.get(&flag_str))
-                                .map(|s| s.as_str())
-                                .unwrap_or("");
+                                .map_or("", std::string::String::as_str);
                             if desc.contains("<number>") || desc.contains("<int>") {
                                 "number"
                             } else {
@@ -228,8 +267,7 @@ impl UsageParser {
                         DocoptArgument::One(_) => {
                             let desc = manual_descriptions
                                 .get(&flag_str)
-                                .map(|s| s.as_str())
-                                .unwrap_or("");
+                                .map_or("", std::string::String::as_str);
                             if desc.contains("<number>") || desc.contains("<int>") {
                                 "number"
                             } else {
@@ -457,9 +495,9 @@ impl UsageParser {
             || desc_lower.contains("regular expression")
         {
             "regex".to_string()
-        } else if name_lower.contains("column") || name_lower.contains("selection") {
-            "string".to_string()
         } else {
+            // if name_lower.contains("column") || name_lower.contains("selection")
+            // Also, default to string if we can't infer a better type
             "string".to_string()
         }
     }

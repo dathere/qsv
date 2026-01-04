@@ -241,9 +241,8 @@ export async function pipelineToShellScript(
   // Generate shell script
   let script = await pipeline.toShellScript();
 
-  // Replace the generic input with the actual input file
-  script = script.replace(/qsv /, `qsv ${inputFile} | qsv `);
-  script = script.replace(/^\s*qsv\s+/, `cat ${inputFile} | qsv `);
+  // Prepend input file as stdin source
+  script = `cat ${inputFile} | ${script}`;
 
   // Add output redirection if specified
   if (outputFile) {

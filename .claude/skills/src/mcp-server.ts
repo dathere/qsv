@@ -167,8 +167,9 @@ class QsvMcpServer {
   private registerResourceHandlers(): void {
     // List resources handler
     this.server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
-      // Reserved for future pagination support
-      const _cursor = request.params?.cursor;
+      // TODO: Implement pagination using request.params?.cursor when resource
+      //       listing supports cursors. For now, we ignore the cursor and
+      //       return all available resources.
 
       console.error('Listing resources...');
 

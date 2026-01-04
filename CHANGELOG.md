@@ -6,44 +6,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## What's Changed
-* build(deps): bump zmij from 0.1.7 to 0.1.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3231
-* build(deps): bump redis from 1.0.1 to 1.0.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3232
-* build(deps): bump zmij from 0.1.8 to 0.1.9 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3233
-* build(deps): bump human-panic from 2.0.4 to 2.0.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3234
-* build(deps): bump zmij from 0.1.9 to 0.1.10 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3235
-* refactor: `frequency` reduce duplication introduced by `--weight` option by @jqnatividad in https://github.com/dathere/qsv/pull/3236
-* build(deps): bump zmij from 0.1.10 to 1.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3237
+## Added
+* feat: qsv MCP server https://github.com/dathere/qsv/pull/3269
+* feat: qsv Claude Agent Skills SDK support 🤖  https://github.com/dathere/qsv/pull/3264
+* feat: `moarstats` add  "xsd_type" column https://github.com/dathere/qsv/pull/3242
+* feat: `moarstats` add Atkinson Index with configurable inequality aversion parameter, Normalized Entropy & Bimodal Coefficient https://github.com/dathere/qsv/pull/3243
+* feat: `moarstats` add bivariate stats https://github.com/dathere/qsv/pull/3247
+* feat: `moarstats` add normalized mutual info https://github.com/dathere/qsv/pull/3256
+* feat: `moarstats` add `--force` and `--jobs` options https://github.com/dathere/qsv/pull/3253
+* feat: `moarstats` add "xsd_subtype"  Gregorian date data types inferencing with `--xsd-gdate-scan` having fast (default) and comprehensive modes https://github.com/dathere/qsv/pull/3259
+* feat: `qsvdp` enable join command that moarstats uses https://github.com/dathere/qsv/pull/3252
+* docs: added comprehensive stats documentation https://github.com/dathere/qsv/pull/3240
+
+## Changed
+* refactor: `frequency` reduce duplication introduced by `--weight` option https://github.com/dathere/qsv/pull/3236
+* refactor: `describegpt` - consolidate JSON response parsing; cache handling; and make DuckDB & Polars error handling more consistent https://github.com/dathere/qsv/pull/3241
+* perf: `moarstats` much faster bivariate calculation https://github.com/dathere/qsv/pull/3248
+* perf: `moarstats` optimize non-streaming bivariate stats compilation https://github.com/dathere/qsv/pull/3250
+* refactor: qsv Skills Agent https://github.com/dathere/qsv/pull/3267
 * build(deps): bump itoa from 1.0.16 to 1.0.17 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3239
+* build(deps): bump human-panic from 2.0.4 to 2.0.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3234
+* build(deps): bump human-panic from 2.0.5 to 2.0.6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3249
+* build(deps): bump libc from 0.2.178 to 0.2.179 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3265
+* build(deps): bump redis from 1.0.1 to 1.0.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3232
 * build(deps): bump serde_json from 1.0.147 to 1.0.148 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3238
-* docs: comprehensive stats documentation by @jqnatividad in https://github.com/dathere/qsv/pull/3240
-* refactor: `describegpt` - consolidate JSON response parsing; cache handling; and make DuckDB & Polars error handling more consistent by @jqnatividad in https://github.com/dathere/qsv/pull/3241
-* feat: `moarstats` add  "xsd_type" column by @jqnatividad in https://github.com/dathere/qsv/pull/3242
-* feat: `moarstats` add Atkinson Index with configurable inequality aversion parameter, Normalized Entropy & Bimodal Coefficient by @jqnatividad in https://github.com/dathere/qsv/pull/3243
+* build(deps): bump tokio from 1.48.0 to 1.49.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3266
+* build(deps): bump zmij from 0.1.7 to 0.1.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3231
+* build(deps): bump zmij from 0.1.8 to 0.1.9 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3233
+* build(deps): bump zmij from 0.1.9 to 0.1.10 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3235
+* build(deps): bump zmij from 0.1.10 to 1.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3237
 * build(deps): bump zmij from 1.0.0 to 1.0.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3244
 * build(deps): bump zmij from 1.0.1 to 1.0.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3245
-* feat: `moarstats` add bivariate stats by @jqnatividad in https://github.com/dathere/qsv/pull/3247
-* perf: `moarstats` much faster bivariate calculation by @jqnatividad in https://github.com/dathere/qsv/pull/3248
-* build(deps): bump human-panic from 2.0.5 to 2.0.6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3249
-* perf: `moarstats` optimize non-streaming bivariate stats compilation by @jqnatividad in https://github.com/dathere/qsv/pull/3250
 * build(deps): bump zmij from 1.0.2 to 1.0.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3251
-* feat: `qsvdp` enable join command that moarstats uses by @jqnatividad in https://github.com/dathere/qsv/pull/3252
-* feat: `moarstats` add `--force` and `--jobs` options by @jqnatividad in https://github.com/dathere/qsv/pull/3253
 * build(deps): bump zmij from 1.0.3 to 1.0.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3255
-* feat: `moarstats` add normalized mutual info by @jqnatividad in https://github.com/dathere/qsv/pull/3256
 * build(deps): bump zmij from 1.0.5 to 1.0.6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3258
-* feat: `moarstats` add "xsd_subtype"  Gregorian date data types inferencing with `--xsd-gdate-scan` having fast (default) and comprehensive modes by @jqnatividad in https://github.com/dathere/qsv/pull/3259
-* fix: refresh_cpu_all() -> refresh_cpu_list(sysinfo::CpuRefreshKind::nothing())… by @jqnatividad in https://github.com/dathere/qsv/pull/3261
 * build(deps): bump zmij from 1.0.6 to 1.0.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3262
 * build(deps): bump zmij from 1.0.7 to 1.0.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3263
-* feat: qsv Agent Skills 🤖  by @jqnatividad in https://github.com/dathere/qsv/pull/3264
-* build(deps): bump libc from 0.2.178 to 0.2.179 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3265
-* build(deps): bump tokio from 1.48.0 to 1.49.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3266
-* refactor: qsv Skills Agent by @jqnatividad in https://github.com/dathere/qsv/pull/3267
 * build(deps): bump zmij from 1.0.8 to 1.0.9 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3268
-* feat: qsv MCP server by @jqnatividad in https://github.com/dathere/qsv/pull/3269
 * build(deps): bump zmij from 1.0.9 to 1.0.10 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3270
+* bumped several indirect dependencies
+* applied select clippy & Codacy suggestions
+* applied several GH Copilot and Claude review suggestions
 
+## Fixed
+* fix: refresh_cpu_all() -> refresh_cpu_list(sysinfo::CpuRefreshKind::nothing())… https://github.com/dathere/qsv/pull/3261
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/12.0.0...13.0.0
 

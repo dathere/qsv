@@ -84,6 +84,31 @@ export async function executePipeline(
       };
     }
 
+    // Validate pipeline steps
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+
+      if (!step.command || typeof step.command !== 'string') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Error: Step ${i + 1} missing required 'command' property or command is not a string`,
+          }],
+          isError: true,
+        };
+      }
+
+      if (step.params && typeof step.params !== 'object') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Error: Step ${i + 1} 'params' must be an object`,
+          }],
+          isError: true,
+        };
+      }
+    }
+
     // Create pipeline
     const pipeline = new QsvPipeline(loader);
 
@@ -150,12 +175,18 @@ async function addStepToPipeline(
   // Map common commands to pipeline methods
   switch (command) {
     case 'select':
-      pipeline.select(params.selection as string || '', params);
+      if (!params.selection) {
+        throw new Error(`'select' command requires 'selection' parameter`);
+      }
+      pipeline.select(params.selection as string, params);
       break;
 
     case 'search':
+      if (!params.pattern) {
+        throw new Error(`'search' command requires 'pattern' parameter`);
+      }
       pipeline.search(
-        params.pattern as string || '',
+        params.pattern as string,
         params.column as string | undefined,
         params,
       );
@@ -166,7 +197,10 @@ async function addStepToPipeline(
       break;
 
     case 'sort':
-      pipeline.sortBy(params.column as string || '', params);
+      if (!params.column) {
+        throw new Error(`'sort' command requires 'column' parameter`);
+      }
+      pipeline.sortBy(params.column as string, params);
       break;
 
     case 'slice':
@@ -186,25 +220,34 @@ async function addStepToPipeline(
       break;
 
     case 'apply':
+      if (!params.operations || !params.column) {
+        throw new Error(`'apply' command requires 'operations' and 'column' parameters`);
+      }
       pipeline.apply(
-        params.operations as string || '',
-        params.column as string || '',
+        params.operations as string,
+        params.column as string,
         params,
       );
       break;
 
     case 'rename':
+      if (!params.columns || !params.newNames) {
+        throw new Error(`'rename' command requires 'columns' and 'newNames' parameters`);
+      }
       pipeline.rename(
-        params.columns as string || '',
-        params.newNames as string || '',
+        params.columns as string,
+        params.newNames as string,
         params,
       );
       break;
 
     case 'join':
+      if (!params.columns || !params.file) {
+        throw new Error(`'join' command requires 'columns' and 'file' parameters`);
+      }
       pipeline.join(
-        params.columns as string || '',
-        params.file as string || '',
+        params.columns as string,
+        params.file as string,
         params,
       );
       break;

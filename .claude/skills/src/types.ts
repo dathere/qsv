@@ -121,12 +121,19 @@ export interface TestExamples {
 /**
  * MCP (Model Context Protocol) Types
  */
+export interface McpToolProperty {
+  type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+  description?: string;
+  default?: string | number | boolean;
+  items?: Record<string, unknown>;
+}
+
 export interface McpToolDefinition {
   name: string;
   description: string;
   inputSchema: {
     type: 'object';
-    properties: Record<string, any>;
+    properties: Record<string, McpToolProperty>;
     required?: string[];
   };
 }

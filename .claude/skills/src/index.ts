@@ -21,6 +21,7 @@ export type {
   SkillCategory,
   TestExample,
   TestExamples,
+  McpToolProperty,
   McpToolDefinition,
   McpToolResult,
   McpResource,

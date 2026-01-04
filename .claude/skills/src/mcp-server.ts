@@ -92,6 +92,8 @@ class QsvMcpServer {
 
         if (skill) {
           tools.push(createToolDefinition(skill));
+        } else {
+          console.error(`Warning: Failed to load skill ${skillName}`);
         }
       }
 
@@ -165,7 +167,8 @@ class QsvMcpServer {
   private registerResourceHandlers(): void {
     // List resources handler
     this.server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
-      const cursor = request.params?.cursor;
+      // Reserved for future pagination support
+      const _cursor = request.params?.cursor;
 
       console.error('Listing resources...');
 

@@ -56,7 +56,7 @@ function header(msg) {
 }
 
 /**
- * Check if qsv binary is available
+ * Check if qsv binary is available and get its path
  */
 async function checkQsvBinary() {
   try {
@@ -70,6 +70,28 @@ async function checkQsvBinary() {
     console.log('  - macOS: brew install qsv');
     console.log('  - Or download from: https://github.com/dathere/qsv/releases\n');
     return false;
+  }
+}
+
+/**
+ * Get qsv binary path
+ */
+async function getQsvBinaryPath() {
+  try {
+    // Try 'which' command (Unix/macOS/Linux)
+    const { stdout } = await execAsync('which qsv');
+    return stdout.trim();
+  } catch {
+    try {
+      // Try 'where' command (Windows)
+      const { stdout } = await execAsync('where qsv');
+      // 'where' returns all matches, take first one
+      return stdout.trim().split('\n')[0];
+    } catch {
+      // Fallback to just 'qsv' - let PATH resolution handle it
+      info('Could not detect qsv binary path, using PATH resolution');
+      return 'qsv';
+    }
   }
 }
 
@@ -146,6 +168,10 @@ async function updateClaudeConfig() {
     info('Creating new Claude Desktop config');
   }
 
+  // Get qsv binary path dynamically
+  const qsvPath = await getQsvBinaryPath();
+  info(`Using qsv binary at: ${qsvPath}`);
+
   // Add or update qsv MCP server
   if (!config.mcpServers) {
     config.mcpServers = {};
@@ -155,7 +181,7 @@ async function updateClaudeConfig() {
     command: 'node',
     args: [mcpServerPath],
     env: {
-      QSV_BIN_PATH: '/usr/local/bin/qsv',
+      QSV_BIN_PATH: qsvPath,
     },
   };
 

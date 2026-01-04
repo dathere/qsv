@@ -2,7 +2,7 @@
  * MCP Tool Definitions and Handlers for QSV Commands
  */
 
-import type { QsvSkill, Argument, Option, McpToolDefinition, McpToolResult } from './types.js';
+import type { QsvSkill, Argument, Option, McpToolDefinition, McpToolProperty } from './types.js';
 import type { SkillExecutor } from './executor.js';
 import type { SkillLoader } from './loader.js';
 
@@ -36,7 +36,7 @@ export const COMMON_COMMANDS = [
  * Convert a QSV skill to an MCP tool definition
  */
 export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
-  const properties: Record<string, any> = {
+  const properties: Record<string, McpToolProperty> = {
     input_file: {
       type: 'string',
       description: 'Path to input CSV file (absolute or relative)',
@@ -96,7 +96,7 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
 /**
  * Map QSV argument types to JSON Schema types
  */
-function mapArgumentType(type: string): string {
+function mapArgumentType(type: string): 'string' | 'number' | 'boolean' | 'object' | 'array' {
   switch (type) {
     case 'number':
       return 'number';
@@ -111,7 +111,7 @@ function mapArgumentType(type: string): string {
 /**
  * Map QSV option types to JSON Schema types
  */
-function mapOptionType(type: string): string {
+function mapOptionType(type: string): 'string' | 'number' | 'boolean' | 'object' | 'array' {
   switch (type) {
     case 'number':
       return 'number';
@@ -142,7 +142,10 @@ export async function handleToolCall(
       return {
         content: [{
           type: 'text' as const,
-          text: `Error: Skill '${skillName}' not found`,
+          text: `Error: Skill '${skillName}' not found.\n\n` +
+                `Please verify the command name is correct. ` +
+                `Available commands include: ${COMMON_COMMANDS.join(', ')}, and 46 others. ` +
+                `Use 'qsv_command' with the 'command' parameter for less common commands.`,
         }],
         isError: true,
       };
@@ -163,8 +166,8 @@ export async function handleToolCall(
     }
 
     // Build args and options
-    const args: Record<string, any> = {};
-    const options: Record<string, any> = {};
+    const args: Record<string, unknown> = {};
+    const options: Record<string, unknown> = {};
 
     // Add input file as 'input' argument if the skill expects it
     if (skill.command.args.some(a => a.name === 'input')) {

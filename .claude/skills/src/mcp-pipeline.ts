@@ -98,11 +98,11 @@ export async function executePipeline(
         };
       }
 
-      if (step.params && typeof step.params !== 'object') {
+      if (step.params && (typeof step.params !== 'object' || step.params === null || Array.isArray(step.params))) {
         return {
           content: [{
             type: 'text' as const,
-            text: `Error: Step ${i + 1} 'params' must be an object`,
+            text: `Error: Step ${i + 1} 'params' must be an object (not null or array)`,
           }],
           isError: true,
         };
@@ -254,8 +254,8 @@ async function addStepToPipeline(
 
     default:
       // For commands without dedicated methods, use the generic add() method
-      // Ensure params is a valid object
-      if (params && typeof params === 'object' && !Array.isArray(params)) {
+      // Ensure params is a valid object (not null or array)
+      if (params && typeof params === 'object' && params !== null && !Array.isArray(params)) {
         pipeline.add(`qsv-${command}`, {
           args: {},
           options: params,

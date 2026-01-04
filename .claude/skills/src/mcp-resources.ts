@@ -17,10 +17,19 @@ export class ExampleResourceProvider {
 
   /**
    * List all available example resources
-   * Supports filtering by query string
+   * Supports filtering by query string and pagination
+   *
+   * @param query - Optional search query to filter resources
+   * @param cursor - Optional pagination cursor (offset as string)
+   * @param pageSize - Number of resources per page (default: 100)
+   * @returns Object with resources array and optional nextCursor
    */
-  async listResources(query?: string): Promise<McpResource[]> {
-    const resources: McpResource[] = [];
+  async listResources(
+    query?: string,
+    cursor?: string,
+    pageSize: number = 100,
+  ): Promise<{ resources: McpResource[]; nextCursor?: string }> {
+    const allResources: McpResource[] = [];
 
     // Get all skills
     const skills = await this.loader.loadAll();
@@ -52,7 +61,7 @@ export class ExampleResourceProvider {
             }
           }
 
-          resources.push({
+          allResources.push({
             uri,
             name,
             description: `${example.description} [${example.tags.join(', ')}]`,
@@ -66,7 +75,52 @@ export class ExampleResourceProvider {
       }
     }
 
-    return resources;
+    // Apply pagination
+    const offset = cursor ? this.decodeCursor(cursor) : 0;
+    const resources = allResources.slice(offset, offset + pageSize);
+
+    // Calculate next cursor (opaque, base64-encoded)
+    const hasMore = offset + pageSize < allResources.length;
+    const nextCursor = hasMore ? this.encodeCursor(offset + pageSize) : undefined;
+
+    return {
+      resources,
+      nextCursor,
+    };
+  }
+
+  /**
+   * Encode pagination offset into an opaque cursor
+   * Per MCP spec, cursors MUST be opaque to clients
+   */
+  private encodeCursor(offset: number): string {
+    // Base64 encode to make cursor opaque
+    const cursorData = JSON.stringify({ offset });
+    return Buffer.from(cursorData, 'utf-8').toString('base64');
+  }
+
+  /**
+   * Decode an opaque cursor to get pagination offset
+   * Validates cursor format and throws on invalid cursors
+   */
+  private decodeCursor(cursor: string): number {
+    try {
+      // Decode base64 cursor
+      const decoded = Buffer.from(cursor, 'base64').toString('utf-8');
+      const data = JSON.parse(decoded);
+
+      // Validate structure
+      if (typeof data.offset !== 'number' || data.offset < 0 || !Number.isInteger(data.offset)) {
+        throw new Error('Invalid cursor format: offset must be a non-negative integer');
+      }
+
+      return data.offset;
+    } catch (error) {
+      // Invalid cursor - throw error that MCP framework will convert to -32602
+      throw new Error(
+        `Invalid pagination cursor: ${error instanceof Error ? error.message : 'malformed cursor'}`,
+      );
+    }
   }
 
   /**
@@ -153,9 +207,10 @@ export class ExampleResourceProvider {
    * List resources by tag
    */
   async listResourcesByTag(tag: string): Promise<McpResource[]> {
-    const allResources = await this.listResources();
+    // Fetch all resources (no pagination for tag filtering)
+    const result = await this.listResources(undefined, undefined, Number.MAX_SAFE_INTEGER);
 
-    return allResources.filter(resource => {
+    return result.resources.filter(resource => {
       const descMatch = resource.description?.toLowerCase().includes(`[${tag.toLowerCase()}`);
       return descMatch;
     });

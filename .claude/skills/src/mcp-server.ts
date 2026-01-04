@@ -167,28 +167,25 @@ class QsvMcpServer {
   private registerResourceHandlers(): void {
     // List resources handler
     this.server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
-      // TODO: Implement pagination using request.params?.cursor when resource
-      //       listing supports cursors. For now, we ignore the cursor and
-      //       return all available resources.
-
       console.error('Listing resources...');
 
-      try {
-        const resources = await this.resourceProvider.listResources();
+      const cursor = request.params?.cursor;
 
-        console.error(`Found ${resources.length} example resources`);
-
-        // MCP supports pagination with cursors, but for now we return all
-        return {
-          resources,
-        };
-      } catch (error) {
-        console.error('Error listing resources:', error);
-
-        return {
-          resources: [],
-        };
+      if (cursor) {
+        console.error(`Pagination cursor: ${cursor}`);
       }
+
+      const result = await this.resourceProvider.listResources(undefined, cursor);
+
+      console.error(
+        `Returning ${result.resources.length} resources` +
+        (result.nextCursor ? ` (more available, cursor: ${result.nextCursor})` : ' (no more resources)'),
+      );
+
+      return {
+        resources: result.resources,
+        nextCursor: result.nextCursor,
+      };
     });
 
     // Read resource handler

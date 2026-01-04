@@ -108,7 +108,8 @@ async function buildTypeScript() {
       cwd: SKILLS_DIR,
     });
 
-    if (stderr && stderr.includes('error')) {
+    // Check for TypeScript errors (error TS1234: ...) to avoid false positives from warnings
+    if (stderr && /error TS\d+:/i.test(stderr)) {
       error('TypeScript build failed');
       console.log(stderr);
       return false;

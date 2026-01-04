@@ -218,7 +218,7 @@ class QsvMcpServer {
 
         // Handle pipeline tool
         if (name === 'qsv_pipeline') {
-          return await executePipeline(args || {}, this.loader);
+          return await executePipeline(args || {}, this.loader, this.filesystemProvider);
         }
 
         // Handle generic command tool

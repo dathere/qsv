@@ -172,6 +172,7 @@ Here's a complete example of working with local files:
 ### Path Validation
 **What is validated:**
 - All `input_file` and `output_file` parameters in qsv command tools
+- Pipeline `input_file` and `output_file` parameters in `qsv_pipeline`
 - Working directory changes via `qsv_set_working_dir`
 - File browsing via `qsv_list_files` (with recursive subdirectory validation)
 - File preview requests in resource browser
@@ -182,10 +183,10 @@ Here's a complete example of working with local files:
 - Attempts to access files outside allowed directories are rejected
 - Prevents directory traversal attacks (e.g., `../../etc/passwd`)
 
-**Important limitations:**
-- The `qsv_pipeline` tool currently bypasses filesystem validation
-- Validation only applies when tools receive the filesystem provider
+**Security notes:**
+- All file operations go through the same validation layer
 - Server runs with same permissions as Node.js process
+- Error messages don't reveal allowed directory paths
 
 ### Default Restrictions
 - Only CSV-related files are listed (`.csv`, `.tsv`, `.tab`, `.ssv`, `.txt`, `.sz`)

@@ -78,14 +78,14 @@ export class FilesystemResourceProvider {
     // Validate that new working directory is within allowed directories
     const isAllowed = this.allowedDirs.some(allowedDir => {
       const rel = relative(allowedDir, newDir);
-      // Path is allowed if it doesn't escape to parent (doesn't start with '..')
+      // Path is allowed if it's the same as allowed dir (empty string)
+      // or a subdirectory (doesn't start with '..')
       return !rel.startsWith('..');
     });
 
     if (!isAllowed) {
       throw new Error(
-        `Cannot set working directory to ${dir}: outside allowed directories. ` +
-        `Allowed: ${this.allowedDirs.join(', ')}`,
+        `Cannot set working directory to ${dir}: outside allowed directories`,
       );
     }
 
@@ -133,8 +133,7 @@ export class FilesystemResourceProvider {
 
     if (!isAllowed) {
       throw new Error(
-        `Access denied: ${path} is outside allowed directories. ` +
-        `Allowed: ${this.allowedDirs.join(', ')}`,
+        `Access denied: ${path} is outside allowed directories`,
       );
     }
 
@@ -293,11 +292,17 @@ export class FilesystemResourceProvider {
       normalized = '/' + normalized;
     }
 
-    // URL encode special characters
-    const encoded = encodeURI(normalized);
+    // URL encode each path segment to properly handle special characters
+    // Split by /, encode each segment, then rejoin to preserve path structure
+    const segments = normalized.split('/');
+    const encodedSegments = segments.map(segment =>
+      segment ? encodeURIComponent(segment) : segment
+    );
+    const encoded = encodedSegments.join('/');
 
-    // RFC 8089: file URIs should use three slashes (file:///)
-    return `file:///${encoded}`;
+    // RFC 8089: file URIs use three slashes total (file:// + leading /)
+    // Since encoded already starts with /, we use file:// prefix
+    return `file://${encoded}`;
   }
 
   /**

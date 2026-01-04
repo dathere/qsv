@@ -2,7 +2,7 @@
 /**
  * QSV MCP Server
  *
- * Model Context Protocol server exposing qsv's 66 CSV data-wrangling commands
+ * Model Context Protocol server exposing qsv's CSV data-wrangling commands
  * to Claude Desktop and other MCP clients.
  */
 

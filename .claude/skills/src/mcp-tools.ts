@@ -139,12 +139,16 @@ export async function handleToolCall(
     const skill = await loader.load(skillName);
 
     if (!skill) {
+      // Calculate remaining commands dynamically
+      const totalCommands = loader.getStats().total;
+      const remainingCommands = totalCommands - COMMON_COMMANDS.length;
+
       return {
         content: [{
           type: 'text' as const,
           text: `Error: Skill '${skillName}' not found.\n\n` +
                 `Please verify the command name is correct. ` +
-                `Available commands include: ${COMMON_COMMANDS.join(', ')}, and 46 others. ` +
+                `Available commands include: ${COMMON_COMMANDS.join(', ')}, and ${remainingCommands} others. ` +
                 `Use 'qsv_command' with the 'command' parameter for less common commands.`,
         }],
         isError: true,
@@ -286,10 +290,14 @@ export async function handleGenericCommand(
 /**
  * Create the generic qsv_command tool definition
  */
-export function createGenericToolDefinition(): McpToolDefinition {
+export function createGenericToolDefinition(loader: SkillLoader): McpToolDefinition {
+  // Calculate remaining commands dynamically
+  const totalCommands = loader.getStats().total;
+  const remainingCommands = totalCommands - COMMON_COMMANDS.length;
+
   return {
     name: 'qsv_command',
-    description: 'Execute any qsv command not exposed as a dedicated tool (46 additional commands available)',
+    description: `Execute any qsv command not exposed as a dedicated tool (${remainingCommands} additional commands available)`,
     inputSchema: {
       type: 'object',
       properties: {

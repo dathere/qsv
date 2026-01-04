@@ -101,13 +101,13 @@ export class ExampleResourceProvider {
         input: example.input ? {
           filename: example.input.filename,
           data: example.input.data,
-          preview: example.input.data
+          preview: example.input.data && Array.isArray(example.input.data)
             ? example.input.data.slice(0, 10).map(row => row.join(',')).join('\n')
             : undefined,
         } : undefined,
         expected: example.expected ? {
           data: example.expected.data,
-          preview: example.expected.data
+          preview: example.expected.data && Array.isArray(example.expected.data)
             ? example.expected.data.slice(0, 10).map(row => row.join(',')).join('\n')
             : undefined,
         } : undefined,
@@ -243,6 +243,11 @@ export class ExampleResourceProvider {
 
     const command = match[1];
     const exampleName = match[2];
+
+    // Validate that captured groups are not empty
+    if (!command || !exampleName || command.trim() === '' || exampleName.trim() === '') {
+      throw new Error(`Invalid resource URI: command and example name must not be empty in ${uri}`);
+    }
 
     // Add qsv- prefix back to get skill name
     const skillName = `qsv-${command}`;

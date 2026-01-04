@@ -98,7 +98,7 @@ class QsvMcpServer {
       }
 
       // Add generic qsv_command tool
-      tools.push(createGenericToolDefinition());
+      tools.push(createGenericToolDefinition(this.loader));
 
       // Add pipeline tool
       tools.push(createPipelineToolDefinition());

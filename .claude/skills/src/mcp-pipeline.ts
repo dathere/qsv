@@ -254,10 +254,18 @@ async function addStepToPipeline(
 
     default:
       // For commands without dedicated methods, use the generic add() method
-      pipeline.add(`qsv-${command}`, {
-        args: {},
-        options: params,
-      });
+      // Ensure params is a valid object
+      if (params && typeof params === 'object' && !Array.isArray(params)) {
+        pipeline.add(`qsv-${command}`, {
+          args: {},
+          options: params,
+        });
+      } else {
+        pipeline.add(`qsv-${command}`, {
+          args: {},
+          options: {},
+        });
+      }
       break;
   }
 }

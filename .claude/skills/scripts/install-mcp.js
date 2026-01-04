@@ -88,9 +88,12 @@ async function getQsvBinaryPath() {
       // 'where' returns all matches, take first one
       return stdout.trim().split('\n')[0];
     } catch {
-      // Fallback to just 'qsv' - let PATH resolution handle it
-      info('Could not detect qsv binary path, using PATH resolution');
-      return 'qsv';
+      // Both 'which' and 'where' failed - qsv is not discoverable
+      error('Could not detect qsv binary on your system PATH.');
+      console.log('\nPlease ensure qsv is installed and available in your PATH:');
+      console.log('  - macOS: brew install qsv');
+      console.log('  - Or download from: https://github.com/dathere/qsv/releases\n');
+      throw new Error('qsv binary not found in PATH');
     }
   }
 }

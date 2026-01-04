@@ -16,16 +16,20 @@ Add the QSV MCP server to your Claude Desktop configuration with optional enviro
     "qsv": {
       "command": "node",
       "args": [
-        "/Users/joelnatividad/.claude-worktrees/qsv/frosty-lichterman/.claude/skills/dist/mcp-server.js"
+        "/path/to/qsv/.claude/skills/dist/mcp-server.js"
       ],
       "env": {
-        "QSV_WORKING_DIR": "/Users/joelnatividad/Downloads",
-        "QSV_ALLOWED_DIRS": "/Users/joelnatividad/Downloads:/Users/joelnatividad/Documents:/Users/joelnatividad/data"
+        "QSV_WORKING_DIR": "/Users/your-username/Downloads",
+        "QSV_ALLOWED_DIRS": "/Users/your-username/Downloads:/Users/your-username/Documents:/Users/your-username/data"
       }
     }
   }
 }
 ```
+
+**Platform-specific notes:**
+- **macOS/Linux**: Use colons (`:`) to separate directories in `QSV_ALLOWED_DIRS`
+- **Windows**: Use semicolons (`;`) to separate directories, and use double backslashes in paths (e.g., `C:\\Users\\YourName\\Downloads`)
 
 ### 2. Restart Claude Desktop
 
@@ -38,12 +42,15 @@ After updating the configuration, restart Claude Desktop for the changes to take
 #### `QSV_WORKING_DIR`
 - **Description**: The default working directory for relative file paths
 - **Default**: Current process directory
-- **Example**: `"/Users/joelnatividad/Downloads"`
+- **Example (Unix)**: `"/Users/your-username/Downloads"`
+- **Example (Windows)**: `"C:\\Users\\YourName\\Downloads"`
 
 #### `QSV_ALLOWED_DIRS`
-- **Description**: Colon-separated list of directories that can be accessed (security feature)
+- **Description**: Delimited list of directories that can be accessed (security feature)
+- **Delimiter**: Colon (`:`) on Unix/macOS, semicolon (`;`) on Windows
 - **Default**: Only the working directory
-- **Example**: `"/Users/joelnatividad/Downloads:/Users/joelnatividad/Documents"`
+- **Example (Unix)**: `"/Users/your-username/Downloads:/Users/your-username/Documents"`
+- **Example (Windows)**: `"C:\\Users\\YourName\\Downloads;C:\\Users\\YourName\\Documents"`
 
 ## Usage Examples
 

@@ -62,8 +62,10 @@ class QsvMcpServer {
 
     // Initialize filesystem provider with configurable directories
     const workingDir = process.env.QSV_WORKING_DIR || process.cwd();
+    // Use platform-appropriate delimiter: semicolon on Windows, colon on Unix
+    const pathDelimiter = process.platform === 'win32' ? ';' : ':';
     const allowedDirs = process.env.QSV_ALLOWED_DIRS
-      ? process.env.QSV_ALLOWED_DIRS.split(':')
+      ? process.env.QSV_ALLOWED_DIRS.split(pathDelimiter)
       : [];
 
     this.filesystemProvider = new FilesystemResourceProvider({
@@ -225,6 +227,7 @@ class QsvMcpServer {
             args || {},
             this.executor,
             this.loader,
+            this.filesystemProvider,
           );
         }
 

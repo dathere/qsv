@@ -129,7 +129,7 @@ export async function handleToolCall(
   params: Record<string, unknown>,
   executor: SkillExecutor,
   loader: SkillLoader,
-  filesystemProvider?: { resolvePath: (path: string) => string },
+  filesystemProvider?: { resolvePath: (path: string) => Promise<string> },
 ) {
   try {
     // Extract command name from tool name (qsv_select -> select)
@@ -173,9 +173,9 @@ export async function handleToolCall(
     // Resolve file paths using filesystem provider if available
     if (filesystemProvider) {
       try {
-        inputFile = filesystemProvider.resolvePath(inputFile);
+        inputFile = await filesystemProvider.resolvePath(inputFile);
         if (outputFile) {
-          outputFile = filesystemProvider.resolvePath(outputFile);
+          outputFile = await filesystemProvider.resolvePath(outputFile);
         }
       } catch (error) {
         return {
@@ -274,6 +274,7 @@ export async function handleGenericCommand(
   params: Record<string, unknown>,
   executor: SkillExecutor,
   loader: SkillLoader,
+  filesystemProvider?: { resolvePath: (path: string) => Promise<string> },
 ) {
   try {
     const commandName = params.command as string | undefined;
@@ -294,6 +295,7 @@ export async function handleGenericCommand(
       params,
       executor,
       loader,
+      filesystemProvider,
     );
   } catch (error) {
     return {

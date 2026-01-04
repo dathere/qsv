@@ -10,14 +10,11 @@ Enhanced the QSV MCP Server to support **direct local filesystem access**, elimi
 
 1. **`src/mcp-filesystem.ts`** - New filesystem resource provider
    - Provides secure file browsing capabilities
-   - Path resolution and validation
+   - Path canonicalization and validation using `fs.realpath()`
    - File preview generation
    - Security restrictions for directory access
-
-2. **`tsconfig.json`** - TypeScript configuration
-   - ES2022 target
-   - Node16 module resolution
-   - Proper build configuration
+   - Cross-platform file URI generation
+   - Platform-aware path delimiter handling
 
 3. **`FILESYSTEM_USAGE.md`** - Comprehensive usage guide
    - Configuration instructions
@@ -234,9 +231,15 @@ Your existing MCP server configuration will continue to work. To enable filesyst
 ### Security Model
 
 - **Whitelist-based**: Only explicitly allowed directories are accessible
-- **No blacklist bypass**: Path traversal attempts are caught during resolution
-- **Symlink resolution**: Symlinks are resolved and validated against allowed directories
-- **Case-sensitive**: Path comparisons are case-sensitive on macOS/Linux
+- **Path canonicalization**: Paths are resolved using `fs.realpath()` to handle symlinks and relative paths
+- **Path traversal protection**: Canonical paths are validated to ensure they don't escape allowed directories
+- **Working directory validation**: Setting a new working directory is only allowed within existing allowed directories
+- **Case-sensitive validation**: Path comparisons respect filesystem case-sensitivity
+
+**Security Limitations:**
+- Users should avoid placing symlinks that point outside allowed directories within those directories
+- Output file validation requires parent directory to exist
+- The server has the same filesystem permissions as the Node.js process running it
 
 ## Performance Impact
 

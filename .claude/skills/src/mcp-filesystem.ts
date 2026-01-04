@@ -5,7 +5,7 @@
  * Claude Desktop to work with local files without uploading them.
  */
 
-import { readdir, stat, readFile } from 'fs/promises';
+import { readdir, stat, readFile, realpath } from 'fs/promises';
 import { join, resolve, relative, basename, extname } from 'path';
 import type { McpResource, McpResourceContent } from './types.js';
 
@@ -70,29 +70,60 @@ export class FilesystemResourceProvider {
 
   /**
    * Set a new working directory
+   * Only allows directories within existing allowed directories for security
    */
   setWorkingDirectory(dir: string): void {
-    this.workingDir = resolve(dir);
-    if (!this.allowedDirs.includes(this.workingDir)) {
-      this.allowedDirs.push(this.workingDir);
+    const newDir = resolve(dir);
+
+    // Validate that new working directory is within allowed directories
+    const isAllowed = this.allowedDirs.some(allowedDir => {
+      const rel = relative(allowedDir, newDir);
+      return !rel.startsWith('..') && !resolve(allowedDir, rel).startsWith('..');
+    });
+
+    if (!isAllowed) {
+      throw new Error(
+        `Cannot set working directory to ${dir}: outside allowed directories. ` +
+        `Allowed: ${this.allowedDirs.join(', ')}`,
+      );
     }
+
+    this.workingDir = newDir;
     console.error(`Working directory changed to: ${this.workingDir}`);
   }
 
   /**
    * Resolve a path (absolute or relative to working directory)
+   * Canonicalizes the path to resolve symlinks and validates against allowed directories
    */
-  resolvePath(path: string): string {
+  async resolvePath(path: string): Promise<string> {
     if (!path) {
       return this.workingDir;
     }
 
     const resolved = resolve(this.workingDir, path);
 
-    // Security check: ensure path is within allowed directories
+    // Canonicalize the path to resolve symlinks
+    let canonical: string;
+    try {
+      canonical = await realpath(resolved);
+    } catch (error) {
+      // If file doesn't exist yet (e.g., output file), use resolved path
+      // but still validate the parent directory exists and is allowed
+      const parentDir = join(resolved, '..');
+      try {
+        canonical = await realpath(parentDir);
+        canonical = join(canonical, basename(resolved));
+      } catch {
+        throw new Error(`Path does not exist and parent directory is inaccessible: ${path}`);
+      }
+    }
+
+    // Security check: ensure canonical path is within allowed directories
     const isAllowed = this.allowedDirs.some(allowedDir => {
-      const rel = relative(allowedDir, resolved);
-      return !rel.startsWith('..') && !resolve(allowedDir, rel).startsWith('..');
+      const rel = relative(allowedDir, canonical);
+      // Path is allowed if it doesn't start with '..' (not a parent escape)
+      return rel && !rel.startsWith('..') && !rel.startsWith('/');
     });
 
     if (!isAllowed) {
@@ -102,7 +133,7 @@ export class FilesystemResourceProvider {
       );
     }
 
-    return resolved;
+    return canonical;
   }
 
   /**
@@ -112,7 +143,7 @@ export class FilesystemResourceProvider {
     directory?: string,
     recursive: boolean = false,
   ): Promise<{ resources: McpResource[] }> {
-    const dir = this.resolvePath(directory || '.');
+    const dir = await this.resolvePath(directory || '.');
     const resources: McpResource[] = [];
 
     try {
@@ -122,7 +153,7 @@ export class FilesystemResourceProvider {
 
       return { resources };
     } catch (error) {
-      console.error(`Error listing files in ${dir}:`, error);
+      console.error(`Error listing files in ${directory || '.'}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
   }
@@ -149,7 +180,7 @@ export class FilesystemResourceProvider {
           const ext = extname(entry.name).toLowerCase();
           if (this.allowedExtensions.has(ext)) {
             const relativePath = relative(this.workingDir, fullPath);
-            const uri = `file:///${fullPath.replace(/\\/g, '/')}`;
+            const uri = this.pathToFileUri(fullPath);
 
             resources.push({
               uri,
@@ -171,9 +202,9 @@ export class FilesystemResourceProvider {
    */
   async getFileContent(uri: string): Promise<McpResourceContent | null> {
     try {
-      // Parse file:/// URI
-      const filePath = uri.replace(/^file:\/\/\//, '');
-      const resolved = this.resolvePath(filePath);
+      // Parse file:/// URI and decode URL encoding
+      const filePath = decodeURIComponent(uri.replace(/^file:\/\/\//, ''));
+      const resolved = await this.resolvePath(filePath);
 
       // Get file stats
       const stats = await stat(resolved);
@@ -189,11 +220,12 @@ export class FilesystemResourceProvider {
       let preview = '';
       if (stats.size <= this.maxPreviewSize) {
         const content = await readFile(resolved, 'utf-8');
-        const lines = content.split('\n').slice(0, this.previewLines);
+        const allLines = content.split('\n');
+        const lines = allLines.slice(0, this.previewLines);
         preview = lines.join('\n');
 
-        if (content.split('\n').length > this.previewLines) {
-          preview += `\n... (${content.split('\n').length - this.previewLines} more lines)`;
+        if (allLines.length > this.previewLines) {
+          preview += `\n... (${allLines.length - this.previewLines} more lines)`;
         }
       } else {
         preview = `File too large for preview (${this.formatBytes(stats.size)})`;
@@ -232,6 +264,25 @@ export class FilesystemResourceProvider {
       console.error(`Error reading file ${uri}:`, error);
       return null;
     }
+  }
+
+  /**
+   * Convert a filesystem path to a file:/// URI
+   * Handles both Windows and Unix paths correctly
+   */
+  private pathToFileUri(filePath: string): string {
+    // Normalize path separators to forward slashes
+    let normalized = filePath.replace(/\\/g, '/');
+
+    // On Windows, convert C:/path to /C:/path
+    if (process.platform === 'win32' && /^[a-zA-Z]:/.test(normalized)) {
+      normalized = '/' + normalized;
+    }
+
+    // URL encode special characters
+    const encoded = encodeURI(normalized);
+
+    return `file://${encoded}`;
   }
 
   /**

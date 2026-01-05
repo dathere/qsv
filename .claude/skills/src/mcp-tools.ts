@@ -198,7 +198,7 @@ export async function handleToolCall(
 
               await new Promise<void>((resolve, reject) => {
                 const proc = spawn(qsvBin, conversionArgs, {
-                  stdio: ['ignore', 'pipe', 'pipe']
+                  stdio: ['ignore', 'ignore', 'pipe']
                 });
 
                 let stderr = '';
@@ -231,7 +231,7 @@ export async function handleToolCall(
 
                   await new Promise<void>((resolve) => {
                     const indexProc = spawn(qsvBin, ['index', tempCsv], {
-                      stdio: ['ignore', 'pipe', 'pipe']
+                      stdio: ['ignore', 'ignore', 'pipe']
                     });
 
                     let indexStderr = '';
@@ -305,7 +305,7 @@ export async function handleToolCall(
 
               await new Promise<void>((resolve) => {
                 const proc = spawn(qsvBin, indexArgs, {
-                  stdio: ['ignore', 'pipe', 'pipe']
+                  stdio: ['ignore', 'ignore', 'pipe']
                 });
 
                 let stderr = '';

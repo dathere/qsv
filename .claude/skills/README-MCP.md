@@ -86,8 +86,12 @@ This script will:
    - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
    - Linux: `~/.config/Claude/claude_desktop_config.json`
 
-> NOTE: You can further customize qsv's behavior by taking advantage of the "env" section
+> **NOTE**: You can further customize qsv's behavior by taking advantage of the "env" section
 > in "mcpServers" to add more QSV environment variables.
+
+> **SECURITY**: The `QSV_BIN_PATH` environment variable should only point to a trusted qsv binary.
+> The MCP server executes this binary with user-provided file paths, so ensure it points to the
+> official qsv installation and is not writable by untrusted users.
 
 3. **Restart Claude Desktop**
 
@@ -333,6 +337,7 @@ Test with Claude Desktop:
 - **No Network Access**: MCP server does not make network requests
 - **User Control**: Claude Desktop prompts before executing tools
 - **Sandboxing**: Consider running in restricted environment for untrusted data
+- **Binary Trust**: The `QSV_BIN_PATH` environment variable should only point to a trusted qsv binary from the official installation. Ensure the binary path is not writable by untrusted users.
 
 ## Future Enhancements
 

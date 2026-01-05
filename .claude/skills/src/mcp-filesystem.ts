@@ -38,6 +38,10 @@ export interface FilesystemConfig {
 }
 
 export class FilesystemResourceProvider {
+  // Static format detection sets (performance optimization)
+  private static readonly EXCEL_FORMATS = new Set(['.xls', '.xlsx', '.xlsm', '.xlsb', '.ods']);
+  private static readonly JSONL_FORMATS = new Set(['.jsonl', '.ndjson']);
+
   private workingDir: string;
   private allowedDirs: string[];
   private allowedExtensions: Set<string>;
@@ -200,10 +204,8 @@ export class FilesystemResourceProvider {
     const ext = this.getFileExtension(basename(filePath));
     if (!ext) return false;
 
-    const excelFormats = new Set(['.xls', '.xlsx', '.xlsm', '.xlsb', '.ods']);
-    const jsonlFormats = new Set(['.jsonl', '.ndjson']);
-
-    return excelFormats.has(ext) || jsonlFormats.has(ext);
+    return FilesystemResourceProvider.EXCEL_FORMATS.has(ext) ||
+           FilesystemResourceProvider.JSONL_FORMATS.has(ext);
   }
 
   /**
@@ -213,11 +215,8 @@ export class FilesystemResourceProvider {
     const ext = this.getFileExtension(basename(filePath));
     if (!ext) return null;
 
-    const excelFormats = new Set(['.xls', '.xlsx', '.xlsm', '.xlsb', '.ods']);
-    const jsonlFormats = new Set(['.jsonl', '.ndjson']);
-
-    if (excelFormats.has(ext)) return 'excel';
-    if (jsonlFormats.has(ext)) return 'jsonl';
+    if (FilesystemResourceProvider.EXCEL_FORMATS.has(ext)) return 'excel';
+    if (FilesystemResourceProvider.JSONL_FORMATS.has(ext)) return 'jsonl';
 
     return null;
   }

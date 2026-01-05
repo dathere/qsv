@@ -25,11 +25,13 @@ These formats are automatically converted to CSV before processing:
 When you select an Excel or JSONL file, the MCP server automatically:
 1. Detects the file format
 2. Runs the appropriate conversion command (`qsv excel` or `qsv jsonl`)
-3. Creates a temporary `.converted.csv` file
+3. Creates a `.converted.csv` file (e.g., `data.xlsx.converted.csv`)
 4. Uses the CSV for processing
 5. Returns results normally
 
 **No extra steps required** - just use the file as you would a CSV!
+
+**Note**: Converted `.converted.csv` files remain on disk and are not automatically deleted. You can manually remove them when no longer needed.
 
 ## Quick Start
 

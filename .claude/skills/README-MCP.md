@@ -7,9 +7,24 @@ Model Context Protocol (MCP) server that exposes qsv's 66 CSV data-wrangling com
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
 - **22 MCP Tools**: 20 common commands as individual tools + 1 generic tool + 1 pipeline tool
-- **Local File Access**: Works directly with your local CSV files via filesystem tools
+- **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
 - **Pipeline Support**: Chain multiple operations together seamlessly
+
+## Supported File Formats
+
+The MCP server works with all tabular data formats supported by qsv:
+
+**Native formats** (direct processing):
+- CSV (`.csv`), TSV (`.tsv`, `.tab`), SSV (`.ssv`)
+- Snappy-compressed (`.csv.sz`, `.tsv.sz`, `.tab.sz`, `.ssv.sz`)
+
+**Auto-converted formats** (transparent conversion):
+- **Excel**: `.xls`, `.xlsx`, `.xlsm`, `.xlsb` → converted via `qsv excel`
+- **OpenDocument**: `.ods` → converted via `qsv excel`
+- **JSONL/NDJSON**: `.jsonl`, `.ndjson` → converted via `qsv jsonl`
+
+Excel and JSONL files are automatically converted to CSV before processing - no extra steps needed!
 
 ## Installation
 
@@ -70,6 +85,9 @@ This script will:
    **Other platforms:**
    - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
    - Linux: `~/.config/Claude/claude_desktop_config.json`
+
+> NOTE: You can further customize qsv's behavior by taking advantage of the "env" section
+> in "mcpServers" to add more QSV environment variables.
 
 3. **Restart Claude Desktop**
 

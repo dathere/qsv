@@ -1,6 +1,35 @@
 # Using QSV MCP Server with Local Files
 
-The QSV MCP Server now supports **direct access to local CSV files** without requiring uploads to Claude Desktop. This guide shows you how to configure and use this feature.
+The QSV MCP Server supports **direct access to local tabular data files** WITHOUT requiring uploads to Claude servers - making for increased security and reduced token usage. This includes CSV, TSV, Excel, JSONL, and more formats.
+
+## Supported File Formats
+
+The MCP server recognizes and processes all tabular formats supported by qsv:
+
+### Native Formats (Direct Processing)
+- **CSV** (`.csv`) - Comma-separated values
+- **TSV** (`.tsv`, `.tab`) - Tab-separated values
+- **SSV** (`.ssv`) - Semicolon-separated values
+- **Snappy-compressed** (`.csv.sz`, `.tsv.sz`, `.tab.sz`, `.ssv.sz`) - Compressed formats
+
+Uncompressed CSV/TSV/TAB/SSV files larger than 10 MB are automatically indexed for increased performance.
+
+### Formats Requiring Automatic Conversion
+
+These formats are automatically converted to CSV before processing:
+
+- **Excel files** (`.xls`, `.xlsx`, `.xlsm`, `.xlsb`) - Converted via `qsv excel`
+- **OpenDocument Spreadsheet** (`.ods`) - Converted via `qsv excel`
+- **JSONL/NDJSON** (`.jsonl`, `.ndjson`) - Converted via `qsv jsonl`
+
+When you select an Excel or JSONL file, the MCP server automatically:
+1. Detects the file format
+2. Runs the appropriate conversion command (`qsv excel` or `qsv jsonl`)
+3. Creates a temporary `.converted.csv` file
+4. Uses the CSV for processing
+5. Returns results normally
+
+**No extra steps required** - just use the file as you would a CSV!
 
 ## Quick Start
 
@@ -54,24 +83,27 @@ After updating the configuration, restart Claude Desktop for the changes to take
 
 ## Usage Examples
 
-### Browse Available CSV Files
+### Browse Available Files
 
 Simply ask Claude to list files in your working directory:
 
 ```
-What CSV files are available in my Downloads folder?
+What tabular data files are available in my Downloads folder?
 ```
 
-Claude will use the `qsv_list_files` tool to show you all CSV files:
+Claude will use the `qsv_list_files` tool to show you all supported files:
 
 ```
-Found 3 CSV files:
+Found 5 tabular data files:
 
-- allegheny_county_property_sale_transactions.csv (CSV file: allegheny_county_property_sale_transactions.csv)
-- sales_data.csv (CSV file: sales_data.csv)
-- customers.csv (CSV file: customers.csv)
+- allegheny_county_property_sale_transactions.csv (Tabular data file: allegheny_county_property_sale_transactions.csv)
+- sales_data.xlsx (Tabular data file: sales_data.xlsx)
+- customers.tsv (Tabular data file: customers.tsv)
+- events.jsonl (Tabular data file: events.jsonl)
+- products.ods (Tabular data file: products.ods)
 
 Use these file paths in qsv commands via the input_file parameter.
+Excel and JSONL files will be automatically converted.
 ```
 
 ### Work with Files Using Relative Paths

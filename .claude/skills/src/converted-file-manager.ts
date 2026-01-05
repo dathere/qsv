@@ -637,6 +637,7 @@ export class ConvertedFileManager {
       // Ensure secure permissions on final file
       await this.setSecurePermissions(this.cacheFilePath);
     } catch (error) {
+      this.metrics.errors.cacheSaveErrors++;
       console.error('[Converted File Manager] Failed to save cache:', error);
     }
   }

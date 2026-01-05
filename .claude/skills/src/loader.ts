@@ -15,7 +15,8 @@ export class SkillLoader {
   private skillsDir: string;
 
   constructor(skillsDir?: string) {
-    this.skillsDir = skillsDir || join(__dirname, '../qsv');
+    // When compiled, __dirname is dist/src/, so go up 2 levels to project root
+    this.skillsDir = skillsDir || join(__dirname, '../../qsv');
   }
 
   /**

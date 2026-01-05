@@ -9,6 +9,7 @@ import { readdir, stat, readFile, realpath } from 'fs/promises';
 import { join, resolve, relative, basename, extname } from 'path';
 import type { McpResource, McpResourceContent, FileInfo } from './types.js';
 import { formatBytes } from './utils.js';
+import { config } from './config.js';
 
 export interface FilesystemConfig {
   /**
@@ -170,11 +171,22 @@ export class FilesystemResourceProvider {
     directory?: string,
     recursive: boolean = false,
   ): Promise<{ resources: McpResource[] }> {
-    const dir = await this.resolvePath(directory || '.');
+    // If directory is undefined or empty, use working directory directly
+    const dir = directory ? await this.resolvePath(directory) : this.workingDir;
     const resources: McpResource[] = [];
 
     try {
       await this.scanDirectory(dir, resources, recursive);
+
+      // Enforce file listing limit
+      if (resources.length > config.maxFilesPerListing) {
+        const limited = resources.slice(0, config.maxFilesPerListing);
+        console.error(
+          `Found ${resources.length} CSV files in ${dir}, ` +
+          `but limit is ${config.maxFilesPerListing}. Returning first ${config.maxFilesPerListing} files.`
+        );
+        return { resources: limited };
+      }
 
       console.error(`Found ${resources.length} CSV files in ${dir}`);
 

@@ -10,16 +10,12 @@ import { ConvertedFileManager } from './converted-file-manager.js';
 import type { QsvSkill, Argument, Option, McpToolDefinition, McpToolProperty, FilesystemProviderExtended } from './types.js';
 import type { SkillExecutor } from './executor.js';
 import type { SkillLoader } from './loader.js';
+import { config } from './config.js';
 
 /**
  * Auto-indexing threshold in MB
  */
 const AUTO_INDEX_SIZE_MB = 10;
-
-/**
- * Default timeout for conversion and indexing operations (5 minutes)
- */
-const DEFAULT_OPERATION_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
  * Track active child processes for graceful shutdown
@@ -35,7 +31,7 @@ let isShuttingDown = false;
  * Get QSV binary path (centralized)
  */
 function getQsvBinaryPath(): string {
-  return process.env.QSV_MCP_BIN_PATH || 'qsv';
+  return config.qsvBinPath;
 }
 
 /**
@@ -44,7 +40,7 @@ function getQsvBinaryPath(): string {
 async function runQsvWithTimeout(
   qsvBin: string,
   args: string[],
-  timeoutMs: number = DEFAULT_OPERATION_TIMEOUT_MS,
+  timeoutMs: number = config.operationTimeoutMs,
 ): Promise<void> {
   // Reject new operations during shutdown
   if (isShuttingDown) {
@@ -299,6 +295,17 @@ export async function handleToolCall(
   loader: SkillLoader,
   filesystemProvider?: { resolvePath: (path: string) => Promise<string> },
 ) {
+  // Check concurrent operation limit
+  if (activeProcesses.size >= config.maxConcurrentOperations) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `Error: Maximum concurrent operations limit reached (${config.maxConcurrentOperations}). Please wait for current operations to complete.`,
+      }],
+      isError: true,
+    };
+  }
+
   try {
     // Extract command name from tool name (qsv_select -> select)
     const commandName = toolName.replace('qsv_', '');

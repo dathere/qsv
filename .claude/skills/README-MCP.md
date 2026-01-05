@@ -78,7 +78,11 @@ This script will:
            "QSV_MCP_BIN_PATH": "/usr/local/bin/qsv",
            "QSV_MCP_WORKING_DIR": "/Users/your-username/Downloads",
            "QSV_MCP_ALLOWED_DIRS": "/Users/your-username/Downloads:/Users/your-username/Documents",
-           "QSV_MCP_CONVERTED_LIFO_SIZE_GB": "1"
+           "QSV_MCP_CONVERTED_LIFO_SIZE_GB": "1",
+           "QSV_MCP_OPERATION_TIMEOUT_MS": "120000",
+           "QSV_MCP_MAX_FILES_PER_LISTING": "1000",
+           "QSV_MCP_MAX_PIPELINE_STEPS": "50",
+           "QSV_MCP_MAX_CONCURRENT_OPERATIONS": "10"
          }
        }
      }
@@ -95,6 +99,21 @@ This script will:
 > **SECURITY**: The `QSV_MCP_BIN_PATH` environment variable should only point to a trusted qsv binary.
 > The MCP server executes this binary with user-provided file paths, so ensure it points to the
 > official qsv installation and is not writable by untrusted users.
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QSV_MCP_BIN_PATH` | `qsv` | Path to qsv binary |
+| `QSV_MCP_WORKING_DIR` | Current directory | Working directory for relative paths |
+| `QSV_MCP_ALLOWED_DIRS` | None | Colon-separated (semicolon on Windows) list of allowed directories |
+| `QSV_MCP_CONVERTED_LIFO_SIZE_GB` | `1` | Maximum size for converted file cache (0.1-100 GB) |
+| `QSV_MCP_OPERATION_TIMEOUT_MS` | `120000` | Operation timeout in milliseconds (1s-30min) |
+| `QSV_MCP_MAX_FILES_PER_LISTING` | `1000` | Maximum files to return in a single listing (1-100k) |
+| `QSV_MCP_MAX_PIPELINE_STEPS` | `50` | Maximum steps in a pipeline (1-1000) |
+| `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | `10` | Maximum concurrent operations (1-100) |
+
+**Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 
 3. **Restart Claude Desktop**
 

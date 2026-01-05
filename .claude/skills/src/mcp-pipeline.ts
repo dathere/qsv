@@ -8,6 +8,7 @@ import type { McpPipelineStep, McpToolDefinition, McpToolResult } from './types.
 import type { SkillExecutor } from './executor.js';
 import type { SkillLoader } from './loader.js';
 import { QsvPipeline } from './pipeline.js';
+import { config } from './config.js';
 
 /**
  * Create the qsv_pipeline tool definition
@@ -98,6 +99,17 @@ export async function executePipeline(
         content: [{
           type: 'text' as const,
           text: 'Error: steps parameter is required and must be a non-empty array',
+        }],
+        isError: true,
+      };
+    }
+
+    // Enforce pipeline step limit
+    if (steps.length > config.maxPipelineSteps) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `Error: Pipeline exceeds maximum step limit (${config.maxPipelineSteps}). Requested ${steps.length} steps.`,
         }],
         isError: true,
       };

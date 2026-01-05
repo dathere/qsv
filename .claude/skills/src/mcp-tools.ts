@@ -173,11 +173,16 @@ export async function handleToolCall(
     // Resolve file paths using filesystem provider if available
     if (filesystemProvider) {
       try {
+        const originalInputFile = inputFile;
         inputFile = await filesystemProvider.resolvePath(inputFile);
+        console.error(`[MCP Tools] Resolved input file: ${originalInputFile} -> ${inputFile}`);
         if (outputFile) {
+          const originalOutputFile = outputFile;
           outputFile = await filesystemProvider.resolvePath(outputFile);
+          console.error(`[MCP Tools] Resolved output file: ${originalOutputFile} -> ${outputFile}`);
         }
       } catch (error) {
+        console.error(`[MCP Tools] Error resolving file path:`, error);
         return {
           content: [{
             type: 'text' as const,
@@ -195,10 +200,13 @@ export async function handleToolCall(
     // Add input file as 'input' argument if the skill expects it
     if (skill.command.args.some(a => a.name === 'input')) {
       args.input = inputFile;
+      console.error(`[MCP Tools] Added input arg: ${inputFile}`);
     }
 
     for (const [key, value] of Object.entries(params)) {
-      if (key === 'input_file' || key === 'output_file') {
+      // Skip input_file and output_file (already handled)
+      // Also skip 'input' if we already set it from input_file
+      if (key === 'input_file' || key === 'output_file' || (key === 'input' && args.input)) {
         continue;
       }
 
@@ -217,6 +225,9 @@ export async function handleToolCall(
     if (outputFile) {
       options['--output'] = outputFile;
     }
+
+    console.error(`[MCP Tools] Executing skill with args:`, JSON.stringify(args));
+    console.error(`[MCP Tools] Executing skill with options:`, JSON.stringify(options));
 
     // Execute the skill
     const result = await executor.execute(skill, {

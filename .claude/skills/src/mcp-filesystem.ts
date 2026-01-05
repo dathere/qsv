@@ -51,7 +51,18 @@ export class FilesystemResourceProvider {
       ...(config.allowedDirectories || []).map(d => resolve(d)),
     ];
     this.allowedExtensions = new Set(
-      config.allowedExtensions || ['.csv', '.tsv', '.tab', '.ssv', '.txt', '.sz'],
+      config.allowedExtensions || [
+        // Native CSV formats
+        '.csv', '.tsv', '.tab', '.ssv',
+        // Snappy-compressed formats
+        '.csv.sz', '.tsv.sz', '.tab.sz', '.ssv.sz',
+        // Excel formats (require conversion via qsv excel)
+        '.xls', '.xlsx', '.xlsm', '.xlsb',
+        // OpenDocument Spreadsheet (require conversion via qsv excel)
+        '.ods',
+        // JSONL/NDJSON (require conversion via qsv jsonl)
+        '.jsonl', '.ndjson',
+      ],
     );
     this.maxPreviewSize = config.maxPreviewSize || 1024 * 1024; // 1MB
     this.previewLines = config.previewLines || 20;
@@ -166,6 +177,52 @@ export class FilesystemResourceProvider {
   }
 
   /**
+   * Get file extension, handling double extensions like .csv.sz
+   */
+  private getFileExtension(filename: string): string | null {
+    const lower = filename.toLowerCase();
+
+    // Check for double extensions first (e.g., .csv.sz)
+    if (lower.endsWith('.csv.sz')) return '.csv.sz';
+    if (lower.endsWith('.tsv.sz')) return '.tsv.sz';
+    if (lower.endsWith('.tab.sz')) return '.tab.sz';
+    if (lower.endsWith('.ssv.sz')) return '.ssv.sz';
+
+    // Check for single extensions
+    const ext = extname(filename).toLowerCase();
+    return ext || null;
+  }
+
+  /**
+   * Check if a file format requires conversion to CSV
+   */
+  needsConversion(filePath: string): boolean {
+    const ext = this.getFileExtension(basename(filePath));
+    if (!ext) return false;
+
+    const excelFormats = new Set(['.xls', '.xlsx', '.xlsm', '.xlsb', '.ods']);
+    const jsonlFormats = new Set(['.jsonl', '.ndjson']);
+
+    return excelFormats.has(ext) || jsonlFormats.has(ext);
+  }
+
+  /**
+   * Get the conversion command for a file format
+   */
+  getConversionCommand(filePath: string): string | null {
+    const ext = this.getFileExtension(basename(filePath));
+    if (!ext) return null;
+
+    const excelFormats = new Set(['.xls', '.xlsx', '.xlsm', '.xlsb', '.ods']);
+    const jsonlFormats = new Set(['.jsonl', '.ndjson']);
+
+    if (excelFormats.has(ext)) return 'excel';
+    if (jsonlFormats.has(ext)) return 'jsonl';
+
+    return null;
+  }
+
+  /**
    * Recursively scan directory for CSV files
    */
   private async scanDirectory(
@@ -192,8 +249,8 @@ export class FilesystemResourceProvider {
             }
           }
         } else if (entry.isFile()) {
-          const ext = extname(entry.name).toLowerCase();
-          if (this.allowedExtensions.has(ext)) {
+          const ext = this.getFileExtension(entry.name);
+          if (ext && this.allowedExtensions.has(ext)) {
             const relativePath = relative(this.workingDir, fullPath);
             const uri = this.pathToFileUri(fullPath);
 
@@ -234,8 +291,9 @@ export class FilesystemResourceProvider {
         throw new Error(`Not a file: ${filePath}`);
       }
 
-      const ext = extname(resolved).toLowerCase();
+      const ext = this.getFileExtension(basename(resolved)) || extname(resolved).toLowerCase();
       const mimeType = this.getMimeType(ext);
+      const conversionCmd = this.getConversionCommand(resolved);
 
       // Generate preview if file is small enough
       let preview = '';
@@ -255,7 +313,7 @@ export class FilesystemResourceProvider {
       const relativePath = relative(this.workingDir, resolved);
       const absolutePath = resolved;
 
-      const info = {
+      const info: any = {
         file: {
           name: basename(resolved),
           path: relativePath,
@@ -275,6 +333,15 @@ export class FilesystemResourceProvider {
           ],
         },
       };
+
+      // Add conversion note if needed
+      if (conversionCmd) {
+        info.conversion = {
+          required: true,
+          command: conversionCmd,
+          note: `This ${ext} file will be automatically converted to CSV using qsv ${conversionCmd} before processing`,
+        };
+      }
 
       return {
         uri,
@@ -319,17 +386,43 @@ export class FilesystemResourceProvider {
    */
   private getMimeType(ext: string): string {
     switch (ext.toLowerCase()) {
+      // Native CSV formats
       case '.csv':
         return 'text/csv';
       case '.tsv':
       case '.tab':
         return 'text/tab-separated-values';
-      case '.txt':
-        return 'text/plain';
-      case '.sz':
+      case '.ssv':
+        return 'text/csv'; // Semicolon-separated
+
+      // Snappy-compressed formats
+      case '.csv.sz':
+      case '.tsv.sz':
+      case '.tab.sz':
+      case '.ssv.sz':
         return 'application/x-snappy-framed';
+
+      // Excel formats
+      case '.xls':
+        return 'application/vnd.ms-excel';
+      case '.xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case '.xlsm':
+        return 'application/vnd.ms-excel.sheet.macroEnabled.12';
+      case '.xlsb':
+        return 'application/vnd.ms-excel.sheet.binary.macroEnabled.12';
+
+      // OpenDocument Spreadsheet
+      case '.ods':
+        return 'application/vnd.oasis.opendocument.spreadsheet';
+
+      // JSONL/NDJSON
+      case '.jsonl':
+      case '.ndjson':
+        return 'application/x-ndjson';
+
       default:
-        return 'text/plain';
+        return 'application/octet-stream';
     }
   }
 

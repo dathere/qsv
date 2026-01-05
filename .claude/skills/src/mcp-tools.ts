@@ -2,6 +2,7 @@
  * MCP Tool Definitions and Handlers for QSV Commands
  */
 
+import { spawn } from 'child_process';
 import type { QsvSkill, Argument, Option, McpToolDefinition, McpToolProperty } from './types.js';
 import type { SkillExecutor } from './executor.js';
 import type { SkillLoader } from './loader.js';
@@ -176,6 +177,168 @@ export async function handleToolCall(
         const originalInputFile = inputFile;
         inputFile = await filesystemProvider.resolvePath(inputFile);
         console.error(`[MCP Tools] Resolved input file: ${originalInputFile} -> ${inputFile}`);
+
+        // Check if file needs conversion (Excel or JSONL to CSV)
+        if ('needsConversion' in filesystemProvider && 'getConversionCommand' in filesystemProvider) {
+          const provider = filesystemProvider as any;
+          if (provider.needsConversion(inputFile)) {
+            const conversionCmd = provider.getConversionCommand(inputFile);
+            console.error(`[MCP Tools] File requires conversion using qsv ${conversionCmd}`);
+
+            // Convert file using qsv excel or qsv jsonl
+            try {
+              // Determine which qsv binary to use (from env or default)
+              const qsvBin = process.env.QSV_BIN_PATH || 'qsv';
+
+              // Run conversion command: qsv excel/jsonl <input> --output <temp.csv>
+              const tempCsv = inputFile + '.converted.csv';
+              const conversionArgs = [conversionCmd, inputFile, '--output', tempCsv];
+
+              console.error(`[MCP Tools] Running conversion: ${qsvBin} ${conversionArgs.join(' ')}`);
+
+              await new Promise<void>((resolve, reject) => {
+                const proc = spawn(qsvBin, conversionArgs, {
+                  stdio: ['ignore', 'pipe', 'pipe']
+                });
+
+                let stderr = '';
+                proc.stderr?.on('data', (chunk) => {
+                  stderr += chunk.toString();
+                });
+
+                proc.on('close', (code) => {
+                  if (code === 0) {
+                    resolve();
+                  } else {
+                    reject(new Error(`Conversion failed with exit code ${code}: ${stderr}`));
+                  }
+                });
+                proc.on('error', reject);
+              });
+
+              // Use the converted CSV as input
+              inputFile = tempCsv;
+              console.error(`[MCP Tools] Conversion successful: ${tempCsv}`);
+
+              // Auto-index the converted CSV if it's >10MB
+              try {
+                const { stat } = await import('fs/promises');
+                const stats = await stat(tempCsv);
+                const fileSizeMB = stats.size / (1024 * 1024);
+
+                if (fileSizeMB > 10) {
+                  console.error(`[MCP Tools] Converted file is ${fileSizeMB.toFixed(1)}MB, creating index...`);
+
+                  await new Promise<void>((resolve) => {
+                    const indexProc = spawn(qsvBin, ['index', tempCsv], {
+                      stdio: ['ignore', 'pipe', 'pipe']
+                    });
+
+                    let indexStderr = '';
+                    indexProc.stderr?.on('data', (chunk) => {
+                      indexStderr += chunk.toString();
+                    });
+
+                    indexProc.on('close', (code) => {
+                      if (code === 0) {
+                        console.error(`[MCP Tools] Index created for converted file`);
+                      } else {
+                        console.error(`[MCP Tools] Index creation failed (continuing anyway): ${indexStderr}`);
+                      }
+                      resolve();
+                    });
+                    indexProc.on('error', (err) => {
+                      console.error(`[MCP Tools] Index creation error (continuing anyway):`, err);
+                      resolve();
+                    });
+                  });
+                }
+              } catch (indexError) {
+                console.error(`[MCP Tools] Auto-indexing converted file error (continuing anyway):`, indexError);
+              }
+            } catch (conversionError) {
+              console.error(`[MCP Tools] Conversion error:`, conversionError);
+              return {
+                content: [{
+                  type: 'text' as const,
+                  text: `Error converting ${originalInputFile}: ${conversionError instanceof Error ? conversionError.message : String(conversionError)}`,
+                }],
+                isError: true,
+              };
+            }
+          }
+        }
+
+        // Auto-index native CSV files if they're large (>10MB) and not indexed
+        // Note: Snappy-compressed files (.sz) cannot be indexed
+        try {
+          const { stat, access } = await import('fs/promises');
+          const { constants } = await import('fs');
+          const { basename } = await import('path');
+
+          // Check if this is an indexable CSV format (not snappy-compressed)
+          const filename = basename(inputFile).toLowerCase();
+          const isIndexable =
+            filename.endsWith('.csv') || filename.endsWith('.tsv') ||
+            filename.endsWith('.tab') || filename.endsWith('.ssv');
+
+          if (isIndexable) {
+            const stats = await stat(inputFile);
+            const fileSizeMB = stats.size / (1024 * 1024);
+            const indexPath = inputFile + '.idx';
+
+            // Check if index exists
+            let indexExists = false;
+            try {
+              await access(indexPath, constants.F_OK);
+              indexExists = true;
+            } catch {
+              indexExists = false;
+            }
+
+            // Create index if file is >10MB and not already indexed
+            if (fileSizeMB > 10 && !indexExists) {
+              console.error(`[MCP Tools] File is ${fileSizeMB.toFixed(1)}MB, creating index...`);
+
+              const qsvBin: string = process.env.QSV_BIN_PATH || 'qsv';
+              const indexArgs = ['index', inputFile];
+
+              await new Promise<void>((resolve) => {
+                const proc = spawn(qsvBin, indexArgs, {
+                  stdio: ['ignore', 'pipe', 'pipe']
+                });
+
+                let stderr = '';
+                proc.stderr?.on('data', (chunk) => {
+                  stderr += chunk.toString();
+                });
+
+                proc.on('close', (code) => {
+                  if (code === 0) {
+                    console.error(`[MCP Tools] Index created successfully: ${indexPath}`);
+                    resolve();
+                  } else {
+                    // Don't fail if indexing fails - just log and continue
+                    console.error(`[MCP Tools] Index creation failed (continuing anyway): ${stderr}`);
+                    resolve();
+                  }
+                });
+                proc.on('error', (err) => {
+                  console.error(`[MCP Tools] Index creation error (continuing anyway):`, err);
+                  resolve();
+                });
+              });
+            } else if (indexExists) {
+              console.error(`[MCP Tools] Index already exists: ${indexPath}`);
+            } else {
+              console.error(`[MCP Tools] File is ${fileSizeMB.toFixed(1)}MB, skipping auto-indexing`);
+            }
+          }
+        } catch (indexError) {
+          // Don't fail if indexing fails - just log and continue
+          console.error(`[MCP Tools] Auto-indexing error (continuing anyway):`, indexError);
+        }
+
         if (outputFile) {
           const originalOutputFile = outputFile;
           outputFile = await filesystemProvider.resolvePath(outputFile);

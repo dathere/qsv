@@ -39,7 +39,11 @@ export interface FilesystemConfig {
 
 export class FilesystemResourceProvider {
   // Static format detection sets (performance optimization)
-  private static readonly EXCEL_FORMATS = new Set(['.xls', '.xlsx', '.xlsm', '.xlsb', '.ods']);
+  private static readonly EXCEL_FORMATS = new Set([
+    '.xls', '.xlsx', '.xlsm', '.xlsb',
+    // Includes .ods as it is also handled via `qsv excel`
+    '.ods',
+  ]);
   private static readonly JSONL_FORMATS = new Set(['.jsonl', '.ndjson']);
 
   private workingDir: string;

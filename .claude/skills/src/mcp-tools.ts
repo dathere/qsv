@@ -374,16 +374,16 @@ export async function handleToolCall(
 
               // Check if we can reuse an existing converted file
               // Note: This looks for any .converted.*.csv file for this source
-              const { basename: getBasename, join: joinPath } = await import('path');
+              const { basename: getBasename, dirname: getDirname, join: joinPath } = await import('path');
               const { readdir } = await import('fs/promises');
 
               const baseName = getBasename(inputFile);
               const pattern = `${baseName}.converted.`;
               let validConverted: string | null = null;
 
-              // Search for existing converted files
+              // Search for existing converted files in the same directory as the input file
               try {
-                const dir = workingDir;
+                const dir = getDirname(inputFile);
                 const files = await readdir(dir);
 
                 for (const file of files) {
@@ -414,8 +414,11 @@ export async function handleToolCall(
 
                   await runQsvWithTimeout(qsvBin, conversionArgs);
 
+                  // Conversion succeeded - mark as complete immediately
+                  await convertedManager.registerConversionComplete(inputFile);
+
                   // Register the converted file and enforce LIFO size limit
-                  // This also marks conversion as complete
+                  // Note: This may fail to acquire lock, but conversion is already complete
                   await convertedManager.registerConvertedFile(inputFile, convertedPath);
 
                   // Use the converted CSV as input

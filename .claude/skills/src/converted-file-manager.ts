@@ -22,7 +22,7 @@ import { stat, unlink, readFile, writeFile, access, rename, readdir, open, realp
 import type { FileHandle } from 'fs/promises';
 import { constants } from 'fs';
 import type { Stats } from 'fs';
-import { dirname, basename, join } from 'path';
+import { dirname, basename, join, resolve } from 'path';
 import { randomUUID, createHash } from 'crypto';
 import { formatBytes } from './utils.js';
 
@@ -260,7 +260,7 @@ export class ConvertedFileManager {
 
   /**
    * Validate size limit configuration (Phase 1)
-   * Valid range: 0.1-1000 GB
+   * Valid range: 0.1-100 GB
    * Recommended range: 0.5-100 GB
    */
   private validateSizeLimit(sizeGB: number): number {
@@ -270,9 +270,9 @@ export class ConvertedFileManager {
       return ConvertedFileManager.DEFAULT_MAX_SIZE_GB;
     }
 
-    // Reject out of bounds (< 0.1 GB or > 1000 GB)
-    if (sizeGB < 0.1 || sizeGB > 1000) {
-      console.error(`[Converted File Manager] Size limit out of valid range: ${sizeGB} GB (must be 0.1-1000 GB), using default ${ConvertedFileManager.DEFAULT_MAX_SIZE_GB} GB`);
+    // Reject out of bounds (< 0.1 GB or > 100 GB)
+    if (sizeGB < 0.1 || sizeGB > 100) {
+      console.error(`[Converted File Manager] Size limit out of valid range: ${sizeGB} GB (must be 0.1-100 GB), using default ${ConvertedFileManager.DEFAULT_MAX_SIZE_GB} GB`);
       return ConvertedFileManager.DEFAULT_MAX_SIZE_GB;
     }
 
@@ -314,12 +314,23 @@ export class ConvertedFileManager {
       return canonical;
     } catch (error: any) {
       if (error.code === 'ENOENT') {
-        // File doesn't exist
+        // File doesn't exist - normalize it anyway to prevent directory traversal
         if (mustExist) {
           throw new Error(`File does not exist: ${filePath}`);
         }
-        // For files being created (e.g., output files), return original path
-        return filePath;
+
+        // Use resolve() to normalize path and remove .. sequences
+        // This prevents directory traversal attacks like ../../../../etc/passwd
+        const normalized = resolve(filePath);
+
+        // Additional validation: ensure normalized path doesn't escape working directory
+        // If working directory is set, verify the normalized path is within it
+        const workingDirResolved = resolve(this.workingDir);
+        if (!normalized.startsWith(workingDirResolved)) {
+          throw new Error(`Path escapes working directory: ${filePath} -> ${normalized}`);
+        }
+
+        return normalized;
       }
       throw error;
     }
@@ -495,8 +506,12 @@ export class ConvertedFileManager {
     }
 
     // Assign sequences to existing entries for stable sort
+    // Use createdAt timestamps as base to ensure monotonicity across migrations
+    // Sort entries by createdAt first to assign sequences in chronological order
+    const sortedEntries = [...cacheV0.entries].sort((a, b) => a.createdAt - b.createdAt);
+
     let sequence = 0;
-    const entriesWithSequence = cacheV0.entries.map(entry => ({
+    const entriesWithSequence = sortedEntries.map(entry => ({
       ...entry,
       sequence: sequence++,
     }));
@@ -576,8 +591,11 @@ export class ConvertedFileManager {
     }
 
     // Assign sequences to recovered entries
+    // Sort by createdAt first to ensure monotonicity
+    const sortedEntries = [...entries].sort((a, b) => a.createdAt - b.createdAt);
+
     let sequence = 0;
-    const entriesWithSequence = entries.map(entry => ({
+    const entriesWithSequence = sortedEntries.map(entry => ({
       ...entry,
       sequence: sequence++,
     }));
@@ -852,10 +870,8 @@ export class ConvertedFileManager {
 
         await this.saveCache(cache);
 
-        // Mark conversion as complete
-        await this.registerConversionComplete(sourcePath);
-
-        // Track successful conversion (Phase 4)
+        // Track successful conversion registration (Phase 4)
+        // Note: Conversion was already marked complete before calling this method
         this.metrics.conversions.successful++;
 
       } catch (error) {
@@ -897,23 +913,29 @@ export class ConvertedFileManager {
    */
   private async enforceSizeLimit(cache: ConvertedFileCacheV1): Promise<void> {
     // Hysteresis to prevent cleanup thrashing (Phase 3)
-    // Skip cleanup only if: under strict limit OR (within hysteresis band AND recently cleaned)
+    // Decision tree:
+    // 1. Size <= 100%: Don't clean (under limit)
+    // 2. Size 100-110% AND cleaned <1hr ago: Don't clean (hysteresis band, prevent thrashing)
+    // 3. Size 100-110% AND cleaned >=1hr ago: Clean (in band but stale, prevent indefinite growth)
+    // 4. Size > 110%: Always clean (exceeded tolerance, ignore time)
     const hysteresisThreshold = this.maxSizeBytes * 1.1; // 10% over limit
     const timeSinceLastCleanup = cache.lastCleanup ? Date.now() - cache.lastCleanup : Infinity;
     const oneHourMs = 60 * 60 * 1000;
 
-    // Under strict limit - no cleanup needed
+    // Case 1: Under strict limit - no cleanup needed
     if (cache.totalSize <= this.maxSizeBytes) {
       return;
     }
 
-    // Between 100-110% of limit AND cleaned recently - skip to prevent thrashing
-    // BUT if over 110%, always clean regardless of time since last cleanup
+    // Case 2: Within hysteresis band AND recently cleaned - skip to prevent thrashing
+    // Cases 3 & 4: Either exceeded hysteresis OR enough time passed - proceed with cleanup
     if (cache.totalSize <= hysteresisThreshold && timeSinceLastCleanup < oneHourMs) {
-      return;
+      return; // Hysteresis: Don't clean if in band and cleaned recently
     }
 
-    // Over limit and either: (1) exceeded hysteresis threshold, or (2) haven't cleaned in a while
+    // Reaching here means we should clean because:
+    // - Over 110% (case 4), OR
+    // - Between 100-110% but haven't cleaned in over an hour (case 3)
 
     // Stable sort by createdAt and sequence (oldest first) for LIFO deletion (Phase 3)
     cache.entries.sort((a, b) => {

@@ -57,9 +57,16 @@ export class SkillExecutor {
     // Add options/flags first
     if (params.options) {
       for (const [key, value] of Object.entries(params.options)) {
+        // Handle keys that may already include the -- prefix
+        const normalizedKey = key.startsWith('--') ? key.substring(2) : key.startsWith('-') ? key.substring(1) : key;
+
         // Find option definition
         const option = skill.command.options.find(o =>
-          o.flag === `--${key}` || o.short === `-${key}` || o.flag.replace('--', '') === key
+          o.flag === key ||
+          o.short === key ||
+          o.flag === `--${normalizedKey}` ||
+          o.short === `-${normalizedKey}` ||
+          o.flag.replace('--', '') === normalizedKey
         );
 
         if (!option) continue;
@@ -113,6 +120,8 @@ export class SkillExecutor {
 
       let stdout = '';
       let stderr = '';
+      let stdoutTruncated = false;
+      const MAX_STDOUT_SIZE = 50 * 1024 * 1024; // 50MB limit to prevent memory issues
 
       // Handle input
       if (params.stdin) {
@@ -122,9 +131,22 @@ export class SkillExecutor {
         proc.stdin.end();
       }
 
-      // Collect output
+      // Collect output with size limit
       proc.stdout.on('data', chunk => {
-        stdout += chunk.toString();
+        const chunkStr = chunk.toString();
+
+        // Check if adding this chunk would exceed the limit
+        if (stdout.length + chunkStr.length > MAX_STDOUT_SIZE) {
+          if (!stdoutTruncated) {
+            stdoutTruncated = true;
+            console.error(`[Executor] WARNING: stdout exceeded ${MAX_STDOUT_SIZE / 1024 / 1024}MB limit, truncating output. Consider using --output to write to a file instead.`);
+            stdout += '\n\n[OUTPUT TRUNCATED - Result too large for display. Use --output option to write to a file.]\n';
+          }
+          // Stop accumulating to prevent memory issues
+          return;
+        }
+
+        stdout += chunkStr;
       });
 
       proc.stderr.on('data', chunk => {
@@ -177,8 +199,15 @@ export class SkillExecutor {
     // Validate option types
     if (params.options) {
       for (const [key, value] of Object.entries(params.options)) {
+        // Handle keys that may already include the -- prefix
+        const normalizedKey = key.startsWith('--') ? key.substring(2) : key.startsWith('-') ? key.substring(1) : key;
+
         const option = skill.command.options.find(o =>
-          o.flag === `--${key}` || o.short === `-${key}` || o.flag.replace('--', '') === key
+          o.flag === key ||
+          o.short === key ||
+          o.flag === `--${normalizedKey}` ||
+          o.short === `-${normalizedKey}` ||
+          o.flag.replace('--', '') === normalizedKey
         );
 
         if (!option) {

@@ -347,7 +347,8 @@ export async function handleToolCall(
               const validConverted = await convertedManager.getValidConvertedFile(inputFile, convertedPath);
 
               if (validConverted) {
-                // Reuse existing converted file
+                // Reuse existing converted file and update timestamp
+                await convertedManager.touchConvertedFile(inputFile);
                 inputFile = validConverted;
               } else {
                 // Run conversion command: qsv excel/jsonl <input> --output <converted.csv>

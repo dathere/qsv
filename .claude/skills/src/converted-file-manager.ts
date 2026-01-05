@@ -5,8 +5,9 @@
  * Reuses existing converted files if source hasn't changed (timestamp comparison).
  */
 
-import { stat, unlink, readFile, writeFile, access } from 'fs/promises';
+import { stat, unlink, readFile, writeFile, access, rename, readdir } from 'fs/promises';
 import { constants } from 'fs';
+import { dirname, basename } from 'path';
 import { formatBytes } from './utils.js';
 
 interface ConvertedFileEntry {
@@ -51,11 +52,17 @@ export class ConvertedFileManager {
   }
 
   /**
-   * Save cache to disk
+   * Save cache to disk using atomic write (temp file + rename)
+   * to prevent corruption from concurrent access
    */
   private async saveCache(cache: ConvertedFileCache): Promise<void> {
     try {
-      await writeFile(this.cacheFilePath, JSON.stringify(cache, null, 2));
+      // Write to temporary file first
+      const tempPath = `${this.cacheFilePath}.tmp.${process.pid}.${Date.now()}`;
+      await writeFile(tempPath, JSON.stringify(cache, null, 2));
+
+      // Atomic rename to actual cache file
+      await rename(tempPath, this.cacheFilePath);
     } catch (error) {
       console.error('[Converted File Manager] Failed to save cache:', error);
     }
@@ -124,6 +131,25 @@ export class ConvertedFileManager {
       await this.saveCache(cache);
     } catch (error) {
       console.error('[Converted File Manager] Error registering converted file:', error);
+    }
+  }
+
+  /**
+   * Update the timestamp of a reused converted file to prevent premature deletion
+   */
+  async touchConvertedFile(sourcePath: string): Promise<void> {
+    try {
+      const cache = await this.loadCache();
+      const entry = cache.entries.find(e => e.sourcePath === sourcePath);
+
+      if (entry) {
+        // Update timestamp to current time
+        entry.createdAt = Date.now();
+        await this.saveCache(cache);
+        console.error(`[Converted File Manager] Updated timestamp for reused file: ${entry.convertedPath}`);
+      }
+    } catch (error) {
+      console.error('[Converted File Manager] Error updating timestamp:', error);
     }
   }
 
@@ -197,6 +223,32 @@ export class ConvertedFileManager {
         cache.entries = validEntries;
         cache.totalSize = validEntries.reduce((sum, e) => sum + e.size, 0);
         await this.saveCache(cache);
+      }
+
+      // Clean up stale temp files (older than 1 hour)
+      try {
+        const cacheDir = dirname(this.cacheFilePath);
+        const cacheFilename = basename(this.cacheFilePath);
+        const files = await readdir(cacheDir);
+        const staleThreshold = Date.now() - 60 * 60 * 1000; // 1 hour
+
+        for (const file of files) {
+          // Match temp files for this cache file: .qsv-mcp-converted-cache.json.tmp.*
+          if (file.startsWith(`${cacheFilename}.tmp.`)) {
+            const tempPath = `${cacheDir}/${file}`;
+            try {
+              const stats = await stat(tempPath);
+              if (stats.mtime.getTime() < staleThreshold) {
+                await unlink(tempPath);
+                console.error(`[Converted File Manager] Deleted stale temp file: ${file}`);
+              }
+            } catch {
+              // File might have been deleted by another process, ignore
+            }
+          }
+        }
+      } catch {
+        // Directory read failed, not critical
       }
     } catch (error) {
       console.error('[Converted File Manager] Error cleaning up orphaned entries:', error);

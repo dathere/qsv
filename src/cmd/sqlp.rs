@@ -384,11 +384,11 @@ impl OutputMode {
             let out_result = match self {
                 OutputMode::Csv => CsvWriter::new(&mut w)
                     .with_separator(delim)
-                    .with_datetime_format(args.flag_datetime_format)
-                    .with_date_format(args.flag_date_format)
-                    .with_time_format(args.flag_time_format)
+                    .with_datetime_format(args.flag_datetime_format.map(std::convert::Into::into))
+                    .with_date_format(args.flag_date_format.map(std::convert::Into::into))
+                    .with_time_format(args.flag_time_format.map(std::convert::Into::into))
                     .with_float_precision(float_precision)
-                    .with_null_value(args.flag_wnull_value)
+                    .with_null_value(args.flag_wnull_value.into())
                     .with_decimal_comma(args.flag_decimal_comma)
                     .include_bom(util::get_envvar_flag("QSV_OUTPUT_BOM"))
                     .finish(&mut df),

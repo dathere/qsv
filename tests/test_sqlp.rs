@@ -942,7 +942,7 @@ fn sqlp_boston311_explain() {
 
     let expected_end = r#"PROJECT 4/29 COLUMNS
 "    SELECTION: [(col(""case_status"")) == (""Closed"")]"
-    ESTIMATED ROWS: 100"#;
+    ESTIMATED ROWS: 181"#;
     assert!(got.ends_with(expected_end));
 }
 

@@ -140,7 +140,28 @@ class ConversionLock {
         pid: process.pid,
         startedAt: Date.now(),
       });
-      await this.lockFd.writeFile(lockData, 'utf-8');
+      try {
+        await this.lockFd.writeFile(lockData, 'utf-8');
+      } catch (writeError) {
+        // Cleanup on write failure: close fd and delete lock file
+        if (this.lockFd) {
+          try {
+            await this.lockFd.close();
+          } catch {
+            // ignore secondary close errors
+          } finally {
+            this.lockFd = null;
+          }
+        }
+        if (this.currentLockPath) {
+          try {
+            await unlink(this.currentLockPath);
+          } catch {
+            // ignore secondary unlink errors
+          }
+        }
+        throw writeError;
+      }
 
       console.error(`[ConversionLock] Acquired lock for: ${sourcePath}`);
       return true;

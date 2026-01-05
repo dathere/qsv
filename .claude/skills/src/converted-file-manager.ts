@@ -279,8 +279,6 @@ export class ConvertedFileManager {
     // Warn about unusual but valid values
     if (sizeGB < 0.5) {
       console.warn(`[Converted File Manager] Unusually small size limit: ${sizeGB} GB (recommended minimum: 0.5 GB)`);
-    } else if (sizeGB > 100) {
-      console.warn(`[Converted File Manager] Unusually large size limit: ${sizeGB} GB (recommended maximum: 100 GB)`);
     }
 
     return sizeGB;

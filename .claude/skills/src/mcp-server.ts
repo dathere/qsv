@@ -55,14 +55,14 @@ class QsvMcpServer {
     );
 
     this.loader = new SkillLoader();
-    this.executor = new SkillExecutor(process.env.QSV_BIN_PATH || 'qsv');
+    this.executor = new SkillExecutor(process.env.QSV_MCP_BIN_PATH || 'qsv');
 
     // Initialize filesystem provider with configurable directories
-    const workingDir = process.env.QSV_WORKING_DIR || process.cwd();
+    const workingDir = process.env.QSV_MCP_WORKING_DIR || process.cwd();
     // Use platform-appropriate delimiter: semicolon on Windows, colon on Unix
     const pathDelimiter = process.platform === 'win32' ? ';' : ':';
-    const allowedDirs = process.env.QSV_ALLOWED_DIRS
-      ? process.env.QSV_ALLOWED_DIRS.split(pathDelimiter)
+    const allowedDirs = process.env.QSV_MCP_ALLOWED_DIRS
+      ? process.env.QSV_MCP_ALLOWED_DIRS.split(pathDelimiter)
       : [];
 
     this.filesystemProvider = new FilesystemResourceProvider({

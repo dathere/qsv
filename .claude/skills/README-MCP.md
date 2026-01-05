@@ -75,7 +75,10 @@ This script will:
          "command": "node",
          "args": ["/absolute/path/to/qsv/.claude/skills/dist/mcp-server.js"],
          "env": {
-           "QSV_BIN_PATH": "/usr/local/bin/qsv"
+           "QSV_MCP_BIN_PATH": "/usr/local/bin/qsv",
+           "QSV_MCP_WORKING_DIR": "/Users/your-username/Downloads",
+           "QSV_MCP_ALLOWED_DIRS": "/Users/your-username/Downloads:/Users/your-username/Documents",
+           "QSV_MCP_CONVERTED_LIFO_SIZE_GB": "1"
          }
        }
      }
@@ -89,7 +92,7 @@ This script will:
 > **NOTE**: You can further customize qsv's behavior by taking advantage of the "env" section
 > in "mcpServers" to add more QSV environment variables.
 
-> **SECURITY**: The `QSV_BIN_PATH` environment variable should only point to a trusted qsv binary.
+> **SECURITY**: The `QSV_MCP_BIN_PATH` environment variable should only point to a trusted qsv binary.
 > The MCP server executes this binary with user-provided file paths, so ensure it points to the
 > official qsv installation and is not writable by untrusted users.
 
@@ -264,7 +267,7 @@ tail -f ~/Library/Logs/Claude/mcp*.log
 ```
 
 **Common issues:**
-- qsv binary not in PATH → Set `QSV_BIN_PATH` env var
+- qsv binary not in PATH → Set `QSV_MCP_BIN_PATH` env var
 - TypeScript not built → Run `npm run build`
 - File permissions → Ensure qsv has read access to CSV files
 
@@ -337,7 +340,7 @@ Test with Claude Desktop:
 - **No Network Access**: MCP server does not make network requests
 - **User Control**: Claude Desktop prompts before executing tools
 - **Sandboxing**: Consider running in restricted environment for untrusted data
-- **Binary Trust**: The `QSV_BIN_PATH` environment variable should only point to a trusted qsv binary from the official installation. Ensure the binary path is not writable by untrusted users.
+- **Binary Trust**: The `QSV_MCP_BIN_PATH` environment variable should only point to a trusted qsv binary from the official installation. Ensure the binary path is not writable by untrusted users.
 
 ## Future Enhancements
 

@@ -31,7 +31,12 @@ When you select an Excel or JSONL file, the MCP server automatically:
 
 **No extra steps required** - just use the file as you would a CSV!
 
-**Note**: Converted `.converted.csv` files remain on disk and are not automatically deleted. You can manually remove them when no longer needed.
+**Automatic Management of Converted Files:**
+- Converted `.converted.csv` files are automatically managed with a LIFO (Last In First Out) cleanup system
+- If the source file hasn't changed, existing converted files are reused (timestamp comparison)
+- When total size of all converted files exceeds the limit (default: 1GB), the oldest files are automatically deleted
+- Configure the size limit with `QSV_MCP_CONVERTED_LIFO_SIZE_GB` environment variable (in GB)
+- The cache tracks all converted files in `.qsv-mcp-converted-cache.json` in your working directory
 
 ## Quick Start
 
@@ -50,8 +55,8 @@ Add the QSV MCP server to your Claude Desktop configuration with optional enviro
         "/path/to/qsv/.claude/skills/dist/mcp-server.js"
       ],
       "env": {
-        "QSV_WORKING_DIR": "/Users/your-username/Downloads",
-        "QSV_ALLOWED_DIRS": "/Users/your-username/Downloads:/Users/your-username/Documents:/Users/your-username/data"
+        "QSV_MCP_WORKING_DIR": "/Users/your-username/Downloads",
+        "QSV_MCP_ALLOWED_DIRS": "/Users/your-username/Downloads:/Users/your-username/Documents:/Users/your-username/data"
       }
     }
   }
@@ -59,7 +64,7 @@ Add the QSV MCP server to your Claude Desktop configuration with optional enviro
 ```
 
 **Platform-specific notes:**
-- **macOS/Linux**: Use colons (`:`) to separate directories in `QSV_ALLOWED_DIRS`
+- **macOS/Linux**: Use colons (`:`) to separate directories in `QSV_MCP_ALLOWED_DIRS`
 - **Windows**: Use semicolons (`;`) to separate directories, and use double backslashes in paths (e.g., `C:\\Users\\YourName\\Downloads`)
 
 ### 2. Restart Claude Desktop
@@ -70,18 +75,28 @@ After updating the configuration, restart Claude Desktop for the changes to take
 
 ### Environment Variables
 
-#### `QSV_WORKING_DIR`
+#### `QSV_MCP_WORKING_DIR`
 - **Description**: The default working directory for relative file paths
 - **Default**: Current process directory
 - **Example (Unix)**: `"/Users/your-username/Downloads"`
 - **Example (Windows)**: `"C:\\Users\\YourName\\Downloads"`
 
-#### `QSV_ALLOWED_DIRS`
+#### `QSV_MCP_ALLOWED_DIRS`
 - **Description**: Delimited list of directories that can be accessed (security feature)
 - **Delimiter**: Colon (`:`) on Unix/macOS, semicolon (`;`) on Windows
 - **Default**: Only the working directory
 - **Example (Unix)**: `"/Users/your-username/Downloads:/Users/your-username/Documents"`
 - **Example (Windows)**: `"C:\\Users\\YourName\\Downloads;C:\\Users\\YourName\\Documents"`
+
+#### `QSV_MCP_CONVERTED_LIFO_SIZE_GB`
+- **Description**: Maximum total size (in GB) of all `.converted.csv` files before LIFO cleanup
+- **Default**: `1` (1 GB)
+- **How it works**:
+  - Excel and JSONL files are automatically converted to CSV for processing
+  - Converted files are cached and reused if the source hasn't changed
+  - When total size exceeds this limit, the oldest converted files are deleted
+  - A cache file (`.qsv-mcp-converted-cache.json`) tracks all converted files
+- **Example**: `"2.5"` (allows up to 2.5 GB of converted files)
 
 ## Usage Examples
 
@@ -229,12 +244,12 @@ Here's a complete example of working with local files:
 - Hidden directories (starting with `.`) are skipped during recursive scans
 
 ### Allowed Directories
-Configure `QSV_ALLOWED_DIRS` to explicitly whitelist directories:
+Configure `QSV_MCP_ALLOWED_DIRS` to explicitly whitelist directories:
 
 ```json
 {
   "env": {
-    "QSV_ALLOWED_DIRS": "/Users/me/safe/data:/Users/me/safe/outputs"
+    "QSV_MCP_ALLOWED_DIRS": "/Users/me/safe/data:/Users/me/safe/outputs"
   }
 }
 ```
@@ -258,11 +273,11 @@ The MCP server also exposes local CSV files as browsable resources in Claude Des
 ### "Access denied" errors
 **Problem**: File path is outside allowed directories
 
-**Solution**: Add the directory to `QSV_ALLOWED_DIRS`:
+**Solution**: Add the directory to `QSV_MCP_ALLOWED_DIRS`:
 ```json
 {
   "env": {
-    "QSV_ALLOWED_DIRS": "/Users/me/Downloads:/path/to/your/data"
+    "QSV_MCP_ALLOWED_DIRS": "/Users/me/Downloads:/path/to/your/data"
   }
 }
 ```
@@ -330,8 +345,8 @@ In Claude Desktop, check the Resources panel to:
       "command": "node",
       "args": ["path/to/mcp-server.js"],
       "env": {
-        "QSV_WORKING_DIR": "/Users/me/primary-data",
-        "QSV_ALLOWED_DIRS": "/Users/me/primary-data:/Users/me/secondary-data:/Users/me/archive-data:/Users/me/Downloads"
+        "QSV_MCP_WORKING_DIR": "/Users/me/primary-data",
+        "QSV_MCP_ALLOWED_DIRS": "/Users/me/primary-data:/Users/me/secondary-data:/Users/me/archive-data:/Users/me/Downloads"
       }
     }
   }
@@ -343,8 +358,8 @@ In Claude Desktop, check the Resources panel to:
 ```json
 {
   "env": {
-    "QSV_WORKING_DIR": "/Volumes/SharedData",
-    "QSV_ALLOWED_DIRS": "/Volumes/SharedData:/Volumes/Backups"
+    "QSV_MCP_WORKING_DIR": "/Volumes/SharedData",
+    "QSV_MCP_ALLOWED_DIRS": "/Volumes/SharedData:/Volumes/Backups"
   }
 }
 ```
@@ -419,5 +434,5 @@ All of this happens **without uploading the file** to Claude!
 If you encounter issues:
 1. Check the Claude Desktop developer console for MCP server logs
 2. Verify your `claude_desktop_config.json` syntax is valid JSON
-3. Ensure file paths in `QSV_ALLOWED_DIRS` exist and are accessible
+3. Ensure file paths in `QSV_MCP_ALLOWED_DIRS` exist and are accessible
 4. Check file permissions on the directories

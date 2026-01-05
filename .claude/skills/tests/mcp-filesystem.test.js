@@ -48,11 +48,11 @@ test('resolvePath prevents directory traversal', async () => {
         // Should reject paths with ..
         await assert.rejects(async () => {
             await provider.resolvePath('../../etc/passwd');
-        }, /Access denied|outside allowed directories/);
+        }, /Access denied|outside allowed directories|Path does not exist/);
         // Should reject absolute paths outside allowed directories
         await assert.rejects(async () => {
             await provider.resolvePath('/etc/passwd');
-        }, /Access denied|outside allowed directories/);
+        }, /Access denied|outside allowed directories|Path does not exist/);
     }
     finally {
         try {

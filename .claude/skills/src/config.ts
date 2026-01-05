@@ -58,9 +58,10 @@ function parseFloatEnv(envVar: string, defaultValue: number, min?: number, max?:
 
 /**
  * Get string from environment variable with default
+ * Uses nullish coalescing (??) to allow empty strings while falling back for undefined/null
  */
 function getStringEnv(envVar: string, defaultValue: string): string {
-  return process.env[envVar] || defaultValue;
+  return process.env[envVar] ?? defaultValue;
 }
 
 /**

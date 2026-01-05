@@ -253,7 +253,7 @@ reqwest = { version = "0.12", features = [
     "stream",
     "zstd",
 ], default-features = false }
-rfd = { version = "0.16", optional = true }
+rfd = { version = "0.17", optional = true }
 rust_decimal = { version = "1.39", default-features = false }
 sanitize-filename = { version = "0.6", optional = true }
 simd-json = "0.17"

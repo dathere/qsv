@@ -19,8 +19,6 @@ export type {
   PipelineStep,
   PipelineResult,
   SkillCategory,
-  TestExample,
-  TestExamples,
   McpToolProperty,
   McpToolDefinition,
   McpToolResult,
@@ -30,7 +28,6 @@ export type {
 } from './types.js';
 
 // MCP Server Components
-export { ExampleResourceProvider } from './mcp-resources.js';
 export {
   COMMON_COMMANDS,
   createToolDefinition,

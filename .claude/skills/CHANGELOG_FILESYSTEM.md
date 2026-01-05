@@ -78,7 +78,7 @@ The MCP server automatically resolves `data.csv` relative to the working directo
 
 - **Path Validation**: Only files within `QSV_ALLOWED_DIRS` can be accessed
 - **Directory Traversal Protection**: Prevents `../../../etc/passwd` style attacks
-- **Extension Filtering**: Only CSV-related files (`.csv`, `.tsv`, `.tab`, `.ssv`, `.txt`, `.sz`) are listed
+- **Extension Filtering**: Only CSV-related files (`.csv`, `.tsv`, `.tab`, `.ssv`, Snappy-compressed formats, Excel, ODS, JSONL/NDJSON) are listed
 - **Preview Limits**: Maximum 1MB preview size, 20 lines max
 
 ### 5. Resource Browser Integration

@@ -2,15 +2,15 @@
 
 Complete TypeScript implementation for loading, executing, and composing qsv command pipelines with the Claude Agent SDK and Claude Desktop (MCP).
 
-## 🎯 NEW: Work with Local CSV Files Without Uploading!
+## 🎯 NEW: Work with Local Tabular Data Files Without Uploading!
 
-The QSV MCP Server now supports **direct access to local CSV files**. No more uploading files to Claude Desktop!
+The QSV MCP Server now supports **direct access to local tabular data files** (CSV, Excel, JSONL, etc.). No more uploading files to Claude Desktop!
 
 **Quick Start**: See [QUICK_START_LOCAL_FILES.md](./QUICK_START_LOCAL_FILES.md)
 **Full Guide**: See [FILESYSTEM_USAGE.md](./FILESYSTEM_USAGE.md)
 
 ### Key Features:
-- ✅ Browse CSV files in your directories
+- ✅ Browse tabular data files in your directories (CSV, Excel, JSONL, etc.)
 - ✅ Process files without uploading
 - ✅ No file size limits
 - ✅ Instant access
@@ -311,7 +311,12 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "qsv": {
       "command": "node",
-      "args": ["/path/to/qsv/.claude/skills/dist/mcp-server.js"]
+      "args": ["/path/to/qsv/.claude/skills/dist/mcp-server.js"],
+      "env": {
+        "QSV_MCP_BIN_PATH": "/usr/local/bin/qsv",
+        "QSV_MCP_WORKING_DIR": "/Users/your-username/Downloads",
+        "QSV_MCP_ALLOWED_DIRS": "/Users/your-username/Downloads:/Users/your-username/Documents"
+      }
     }
   }
 }
@@ -338,8 +343,8 @@ Claude will automatically:
 ### What's Available
 
 - **25 MCP Tools**: 20 common commands + generic fallback + pipeline tool + 3 filesystem tools
-- **Local File Access**: Browse and process CSV files directly from your filesystem
-- **File-Based Processing**: Works with your local CSV files without uploading
+- **Local File Access**: Browse and process tabular data files (CSV, Excel, JSONL, etc.) directly from your filesystem
+- **File-Based Processing**: Works with your local files without uploading
 - **Natural Language Interface**: No command syntax needed
 
 For complete MCP documentation, see [README-MCP.md](./README-MCP.md).

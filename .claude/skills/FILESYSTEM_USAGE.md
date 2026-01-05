@@ -55,6 +55,7 @@ Add the QSV MCP server to your Claude Desktop configuration with optional enviro
         "/path/to/qsv/.claude/skills/dist/mcp-server.js"
       ],
       "env": {
+        "QSV_MCP_BIN_PATH": "/usr/local/bin/qsv",
         "QSV_MCP_WORKING_DIR": "/Users/your-username/Downloads",
         "QSV_MCP_ALLOWED_DIRS": "/Users/your-username/Downloads:/Users/your-username/Documents:/Users/your-username/data"
       }
@@ -74,6 +75,13 @@ After updating the configuration, restart Claude Desktop for the changes to take
 ## Configuration Options
 
 ### Environment Variables
+
+#### `QSV_MCP_BIN_PATH`
+- **Description**: Path to the qsv binary executable
+- **Default**: `qsv` (assumes qsv is in PATH)
+- **Example (Unix)**: `"/usr/local/bin/qsv"`
+- **Example (Windows)**: `"C:\\Program Files\\qsv\\qsv.exe"`
+- **Security Note**: This should only point to a trusted qsv binary from the official installation. Ensure the binary path is not writable by untrusted users.
 
 #### `QSV_MCP_WORKING_DIR`
 - **Description**: The default working directory for relative file paths
@@ -238,7 +246,7 @@ Here's a complete example of working with local files:
 - Error messages don't reveal allowed directory paths
 
 ### Default Restrictions
-- Only CSV-related files are listed (`.csv`, `.tsv`, `.tab`, `.ssv`, `.txt`, `.sz`)
+- Only CSV-related files are listed (`.csv`, `.tsv`, `.tab`, `.ssv`, Snappy-compressed formats (`.csv.sz`, etc.), and Excel/ODS/JSONL formats)
 - Maximum preview size: 1MB
 - Preview limited to first 20 lines
 - Hidden directories (starting with `.`) are skipped during recursive scans
@@ -297,8 +305,10 @@ The MCP server also exposes local CSV files as browsable resources in Claude Des
 - `.csv` (comma-separated)
 - `.tsv` or `.tab` (tab-separated)
 - `.ssv` (semicolon-separated)
-- `.txt` (text)
-- `.sz` (Snappy compressed)
+- `.csv.sz`, `.tsv.sz`, `.tab.sz`, `.ssv.sz` (Snappy compressed)
+- `.xls`, `.xlsx`, `.xlsm`, `.xlsb` (Excel formats)
+- `.ods` (OpenDocument Spreadsheet)
+- `.jsonl`, `.ndjson` (JSON Lines)
 
 ## Tips & Best Practices
 
@@ -345,6 +355,7 @@ In Claude Desktop, check the Resources panel to:
       "command": "node",
       "args": ["path/to/mcp-server.js"],
       "env": {
+        "QSV_MCP_BIN_PATH": "/usr/local/bin/qsv",
         "QSV_MCP_WORKING_DIR": "/Users/me/primary-data",
         "QSV_MCP_ALLOWED_DIRS": "/Users/me/primary-data:/Users/me/secondary-data:/Users/me/archive-data:/Users/me/Downloads"
       }

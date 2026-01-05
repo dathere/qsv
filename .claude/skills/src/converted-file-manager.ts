@@ -291,12 +291,7 @@ export class ConvertedFileManager {
    * @param mustExist If true, throws error if file doesn't exist (default: false)
    */
   private async validatePath(filePath: string, mustExist: boolean = false): Promise<string> {
-    // Check for null bytes
-    if (filePath.includes('\0')) {
-      throw new Error('Invalid path: contains null byte');
-    }
-
-    // Check for control characters
+    // Check for control characters (includes null bytes)
     if (/[\x00-\x1F\x7F]/.test(filePath)) {
       throw new Error('Invalid path: contains control characters');
     }

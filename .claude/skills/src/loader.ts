@@ -6,7 +6,7 @@
 import { readdir, readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { QsvSkill, SkillCategory, TestExamples } from './types.js';
+import type { QsvSkill, SkillCategory } from './types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -116,24 +116,4 @@ export class SkillLoader {
     };
   }
 
-  /**
-   * Load test-based examples for a skill (on-demand)
-   * These are extracted from CI test files and contain real input/output data
-   */
-  async loadTestExamples(skillName: string): Promise<TestExamples | null> {
-    const skill = await this.load(skillName);
-
-    if (!skill || !skill.examples_ref) {
-      return null;
-    }
-
-    try {
-      const examplesPath = join(this.skillsDir, '..', skill.examples_ref);
-      const content = await readFile(examplesPath, 'utf-8');
-      return JSON.parse(content) as TestExamples;
-    } catch (error) {
-      console.warn(`Failed to load test examples for ${skillName}:`, error);
-      return null;
-    }
-  }
 }

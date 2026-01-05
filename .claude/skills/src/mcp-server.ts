@@ -17,7 +17,6 @@ import {
 
 import { SkillLoader } from './loader.js';
 import { SkillExecutor } from './executor.js';
-import { ExampleResourceProvider } from './mcp-resources.js';
 import { FilesystemResourceProvider } from './mcp-filesystem.js';
 import type { McpToolResult } from './types.js';
 import {
@@ -39,7 +38,6 @@ class QsvMcpServer {
   private server: Server;
   private loader: SkillLoader;
   private executor: SkillExecutor;
-  private resourceProvider: ExampleResourceProvider;
   private filesystemProvider: FilesystemResourceProvider;
 
   constructor() {
@@ -58,7 +56,6 @@ class QsvMcpServer {
 
     this.loader = new SkillLoader();
     this.executor = new SkillExecutor(process.env.QSV_BIN_PATH || 'qsv');
-    this.resourceProvider = new ExampleResourceProvider(this.loader);
 
     // Initialize filesystem provider with configurable directories
     const workingDir = process.env.QSV_WORKING_DIR || process.cwd();
@@ -272,48 +269,14 @@ class QsvMcpServer {
     this.server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
       console.error('Listing resources...');
 
-      const cursor = request.params?.cursor;
+      // Only return filesystem files
+      const filesystemResult = await this.filesystemProvider.listFiles(undefined, false);
 
-      if (cursor) {
-        console.error(`Pagination cursor: ${cursor}`);
-      }
+      console.error(`Returning ${filesystemResult.resources.length} file resources`);
 
-      // When pagination is active, only return examples (which support pagination)
-      // When no cursor, return filesystem files + first page of examples
-      if (cursor) {
-        // Pagination active - only return examples
-        const exampleResult = await this.resourceProvider.listResources(undefined, cursor);
-
-        console.error(
-          `Returning ${exampleResult.resources.length} example resources` +
-          (exampleResult.nextCursor ? ` (more available)` : ' (last page)'),
-        );
-
-        return {
-          resources: exampleResult.resources,
-          nextCursor: exampleResult.nextCursor,
-        };
-      } else {
-        // First page - return filesystem files + first page of examples
-        const filesystemResult = await this.filesystemProvider.listFiles(undefined, false);
-        const exampleResult = await this.resourceProvider.listResources(undefined, undefined);
-
-        const allResources = [
-          ...filesystemResult.resources,
-          ...exampleResult.resources,
-        ];
-
-        console.error(
-          `Returning ${allResources.length} resources ` +
-          `(${filesystemResult.resources.length} files, ${exampleResult.resources.length} examples)` +
-          (exampleResult.nextCursor ? ` (more examples available)` : ''),
-        );
-
-        return {
-          resources: allResources,
-          nextCursor: exampleResult.nextCursor,
-        };
-      }
+      return {
+        resources: filesystemResult.resources,
+      };
     });
 
     // Read resource handler
@@ -323,15 +286,12 @@ class QsvMcpServer {
       console.error(`Reading resource: ${uri}`);
 
       try {
-        let resource;
-
-        // Check if it's a file:/// URI (filesystem resource)
-        if (uri.startsWith('file:///')) {
-          resource = await this.filesystemProvider.getFileContent(uri);
-        } else {
-          // Otherwise, it's an example resource
-          resource = await this.resourceProvider.getResource(uri);
+        // Only handle file:/// URIs
+        if (!uri.startsWith('file:///')) {
+          throw new Error(`Unsupported resource URI: ${uri}`);
         }
+
+        const resource = await this.filesystemProvider.getFileContent(uri);
 
         if (!resource) {
           throw new Error(`Resource not found: ${uri}`);

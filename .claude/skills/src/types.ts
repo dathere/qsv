@@ -11,7 +11,6 @@ export interface QsvSkill {
   examples: Example[];
   hints?: BehavioralHints;
   test_file?: string;
-  examples_ref?: string;
 }
 
 export interface CommandSpec {
@@ -89,34 +88,6 @@ export type SkillCategory =
   | 'conversion'
   | 'analysis'
   | 'utility';
-
-/**
- * Test-based Examples (load-as-needed)
- */
-export interface TestExample {
-  name: string;
-  description: string;
-  input?: {
-    data?: string[][];
-    filename?: string;
-    content?: string;
-  };
-  command: string;
-  args: string[];
-  options: Record<string, string>;
-  expected?: {
-    data?: string[][];
-    stdout?: string;
-    stderr?: string;
-  };
-  tags: string[];
-}
-
-export interface TestExamples {
-  skill: string;
-  version: string;
-  examples: TestExample[];
-}
 
 /**
  * MCP (Model Context Protocol) Types

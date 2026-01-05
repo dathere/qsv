@@ -362,11 +362,20 @@ export async function handleToolCall(
 
               // Generate unique converted file path with UUID to prevent collisions
               const { randomUUID } = await import('crypto');
-              // Use 16 chars (64 bits) for better collision resistance
-              // 8 chars (32 bits) has 50% collision probability after ~65k conversions
-              // 16 chars (64 bits) has 50% collision probability after ~4 billion conversions
-              const uuid = randomUUID().substring(0, 16);
-              const convertedPath = `${inputFile}.converted.${uuid}.csv`;
+              // Use 16 hex chars (64 bits) for better collision resistance
+              // Remove hyphens to get pure hex digits (randomUUID() includes hyphens)
+              // 8 hex chars (32 bits) has 50% collision probability after ~65k conversions
+              // 16 hex chars (64 bits) has 50% collision probability after ~4 billion conversions
+              const uuid = randomUUID().replace(/-/g, '').substring(0, 16);
+              let convertedPath = `${inputFile}.converted.${uuid}.csv`;
+
+              // Validate the generated converted path for defense-in-depth
+              // Even though it's derived from already-validated inputFile, ensure it's safe
+              try {
+                convertedPath = await provider.resolvePath(convertedPath);
+              } catch (error) {
+                throw new Error(`Invalid converted file path: ${convertedPath} - ${error}`);
+              }
 
               // Initialize converted file manager
               const workingDir = provider.getWorkingDirectory();

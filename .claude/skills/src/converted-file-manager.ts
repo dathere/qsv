@@ -410,8 +410,9 @@ export class ConvertedFileManager {
    * hash-based validation should call computeFileHash() separately and compare.
    */
   private hasSourceChanged(entry: ConvertedFileEntry, sourceStats: Stats): boolean {
-    // Priority 1: Inode comparison (Unix-like systems, fast and reliable)
-    if (entry.sourceInode !== undefined && sourceStats.ino !== undefined) {
+    // Priority 1: Inode comparison (Unix-like systems only, fast and reliable)
+    // Skip on Windows where ino is always 0 (meaningless comparison)
+    if (entry.sourceInode !== undefined && sourceStats.ino !== undefined && sourceStats.ino !== 0) {
       if (entry.sourceInode !== sourceStats.ino) {
         console.error('[Converted File Manager] Source file inode changed (file replaced)');
         return true; // Inode changed = file was replaced
@@ -479,6 +480,7 @@ export class ConvertedFileManager {
   /**
    * Validate cache structure and migrate from v0 to v1 if needed
    * Enhanced with sequence initialization (Phase 3)
+   * Persists any corrections made during validation (Phase 5)
    */
   private async validateCache(cache: any): Promise<ConvertedFileCacheV1> {
     // Check if this is v0 format (no version field)
@@ -500,6 +502,9 @@ export class ConvertedFileManager {
       throw new Error('Invalid cache: totalSize is not a number');
     }
 
+    // Track whether any corrections were made that need to be persisted
+    let needsPersist = false;
+
     // Initialize nextSequence if missing (for existing v1 caches)
     if (cache.nextSequence === undefined) {
       let maxSequence = -1;
@@ -510,6 +515,7 @@ export class ConvertedFileManager {
       }
       cache.nextSequence = maxSequence + 1;
       console.error(`[Converted File Manager] Initialized nextSequence to ${cache.nextSequence}`);
+      needsPersist = true;
     }
 
     // Recalculate totalSize to ensure consistency
@@ -519,6 +525,13 @@ export class ConvertedFileManager {
     if (Math.abs(calculatedSize - cache.totalSize) > TOLERANCE_BYTES) {
       console.warn(`[Converted File Manager] totalSize mismatch (${cache.totalSize} vs ${calculatedSize}), fixing...`);
       cache.totalSize = calculatedSize;
+      needsPersist = true;
+    }
+
+    // Persist corrections to disk if any were made
+    if (needsPersist) {
+      console.error('[Converted File Manager] Persisting cache validation fixes...');
+      await this.saveCache(cache as ConvertedFileCacheV1);
     }
 
     return cache as ConvertedFileCacheV1;
@@ -677,6 +690,7 @@ export class ConvertedFileManager {
     } catch (error) {
       this.metrics.errors.cacheSaveErrors++;
       console.error('[Converted File Manager] Failed to save cache:', error);
+      throw error;
     }
   }
 
@@ -923,6 +937,7 @@ export class ConvertedFileManager {
 
       } catch (error) {
         console.error('[Converted File Manager] Error registering converted file:', error);
+        throw error;
       }
     });
 

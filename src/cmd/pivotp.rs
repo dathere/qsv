@@ -771,7 +771,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         },
         None => Box::new(io::stdout()) as Box<dyn Write>,
     };
-    let datetime_fmt: PlSmallStr = "%Y-%m-%d %H:%M:%S".to_string().into();
+    let datetime_fmt: PlSmallStr = PlSmallStr::from_str("%Y-%m-%d %H:%M:%S");
     CsvWriter::new(&mut writer)
         .include_header(true)
         .with_datetime_format(Some(datetime_fmt))

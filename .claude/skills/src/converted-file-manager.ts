@@ -22,7 +22,7 @@ import { stat, unlink, readFile, writeFile, access, rename, readdir, open, realp
 import type { FileHandle } from 'fs/promises';
 import { constants } from 'fs';
 import type { Stats } from 'fs';
-import { dirname, basename, join, resolve } from 'path';
+import { dirname, basename, join, resolve, relative, sep } from 'path';
 import { randomUUID, createHash } from 'crypto';
 import { formatBytes } from './utils.js';
 
@@ -345,10 +345,13 @@ export class ConvertedFileManager {
         const normalized = resolve(filePath);
 
         // Additional validation: ensure normalized path doesn't escape working directory
-        // If working directory is set, verify the normalized path is within it
+        // Use path.relative() for robust cross-platform validation (handles Windows case-insensitivity)
         const workingDirResolved = resolve(this.workingDir);
-        if (!normalized.startsWith(workingDirResolved)) {
-          throw new Error(`Path escapes working directory: ${filePath} -> ${normalized}`);
+        const relativePath = relative(workingDirResolved, normalized);
+
+        // If relative path starts with "..", it's trying to escape the working directory
+        if (relativePath.startsWith('..' + sep) || relativePath === '..') {
+          throw new Error(`Path escapes working directory: ${filePath} -> ${normalized} (relative: ${relativePath})`);
         }
 
         return normalized;
@@ -590,7 +593,21 @@ export class ConvertedFileManager {
             const stats = await stat(convertedPath);
 
             // Try to infer source path (remove .converted.{uuid}.csv suffix)
-            const sourcePath = convertedPath.replace(/\.converted\.[^.]+\.csv$/, '');
+            // Use more robust parsing to handle edge cases like filenames containing ".converted."
+            const fileBasename = basename(convertedPath);
+            const fileDir = dirname(convertedPath);
+
+            // Find the position of ".converted." marker
+            const markerIndex = fileBasename.lastIndexOf('.converted.');
+            if (markerIndex === -1) {
+              // Malformed filename, skip this entry
+              console.error(`[Converted File Manager] Malformed converted filename: ${fileBasename}`);
+              continue;
+            }
+
+            // Extract source base name (everything before ".converted.")
+            const sourceBasename = fileBasename.substring(0, markerIndex);
+            const sourcePath = join(fileDir, sourceBasename);
 
             // Verify source exists
             const sourceStats = await stat(sourcePath).catch(() => null);
@@ -967,9 +984,10 @@ export class ConvertedFileManager {
     // - Over 110% (case 4), OR
     // - Between 100-110% but haven't cleaned in over an hour (case 3)
 
-    // Stable sort by createdAt and sequence (oldest first) for LIFO deletion (Phase 3)
-    cache.entries.sort((a, b) => {
-      // Primary sort: createdAt timestamp
+    // Create a sorted copy for cleanup iteration (don't mutate cache.entries directly)
+    // This prevents inconsistency if concurrent operations save during cleanup
+    const sortedEntries = [...cache.entries].sort((a, b) => {
+      // Primary sort: createdAt timestamp (oldest first) for LIFO deletion
       const timeDiff = a.createdAt - b.createdAt;
       if (timeDiff !== 0) {
         return timeDiff;
@@ -985,7 +1003,7 @@ export class ConvertedFileManager {
     let currentSize = cache.totalSize;
 
     // Mark oldest files for deletion until we're under the limit
-    for (const entry of cache.entries) {
+    for (const entry of sortedEntries) {
       if (currentSize <= this.maxSizeBytes) {
         break;
       }

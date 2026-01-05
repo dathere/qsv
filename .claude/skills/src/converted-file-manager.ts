@@ -25,6 +25,7 @@ import type { Stats } from 'fs';
 import { dirname, basename, join, resolve, relative, sep } from 'path';
 import { randomUUID, createHash } from 'crypto';
 import { formatBytes } from './utils.js';
+import { config } from './config.js';
 
 /**
  * Cache format version 1 with enhanced metadata
@@ -267,9 +268,7 @@ export class ConvertedFileManager {
   constructor(workingDir: string, maxSizeGB?: number) {
     // Validate and sanitize size limit
     const sizeGB = this.validateSizeLimit(
-      maxSizeGB ??
-      (parseFloat(process.env.QSV_MCP_CONVERTED_LIFO_SIZE_GB || '') ||
-       ConvertedFileManager.DEFAULT_MAX_SIZE_GB)
+      maxSizeGB ?? config.convertedLifoSizeGB
     );
 
     this.maxSizeBytes = sizeGB * 1024 * 1024 * 1024;

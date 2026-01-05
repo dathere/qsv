@@ -19,6 +19,7 @@ import { SkillLoader } from './loader.js';
 import { SkillExecutor } from './executor.js';
 import { FilesystemResourceProvider } from './mcp-filesystem.js';
 import type { McpToolResult } from './types.js';
+import { config } from './config.js';
 import {
   COMMON_COMMANDS,
   createToolDefinition,
@@ -33,6 +34,7 @@ import {
   createPipelineToolDefinition,
   executePipeline,
 } from './mcp-pipeline.js';
+import { VERSION } from './version.js';
 
 /**
  * QSV MCP Server implementation
@@ -47,7 +49,7 @@ class QsvMcpServer {
     this.server = new Server(
       {
         name: 'qsv-server',
-        version: '12.0.0',
+        version: VERSION,
       },
       {
         capabilities: {
@@ -58,19 +60,12 @@ class QsvMcpServer {
     );
 
     this.loader = new SkillLoader();
-    this.executor = new SkillExecutor(process.env.QSV_MCP_BIN_PATH || 'qsv');
+    this.executor = new SkillExecutor(config.qsvBinPath);
 
     // Initialize filesystem provider with configurable directories
-    const workingDir = process.env.QSV_MCP_WORKING_DIR || process.cwd();
-    // Use platform-appropriate delimiter: semicolon on Windows, colon on Unix
-    const pathDelimiter = process.platform === 'win32' ? ';' : ':';
-    const allowedDirs = process.env.QSV_MCP_ALLOWED_DIRS
-      ? process.env.QSV_MCP_ALLOWED_DIRS.split(pathDelimiter)
-      : [];
-
     this.filesystemProvider = new FilesystemResourceProvider({
-      workingDirectory: workingDir,
-      allowedDirectories: allowedDirs,
+      workingDirectory: config.workingDir,
+      allowedDirectories: config.allowedDirs,
     });
   }
 

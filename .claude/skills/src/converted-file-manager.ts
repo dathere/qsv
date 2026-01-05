@@ -439,6 +439,14 @@ export class ConvertedFileManager {
       }
 
       // JSON parse error or other corruption
+      // Track cache load failures/corruption in metrics if available
+      if (
+        this.metrics &&
+        this.metrics.errors &&
+        typeof this.metrics.errors.cacheLoadErrors === 'number'
+      ) {
+        this.metrics.errors.cacheLoadErrors++;
+      }
       console.error('[Converted File Manager] Cache load failed, attempting recovery:', error);
       return await this.recoverFromCorruption();
     }

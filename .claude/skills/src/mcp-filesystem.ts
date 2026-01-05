@@ -254,10 +254,22 @@ export class FilesystemResourceProvider {
             const relativePath = relative(this.workingDir, fullPath);
             const uri = this.pathToFileUri(fullPath);
 
+            // Get file metadata
+            let description = entry.name;
+            try {
+              const fileStats = await stat(fullPath);
+              const size = this.formatBytes(fileStats.size);
+              const date = fileStats.mtime.toISOString().split('T')[0]; // YYYY-MM-DD
+              description = `${entry.name} (${size} ${date})`;
+            } catch {
+              // If stat fails, use basic description
+              description = entry.name;
+            }
+
             resources.push({
               uri,
               name: relativePath,
-              description: `Tabular data file: ${entry.name}`,
+              description,
               mimeType: this.getMimeType(ext),
             });
           }

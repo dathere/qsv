@@ -194,8 +194,15 @@ class ConversionLock {
       const age = Date.now() - stats.mtime.getTime();
 
       if (age > ConversionLock.STALE_LOCK_AGE_MS) {
-        await unlink(this.currentLockPath);
-        console.error(`[ConversionLock] Cleaned up stale lock (${Math.round(age / 1000)}s old)`);
+        try {
+          await unlink(this.currentLockPath);
+          console.error(`[ConversionLock] Cleaned up stale lock (${Math.round(age / 1000)}s old)`);
+        } catch (error: any) {
+          if (error.code !== 'ENOENT') {
+            // Ignore race where another process already removed the stale lock
+            console.error('[ConversionLock] Error deleting stale lock file:', error);
+          }
+        }
       }
     } catch (error: any) {
       if (error.code !== 'ENOENT') {

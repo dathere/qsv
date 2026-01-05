@@ -2,7 +2,7 @@
  * MCP Tool Definitions and Handlers for QSV Commands
  */
 
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import { stat, access } from 'fs/promises';
 import { constants } from 'fs';
 import { basename } from 'path';
@@ -22,6 +22,16 @@ const AUTO_INDEX_SIZE_MB = 10;
 const DEFAULT_OPERATION_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
+ * Track active child processes for graceful shutdown
+ */
+const activeProcesses = new Set<ChildProcess>();
+
+/**
+ * Flag indicating shutdown is in progress
+ */
+let isShuttingDown = false;
+
+/**
  * Get QSV binary path (centralized)
  */
 function getQsvBinaryPath(): string {
@@ -29,25 +39,40 @@ function getQsvBinaryPath(): string {
 }
 
 /**
- * Run a qsv command with timeout
+ * Run a qsv command with timeout and process tracking
  */
 async function runQsvWithTimeout(
   qsvBin: string,
   args: string[],
   timeoutMs: number = DEFAULT_OPERATION_TIMEOUT_MS,
 ): Promise<void> {
+  // Reject new operations during shutdown
+  if (isShuttingDown) {
+    throw new Error('Server is shutting down, operation rejected');
+  }
+
   return new Promise((resolve, reject) => {
     const proc = spawn(qsvBin, args, {
       stdio: ['ignore', 'ignore', 'pipe']
     });
 
+    // Track this process
+    activeProcesses.add(proc);
+
     let stderr = '';
     let timedOut = false;
+
+    // Cleanup function
+    const cleanup = () => {
+      clearTimeout(timer);
+      activeProcesses.delete(proc);
+    };
 
     // Set up timeout
     const timer = setTimeout(() => {
       timedOut = true;
       proc.kill('SIGTERM');
+      cleanup();
       reject(new Error(`Operation timed out after ${timeoutMs}ms: ${qsvBin} ${args.join(' ')}`));
     }, timeoutMs);
 
@@ -56,7 +81,7 @@ async function runQsvWithTimeout(
     });
 
     proc.on('close', (code) => {
-      clearTimeout(timer);
+      cleanup();
       if (!timedOut) {
         if (code === 0) {
           resolve();
@@ -67,7 +92,7 @@ async function runQsvWithTimeout(
     });
 
     proc.on('error', (err) => {
-      clearTimeout(timer);
+      cleanup();
       if (!timedOut) {
         reject(err);
       }
@@ -565,4 +590,34 @@ export function createGenericToolDefinition(loader: SkillLoader): McpToolDefinit
       required: ['command', 'input_file'],
     },
   };
+}
+
+/**
+ * Initiate graceful shutdown
+ */
+export function initiateShutdown(): void {
+  isShuttingDown = true;
+  console.error(`[MCP Tools] Shutdown initiated, ${activeProcesses.size} active processes`);
+}
+
+/**
+ * Kill all active child processes
+ */
+export function killAllProcesses(): void {
+  for (const proc of activeProcesses) {
+    try {
+      proc.kill('SIGTERM');
+    } catch {
+      // Process might have already exited
+    }
+  }
+  activeProcesses.clear();
+  console.error('[MCP Tools] All child processes terminated');
+}
+
+/**
+ * Get count of active processes
+ */
+export function getActiveProcessCount(): number {
+  return activeProcesses.size;
 }

@@ -25,6 +25,9 @@ import {
   createGenericToolDefinition,
   handleToolCall,
   handleGenericCommand,
+  initiateShutdown,
+  killAllProcesses,
+  getActiveProcessCount,
 } from './mcp-tools.js';
 import {
   createPipelineToolDefinition,
@@ -327,6 +330,54 @@ class QsvMcpServer {
 }
 
 /**
+ * Graceful shutdown handler
+ */
+function setupShutdownHandlers(): void {
+  const SHUTDOWN_TIMEOUT_MS = 2000; // 2 seconds max for graceful shutdown
+  let shutdownInProgress = false;
+
+  const handleShutdown = (signal: string) => {
+    if (shutdownInProgress) {
+      console.error(`[Server] Force exit on second ${signal}`);
+      process.exit(1);
+    }
+
+    shutdownInProgress = true;
+    console.error(`[Server] Received ${signal}, shutting down gracefully...`);
+
+    // Set hard timeout to force exit
+    const forceExitTimer = setTimeout(() => {
+      console.error('[Server] Shutdown timeout exceeded, forcing exit');
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+
+    // Prevent the timeout from keeping the process alive
+    forceExitTimer.unref();
+
+    // Initiate shutdown
+    initiateShutdown();
+
+    // Kill all child processes
+    killAllProcesses();
+
+    // Wait briefly for processes to exit, then force exit
+    setTimeout(() => {
+      const remaining = getActiveProcessCount();
+      if (remaining > 0) {
+        console.error(`[Server] ${remaining} processes still active, forcing exit`);
+      } else {
+        console.error('[Server] Graceful shutdown complete');
+      }
+      process.exit(0);
+    }, 100);
+  };
+
+  // Handle both SIGTERM (from Claude Desktop) and SIGINT (Ctrl+C)
+  process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+  process.on('SIGINT', () => handleShutdown('SIGINT'));
+}
+
+/**
  * Main entry point
  */
 async function main(): Promise<void> {
@@ -336,11 +387,10 @@ async function main(): Promise<void> {
     await server.initialize();
     await server.start();
 
-    // Keep the process running
-    process.on('SIGINT', () => {
-      console.error('Shutting down QSV MCP Server...');
-      process.exit(0);
-    });
+    // Setup graceful shutdown handlers
+    setupShutdownHandlers();
+
+    console.error('[Server] Ready to accept requests (Press Ctrl+C to shutdown)');
   } catch (error) {
     console.error('Fatal error starting QSV MCP Server:', error);
     process.exit(1);

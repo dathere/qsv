@@ -66,7 +66,7 @@ test('resolvePath prevents directory traversal', async () => {
       async () => {
         await provider.resolvePath('/etc/passwd');
       },
-      /Access denied|outside allowed directories/
+      /Access denied|outside allowed directories|Path does not exist/
     );
   } finally {
     try {

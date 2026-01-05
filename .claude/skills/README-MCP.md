@@ -7,9 +7,9 @@ Model Context Protocol (MCP) server that exposes qsv's 66 CSV data-wrangling com
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
 - **22 MCP Tools**: 20 common commands as individual tools + 1 generic tool + 1 pipeline tool
-- **1,279 Example Resources**: Real test examples with full input/output data
-- **File-Based Processing**: Works directly with your local CSV files
+- **Local File Access**: Works directly with your local CSV files via filesystem tools
 - **Natural Language Interface**: No need to remember command syntax
+- **Pipeline Support**: Chain multiple operations together seamlessly
 
 ## Installation
 
@@ -178,56 +178,6 @@ Parameters:
 Result: Parquet file created
 ```
 
-### Example 5: Learning from Examples
-
-```
-User: "Show me an example of joining two CSV files"
-
-Claude reads resource: qsv://examples/join/join_basic
-
-Returns:
-- Example command
-- Input data
-- Expected output
-- Tags: [basic, joining]
-
-Claude explains: "Here's how to join CSVs with qsv..."
-```
-
-## Example Resources
-
-The MCP server exposes **1,279 real test examples** as browsable resources.
-
-### Resource URI Format
-
-```
-qsv://examples/{command}/{example_name}
-```
-
-Examples:
-- `qsv://examples/select/select_basic`
-- `qsv://examples/stats/stats_with_nulls`
-- `qsv://examples/join/join_left_outer`
-
-### Resource Content
-
-Each example includes:
-- **Command**: Full command string
-- **Input data**: CSV data used in the test
-- **Expected output**: What the command should produce
-- **Tags**: Categorization (basic, regression, error-handling, etc.)
-- **Usage instructions**: How to run the example
-
-### Available Tags
-
-- `basic` - Basic functionality examples
-- `regression` - Regression test cases (issue fixes)
-- `error-handling` - Error scenarios
-- `case-sensitivity` - Case-sensitive operations
-- `unicode` - Unicode handling
-- `no-headers` - Headerless CSV examples
-- `custom-delimiter` - Non-comma delimiters
-
 ## Architecture
 
 ```
@@ -238,9 +188,9 @@ Each example includes:
                    │ MCP Protocol (JSON-RPC 2.0)
 ┌──────────────────▼──────────────────────────┐
 │          QSV MCP Server                     │
-│  • 22 MCP Tools                             │
-│  • 1,279 Example Resources                  │
-│  • File-based data handling                 │
+│  • 22 MCP Tools (commands)                  │
+│  • 3 Filesystem Tools (list/browse files)  │
+│  • Local file access & validation          │
 └──────────────────┬──────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────┐
@@ -322,7 +272,7 @@ Press Ctrl+C to stop.
 ├── src/
 │   ├── mcp-server.ts         # Main MCP server
 │   ├── mcp-tools.ts          # Tool definitions
-│   ├── mcp-resources.ts      # Resource provider
+│   ├── mcp-filesystem.ts     # Filesystem resource provider
 │   ├── mcp-pipeline.ts       # Pipeline tool
 │   ├── types.ts              # Type definitions
 │   ├── loader.ts             # Skill loader
@@ -354,8 +304,8 @@ Test with Claude Desktop:
 
 ## Performance
 
-- **Tool Loading**: < 50ms (66 skills loaded on startup)
-- **Example Loading**: 5-10ms per skill (loaded on-demand)
+- **Server Startup**: < 100ms (66 skills loaded)
+- **Tool Execution**: < 10ms overhead + qsv processing time
 - **File Processing**: Depends on qsv performance (generally very fast)
 - **Streaming**: Large files processed efficiently by qsv
 
@@ -383,7 +333,7 @@ Potential additions for future versions:
 - [MCP Specification](https://modelcontextprotocol.io/)
 - [Claude Desktop](https://claude.ai/desktop)
 - [QSV Skills README](./README.md)
-- [Test Examples Guide](../../docs/AGENT_SKILLS_TEST_EXAMPLES.md)
+- [Filesystem Usage Guide](./FILESYSTEM_USAGE.md)
 
 ## Support
 
@@ -395,8 +345,8 @@ For issues or questions:
 
 ---
 
-**Generated**: 2026-01-03
-**Version**: 12.0.0
-**Tools**: 22 (20 common + 1 generic + 1 pipeline)
-**Examples**: 1,279 from 54 skills
+**Updated**: 2026-01-04
+**Version**: 13.0.0
+**Tools**: 25 (20 common + 1 generic + 1 pipeline + 3 filesystem)
+**Skills**: 66 qsv commands
 **Status**: ✅ Production Ready

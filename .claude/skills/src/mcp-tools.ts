@@ -359,38 +359,100 @@ export async function handleToolCall(
             // Convert file using qsv excel or qsv jsonl
             try {
               const qsvBin = getQsvBinaryPath();
-              const convertedPath = inputFile + '.converted.csv';
+
+              // Generate unique converted file path with UUID to prevent collisions
+              const { randomUUID } = await import('crypto');
+              // Use 16 hex chars (64 bits) for better collision resistance
+              // Remove hyphens to get pure hex digits (randomUUID() includes hyphens)
+              // 8 hex chars (32 bits) has 50% collision probability after ~65k conversions
+              // 16 hex chars (64 bits) has 50% collision probability after ~4 billion conversions
+              const uuid = randomUUID().replace(/-/g, '').substring(0, 16);
+              let convertedPath = `${inputFile}.converted.${uuid}.csv`;
+
+              // Validate the generated converted path for defense-in-depth
+              // Even though it's derived from already-validated inputFile, ensure it's safe
+              try {
+                convertedPath = await provider.resolvePath(convertedPath);
+              } catch (error) {
+                throw new Error(`Invalid converted file path: ${convertedPath} - ${error}`);
+              }
 
               // Initialize converted file manager
               const workingDir = provider.getWorkingDirectory();
               const convertedManager = new ConvertedFileManager(workingDir);
 
-              // Clean up orphaned entries first
+              // Clean up orphaned entries and partial conversions first
               await convertedManager.cleanupOrphanedEntries();
 
               // Check if we can reuse an existing converted file
-              const validConverted = await convertedManager.getValidConvertedFile(inputFile, convertedPath);
+              // Note: This looks for any .converted.*.csv file for this source
+              const { basename: getBasename, dirname: getDirname, join: joinPath } = await import('path');
+              const { readdir } = await import('fs/promises');
+
+              const baseName = getBasename(inputFile);
+              const pattern = `${baseName}.converted.`;
+              let validConverted: string | null = null;
+
+              // Search for existing converted files in the same directory as the input file
+              try {
+                const dir = getDirname(inputFile);
+                const files = await readdir(dir);
+
+                for (const file of files) {
+                  if (file.startsWith(pattern) && file.endsWith('.csv')) {
+                    const filePath = joinPath(dir, file);
+                    validConverted = await convertedManager.getValidConvertedFile(inputFile, filePath);
+                    if (validConverted) break;
+                  }
+                }
+              } catch (error) {
+                // If readdir fails, just proceed with conversion
+                console.error('[MCP Tools] Error searching for existing converted file:', error);
+              }
 
               if (validConverted) {
                 // Reuse existing converted file and update timestamp
                 await convertedManager.touchConvertedFile(inputFile);
                 inputFile = validConverted;
+                console.error(`[MCP Tools] Reusing existing conversion: ${validConverted}`);
               } else {
-                // Run conversion command: qsv excel/jsonl <input> --output <converted.csv>
-                const conversionArgs = [conversionCmd, inputFile, '--output', convertedPath];
-                console.error(`[MCP Tools] Running conversion: ${qsvBin} ${conversionArgs.join(' ')}`);
+                // Register conversion start for failure tracking
+                await convertedManager.registerConversionStart(inputFile, convertedPath);
 
-                await runQsvWithTimeout(qsvBin, conversionArgs);
+                try {
+                  // Run conversion command: qsv excel/jsonl <input> --output <converted.csv>
+                  const conversionArgs = [conversionCmd, inputFile, '--output', convertedPath];
+                  console.error(`[MCP Tools] Running conversion: ${qsvBin} ${conversionArgs.join(' ')}`);
 
-                // Register the converted file and enforce LIFO size limit
-                await convertedManager.registerConvertedFile(inputFile, convertedPath);
+                  await runQsvWithTimeout(qsvBin, conversionArgs);
 
-                // Use the converted CSV as input
-                inputFile = convertedPath;
-                console.error(`[MCP Tools] Conversion successful: ${convertedPath}`);
+                  // Conversion succeeded - first register the converted file in the cache
+                  await convertedManager.registerConvertedFile(inputFile, convertedPath);
 
-                // Auto-index the converted CSV
-                await autoIndexIfNeeded(convertedPath);
+                  // Only mark conversion as complete after successful cache registration
+                  await convertedManager.registerConversionComplete(inputFile);
+                  // Use the converted CSV as input
+                  inputFile = convertedPath;
+                  console.error(`[MCP Tools] Conversion successful: ${convertedPath}`);
+
+                  // Auto-index the converted CSV
+                  await autoIndexIfNeeded(convertedPath);
+                } catch (conversionError) {
+                  // Conversion failed - clean up partial file
+                  try {
+                    const { unlink } = await import('fs/promises');
+                    await unlink(convertedPath);
+                    console.error(`[MCP Tools] Cleaned up partial conversion file: ${convertedPath}`);
+                  } catch {
+                    // Ignore cleanup errors - cleanupPartialConversions will handle it
+                  }
+
+                  // Track conversion failure
+                  convertedManager.trackConversionFailure();
+
+                  // Re-throw to outer catch block
+                  throw conversionError;
+                }
               }
             } catch (conversionError) {
               console.error(`[MCP Tools] Conversion error:`, conversionError);

@@ -374,19 +374,21 @@ export async function handleToolCall(
 
               // Check if we can reuse an existing converted file
               // Note: This looks for any .converted.*.csv file for this source
-              const basePath = inputFile;
-              const pattern = `${basePath}.converted.`;
+              const { basename: getBasename, join: joinPath } = await import('path');
+              const { readdir } = await import('fs/promises');
+
+              const baseName = getBasename(inputFile);
+              const pattern = `${baseName}.converted.`;
               let validConverted: string | null = null;
 
               // Search for existing converted files
               try {
-                const { readdir } = await import('fs/promises');
                 const dir = workingDir;
                 const files = await readdir(dir);
 
                 for (const file of files) {
-                  const filePath = `${dir}/${file}`;
                   if (file.startsWith(pattern) && file.endsWith('.csv')) {
+                    const filePath = joinPath(dir, file);
                     validConverted = await convertedManager.getValidConvertedFile(inputFile, filePath);
                     if (validConverted) break;
                   }

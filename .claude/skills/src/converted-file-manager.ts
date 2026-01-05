@@ -22,7 +22,7 @@ import { stat, unlink, readFile, writeFile, access, rename, readdir, open, realp
 import type { FileHandle } from 'fs/promises';
 import { constants } from 'fs';
 import type { Stats } from 'fs';
-import { dirname, basename } from 'path';
+import { dirname, basename, join } from 'path';
 import { randomUUID, createHash } from 'crypto';
 import { formatBytes } from './utils.js';
 
@@ -109,13 +109,13 @@ export interface ConversionMetrics {
  * File-based lock for preventing concurrent conversions of the same file
  */
 class ConversionLock {
-  private lockPath: string;
+  private baseLockPath: string;
+  private currentLockPath: string | null = null;
   private lockFd: FileHandle | null = null;
-  private static readonly LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
   private static readonly STALE_LOCK_AGE_MS = 10 * 60 * 1000; // 10 minutes
 
   constructor(lockPath: string) {
-    this.lockPath = lockPath;
+    this.baseLockPath = lockPath;
   }
 
   /**
@@ -125,14 +125,14 @@ class ConversionLock {
   async acquireLock(sourcePath: string): Promise<boolean> {
     // Generate lock file path based on source path hash
     const sourceHash = createHash('sha256').update(sourcePath).digest('hex').substring(0, 16);
-    this.lockPath = `${this.lockPath}.lock.${sourceHash}`;
+    this.currentLockPath = `${this.baseLockPath}.lock.${sourceHash}`;
 
     try {
       // Clean up stale lock if it exists
       await this.cleanupStaleLock();
 
       // Try to create lock file exclusively (fails if exists)
-      this.lockFd = await open(this.lockPath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+      this.lockFd = await open(this.currentLockPath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
 
       // Write lock metadata
       const lockData = JSON.stringify({
@@ -168,13 +168,16 @@ class ConversionLock {
       }
     }
 
-    try {
-      await unlink(this.lockPath);
-      console.error(`[ConversionLock] Released lock: ${basename(this.lockPath)}`);
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
-        console.error('[ConversionLock] Error deleting lock file:', error);
+    if (this.currentLockPath !== null) {
+      try {
+        await unlink(this.currentLockPath);
+        console.error(`[ConversionLock] Released lock: ${basename(this.currentLockPath)}`);
+      } catch (error: any) {
+        if (error.code !== 'ENOENT') {
+          console.error('[ConversionLock] Error deleting lock file:', error);
+        }
       }
+      this.currentLockPath = null;
     }
   }
 
@@ -182,12 +185,16 @@ class ConversionLock {
    * Clean up stale lock file (older than STALE_LOCK_AGE_MS)
    */
   private async cleanupStaleLock(): Promise<void> {
+    if (this.currentLockPath === null) {
+      return;
+    }
+
     try {
-      const stats = await stat(this.lockPath);
+      const stats = await stat(this.currentLockPath);
       const age = Date.now() - stats.mtime.getTime();
 
       if (age > ConversionLock.STALE_LOCK_AGE_MS) {
-        await unlink(this.lockPath);
+        await unlink(this.currentLockPath);
         console.error(`[ConversionLock] Cleaned up stale lock (${Math.round(age / 1000)}s old)`);
       }
     } catch (error: any) {
@@ -200,10 +207,12 @@ class ConversionLock {
 
   /**
    * Execute a function with an exclusive lock
+   * Returns null if lock cannot be acquired (another process holds it)
    */
   async withLock<T>(sourcePath: string, fn: () => Promise<T>): Promise<T | null> {
     const acquired = await this.acquireLock(sourcePath);
     if (!acquired) {
+      console.warn(`[ConversionLock] Cannot acquire lock for ${sourcePath} - another process may be converting this file`);
       return null; // Lock not acquired, another process is converting
     }
 
@@ -237,8 +246,8 @@ export class ConvertedFileManager {
 
     this.maxSizeBytes = sizeGB * 1024 * 1024 * 1024;
     this.workingDir = workingDir;
-    this.cacheFilePath = `${workingDir}/${ConvertedFileManager.CACHE_FILE}`;
-    this.conversionsFilePath = `${workingDir}/${ConvertedFileManager.CONVERSIONS_FILE}`;
+    this.cacheFilePath = join(workingDir, ConvertedFileManager.CACHE_FILE);
+    this.conversionsFilePath = join(workingDir, ConvertedFileManager.CONVERSIONS_FILE);
 
     // Initialize metrics (Phase 4)
     this.metrics = {
@@ -251,20 +260,27 @@ export class ConvertedFileManager {
 
   /**
    * Validate size limit configuration (Phase 1)
+   * Valid range: 0.1-1000 GB
+   * Recommended range: 0.5-100 GB
    */
   private validateSizeLimit(sizeGB: number): number {
+    // Reject invalid values (non-numeric, negative, zero, infinity, NaN)
     if (!Number.isFinite(sizeGB) || sizeGB <= 0) {
       console.error(`[Converted File Manager] Invalid size limit: ${sizeGB}, using default ${ConvertedFileManager.DEFAULT_MAX_SIZE_GB} GB`);
       return ConvertedFileManager.DEFAULT_MAX_SIZE_GB;
     }
 
+    // Reject out of bounds (< 0.1 GB or > 1000 GB)
     if (sizeGB < 0.1 || sizeGB > 1000) {
-      console.error(`[Converted File Manager] Size limit out of range: ${sizeGB} GB (valid: 0.1-1000), using default`);
+      console.error(`[Converted File Manager] Size limit out of valid range: ${sizeGB} GB (must be 0.1-1000 GB), using default ${ConvertedFileManager.DEFAULT_MAX_SIZE_GB} GB`);
       return ConvertedFileManager.DEFAULT_MAX_SIZE_GB;
     }
 
-    if (sizeGB < 0.5 || sizeGB > 100) {
-      console.warn(`[Converted File Manager] Unusual size limit: ${sizeGB} GB`);
+    // Warn about unusual but valid values
+    if (sizeGB < 0.5) {
+      console.warn(`[Converted File Manager] Unusually small size limit: ${sizeGB} GB (recommended minimum: 0.5 GB)`);
+    } else if (sizeGB > 100) {
+      console.warn(`[Converted File Manager] Unusually large size limit: ${sizeGB} GB (recommended maximum: 100 GB)`);
     }
 
     return sizeGB;
@@ -273,8 +289,10 @@ export class ConvertedFileManager {
   /**
    * Validate and canonicalize file path (Phase 2)
    * Prevents directory traversal attacks and normalizes paths
+   * @param filePath The path to validate
+   * @param mustExist If true, throws error if file doesn't exist (default: false)
    */
-  private async validatePath(filePath: string): Promise<string> {
+  private async validatePath(filePath: string, mustExist: boolean = false): Promise<string> {
     // Check for null bytes
     if (filePath.includes('\0')) {
       throw new Error('Invalid path: contains null byte');
@@ -295,9 +313,12 @@ export class ConvertedFileManager {
       const canonical = await realpath(filePath);
       return canonical;
     } catch (error: any) {
-      // If realpath fails because file doesn't exist yet, that's okay
-      // Just return the original path for files being created
       if (error.code === 'ENOENT') {
+        // File doesn't exist
+        if (mustExist) {
+          throw new Error(`File does not exist: ${filePath}`);
+        }
+        // For files being created (e.g., output files), return original path
         return filePath;
       }
       throw error;
@@ -346,17 +367,15 @@ export class ConvertedFileManager {
 
   /**
    * Check if source file has changed using enhanced detection (Phase 2)
-   * Uses multiple signals: hash > inode > mtime+size > mtime-only
+   * Uses multiple signals: inode > size+mtime > mtime-only
+   *
+   * Note: Hash comparison is intentionally NOT performed here as it's expensive.
+   * The sourceHash field is stored for future use cases (e.g., manual verification,
+   * debugging, or when called with an explicitly computed hash). Callers needing
+   * hash-based validation should call computeFileHash() separately and compare.
    */
   private hasSourceChanged(entry: ConvertedFileEntry, sourceStats: Stats): boolean {
-    // Priority 1: Hash comparison (most reliable)
-    if (entry.sourceHash) {
-      // Hash was recorded, so we should compute current hash to compare
-      // For now, we'll skip this in the check and rely on other methods
-      // Hash computation is expensive and should be opt-in
-    }
-
-    // Priority 2: Inode comparison (Unix-like systems)
+    // Priority 1: Inode comparison (Unix-like systems, fast and reliable)
     if (entry.sourceInode !== undefined && sourceStats.ino !== undefined) {
       if (entry.sourceInode !== sourceStats.ino) {
         console.error('[Converted File Manager] Source file inode changed (file replaced)');
@@ -364,7 +383,7 @@ export class ConvertedFileManager {
       }
     }
 
-    // Priority 3: Size + mtime comparison
+    // Priority 2: Size + mtime comparison
     if (entry.sourceSize !== undefined) {
       const sizeChanged = entry.sourceSize !== sourceStats.size;
       const mtimeChanged = sourceStats.mtime.getTime() > entry.sourceTimestamp;
@@ -382,9 +401,9 @@ export class ConvertedFileManager {
       return false; // Size and mtime match
     }
 
-    // Priority 4: Fallback to mtime-only (legacy behavior)
+    // Priority 3: Fallback to mtime-only (legacy behavior for old cache entries)
     if (sourceStats.mtime.getTime() > entry.sourceTimestamp) {
-      console.error('[Converted File Manager] Source file mtime changed (legacy check)');
+      console.error('[Converted File Manager] Source file mtime changed (fallback check)');
       return true;
     }
 
@@ -451,8 +470,10 @@ export class ConvertedFileManager {
     }
 
     // Recalculate totalSize to ensure consistency
+    // Allow small tolerance (100 bytes) for concurrent operations or filesystem metadata timing
     const calculatedSize = cache.entries.reduce((sum: number, e: ConvertedFileEntry) => sum + e.size, 0);
-    if (Math.abs(calculatedSize - cache.totalSize) > 1024) { // Allow 1KB rounding error
+    const TOLERANCE_BYTES = 100;
+    if (Math.abs(calculatedSize - cache.totalSize) > TOLERANCE_BYTES) {
       console.warn(`[Converted File Manager] totalSize mismatch (${cache.totalSize} vs ${calculatedSize}), fixing...`);
       cache.totalSize = calculatedSize;
     }
@@ -519,7 +540,7 @@ export class ConvertedFileManager {
 
       for (const file of files) {
         if (file.includes('.converted.') && file.endsWith('.csv')) {
-          const convertedPath = `${this.workingDir}/${file}`;
+          const convertedPath = join(this.workingDir, file);
 
           try {
             const stats = await stat(convertedPath);
@@ -785,8 +806,12 @@ export class ConvertedFileManager {
   ): Promise<void> {
     const lock = new ConversionLock(this.cacheFilePath);
 
-    await lock.withLock(sourcePath, async () => {
+    const result = await lock.withLock(sourcePath, async () => {
       try {
+        // Validate paths - both files must exist at registration time
+        await this.validatePath(convertedPath, true);
+        await this.validatePath(sourcePath, true);
+
         const cache = await this.loadCache();
         const convertedStats = await stat(convertedPath);
         const sourceStats = await stat(sourcePath);
@@ -794,7 +819,8 @@ export class ConvertedFileManager {
         // Remove existing entry for this source if present
         cache.entries = cache.entries.filter(e => e.sourcePath !== sourcePath);
 
-        // Compute hash for files under 10MB (optional enhanced detection)
+        // Compute hash for files under 10MB (stored for debugging/manual verification)
+        // Note: Not used in automatic change detection due to performance cost
         const sourceHashResult = sourceStats.size < 10 * 1024 * 1024
           ? await this.computeFileHash(sourcePath)
           : null;
@@ -836,6 +862,13 @@ export class ConvertedFileManager {
         console.error('[Converted File Manager] Error registering converted file:', error);
       }
     });
+
+    // Check if lock acquisition failed
+    if (result === null) {
+      console.warn(`[Converted File Manager] Failed to register ${convertedPath} - could not acquire lock (another process may be registering the same file)`);
+      // Note: The file is still valid and usable, just not tracked in the cache yet.
+      // The next cleanup cycle or successful registration attempt will add it.
+    }
   }
 
   /**
@@ -863,20 +896,24 @@ export class ConvertedFileManager {
    * Enhanced with stable sort using sequence counter (Phase 3)
    */
   private async enforceSizeLimit(cache: ConvertedFileCacheV1): Promise<void> {
-    // Add hysteresis to prevent cleanup thrashing (Phase 3)
+    // Hysteresis to prevent cleanup thrashing (Phase 3)
+    // Skip cleanup only if: under strict limit OR (within hysteresis band AND recently cleaned)
     const hysteresisThreshold = this.maxSizeBytes * 1.1; // 10% over limit
     const timeSinceLastCleanup = cache.lastCleanup ? Date.now() - cache.lastCleanup : Infinity;
     const oneHourMs = 60 * 60 * 1000;
 
-    // Only cleanup if significantly over limit OR haven't cleaned up in a while
+    // Under strict limit - no cleanup needed
     if (cache.totalSize <= this.maxSizeBytes) {
-      return; // Under limit
-    }
-
-    if (cache.totalSize <= hysteresisThreshold && timeSinceLastCleanup < oneHourMs) {
-      // Within hysteresis band and cleaned up recently, skip
       return;
     }
+
+    // Between 100-110% of limit AND cleaned recently - skip to prevent thrashing
+    // BUT if over 110%, always clean regardless of time since last cleanup
+    if (cache.totalSize <= hysteresisThreshold && timeSinceLastCleanup < oneHourMs) {
+      return;
+    }
+
+    // Over limit and either: (1) exceeded hysteresis threshold, or (2) haven't cleaned in a while
 
     // Stable sort by createdAt and sequence (oldest first) for LIFO deletion (Phase 3)
     cache.entries.sort((a, b) => {
@@ -956,7 +993,8 @@ export class ConvertedFileManager {
 
     // Final consistency check
     const recalculated = this.recalculateTotalSize(cache);
-    if (Math.abs(recalculated - cache.totalSize) > 1024) {
+    const TOLERANCE_BYTES = 100; // Small tolerance for concurrent operations
+    if (Math.abs(recalculated - cache.totalSize) > TOLERANCE_BYTES) {
       console.warn(`[Converted File Manager] Size discrepancy after cleanup, fixing (${cache.totalSize} -> ${recalculated})`);
       cache.totalSize = recalculated;
     }
@@ -997,7 +1035,7 @@ export class ConvertedFileManager {
         for (const file of files) {
           // Match temp files for this cache file: .qsv-mcp-converted-cache.json.tmp.*
           if (file.startsWith(`${cacheFilename}.tmp.`)) {
-            const tempPath = `${cacheDir}/${file}`;
+            const tempPath = join(cacheDir, file);
             try {
               const stats = await stat(tempPath);
               if (stats.mtime.getTime() < staleThreshold) {

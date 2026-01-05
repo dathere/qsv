@@ -13,8 +13,8 @@ Edit: `~/Library/Application Support/Claude/claude_desktop_config.json`
         "/path/to/qsv/.claude/skills/dist/mcp-server.js"
       ],
       "env": {
-        "QSV_WORKING_DIR": "/Users/your-username/Downloads",
-        "QSV_ALLOWED_DIRS": "/Users/your-username/Downloads:/Users/your-username/Documents"
+        "QSV_MCP_WORKING_DIR": "/Users/your-username/Downloads",
+        "QSV_MCP_ALLOWED_DIRS": "/Users/your-username/Downloads:/Users/your-username/Documents"
       }
     }
   }
@@ -24,7 +24,7 @@ Edit: `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Important**: Update these paths to match your system:
 - Replace `/path/to/qsv` with the actual path to your qsv installation
 - Replace `/Users/your-username` with your home directory path
-- On Windows, use semicolons (`;`) instead of colons (`:`) to separate directories in `QSV_ALLOWED_DIRS`
+- On Windows, use semicolons (`;`) instead of colons (`:`) to separate directories in `QSV_MCP_ALLOWED_DIRS`
 - On Windows, paths should look like `C:\\Users\\YourName\\Downloads`
 
 ## 2. Restart Claude Desktop
@@ -80,8 +80,8 @@ All existing qsv tools (`qsv_stats`, `qsv_frequency`, etc.) now work with local 
 
 | Variable | Purpose | Example (Unix) | Example (Windows) |
 |----------|---------|----------------|-------------------|
-| `QSV_WORKING_DIR` | Default directory for relative paths | `/Users/me/data` | `C:\\Users\\me\\data` |
-| `QSV_ALLOWED_DIRS` | Delimited allowed directories | `/Users/me/data:/Users/me/downloads` | `C:\\Users\\me\\data;C:\\Users\\me\\downloads` |
+| `QSV_MCP_WORKING_DIR` | Default directory for relative paths | `/Users/me/data` | `C:\\Users\\me\\data` |
+| `QSV_MCP_ALLOWED_DIRS` | Delimited allowed directories | `/Users/me/data:/Users/me/downloads` | `C:\\Users\\me\\data;C:\\Users\\me\\downloads` |
 
 **Note**: On Windows, use semicolons (`;`) to separate directories. On Unix/macOS, use colons (`:`).
 

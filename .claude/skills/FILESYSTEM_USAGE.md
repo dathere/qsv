@@ -1,6 +1,42 @@
 # Using QSV MCP Server with Local Files
 
-The QSV MCP Server now supports **direct access to local CSV files** without requiring uploads to Claude Desktop. This guide shows you how to configure and use this feature.
+The QSV MCP Server supports **direct access to local tabular data files** WITHOUT requiring uploads to Claude servers - making for increased security and reduced token usage. This includes CSV, TSV, Excel, JSONL, and more formats.
+
+## Supported File Formats
+
+The MCP server recognizes and processes all tabular formats supported by qsv:
+
+### Native Formats (Direct Processing)
+- **CSV** (`.csv`) - Comma-separated values
+- **TSV** (`.tsv`, `.tab`) - Tab-separated values
+- **SSV** (`.ssv`) - Semicolon-separated values
+- **Snappy-compressed** (`.csv.sz`, `.tsv.sz`, `.tab.sz`, `.ssv.sz`) - Compressed formats
+
+Uncompressed CSV/TSV/TAB/SSV files larger than 10 MB are automatically indexed for increased performance.
+
+### Formats Requiring Automatic Conversion
+
+These formats are automatically converted to CSV before processing:
+
+- **Excel files** (`.xls`, `.xlsx`, `.xlsm`, `.xlsb`) - Converted via `qsv excel`
+- **OpenDocument Spreadsheet** (`.ods`) - Converted via `qsv excel`
+- **JSONL/NDJSON** (`.jsonl`, `.ndjson`) - Converted via `qsv jsonl`
+
+When you select an Excel or JSONL file, the MCP server automatically:
+1. Detects the file format
+2. Runs the appropriate conversion command (`qsv excel` or `qsv jsonl`)
+3. Creates a `.converted.csv` file (e.g., `data.xlsx.converted.csv`)
+4. Uses the CSV for processing
+5. Returns results normally
+
+**No extra steps required** - just use the file as you would a CSV!
+
+**Automatic Management of Converted Files:**
+- Converted `.converted.csv` files are automatically managed with a LIFO (Last In First Out) cleanup system
+- If the source file hasn't changed, existing converted files are reused (timestamp comparison)
+- When total size of all converted files exceeds the limit (default: 1GB), the oldest files are automatically deleted
+- Configure the size limit with `QSV_MCP_CONVERTED_LIFO_SIZE_GB` environment variable (in GB)
+- The cache tracks all converted files in `.qsv-mcp-converted-cache.json` in your working directory
 
 ## Quick Start
 
@@ -19,8 +55,8 @@ Add the QSV MCP server to your Claude Desktop configuration with optional enviro
         "/path/to/qsv/.claude/skills/dist/mcp-server.js"
       ],
       "env": {
-        "QSV_WORKING_DIR": "/Users/your-username/Downloads",
-        "QSV_ALLOWED_DIRS": "/Users/your-username/Downloads:/Users/your-username/Documents:/Users/your-username/data"
+        "QSV_MCP_WORKING_DIR": "/Users/your-username/Downloads",
+        "QSV_MCP_ALLOWED_DIRS": "/Users/your-username/Downloads:/Users/your-username/Documents:/Users/your-username/data"
       }
     }
   }
@@ -28,7 +64,7 @@ Add the QSV MCP server to your Claude Desktop configuration with optional enviro
 ```
 
 **Platform-specific notes:**
-- **macOS/Linux**: Use colons (`:`) to separate directories in `QSV_ALLOWED_DIRS`
+- **macOS/Linux**: Use colons (`:`) to separate directories in `QSV_MCP_ALLOWED_DIRS`
 - **Windows**: Use semicolons (`;`) to separate directories, and use double backslashes in paths (e.g., `C:\\Users\\YourName\\Downloads`)
 
 ### 2. Restart Claude Desktop
@@ -39,39 +75,52 @@ After updating the configuration, restart Claude Desktop for the changes to take
 
 ### Environment Variables
 
-#### `QSV_WORKING_DIR`
+#### `QSV_MCP_WORKING_DIR`
 - **Description**: The default working directory for relative file paths
 - **Default**: Current process directory
 - **Example (Unix)**: `"/Users/your-username/Downloads"`
 - **Example (Windows)**: `"C:\\Users\\YourName\\Downloads"`
 
-#### `QSV_ALLOWED_DIRS`
+#### `QSV_MCP_ALLOWED_DIRS`
 - **Description**: Delimited list of directories that can be accessed (security feature)
 - **Delimiter**: Colon (`:`) on Unix/macOS, semicolon (`;`) on Windows
 - **Default**: Only the working directory
 - **Example (Unix)**: `"/Users/your-username/Downloads:/Users/your-username/Documents"`
 - **Example (Windows)**: `"C:\\Users\\YourName\\Downloads;C:\\Users\\YourName\\Documents"`
 
+#### `QSV_MCP_CONVERTED_LIFO_SIZE_GB`
+- **Description**: Maximum total size (in GB) of all `.converted.csv` files before LIFO cleanup
+- **Default**: `1` (1 GB)
+- **How it works**:
+  - Excel and JSONL files are automatically converted to CSV for processing
+  - Converted files are cached and reused if the source hasn't changed
+  - When total size exceeds this limit, the oldest converted files are deleted
+  - A cache file (`.qsv-mcp-converted-cache.json`) tracks all converted files
+- **Example**: `"2.5"` (allows up to 2.5 GB of converted files)
+
 ## Usage Examples
 
-### Browse Available CSV Files
+### Browse Available Files
 
 Simply ask Claude to list files in your working directory:
 
 ```
-What CSV files are available in my Downloads folder?
+What tabular data files are available in my Downloads folder?
 ```
 
-Claude will use the `qsv_list_files` tool to show you all CSV files:
+Claude will use the `qsv_list_files` tool to show you all supported files:
 
 ```
-Found 3 CSV files:
+Found 5 tabular data files:
 
-- allegheny_county_property_sale_transactions.csv (CSV file: allegheny_county_property_sale_transactions.csv)
-- sales_data.csv (CSV file: sales_data.csv)
-- customers.csv (CSV file: customers.csv)
+- allegheny_county_property_sale_transactions.csv (Tabular data file: allegheny_county_property_sale_transactions.csv)
+- sales_data.xlsx (Tabular data file: sales_data.xlsx)
+- customers.tsv (Tabular data file: customers.tsv)
+- events.jsonl (Tabular data file: events.jsonl)
+- products.ods (Tabular data file: products.ods)
 
 Use these file paths in qsv commands via the input_file parameter.
+Excel and JSONL files will be automatically converted.
 ```
 
 ### Work with Files Using Relative Paths
@@ -195,12 +244,12 @@ Here's a complete example of working with local files:
 - Hidden directories (starting with `.`) are skipped during recursive scans
 
 ### Allowed Directories
-Configure `QSV_ALLOWED_DIRS` to explicitly whitelist directories:
+Configure `QSV_MCP_ALLOWED_DIRS` to explicitly whitelist directories:
 
 ```json
 {
   "env": {
-    "QSV_ALLOWED_DIRS": "/Users/me/safe/data:/Users/me/safe/outputs"
+    "QSV_MCP_ALLOWED_DIRS": "/Users/me/safe/data:/Users/me/safe/outputs"
   }
 }
 ```
@@ -224,11 +273,11 @@ The MCP server also exposes local CSV files as browsable resources in Claude Des
 ### "Access denied" errors
 **Problem**: File path is outside allowed directories
 
-**Solution**: Add the directory to `QSV_ALLOWED_DIRS`:
+**Solution**: Add the directory to `QSV_MCP_ALLOWED_DIRS`:
 ```json
 {
   "env": {
-    "QSV_ALLOWED_DIRS": "/Users/me/Downloads:/path/to/your/data"
+    "QSV_MCP_ALLOWED_DIRS": "/Users/me/Downloads:/path/to/your/data"
   }
 }
 ```
@@ -296,8 +345,8 @@ In Claude Desktop, check the Resources panel to:
       "command": "node",
       "args": ["path/to/mcp-server.js"],
       "env": {
-        "QSV_WORKING_DIR": "/Users/me/primary-data",
-        "QSV_ALLOWED_DIRS": "/Users/me/primary-data:/Users/me/secondary-data:/Users/me/archive-data:/Users/me/Downloads"
+        "QSV_MCP_WORKING_DIR": "/Users/me/primary-data",
+        "QSV_MCP_ALLOWED_DIRS": "/Users/me/primary-data:/Users/me/secondary-data:/Users/me/archive-data:/Users/me/Downloads"
       }
     }
   }
@@ -309,8 +358,8 @@ In Claude Desktop, check the Resources panel to:
 ```json
 {
   "env": {
-    "QSV_WORKING_DIR": "/Volumes/SharedData",
-    "QSV_ALLOWED_DIRS": "/Volumes/SharedData:/Volumes/Backups"
+    "QSV_MCP_WORKING_DIR": "/Volumes/SharedData",
+    "QSV_MCP_ALLOWED_DIRS": "/Volumes/SharedData:/Volumes/Backups"
   }
 }
 ```
@@ -385,5 +434,5 @@ All of this happens **without uploading the file** to Claude!
 If you encounter issues:
 1. Check the Claude Desktop developer console for MCP server logs
 2. Verify your `claude_desktop_config.json` syntax is valid JSON
-3. Ensure file paths in `QSV_ALLOWED_DIRS` exist and are accessible
+3. Ensure file paths in `QSV_MCP_ALLOWED_DIRS` exist and are accessible
 4. Check file permissions on the directories

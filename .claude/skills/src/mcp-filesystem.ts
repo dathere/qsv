@@ -7,7 +7,8 @@
 
 import { readdir, stat, readFile, realpath } from 'fs/promises';
 import { join, resolve, relative, basename, extname } from 'path';
-import type { McpResource, McpResourceContent } from './types.js';
+import type { McpResource, McpResourceContent, FileInfo } from './types.js';
+import { formatBytes } from './utils.js';
 
 export interface FilesystemConfig {
   /**
@@ -38,6 +39,14 @@ export interface FilesystemConfig {
 }
 
 export class FilesystemResourceProvider {
+  // Static format detection sets (performance optimization)
+  private static readonly EXCEL_FORMATS = new Set([
+    '.xls', '.xlsx', '.xlsm', '.xlsb',
+    // Includes .ods as it is also handled via `qsv excel`
+    '.ods',
+  ]);
+  private static readonly JSONL_FORMATS = new Set(['.jsonl', '.ndjson']);
+
   private workingDir: string;
   private allowedDirs: string[];
   private allowedExtensions: Set<string>;
@@ -51,7 +60,18 @@ export class FilesystemResourceProvider {
       ...(config.allowedDirectories || []).map(d => resolve(d)),
     ];
     this.allowedExtensions = new Set(
-      config.allowedExtensions || ['.csv', '.tsv', '.tab', '.ssv', '.txt', '.sz'],
+      config.allowedExtensions || [
+        // Native CSV formats
+        '.csv', '.tsv', '.tab', '.ssv',
+        // Snappy-compressed formats
+        '.csv.sz', '.tsv.sz', '.tab.sz', '.ssv.sz',
+        // Excel formats (require conversion via qsv excel)
+        '.xls', '.xlsx', '.xlsm', '.xlsb',
+        // OpenDocument Spreadsheet (require conversion via qsv excel)
+        '.ods',
+        // JSONL/NDJSON (require conversion via qsv jsonl)
+        '.jsonl', '.ndjson',
+      ],
     );
     this.maxPreviewSize = config.maxPreviewSize || 1024 * 1024; // 1MB
     this.previewLines = config.previewLines || 20;
@@ -166,6 +186,47 @@ export class FilesystemResourceProvider {
   }
 
   /**
+   * Get file extension, handling double extensions like .csv.sz
+   */
+  private getFileExtension(filename: string): string | null {
+    const lower = filename.toLowerCase();
+
+    // Check for double extensions first (e.g., .csv.sz)
+    if (lower.endsWith('.csv.sz')) return '.csv.sz';
+    if (lower.endsWith('.tsv.sz')) return '.tsv.sz';
+    if (lower.endsWith('.tab.sz')) return '.tab.sz';
+    if (lower.endsWith('.ssv.sz')) return '.ssv.sz';
+
+    // Check for single extensions
+    const ext = extname(filename).toLowerCase();
+    return ext || null;
+  }
+
+  /**
+   * Check if a file format requires conversion to CSV
+   */
+  needsConversion(filePath: string): boolean {
+    const ext = this.getFileExtension(basename(filePath));
+    if (!ext) return false;
+
+    return FilesystemResourceProvider.EXCEL_FORMATS.has(ext) ||
+           FilesystemResourceProvider.JSONL_FORMATS.has(ext);
+  }
+
+  /**
+   * Get the conversion command for a file format
+   */
+  getConversionCommand(filePath: string): string | null {
+    const ext = this.getFileExtension(basename(filePath));
+    if (!ext) return null;
+
+    if (FilesystemResourceProvider.EXCEL_FORMATS.has(ext)) return 'excel';
+    if (FilesystemResourceProvider.JSONL_FORMATS.has(ext)) return 'jsonl';
+
+    return null;
+  }
+
+  /**
    * Recursively scan directory for CSV files
    */
   private async scanDirectory(
@@ -192,15 +253,27 @@ export class FilesystemResourceProvider {
             }
           }
         } else if (entry.isFile()) {
-          const ext = extname(entry.name).toLowerCase();
-          if (this.allowedExtensions.has(ext)) {
+          const ext = this.getFileExtension(entry.name);
+          if (ext && this.allowedExtensions.has(ext)) {
             const relativePath = relative(this.workingDir, fullPath);
             const uri = this.pathToFileUri(fullPath);
+
+            // Get file metadata
+            let description = entry.name;
+            try {
+              const fileStats = await stat(fullPath);
+              const size = formatBytes(fileStats.size);
+              const date = fileStats.mtime.toISOString().split('T')[0]; // YYYY-MM-DD
+              description = `${entry.name} (${size} ${date})`;
+            } catch {
+              // If stat fails, use basic description
+              description = entry.name;
+            }
 
             resources.push({
               uri,
               name: relativePath,
-              description: `Tabular data file: ${entry.name}`,
+              description,
               mimeType: this.getMimeType(ext),
             });
           }
@@ -234,8 +307,9 @@ export class FilesystemResourceProvider {
         throw new Error(`Not a file: ${filePath}`);
       }
 
-      const ext = extname(resolved).toLowerCase();
+      const ext = this.getFileExtension(basename(resolved)) || extname(resolved).toLowerCase();
       const mimeType = this.getMimeType(ext);
+      const conversionCmd = this.getConversionCommand(resolved);
 
       // Generate preview if file is small enough
       let preview = '';
@@ -249,19 +323,19 @@ export class FilesystemResourceProvider {
           preview += `\n... (${allLines.length - this.previewLines} more lines)`;
         }
       } else {
-        preview = `File too large for preview (${this.formatBytes(stats.size)})`;
+        preview = `File too large for preview (${formatBytes(stats.size)})`;
       }
 
       const relativePath = relative(this.workingDir, resolved);
       const absolutePath = resolved;
 
-      const info = {
+      const info: FileInfo = {
         file: {
           name: basename(resolved),
           path: relativePath,
           absolutePath,
           size: stats.size,
-          sizeFormatted: this.formatBytes(stats.size),
+          sizeFormatted: formatBytes(stats.size),
           modified: stats.mtime.toISOString(),
           extension: ext,
         },
@@ -275,6 +349,15 @@ export class FilesystemResourceProvider {
           ],
         },
       };
+
+      // Add conversion note if needed
+      if (conversionCmd) {
+        info.conversion = {
+          required: true,
+          command: conversionCmd,
+          note: `This ${ext} file will be automatically converted to CSV using qsv ${conversionCmd} before processing`,
+        };
+      }
 
       return {
         uri,
@@ -319,33 +402,44 @@ export class FilesystemResourceProvider {
    */
   private getMimeType(ext: string): string {
     switch (ext.toLowerCase()) {
+      // Native CSV formats
       case '.csv':
         return 'text/csv';
       case '.tsv':
       case '.tab':
         return 'text/tab-separated-values';
-      case '.txt':
-        return 'text/plain';
-      case '.sz':
+      case '.ssv':
+        return 'text/csv'; // Semicolon-separated
+
+      // Snappy-compressed formats
+      case '.csv.sz':
+      case '.tsv.sz':
+      case '.tab.sz':
+      case '.ssv.sz':
         return 'application/x-snappy-framed';
+
+      // Excel formats
+      case '.xls':
+        return 'application/vnd.ms-excel';
+      case '.xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case '.xlsm':
+        return 'application/vnd.ms-excel.sheet.macroEnabled.12';
+      case '.xlsb':
+        return 'application/vnd.ms-excel.sheet.binary.macroEnabled.12';
+
+      // OpenDocument Spreadsheet
+      case '.ods':
+        return 'application/vnd.oasis.opendocument.spreadsheet';
+
+      // JSONL/NDJSON
+      case '.jsonl':
+      case '.ndjson':
+        return 'application/x-ndjson';
+
       default:
-        return 'text/plain';
+        return 'application/octet-stream';
     }
   }
 
-  /**
-   * Format bytes to human-readable string
-   */
-  private formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
-    const i = Math.min(
-      Math.floor(Math.log(bytes) / Math.log(k)),
-      sizes.length - 1,
-    );
-
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-  }
 }

@@ -133,20 +133,28 @@ async function promptForEnvVars() {
   info(`Platform detected: ${platform()}`);
   info(`Directory delimiter: '${defaults.delimiter}'\n`);
 
-  // Prompt for QSV_WORKING_DIR
-  console.log(`${colors.cyan}QSV_WORKING_DIR${colors.reset}`);
+  // Prompt for QSV_MCP_WORKING_DIR
+  console.log(`${colors.cyan}QSV_MCP_WORKING_DIR${colors.reset}`);
   console.log('  Default working directory for relative file paths');
   const workingDir = await promptUser('Enter working directory', defaults.workingDir);
 
-  // Prompt for QSV_ALLOWED_DIRS
-  console.log(`\n${colors.cyan}QSV_ALLOWED_DIRS${colors.reset}`);
+  // Prompt for QSV_MCP_ALLOWED_DIRS
+  console.log(`\n${colors.cyan}QSV_MCP_ALLOWED_DIRS${colors.reset}`);
   console.log(`  Allowed directories (separated by '${defaults.delimiter}')`);
   console.log('  Files outside these directories cannot be accessed');
   const allowedDirs = await promptUser('Enter allowed directories', defaults.allowedDirs);
 
+  // Prompt for QSV_MCP_CONVERTED_LIFO_SIZE_GB
+  console.log(`\n${colors.cyan}QSV_MCP_CONVERTED_LIFO_SIZE_GB${colors.reset}`);
+  console.log('  Max total size (GB) of .converted.csv files before LIFO cleanup');
+  console.log('  Excel/JSONL files are auto-converted to CSV for processing');
+  console.log('  Oldest converted files are deleted when limit is exceeded');
+  const convertedLifoSize = await promptUser('Enter LIFO size limit in GB', '1');
+
   return {
-    QSV_WORKING_DIR: workingDir,
-    QSV_ALLOWED_DIRS: allowedDirs,
+    QSV_MCP_WORKING_DIR: workingDir,
+    QSV_MCP_ALLOWED_DIRS: allowedDirs,
+    QSV_MCP_CONVERTED_LIFO_SIZE_GB: convertedLifoSize,
   };
 }
 
@@ -280,7 +288,7 @@ async function updateClaudeConfig(envVars) {
     command: 'node',
     args: [mcpServerPath],
     env: {
-      QSV_BIN_PATH: qsvPath,
+      QSV_MCP_BIN_PATH: qsvPath,
       ...envVars,
     },
   };
@@ -305,8 +313,8 @@ function printVerificationSteps(envVars) {
 
   console.log('Configuration summary:\n');
   if (envVars) {
-    console.log(`  Working Directory: ${envVars.QSV_WORKING_DIR}`);
-    console.log(`  Allowed Directories: ${envVars.QSV_ALLOWED_DIRS}\n`);
+    console.log(`  Working Directory: ${envVars.QSV_MCP_WORKING_DIR}`);
+    console.log(`  Allowed Directories: ${envVars.QSV_MCP_ALLOWED_DIRS}\n`);
   }
 
   console.log('Next steps:\n');

@@ -57,7 +57,7 @@ class QsvMcpServer {
     );
 
     this.loader = new SkillLoader();
-    this.executor = new SkillExecutor();
+    this.executor = new SkillExecutor(process.env.QSV_BIN_PATH || 'qsv');
     this.resourceProvider = new ExampleResourceProvider(this.loader);
 
     // Initialize filesystem provider with configurable directories

@@ -101,6 +101,12 @@ export class SkillExecutor {
     stderr: string;
   }> {
     return new Promise((resolve, reject) => {
+      // Log the full command for debugging
+      const fullCommand = `${this.qsvBinary} ${args.join(' ')}`;
+      console.error(`[Executor] Running command: ${fullCommand}`);
+      console.error(`[Executor] Binary path: ${this.qsvBinary}`);
+      console.error(`[Executor] Args:`, JSON.stringify(args));
+
       const proc = spawn(this.qsvBinary, args, {
         stdio: ['pipe', 'pipe', 'pipe']
       });
@@ -122,10 +128,15 @@ export class SkillExecutor {
       });
 
       proc.stderr.on('data', chunk => {
-        stderr += chunk.toString();
+        const data = chunk.toString();
+        stderr += data;
+        console.error(`[Executor] stderr: ${data}`);
       });
 
       proc.on('close', exitCode => {
+        console.error(`[Executor] Process exited with code: ${exitCode}`);
+        console.error(`[Executor] stdout length: ${stdout.length}`);
+        console.error(`[Executor] stderr length: ${stderr.length}`);
         resolve({
           exitCode: exitCode || 0,
           stdout,
@@ -133,7 +144,10 @@ export class SkillExecutor {
         });
       });
 
-      proc.on('error', reject);
+      proc.on('error', (err) => {
+        console.error(`[Executor] Process error:`, err);
+        reject(err);
+      });
     });
   }
 

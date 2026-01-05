@@ -359,38 +359,85 @@ export async function handleToolCall(
             // Convert file using qsv excel or qsv jsonl
             try {
               const qsvBin = getQsvBinaryPath();
-              const convertedPath = inputFile + '.converted.csv';
+
+              // Generate unique converted file path with UUID to prevent collisions
+              const { randomUUID } = await import('crypto');
+              const uuid = randomUUID().substring(0, 8); // Use first 8 chars for readability
+              const convertedPath = `${inputFile}.converted.${uuid}.csv`;
 
               // Initialize converted file manager
               const workingDir = provider.getWorkingDirectory();
               const convertedManager = new ConvertedFileManager(workingDir);
 
-              // Clean up orphaned entries first
+              // Clean up orphaned entries and partial conversions first
               await convertedManager.cleanupOrphanedEntries();
 
               // Check if we can reuse an existing converted file
-              const validConverted = await convertedManager.getValidConvertedFile(inputFile, convertedPath);
+              // Note: This looks for any .converted.*.csv file for this source
+              const basePath = inputFile;
+              const pattern = `${basePath}.converted.`;
+              let validConverted: string | null = null;
+
+              // Search for existing converted files
+              try {
+                const { readdir } = await import('fs/promises');
+                const dir = workingDir;
+                const files = await readdir(dir);
+
+                for (const file of files) {
+                  const filePath = `${dir}/${file}`;
+                  if (file.startsWith(pattern) && file.endsWith('.csv')) {
+                    validConverted = await convertedManager.getValidConvertedFile(inputFile, filePath);
+                    if (validConverted) break;
+                  }
+                }
+              } catch (error) {
+                // If readdir fails, just proceed with conversion
+                console.error('[MCP Tools] Error searching for existing converted file:', error);
+              }
 
               if (validConverted) {
                 // Reuse existing converted file and update timestamp
                 await convertedManager.touchConvertedFile(inputFile);
                 inputFile = validConverted;
+                console.error(`[MCP Tools] Reusing existing conversion: ${validConverted}`);
               } else {
-                // Run conversion command: qsv excel/jsonl <input> --output <converted.csv>
-                const conversionArgs = [conversionCmd, inputFile, '--output', convertedPath];
-                console.error(`[MCP Tools] Running conversion: ${qsvBin} ${conversionArgs.join(' ')}`);
+                // Register conversion start for failure tracking
+                await convertedManager.registerConversionStart(inputFile, convertedPath);
 
-                await runQsvWithTimeout(qsvBin, conversionArgs);
+                try {
+                  // Run conversion command: qsv excel/jsonl <input> --output <converted.csv>
+                  const conversionArgs = [conversionCmd, inputFile, '--output', convertedPath];
+                  console.error(`[MCP Tools] Running conversion: ${qsvBin} ${conversionArgs.join(' ')}`);
 
-                // Register the converted file and enforce LIFO size limit
-                await convertedManager.registerConvertedFile(inputFile, convertedPath);
+                  await runQsvWithTimeout(qsvBin, conversionArgs);
 
-                // Use the converted CSV as input
-                inputFile = convertedPath;
-                console.error(`[MCP Tools] Conversion successful: ${convertedPath}`);
+                  // Register the converted file and enforce LIFO size limit
+                  // This also marks conversion as complete
+                  await convertedManager.registerConvertedFile(inputFile, convertedPath);
 
-                // Auto-index the converted CSV
-                await autoIndexIfNeeded(convertedPath);
+                  // Use the converted CSV as input
+                  inputFile = convertedPath;
+                  console.error(`[MCP Tools] Conversion successful: ${convertedPath}`);
+
+                  // Auto-index the converted CSV
+                  await autoIndexIfNeeded(convertedPath);
+                } catch (conversionError) {
+                  // Conversion failed - clean up partial file
+                  try {
+                    const { unlink } = await import('fs/promises');
+                    await unlink(convertedPath);
+                    console.error(`[MCP Tools] Cleaned up partial conversion file: ${convertedPath}`);
+                  } catch {
+                    // Ignore cleanup errors - cleanupPartialConversions will handle it
+                  }
+
+                  // Track conversion failure
+                  convertedManager.trackConversionFailure();
+
+                  // Re-throw to outer catch block
+                  throw conversionError;
+                }
               }
             } catch (conversionError) {
               console.error(`[MCP Tools] Conversion error:`, conversionError);

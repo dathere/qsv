@@ -414,13 +414,11 @@ export async function handleToolCall(
 
                   await runQsvWithTimeout(qsvBin, conversionArgs);
 
-                  // Conversion succeeded - mark as complete immediately
-                  await convertedManager.registerConversionComplete(inputFile);
-
-                  // Register the converted file and enforce LIFO size limit
-                  // Note: This may fail to acquire lock, but conversion is already complete
+                  // Conversion succeeded - first register the converted file in the cache
                   await convertedManager.registerConvertedFile(inputFile, convertedPath);
 
+                  // Only mark conversion as complete after successful cache registration
+                  await convertedManager.registerConversionComplete(inputFile);
                   // Use the converted CSV as input
                   inputFile = convertedPath;
                   console.error(`[MCP Tools] Conversion successful: ${convertedPath}`);

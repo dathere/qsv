@@ -135,3 +135,38 @@ export interface McpPipelineStep {
   command: string;
   params: Record<string, unknown>;
 }
+
+/**
+ * File information structure for resource content
+ */
+export interface FileInfo {
+  file: {
+    name: string;
+    path: string;
+    absolutePath: string;
+    size: number;
+    sizeFormatted: string;
+    modified: string;
+    extension: string;
+  };
+  preview: string;
+  usage: {
+    description: string;
+    examples: string[];
+  };
+  conversion?: {
+    required: boolean;
+    command: string;
+    note: string;
+  };
+}
+
+/**
+ * Filesystem provider with extended capabilities
+ */
+export interface FilesystemProviderExtended {
+  resolvePath: (path: string) => Promise<string>;
+  needsConversion: (path: string) => boolean;
+  getConversionCommand: (path: string) => string | null;
+  getWorkingDirectory: () => string;
+}

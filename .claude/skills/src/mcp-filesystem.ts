@@ -7,7 +7,8 @@
 
 import { readdir, stat, readFile, realpath } from 'fs/promises';
 import { join, resolve, relative, basename, extname } from 'path';
-import type { McpResource, McpResourceContent } from './types.js';
+import type { McpResource, McpResourceContent, FileInfo } from './types.js';
+import { formatBytes } from './utils.js';
 
 export interface FilesystemConfig {
   /**
@@ -261,7 +262,7 @@ export class FilesystemResourceProvider {
             let description = entry.name;
             try {
               const fileStats = await stat(fullPath);
-              const size = this.formatBytes(fileStats.size);
+              const size = formatBytes(fileStats.size);
               const date = fileStats.mtime.toISOString().split('T')[0]; // YYYY-MM-DD
               description = `${entry.name} (${size} ${date})`;
             } catch {
@@ -322,19 +323,19 @@ export class FilesystemResourceProvider {
           preview += `\n... (${allLines.length - this.previewLines} more lines)`;
         }
       } else {
-        preview = `File too large for preview (${this.formatBytes(stats.size)})`;
+        preview = `File too large for preview (${formatBytes(stats.size)})`;
       }
 
       const relativePath = relative(this.workingDir, resolved);
       const absolutePath = resolved;
 
-      const info: any = {
+      const info: FileInfo = {
         file: {
           name: basename(resolved),
           path: relativePath,
           absolutePath,
           size: stats.size,
-          sizeFormatted: this.formatBytes(stats.size),
+          sizeFormatted: formatBytes(stats.size),
           modified: stats.mtime.toISOString(),
           extension: ext,
         },
@@ -441,19 +442,4 @@ export class FilesystemResourceProvider {
     }
   }
 
-  /**
-   * Format bytes to human-readable string
-   */
-  private formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
-    const i = Math.min(
-      Math.floor(Math.log(bytes) / Math.log(k)),
-      sizes.length - 1,
-    );
-
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-  }
 }

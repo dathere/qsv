@@ -7,7 +7,7 @@ import { stat, access } from 'fs/promises';
 import { constants } from 'fs';
 import { basename } from 'path';
 import { ConvertedFileManager } from './converted-file-manager.js';
-import type { QsvSkill, Argument, Option, McpToolDefinition, McpToolProperty } from './types.js';
+import type { QsvSkill, Argument, Option, McpToolDefinition, McpToolProperty, FilesystemProviderExtended } from './types.js';
 import type { SkillExecutor } from './executor.js';
 import type { SkillLoader } from './loader.js';
 
@@ -17,10 +17,80 @@ import type { SkillLoader } from './loader.js';
 const AUTO_INDEX_SIZE_MB = 10;
 
 /**
+ * Default timeout for conversion and indexing operations (5 minutes)
+ */
+const DEFAULT_OPERATION_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
  * Get QSV binary path (centralized)
  */
 function getQsvBinaryPath(): string {
   return process.env.QSV_MCP_BIN_PATH || 'qsv';
+}
+
+/**
+ * Run a qsv command with timeout
+ */
+async function runQsvWithTimeout(
+  qsvBin: string,
+  args: string[],
+  timeoutMs: number = DEFAULT_OPERATION_TIMEOUT_MS,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(qsvBin, args, {
+      stdio: ['ignore', 'ignore', 'pipe']
+    });
+
+    let stderr = '';
+    let timedOut = false;
+
+    // Set up timeout
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill('SIGTERM');
+      reject(new Error(`Operation timed out after ${timeoutMs}ms: ${qsvBin} ${args.join(' ')}`));
+    }, timeoutMs);
+
+    proc.stderr?.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      if (!timedOut) {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`Command failed with exit code ${code}: ${stderr}`));
+        }
+      }
+    });
+
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      if (!timedOut) {
+        reject(err);
+      }
+    });
+  });
+}
+
+/**
+ * Check if an object has filesystem provider capabilities
+ */
+function isFilesystemProviderExtended(obj: unknown): obj is FilesystemProviderExtended {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    'resolvePath' in obj &&
+    'needsConversion' in obj &&
+    'getConversionCommand' in obj &&
+    'getWorkingDirectory' in obj &&
+    typeof (obj as any).resolvePath === 'function' &&
+    typeof (obj as any).needsConversion === 'function' &&
+    typeof (obj as any).getConversionCommand === 'function' &&
+    typeof (obj as any).getWorkingDirectory === 'function'
+  );
 }
 
 /**
@@ -62,29 +132,13 @@ async function autoIndexIfNeeded(
       const qsvBin = getQsvBinaryPath();
       const indexArgs = ['index', filePath];
 
-      await new Promise<void>((resolve) => {
-        const proc = spawn(qsvBin, indexArgs, {
-          stdio: ['ignore', 'ignore', 'pipe']
-        });
-
-        let stderr = '';
-        proc.stderr?.on('data', (chunk) => {
-          stderr += chunk.toString();
-        });
-
-        proc.on('close', (code) => {
-          if (code === 0) {
-            console.error(`[MCP Tools] Index created successfully: ${indexPath}`);
-          } else {
-            console.error(`[MCP Tools] Index creation failed (continuing anyway): ${stderr}`);
-          }
-          resolve();
-        });
-        proc.on('error', (err) => {
-          console.error(`[MCP Tools] Index creation error (continuing anyway):`, err);
-          resolve();
-        });
-      });
+      try {
+        await runQsvWithTimeout(qsvBin, indexArgs);
+        console.error(`[MCP Tools] Index created successfully: ${indexPath}`);
+      } catch (error) {
+        // Don't fail if indexing fails or times out - just log and continue
+        console.error(`[MCP Tools] Index creation failed (continuing anyway):`, error);
+      }
     } else if (indexExists) {
       console.error(`[MCP Tools] Index already exists: ${indexPath}`);
     } else {
@@ -267,15 +321,8 @@ export async function handleToolCall(
         console.error(`[MCP Tools] Resolved input file: ${originalInputFile} -> ${inputFile}`);
 
         // Check if file needs conversion (Excel or JSONL to CSV)
-        if ('needsConversion' in filesystemProvider && 'getConversionCommand' in filesystemProvider &&
-            'getWorkingDirectory' in filesystemProvider) {
-          type FileSystemProvider = {
-            needsConversion: (path: string) => boolean;
-            getConversionCommand: (path: string) => string | null;
-            getWorkingDirectory: () => string;
-            resolvePath: (path: string) => Promise<string>;
-          };
-          const provider = filesystemProvider as FileSystemProvider;
+        if (isFilesystemProviderExtended(filesystemProvider)) {
+          const provider = filesystemProvider;
 
           if (provider.needsConversion(inputFile)) {
             const conversionCmd = provider.getConversionCommand(inputFile);
@@ -307,25 +354,7 @@ export async function handleToolCall(
                 const conversionArgs = [conversionCmd, inputFile, '--output', convertedPath];
                 console.error(`[MCP Tools] Running conversion: ${qsvBin} ${conversionArgs.join(' ')}`);
 
-                await new Promise<void>((resolve, reject) => {
-                  const proc = spawn(qsvBin, conversionArgs, {
-                    stdio: ['ignore', 'ignore', 'pipe']
-                  });
-
-                  let stderr = '';
-                  proc.stderr?.on('data', (chunk) => {
-                    stderr += chunk.toString();
-                  });
-
-                  proc.on('close', (code) => {
-                    if (code === 0) {
-                      resolve();
-                    } else {
-                      reject(new Error(`Conversion failed with exit code ${code}: ${stderr}`));
-                    }
-                  });
-                  proc.on('error', reject);
-                });
+                await runQsvWithTimeout(qsvBin, conversionArgs);
 
                 // Register the converted file and enforce LIFO size limit
                 await convertedManager.registerConvertedFile(inputFile, convertedPath);

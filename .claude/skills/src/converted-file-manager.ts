@@ -7,6 +7,7 @@
 
 import { stat, unlink, readFile, writeFile, access } from 'fs/promises';
 import { constants } from 'fs';
+import { formatBytes } from './utils.js';
 
 interface ConvertedFileEntry {
   convertedPath: string;
@@ -155,7 +156,7 @@ export class ConvertedFileManager {
     }
 
     console.error(
-      `[Converted File Manager] Size limit exceeded (${this.formatBytes(cache.totalSize)} > ${this.formatBytes(this.maxSizeBytes)}), ` +
+      `[Converted File Manager] Size limit exceeded (${formatBytes(cache.totalSize)} > ${formatBytes(this.maxSizeBytes)}), ` +
       `deleting ${toDelete.length} oldest file(s)...`
     );
 
@@ -163,7 +164,7 @@ export class ConvertedFileManager {
     for (const entry of toDelete) {
       try {
         await unlink(entry.convertedPath);
-        console.error(`[Converted File Manager] Deleted: ${entry.convertedPath} (${this.formatBytes(entry.size)})`);
+        console.error(`[Converted File Manager] Deleted: ${entry.convertedPath} (${formatBytes(entry.size)})`);
 
         // Remove from cache
         cache.entries = cache.entries.filter(e => e.convertedPath !== entry.convertedPath);
@@ -202,19 +203,4 @@ export class ConvertedFileManager {
     }
   }
 
-  /**
-   * Format bytes to human-readable string
-   */
-  private formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.min(
-      Math.floor(Math.log(bytes) / Math.log(k)),
-      sizes.length - 1,
-    );
-
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-  }
 }

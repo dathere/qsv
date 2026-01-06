@@ -18,6 +18,7 @@ UE            = "UE"
 seeked        = "seeked"
 DNE           = "DNE"
 Generice      = "Generice"
+Portugese     = "Portugese"
 
 [files]
 extend-exclude = [

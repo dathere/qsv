@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Added
 * feat: qsv MCP server https://github.com/dathere/qsv/pull/3269
-* feat: qsv Claude Agent Skills SDK support 🤖  https://github.com/dathere/qsv/pull/3264
+* feat: `MCP` - expanded file selector for more supported tabular file formats; auto index for files larger than 10mb https://github.com/dathere/qsv/pull/3278
+* feat: added Claude Agent Skills SDK support 🤖  https://github.com/dathere/qsv/pull/3264
 * feat: `moarstats` add  "xsd_type" column https://github.com/dathere/qsv/pull/3242
 * feat: `moarstats` add Atkinson Index with configurable inequality aversion parameter, Normalized Entropy & Bimodal Coefficient https://github.com/dathere/qsv/pull/3243
 * feat: `moarstats` add bivariate stats https://github.com/dathere/qsv/pull/3247
@@ -21,19 +22,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Changed
 * refactor: `frequency` reduce duplication introduced by `--weight` option https://github.com/dathere/qsv/pull/3236
 * refactor: `describegpt` - consolidate JSON response parsing; cache handling; and make DuckDB & Polars error handling more consistent https://github.com/dathere/qsv/pull/3241
+* refactor MCP Server to optimize for Local Access to Files https://github.com/dathere/qsv/pull/3272
+* refactor: mcp server improvements https://github.com/dathere/qsv/pull/3274
+* refactor: simplify MCP server - remove examples from ci tests https://github.com/dathere/qsv/pull/3277
+* refactor: MCP LIFO converted cache https://github.com/dathere/qsv/pull/3280
+* refactor: MCP https://github.com/dathere/qsv/pull/3282
 * perf: `moarstats` much faster bivariate calculation https://github.com/dathere/qsv/pull/3248
 * perf: `moarstats` optimize non-streaming bivariate stats compilation https://github.com/dathere/qsv/pull/3250
 * refactor: qsv Skills Agent https://github.com/dathere/qsv/pull/3267
+* deps: polars bump to rev c241260 https://github.com/dathere/qsv/pull/3276
 * build(deps): bump itoa from 1.0.16 to 1.0.17 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3239
 * build(deps): bump human-panic from 2.0.4 to 2.0.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3234
 * build(deps): bump human-panic from 2.0.5 to 2.0.6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3249
 * build(deps): bump libc from 0.2.178 to 0.2.179 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3265
 * build(deps): bump redis from 1.0.1 to 1.0.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3232
+* build(deps): bump rfd from 0.16.0 to 0.17.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3279
+* build(deps): bump rfd from 0.17.0 to 0.17.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3284
 * build(deps): bump serde_json from 1.0.147 to 1.0.148 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3238
+* build(deps): bump serial_test from 3.2.0 to 3.3.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3273
+* build(deps): bump serial_test from 3.3.0 to 3.3.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3275
 * build(deps): bump tokio from 1.48.0 to 1.49.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3266
+* build(deps): bump url from 2.5.7 to 2.5.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3286
 * build(deps): bump zmij from 0.1.7 to 0.1.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3231
 * build(deps): bump zmij from 0.1.8 to 0.1.9 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3233
-* build(deps): bump zmij from 0.1.9 to 0.1.10 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3235
+* build(deps): bump zmij from 0.1.9 to 0.1.10 by @dependabot[bot] in https://github.com/dathere/qsv/pucd ll/3235
 * build(deps): bump zmij from 0.1.10 to 1.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3237
 * build(deps): bump zmij from 1.0.0 to 1.0.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3244
 * build(deps): bump zmij from 1.0.1 to 1.0.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3245
@@ -44,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * build(deps): bump zmij from 1.0.7 to 1.0.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3263
 * build(deps): bump zmij from 1.0.8 to 1.0.9 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3268
 * build(deps): bump zmij from 1.0.9 to 1.0.10 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3270
+* build(deps): bump zmij from 1.0.10 to 1.0.11 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3283
+* build(deps): bump zmij from 1.0.11 to 1.0.12 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3287
 * bumped several indirect dependencies
 * applied select clippy & Codacy suggestions
 * applied several GH Copilot and Claude review suggestions

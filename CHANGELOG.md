@@ -6,9 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [13.0.0] - 2026-01-06 🦾 **"The Statistical Data-Wrangling Agent Release"** 🤖
+## [13.0.0] - 2026-01-06 🦾 **_"The Statistical Data-Wrangling Agent Release"_** 🤖
 
-Welcome to **qsv 13.0.0** - a major milestone that transforms qsv into an **AI-native Agent**! This is in addition to the online [AI-Chatbot for CKAN portals](https://dathere.com/ai-chatbot/) we released last September, and continues our march towards even more AI/ML/Graph/FAIR and Data Librarian/Concierge/Advisor/Analyst capabilities across the datHere suite in the coming months.
+Welcome to **qsv 13.0.0** - a major milestone that transforms qsv into an **AI-native Agent** as we start 2026!<br>This is in addition to the online [AI-Chatbot for CKAN portals](https://dathere.com/ai-chatbot/) we released last September, and continues our march towards even more AI/ML/Graph/FAIR and Data Librarian/Concierge/Advisor/Analyst capabilities across the datHere suite in the coming months.
 
 This release introduces first-class support for AI agents through three major new capabilities:
 
@@ -16,7 +16,6 @@ This release introduces first-class support for AI agents through three major ne
 
 qsv now ships with a built-in **Model Context Protocol (MCP) Server** enabling seamless integration with AI Chatbots starting with Claude Desktop.
 
-Key features:
 - **Local Data** - Its ["zero-copy"](https://en.wikipedia.org/wiki/Zero-copy)" inspired approach allows you to wrangle very large datasets - **WITHOUT** sending raw data, only sending statistical metadata to Claude! This is not only good for security and privacy reasons - it overcomes Claude's upload size limit, saves tokens and improves performance!
 - **22 MCP Tools**: 20 common qsv commands as individual tools + 1 generic tool to access all other 46 commands + 1 pipeline tool
 - **Natural Language Interface**: No need to remember command syntax
@@ -106,34 +105,20 @@ See [STATS_DEFINITIONS.md](https://github.com/dathere/qsv/blob/f65bdfa333e7fbcbc
 * build(deps): bump serial_test from 3.3.0 to 3.3.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3275
 * build(deps): bump tokio from 1.48.0 to 1.49.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3266
 * build(deps): bump url from 2.5.7 to 2.5.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3286
-* build(deps): bump zmij from 0.1.7 to 0.1.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3231
-* build(deps): bump zmij from 0.1.8 to 0.1.9 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3233
-* build(deps): bump zmij from 0.1.9 to 0.1.10 by @dependabot[bot] in https://github.com/dathere/qsv/pucd ll/3235
-* build(deps): bump zmij from 0.1.10 to 1.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3237
-* build(deps): bump zmij from 1.0.0 to 1.0.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3244
-* build(deps): bump zmij from 1.0.1 to 1.0.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3245
-* build(deps): bump zmij from 1.0.2 to 1.0.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3251
-* build(deps): bump zmij from 1.0.3 to 1.0.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3255
-* build(deps): bump zmij from 1.0.5 to 1.0.6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3258
-* build(deps): bump zmij from 1.0.6 to 1.0.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3262
-* build(deps): bump zmij from 1.0.7 to 1.0.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3263
-* build(deps): bump zmij from 1.0.8 to 1.0.9 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3268
-* build(deps): bump zmij from 1.0.9 to 1.0.10 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3270
-* build(deps): bump zmij from 1.0.10 to 1.0.11 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3283
-* build(deps): bump zmij from 1.0.11 to 1.0.12 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3287
+* build(deps): numerous bumps zmij from 0.1.7 to 1.0.12
 * bumped several indirect dependencies
 * applied select clippy & Codacy suggestions
 * applied several GH Copilot and Claude review suggestions
 
 ## Fixed
 * fix: refresh_cpu_all() -> refresh_cpu_list(sysinfo::CpuRefreshKind::nothing())… https://github.com/dathere/qsv/pull/3261
-- fix: `stats` remove redundant check https://github.com/dathere/qsv/commit/0977ebf88c48274afb1f3e0c3d1506f91eabc804
-- fix: `moarstats` correct `kendall_tau` formula https://github.com/dathere/qsv/commit/cf165439e013fad5b369c81e5704cc2607a91f8e
-- fix: `describegpt` and `util::run_qsv_cmd` - add special case for `sample` as it expects output differently https://github.com/dathere/qsv/commit/6b6039fb622bd2b74c1b7275d7ff1110abaee56c
-- fix: CVE-2025-66414 security vulnerability https://github.com/advisories/GHSA-w48q-cv73-mx4w
-- fix: RUSTSEC-2026-0001 (rkyv bump) https://github.com/dathere/qsv/commit/c2d4937028d7cb87a7a6da0162ee10ef9b9148d5
-- typo: Portugese → Portuguese
-- typo: stats asummes → assumes
+* fix: `stats` remove redundant check https://github.com/dathere/qsv/commit/0977ebf88c48274afb1f3e0c3d1506f91eabc804
+* fix: `moarstats` correct `kendall_tau` formula https://github.com/dathere/qsv/commit/cf165439e013fad5b369c81e5704cc2607a91f8e
+* fix: `describegpt` and `util::run_qsv_cmd` - add special case for `sample` as it expects output differently https://github.com/dathere/qsv/commit/6b6039fb622bd2b74c1b7275d7ff1110abaee56c
+* fix: CVE-2025-66414 security vulnerability https://github.com/advisories/GHSA-w48q-cv73-mx4w
+* fix: RUSTSEC-2026-0001 (rkyv bump) https://github.com/dathere/qsv/commit/c2d4937028d7cb87a7a6da0162ee10ef9b9148d5
+* typo: Portugese → Portuguese
+* typo: stats asummes → assumes
 
 ## AI Contributors
 * @jqnatividad orchestrated @Copilot, Claude Code and Cursor using various models

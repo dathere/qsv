@@ -19,7 +19,7 @@ Successfully delivered a complete end-to-end system for auto-generating, loading
 **Features**:
 - Parses USAGE text from all 66 qsv commands
 - Handles multiple raw string delimiters (`r#"` and `r##"`)
-- Infers parameter types automatically
+- Parses parameter types using qsv-docopt
 - Extracts performance hints from emoji markers
 - Generates structured JSON skill definitions
 - Provides detailed progress reporting

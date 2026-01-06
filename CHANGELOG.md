@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [13.0.0] - 2026-01-06 🦾 **_"The Statistical Data-Wrangling Agent Release"_** 🤖
 
-Welcome to **qsv 13.0.0** - a major milestone that transforms qsv into an **AI-native Agent** as we start 2026!<br>This is in addition to the online [AI-Chatbot for CKAN portals](https://dathere.com/ai-chatbot/) we released last September, and continues our march towards even more AI/ML/Graph/FAIR and Data Librarian/Concierge/Advisor/Analyst capabilities across the datHere suite in the coming months.
+We welcome 2026 with **qsv 13.0.0** - a major milestone that transforms qsv into an **AI-native Agent**!
+
+This is in addition to the online [AI-Chatbot for CKAN portals](https://dathere.com/ai-chatbot/) we released last September and the [expanded describegpt command](https://github.com/dathere/qsv?tab=readme-ov-file#describegpt_deeplink) we released last month as we continue our march towards even more AI/ML/Graph/FAIR and Data Librarian/Concierge/Advisor/Analyst capabilities across the datHere suite in the coming months as we embark on a [strategic partnership with the Open Knowledge Foundation to Strengthen Open, FAIR, AI-Ready Data Infrastructure Powered by CKAN](https://blog.okfn.org/2025/12/09/open-knowledge-foundation-and-dathere-announce-new-partnership-to-strengthen-open-fair-ai-ready-data-infrastructure-powered-by-ckan/).
 
 This release introduces first-class support for AI agents through three major new capabilities:
 
@@ -16,7 +18,7 @@ This release introduces first-class support for AI agents through three major ne
 
 qsv now ships with a built-in **Model Context Protocol (MCP) Server** enabling seamless integration with AI Chatbots starting with Claude Desktop.
 
-- **Local Data** - Its ["zero-copy"](https://en.wikipedia.org/wiki/Zero-copy)" inspired approach allows you to wrangle very large datasets - **WITHOUT** sending raw data, only sending statistical metadata to Claude! This is not only good for security and privacy reasons - it overcomes Claude's upload size limit, saves tokens and improves performance!
+- **Local Data** - Its ["zero-copy"](https://en.wikipedia.org/wiki/Zero-copy) inspired approach allows you to wrangle very large datasets - **WITHOUT** sending raw data, only sending statistical metadata to Claude! This is not only good for security and privacy reasons - it overcomes Claude's upload size limit, saves tokens and improves performance!
 - **22 MCP Tools**: 20 common qsv commands as individual tools + 1 generic tool to access all other 46 commands + 1 pipeline tool
 - **Natural Language Interface**: No need to remember command syntax
 - **Pipeline Support**: Chain multiple operations together seamlessly
@@ -121,7 +123,7 @@ See [STATS_DEFINITIONS.md](https://github.com/dathere/qsv/blob/f65bdfa333e7fbcbc
 * typo: stats asummes → assumes
 
 ## AI Contributors
-* @jqnatividad orchestrated @Copilot, Claude Code and Cursor using various models
+* @jqnatividad collaborated with and orchestrated @Copilot, Claude Code, Cursor and Gemini using various models
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/12.0.0...13.0.0
 

@@ -45,7 +45,8 @@ Excel and JSONL files are automatically converted to CSV before processing - no 
 ### Automated Installation
 
 ```bash
-cd /path/to/qsv/.claude/skills
+git clone https://github.com/dathere/qsv.git
+cd qsv/.claude/skills
 npm install
 npm run mcp:install
 ```
@@ -60,7 +61,7 @@ This script will:
 
 1. **Build the MCP server:**
    ```bash
-   cd /path/to/qsv/.claude/skills
+   cd /path/to/qsv_repo/.claude/skills
    npm install
    npm run build
    ```

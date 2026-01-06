@@ -6,6 +6,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [13.0.0] - 2026-01-06 🦾 **"The Statistical Data-Wrangling Agent Release"** 🤖
+
+Welcome to **qsv 13.0.0** - a major milestone that transforms qsv into an **AI-native Agent**! This is in addition to the online [AI-Chatbot for CKAN portals](https://dathere.com/ai-chatbot/) we released last September, and continues our march towards even more AI/ML/Graph/FAIR and Data Librarian/Concierge/Advisor/Analyst capabilities across the datHere suite in the coming months.
+
+This release introduces first-class support for AI agents through three major new capabilities:
+
+### MCP Server - Model Context Protocol Integration
+
+qsv now ships with a built-in **Model Context Protocol (MCP) Server** enabling seamless integration with AI Chatbots starting with Claude Desktop.
+
+Key features:
+- **Local Data** - Its ["zero-copy"](https://en.wikipedia.org/wiki/Zero-copy)" inspired approach allows you to wrangle very large datasets - **WITHOUT** sending raw data, only sending statistical metadata to Claude! This is not only good for security and privacy reasons - it overcomes Claude's upload size limit, saves tokens and improves performance!
+- **22 MCP Tools**: 20 common qsv commands as individual tools + 1 generic tool to access all other 46 commands + 1 pipeline tool
+- **Natural Language Interface**: No need to remember command syntax
+- **Pipeline Support**: Chain multiple operations together seamlessly
+
+See the [MCP documentation](https://github.com/dathere/qsv/blob/master/.claude/skills/README-MCP.md) for detailed setup instructions.
+
+### Claude Agent SDK Helper Utilities
+
+New **Agent Skills** infrastructure provides:
+- `qsv-skill-gen` CLI - Generate skill definitions for AI agents
+- Parses qsv USAGE text using qsv-docopt to generate JSON skill definitions. This allows quick update of Agent Skills as commands and options are added & modified.
+- Shell-safe example generation with proper quoting
+- [Comprehensive documentation](https://github.com/dathere/qsv/blob/master/docs/AGENT_COMPLETE_SUMMARY.md) for AI agent integration to integrate qsv into your own AI solutions!
+
+### `moarstats` - Massive Statistical Expansion
+
+The `moarstats` command received substantial enhancements, adding **24+ [MOAR](https://www.dictionary.com/culture/slang/moar) statistical measures**:
+
+**Advanced Univariate Statistics**:
+- **Bimodality Coefficient** - Detect multimodal distributions
+- **Normalized Entropy** - Scaled information content measure (0-1)
+- **Atkinson Index** - Inequality measure with configurable epsilon parameter
+
+**Bivariate Statistics**:
+- **Pearson's correlation** - Linear correlation coefficient
+- **Spearman's rank correlation** - Monotonic relationship measure
+- **Kendall's tau** - Concordance-based correlation
+- **Covariance** - Joint variability measure
+- **Mutual Information** - Information-theoretic dependency
+- **Normalized Mutual Information** - Scaled mutual information (0-1)
+- **Multi-dataset joins** - `--join-inputs` for bivariate analysis ACROSS datasets
+
+**XSD Type Mapping**:
+- Automatic inference of W3C XML Schema Definition (XSD) datatypes
+- Smart XSD Gregorian date type inferencing with "quick" and "thorough" modes (#3259)
+- Support for gYear, gMonth, gDay, gMonthDay, gYearMonth validation
+
+See [STATS_DEFINITIONS.md](https://github.com/dathere/qsv/blob/f65bdfa333e7fbcbc21b96b4ea7e065071bbd9fe/docs/STATS_DEFINITIONS.md) for a comprehensive list of the ~100 statistical metrics qsv compiles!
+
+---
+
+### Breaking Changes
+
+- `lens`: Default behavior changed to NOT stream from stdin (use explicit flag if needed)
+- `moarstats`: Output now includes additional columns (`xsd_type`, bivariate stats)
+
+---
+
 ## Added
 * feat: qsv MCP server https://github.com/dathere/qsv/pull/3269
 * feat: `MCP` - expanded file selector for more supported tabular file formats; auto index for files larger than 10mb https://github.com/dathere/qsv/pull/3278
@@ -20,16 +80,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * docs: added comprehensive stats documentation https://github.com/dathere/qsv/pull/3240
 
 ## Changed
-* refactor: `frequency` reduce duplication introduced by `--weight` option https://github.com/dathere/qsv/pull/3236
 * refactor: `describegpt` - consolidate JSON response parsing; cache handling; and make DuckDB & Polars error handling more consistent https://github.com/dathere/qsv/pull/3241
-* refactor MCP Server to optimize for Local Access to Files https://github.com/dathere/qsv/pull/3272
-* refactor: mcp server improvements https://github.com/dathere/qsv/pull/3274
-* refactor: simplify MCP server - remove examples from ci tests https://github.com/dathere/qsv/pull/3277
-* refactor: MCP LIFO converted cache https://github.com/dathere/qsv/pull/3280
-* refactor: MCP https://github.com/dathere/qsv/pull/3282
+* refactor: `frequency` reduce duplication introduced by `--weight` option https://github.com/dathere/qsv/pull/3236
+* perf: `frequency` precompute `other_prefix` for performance https://github.com/dathere/qsv/commit/2dc75ee93ad82b7f7c52cd9645825b634a6d55b6
+* perf: `frequency` simplify `apply_limits*` helper functions https://github.com/dathere/qsv/commit/f0b7f9ce5e016c04c15532b2dc313e3fb515c8f0
+* perf: `pivotp` convert directly to `PlSmallStr` for performance https://github.com/dathere/qsv/commit/b7dbb3fb01352ced1d27f1952dc4482c1a761899
+* refactor `MCP Server` to optimize for Local Access to Files https://github.com/dathere/qsv/pull/3272
+* refactor: `MCP Server` improvements https://github.com/dathere/qsv/pull/3274
+* refactor: `MCP Server` remove examples from ci tests https://github.com/dathere/qsv/pull/3277
+* refactor: `MCP Server` add LIFO converted cache https://github.com/dathere/qsv/pull/3280
+* refactor: `MCP Server` moar refactoring after tests https://github.com/dathere/qsv/pull/3282
 * perf: `moarstats` much faster bivariate calculation https://github.com/dathere/qsv/pull/3248
 * perf: `moarstats` optimize non-streaming bivariate stats compilation https://github.com/dathere/qsv/pull/3250
-* refactor: qsv Skills Agent https://github.com/dathere/qsv/pull/3267
+* refactor: `qsv Skills Agent` https://github.com/dathere/qsv/pull/3267
 * deps: polars bump to rev c241260 https://github.com/dathere/qsv/pull/3276
 * build(deps): bump itoa from 1.0.16 to 1.0.17 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3239
 * build(deps): bump human-panic from 2.0.4 to 2.0.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3234
@@ -64,6 +127,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Fixed
 * fix: refresh_cpu_all() -> refresh_cpu_list(sysinfo::CpuRefreshKind::nothing())… https://github.com/dathere/qsv/pull/3261
+- fix: `stats` remove redundant check https://github.com/dathere/qsv/commit/0977ebf88c48274afb1f3e0c3d1506f91eabc804
+- fix: `moarstats` correct `kendall_tau` formula https://github.com/dathere/qsv/commit/cf165439e013fad5b369c81e5704cc2607a91f8e
+- fix: `describegpt` and `util::run_qsv_cmd` - add special case for `sample` as it expects output differently https://github.com/dathere/qsv/commit/6b6039fb622bd2b74c1b7275d7ff1110abaee56c
+- fix: CVE-2025-66414 security vulnerability https://github.com/advisories/GHSA-w48q-cv73-mx4w
+- fix: RUSTSEC-2026-0001 (rkyv bump) https://github.com/dathere/qsv/commit/c2d4937028d7cb87a7a6da0162ee10ef9b9148d5
+- typo: Portugese → Portuguese
+- typo: stats asummes → assumes
+
+## AI Contributors
+* @jqnatividad orchestrated @Copilot, Claude Code and Cursor using various models
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/12.0.0...13.0.0
 

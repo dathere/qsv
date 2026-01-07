@@ -294,18 +294,21 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
   const required: string[] = ['input_file'];
 
   // Add positional arguments
-  for (const arg of skill.command.args) {
-    properties[arg.name] = {
-      type: mapArgumentType(arg.type),
-      description: arg.description,
-    };
-    if (arg.required) {
-      required.push(arg.name);
+  if (skill.command.args && Array.isArray(skill.command.args)) {
+    for (const arg of skill.command.args) {
+      properties[arg.name] = {
+        type: mapArgumentType(arg.type),
+        description: arg.description,
+      };
+      if (arg.required) {
+        required.push(arg.name);
+      }
     }
   }
 
   // Add options
-  for (const opt of skill.command.options) {
+  if (skill.command.options && Array.isArray(skill.command.options)) {
+    for (const opt of skill.command.options) {
     const optName = opt.flag.replace(/^--/, '').replace(/-/g, '_');
 
     if (opt.type === 'flag') {
@@ -321,6 +324,7 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
       if (opt.default) {
         properties[optName].default = opt.default;
       }
+    }
     }
   }
 

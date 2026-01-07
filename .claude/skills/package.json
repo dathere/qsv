@@ -17,7 +17,8 @@
     "test-pipeline": "node examples/pipeline.js",
     "test-update-checker": "node examples/update-checker-demo.js",
     "mcp:start": "node dist/mcp-server.js",
-    "mcp:install": "node scripts/install-mcp.js"
+    "mcp:install": "node scripts/install-mcp.js",
+    "mcpb:package": "node scripts/package-mcpb.js"
   },
   "keywords": [
     "qsv",
@@ -31,6 +32,7 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "archiver": "^7.0.0",
     "typescript": "^5.0.0"
   },
   "dependencies": {

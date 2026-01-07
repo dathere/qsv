@@ -39,13 +39,15 @@ export interface UpdateConfig {
   checkForUpdatesOnStartup: boolean;
   notifyOnUpdatesAvailable: boolean;
   githubRepo: string;
+  isExtensionMode?: boolean; // Desktop extension mode - skip MCP server version checks
 }
 
 const DEFAULT_CONFIG: UpdateConfig = {
   autoRegenerateSkills: false, // Conservative default
   checkForUpdatesOnStartup: true,
   notifyOnUpdatesAvailable: true,
-  githubRepo: 'dathere/qsv'
+  githubRepo: 'dathere/qsv',
+  isExtensionMode: false
 };
 
 export class UpdateChecker {
@@ -254,7 +256,8 @@ export class UpdateChecker {
     // Get current versions
     const currentQsvVersion = await this.getQsvBinaryVersion();
     const skillsVersion = this.getSkillsVersion();
-    const mcpServerVersion = this.getMcpServerVersion();
+    // Skip MCP server version check in extension mode (managed by Claude Desktop)
+    const mcpServerVersion = this.config.isExtensionMode ? 'extension' : this.getMcpServerVersion();
 
     // Check if skills are outdated
     const skillsOutdated = currentQsvVersion !== skillsVersion &&
@@ -364,7 +367,8 @@ export class UpdateChecker {
   async quickCheck(): Promise<{ skillsOutdated: boolean; versions: VersionInfo }> {
     const currentQsvVersion = await this.getQsvBinaryVersion();
     const skillsVersion = this.getSkillsVersion();
-    const mcpServerVersion = this.getMcpServerVersion();
+    // Skip MCP server version check in extension mode (managed by Claude Desktop)
+    const mcpServerVersion = this.config.isExtensionMode ? 'extension' : this.getMcpServerVersion();
 
     const skillsOutdated = currentQsvVersion !== skillsVersion &&
                            skillsVersion !== 'unknown' &&
@@ -390,6 +394,7 @@ export function getUpdateConfigFromEnv(): Partial<UpdateConfig> {
     autoRegenerateSkills: process.env.QSV_MCP_AUTO_REGENERATE_SKILLS === 'true',
     checkForUpdatesOnStartup: process.env.QSV_MCP_CHECK_UPDATES_ON_STARTUP !== 'false',
     notifyOnUpdatesAvailable: process.env.QSV_MCP_NOTIFY_UPDATES !== 'false',
-    githubRepo: process.env.QSV_MCP_GITHUB_REPO || 'dathere/qsv'
+    githubRepo: process.env.QSV_MCP_GITHUB_REPO || 'dathere/qsv',
+    isExtensionMode: process.env.MCPB_EXTENSION_MODE === 'true'
   };
 }

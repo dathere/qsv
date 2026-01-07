@@ -1,7 +1,8 @@
 /**
  * Centralized Configuration
- * 
+ *
  * Manages all configurable settings with environment variable support.
+ * Supports both legacy MCP server and Desktop Extension modes.
  */
 
 /**
@@ -81,6 +82,29 @@ function getPathDelimiter(): string {
 }
 
 /**
+ * Parse boolean from environment variable
+ */
+function getBooleanEnv(envVar: string, defaultValue: boolean): boolean {
+  const value = process.env[envVar];
+  if (!value) return defaultValue;
+
+  const lower = value.toLowerCase();
+  if (lower === 'true' || lower === '1' || lower === 'yes') return true;
+  if (lower === 'false' || lower === '0' || lower === 'no') return false;
+
+  console.error(`[Config] Invalid boolean value for ${envVar}: ${value}, using default: ${defaultValue}`);
+  return defaultValue;
+}
+
+/**
+ * Detect if running in Desktop Extension mode
+ * Desktop extensions set MCPB_EXTENSION_MODE=true
+ */
+export function isExtensionMode(): boolean {
+  return getBooleanEnv('MCPB_EXTENSION_MODE', false);
+}
+
+/**
  * Configuration object with all configurable settings
  */
 export const config = {
@@ -156,4 +180,52 @@ export const config = {
     1, // Minimum: 1 operation
     100, // Maximum: 100 operations
   ),
+
+  /**
+   * Command timeout in milliseconds (alternative name for operationTimeoutMs)
+   * Desktop extensions use QSV_MCP_TIMEOUT_MS, legacy MCP uses operationTimeoutMs
+   * Default: 5 minutes
+   */
+  timeoutMs: parseIntEnv(
+    'QSV_MCP_TIMEOUT_MS',
+    5 * 60 * 1000, // 5 minutes
+    10 * 1000, // Minimum: 10 seconds
+    60 * 60 * 1000, // Maximum: 1 hour
+  ),
+
+  /**
+   * Maximum output size in bytes
+   * Large outputs are automatically saved to disk
+   * Default: 50 MB
+   */
+  maxOutputSize: parseIntEnv(
+    'QSV_MCP_MAX_OUTPUT_SIZE',
+    50 * 1024 * 1024, // 50 MB
+    1 * 1024 * 1024, // Minimum: 1 MB
+    100 * 1024 * 1024, // Maximum: 100 MB
+  ),
+
+  /**
+   * Auto-regenerate skills when qsv version changes
+   * Default: false (manual regeneration)
+   */
+  autoRegenerateSkills: getBooleanEnv('QSV_MCP_AUTO_REGENERATE_SKILLS', false),
+
+  /**
+   * Check for qsv updates on startup
+   * Default: true
+   */
+  checkUpdatesOnStartup: getBooleanEnv('QSV_MCP_CHECK_UPDATES_ON_STARTUP', true),
+
+  /**
+   * Show update notifications in logs
+   * Default: true
+   */
+  notifyUpdates: getBooleanEnv('QSV_MCP_NOTIFY_UPDATES', true),
+
+  /**
+   * Detect if running in Desktop Extension mode
+   * Desktop extensions set MCPB_EXTENSION_MODE=true
+   */
+  isExtensionMode: isExtensionMode(),
 } as const;

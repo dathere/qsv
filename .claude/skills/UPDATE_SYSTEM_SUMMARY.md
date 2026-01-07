@@ -21,7 +21,7 @@ Implemented a comprehensive auto-update system for the QSV MCP Server that keeps
 - `getSkillsVersion()` - Get version skills were generated with
 - `quickCheck()` - Fast local version comparison (no network)
 - `checkForUpdates()` - Full check including GitHub API
-- `autoRegenerateSkills()` - Auto-run qsv-skill-gen if configured
+- `autoRegenerateSkills()` - Auto-run `qsv --update-mcp-skills` if configured
 
 ### 2. Integration with MCP Server (`src/mcp-server.ts`)
 
@@ -79,7 +79,7 @@ Created comprehensive documentation:
 1. User updates qsv: `qsv --update`
 2. MCP server detects mismatch on next startup
 3. Logs show clear instructions to regenerate
-4. User runs: `cargo run --bin qsv-skill-gen --features all_features`
+4. User runs: `qsv --update-mcp-skills`
 5. Restart Claude Desktop
 
 **Output example**:
@@ -89,7 +89,7 @@ Created comprehensive documentation:
    Skills generated with: 0.132.0
 
 ℹ️  To update skills manually, run:
-   cargo run --bin qsv-skill-gen --features all_features
+   qsv --update-mcp-skills
    Then restart the MCP server
 ```
 
@@ -100,7 +100,7 @@ Created comprehensive documentation:
 **What happens**:
 1. User updates qsv: `qsv --update`
 2. MCP server detects mismatch on next startup
-3. **Automatically** runs qsv-skill-gen (takes ~5-10 seconds)
+3. **Automatically** runs `qsv --update-mcp-skills` (takes ~5-10 seconds)
 4. Logs show success message
 5. User restarts Claude Desktop
 

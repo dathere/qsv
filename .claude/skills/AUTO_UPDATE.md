@@ -14,7 +14,7 @@ The QSV MCP Server includes a comprehensive auto-update system that keeps your s
 2. **Skill Definitions Updates**
    - Auto-detected when qsv version changes
    - Can be auto-regenerated (if configured)
-   - Manual regeneration: `cargo run --bin qsv-skill-gen --features all_features`
+   - Manual regeneration: `qsv --update-mcp-skills`
 
 3. **MCP Server Code Updates**
    - Checked against GitHub releases
@@ -135,13 +135,8 @@ jobs:
           unzip qsv-linux-x86_64.zip
           sudo mv qsv /usr/local/bin/
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-
       - name: Regenerate skills
-        run: cargo run --bin qsv-skill-gen --features all_features
+        run: qsv --update-mcp-skills
 
       - name: Build MCP server
         run: |
@@ -229,10 +224,33 @@ This file is automatically managed and helps track update history.
 
 **Solution**:
 - Verify qsv binary location: `which qsv`
-- Test manual regeneration: `qsv --update-mcp-skills`
+- Ensure you're in the qsv repository: `pwd` (should show path ending in `/qsv`)
+- Test manual regeneration: `cd /path/to/qsv && qsv --update-mcp-skills`
 - Check if binary has mcp feature: `qsv --version` (shows installed features)
 - Check MCP server logs: `~/Library/Logs/Claude/mcp*.log`
 - If flag not available, rebuild qsv: `cargo build --release --features all_features`
+
+### "Could not find qsv repository root" error
+
+**Problem**: Running `qsv --update-mcp-skills` fails with "Could not find qsv repository root"
+
+**Cause**: The command must be run from within the qsv repository directory structure (where `Cargo.toml` and `src/cmd` exist). This is because the skill generation writes to `.claude/skills/qsv/` relative to the repository root.
+
+**Solution**:
+1. **If you installed qsv via package manager** (Homebrew, cargo install, etc.):
+   - Clone the qsv repository: `git clone https://github.com/dathere/qsv.git`
+   - Navigate into it: `cd qsv`
+   - Run: `qsv --update-mcp-skills`
+
+2. **If you built qsv from source**:
+   - Navigate to your qsv repository directory: `cd /path/to/qsv`
+   - Verify you're in the right place: `ls Cargo.toml src/cmd` (both should exist)
+   - Run: `qsv --update-mcp-skills`
+
+3. **For auto-regeneration**:
+   - The MCP server must have access to the repository directory
+   - Auto-regeneration will fail if the qsv binary can't find the repository
+   - Consider using manual regeneration workflow if binary is installed system-wide
 
 ### Version check fails
 
@@ -271,6 +289,10 @@ The update check runs asynchronously and doesn't block MCP server startup.
 - **qsv binary** with "mcp" feature enabled
   - Included in prebuilt binaries from GitHub releases
   - When building from source: Use `cargo build --release --features all_features`
+- **qsv repository** cloned locally
+  - The `--update-mcp-skills` command must be run from within the repository
+  - Outputs to `.claude/skills/qsv/` relative to repository root
+  - Clone with: `git clone https://github.com/dathere/qsv.git`
 - **Node.js** >= 18.0.0 (for MCP server)
 
 ## Best Practices

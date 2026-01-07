@@ -222,7 +222,8 @@ Each skill JSON file follows this structure:
 Skills are auto-generated from qsv command USAGE text using the `--update-mcp-skills` flag:
 
 ```bash
-# Generate all 66 skills
+# Must be run from within the qsv repository directory
+cd /path/to/qsv
 qsv --update-mcp-skills
 
 # Output: .claude/skills/qsv/*.json
@@ -364,7 +365,8 @@ npm test                              # Basic skill usage
 npm run test-pipeline                 # Pipeline composition
 npm run mcp:install                   # Install MCP server for Claude Desktop
 
-# Regenerate skills
+# Regenerate skills (from qsv repository root)
+cd /path/to/qsv
 qsv --update-mcp-skills
 ```
 

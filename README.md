@@ -131,8 +131,6 @@ If you prefer to explore your data using a graphical interface instead of the co
 <a target="_blank" href="https://qsv.dathere.com/download/qsv-pro/linux-appimage"><img src="https://github.com/user-attachments/assets/742d4a46-cfef-4d74-b4ab-8cbde5dc065f" width="200" /></a>
 </div>
 
-<p>For Windows users, if you get a Microsoft Smartscreen Defender warning then you can click "More Info" then "Run anyway". The warning only shows up since the binary is not signed on Windows.</p>
-
 ### Option 1: Download Prebuilt Binaries
 
 Full-featured prebuilt [binary variants](#variants) of the latest qsv version for Linux, macOS & Windows are available [for download](https://github.com/dathere/qsv/releases/latest), including binaries compiled with [Rust Nightly](https://stackoverflow.com/questions/70745970/rust-nightly-vs-beta-version) ([more info](https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#nightly-release-builds)). You may click a badge below based on your platform to download a ZIP with pre-built binaries.

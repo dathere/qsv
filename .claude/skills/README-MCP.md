@@ -113,8 +113,14 @@ This script will:
 | `QSV_MCP_MAX_FILES_PER_LISTING` | `1000` | Maximum files to return in a single listing (1-100k) |
 | `QSV_MCP_MAX_PIPELINE_STEPS` | `50` | Maximum steps in a pipeline (1-1000) |
 | `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | `10` | Maximum concurrent operations (1-100) |
+| `QSV_MCP_AUTO_REGENERATE_SKILLS` | `false` | Automatically regenerate skills when qsv version changes |
+| `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates when MCP server starts |
+| `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications in logs |
+| `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repository to check for releases |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
+
+**Auto-Update**: The server includes built-in update detection and can automatically regenerate skills when qsv is updated. See [AUTO_UPDATE.md](./AUTO_UPDATE.md) for details.
 
 3. **Restart Claude Desktop**
 
@@ -385,6 +391,7 @@ Potential additions for future versions:
 - [Claude Desktop](https://claude.ai/desktop)
 - [QSV Skills README](./README.md)
 - [Filesystem Usage Guide](./FILESYSTEM_USAGE.md)
+- [Auto-Update Guide](./AUTO_UPDATE.md)
 
 ## Support
 

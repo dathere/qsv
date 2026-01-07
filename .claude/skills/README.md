@@ -219,11 +219,12 @@ Each skill JSON file follows this structure:
 
 ### Skill Definitions
 
-Skills are auto-generated from qsv command USAGE text using `qsv-skill-gen`:
+Skills are auto-generated from qsv command USAGE text using the `--update-mcp-skills` flag:
 
 ```bash
-# Generate all 66 skills
-cargo run --bin qsv-skill-gen --features all_features
+# Must be run from within the qsv repository directory
+cd /path/to/qsv
+qsv --update-mcp-skills
 
 # Output: .claude/skills/qsv/*.json
 ```
@@ -364,14 +365,16 @@ npm test                              # Basic skill usage
 npm run test-pipeline                 # Pipeline composition
 npm run mcp:install                   # Install MCP server for Claude Desktop
 
-# Regenerate skills (from qsv repo root)
-cargo run --bin qsv-skill-gen --features all_features
+# Regenerate skills (from qsv repository root)
+cd /path/to/qsv
+qsv --update-mcp-skills
 ```
 
 ## Documentation
 
 - [MCP Server Guide](./README-MCP.md) - Claude Desktop integration
 - [Filesystem Usage Guide](./FILESYSTEM_USAGE.md) - Local file access
+- [Auto-Update Guide](./AUTO_UPDATE.md) - Keep skills in sync with qsv releases
 - [Complete API Documentation](./SKILLS_README.md)
 - [Design Document](./docs/design/AGENT_SKILLS_DESIGN.md)
 - [Integration Guide](./docs/design/AGENT_SKILLS_INTEGRATION.md)
@@ -393,7 +396,7 @@ MIT
 
 **Updated**: 2026-01-07
 **Version**: 13.0.0
-**Generator**: `qsv-skill-gen` v13.0.0
+**Generator**: `qsv --update-mcp-skills`
 **Skills**: 66/66 commands (100%)
 **Usage Examples**: 417 from documentation
 **Parsing**: qsv-docopt (robust, accurate)

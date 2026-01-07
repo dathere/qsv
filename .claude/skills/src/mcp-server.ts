@@ -35,6 +35,7 @@ import {
   executePipeline,
 } from './mcp-pipeline.js';
 import { VERSION } from './version.js';
+import { UpdateChecker, getUpdateConfigFromEnv } from './update-checker.js';
 
 /**
  * QSV MCP Server implementation
@@ -44,6 +45,7 @@ class QsvMcpServer {
   private loader: SkillLoader;
   private executor: SkillExecutor;
   private filesystemProvider: FilesystemResourceProvider;
+  private updateChecker: UpdateChecker;
 
   constructor() {
     this.server = new Server(
@@ -67,6 +69,13 @@ class QsvMcpServer {
       workingDirectory: config.workingDir,
       allowedDirectories: config.allowedDirs,
     });
+
+    // Initialize update checker with environment configuration
+    this.updateChecker = new UpdateChecker(
+      config.qsvBinPath,
+      undefined, // Use default skills directory
+      getUpdateConfigFromEnv()
+    );
   }
 
   /**
@@ -77,6 +86,9 @@ class QsvMcpServer {
     console.error('Loading QSV skills...');
     const skills = await this.loader.loadAll();
     console.error(`Loaded ${skills.size} skills`);
+
+    // Check for updates (if enabled)
+    await this.checkForUpdates();
 
     // Register tool handlers
     console.error('About to register tool handlers...');
@@ -89,6 +101,61 @@ class QsvMcpServer {
     console.error('Resource handlers registered');
 
     console.error('QSV MCP Server initialized successfully');
+  }
+
+  /**
+   * Check for updates and optionally auto-regenerate skills
+   */
+  private async checkForUpdates(): Promise<void> {
+    try {
+      // Quick check first (no network calls)
+      const quickCheck = await this.updateChecker.quickCheck();
+
+      if (quickCheck.skillsOutdated) {
+        console.error('');
+        console.error('⚠️  VERSION MISMATCH DETECTED ⚠️');
+        console.error(`   qsv binary: ${quickCheck.versions.qsvBinaryVersion}`);
+        console.error(`   Skills generated with: ${quickCheck.versions.skillsGeneratedWithVersion}`);
+        console.error('');
+
+        // Attempt auto-regeneration if configured
+        const autoRegenerated = await this.updateChecker.autoRegenerateSkills();
+
+        if (autoRegenerated) {
+          console.error('✅ Skills auto-regenerated successfully');
+          console.error('   Please restart the MCP server to load updated skills');
+          console.error('');
+        } else {
+          console.error('ℹ️  To update skills manually, run:');
+          console.error('   qsv --update-mcp-skills');
+          console.error('   Then restart the MCP server');
+          console.error('');
+        }
+      }
+
+      // Perform full check (with network calls) in the background
+      // This won't block server startup
+      setImmediate(async () => {
+        try {
+          const fullCheck = await this.updateChecker.checkForUpdates();
+
+          if (fullCheck.recommendations.length > 0) {
+            console.error('');
+            console.error('📦 UPDATE CHECK RESULTS:');
+            fullCheck.recommendations.forEach(rec => {
+              console.error(rec);
+            });
+            console.error('');
+          }
+        } catch (error) {
+          // Non-critical error - don't block server
+          console.error('[UpdateChecker] Background update check failed:', error);
+        }
+      });
+    } catch (error) {
+      // Non-critical error - don't block server startup
+      console.error('[UpdateChecker] Failed to check for updates:', error);
+    }
   }
 
   /**

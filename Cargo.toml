@@ -50,13 +50,6 @@ doctest           = false
 path              = "src/maindp.rs"
 required-features = ["datapusher_plus"]
 
-[[bin]]
-name              = "qsv-skill-gen"
-test              = false
-bench             = false
-doctest           = false
-path              = "src/bin/qsv-skill-gen.rs"
-
 [[test]]
 name = "tests"
 path = "tests/tests.rs"
@@ -99,6 +92,7 @@ censor = { version = "0.3", optional = true }
 chrono = { version = "0.4", default-features = false }
 chrono-tz = "0.10"
 console = { version = "0.16", optional = true }
+const_format = "0.2"
 cpc = { version = "3", optional = true }
 crc32fast = { version = "1.4", optional = true }
 crossbeam-channel = "0.5"
@@ -379,6 +373,7 @@ distrib_features = [
     "foreach",
     "geocode",
     "luau",
+    "mcp",
     "polars",
     "python",
     "to",
@@ -416,6 +411,7 @@ geocode = [
     "sled",
 ]
 luau = ["mlua", "sanitize-filename"]
+mcp = []
 polars = ["dep:polars", "bytemuck"]
 
 prompt = ["rfd"]

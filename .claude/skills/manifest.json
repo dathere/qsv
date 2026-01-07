@@ -4,8 +4,8 @@
   "version": "13.0.0",
   "description": "Complete CSV data-wrangling toolkit with 66 commands for transforming, analyzing, and validating tabular data. Process local CSV, Excel, and JSONL files without uploading.",
   "author": {
-    "name": "Joel Natividad",
-    "url": "https://github.com/dathere/qsv"
+    "name": "datHere, Inc.",
+    "url": "https://dathere.com"
   },
   "repository": {
     "type": "git",

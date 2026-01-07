@@ -5,6 +5,44 @@
  * Supports both legacy MCP server and Desktop Extension modes.
  */
 
+import { homedir, tmpdir } from 'os';
+import { join } from 'path';
+
+/**
+ * Expand template variables in strings
+ * Supports: ${HOME}, ${USERPROFILE}, ${DESKTOP}, ${DOCUMENTS}, ${DOWNLOADS}, ${TEMP}, ${TMPDIR}
+ */
+function expandTemplateVars(value: string): string {
+  if (!value) return value;
+
+  const home = homedir();
+
+  // Get platform-specific special directories
+  const desktop = process.platform === 'win32'
+    ? join(home, 'Desktop')
+    : join(home, 'Desktop');
+
+  const documents = process.platform === 'win32'
+    ? join(home, 'Documents')
+    : join(home, 'Documents');
+
+  const downloads = process.platform === 'win32'
+    ? join(home, 'Downloads')
+    : join(home, 'Downloads');
+
+  const temp = tmpdir();
+
+  // Replace template variables
+  return value
+    .replace(/\$\{HOME\}/g, home)
+    .replace(/\$\{USERPROFILE\}/g, home)
+    .replace(/\$\{DESKTOP\}/g, desktop)
+    .replace(/\$\{DOCUMENTS\}/g, documents)
+    .replace(/\$\{DOWNLOADS\}/g, downloads)
+    .replace(/\$\{TEMP\}/g, temp)
+    .replace(/\$\{TMPDIR\}/g, temp);
+}
+
 /**
  * Parse integer from environment variable with validation
  */
@@ -59,19 +97,25 @@ function parseFloatEnv(envVar: string, defaultValue: number, min?: number, max?:
 
 /**
  * Get string from environment variable with default
+ * Expands template variables like ${HOME}, ${USERPROFILE}, etc.
  * Uses nullish coalescing (??) to allow empty strings while falling back for undefined/null
  */
 function getStringEnv(envVar: string, defaultValue: string): string {
-  return process.env[envVar] ?? defaultValue;
+  const value = process.env[envVar] ?? defaultValue;
+  return expandTemplateVars(value);
 }
 
 /**
  * Get string array from environment variable (split by delimiter)
+ * Expands template variables in each path
  */
 function getStringArrayEnv(envVar: string, defaultValue: string[], delimiter: string): string[] {
   const value = process.env[envVar];
   if (!value) return defaultValue;
-  return value.split(delimiter).filter(s => s.length > 0);
+  return value
+    .split(delimiter)
+    .filter(s => s.length > 0)
+    .map(s => expandTemplateVars(s));
 }
 
 /**

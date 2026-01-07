@@ -1,3 +1,4 @@
+#![allow(clippy::needless_continue, clippy::ref_as_ptr, clippy::unused_self)]
 // qsv MCP Skills Generator - Generate Agent Skills from qsv command USAGE text
 //
 // This module parses USAGE text from qsv commands and generates Agent Skill
@@ -5,10 +6,7 @@
 //
 // Uses qsv-docopt Parser for robust USAGE text parsing.
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::Path};
 
 use qsv_docopt::parse::{Argument as DocoptArgument, Atom, Parser};
 use serde::{Deserialize, Serialize};

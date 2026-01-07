@@ -178,6 +178,48 @@ List all CSV files in my Documents folder and its subdirectories
 
 Claude will use `qsv_list_files` with `recursive: true`.
 
+## Data Handling
+
+### Input Files
+
+- All qsv tools accept `input_file` parameter (absolute or relative path)
+- qsv reads directly from your local filesystem
+- No input file size limitations (qsv streams large files efficiently)
+- Uncompressed files > 10MB are automatically indexed for improved performance
+- Excel and JSONL files are automatically converted to CSV before processing
+
+### Output Files
+
+When processing data, you can either specify an output file or let the MCP server handle it intelligently:
+
+**With `output_file` specified**:
+- qsv writes results directly to the specified file
+- Tool returns metadata about the operation (file path, size, duration)
+
+**Without `output_file` (automatic handling)**:
+- **Small outputs (≤ 850KB)**: Returned directly in the chat for immediate viewing
+- **Large outputs (> 850KB)**: Automatically saved to your working directory with a timestamped filename
+
+**Smart large file handling**: The MCP server automatically detects when output would exceed Claude Desktop's 1MB response limit and saves it to disk instead. This prevents timeouts and memory issues when processing large datasets.
+
+Example of large output handling:
+```
+User: "Select all columns from large_dataset.csv"
+
+Claude: ✅ Large output saved to file (too large to display in chat)
+
+File: qsv-select-2026-01-07_14-30-45.csv
+Location: /Users/your-username/Downloads
+Size: 2.5 MB
+Duration: 150ms
+
+The file is now available in your working directory.
+You can:
+- Open it in your preferred application
+- Process it further with additional qsv commands
+- Specify an output_file parameter to control where results are saved
+```
+
 ## Available Filesystem Tools
 
 ### `qsv_list_files`

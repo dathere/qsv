@@ -250,13 +250,18 @@ Result: Parquet file created
 
 - Tools accept `input_file` parameter (absolute or relative path)
 - qsv reads directly from your local filesystem
-- No file size limitations (qsv streams large files efficiently)
+- No input file size limitations (qsv streams large files efficiently)
+- Auto-indexing for files > 10MB improves performance
 
 ### Output
 
 - Optional `output_file` parameter
 - **If provided**: qsv writes to file, tool returns metadata
-- **If omitted**: qsv writes to stdout, tool returns CSV content (for small results)
+- **If omitted**:
+  - Small outputs (≤ 850KB): Returned directly in chat
+  - Large outputs (> 850KB): Automatically saved to working directory with timestamped filename
+
+**Smart large file handling**: The server automatically detects when output would exceed Claude Desktop's limits and saves it to disk instead, preventing timeouts and memory issues.
 
 ### File Paths
 
@@ -391,7 +396,7 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-01-04
+**Updated**: 2026-01-07
 **Version**: 13.0.0
 **Tools**: 25 (20 common + 1 generic + 1 pipeline + 3 filesystem)
 **Skills**: 66 qsv commands

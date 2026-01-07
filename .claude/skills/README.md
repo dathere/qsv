@@ -12,7 +12,8 @@ The QSV MCP Server now supports **direct access to local tabular data files** (C
 ### Key Features:
 - ✅ Browse tabular data files in your directories (CSV, Excel, JSONL, etc.)
 - ✅ Process files without uploading
-- ✅ No file size limits
+- ✅ No input file size limits (streams large files efficiently)
+- ✅ Smart output handling (auto-saves large results > 850KB to disk)
 - ✅ Instant access
 - ✅ Secure path validation
 
@@ -390,7 +391,7 @@ MIT
 
 ---
 
-**Updated**: 2026-01-04
+**Updated**: 2026-01-07
 **Version**: 13.0.0
 **Generator**: `qsv-skill-gen` v13.0.0
 **Skills**: 66/66 commands (100%)

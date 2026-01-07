@@ -65,7 +65,8 @@ Show frequency distribution for the status column in customers.csv
 
 ✅ **No file uploads** - Direct filesystem access
 ✅ **Instant access** - No upload time
-✅ **No size limits** - Process GB-sized files
+✅ **No input size limits** - Process GB-sized files
+✅ **Smart output handling** - Large results auto-saved to disk
 ✅ **Browse files** - See what's available before processing
 ✅ **Secure** - Only allowed directories are accessible
 

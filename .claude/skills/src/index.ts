@@ -1,6 +1,6 @@
 /**
  * QSV Agent Skills
- * Auto-generated skills for qsv CSV data-wrangling toolkit
+ * Auto-generated skills for qsv data-wrangling toolkit
  */
 
 export { SkillLoader } from './loader.js';

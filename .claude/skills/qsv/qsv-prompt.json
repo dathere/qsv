@@ -1,6 +1,6 @@
 {
   "name": "qsv-prompt",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Open a file dialog to pick a file as input or save to an output file.",
   "category": "utility",
   "command": {
@@ -58,24 +58,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "| qsv stats | qsv lens",
-      "command": "qsv prompt | qsv stats | qsv lens"
-    },
-    {
-      "description": "-m 'Pick a CSV file to summarize' | qsv stats -E | qsv prompt --fd-output",
-      "command": "qsv prompt -m 'Pick a CSV file to summarize' | qsv stats -E | qsv prompt --fd-output"
-    },
-    {
-      "description": "-m 'Select a spreadsheet to export to CSV' -F xlsx,xls,ods | \\",
-      "command": "qsv prompt -m 'Select a spreadsheet to export to CSV' -F xlsx,xls,ods | \\"
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_prompt.rs",
-  "examples_ref": "examples/qsv-prompt-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_prompt.rs"
 }

@@ -1,6 +1,6 @@
 {
   "name": "qsv-pro",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Interact with qsv pro API. Learn more about qsv pro at: https://qsvpro.dathere.com. - qsv pro must be running for this command to work as described. - Some features of this command require a paid plan of qsv pro and may require an Internet connection. The qsv pro command has subcommands: lens:     Run csvlens on a local file in a new Alacritty terminal emulator window (Windows only). workflow: Import a local file into the qsv pro Workflow (Workflow must be open).",
   "category": "utility",
   "command": {
@@ -22,11 +22,9 @@
       }
     ]
   },
-  "examples": [],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_pro.rs",
-  "examples_ref": "examples/qsv-pro-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_pro.rs"
 }

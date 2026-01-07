@@ -1,6 +1,6 @@
 {
   "name": "qsv-enumerate",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Add a new column enumerating the lines of a CSV file. This can be useful to keep track of a specific line order, give a unique identifier to each line or even make a copy of the contents of a column. The enum function has four modes of operation: 1. INCREMENT. Add an incremental identifier to each of the lines: 2. UUID4. Add a uuid v4 to each of the lines: 3. UUID7. Add a uuid v7 to each of the lines: 3. CONSTANT. Create a new column filled with a given value: 4. COPY. Copy the contents of a column to a new one: 5. HASH. Create a new column with the deterministic hash of the given column/s. The hash uses the xxHash algorithm and is platform-agnostic. (see https://github.com/DoumanAsh/xxhash-rust for more information): Finally, you should also be able to shuffle the lines of a CSV file by sorting on the generated uuid4s: This will shuffle the lines of the file.csv file as uuids generated using the v4 specification are random and for practical purposes, are unique (1 in 2^122). See https://en.wikipedia.org/wiki/Universally_unique_identifier#Collisions However, sorting on uuid7 identifiers will not work as they are time-based and monotonically increasing, and will not shuffle the lines.",
   "category": "utility",
   "command": {
@@ -77,56 +77,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "qsv enum file.csv",
-      "command": "qsv enum file.csv"
-    },
-    {
-      "description": "qsv enum --uuid4 file.csv",
-      "command": "qsv enum --uuid4 file.csv"
-    },
-    {
-      "description": "qsv enum --uuid7 file.csv",
-      "command": "qsv enum --uuid7 file.csv"
-    },
-    {
-      "description": "qsv enum --constant 0",
-      "command": "qsv enum --constant 0"
-    },
-    {
-      "description": "qsv enum --copy names",
-      "command": "qsv enum --copy names"
-    },
-    {
-      "description": "qsv enum --hash 1- // hash all columns, auto-ignores existing \"hash\" column",
-      "command": "qsv enum --hash 1- // hash all columns, auto-ignores existing \"hash\" column"
-    },
-    {
-      "description": "qsv enum --hash col2,col3,col4 // hash specific columns",
-      "command": "qsv enum --hash col2,col3,col4 // hash specific columns"
-    },
-    {
-      "description": "qsv enum --hash col2 // hash a single column",
-      "command": "qsv enum --hash col2 // hash a single column"
-    },
-    {
-      "description": "qsv enum --hash /record_id|name|address/ // hash columns that match a regex",
-      "command": "qsv enum --hash /record_id|name|address/ // hash columns that match a regex"
-    },
-    {
-      "description": "qsv enum --hash !/record_id/ // hash all columns except the record_id column",
-      "command": "qsv enum --hash !/record_id/ // hash all columns except the record_id column"
-    },
-    {
-      "description": "qsv enum --uuid4 file.csv | qsv sort -s uuid4 > shuffled.csv",
-      "command": "qsv enum --uuid4 file.csv | qsv sort -s uuid4 > shuffled.csv"
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_enumerate.rs",
-  "examples_ref": "examples/qsv-enumerate-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_enumerate.rs"
 }

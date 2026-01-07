@@ -1,12 +1,18 @@
 {
   "name": "qsv-applydp",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "applydp is a slimmed-down version of apply specifically created for Datapusher+. It \"applies\" a series of transformation functions to given CSV column/s. This can be used to perform typical data-wrangling tasks and/or to harmonize some values, etc. It has three subcommands: 1. operations*   - 18 string, format & regex operators. 2. emptyreplace* - replace empty cells with <--replacement> string. 3. dynfmt        - Dynamically constructs a new column from other columns using the <--formatstr> template. * subcommand is multi-column capable. OPERATIONS (multi-column capable) Multiple operations can be applied, with the comma-delimited operation series applied in order: trim => Trim the cell trim,upper => Trim the cell, then transform to uppercase Operations support multi-column transformations. Just make sure the number of transformed columns with the --rename option is the same. e.g.: It has 18 supported operations: * len: Return string length * lower: Transform to lowercase * upper: Transform to uppercase * squeeze: Compress consecutive whitespaces * squeeze0: Remove whitespace * trim: Trim (drop whitespace left & right of the string) * ltrim: Left trim whitespace * rtrim: Right trim whitespace * mtrim: Trims --comparand matches left & right of the string (Rust trim_matches) * mltrim: Left trim --comparand matches (Rust trim_start_matches) * mrtrim: Right trim --comparand matches (Rust trim_end_matches) * strip_prefix: Removes specified prefix in --comparand * strip_suffix: Remove specified suffix in --comparand * escape - escape (Rust escape_default) * replace: Replace all matches of a pattern (using --comparand) with a string (using --replacement) (Rust replace) * regex_replace: Replace all regex matches in --comparand w/ --replacement. Specify <NULL> as --replacement to remove matches. * round: Round numeric values to the specified number of decimal places using Midpoint Nearest Even Rounding Strategy AKA \"Bankers Rounding.\" Specify the number of decimal places with --formatstr (default: 3). * copy: Mark a column for copying",
   "category": "transformation",
   "command": {
     "binary": "qsv",
     "subcommand": "applydp",
     "args": [
+      {
+        "name": "operations",
+        "type": "string",
+        "required": true,
+        "description": "The operation/s to apply."
+      },
       {
         "name": "column",
         "type": "string",
@@ -18,12 +24,6 @@
         "type": "file",
         "required": true,
         "description": "The input file to read from. If not specified, reads from stdin."
-      },
-      {
-        "name": "operations",
-        "type": "string",
-        "required": true,
-        "description": "The operation/s to apply."
       }
     ],
     "options": [
@@ -85,76 +85,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "operations trim,upper col1,col2,col3 -r newcol1,newcol2,newcol3 file.csv",
-      "command": "qsv applydp operations trim,upper col1,col2,col3 -r newcol1,newcol2,newcol3 file.csv"
-    },
-    {
-      "description": "operations trim,upper surname file.csv",
-      "command": "qsv applydp operations trim,upper surname file.csv"
-    },
-    {
-      "description": "operations trim,upper surname -r uppercase_clean_surname file.csv",
-      "command": "qsv applydp operations trim,upper surname -r uppercase_clean_surname file.csv"
-    },
-    {
-      "description": "operations trim,upper surname -c uppercase_clean_surname file.csv",
-      "command": "qsv applydp operations trim,upper surname -c uppercase_clean_surname file.csv"
-    },
-    {
-      "description": "operations trim,squeeze,upper \\_name$\\ file.csv",
-      "command": "qsv applydp operations trim,squeeze,upper \\_name$\\ file.csv"
-    },
-    {
-      "description": "operations trim,upper firstname,surname -r ufirstname,usurname file.csv",
-      "command": "qsv applydp operations trim,upper firstname,surname -r ufirstname,usurname file.csv"
-    },
-    {
-      "description": "operations mtrim description --comparand '()<>' file.csv",
-      "command": "qsv applydp operations mtrim description --comparand '()<>' file.csv"
-    },
-    {
-      "description": "replace description --comparand ' and ' --replacement ' & ' file.csv",
-      "command": "qsv applydp replace description --comparand ' and ' --replacement ' & ' file.csv"
-    },
-    {
-      "description": "operations copy col_to_copy -c col_copy file.csv",
-      "command": "qsv applydp operations copy col_to_copy -c col_copy file.csv"
-    },
-    {
-      "description": "emptyreplace Measurement --replacement None file.csv",
-      "command": "qsv applydp emptyreplace Measurement --replacement None file.csv"
-    },
-    {
-      "description": "emptyreplace Measurement --replacement 'Unknown Measurement' file.csv",
-      "command": "qsv applydp emptyreplace Measurement --replacement 'Unknown Measurement' file.csv"
-    },
-    {
-      "description": "emptyreplace M1,M2,M3 --replacement None file.csv",
-      "command": "qsv applydp emptyreplace M1,M2,M3 --replacement None file.csv"
-    },
-    {
-      "description": "emptyreplace '/^Measurement/' --replacement None file.csv",
-      "command": "qsv applydp emptyreplace '/^Measurement/' --replacement None file.csv"
-    },
-    {
-      "description": "emptyreplace --replacement None '/(?i)^observation/' file.csv",
-      "command": "qsv applydp emptyreplace --replacement None '/(?i)^observation/' file.csv"
-    },
-    {
-      "description": "dynfmt --formatstr '{house_number} {street}, {city} {zip_code} USA' -c 'mailing address' file.csv",
-      "command": "qsv applydp dynfmt --formatstr '{house_number} {street}, {city} {zip_code} USA' -c 'mailing address' file.csv"
-    },
-    {
-      "description": "dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullName file.csv",
-      "command": "qsv applydp dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullName file.csv"
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_applydp.rs",
-  "examples_ref": "examples/qsv-applydp-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_applydp.rs"
 }

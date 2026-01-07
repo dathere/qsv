@@ -55,18 +55,15 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SkillDefinition {
-    name:         String,
-    version:      String,
-    description:  String,
-    category:     String,
-    command:      CommandSpec,
-    examples:     Vec<Example>,
+    name:        String,
+    version:     String,
+    description: String,
+    category:    String,
+    command:     CommandSpec,
     #[serde(skip_serializing_if = "Option::is_none")]
-    hints:        Option<BehavioralHints>,
+    hints:       Option<BehavioralHints>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    test_file:    Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    examples_ref: Option<String>,
+    test_file:   Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -101,12 +98,6 @@ struct Option_ {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Example {
-    description: String,
-    command:     String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 struct BehavioralHints {
     streamable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -129,7 +120,6 @@ impl UsageParser {
 
     fn parse(&self) -> Result<SkillDefinition, String> {
         let description = self.extract_description()?;
-        let examples = self.extract_examples();
 
         // Use qsv-docopt Parser to parse USAGE text
         let (args, options) = self.parse_with_docopt()?;
@@ -148,14 +138,36 @@ impl UsageParser {
                 args,
                 options,
             },
-            examples,
             hints,
             test_file: Some(format!(
                 "https://github.com/dathere/qsv/blob/master/tests/test_{}.rs",
                 self.command_name
             )),
-            examples_ref: Some(format!("examples/qsv-{}-examples.json", self.command_name)),
         })
+    }
+
+    /// Extract positional argument names in order from USAGE line
+    fn extract_arg_order_from_usage(&self) -> Vec<String> {
+        let mut arg_order = Vec::new();
+
+        // Find the main usage line (not --help line)
+        if let Some(usage_line) = self
+            .usage_text
+            .lines()
+            .skip_while(|l| !l.contains("Usage:"))
+            .skip(1) // Skip "Usage:" line
+            .find(|l| !l.trim().ends_with("--help") && l.contains("qsv"))
+        {
+            // Extract all <arg> and [<arg>] patterns in order
+            let re = regex::Regex::new(r"(?:\[)?<([^>]+)>(?:\])?").unwrap();
+            for cap in re.captures_iter(usage_line) {
+                if let Some(arg_name) = cap.get(1) {
+                    arg_order.push(arg_name.as_str().to_string());
+                }
+            }
+        }
+
+        arg_order
     }
 
     /// Parse USAGE text using qsv-docopt Parser for robust parsing
@@ -164,7 +176,7 @@ impl UsageParser {
         let parser =
             Parser::new(&self.usage_text).map_err(|e| format!("Docopt parsing failed: {e}"))?;
 
-        let mut args = Vec::new();
+        let mut args_map = std::collections::HashMap::new();
         let mut options = Vec::new();
 
         // Also parse manually to get descriptions
@@ -304,13 +316,16 @@ impl UsageParser {
 
                     let arg_type = self.infer_argument_type(&arg_name, &description);
 
-                    args.push(Argument {
-                        name: arg_name.clone(),
-                        arg_type,
-                        required: !opts.arg.has_default(), // If it has a default, it's optional
-                        description,
-                        examples: Vec::new(),
-                    });
+                    args_map.insert(
+                        arg_name.clone(),
+                        Argument {
+                            name: arg_name.clone(),
+                            arg_type,
+                            required: !opts.arg.has_default(), // If it has a default, it's optional
+                            description,
+                            examples: Vec::new(),
+                        },
+                    );
                 },
                 Atom::Command(_) => {
                     // Skip commands - we're only interested in args/options
@@ -319,8 +334,16 @@ impl UsageParser {
             }
         }
 
-        // Sort for consistent output
-        args.sort_by(|a, b| a.name.cmp(&b.name));
+        // Reorder args based on their appearance in the USAGE line
+        let arg_order = self.extract_arg_order_from_usage();
+        let mut args = Vec::new();
+        for arg_name in arg_order {
+            if let Some(arg) = args_map.remove(&arg_name) {
+                args.push(arg);
+            }
+        }
+
+        // Sort options for consistent output
         options.sort_by(|a, b| a.flag.cmp(&b.flag));
 
         Ok((args, options))
@@ -430,52 +453,6 @@ impl UsageParser {
         }
 
         Ok(description_lines.join(" "))
-    }
-
-    fn extract_examples(&self) -> Vec<Example> {
-        let lines: Vec<&str> = self.usage_text.lines().collect();
-        let mut examples = Vec::new();
-        let mut current_description = String::new();
-
-        for line in lines {
-            let trimmed = line.trim();
-
-            // Comments are descriptions for the next example
-            if trimmed.starts_with('#') {
-                current_description = trimmed.trim_start_matches('#').trim().to_string();
-            }
-            // Commands start with $
-            else if trimmed.starts_with('$') {
-                let command = trimmed.trim_start_matches('$').trim().to_string();
-
-                // Use comment as description, or extract from command
-                let description = if current_description.is_empty() {
-                    // Try to infer description from command
-                    self.infer_example_description(&command)
-                } else {
-                    current_description.clone()
-                };
-
-                examples.push(Example {
-                    description,
-                    command,
-                });
-
-                current_description.clear();
-            }
-        }
-
-        examples
-    }
-
-    fn infer_example_description(&self, command: &str) -> String {
-        // Simple heuristic: use the command itself as description
-        if let Some(after_subcommand) = command.strip_prefix("qsv ")
-            && let Some(rest) = after_subcommand.strip_prefix(&format!("{} ", self.command_name))
-        {
-            return rest.to_string();
-        }
-        command.to_string()
     }
 
     fn infer_argument_type(&self, name: &str, description: &str) -> String {
@@ -709,7 +686,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::write(&output_file, json)?;
 
         println!("  ✅ Generated: {}", output_file.display());
-        println!("     - {} examples", skill.examples.len());
         println!("     - {} arguments", skill.command.args.len());
         println!("     - {} options", skill.command.options.len());
         println!();

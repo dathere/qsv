@@ -1,6 +1,6 @@
 {
   "name": "qsv-to",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Convert CSV files to PostgreSQL, SQLite, Excel XLSX, ODS, Parquet and Data Package. POSTGRESQL ========== To convert to postgres you need to supply connection string. The format is described here - https://docs.rs/postgres/latest/postgres/config/struct.Config.html#examples-1. Additionally you can use `env=MY_ENV_VAR` and qsv will get the connection string from the environment variable `MY_ENV_VAR`. If using the `--dump` option instead of a connection string put a name of a file or `-` for stdout.",
   "category": "conversion",
   "command": {
@@ -8,7 +8,7 @@
     "subcommand": "to",
     "args": [
       {
-        "name": "datapackage",
+        "name": "postgres",
         "type": "string",
         "required": true,
         "description": ""
@@ -16,36 +16,6 @@
       {
         "name": "input",
         "type": "file",
-        "required": true,
-        "description": ""
-      },
-      {
-        "name": "ods",
-        "type": "string",
-        "required": true,
-        "description": ""
-      },
-      {
-        "name": "parquet",
-        "type": "string",
-        "required": true,
-        "description": ""
-      },
-      {
-        "name": "postgres",
-        "type": "string",
-        "required": true,
-        "description": ""
-      },
-      {
-        "name": "sqlite",
-        "type": "string",
-        "required": true,
-        "description": ""
-      },
-      {
-        "name": "xlsx",
-        "type": "string",
         "required": true,
         "description": ""
       }
@@ -123,136 +93,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "postgres 'postgres://testuser:pass@localhost/test' file1.csv file2.csv",
-      "command": "qsv to postgres 'postgres://testuser:pass@localhost/test' file1.csv file2.csv"
-    },
-    {
-      "description": "postgres 'postgres://testuser:pass@localhost/test' --schema=myschema file1.csv file2.csv",
-      "command": "qsv to postgres 'postgres://testuser:pass@localhost/test' --schema=myschema file1.csv file2.csv"
-    },
-    {
-      "description": "postgres 'env=DATABASE_URL' file1.csv file2.csv",
-      "command": "qsv to postgres 'env=DATABASE_URL' file1.csv file2.csv"
-    },
-    {
-      "description": "postgres 'postgres://testuser:pass@localhost/test' dir1",
-      "command": "qsv to postgres 'postgres://testuser:pass@localhost/test' dir1"
-    },
-    {
-      "description": "postgres 'postgres://testuser:pass@localhost/test' input.infile-list",
-      "command": "qsv to postgres 'postgres://testuser:pass@localhost/test' input.infile-list"
-    },
-    {
-      "description": "postgres 'postgres://testuser:pass@localhost/test' --drop file1.csv file2.csv",
-      "command": "qsv to postgres 'postgres://testuser:pass@localhost/test' --drop file1.csv file2.csv"
-    },
-    {
-      "description": "postgres 'postgres://testuser:pass@localhost/test' --evolve file1.csv file2.csv",
-      "command": "qsv to postgres 'postgres://testuser:pass@localhost/test' --evolve file1.csv file2.csv"
-    },
-    {
-      "description": "postgres --dump dumpfile.sql file1.csv file2.csv",
-      "command": "qsv to postgres --dump dumpfile.sql file1.csv file2.csv"
-    },
-    {
-      "description": "postgres --dump - file1.csv file2.csv",
-      "command": "qsv to postgres --dump - file1.csv file2.csv"
-    },
-    {
-      "description": "sqlite test.db file1.csv file2.csv",
-      "command": "qsv to sqlite test.db file1.csv file2.csv"
-    },
-    {
-      "description": "sqlite test.db dir",
-      "command": "qsv to sqlite test.db dir"
-    },
-    {
-      "description": "sqlite test.db mydata.infile-list",
-      "command": "qsv to sqlite test.db mydata.infile-list"
-    },
-    {
-      "description": "sqlite test.db --drop file1.csv file2.csv",
-      "command": "qsv to sqlite test.db --drop file1.csv file2.csv"
-    },
-    {
-      "description": "sqlite test.db --evolve file1.csv file2.csv",
-      "command": "qsv to sqlite test.db --evolve file1.csv file2.csv"
-    },
-    {
-      "description": "sqlite --dump dumpfile.sql file1.csv file2.csv",
-      "command": "qsv to sqlite --dump dumpfile.sql file1.csv file2.csv"
-    },
-    {
-      "description": "sqlite --dump - file1.csv file2.csv",
-      "command": "qsv to sqlite --dump - file1.csv file2.csv"
-    },
-    {
-      "description": "xlsx output.xlsx file1.csv file2.csv",
-      "command": "qsv to xlsx output.xlsx file1.csv file2.csv"
-    },
-    {
-      "description": "xlsx output.xlsx dir1",
-      "command": "qsv to xlsx output.xlsx dir1"
-    },
-    {
-      "description": "xlsx output.xlsx ourdata.infile-list",
-      "command": "qsv to xlsx output.xlsx ourdata.infile-list"
-    },
-    {
-      "description": "ods output.ods file1.csv file2.csv",
-      "command": "qsv to ods output.ods file1.csv file2.csv"
-    },
-    {
-      "description": "ods output.ods dir1",
-      "command": "qsv to ods output.ods dir1"
-    },
-    {
-      "description": "ods output.ods ourdata.infile-list",
-      "command": "qsv to ods output.ods ourdata.infile-list"
-    },
-    {
-      "description": "parquet mydir file1.csv file2.csv",
-      "command": "qsv to parquet mydir file1.csv file2.csv"
-    },
-    {
-      "description": "parquet --pipe mydir -",
-      "command": "qsv to parquet --pipe mydir -"
-    },
-    {
-      "description": "parquet myparquetdir dir1",
-      "command": "qsv to parquet myparquetdir dir1"
-    },
-    {
-      "description": "parquet myparquetdir data.infile-list",
-      "command": "qsv to parquet myparquetdir data.infile-list"
-    },
-    {
-      "description": "datapackage datapackage.json file1.csv file2.csv",
-      "command": "qsv to datapackage datapackage.json file1.csv file2.csv"
-    },
-    {
-      "description": "datapackage datapackage.json --stats file1.csv file2.csv",
-      "command": "qsv to datapackage datapackage.json --stats file1.csv file2.csv"
-    },
-    {
-      "description": "datapackage datapackage.json dir1",
-      "command": "qsv to datapackage datapackage.json dir1"
-    },
-    {
-      "description": "datapackage datapackage.json data.infile-list",
-      "command": "qsv to datapackage datapackage.json data.infile-list"
-    },
-    {
-      "description": "xlsx datapackage.xlsx --stats --print-package file1.csv file2.csv",
-      "command": "qsv to xlsx datapackage.xlsx --stats --print-package file1.csv file2.csv"
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_to.rs",
-  "examples_ref": "examples/qsv-to-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_to.rs"
 }

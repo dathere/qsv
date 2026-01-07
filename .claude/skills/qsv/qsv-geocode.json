@@ -1,6 +1,6 @@
 {
   "name": "qsv-geocode",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Geocodes a location in CSV data against an updatable local copy of the Geonames cities index and a local copy of the MaxMind GeoLite2 City database. The Geonames cities index can be retrieved and updated using the `geocode index-*` subcommands. The GeoLite2 City database will need to be MANUALLY downloaded from MaxMind. Though it is free, you will need to create a MaxMind account to download the GeoIP2 Binary database (mmdb) from https://www.maxmind.com/en/accounts/current/geoip/downloads. Copy the GeoLite2-City.mmdb file to the ~/.qsv-cache/ directory or point to it using the QSV_GEOIP2_FILENAME environment variable. When you run the command for the first time, it will download a prebuilt Geonames cities index from the qsv GitHub repo and use it going forward. You can operate on the local index using the `geocode index-*` subcommands. By default, the prebuilt index uses the Geonames Gazeteer cities15000.zip file using English names. It contains cities with populations > 15,000 (about ~26k cities). See https://download.geonames.org/export/dump/ for more information. It has seven major subcommands: * suggest        - given a partial City name, return the closest City's location metadata per the local Geonames cities index (Jaro-Winkler distance) * suggestnow     - same as suggest, but using a partial City name from the command line, instead of CSV data. * reverse        - given a WGS-84 location coordinate, return the closest City's location metadata per the local Geonames cities index. (Euclidean distance - shortest distance \"as the crow flies\") * reversenow     - sames as reverse, but using a coordinate from the command line, instead of CSV data. * countryinfo    - returns the country information for the ISO-3166 2-letter country code (e.g. US, CA, MX, etc.) * countryinfonow - same as countryinfo, but using a country code from the command line, instead of CSV data. * iplookup       - given an IP address or URL, return the closest City's location metadata per the local Maxmind GeoLite2 City database. * iplookupnow    - same as iplookup, but using an IP address or URL from the command line, instead of CSV data. * index-*        - operations to update the local Geonames cities index. (index-check, index-update, index-load & index-reset) SUGGEST Suggest a Geonames city based on a partial city name. It returns the closest Geonames city record based on the Jaro-Winkler distance between the partial city name and the Geonames city name. The geocoded information is formatted based on --formatstr, returning it in '%location' format (i.e. \"(lat, long)\") if not specified. Use the --new-column option if you want to keep the location column:",
   "category": "utility",
   "command": {
@@ -14,22 +14,10 @@
         "description": "The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in \"lat, long\" or \"(lat, long)\" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information."
       },
       {
-        "name": "index-file",
-        "type": "file",
-        "required": true,
-        "description": "The alternate geonames index file to use. It must be a .rkyv file. For convenience, if this is set to 500, 1000, 5000 or 15000, it will download the corresponding English-only Geonames index rkyv file from the qsv GitHub repo for the current qsv version and use it. Only used by the index-load subcommand."
-      },
-      {
         "name": "input",
         "type": "file",
         "required": true,
         "description": "The input file to read from. If not specified, reads from stdin."
-      },
-      {
-        "name": "location",
-        "type": "string",
-        "required": true,
-        "description": "The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL."
       }
     ],
     "options": [
@@ -143,148 +131,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "suggest city --new-column lat_long file.csv",
-      "command": "qsv geocode suggest city --new-column lat_long file.csv"
-    },
-    {
-      "description": "suggest city --country us,ca,mx file.csv",
-      "command": "qsv geocode suggest city --country us,ca,mx file.csv"
-    },
-    {
-      "description": "suggest city --country us --admin1 \"New York,US.CA\" file.csv",
-      "command": "qsv geocode suggest city --country us --admin1 \"New York,US.CA\" file.csv"
-    },
-    {
-      "description": "suggest city --admin1 \"US.NY,US.CA\" file.csv",
-      "command": "qsv geocode suggest city --admin1 \"US.NY,US.CA\" file.csv"
-    },
-    {
-      "description": "suggest city --formatstr %state --new-column state file.csv",
-      "command": "qsv geocode suggest city --formatstr %state --new-column state file.csv"
-    },
-    {
-      "description": "suggest city -f \"{name}, {admin1}, {country} in {timezone}\" file.csv",
-      "command": "qsv geocode suggest city -f \"{name}, {admin1}, {country} in {timezone}\" file.csv"
-    },
-    {
-      "description": "using French place names. You'll need to rebuild the index with the --languages option first",
-      "command": "qsv geocode suggest city -f \"{name}, {admin1}, {country} in {timezone}\" -l fr file.csv"
-    },
-    {
-      "description": "suggestnow \"New York\"",
-      "command": "qsv geocode suggestnow \"New York\""
-    },
-    {
-      "description": "suggestnow --country US -f %cityrecord \"Paris\"",
-      "command": "qsv geocode suggestnow --country US -f %cityrecord \"Paris\""
-    },
-    {
-      "description": "suggestnow --admin1 \"US:OH\" \"Athens\"",
-      "command": "qsv geocode suggestnow --admin1 \"US:OH\" \"Athens\""
-    },
-    {
-      "description": "reverse LatLong -c City file.csv",
-      "command": "qsv geocode reverse LatLong -c City file.csv"
-    },
-    {
-      "description": "reverse LatLong -c CityState file.csv -o file_with_citystate.csv",
-      "command": "qsv geocode reverse LatLong -c CityState file.csv -o file_with_citystate.csv"
-    },
-    {
-      "description": "reverse LatLong -f %timezone -c tz file.csv -o file_with_tz.csv",
-      "command": "qsv geocode reverse LatLong -f %timezone -c tz file.csv -o file_with_tz.csv"
-    },
-    {
-      "description": "reversenow \"40.71427, -74.00597\"",
-      "command": "qsv geocode reversenow \"40.71427, -74.00597\""
-    },
-    {
-      "description": "reversenow --country US -f %cityrecord \"40.71427, -74.00597\"",
-      "command": "qsv geocode reversenow --country US -f %cityrecord \"40.71427, -74.00597\""
-    },
-    {
-      "description": "reversenow --admin1 \"US:OH\" \"(39.32924, -82.10126)\"",
-      "command": "qsv geocode reversenow --admin1 \"US:OH\" \"(39.32924, -82.10126)\""
-    },
-    {
-      "description": "countryinfo country_col data.csv",
-      "command": "qsv geocode countryinfo country_col data.csv"
-    },
-    {
-      "description": "countryinfo --formatstr \"%json\" country_col data.csv",
-      "command": "qsv geocode countryinfo --formatstr \"%json\" country_col data.csv"
-    },
-    {
-      "description": "countryinfo -f \"%continent\" country_col data.csv",
-      "command": "qsv geocode countryinfo -f \"%continent\" country_col data.csv"
-    },
-    {
-      "description": "countryinfo -f \"{country_name} ({fips}) in {continent}\" country_col data.csv",
-      "command": "qsv geocode countryinfo -f \"{country_name} ({fips}) in {continent}\" country_col data.csv"
-    },
-    {
-      "description": "countryinfonow US",
-      "command": "qsv geocode countryinfonow US"
-    },
-    {
-      "description": "countryinfonow --formatstr \"%pretty-json\" US",
-      "command": "qsv geocode countryinfonow --formatstr \"%pretty-json\" US"
-    },
-    {
-      "description": "countryinfonow -f \"%continent\" US",
-      "command": "qsv geocode countryinfonow -f \"%continent\" US"
-    },
-    {
-      "description": "countryinfonow -f \"{country_name} ({fips}) in {continent}\" US",
-      "command": "qsv geocode countryinfonow -f \"{country_name} ({fips}) in {continent}\" US"
-    },
-    {
-      "description": "iplookup IP_col data.csv",
-      "command": "qsv geocode iplookup IP_col data.csv"
-    },
-    {
-      "description": "iplookup --formatstr \"%json\" IP_col data.csv",
-      "command": "qsv geocode iplookup --formatstr \"%json\" IP_col data.csv"
-    },
-    {
-      "description": "iplookup -f \"%cityrecord\" IP_col data.csv",
-      "command": "qsv geocode iplookup -f \"%cityrecord\" IP_col data.csv"
-    },
-    {
-      "description": "iplookupnow 140.174.222.253",
-      "command": "qsv geocode iplookupnow 140.174.222.253"
-    },
-    {
-      "description": "iplookupnow https://amazon.com",
-      "command": "qsv geocode iplookupnow https://amazon.com"
-    },
-    {
-      "description": "iplookupnow --formatstr \"%json\" 140.174.222.253",
-      "command": "qsv geocode iplookupnow --formatstr \"%json\" 140.174.222.253"
-    },
-    {
-      "description": "iplookupnow -f \"%cityrecord\" 140.174.222.253",
-      "command": "qsv geocode iplookupnow -f \"%cityrecord\" 140.174.222.253"
-    },
-    {
-      "description": "index-update",
-      "command": "qsv geocode index-update"
-    },
-    {
-      "description": "with English, French, German & Spanish place names",
-      "command": "qsv geocode index-update --languages en,fr,de,es"
-    },
-    {
-      "description": "index-load my_geonames_index.rkyv",
-      "command": "qsv geocode index-load my_geonames_index.rkyv"
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_geocode.rs",
-  "examples_ref": "examples/qsv-geocode-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_geocode.rs"
 }

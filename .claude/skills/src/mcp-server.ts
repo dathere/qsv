@@ -79,10 +79,14 @@ class QsvMcpServer {
     console.error(`Loaded ${skills.size} skills`);
 
     // Register tool handlers
+    console.error('About to register tool handlers...');
     this.registerToolHandlers();
+    console.error('Tool handlers registered');
 
     // Register resource handlers
+    console.error('About to register resource handlers...');
     this.registerResourceHandlers();
+    console.error('Resource handlers registered');
 
     console.error('QSV MCP Server initialized successfully');
   }
@@ -91,29 +95,57 @@ class QsvMcpServer {
    * Register MCP tool handlers
    */
   private registerToolHandlers(): void {
-    // List tools handler
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      const tools = [];
+    console.error('[Server] Registering tool handlers...');
+    try {
+      // List tools handler
+      this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+        console.error('[Server] Handling tools/list request...');
+        const tools = [];
 
       // Add 20 common command tools
+      console.error('[Server] Loading common command tools...');
       for (const command of COMMON_COMMANDS) {
         const skillName = `qsv-${command}`;
-        const skill = await this.loader.load(skillName);
+        try {
+          const skill = await this.loader.load(skillName);
 
-        if (skill) {
-          tools.push(createToolDefinition(skill));
-        } else {
-          console.error(`Warning: Failed to load skill ${skillName}`);
+          if (skill) {
+            const toolDef = createToolDefinition(skill);
+            tools.push(toolDef);
+          } else {
+            console.error(`Warning: Failed to load skill ${skillName}`);
+          }
+        } catch (error) {
+          console.error(`Error creating tool definition for ${skillName}:`, error);
         }
       }
 
       // Add generic qsv_command tool
-      tools.push(createGenericToolDefinition(this.loader));
+      console.error('[Server] Adding generic command tool...');
+      try {
+        const genericTool = createGenericToolDefinition(this.loader);
+        console.error('[Server] Generic tool created:', JSON.stringify(genericTool).substring(0, 200));
+        tools.push(genericTool);
+        console.error('[Server] Generic tool added successfully');
+      } catch (error) {
+        console.error('[Server] Error creating generic tool:', error);
+        throw error;
+      }
 
       // Add pipeline tool
-      tools.push(createPipelineToolDefinition());
+      console.error('[Server] Adding pipeline tool...');
+      try {
+        const pipelineTool = createPipelineToolDefinition();
+        console.error('[Server] Pipeline tool created:', JSON.stringify(pipelineTool).substring(0, 200));
+        tools.push(pipelineTool);
+        console.error('[Server] Pipeline tool added successfully');
+      } catch (error) {
+        console.error('[Server] Error creating pipeline tool:', error);
+        throw error;
+      }
 
       // Add filesystem tools
+      console.error('[Server] Adding filesystem tools...');
       tools.push({
         name: 'qsv_list_files',
         description: 'List tabular data files (CSV, TSV, etc.) in a directory. Use this to browse available files before processing them.',
@@ -158,8 +190,13 @@ class QsvMcpServer {
 
       console.error(`Registered ${tools.length} tools`);
 
-      return { tools };
-    });
+        return { tools };
+      });
+      console.error('[Server] Tool handlers registered successfully');
+    } catch (error) {
+      console.error('[Server] Error registering tool handlers:', error);
+      throw error;
+    }
 
     // Call tool handler
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {

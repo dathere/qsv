@@ -1,6 +1,6 @@
 {
   "name": "qsv-slice",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Returns the rows in the range specified (starting at 0, half-open interval). The range does not include headers. If the start of the range isn't specified, then the slice starts from the first record in the CSV data. If the end of the range isn't specified, then the slice continues to the last record in the CSV data. This operation can be made much faster by creating an index with 'qsv index' first. With an index, the command requires parsing just the rows that are sliced. Without an index, all rows up to the first row in the slice must be parsed.",
   "category": "selection",
   "command": {
@@ -67,68 +67,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "Slice from the 3rd record to the end",
-      "command": "qsv slice --start 2 data.csv"
-    },
-    {
-      "description": "Slice the first three records",
-      "command": "qsv slice --start 0 --end 2 data.csv"
-    },
-    {
-      "description": "--len 3 data.csv",
-      "command": "qsv slice --len 3 data.csv"
-    },
-    {
-      "description": "-l 3 data.csv",
-      "command": "qsv slice -l 3 data.csv"
-    },
-    {
-      "description": "Slice the last record",
-      "command": "qsv slice -s -1 data.csv"
-    },
-    {
-      "description": "Slice the last 10 records",
-      "command": "qsv slice -s -10 data.csv"
-    },
-    {
-      "description": "Get everything except the last 10 records",
-      "command": "qsv slice -s -10 --invert data.csv"
-    },
-    {
-      "description": "Slice the first three records of the last 10 records",
-      "command": "qsv slice -s -10 -l 3 data.csv"
-    },
-    {
-      "description": "Slice the second record",
-      "command": "qsv slice --index 1 data.csv"
-    },
-    {
-      "description": "-i 1 data.csv",
-      "command": "qsv slice -i 1 data.csv"
-    },
-    {
-      "description": "Slice from the second record, two records",
-      "command": "qsv slice -s 1 --len 2 data.csv"
-    },
-    {
-      "description": "Slice records 10 to 20 as JSON",
-      "command": "qsv slice -s 9 -e 19 --json data.csv"
-    },
-    {
-      "description": "-s 9 -l 10 --json data.csv",
-      "command": "qsv slice -s 9 -l 10 --json data.csv"
-    },
-    {
-      "description": "Slice records 1 to 9 and 21 to the end as JSON",
-      "command": "qsv slice -s 9 -l 10 --invert --json data.csv"
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_slice.rs",
-  "examples_ref": "examples/qsv-slice-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_slice.rs"
 }

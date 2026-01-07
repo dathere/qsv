@@ -1,5 +1,11 @@
-# Build artifacts - dist directory only
+# Build artifacts
 dist/
+*.js.map
+*.d.ts.map
+
+# Compiled test files (should only be in dist/)
+tests/*.js
+tests/*.d.ts
 
 # Dependencies
 node_modules/

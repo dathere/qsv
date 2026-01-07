@@ -1,6 +1,6 @@
 {
   "name": "qsv-explode",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Explodes a row into multiple ones by splitting a column value based on the given separator. For instance the following CSV: name,colors John,blue|yellow Mary,red Can be exploded on the \"colors\" <column> based on the \"|\" <separator> to: name,colors John,blue John,yellow Mary,red",
   "category": "utility",
   "command": {
@@ -14,14 +14,14 @@
         "description": ""
       },
       {
-        "name": "input",
-        "type": "file",
+        "name": "separator",
+        "type": "string",
         "required": true,
         "description": ""
       },
       {
-        "name": "separator",
-        "type": "string",
+        "name": "input",
+        "type": "file",
         "required": true,
         "description": ""
       }
@@ -54,11 +54,9 @@
       }
     ]
   },
-  "examples": [],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_explode.rs",
-  "examples_ref": "examples/qsv-explode-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_explode.rs"
 }

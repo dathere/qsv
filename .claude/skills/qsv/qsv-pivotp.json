@@ -1,6 +1,6 @@
 {
   "name": "qsv-pivotp",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Pivots CSV data using the Polars engine. The pivot operation consists of: - One or more index columns (these will be the new rows) - A column that will be pivoted (this will create the new columns) - A values column that will be aggregated - An aggregation function to apply. Features \"smart\" aggregation auto-selection. For examples, see https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs.",
   "category": "utility",
   "command": {
@@ -8,16 +8,16 @@
     "subcommand": "pivotp",
     "args": [
       {
-        "name": "input",
-        "type": "file",
-        "required": true,
-        "description": "is the input CSV file. The file must have headers. If the file has a pschema.json file, it will be used to inform the pivot operation unless --infer-len is explicitly set to a value other than the default of 10,000 rows. Stdin is not supported."
-      },
-      {
         "name": "on-cols",
         "type": "string",
         "required": true,
         "description": "The column(s) to pivot on (creates new columns)."
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": "is the input CSV file. The file must have headers. If the file has a pschema.json file, it will be used to inform the pivot operation unless --infer-len is explicitly set to a value other than the default of 10,000 rows. Stdin is not supported."
       }
     ],
     "options": [
@@ -101,11 +101,9 @@
       }
     ]
   },
-  "examples": [],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs",
-  "examples_ref": "examples/qsv-pivotp-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs"
 }

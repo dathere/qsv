@@ -1,12 +1,18 @@
 {
   "name": "qsv-apply",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Apply a series of transformation functions to given CSV column/s. This can be used to perform typical data-wrangling tasks and/or to harmonize some values, etc. It has four subcommands: 1. operations*   - 40 string, format, currency, regex & NLP operators. 2. emptyreplace* - replace empty cells with <--replacement> string. 3. dynfmt        - Dynamically constructs a new column from other columns using the <--formatstr> template. 4. calcconv      - parse and evaluate math expressions, with support for units and conversions. * subcommand is multi-column capable. OPERATIONS (multi-column capable) Multiple operations can be applied, with the comma-delimited operation series applied in order: trim => Trim the cell trim,upper => Trim the cell, then transform to uppercase lower,simdln => Lowercase the cell, then compute the normalized Damerau-Levenshtein similarity to --comparand Operations support multi-column transformations. Just make sure the number of transformed columns with the --rename option is the same. e.g.: It has 40 supported operations: * len: Return string length * lower: Transform to lowercase * upper: Transform to uppercase * squeeze: Compress consecutive whitespaces * squeeze0: Remove whitespace * trim: Trim (drop whitespace left & right of the string) * ltrim: Left trim whitespace * rtrim: Right trim whitespace * mtrim: Trims --comparand matches left & right of the string (Rust trim_matches) * mltrim: Left trim --comparand matches (Rust trim_start_matches) * mrtrim: Right trim --comparand matches (Rust trim_end_matches) * strip_prefix: Removes specified prefix in --comparand * strip_suffix: Remove specified suffix in --comparand * escape - escape (Rust escape_default) * encode62: base62 encode * decode62: base62 decode * encode64: base64 encode * decode64: base64 decode * crc32: crc32 checksum * replace: Replace all matches of a pattern (using --comparand) with a string (using --replacement) (Rust replace) * regex_replace: Replace all regex matches in --comparand w/ --replacement. Specify <NULL> as --replacement to remove matches. * titlecase - capitalizes English text using Daring Fireball titlecase style https://daringfireball.net/2008/05/title_case * censor: profanity filter. Add additional comma-delimited profanities with --comparand. * censor_check: check if profanity is detected (boolean). Add additional comma-delimited profanities with -comparand. * censor_count: count of profanities detected. Add additional comma-delimited profanities with -comparand. * round: Round numeric values to the specified number of decimal places using Midpoint Nearest Even Rounding Strategy AKA \"Bankers Rounding.\" Specify the number of decimal places with --formatstr (default: 3). * thousands: Add thousands separators to numeric values. Specify the separator policy with --formatstr (default: comma). The valid policies are: comma, dot, space, underscore, hexfour (place a space every four hex digits) and indiancomma (place a comma every two digits, except the last three digits). The decimal separator can be specified with --replacement (default: '.') * currencytonum: Gets the numeric value of a currency. Supports currency symbols (e.g. $,¥,£,€,֏,₱,₽,₪,₩,ƒ,฿,₫) and strings (e.g. USD, EUR, RMB, JPY, etc.). Recognizes point, comma and space separators. Is \"permissive\" by default, meaning it will allow no or non-ISO currency symbols. To enforce strict parsing, which will require a valid ISO currency symbol, set the --formatstr to \"strict\". * numtocurrency: Convert a numeric value to a currency. Specify the currency symbol with --comparand. Automatically rounds values to two decimal places. Specify \"euro\" formatting (e.g. 1.000,00 instead of 1,000.00 ) by setting --formatstr to \"euro\". Specify conversion rate by setting --replacement to a number. * gender_guess: Guess the gender of a name. * copy: Mark a column for copying * simdl: Damerau-Levenshtein similarity to --comparand * simdln: Normalized Damerau-Levenshtein similarity to --comparand (between 0.0 & 1.0) * simjw: Jaro-Winkler similarity to --comparand (between 0.0 & 1.0) * simsd: Sørensen-Dice similarity to --comparand (between 0.0 & 1.0) * simhm: Hamming distance to --comparand. Num of positions characters differ. * simod: Optimal String Alignment (OSA) Distance to --comparand. * eudex: Multi-lingual sounds like --comparand (boolean) Tested on English, Catalan, German, Spanish, Swedish and Italian dictionaries. It supports all C1 letters (e.g. ü, ö, æ, ß, é, etc.) and takes their sound into account. It should work on other European languages that use the Latin alphabet. * sentiment: Normalized VADER sentiment score (English only - between -1.0 to 1.0). * whatlang: Language Detection for 87 supported languages, with default confidence threshold of 0.9, which can be overridden by assigning 0.0 to 1.0 to --comparand. If language detection confidence is below the threshold, it will still show the best language guess, followed by the confidence score, ending with a question mark. If you want to always displays the confidence score, end the --comparand value with a question mark (e.g. 0.9?) https://github.com/greyblake/whatlang-rs/blob/master/SUPPORTED_LANGUAGES.md",
   "category": "transformation",
   "command": {
     "binary": "qsv",
     "subcommand": "apply",
     "args": [
+      {
+        "name": "operations",
+        "type": "string",
+        "required": true,
+        "description": "The operation/s to apply."
+      },
       {
         "name": "column",
         "type": "string",
@@ -18,12 +24,6 @@
         "type": "file",
         "required": true,
         "description": "The input file to read from. If not specified, reads from stdin."
-      },
-      {
-        "name": "operations",
-        "type": "string",
-        "required": true,
-        "description": "The operation/s to apply."
       }
     ],
     "options": [
@@ -90,128 +90,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "to newcol1,newcol2 and newcol3",
-      "command": "qsv apply operations trim,upper col1,col2,col3 -r newcol1,newcol2,newcol3 file.csv"
-    },
-    {
-      "description": "operations trim,upper surname file.csv",
-      "command": "qsv apply operations trim,upper surname file.csv"
-    },
-    {
-      "description": "operations trim,upper surname -r uppercase_clean_surname file.csv",
-      "command": "qsv apply operations trim,upper surname -r uppercase_clean_surname file.csv"
-    },
-    {
-      "description": "operations trim,upper surname -c uppercase_clean_surname file.csv",
-      "command": "qsv apply operations trim,upper surname -c uppercase_clean_surname file.csv"
-    },
-    {
-      "description": "operations trim,upper firstname,surname -r ufirstname,usurname file.csv",
-      "command": "qsv apply operations trim,upper firstname,surname -r ufirstname,usurname file.csv"
-    },
-    {
-      "description": "operations mtrim description --comparand '()<>' file.csv",
-      "command": "qsv apply operations mtrim description --comparand '()<>' file.csv"
-    },
-    {
-      "description": "operations replace description --comparand ' and ' --replacement ' & ' file.csv",
-      "command": "qsv apply operations replace description --comparand ' and ' --replacement ' & ' file.csv"
-    },
-    {
-      "description": "operations currencytonum Salary -c Salary_num file.csv",
-      "command": "qsv apply operations currencytonum Salary -c Salary_num file.csv"
-    },
-    {
-      "description": "operations numtocurrency USD_Price -C PHP -R 60 -c PHP_Price file.csv",
-      "command": "qsv apply operations numtocurrency USD_Price -C PHP -R 60 -c PHP_Price file.csv"
-    },
-    {
-      "description": "operations encode64 text_col -c encoded file.csv | qsv apply operations decode64 encoded",
-      "command": "qsv apply operations encode64 text_col -c encoded file.csv | qsv apply operations decode64 encoded"
-    },
-    {
-      "description": "operations lower,simdln neighborhood --comparand roxbury -c dln_roxbury_score boston311.csv",
-      "command": "qsv apply operations lower,simdln neighborhood --comparand roxbury -c dln_roxbury_score boston311.csv"
-    },
-    {
-      "description": "operations copy col_to_copy -c col_copy file.csv",
-      "command": "qsv apply operations copy col_to_copy -c col_copy file.csv"
-    },
-    {
-      "description": "emptyreplace Measurement --replacement None file.csv",
-      "command": "qsv apply emptyreplace Measurement --replacement None file.csv"
-    },
-    {
-      "description": "emptyreplace Measurement --replacement 'Unknown Measurement' file.csv",
-      "command": "qsv apply emptyreplace Measurement --replacement 'Unknown Measurement' file.csv"
-    },
-    {
-      "description": "emptyreplace M1,M2,M3 --replacement None file.csv",
-      "command": "qsv apply emptyreplace M1,M2,M3 --replacement None file.csv"
-    },
-    {
-      "description": "emptyreplace '/^Measurement/' --replacement None file.csv",
-      "command": "qsv apply emptyreplace '/^Measurement/' --replacement None file.csv"
-    },
-    {
-      "description": "emptyreplace --replacement None '/(?i)^observation/' file.csv",
-      "command": "qsv apply emptyreplace --replacement None '/(?i)^observation/' file.csv"
-    },
-    {
-      "description": "dynfmt --formatstr '{house_number} {street}, {city} {zip_code} USA' -c 'mailing address' file.csv",
-      "command": "qsv apply dynfmt --formatstr '{house_number} {street}, {city} {zip_code} USA' -c 'mailing address' file.csv"
-    },
-    {
-      "description": "dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullName file.csv",
-      "command": "qsv apply dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullName file.csv"
-    },
-    {
-      "description": "calcconv --formatstr '{col1} + {col2} * {col3}' --new-column result file.csv",
-      "command": "qsv apply calcconv --formatstr '{col1} + {col2} * {col3}' --new-column result file.csv"
-    },
-    {
-      "description": "calcconv --formatstr '{col1} % 3' --new-column remainder file.csv",
-      "command": "qsv apply calcconv --formatstr '{col1} % 3' --new-column remainder file.csv"
-    },
-    {
-      "description": "calcconv --formatstr '{col1}mb in gigabytes' -c gb file.csv",
-      "command": "qsv apply calcconv --formatstr '{col1}mb in gigabytes' -c gb file.csv"
-    },
-    {
-      "description": "calcconv --formatstr '{col1} Fahrenheit in Celsius\" -c metric_temperature file.csv",
-      "command": "qsv apply calcconv --formatstr '{col1} Fahrenheit in Celsius\" -c metric_temperature file.csv"
-    },
-    {
-      "description": "calcconv --formatstr '{col1}km + {col2}mi in meters' -c meters file.csv",
-      "command": "qsv apply calcconv --formatstr '{col1}km + {col2}mi in meters' -c meters file.csv"
-    },
-    {
-      "description": "calcconv --formatstr '({col1} + {col2})km to light years <UNIT>' -c light_years file.csv",
-      "command": "qsv apply calcconv --formatstr '({col1} + {col2})km to light years <UNIT>' -c light_years file.csv"
-    },
-    {
-      "description": "calcconv --formatstr '{col1}m/s + {col2}mi/h in kilometers per h' -c kms_per_h file.csv",
-      "command": "qsv apply calcconv --formatstr '{col1}m/s + {col2}mi/h in kilometers per h' -c kms_per_h file.csv"
-    },
-    {
-      "description": "calcconv --formatstr 'round(sqrt{col1}^4)! liters' -c liters file.csv",
-      "command": "qsv apply calcconv --formatstr 'round(sqrt{col1}^4)! liters' -c liters file.csv"
-    },
-    {
-      "description": "calcconv --formatstr '10% of abs(sin(pi)) horsepower to watts' -c watts file.csv",
-      "command": "qsv apply calcconv --formatstr '10% of abs(sin(pi)) horsepower to watts' -c watts file.csv"
-    },
-    {
-      "description": "calcconv --formatstr '{col1} Billion Trillion * {col2} quadrillion vigintillion' -c num_atoms file.csv",
-      "command": "qsv apply calcconv --formatstr '{col1} Billion Trillion * {col2} quadrillion vigintillion' -c num_atoms file.csv"
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_apply.rs",
-  "examples_ref": "examples/qsv-apply-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_apply.rs"
 }

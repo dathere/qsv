@@ -1,7 +1,7 @@
 /**
  * MCP Filesystem Resource Provider
  *
- * Exposes local CSV files as browsable MCP resources, allowing
+ * Exposes local tabular data files as browsable MCP resources, allowing
  * Claude Desktop to work with local files without uploading them.
  */
 
@@ -24,7 +24,7 @@ export interface FilesystemConfig {
   allowedDirectories?: string[];
 
   /**
-   * File extensions to include in listings (defaults to CSV-related)
+   * File extensions to include in listings
    */
   allowedExtensions?: string[];
 
@@ -165,7 +165,7 @@ export class FilesystemResourceProvider {
   }
 
   /**
-   * List CSV files in a directory as MCP resources
+   * List tabular data files in a directory as MCP resources
    */
   async listFiles(
     directory?: string,
@@ -182,13 +182,13 @@ export class FilesystemResourceProvider {
       if (resources.length > config.maxFilesPerListing) {
         const limited = resources.slice(0, config.maxFilesPerListing);
         console.error(
-          `Found ${resources.length} CSV files in ${dir}, ` +
+          `Found ${resources.length} tabular data files in ${dir}, ` +
           `but limit is ${config.maxFilesPerListing}. Returning first ${config.maxFilesPerListing} files.`
         );
         return { resources: limited };
       }
 
-      console.error(`Found ${resources.length} CSV files in ${dir}`);
+      console.error(`Found ${resources.length} tabular data files in ${dir}`);
 
       return { resources };
     } catch (error) {
@@ -239,7 +239,7 @@ export class FilesystemResourceProvider {
   }
 
   /**
-   * Recursively scan directory for CSV files
+   * Recursively scan directory for tabular data files
    */
   private async scanDirectory(
     dir: string,

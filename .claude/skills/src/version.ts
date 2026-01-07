@@ -4,7 +4,7 @@
  * Exports the version from package.json to ensure consistency across the codebase.
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -16,8 +16,17 @@ const __dirname = dirname(__filename);
  */
 function getVersion(): string {
   try {
-    // When compiled, __dirname is dist/src/, so go up 2 levels to project root
-    const packageJsonPath = join(__dirname, '../../package.json');
+    // Try multiple possible locations for package.json
+    // 1. When built for production: dist/version.js -> ../package.json
+    // 2. When built for tests: dist/src/version.js -> ../../package.json
+    const productionPath = join(__dirname, '../package.json');
+    const testPath = join(__dirname, '../../package.json');
+
+    let packageJsonPath = productionPath;
+    if (!existsSync(productionPath) && existsSync(testPath)) {
+      packageJsonPath = testPath;
+    }
+
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
     return packageJson.version || '0.0.0';
   } catch (error) {

@@ -1,6 +1,6 @@
 {
   "name": "qsv-transpose",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Transpose the rows/columns of CSV data.",
   "category": "transformation",
   "command": {
@@ -47,40 +47,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "Transpose data in-memory.",
-      "command": "qsv transpose data.csv"
-    },
-    {
-      "description": "Transpose data using multiple passes. For large datasets.",
-      "command": "qsv transpose data.csv --multipass"
-    },
-    {
-      "description": "Convert CSV to \"long\" format using the first column as the \"field\" identifier",
-      "command": "qsv transpose data.csv --long 1"
-    },
-    {
-      "description": "use the columns \"name\" & \"age\" as the \"field\" identifier",
-      "command": "qsv transpose --long \"name,age\" data.csv"
-    },
-    {
-      "description": "use the columns 1 & 3 as the \"field\" identifier",
-      "command": "qsv transpose --long 1,3 data.csv"
-    },
-    {
-      "description": "use the columns 1 to 3 as the \"field\" identifier",
-      "command": "qsv transpose --long 1-3 data.csv"
-    },
-    {
-      "description": "use all columns starting with \"name\" as the \"field\" identifier",
-      "command": "qsv transpose --long /^name/ data.csv"
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_transpose.rs",
-  "examples_ref": "examples/qsv-transpose-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_transpose.rs"
 }

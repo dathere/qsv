@@ -372,10 +372,10 @@ cargo run --bin qsv-skill-gen --features all_features
 - [MCP Server Guide](./README-MCP.md) - Claude Desktop integration
 - [Filesystem Usage Guide](./FILESYSTEM_USAGE.md) - Local file access
 - [Complete API Documentation](./SKILLS_README.md)
-- [Design Document](../../docs/AGENT_SKILLS_DESIGN.md)
-- [Integration Guide](../../docs/AGENT_SKILLS_INTEGRATION.md)
-- [POC Summary](../../docs/AGENT_SKILLS_POC_SUMMARY.md)
-- [Complete Summary](../../docs/AGENT_SKILLS_COMPLETE_SUMMARY.md)
+- [Design Document](./docs/design/AGENT_SKILLS_DESIGN.md)
+- [Integration Guide](./docs/design/AGENT_SKILLS_INTEGRATION.md)
+- [POC Summary](./docs/design/AGENT_SKILLS_POC_SUMMARY.md)
+- [Complete Summary](./docs/design/AGENT_SKILLS_COMPLETE_SUMMARY.md)
 - [qsv Commands](https://github.com/dathere/qsv#commands)
 
 ## Requirements

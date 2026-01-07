@@ -79,9 +79,11 @@ export class UpdateChecker {
           return;
         }
 
-        // Parse version from output like "qsv 0.132.0"
-        const match = output.match(/qsv\s+(\d+\.\d+\.\d+)/);
+        // Parse version from output like "qsv 0.132.0" or "qsv 0.132.0-beta"
+        // Handle multiple spaces, extra text, and pre-release tags
+        const match = output.match(/qsv\s+(\d+\.\d+\.\d+)(?:-[\w.]+)?/);
         if (match) {
+          // Only use the main version number (ignore pre-release tags for now)
           resolve(match[1]);
         } else {
           reject(new Error(`Could not parse qsv version from: ${output}`));
@@ -98,19 +100,33 @@ export class UpdateChecker {
    * Get version that skills were generated with (from skill JSON files)
    */
   getSkillsVersion(): string {
-    try {
-      // Read version from any skill file (they all have the same version)
-      const sampleSkillPath = join(this.skillsDir, 'qsv-stats.json');
-      if (!existsSync(sampleSkillPath)) {
-        return 'unknown';
-      }
+    // Try multiple skill files as fallbacks for resilience
+    const skillFilesToTry = [
+      'qsv-stats.json',
+      'qsv-select.json',
+      'qsv-count.json',
+      'qsv-search.json'
+    ];
 
-      const skill = JSON.parse(readFileSync(sampleSkillPath, 'utf-8'));
-      return skill.version || 'unknown';
-    } catch (error) {
-      console.error('[UpdateChecker] Failed to read skills version:', error);
-      return 'unknown';
+    for (const skillFile of skillFilesToTry) {
+      try {
+        const skillPath = join(this.skillsDir, skillFile);
+        if (!existsSync(skillPath)) {
+          continue;
+        }
+
+        const skill = JSON.parse(readFileSync(skillPath, 'utf-8'));
+        if (skill.version) {
+          return skill.version;
+        }
+      } catch (error) {
+        // Try next file
+        continue;
+      }
     }
+
+    console.warn('[UpdateChecker] Could not determine skills version from any skill file');
+    return 'unknown';
   }
 
   /**
@@ -153,6 +169,11 @@ export class UpdateChecker {
       writeFileSync(this.versionFilePath, JSON.stringify(info, null, 2), 'utf-8');
     } catch (error) {
       console.error('[UpdateChecker] Failed to save version info:', error);
+      console.warn(
+        '[UpdateChecker] WARNING: Version info could not be persisted at',
+        this.versionFilePath,
+        '- update checks may be repeated or version tracking may be inaccurate.'
+      );
     }
   }
 
@@ -177,9 +198,19 @@ export class UpdateChecker {
         return null;
       }
 
-      const data = await response.json() as { tag_name: string };
+      const data: unknown = await response.json();
+      if (
+        !data ||
+        typeof data !== 'object' ||
+        data === null ||
+        typeof (data as { tag_name?: unknown }).tag_name !== 'string'
+      ) {
+        console.error('[UpdateChecker] GitHub API response missing valid tag_name field');
+        return null;
+      }
+      const tagName = (data as { tag_name: string }).tag_name;
       // Tag format is typically "v0.132.0" or "0.132.0"
-      const version = data.tag_name.replace(/^v/, '');
+      const version = tagName.replace(/^v/, '');
       return version;
     } catch (error) {
       console.error('[UpdateChecker] Failed to check GitHub releases:', error);
@@ -189,10 +220,19 @@ export class UpdateChecker {
 
   /**
    * Compare semantic versions (simple implementation)
+   * Handles only numeric versions like "1.2.3" (pre-release tags are ignored)
    */
   private compareVersions(v1: string, v2: string): number {
     const parts1 = v1.split('.').map(Number);
     const parts2 = v2.split('.').map(Number);
+
+    // Validate that all parts are valid numbers
+    if (parts1.some(isNaN) || parts2.some(isNaN)) {
+      console.warn(
+        `[UpdateChecker] Invalid version format: "${v1}" or "${v2}" - comparison may be incorrect`
+      );
+      return 0; // Treat as equal if we can't compare
+    }
 
     for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
       const part1 = parts1[i] || 0;

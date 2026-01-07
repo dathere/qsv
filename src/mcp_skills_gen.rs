@@ -601,21 +601,44 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // Determine repository root - look for Cargo.toml with src/cmd
     // This command must be run from within the qsv repository directory
     let mut repo_root = std::env::current_dir()?;
+    let original_dir = repo_root.clone();
+
+    let mut iterations = 0;
+    const MAX_ITERATIONS: usize = 100; // Prevent infinite loops
+
     loop {
         if repo_root.join("Cargo.toml").exists() && repo_root.join("src/cmd").exists() {
             break;
         }
-        if !repo_root.pop() {
+
+        iterations += 1;
+        if iterations >= MAX_ITERATIONS {
             return fail_clierror!(
-                "Could not find qsv repository root. This command must be run from within \
-                 the qsv repository directory (where Cargo.toml and src/cmd exist).\n\
-                 Current directory: {}\n\
+                "Could not find qsv repository root after checking {} parent directories. \
+                 This command must be run from within the qsv repository directory \
+                 (where Cargo.toml and src/cmd exist).\n\
+                 Original directory: {}\n\
                  \n\
                  If you're using a package-installed qsv binary, you need to:\n\
                  1. Clone the qsv repository: git clone https://github.com/dathere/qsv.git\n\
                  2. cd into the repository: cd qsv\n\
                  3. Run: qsv --update-mcp-skills",
-                std::env::current_dir()?.display()
+                MAX_ITERATIONS,
+                original_dir.display()
+            );
+        }
+
+        if !repo_root.pop() {
+            return fail_clierror!(
+                "Could not find qsv repository root. This command must be run from within \
+                 the qsv repository directory (where Cargo.toml and src/cmd exist).\n\
+                 Original directory: {}\n\
+                 \n\
+                 If you're using a package-installed qsv binary, you need to:\n\
+                 1. Clone the qsv repository: git clone https://github.com/dathere/qsv.git\n\
+                 2. cd into the repository: cd qsv\n\
+                 3. Run: qsv --update-mcp-skills",
+                original_dir.display()
             );
         }
     }

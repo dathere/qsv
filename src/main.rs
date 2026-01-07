@@ -268,10 +268,13 @@ fn main() -> QsvExitCode {
     #[cfg(feature = "mcp")]
     {
         if args.flag_update_mcp_skills {
-            util::log_end(qsv_args, now);
             match mcp_skills_gen::generate_mcp_skills() {
-                Ok(()) => return QsvExitCode::Good,
+                Ok(()) => {
+                    util::log_end(qsv_args, now);
+                    return QsvExitCode::Good;
+                },
                 Err(e) => {
+                    util::log_end(qsv_args, now);
                     werr!("MCP skills generation error: {e}");
                     return QsvExitCode::Bad;
                 },

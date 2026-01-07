@@ -11,6 +11,7 @@ import type { QsvSkill, Argument, Option, McpToolDefinition, McpToolProperty, Fi
 import type { SkillExecutor } from './executor.js';
 import type { SkillLoader } from './loader.js';
 import { config } from './config.js';
+import { formatBytes } from './utils.js';
 
 /**
  * Auto-indexing threshold in MB
@@ -71,6 +72,13 @@ const METADATA_COMMANDS = new Set([
  * Input file size threshold (in bytes) for auto temp file
  */
 const LARGE_FILE_THRESHOLD_BYTES = 10 * 1024 * 1024; // 10MB
+
+/**
+ * Maximum size for MCP response (in bytes)
+ * Outputs larger than this will be saved to working directory instead of returned directly
+ * Claude Desktop has a 1MB limit, so we use 850KB to stay safely under
+ */
+const MAX_MCP_RESPONSE_SIZE = 850 * 1024; // 850KB - safe for Claude Desktop (< 1MB limit)
 
 /**
  * Track active child processes for graceful shutdown
@@ -646,27 +654,54 @@ export async function handleToolCall(
 
       if (outputFile) {
         if (autoCreatedTempFile) {
-          // Read temp file contents and return them
+          // Check temp file size before deciding how to handle it
           try {
-            const { readFile, unlink } = await import('fs/promises');
-            const fileContents = await readFile(outputFile, 'utf-8');
+            const { stat, readFile, unlink, rename } = await import('fs/promises');
+            const { join } = await import('path');
 
-            // Clean up temp file
-            try {
-              await unlink(outputFile);
-              console.error(`[MCP Tools] Deleted temp file: ${outputFile}`);
-            } catch (unlinkError) {
-              console.error(`[MCP Tools] Failed to delete temp file:`, unlinkError);
+            const tempFileStats = await stat(outputFile);
+
+            if (tempFileStats.size > MAX_MCP_RESPONSE_SIZE) {
+              // Output too large for MCP response - save to working directory instead
+              console.error(`[MCP Tools] Output file (${formatBytes(tempFileStats.size)}) exceeds MCP response limit (${formatBytes(MAX_MCP_RESPONSE_SIZE)})`);
+
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').split('.')[0];
+              const savedFileName = `qsv-${commandName}-${timestamp}.csv`;
+              const savedPath = join(config.workingDir, savedFileName);
+
+              // Move temp file to working directory
+              await rename(outputFile, savedPath);
+              console.error(`[MCP Tools] Saved large output to: ${savedPath}`);
+
+              responseText = `✅ Large output saved to file (too large to display in chat)\n\n`;
+              responseText += `File: ${savedFileName}\n`;
+              responseText += `Location: ${config.workingDir}\n`;
+              responseText += `Size: ${formatBytes(tempFileStats.size)}\n`;
+              responseText += `Duration: ${result.metadata.duration}ms\n\n`;
+              responseText += `The file is now available in your working directory and can be processed with additional qsv commands.`;
+
+            } else {
+              // Small enough - return contents directly
+              console.error(`[MCP Tools] Output file (${formatBytes(tempFileStats.size)}) is small enough to return directly`);
+              const fileContents = await readFile(outputFile, 'utf-8');
+
+              // Clean up temp file
+              try {
+                await unlink(outputFile);
+                console.error(`[MCP Tools] Deleted temp file: ${outputFile}`);
+              } catch (unlinkError) {
+                console.error(`[MCP Tools] Failed to delete temp file:`, unlinkError);
+              }
+
+              // Return the file contents
+              responseText = fileContents;
             }
-
-            // Return the file contents
-            responseText = fileContents;
           } catch (readError) {
-            console.error(`[MCP Tools] Failed to read temp file:`, readError);
+            console.error(`[MCP Tools] Failed to process temp file:`, readError);
             return {
               content: [{
                 type: 'text' as const,
-                text: `Error reading output from temp file: ${readError instanceof Error ? readError.message : String(readError)}`,
+                text: `Error processing output from temp file: ${readError instanceof Error ? readError.message : String(readError)}`,
               }],
               isError: true,
             };

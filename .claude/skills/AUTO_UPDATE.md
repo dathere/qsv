@@ -1,0 +1,291 @@
+# Auto-Update System for QSV MCP Server
+
+The QSV MCP Server includes a comprehensive auto-update system that keeps your skills in sync with qsv releases.
+
+## How It Works
+
+### Three-Tier Update Strategy
+
+1. **qsv Binary Updates**
+   - Detected automatically on MCP server startup
+   - Users update via: `qsv --update` or package managers (brew, cargo, etc.)
+   - Server detects version changes and notifies you
+
+2. **Skill Definitions Updates**
+   - Auto-detected when qsv version changes
+   - Can be auto-regenerated (if configured)
+   - Manual regeneration: `cargo run --bin qsv-skill-gen --features all_features`
+
+3. **MCP Server Code Updates**
+   - Checked against GitHub releases
+   - Updated via: `npm update` or `git pull && npm install && npm run build`
+
+## Configuration
+
+Add these environment variables to your Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "qsv": {
+      "command": "node",
+      "args": ["/path/to/qsv/.claude/skills/dist/mcp-server.js"],
+      "env": {
+        "QSV_MCP_BIN_PATH": "/usr/local/bin/qsv",
+        "QSV_MCP_WORKING_DIR": "/Users/your-username/Downloads",
+
+        "QSV_MCP_AUTO_REGENERATE_SKILLS": "false",
+        "QSV_MCP_CHECK_UPDATES_ON_STARTUP": "true",
+        "QSV_MCP_NOTIFY_UPDATES": "true",
+        "QSV_MCP_GITHUB_REPO": "dathere/qsv"
+      }
+    }
+  }
+}
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QSV_MCP_AUTO_REGENERATE_SKILLS` | `false` | Automatically regenerate skills when qsv version changes |
+| `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates when MCP server starts |
+| `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications in logs |
+| `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repository to check for releases |
+
+## Update Workflows
+
+### Workflow 1: Conservative (Recommended)
+
+**Configuration**:
+```json
+"QSV_MCP_AUTO_REGENERATE_SKILLS": "false"
+```
+
+**Process**:
+1. Update qsv: `qsv --update`
+2. MCP server detects version mismatch on next startup
+3. Server logs show instructions to regenerate skills
+4. Run: `cargo run --bin qsv-skill-gen --features all_features`
+5. Restart Claude Desktop
+
+**Pros**:
+- Full control over when updates happen
+- Can review changes before applying
+- No unexpected behavior
+
+**Cons**:
+- Requires manual steps
+- Can forget to regenerate skills
+
+### Workflow 2: Automatic
+
+**Configuration**:
+```json
+"QSV_MCP_AUTO_REGENERATE_SKILLS": "true"
+```
+
+**Process**:
+1. Update qsv: `qsv --update`
+2. MCP server detects version mismatch on next startup
+3. Server automatically runs `qsv-skill-gen`
+4. Server logs show success message
+5. Restart Claude Desktop to load new skills
+
+**Pros**:
+- Fully automated
+- Always in sync
+- Less maintenance
+
+**Cons**:
+- Requires Rust toolchain available to Node.js process
+- Regeneration adds startup time (~5-10 seconds)
+- Must restart MCP server after auto-regeneration
+
+### Workflow 3: CI/CD Pipeline (Advanced)
+
+For teams or advanced users, set up a GitHub Actions workflow:
+
+```yaml
+# .github/workflows/update-mcp-skills.yml
+name: Update MCP Skills
+
+on:
+  # Trigger when qsv releases
+  repository_dispatch:
+    types: [qsv-release]
+
+  # Or run daily
+  schedule:
+    - cron: '0 0 * * *'
+
+  # Or manual trigger
+  workflow_dispatch:
+
+jobs:
+  regenerate-skills:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install qsv
+        run: |
+          curl -LO https://github.com/dathere/qsv/releases/latest/download/qsv-linux-x86_64.zip
+          unzip qsv-linux-x86_64.zip
+          sudo mv qsv /usr/local/bin/
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Regenerate skills
+        run: cargo run --bin qsv-skill-gen --features all_features
+
+      - name: Build MCP server
+        run: |
+          cd .claude/skills
+          npm install
+          npm run build
+
+      - name: Commit and push
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add .claude/skills/qsv/*.json
+          git commit -m "chore: regenerate skills for qsv $(qsv --version | cut -d' ' -f2)"
+          git push
+```
+
+## Update Scenarios
+
+### Scenario 1: qsv Updated, Skills Outdated
+
+**What you'll see**:
+```
+⚠️  VERSION MISMATCH DETECTED ⚠️
+   qsv binary: 0.133.0
+   Skills generated with: 0.132.0
+
+ℹ️  To update skills manually, run:
+   cargo run --bin qsv-skill-gen --features all_features
+   Then restart the MCP server
+```
+
+**Action**: Follow the instructions to regenerate skills
+
+### Scenario 2: New qsv Release Available
+
+**What you'll see**:
+```
+📦 UPDATE CHECK RESULTS:
+🆕 New qsv release available: 0.133.0 (you have 0.132.0)
+   Update with: qsv --update
+```
+
+**Action**: Run `qsv --update`, then regenerate skills
+
+### Scenario 3: Skills Auto-Regenerated
+
+**What you'll see**:
+```
+⚠️  VERSION MISMATCH DETECTED ⚠️
+   qsv binary: 0.133.0
+   Skills generated with: 0.132.0
+
+[UpdateChecker] Auto-regenerating skills...
+✅ Skills regenerated successfully
+   Please restart the MCP server to load updated skills
+```
+
+**Action**: Restart Claude Desktop
+
+## Version Tracking
+
+The update checker stores version information in `.qsv-mcp-versions.json`:
+
+```json
+{
+  "qsvBinaryVersion": "0.133.0",
+  "skillsGeneratedWithVersion": "0.133.0",
+  "mcpServerVersion": "13.0.0",
+  "lastChecked": "2026-01-07T14:30:00.000Z"
+}
+```
+
+This file is automatically managed and helps track update history.
+
+## Troubleshooting
+
+### Auto-regeneration fails
+
+**Problem**: `QSV_MCP_AUTO_REGENERATE_SKILLS=true` but skills don't regenerate
+
+**Possible causes**:
+1. Rust toolchain not available to Node.js process
+2. Not running from qsv repository directory
+3. Insufficient permissions
+
+**Solution**:
+- Ensure `cargo` is in PATH: `which cargo`
+- Check MCP server logs: `~/Library/Logs/Claude/mcp*.log`
+- Try manual regeneration to verify it works
+
+### Version check fails
+
+**Problem**: Update checker reports errors
+
+**Possible causes**:
+1. qsv not in PATH
+2. Network issues (GitHub API)
+3. Permissions issues reading skill files
+
+**Solution**:
+- Verify qsv works: `qsv --version`
+- Check network: `curl https://api.github.com/repos/dathere/qsv/releases/latest`
+- Set `QSV_MCP_CHECK_UPDATES_ON_STARTUP=false` to disable
+
+### Skills still outdated after regeneration
+
+**Problem**: Regenerated skills but still showing old version
+
+**Solution**:
+1. Verify regeneration completed: Check `.claude/skills/qsv/*.json` files
+2. Restart Claude Desktop completely (not just close window)
+3. Check Claude Desktop logs for MCP server initialization
+4. Verify MCP server is loading skills from correct directory
+
+## Performance Impact
+
+- **Quick check**: < 50ms (version comparison only)
+- **Full check**: < 500ms (includes GitHub API call)
+- **Auto-regeneration**: ~5-10 seconds (only when needed)
+
+The update check runs asynchronously and doesn't block MCP server startup.
+
+## Best Practices
+
+1. **Development**: Use `QSV_MCP_AUTO_REGENERATE_SKILLS=true` for convenience
+2. **Production**: Use `QSV_MCP_AUTO_REGENERATE_SKILLS=false` for stability
+3. **Teams**: Set up CI/CD pipeline for coordinated updates
+4. **Check logs regularly**: Monitor for update notifications
+5. **Test after updates**: Verify skills work correctly after regeneration
+
+## Related Documentation
+
+- [README-MCP.md](./README-MCP.md) - MCP server documentation
+- [FILESYSTEM_USAGE.md](./FILESYSTEM_USAGE.md) - Filesystem features
+- [qsv --update documentation](https://github.com/dathere/qsv#self-update)
+
+## Support
+
+For issues with auto-updates:
+1. Check Claude Desktop logs: `~/Library/Logs/Claude/mcp*.log`
+2. Enable debug logging: Add `NODE_DEBUG=*` to env vars
+3. Report issues: https://github.com/dathere/qsv/issues
+
+---
+
+**Updated**: 2026-01-07
+**Version**: 13.0.0
+**Status**: ✅ Production Ready

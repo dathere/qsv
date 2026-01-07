@@ -1,0 +1,565 @@
+# QSV Desktop Extension Guide
+
+Complete guide for using the qsv MCP Server as a Claude Desktop Extension.
+
+## What is the Desktop Extension?
+
+The qsv Desktop Extension packages the MCP Server as a `.mcpb` file (MCP Bundle) that can be installed in Claude Desktop with a simple double-click. No terminal commands, no config file editing, no Node.js installation required.
+
+### Benefits over Legacy MCP Installation
+
+| Aspect | Legacy MCP Server | Desktop Extension |
+|--------|------------------|-------------------|
+| Installation | 6 manual steps, terminal required | 2 steps, no terminal |
+| Configuration | Edit JSON files manually | User-friendly settings UI |
+| Updates | Manual reinstallation | Automatic via marketplace |
+| Discovery | Search GitHub | Built-in extension directory |
+| Requirements | Node.js, npm, git | Just Claude Desktop |
+| Security | Config files in plain text | OS keychain storage |
+
+---
+
+## Prerequisites
+
+### Required
+
+1. **Claude Desktop** - Download from [claude.ai](https://claude.ai/)
+2. **qsv binary** - Install via one of these methods:
+
+   ```bash
+   # macOS (Homebrew)
+   brew install qsv
+
+   # macOS/Linux (pre-built binary)
+   curl -LO https://github.com/dathere/qsv/releases/latest/download/qsv-$(uname -s)-$(uname -m).zip
+   unzip qsv-*.zip
+   sudo mv qsv /usr/local/bin/
+
+   # Windows (Scoop)
+   scoop install qsv
+
+   # From source (requires Rust)
+   cargo install qsv --features all_features
+   ```
+
+3. **Verify qsv installation**:
+
+   ```bash
+   qsv --version
+   # Should output: qsv 0.133.0 (or later)
+   ```
+
+---
+
+## Installation
+
+### Step 1: Download Extension
+
+**Option A: From Extension Marketplace** (when available)
+1. Open Claude Desktop
+2. Go to Settings → Extensions
+3. Search for "qsv"
+4. Click "Install"
+
+**Option B: Manual Installation**
+1. Download `qsv-mcp-server.mcpb` from GitHub releases
+2. Or build it yourself:
+   ```bash
+   cd /path/to/qsv/.claude/skills
+   npm install
+   npm run mcpb:package
+   ```
+
+### Step 2: Install Extension
+
+1. **Drag and drop** the `.mcpb` file into Claude Desktop settings, OR
+2. **Double-click** the `.mcpb` file (opens with Claude Desktop), OR
+3. In Claude Desktop: Settings → Extensions → "Install from file" → select `.mcpb` file
+
+### Step 3: Configure Extension
+
+After installation, Claude Desktop will prompt you to configure the extension:
+
+1. **qsv Binary Path** (required)
+   - If qsv is in PATH: Leave as `qsv`
+   - Otherwise: Enter full path (e.g., `/usr/local/bin/qsv`)
+
+2. **Default Working Directory** (optional)
+   - Default: `~/Downloads`
+   - Where qsv commands run by default
+
+3. **Allowed Directories** (optional)
+   - Default: `~/Downloads:~/Documents`
+   - Colon-separated paths where qsv can access files
+   - Leave empty to allow all directories
+
+4. **Advanced Settings** (optional)
+   - Command Timeout: 300000ms (5 minutes)
+   - Max Output Size: 50MB
+   - Auto-Regenerate Skills: false
+   - Check for Updates: true
+
+### Step 4: Restart Claude Desktop
+
+Close and reopen Claude Desktop to activate the extension.
+
+---
+
+## Verifying Installation
+
+### Test Extension is Active
+
+In Claude Desktop chat:
+
+```
+List available qsv commands
+```
+
+Claude should respond with a list of 66 qsv commands.
+
+### Test Basic Command
+
+```
+Can you show me an example of using qsv stats?
+```
+
+Claude should provide examples and offer to run commands.
+
+### Test File Access
+
+```
+List CSV files in my Downloads folder
+```
+
+Claude should use the `qsv_list_files` tool to show your CSV files.
+
+---
+
+## Using the Extension
+
+### Working with Local Files
+
+The extension provides direct access to your local CSV, Excel, and JSONL files:
+
+```
+Show me the first few rows of ~/Downloads/data.csv
+```
+
+Claude will use `qsv_get_file_preview` to display the file contents.
+
+### Running qsv Commands
+
+```
+Calculate statistics for the price column in ~/Downloads/sales.csv
+```
+
+Claude will use `qsv_stats` with the appropriate arguments.
+
+### Complex Pipelines
+
+```
+From ~/Downloads/customers.csv:
+1. Remove duplicate emails
+2. Keep only customers from California
+3. Sort by revenue descending
+4. Show top 10
+```
+
+Claude will use `qsv_pipeline` to chain multiple operations.
+
+### Available Operations
+
+The extension provides 25 MCP tools covering:
+
+- **Data Selection**: select, slice, sample
+- **Statistics**: stats, moarstats, frequency
+- **Filtering**: search, searchset, dedup
+- **Transformation**: apply, rename, replace
+- **Aggregation**: groupby, pivot
+- **Joining**: join, joinp
+- **Validation**: validate, schema, safenames
+- **Conversion**: excel, json, jsonl, to
+- **Formatting**: fmt, table, fixlengths
+- **Filesystem**: list_files, get_file_preview, set_working_dir
+
+For complete documentation, see [README.md](./README.md).
+
+---
+
+## Configuration
+
+### Accessing Settings
+
+1. Open Claude Desktop
+2. Go to Settings → Extensions
+3. Find "qsv Data Wrangling"
+4. Click gear icon ⚙️
+
+### Configuration Options
+
+#### qsv Binary Path
+
+**Purpose**: Location of qsv executable
+
+**Default**: `qsv` (assumes qsv is in PATH)
+
+**Examples**:
+- macOS/Linux: `/usr/local/bin/qsv`
+- Windows: `C:\Program Files\qsv\qsv.exe`
+
+**Finding your path**:
+```bash
+which qsv          # macOS/Linux
+where qsv           # Windows
+```
+
+#### Working Directory
+
+**Purpose**: Default directory for qsv operations
+
+**Default**: `~/Downloads` (macOS/Linux) or `%USERPROFILE%\Downloads` (Windows)
+
+**When to change**: If you primarily work with files in a different location
+
+#### Allowed Directories
+
+**Purpose**: Security - restrict file access to specific directories
+
+**Default**: `~/Downloads:~/Documents`
+
+**Format**:
+- macOS/Linux: Colon-separated paths (`/path1:/path2`)
+- Windows: Semicolon-separated paths (`C:\path1;C:\path2`)
+
+**Examples**:
+- Allow all: Leave empty
+- Specific folders: `/Users/you/Data:/Users/you/Projects`
+- Windows: `C:\Users\You\Data;C:\Users\You\Documents`
+
+#### Timeout Settings
+
+**Command Timeout**: Maximum time for qsv operations (default: 5 minutes)
+
+**Use cases**:
+- Large files: Increase to 15-30 minutes
+- Quick operations only: Decrease to 1-2 minutes
+
+#### Output Size Limit
+
+**Max Output Size**: Maximum size of command output (default: 50MB)
+
+**Behavior**:
+- Outputs < 850KB: Returned directly
+- Outputs > 850KB: Saved to temp file, path returned
+- Outputs > limit: Error with suggestion to adjust
+
+#### Update Settings
+
+**Auto-Regenerate Skills**: Automatically update skill definitions when qsv version changes (default: false)
+
+**Requirements**:
+- qsv repository cloned locally
+- qsv binary built with "mcp" feature
+
+**Check for Updates**: Check for new qsv releases on startup (default: true)
+
+**Show Update Notifications**: Display update notifications in logs (default: true)
+
+---
+
+## Troubleshooting
+
+### Extension Not Appearing
+
+**Symptom**: qsv extension doesn't show in Claude Desktop
+
+**Solutions**:
+1. **Restart Claude Desktop** - Close completely and reopen
+2. **Check installation**:
+   - Settings → Extensions
+   - Look for "qsv Data Wrangling"
+3. **Reinstall extension** - Remove and reinstall the `.mcpb` file
+4. **Check Claude Desktop logs**:
+   - macOS: `~/Library/Logs/Claude/`
+   - Windows: `%APPDATA%\Claude\logs\`
+   - Look for MCP-related errors
+
+### "qsv command not found"
+
+**Symptom**: Extension installed but commands fail with "command not found"
+
+**Solutions**:
+1. **Verify qsv is installed**:
+   ```bash
+   qsv --version
+   ```
+2. **Check binary path in settings**:
+   - Settings → Extensions → qsv → Configuration
+   - Verify "qsv Binary Path" is correct
+3. **Use full path**:
+   - Find qsv location: `which qsv` (macOS/Linux) or `where qsv` (Windows)
+   - Update configuration with full path
+4. **Reinstall qsv** if not found:
+   - See [Prerequisites](#prerequisites) section
+
+### Permission Denied Errors
+
+**Symptom**: "Permission denied" when accessing files
+
+**Solutions**:
+1. **Check allowed directories**:
+   - Verify file is in an allowed directory
+   - Update "Allowed Directories" setting if needed
+2. **Grant Claude Desktop file access** (macOS):
+   - System Preferences → Security & Privacy → Files and Folders
+   - Enable access for Claude Desktop
+3. **Check file permissions**:
+   ```bash
+   ls -l ~/path/to/file.csv
+   ```
+
+### Large File Timeouts
+
+**Symptom**: Commands timeout on large files
+
+**Solutions**:
+1. **Increase timeout**:
+   - Settings → Extensions → qsv → Advanced Settings
+   - Increase "Command Timeout" to 15-30 minutes
+2. **Use streaming commands**:
+   - Most qsv commands stream data (constant memory)
+   - Avoid commands marked with 🤯 (memory-intensive)
+3. **Pre-index large files**:
+   ```bash
+   qsv index large-file.csv
+   ```
+4. **Use compression**:
+   ```bash
+   qsv snappy compress large-file.csv
+   ```
+
+### Skills Outdated
+
+**Symptom**: Warning about qsv version mismatch
+
+**Background**: Skills are JSON files describing qsv commands. When qsv updates, skills may be outdated.
+
+**Solutions**:
+1. **Manual update** (if auto-regenerate disabled):
+   ```bash
+   cd /path/to/qsv
+   qsv --update-mcp-skills
+   ```
+2. **Enable auto-regenerate**:
+   - Settings → Extensions → qsv → Advanced Settings
+   - Enable "Auto-Regenerate Skills"
+   - Requires qsv repository cloned locally
+3. **Update qsv**:
+   ```bash
+   qsv --update
+   ```
+
+### Extension Updates
+
+**Automatic Updates** (when available):
+- Extension marketplace handles updates automatically
+- Notifications appear in Claude Desktop
+
+**Manual Updates**:
+1. Download latest `.mcpb` file
+2. Settings → Extensions → qsv → Remove
+3. Install new `.mcpb` file
+4. Reconfigure settings (will be preserved)
+5. Restart Claude Desktop
+
+---
+
+## Comparison with Legacy MCP Server
+
+The Desktop Extension and legacy MCP server are **functionally identical** but differ in installation and configuration:
+
+### When to Use Extension
+
+✅ **Use Desktop Extension if**:
+- You want simplest installation
+- You prefer GUI configuration
+- You want automatic updates
+- You're a non-technical user
+- You only use Claude Desktop
+
+### When to Use Legacy MCP Server
+
+✅ **Use Legacy MCP Server if**:
+- You need maximum configuration flexibility
+- You use MCP-compatible tools besides Claude Desktop
+- You prefer config files over GUI
+- You're comfortable with terminal/npm
+- You want latest features immediately (no marketplace delay)
+
+### Migration
+
+**From Legacy MCP Server to Extension**:
+1. Install extension (see [Installation](#installation))
+2. Configure settings to match your `claude_desktop_config.json`
+3. Remove legacy MCP server from config:
+   ```bash
+   # Edit ~/Library/Application Support/Claude/claude_desktop_config.json
+   # Remove the "qsv" entry from "mcpServers"
+   ```
+4. Restart Claude Desktop
+
+**From Extension to Legacy MCP Server**:
+1. Remove extension: Settings → Extensions → qsv → Remove
+2. Follow instructions in [README.md](./README.md#installation)
+
+---
+
+## Advanced Topics
+
+### Custom Skill Definitions
+
+The extension uses skill definitions from `.claude/skills/qsv/*.json`.
+
+**To customize**:
+1. Extension mode loads skills from bundled files (read-only)
+2. For custom skills, use legacy MCP server mode
+3. Edit JSON files in qsv repository
+4. Run `qsv --update-mcp-skills` to regenerate
+5. Repackage extension: `npm run mcpb:package`
+
+### Working with Large Datasets
+
+**Best practices**:
+1. **Index files first**: `qsv index large-file.csv` enables fast random access
+2. **Use stats cache**: `qsv stats --stats-jsonl large-file.csv` creates cache for "smart" commands
+3. **Compress data**: Snappy compression (`.sz` extension) provides fast compression/decompression
+4. **Stream operations**: Prefer streaming commands over memory-intensive ones
+5. **Increase limits**: Adjust timeout and output size settings
+
+### Integration with Other Tools
+
+**Exporting results**:
+- Results are saved as CSV files
+- Use qsv to convert to other formats:
+  ```bash
+  qsv to parquet input.csv
+  qsv to xlsx input.csv
+  qsv to json input.csv
+  ```
+
+**Pipeline with external tools**:
+- qsv outputs can be piped to other commands
+- Example: `qsv stats input.csv | qsv table`
+
+### Security Considerations
+
+**File Access**:
+- Extension respects "Allowed Directories" setting
+- Symlinks are followed (can escape allowed directories)
+- Consider restricting to specific folders for production use
+
+**Sensitive Data**:
+- Skills and data never leave your machine
+- Extension runs locally (no cloud processing)
+- Credentials stored in OS keychain (not config files)
+
+**Code Execution**:
+- qsv binary must be trusted
+- Extension does not execute arbitrary code
+- All operations go through qsv command-line interface
+
+---
+
+## Frequently Asked Questions
+
+### Can I use the extension without qsv installed?
+
+No. The extension requires qsv binary to be installed separately. The extension is a wrapper that makes qsv easier to use with Claude, not a replacement for qsv itself.
+
+### Does the extension upload my data to Claude?
+
+No. All processing happens locally on your machine. The extension runs qsv commands locally and returns results to Claude Desktop. Your data never leaves your computer.
+
+### Can I use the extension with Claude API (not Desktop)?
+
+No. Desktop Extensions only work with Claude Desktop. For Claude API integration, use the MCP SDK directly or the legacy MCP server.
+
+### How do I update qsv?
+
+```bash
+qsv --update          # If qsv was installed via self-update
+brew upgrade qsv       # If installed via Homebrew
+cargo install qsv      # If installed via Cargo
+```
+
+After updating qsv, the extension will detect the version change and prompt you to regenerate skills (or do it automatically if enabled).
+
+### Can I have multiple versions of the extension?
+
+No. Claude Desktop allows only one instance of each extension. However, you can switch between extension and legacy MCP server configurations.
+
+### What's the file size limit?
+
+The extension can process files of any size, but practical limits exist:
+- **Timeout**: Default 5 minutes (configurable)
+- **Memory**: Memory-intensive commands (🤯) load entire file
+- **Output**: Results > 850KB saved to temp files
+
+For very large files (> 10GB), consider using qsv directly in terminal.
+
+### Can I contribute to the extension?
+
+Yes! The extension is open source:
+- Repository: https://github.com/dathere/qsv
+- Extension code: `.claude/skills/` directory
+- Issues: https://github.com/dathere/qsv/issues
+- Pull requests welcome!
+
+---
+
+## Getting Help
+
+### Documentation
+
+- **Quick Start**: [QUICK_START_LOCAL_FILES.md](./QUICK_START_LOCAL_FILES.md)
+- **Full Guide**: [README.md](./README.md)
+- **Filesystem Usage**: [FILESYSTEM_USAGE.md](./FILESYSTEM_USAGE.md)
+- **Auto-Update System**: [AUTO_UPDATE.md](./AUTO_UPDATE.md)
+- **qsv Documentation**: https://github.com/dathere/qsv#commands
+
+### Support
+
+- **GitHub Issues**: https://github.com/dathere/qsv/issues
+- **Discussions**: https://github.com/dathere/qsv/discussions
+- **Discord**: https://discord.gg/dathere (coming soon)
+
+### Logs
+
+**Claude Desktop logs** (for extension debugging):
+- macOS: `~/Library/Logs/Claude/mcp*.log`
+- Windows: `%APPDATA%\Claude\logs\mcp*.log`
+- Linux: `~/.local/share/Claude/logs/mcp*.log`
+
+**MCP Server logs**:
+- Extension logs appear in Claude Desktop logs
+- Look for `[qsv-data-wrangling]` prefixed messages
+
+---
+
+## Changelog
+
+### Version 13.0.0 (2026-01-07)
+- Initial Desktop Extension release
+- 66 qsv commands packaged as MCP tools
+- Filesystem resource browsing
+- Auto-conversion for Excel and JSONL files
+- Pipeline composition support
+- Update checker with auto-regeneration
+- Platform-specific configuration (Windows/macOS/Linux)
+
+---
+
+**Status**: ✅ Production Ready
+**Extension ID**: `qsv-data-wrangling`
+**Package Size**: ~11MB (compressed)
+**Supported Platforms**: macOS, Windows, Linux

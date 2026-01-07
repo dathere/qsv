@@ -39,13 +39,54 @@ Each skill file provides:
 
 ### Installation
 
+**Choose your installation method:**
+
+<details>
+<summary><b>🎁 Desktop Extension (Recommended)</b> - Easiest installation, automatic updates</summary>
+
+**Perfect for**: Most users, especially non-technical users
+
+**Requirements**: Claude Desktop + qsv binary
+
+**Installation**:
+1. Install qsv: `brew install qsv` (macOS) or see [qsv installation](https://github.com/dathere/qsv#installation)
+2. Download `qsv-mcp-server.mcpb` from releases
+3. Double-click the `.mcpb` file (opens with Claude Desktop)
+4. Configure qsv binary path in settings
+5. Restart Claude Desktop
+
+**Documentation**: [DESKTOP_EXTENSION.md](./DESKTOP_EXTENSION.md)
+
+</details>
+
+<details>
+<summary><b>⚙️ Legacy MCP Server</b> - Maximum flexibility, for technical users</summary>
+
+**Perfect for**: Developers, users who want config file control, non-Claude Desktop MCP clients
+
+**Requirements**: Node.js ≥ 18.0.0 + npm + qsv binary
+
+**Installation**:
 ```bash
 cd .claude/skills
 npm install
 npm run build
+npm run mcp:install  # Interactive configuration
 ```
 
-### Run Examples
+This will:
+1. Build TypeScript code
+2. Prompt for configuration (qsv path, allowed directories, etc.)
+3. Update Claude Desktop config file automatically
+4. Restart Claude Desktop to activate
+
+**Manual configuration**: Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+</details>
+
+**Both methods provide identical functionality** - choose based on your preference for installation simplicity vs configuration control.
+
+### Run Examples (Legacy MCP Server only)
 
 ```bash
 # Basic skill loading and execution
@@ -54,8 +95,8 @@ npm test
 # Pipeline composition
 npm run test-pipeline
 
-# MCP server (for Claude Desktop)
-npm run mcp:install
+# Package as Desktop Extension
+npm run mcpb:package
 ```
 
 ## Generated Skills (66)
@@ -372,15 +413,21 @@ qsv --update-mcp-skills
 
 ## Documentation
 
-- [MCP Server Guide](./README-MCP.md) - Claude Desktop integration
-- [Filesystem Usage Guide](./FILESYSTEM_USAGE.md) - Local file access
+### Installation & Setup
+- [Desktop Extension Guide](./DESKTOP_EXTENSION.md) - Install as Claude Desktop extension (recommended)
+- [MCP Server Guide](./README-MCP.md) - Claude Desktop integration (legacy method)
 - [Auto-Update Guide](./AUTO_UPDATE.md) - Keep skills in sync with qsv releases
+
+### Usage & Features
+- [Filesystem Usage Guide](./FILESYSTEM_USAGE.md) - Local file access
 - [Complete API Documentation](./SKILLS_README.md)
+- [qsv Commands](https://github.com/dathere/qsv#commands)
+
+### Technical Documentation
 - [Design Document](./docs/design/AGENT_SKILLS_DESIGN.md)
 - [Integration Guide](./docs/design/AGENT_SKILLS_INTEGRATION.md)
 - [POC Summary](./docs/design/AGENT_SKILLS_POC_SUMMARY.md)
 - [Complete Summary](./docs/design/AGENT_SKILLS_COMPLETE_SUMMARY.md)
-- [qsv Commands](https://github.com/dathere/qsv#commands)
 
 ## Requirements
 

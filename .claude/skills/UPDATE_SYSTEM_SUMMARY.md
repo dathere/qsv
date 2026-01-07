@@ -129,7 +129,7 @@ Created comprehensive documentation:
 ### 1. Why Three-Tier Strategy?
 
 **qsv binary**: Users manage via their preferred method (package manager, qsv --update, cargo install)
-**Skill definitions**: MCP server can regenerate since it's just running a cargo command
+**Skill definitions**: MCP server can regenerate by calling `qsv --update-mcp-skills` (no Rust toolchain needed)
 **MCP server code**: Standard npm package updates
 
 ### 2. Why Quick Check + Background Check?
@@ -143,10 +143,10 @@ Created comprehensive documentation:
 
 - `QSV_MCP_AUTO_REGENERATE_SKILLS=false` by default
 - Automatic regeneration requires:
-  - Rust toolchain available
-  - Being in qsv repository directory
+  - qsv binary with "mcp" feature enabled
   - 5-10 seconds added to startup time
 - Better to notify users than fail unexpectedly
+- Much simpler than previous approach (no Rust toolchain required)
 
 ### 4. Why Store Version Info?
 

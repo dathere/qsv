@@ -66,7 +66,7 @@ Add these environment variables to your Claude Desktop config:
 1. Update qsv: `qsv --update`
 2. MCP server detects version mismatch on next startup
 3. Server logs show instructions to regenerate skills
-4. Run: `cargo run --bin qsv-skill-gen --features all_features`
+4. Run: `qsv --update-mcp-skills`
 5. Restart Claude Desktop
 
 **Pros**:
@@ -88,19 +88,20 @@ Add these environment variables to your Claude Desktop config:
 **Process**:
 1. Update qsv: `qsv --update`
 2. MCP server detects version mismatch on next startup
-3. Server automatically runs `qsv-skill-gen`
+3. Server automatically runs `qsv --update-mcp-skills`
 4. Server logs show success message
 5. Restart Claude Desktop to load new skills
 
 **Pros**:
 - Fully automated
 - Always in sync
+- No separate toolchain required (uses qsv binary)
 - Less maintenance
 
 **Cons**:
-- Requires Rust toolchain available to Node.js process
 - Regeneration adds startup time (~5-10 seconds)
 - Must restart MCP server after auto-regeneration
+- Requires qsv binary with "mcp" feature enabled
 
 ### Workflow 3: CI/CD Pipeline (Advanced)
 
@@ -168,11 +169,11 @@ jobs:
    Skills generated with: 0.132.0
 
 ℹ️  To update skills manually, run:
-   cargo run --bin qsv-skill-gen --features all_features
+   qsv --update-mcp-skills
    Then restart the MCP server
 ```
 
-**Action**: Follow the instructions to regenerate skills
+**Action**: Run `qsv --update-mcp-skills` then restart Claude Desktop
 
 ### Scenario 2: New qsv Release Available
 
@@ -222,14 +223,16 @@ This file is automatically managed and helps track update history.
 **Problem**: `QSV_MCP_AUTO_REGENERATE_SKILLS=true` but skills don't regenerate
 
 **Possible causes**:
-1. Rust toolchain not available to Node.js process
-2. Not running from qsv repository directory
+1. qsv binary not in PATH or `QSV_MCP_BIN_PATH` not set correctly
+2. qsv binary wasn't built with "mcp" feature
 3. Insufficient permissions
 
 **Solution**:
-- Ensure `cargo` is in PATH: `which cargo`
+- Verify qsv binary location: `which qsv`
+- Test manual regeneration: `qsv --update-mcp-skills`
+- Check if binary has mcp feature: `qsv --version` (shows installed features)
 - Check MCP server logs: `~/Library/Logs/Claude/mcp*.log`
-- Try manual regeneration to verify it works
+- If flag not available, rebuild qsv: `cargo build --release --features all_features`
 
 ### Version check fails
 
@@ -263,6 +266,13 @@ This file is automatically managed and helps track update history.
 
 The update check runs asynchronously and doesn't block MCP server startup.
 
+## Requirements
+
+- **qsv binary** with "mcp" feature enabled
+  - Included in prebuilt binaries from GitHub releases
+  - When building from source: Use `cargo build --release --features all_features`
+- **Node.js** >= 18.0.0 (for MCP server)
+
 ## Best Practices
 
 1. **Development**: Use `QSV_MCP_AUTO_REGENERATE_SKILLS=true` for convenience
@@ -270,6 +280,7 @@ The update check runs asynchronously and doesn't block MCP server startup.
 3. **Teams**: Set up CI/CD pipeline for coordinated updates
 4. **Check logs regularly**: Monitor for update notifications
 5. **Test after updates**: Verify skills work correctly after regeneration
+6. **Use prebuilt binaries**: Easiest way to ensure "mcp" feature is enabled
 
 ## Related Documentation
 

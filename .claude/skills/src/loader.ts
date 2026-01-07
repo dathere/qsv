@@ -6,6 +6,7 @@
 import { readdir, readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 import type { QsvSkill, SkillCategory } from './types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -15,8 +16,24 @@ export class SkillLoader {
   private skillsDir: string;
 
   constructor(skillsDir?: string) {
-    // When compiled, __dirname is dist/src/, so go up 2 levels to project root
-    this.skillsDir = skillsDir || join(__dirname, '../../qsv');
+    if (skillsDir) {
+      this.skillsDir = skillsDir;
+    } else {
+      // Try multiple possible locations for the qsv directory
+      // 1. When built for production: dist/loader.js -> ../qsv
+      // 2. When built for tests: dist/src/loader.js -> ../../qsv
+      const productionPath = join(__dirname, '../qsv');
+      const testPath = join(__dirname, '../../qsv');
+
+      if (existsSync(productionPath)) {
+        this.skillsDir = productionPath;
+      } else if (existsSync(testPath)) {
+        this.skillsDir = testPath;
+      } else {
+        // Fallback to production path (will fail with clearer error)
+        this.skillsDir = productionPath;
+      }
+    }
   }
 
   /**
@@ -111,9 +128,9 @@ export class SkillLoader {
         acc[cat] = this.getByCategory(cat).length;
         return acc;
       }, {} as Record<string, number>),
-      totalExamples: skills.reduce((sum, s) => sum + s.examples.length, 0),
-      totalOptions: skills.reduce((sum, s) => sum + s.command.options.length, 0),
-      totalArgs: skills.reduce((sum, s) => sum + s.command.args.length, 0)
+      totalExamples: skills.reduce((sum, s) => sum + (s.examples?.length || 0), 0),
+      totalOptions: skills.reduce((sum, s) => sum + (s.command.options?.length || 0), 0),
+      totalArgs: skills.reduce((sum, s) => sum + (s.command.args?.length || 0), 0)
     };
   }
 

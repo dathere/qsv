@@ -60,7 +60,6 @@ struct SkillDefinition {
     description: String,
     category:    String,
     command:     CommandSpec,
-    examples:    Vec<Example>,
     #[serde(skip_serializing_if = "Option::is_none")]
     hints:       Option<BehavioralHints>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -99,12 +98,6 @@ struct Option_ {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Example {
-    description: String,
-    command:     String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 struct BehavioralHints {
     streamable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -127,7 +120,6 @@ impl UsageParser {
 
     fn parse(&self) -> Result<SkillDefinition, String> {
         let description = self.extract_description()?;
-        let examples = self.extract_examples();
 
         // Use qsv-docopt Parser to parse USAGE text
         let (args, options) = self.parse_with_docopt()?;
@@ -146,7 +138,6 @@ impl UsageParser {
                 args,
                 options,
             },
-            examples,
             hints,
             test_file: Some(format!(
                 "https://github.com/dathere/qsv/blob/master/tests/test_{}.rs",
@@ -464,52 +455,6 @@ impl UsageParser {
         Ok(description_lines.join(" "))
     }
 
-    fn extract_examples(&self) -> Vec<Example> {
-        let lines: Vec<&str> = self.usage_text.lines().collect();
-        let mut examples = Vec::new();
-        let mut current_description = String::new();
-
-        for line in lines {
-            let trimmed = line.trim();
-
-            // Comments are descriptions for the next example
-            if trimmed.starts_with('#') {
-                current_description = trimmed.trim_start_matches('#').trim().to_string();
-            }
-            // Commands start with $
-            else if trimmed.starts_with('$') {
-                let command = trimmed.trim_start_matches('$').trim().to_string();
-
-                // Use comment as description, or extract from command
-                let description = if current_description.is_empty() {
-                    // Try to infer description from command
-                    self.infer_example_description(&command)
-                } else {
-                    current_description.clone()
-                };
-
-                examples.push(Example {
-                    description,
-                    command,
-                });
-
-                current_description.clear();
-            }
-        }
-
-        examples
-    }
-
-    fn infer_example_description(&self, command: &str) -> String {
-        // Simple heuristic: use the command itself as description
-        if let Some(after_subcommand) = command.strip_prefix("qsv ")
-            && let Some(rest) = after_subcommand.strip_prefix(&format!("{} ", self.command_name))
-        {
-            return rest.to_string();
-        }
-        command.to_string()
-    }
-
     fn infer_argument_type(&self, name: &str, description: &str) -> String {
         let name_lower = name.to_lowercase();
         let desc_lower = description.to_lowercase();
@@ -741,7 +686,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::write(&output_file, json)?;
 
         println!("  ✅ Generated: {}", output_file.display());
-        println!("     - {} examples", skill.examples.len());
         println!("     - {} arguments", skill.command.args.len());
         println!("     - {} options", skill.command.options.len());
         println!();

@@ -124,11 +124,11 @@
 If you prefer to explore your data using a graphical interface instead of the command-line, feel free to try out **[qsv pro](https://qsvpro.dathere.com)**. Leveraging qsv, qsv pro can help you quickly analyze spreadsheet data by just dropping a file, along with many other interactive features. Learn more at [qsvpro.dathere.com](https://qsvpro.dathere.com) or download qsv pro directly by clicking one of the badges below.
 
 <div style="display: flex; gap: 1rem;">
-<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro/windows"><img src="https://github.com/user-attachments/assets/59fa54f8-dba5-4cb4-b79e-73eabce6fccc" width="200" /></a>
-<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro/macos"><img src="https://github.com/user-attachments/assets/397ae654-249c-457d-846a-ef805064c30e" width="200" /></a>
-<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro/linux-deb"><img src="https://github.com/user-attachments/assets/fa3baab0-3cad-4551-8a6c-c662ab34f4fc" width="200" /></a>
-<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro/linux-rpm"><img src="https://github.com/user-attachments/assets/03e55e06-2861-4e20-864d-14cb82859be1" width="200" /></a>
-<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro/linux-appimage"><img src="https://github.com/user-attachments/assets/742d4a46-cfef-4d74-b4ab-8cbde5dc065f" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro/windows"><img alt="qsv pro Windows download badge" src="https://github.com/user-attachments/assets/59fa54f8-dba5-4cb4-b79e-73eabce6fccc" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro/macos"><img alt="qsv pro macOS download badge" src="https://github.com/user-attachments/assets/397ae654-249c-457d-846a-ef805064c30e" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro/linux-deb"><img alt="qsv pro Linux (deb) download badge" src="https://github.com/user-attachments/assets/fa3baab0-3cad-4551-8a6c-c662ab34f4fc" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro/linux-rpm"><img alt="qsv pro Linux (rpm) download badge" src="https://github.com/user-attachments/assets/03e55e06-2861-4e20-864d-14cb82859be1" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro/linux-appimage"><img alt="qsv pro Linux (AppImage) download badge" src="https://github.com/user-attachments/assets/742d4a46-cfef-4d74-b4ab-8cbde5dc065f" width="200" /></a>
 </div>
 
 ### Option 1: Download Prebuilt Binaries
@@ -136,14 +136,14 @@ If you prefer to explore your data using a graphical interface instead of the co
 Full-featured prebuilt [binary variants](#variants) of the latest qsv version for Linux, macOS & Windows are available [for download](https://github.com/dathere/qsv/releases/latest), including binaries compiled with [Rust Nightly](https://stackoverflow.com/questions/70745970/rust-nightly-vs-beta-version) ([more info](https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#nightly-release-builds)). You may click a badge below based on your platform to download a ZIP with pre-built binaries.
 
 <div style="display: flex; gap: 1rem;">
-<a target="_blank" href="https://qsv.dathere.com/download/linux-x86_64-gnu"><img src="https://github.com/user-attachments/assets/f71812ec-30bc-4bfe-a8a3-a639d6a6c5aa" width="200" /></a>
-<a target="_blank" href="https://qsv.dathere.com/download/linux-aarch64-gnu"><img src="https://github.com/user-attachments/assets/80dccb2a-c0e5-4f85-a4e2-282d7e84d03f" width="200" /></a>
-<a target="_blank" href="https://qsv.dathere.com/download/linux-x86_64-musl"><img src="https://github.com/user-attachments/assets/aa2ee7ec-c183-4426-87e6-c2e9c136b69f" width="200" /></a>
-<a target="_blank" href="https://qsv.dathere.com/download/linux-powerpc64le-gnu"><img src="https://github.com/user-attachments/assets/e5c81cd3-7a2d-4107-a124-a6f3be3cdd40" width="200" /></a>
-<a target="_blank" href="https://qsv.dathere.com/download/macos-silicon"><img src="https://github.com/user-attachments/assets/6b9534ae-ea09-44f9-b34a-259a3d9bcfa1" width="200" /></a>
-<a target="_blank" href="https://qsv.dathere.com/download/windows-msvc"><img src="https://github.com/user-attachments/assets/d4418a34-541a-4a9a-8f29-da25d9ff3d7f" width="200" /></a>
-<a target="_blank" href="https://qsv.dathere.com/download/windows-aarch64-msvc"><img src="https://github.com/user-attachments/assets/2754df2b-9125-4c6d-aaf4-951cefe69a7f" width="200" /></a>
-<a target="_blank" href="https://qsv.dathere.com/download/windows-gnu"><img src="https://github.com/user-attachments/assets/771660f3-e898-4ee2-acb5-e5f268434752" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/linux-x86_64-gnu"><img alt="qsv Linux x86_64 GNU download badge" src="https://github.com/user-attachments/assets/f71812ec-30bc-4bfe-a8a3-a639d6a6c5aa" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/linux-aarch64-gnu"><img alt="qsv Linux AArch64 GNU download badge" src="https://github.com/user-attachments/assets/80dccb2a-c0e5-4f85-a4e2-282d7e84d03f" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/linux-x86_64-musl"><img alt="qsv Linux x86_64 MUSL download badge" src="https://github.com/user-attachments/assets/aa2ee7ec-c183-4426-87e6-c2e9c136b69f" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/linux-powerpc64le-gnu"><img alt="qsv linux-powerpc64le-gnu download badge" src="https://github.com/user-attachments/assets/e5c81cd3-7a2d-4107-a124-a6f3be3cdd40" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/macos-silicon"><img alt="qsv macOS download badge" src="https://github.com/user-attachments/assets/6b9534ae-ea09-44f9-b34a-259a3d9bcfa1" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/windows-msvc"><img alt="qsv Windows MSVC download badge" src="https://github.com/user-attachments/assets/d4418a34-541a-4a9a-8f29-da25d9ff3d7f" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/windows-aarch64-msvc"><img alt="qsv Windows AArch64 MSVC download badge" src="https://github.com/user-attachments/assets/2754df2b-9125-4c6d-aaf4-951cefe69a7f" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/windows-gnu"><img alt="qsv Windows GNU download badge" src="https://github.com/user-attachments/assets/771660f3-e898-4ee2-acb5-e5f268434752" width="200" /></a>
 </div>
 
 Prebuilt binaries for Apple Silicon, Windows for ARM, [IBM Power Servers (PowerPC64 LE Linux)](https://www.ibm.com/products/power) and [IBM Z mainframes (s390x)](https://www.ibm.com/products/z) have CPU optimizations enabled ([`target-cpu=native`](https://rust-lang.github.io/packed_simd/perf-guide/target-feature/rustflags.html#target-cpu)) for even more performance gains.
@@ -152,7 +152,7 @@ We do not enable CPU optimizations on prebuilt binaries on x86_64 platforms as t
 
 For Windows, an MSI "Easy installer" for the x86_64 MSVC `qsvp` binary is also available. After downloading and installing the Easy installer, launch the Easy installer and click "Install qsv" to download the latest `qsvp` pre-built binary to a folder that is added to your `PATH`. Afterwards qsv should be installed and you may launch a new terminal to use qsv.
 
-<a download href="https://github.com/dathere/qsv-easy-windows-installer/releases/download/v1.1.1/qsv-easy-installer_1.1.1_x64_en-US.msi"><img src="https://github.com/user-attachments/assets/ca24398b-0aaf-40be-abe0-c79a2b2da520" width="200" /></a>
+<a download href="https://github.com/dathere/qsv-easy-windows-installer/releases/download/v1.1.1/qsv-easy-installer_1.1.1_x64_en-US.msi"><img alt="qsv Windows Easy Installer download badge" src="https://github.com/user-attachments/assets/ca24398b-0aaf-40be-abe0-c79a2b2da520" width="200" /></a>
 
 For macOS, ["ad-hoc" signatures](https://users.rust-lang.org/t/distributing-cli-apps-on-macos/70223) are used to sign our binaries, so you will need to [set appropriate Gatekeeper security settings](https://support.apple.com/en-us/HT202491) or run the following command to remove the quarantine attribute from qsv before you run it for the first time:
 
@@ -317,13 +317,13 @@ Unfortunately, this prevents us from cross-compiling binaries with the `luau` fe
 qsv has extensive, extendable [shell completion](https://en.wikipedia.org/wiki/Command-line_completion) support. It currently supports the following shells: `bash`, `zsh`, `powershell`, `fish`, `nushell`, `fig` & `elvish`. You may download a shell completions script for your shell by clicking one of the badges below:
 
 <div style="display: flex; gap: 1rem;">
-<a download href="https://qsv.dathere.com/download/bash-shell"><img src="https://github.com/user-attachments/assets/3e35edf8-27d0-485d-84b1-36d8f1ef7075" width="140" /></a>
-<a download target="_blank" href="https://qsv.dathere.com/download/powershell-shell"><img src="https://github.com/user-attachments/assets/738358c8-c925-4778-b9c1-ef4ae1f2c52d" width="140" /></a>
-<a download target="_blank" href="https://qsv.dathere.com/download/zsh-shell"><img src="https://github.com/user-attachments/assets/a633e577-143c-47d3-bb5a-c4ca102bc007" width="140" /></a>
-<a download target="_blank" href="https://qsv.dathere.com/download/fish-shell"><img src="https://github.com/user-attachments/assets/cd24def7-bb75-4842-aa74-f92b5bc659ed" width="140" /></a>
-<a download target="_blank" href="https://qsv.dathere.com/download/nushell-shell"><img src="https://github.com/user-attachments/assets/fa76664e-8e3b-4663-bf16-ad489a42bdef" width="140" /></a>
-<a download target="_blank" href="https://qsv.dathere.com/download/fig-shell" width="160" /><img src="https://github.com/user-attachments/assets/7151e8ac-903b-4fa4-b63b-aceaaa0e2a9e" width="140" /></a>
-<a download target="_blank" href="https://qsv.dathere.com/download/elvish-shell"><img src="https://github.com/user-attachments/assets/9d2aa23e-73a7-4f77-8ab2-f168bf8ca216" width="140" /></a>
+<a download href="https://qsv.dathere.com/download/bash-shell"><img alt="qsv Bash shell completions download badge" src="https://github.com/user-attachments/assets/3e35edf8-27d0-485d-84b1-36d8f1ef7075" width="140" /></a>
+<a download target="_blank" href="https://qsv.dathere.com/download/powershell-shell"><img alt="qsv PowerShell shell completions download badge" src="https://github.com/user-attachments/assets/738358c8-c925-4778-b9c1-ef4ae1f2c52d" width="140" /></a>
+<a download target="_blank" href="https://qsv.dathere.com/download/zsh-shell"><img alt="qsv zsh shell completions download badge" src="https://github.com/user-attachments/assets/a633e577-143c-47d3-bb5a-c4ca102bc007" width="140" /></a>
+<a download target="_blank" href="https://qsv.dathere.com/download/fish-shell"><img alt="qsv fish shell completions download badge" src="https://github.com/user-attachments/assets/cd24def7-bb75-4842-aa74-f92b5bc659ed" width="140" /></a>
+<a download target="_blank" href="https://qsv.dathere.com/download/nushell-shell"><img alt="qsv nushell shell completions download badge" src="https://github.com/user-attachments/assets/fa76664e-8e3b-4663-bf16-ad489a42bdef" width="140" /></a>
+<a download target="_blank" href="https://qsv.dathere.com/download/fig-shell" width="160" /><img alt="qsv fig shell completions download badge" src="https://github.com/user-attachments/assets/7151e8ac-903b-4fa4-b63b-aceaaa0e2a9e" width="140" /></a>
+<a download target="_blank" href="https://qsv.dathere.com/download/elvish-shell"><img alt="qsv elvish shell completions download badge" src="https://github.com/user-attachments/assets/9d2aa23e-73a7-4f77-8ab2-f168bf8ca216" width="140" /></a>
 </div>
 
 To customize shell completions, see the [Shell Completion](contrib/completions/README.md) documentation. If you're using Bash, you can also follow the step-by-step tutorial at [100.dathere.com](https://100.dathere.com/exercises-setup.html#optional-set-up-qsv-completions) to learn how to enable the Bash shell completions.

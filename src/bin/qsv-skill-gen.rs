@@ -158,13 +158,37 @@ impl UsageParser {
         })
     }
 
+    /// Extract positional argument names in order from USAGE line
+    fn extract_arg_order_from_usage(&self) -> Vec<String> {
+        let mut arg_order = Vec::new();
+
+        // Find the main usage line (not --help line)
+        if let Some(usage_line) = self
+            .usage_text
+            .lines()
+            .skip_while(|l| !l.contains("Usage:"))
+            .skip(1) // Skip "Usage:" line
+            .find(|l| !l.trim().ends_with("--help") && l.contains("qsv"))
+        {
+            // Extract all <arg> and [<arg>] patterns in order
+            let re = regex::Regex::new(r"(?:\[)?<([^>]+)>(?:\])?").unwrap();
+            for cap in re.captures_iter(usage_line) {
+                if let Some(arg_name) = cap.get(1) {
+                    arg_order.push(arg_name.as_str().to_string());
+                }
+            }
+        }
+
+        arg_order
+    }
+
     /// Parse USAGE text using qsv-docopt Parser for robust parsing
     fn parse_with_docopt(&self) -> Result<(Vec<Argument>, Vec<Option_>), String> {
         // Parse USAGE text with docopt
         let parser =
             Parser::new(&self.usage_text).map_err(|e| format!("Docopt parsing failed: {e}"))?;
 
-        let mut args = Vec::new();
+        let mut args_map = std::collections::HashMap::new();
         let mut options = Vec::new();
 
         // Also parse manually to get descriptions
@@ -304,13 +328,16 @@ impl UsageParser {
 
                     let arg_type = self.infer_argument_type(&arg_name, &description);
 
-                    args.push(Argument {
-                        name: arg_name.clone(),
-                        arg_type,
-                        required: !opts.arg.has_default(), // If it has a default, it's optional
-                        description,
-                        examples: Vec::new(),
-                    });
+                    args_map.insert(
+                        arg_name.clone(),
+                        Argument {
+                            name: arg_name.clone(),
+                            arg_type,
+                            required: !opts.arg.has_default(), // If it has a default, it's optional
+                            description,
+                            examples: Vec::new(),
+                        },
+                    );
                 },
                 Atom::Command(_) => {
                     // Skip commands - we're only interested in args/options
@@ -319,8 +346,16 @@ impl UsageParser {
             }
         }
 
-        // Sort for consistent output
-        args.sort_by(|a, b| a.name.cmp(&b.name));
+        // Reorder args based on their appearance in the USAGE line
+        let arg_order = self.extract_arg_order_from_usage();
+        let mut args = Vec::new();
+        for arg_name in arg_order {
+            if let Some(arg) = args_map.remove(&arg_name) {
+                args.push(arg);
+            }
+        }
+
+        // Sort options for consistent output
         options.sort_by(|a, b| a.flag.cmp(&b.flag));
 
         Ok((args, options))

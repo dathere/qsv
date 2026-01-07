@@ -607,7 +607,9 @@ pub fn generate_mcp_skills() -> CliResult<()> {
             break;
         }
         if !repo_root.pop() {
-            return fail_clierror!("Could not find qsv repository root (no Cargo.toml with src/cmd)");
+            return fail_clierror!(
+                "Could not find qsv repository root (no Cargo.toml with src/cmd)"
+            );
         }
     }
 

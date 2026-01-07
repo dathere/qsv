@@ -73,7 +73,8 @@ Options:
     -U, --updatenow      Update qsv to the latest release from GitHub without confirming."#;
 
 #[cfg(feature = "mcp")]
-const USAGE_MCP: &str = "    --update-mcp-skills  Regenerate MCP skills JSON files for Claude Desktop.";
+const USAGE_MCP: &str =
+    "    --update-mcp-skills  Regenerate MCP skills JSON files for Claude Desktop.";
 
 const USAGE_FOOTER: &str = "    -h, --help           Display this message
     <command> -h         Display the command help message
@@ -81,24 +82,18 @@ const USAGE_FOOTER: &str = "    -h, --help           Display this message
                          max_jobs, num_cpus, build info then exit";
 
 #[cfg(feature = "mcp")]
-const USAGE: &str = const_format::concatcp!(
-    USAGE_COMMON,
-    "\n",
-    USAGE_MCP,
-    "\n",
-    USAGE_FOOTER
-);
+const USAGE: &str = const_format::concatcp!(USAGE_COMMON, "\n", USAGE_MCP, "\n", USAGE_FOOTER);
 
 #[cfg(not(feature = "mcp"))]
 const USAGE: &str = const_format::concatcp!(USAGE_COMMON, "\n", USAGE_FOOTER);
 
 #[derive(Deserialize)]
 struct Args {
-    arg_command:    Option<Command>,
-    flag_list:      bool,
-    flag_envlist:   bool,
-    flag_update:    bool,
-    flag_updatenow: bool,
+    arg_command:            Option<Command>,
+    flag_list:              bool,
+    flag_envlist:           bool,
+    flag_update:            bool,
+    flag_updatenow:         bool,
     #[cfg(feature = "mcp")]
     flag_update_mcp_skills: bool,
 }

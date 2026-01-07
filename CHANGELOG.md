@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [13.1.0] - 2026-01-07
+MCP Server fixes/improvements found during more rigorous testing.
+This placeholder entry is here to signal package maintainers to hold off on updating
+to 13.0.0.
+
+## What's Changed
+* build(deps): bump serde_json from 1.0.148 to 1.0.149 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3290
+* refactor: MCP by @jqnatividad in https://github.com/dathere/qsv/pull/3291
+
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/13.0.0...13.1.0
+
 ## [13.0.0] - 2026-01-06 🦾 **_"The Statistical Data-Wrangling Agent Release"_** 🤖
 
 We welcome 2026 with **qsv 13.0.0** - a major milestone that transforms qsv into an **AI-native Agent**!

@@ -55,11 +55,13 @@ mod cmd;
 mod config;
 mod index;
 mod lookup;
+#[cfg(feature = "mcp")]
+mod mcp_skills_gen;
 mod odhtcache;
 mod select;
 mod util;
 
-static USAGE: &str = r#"
+const USAGE_COMMON: &str = r#"
 Usage:
     qsv <command> [<args>...]
     qsv [options]
@@ -68,11 +70,27 @@ Options:
     --list               List all commands available.
     --envlist            List all qsv-relevant environment variables.
     -u, --update         Update qsv to the latest release from GitHub.
-    -U, --updatenow      Update qsv to the latest release from GitHub without confirming.
-    -h, --help           Display this message
+    -U, --updatenow      Update qsv to the latest release from GitHub without confirming."#;
+
+#[cfg(feature = "mcp")]
+const USAGE_MCP: &str = "    --update-mcp-skills  Regenerate MCP skills JSON files for Claude Desktop.";
+
+const USAGE_FOOTER: &str = "    -h, --help           Display this message
     <command> -h         Display the command help message
-    -v, --version        Print version info, mem allocator, features installed, 
-                         max_jobs, num_cpus, build info then exit"#;
+    -v, --version        Print version info, mem allocator, features installed,
+                         max_jobs, num_cpus, build info then exit";
+
+#[cfg(feature = "mcp")]
+const USAGE: &str = const_format::concatcp!(
+    USAGE_COMMON,
+    "\n",
+    USAGE_MCP,
+    "\n",
+    USAGE_FOOTER
+);
+
+#[cfg(not(feature = "mcp"))]
+const USAGE: &str = const_format::concatcp!(USAGE_COMMON, "\n", USAGE_FOOTER);
 
 #[derive(Deserialize)]
 struct Args {
@@ -81,6 +99,8 @@ struct Args {
     flag_envlist:   bool,
     flag_update:    bool,
     flag_updatenow: bool,
+    #[cfg(feature = "mcp")]
+    flag_update_mcp_skills: bool,
 }
 
 fn main() -> QsvExitCode {
@@ -249,6 +269,19 @@ fn main() -> QsvExitCode {
         util::show_env_vars();
         util::log_end(qsv_args, now);
         return QsvExitCode::Good;
+    }
+    #[cfg(feature = "mcp")]
+    {
+        if args.flag_update_mcp_skills {
+            util::log_end(qsv_args, now);
+            match mcp_skills_gen::generate_mcp_skills() {
+                Ok(()) => return QsvExitCode::Good,
+                Err(e) => {
+                    werr!("MCP skills generation error: {e}");
+                    return QsvExitCode::Bad;
+                },
+            }
+        }
     }
     if args.flag_update || args.flag_updatenow {
         util::log_end(qsv_args, now);

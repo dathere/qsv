@@ -1,47 +1,7 @@
-#![cfg_attr(
-    clippy,
-    allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_possible_wrap,
-        clippy::cast_sign_loss,
-        // things are often more readable this way
-        clippy::needless_raw_string_hashes,
-        clippy::cast_lossless,
-        clippy::module_name_repetitions,
-        clippy::type_complexity,
-        clippy::zero_prefixed_literal,
-        clippy::unused_self,
-        clippy::if_same_then_else,
-        clippy::needless_continue,
-        // correctly used
-        clippy::enum_glob_use,
-        clippy::result_unit_err,
-        // not practical
-        clippy::similar_names,
-        clippy::too_many_lines,
-        clippy::struct_excessive_bools,
-        // preference
-        clippy::doc_markdown,
-        clippy::unnecessary_wraps,
-        clippy::ref_as_ptr,
-        // false positive
-        clippy::needless_doctest_main,
-        // noisy
-        clippy::missing_errors_doc,
-        clippy::use_self,
-        clippy::cognitive_complexity,
-        clippy::option_if_let_else,
-        clippy::implicit_clone,
-    ),
-    warn(
-        clippy::missing_asserts_for_indexing,
-    )
-)]
-
-// qsv-skill-gen: Generate Agent Skills from qsv command USAGE text
+// qsv MCP Skills Generator - Generate Agent Skills from qsv command USAGE text
 //
-// This tool parses USAGE text from qsv commands and generates Agent Skill
-// definitions in JSON format for use with the Claude Agent SDK.
+// This module parses USAGE text from qsv commands and generates Agent Skill
+// definitions in JSON format for use with Claude Desktop (MCP) and the Claude Agent SDK.
 //
 // Uses qsv-docopt Parser for robust USAGE text parsing.
 
@@ -52,6 +12,8 @@ use std::{
 
 use qsv_docopt::parse::{Argument as DocoptArgument, Atom, Parser};
 use serde::{Deserialize, Serialize};
+
+use crate::CliResult;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SkillDefinition {
@@ -565,7 +527,9 @@ fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
     Ok(after_start[..usage_end].to_string())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// Public function to generate MCP skills JSON files
+/// Called via `qsv --update-mcp-skills` flag
+pub fn generate_mcp_skills() -> CliResult<()> {
     // Get all commands from src/cmd/*.rs (excluding mod.rs and duplicates)
     let commands = vec![
         "apply",
@@ -636,22 +600,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "validate",
     ];
 
+    // Determine repository root - look for Cargo.toml
+    let mut repo_root = std::env::current_dir()?;
+    loop {
+        if repo_root.join("Cargo.toml").exists() && repo_root.join("src/cmd").exists() {
+            break;
+        }
+        if !repo_root.pop() {
+            return fail_clierror!("Could not find qsv repository root (no Cargo.toml with src/cmd)");
+        }
+    }
+
     // Create output directory
-    let output_dir = PathBuf::from(".claude/skills/qsv");
+    let output_dir = repo_root.join(".claude/skills/qsv");
     fs::create_dir_all(&output_dir)?;
 
-    println!("QSV Agent Skill Generator (using qsv-docopt)");
-    println!("=============================================");
-    println!("Generating {} skills...\n", commands.len());
+    eprintln!("QSV MCP Skills Generator (via qsv --update-mcp-skills)");
+    eprintln!("=======================================================");
+    eprintln!("Repository: {}", repo_root.display());
+    eprintln!("Output: {}", output_dir.display());
+    eprintln!("Generating {} skills...\n", commands.len());
 
     let mut success_count = 0;
     let mut error_count = 0;
 
     for cmd_name in &commands {
-        println!("Processing: {cmd_name}");
+        eprintln!("Processing: {cmd_name}");
 
         // Find command file
-        let cmd_file = PathBuf::from(format!("src/cmd/{cmd_name}.rs"));
+        let cmd_file = repo_root.join(format!("src/cmd/{cmd_name}.rs"));
 
         if !cmd_file.exists() {
             eprintln!("  ❌ File not found: {}", cmd_file.display());
@@ -685,22 +662,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let json = serde_json::to_string_pretty(&skill)?;
         fs::write(&output_file, json)?;
 
-        println!("  ✅ Generated: {}", output_file.display());
-        println!("     - {} arguments", skill.command.args.len());
-        println!("     - {} options", skill.command.options.len());
-        println!();
+        eprintln!("  ✅ Generated: {}", output_file.display());
+        eprintln!("     - {} arguments", skill.command.args.len());
+        eprintln!("     - {} options", skill.command.options.len());
+        eprintln!();
 
         success_count += 1;
     }
 
-    println!("\n✨ Skill generation complete!");
-    println!("📁 Output directory: {}", output_dir.display());
-    println!(
+    eprintln!("\n✨ MCP Skills generation complete!");
+    eprintln!("📁 Output directory: {}", output_dir.display());
+    eprintln!(
         "📊 Summary: {} succeeded, {} failed out of {} total",
         success_count,
         error_count,
         commands.len()
     );
+
+    if error_count > 0 {
+        return fail_clierror!("{} skill(s) failed to generate", error_count);
+    }
+
+    eprintln!("\n💡 Restart Claude Desktop to load the updated skills.");
 
     Ok(())
 }

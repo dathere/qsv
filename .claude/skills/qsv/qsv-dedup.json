@@ -1,6 +1,6 @@
 {
   "name": "qsv-dedup",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Deduplicates CSV rows. This requires reading all of the CSV data into memory because because the rows need to be sorted first. That is, unless the --sorted option is used to indicate the CSV is already sorted - typically, with the sort cmd for more sorting options or the extsort cmd for larger than memory CSV files. This will make dedup run in streaming mode with constant memory. Either way, the output will not only be deduplicated, it will also be sorted. A duplicate count will also be sent to <stderr>. For examples, see https://github.com/dathere/qsv/blob/master/tests/test_dedup.rs.",
   "category": "utility",
   "command": {
@@ -82,11 +82,9 @@
       }
     ]
   },
-  "examples": [],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_dedup.rs",
-  "examples_ref": "examples/qsv-dedup-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_dedup.rs"
 }

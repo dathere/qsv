@@ -1,6 +1,6 @@
 {
   "name": "qsv-describegpt",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Create a \"neuro-procedural\" Data Dictionary and/or infer Description & Tags about a Dataset using an OpenAI API-compatible Large Language Model (LLM). It does this by compiling Summary Statistics & a Frequency Distribution of the Dataset, and then prompting the LLM with detailed, configurable, Mini Jinja-templated prompts with these extended statistical context. The Data Dictionary is \"neuro-procedural\" as it uses a hybrid approach. It's primarily populated deterministically using Summary Statistics & Frequency Distribution data, and only the human-friendly Label & Description are populated by the \"neural network\" LLM using the same statistical context. CHAT MODE: You can also use the --prompt option to ask a natural language question about the Dataset. If the question can be answered by solely using the Dataset's Summary Statistics and Frequency Distribution data, the LLM will return the answer directly. CHAT SQL RETRIEVAL-AUGMENTED GENERATION (RAG) SUB-MODE: If the question cannot be answered using the Dataset's Summary Statistics & Frequency Distribution, it will first create a Data Dictionary and a small random sample (default: 100 rows) of the Dataset and provide it to the LLM as additional context to help it generate a SQL query that DETERMINISTICALLY answers the natural language question. Two SQL dialects are currently supported - DuckDB (highly recommended) & Polars. If the QSV_DESCRIBEGPT_DB_ENGINE environment variable is set to the absolute path of the DuckDB binary, DuckDB will be used to answer the question. Otherwise, if the \"polars\" feature is enabled, Polars SQL will be used. If neither DuckDB nor Polars is available, the SQL query will be returned in a Markdown code block, along with the reasoning behind the query. Even in \"SQL RAG\" mode, though the SQL query is guaranteed to be deterministic, the query itself may not be correct. In the event of a SQL query execution failure, run the same --prompt with the --fresh option to request the LLM to generate a new SQL query. When using DuckDB, all loaded DuckDB extensions will be sent as additional context to the LLM to let it know what functions (even UDFs!) it can use in the SQL queries it generates. If you want a specific function or technique to be used in the SQL query, mention it in the prompt. SUPPORTED MODELS & LLM PROVIDERS: OpenAI's open-weights gpt-oss model (both 20b and 120b variants) was used during development & is recommended for most use cases. It was also tested with OpenAI, TogetherAI, OpenRouter and Google Gemini cloud providers. Local LLMs tested include Ollama, Jan and LM Studio. NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them. CACHING: As LLM inferencing takes time and can be expensive, describegpt caches the LLM inferencing results in a either a disk cache (default) or a Redis cache. It does so by calculating the BLAKE3 hash of the input file and using it as the primary cache key along with the prompt type, model and other parameters as required. The default disk cache is stored in the ~/.qsv/cache/describegpt directory with a default TTL of 28 days and cache hits NOT refreshing an existing cached value's TTL. Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars to change disk cache settings. Alternatively a Redis cache can be used instead of the disk cache. This is especially useful if you want to share the cache across the network with other users or computers. The Redis cache is stored in database 3 by default with a TTL of 28 days and cache hits NOT refreshing an existing cached value's TTL. Adjust the QSV_DG_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS & QSV_REDIS_TTL_REFRESH env vars to change Redis cache settings.",
   "category": "analysis",
   "command": {
@@ -238,76 +238,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "(replace <API_KEY> with your OpenAI API key)",
-      "command": "qsv describegpt data.csv --api-key <API_KEY> --all"
-    },
-    {
-      "description": "Generate a Data Dictionary of data.csv using the DeepSeek R1:14b model on a local Ollama instance",
-      "command": "qsv describegpt data.csv -u http://localhost:11434/v1 --model deepseek-r1:14b --dictionary"
-    },
-    {
-      "description": "Questions that can be answered using the Summary Statistics & Frequency Distribution of the dataset.",
-      "command": "export QSV_LLM_BASE_URL=http://localhost:1234/v1"
-    },
-    {
-      "description": "NYC_311.csv --prompt \"What is the most common complaint?\"",
-      "command": "qsv describegpt NYC_311.csv --prompt \"What is the most common complaint?\""
-    },
-    {
-      "description": "NYC_311.csv --prompt \"List the top 10 complaints.\"",
-      "command": "qsv describegpt NYC_311.csv --prompt \"List the top 10 complaints.\""
-    },
-    {
-      "description": "NYC_311.csv -p \"Can you tell me how many complaints were resolved?\"",
-      "command": "qsv describegpt NYC_311.csv -p \"Can you tell me how many complaints were resolved?\""
-    },
-    {
-      "description": "Generate a DuckDB SQL query to answer the question",
-      "command": "export QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb"
-    },
-    {
-      "description": "NYC_311.csv -p \"What's the breakdown of complaint types by borough descending order?\"",
-      "command": "qsv describegpt NYC_311.csv -p \"What's the breakdown of complaint types by borough descending order?\""
-    },
-    {
-      "description": "If generated SQL query runs successfully, the file is \"results.csv\". Otherwise, it is \"results.sql\".",
-      "command": "qsv describegpt NYC_311.csv -p \"Aggregate complaint types by community board\" --sql-results results"
-    },
-    {
-      "description": "Cache Dictionary, Description & Tags inference results using the Redis cache instead of the disk cache",
-      "command": "qsv describegpt data.csv --all --redis-cache"
-    },
-    {
-      "description": "Get fresh Description & Tags inference results from the LLM and refresh disk cache entries for both",
-      "command": "qsv describegpt data.csv --description --tags --fresh"
-    },
-    {
-      "description": "Get fresh inference results from the LLM and refresh the Redis cache entries for all three",
-      "command": "qsv describegpt data.csv --all --redis-cache --fresh"
-    },
-    {
-      "description": "Forget a cached response for data.csv's data dictionary if it exists and then exit",
-      "command": "qsv describegpt data.csv --dictionary --forget"
-    },
-    {
-      "description": "Flush/Remove ALL cached entries in the disk cache",
-      "command": "qsv describegpt --flush-cache"
-    },
-    {
-      "description": "Flush/Remove ALL cached entries in the Redis cache",
-      "command": "qsv describegpt --redis-cache --flush-cache"
-    },
-    {
-      "description": "QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.",
-      "command": "QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND."
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs",
-  "examples_ref": "examples/qsv-describegpt-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs"
 }

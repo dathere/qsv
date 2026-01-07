@@ -1,6 +1,6 @@
 {
   "name": "qsv-search",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Filters CSV data by whether the given regex matches a row. The regex is applied to selected field in each row, and if any field matches, then the row is written to the output, and the number of matches to stderr. The columns to search can be limited with the '--select' flag (but the full row is still written to the output if there is a match). Returns exitcode 0 when matches are found, returning number of matches to stderr. Returns exitcode 1 when no match is found, unless the '--not-one' flag is used. When --quick is enabled, no output is produced and exitcode 0 is returned on the first match. When the CSV is indexed, a faster parallel search is used. For examples, see https://github.com/dathere/qsv/blob/master/tests/test_search.rs.",
   "category": "filtering",
   "command": {
@@ -8,16 +8,16 @@
     "subcommand": "search",
     "args": [
       {
-        "name": "input",
-        "type": "file",
-        "required": true,
-        "description": "The CSV file to read. If not given, reads from stdin."
-      },
-      {
         "name": "regex",
         "type": "regex",
         "required": true,
         "description": "Regular expression to match. Uses Rust regex syntax. See https://docs.rs/regex/latest/regex/index.html#syntax or https://regex101.com with the Rust flavor for more info."
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": "The CSV file to read. If not given, reads from stdin."
       }
     ],
     "options": [
@@ -130,11 +130,9 @@
       }
     ]
   },
-  "examples": [],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_search.rs",
-  "examples_ref": "examples/qsv-search-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_search.rs"
 }

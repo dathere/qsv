@@ -1,6 +1,6 @@
 {
   "name": "qsv-count",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Returns a count of the number of records in the CSV data. It has three modes of operation: 1. If a valid index is present, it will use it to lookup the count and return instantaneously. (fastest) If no index is present, it will read the CSV and count the number of records by scanning the file. 2. If the polars feature is enabled, it will use the multithreaded, mem-mapped Polars CSV reader. (faster - not available on qsvlite) 3. If the polars feature is not enabled, it will use the \"regular\", single-threaded CSV reader. Note that the count will not include the header row (unless --no-headers is given). For examples, see https://github.com/dathere/qsv/blob/master/tests/test_count.rs.",
   "category": "aggregation",
   "command": {
@@ -68,11 +68,9 @@
       }
     ]
   },
-  "examples": [],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_count.rs",
-  "examples_ref": "examples/qsv-count-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_count.rs"
 }

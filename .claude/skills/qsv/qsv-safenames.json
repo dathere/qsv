@@ -1,6 +1,6 @@
 {
   "name": "qsv-safenames",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Modify headers of a CSV to only have \"safe\" names - guaranteed \"database-ready\" names (optimized specifically for PostgreSQL column identifiers). Fold to lowercase. Trim leading & trailing whitespaces. Replace whitespace/non-alphanumeric characters with _. If name starts with a number & check_first_char is true, prepend the unsafe prefix. If a header with the same name already exists, append a sequence suffix (e.g. col, col_2, col_3). Names are limited to 60 characters in length. Empty names are replaced with the unsafe prefix. In addition, specifically because of CKAN Datastore requirements: - Headers with leading underscores are replaced with \"unsafe_\" prefix. - Headers that are named \"_id\" are renamed to \"reserved__id\". These CKAN Datastore options can be configured via the --prefix & --reserved options, respectively. In Always (a) and Conditional (c) mode, returns number of modified headers to stderr, and sends CSV with safe headers output to stdout. In Verify (v) mode, returns number of unsafe headers to stderr. In Verbose (V) mode, returns number of headers; duplicate count and unsafe & safe headers to stderr. No stdout output is generated in Verify and Verbose mode. In JSON (j) mode, returns Verbose mode info in minified JSON to stdout. In Pretty JSON (J) mode, returns Verbose mode info in pretty printed JSON to stdout. Given data.csv: c1,12_col,Col with Embedded Spaces,,Column!@Invalid+Chars,c1 1,a2,a3,a4,a5,a6 c1,unsafe_12_col,col_with_embedded_spaces,unsafe_,column__invalid_chars,c1_2 1,a2,a3,a4,a5,a6 stderr: 5 Conditionally rename headers, allowing \"quoted identifiers\": c1,unsafe_12_col,Col with Embedded Spaces,unsafe_,column__invalid_chars,c1_2 1,a2,a3,a4,a5,a6 stderr: 4 Verify how many \"unsafe\" headers are found: stderr: 4 Verbose mode: stderr: 6 header/s 1 duplicate/s: \"c1:2\" 4 unsafe header/s: [\"12_col\", \"Col with Embedded Spaces\", \"\", \"Column!@Invalid+Chars\"] 1 safe header/s: [\"c1\"] Note that even if \"Col with Embedded Spaces\" is technically safe, it is generally discouraged. Though it can be created as a \"quoted identifier\" in PostgreSQL, it is still marked \"unsafe\" by default, unless mode is set to \"conditional.\" It is discouraged because the embedded spaces can cause problems later on. (see https://lerner.co.il/2013/11/30/quoting-postgresql/ for more info).",
   "category": "validation",
   "command": {
@@ -50,28 +50,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "data.csv",
-      "command": "qsv safenames data.csv"
-    },
-    {
-      "description": "--mode c data.csv",
-      "command": "qsv safenames --mode c data.csv"
-    },
-    {
-      "description": "--mode v data.csv",
-      "command": "qsv safenames --mode v data.csv"
-    },
-    {
-      "description": "--mode V data.csv",
-      "command": "qsv safenames --mode V data.csv"
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_safenames.rs",
-  "examples_ref": "examples/qsv-safenames-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_safenames.rs"
 }

@@ -1,6 +1,6 @@
 {
   "name": "qsv-split",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Splits the given CSV data into chunks. It has three modes: by size (rowcount), by number of chunks and by kb-size. See `partition` command for splitting by a column value. When splitting by size, the CSV data is split into chunks of the given number of rows. The last chunk may have fewer rows if the number of records is not evenly divisible by the given rowcount. When splitting by number of chunks, the CSV data is split into the given number of chunks. The number of rows in each chunk is determined by the number of records in the CSV data and the number of desired chunks. If the number of records is not evenly divisible by the number of chunks, the last chunk will have fewer records. When splitting by kb-size, the CSV data is split into chunks of the given size in kilobytes. The number of rows in each chunk may vary, but the size of each chunk will not exceed the desired size. Uses multithreading to go faster if the CSV has an index when splitting by size or by number of chunks. Splitting by kb-size is always done sequentially with a single thread. The default is to split by size with a chunk size of 500. The files are written to the directory given with the name '{start}.csv', where {start} is the index of the first record of the chunk (starting at 0).",
   "category": "utility",
   "command": {
@@ -8,16 +8,16 @@
     "subcommand": "split",
     "args": [
       {
-        "name": "input",
-        "type": "file",
-        "required": true,
-        "description": "The CSV file to read. If not given, input is read from STDIN."
-      },
-      {
         "name": "outdir",
         "type": "string",
         "required": true,
         "description": "The directory where the output files will be written. If it does not exist, it will be created."
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": "The CSV file to read. If not given, input is read from STDIN."
       }
     ],
     "options": [
@@ -91,48 +91,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "outdir --size 100 --filename chunk_{}.csv input.csv",
-      "command": "qsv split outdir --size 100 --filename chunk_{}.csv input.csv"
-    },
-    {
-      "description": "in the directory 'outdir', creating the directory if it does not exist.",
-      "command": "qsv split outdir/subdir -s 100 --filename chunk_{}.csv --pad 5 input.csv"
-    },
-    {
-      "description": "in the directory 'outdir/subdir', creating the directories if they do not exist.",
-      "command": "qsv split . -s 100 input.csv"
-    },
-    {
-      "description": "This will create files like 0.csv, 100.csv, etc. in the current directory.",
-      "command": "qsv split outdir --kb-size 1000 input.csv"
-    },
-    {
-      "description": "to 1000KB in size.",
-      "command": "cat in.csv | qsv split mysplitoutput -s 1000"
-    },
-    {
-      "description": "outdir --chunks 10 input.csv",
-      "command": "qsv split outdir --chunks 10 input.csv"
-    },
-    {
-      "description": "splitoutdir -c 10 -j 4 input.csv",
-      "command": "qsv split splitoutdir -c 10 -j 4 input.csv"
-    },
-    {
-      "description": "outdir -s 100 --filter \"gzip $FILE\" input.csv",
-      "command": "qsv split outdir -s 100 --filter \"gzip $FILE\" input.csv"
-    },
-    {
-      "description": "'outdir', and then run the command \"gzip\" on each chunk.",
-      "command": "qsv split outdir --filter \"powershell Compress-Archive -Path $FILE -Destination {}.zip\" input.csv"
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_split.rs",
-  "examples_ref": "examples/qsv-split-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_split.rs"
 }

@@ -1,6 +1,6 @@
 {
   "name": "qsv-lens",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Explore tabular data files interactively using the csvlens (https://github.com/YS-L/csvlens) engine. If the polars feature is enabled, lens can browse tabular data in Arrow, Avro/IPC, Parquet, JSON (JSON Array) and JSONL files. It also automatically decompresses csv/tsv/tab/ssv files using the gz,zlib & zst compression formats (e.g. data.csv.gz, data.tsv.zlib, data.tab.gz & data.ssv.zst). If the polars feature is not enabled, lens can only browse CSV dialects (CSV, TSV, Tab, SSV) and its snappy-compressed variants (CSV.sz, TSV.sz, Tab.sz & SSV.sz). Press 'q' to exit. Press '?' for help.",
   "category": "utility",
   "command": {
@@ -99,92 +99,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "data.csv // comma-separated",
-      "command": "qsv lens data.csv // comma-separated"
-    },
-    {
-      "description": "data.tsv // Tab-separated",
-      "command": "qsv lens data.tsv // Tab-separated"
-    },
-    {
-      "description": "data.tab // Tab-separated",
-      "command": "qsv lens data.tab // Tab-separated"
-    },
-    {
-      "description": "data.ssv // Semicolon-separated",
-      "command": "qsv lens data.ssv // Semicolon-separated"
-    },
-    {
-      "description": "custom delimiter",
-      "command": "qsv lens --delimiter '|' data.csv"
-    },
-    {
-      "description": "data.csv.sz // Snappy-compressed CSV",
-      "command": "qsv lens data.csv.sz // Snappy-compressed CSV"
-    },
-    {
-      "description": "data.tsv.sz // Snappy-compressed Tab-separated",
-      "command": "qsv lens data.tsv.sz // Snappy-compressed Tab-separated"
-    },
-    {
-      "description": "additional compression formats below require polars feature",
-      "command": "qsv lens data.csv.gz // Gzipped CSV"
-    },
-    {
-      "description": "data.tsv.zlib // Zlib-compressed Tab-separated",
-      "command": "qsv lens data.tsv.zlib // Zlib-compressed Tab-separated"
-    },
-    {
-      "description": "data.tab.zst // Zstd-compressed Tab-separated",
-      "command": "qsv lens data.tab.zst // Zstd-compressed Tab-separated"
-    },
-    {
-      "description": "data.ssv.zst // Zstd-compressed Semicolon-separated",
-      "command": "qsv lens data.ssv.zst // Zstd-compressed Semicolon-separated"
-    },
-    {
-      "description": "data.parquet // Parquet",
-      "command": "qsv lens data.parquet // Parquet"
-    },
-    {
-      "description": "data.jsonl // JSON Lines",
-      "command": "qsv lens data.jsonl // JSON Lines"
-    },
-    {
-      "description": "data.json // JSON - will only work with a JSON Array",
-      "command": "qsv lens data.json // JSON - will only work with a JSON Array"
-    },
-    {
-      "description": "data.avro // Avro",
-      "command": "qsv lens data.avro // Avro"
-    },
-    {
-      "description": "--prompt 'Select City:' --echo-column 'City' data.csv",
-      "command": "qsv lens --prompt 'Select City:' --echo-column 'City' data.csv"
-    },
-    {
-      "description": "--filter NYPD data.csv",
-      "command": "qsv lens --filter NYPD data.csv"
-    },
-    {
-      "description": "Show rows that contain \"nois\" case insensitive (for noise, noisy, noisier, etc.)",
-      "command": "qsv lens --filter nois --ignore-case data.csv"
-    },
-    {
-      "description": "--find 'New York' data.csv",
-      "command": "qsv lens --find 'New York' data.csv"
-    },
-    {
-      "description": "--find '^\\d+$' data.csv",
-      "command": "qsv lens --find '^\\d+$' data.csv"
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_lens.rs",
-  "examples_ref": "examples/qsv-lens-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_lens.rs"
 }

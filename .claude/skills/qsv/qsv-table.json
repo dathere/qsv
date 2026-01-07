@@ -1,6 +1,6 @@
 {
   "name": "qsv-table",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Outputs CSV data as a table with columns in alignment. Though this command is primarily designed for DISPLAYING CSV data using \"elastic tabstops\" so its more human-readable, it can also be used to convert CSV data to other special machine-readable formats: -  a more human-readable TSV format with the \"leftendtab\" alignment option -  Fixed-Width format with the \"leftfwf\" alignment option - similar to \"left\", but with the first line being a comment (prefixed with \"#\") that enumerates the position (1-based, comma-separated) of each column (e.g. \"#1,10,15\"). This will not work well if the CSV data contains large fields. Note that formatting a table requires buffering all CSV data into memory. Therefore, you should use the 'sample' or 'slice' command to trim down large CSV data before formatting it with this command.",
   "category": "formatting",
   "command": {
@@ -60,11 +60,9 @@
       }
     ]
   },
-  "examples": [],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_table.rs",
-  "examples_ref": "examples/qsv-table-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_table.rs"
 }

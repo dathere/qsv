@@ -1,6 +1,6 @@
 {
   "name": "qsv-reverse",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Reverses rows of CSV data. Useful for cases when there is no column that can be used for sorting in reverse order, or when keys are not unique and order of rows with the same key needs to be preserved. Note that if the CSV is not indexed, this operation will require reading all of the CSV data into memory",
   "category": "transformation",
   "command": {
@@ -42,11 +42,9 @@
       }
     ]
   },
-  "examples": [],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_reverse.rs",
-  "examples_ref": "examples/qsv-reverse-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_reverse.rs"
 }

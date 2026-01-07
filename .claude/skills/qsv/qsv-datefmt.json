@@ -1,6 +1,6 @@
 {
   "name": "qsv-datefmt",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Formats recognized date fields (19 formats recognized) to a specified date format using strftime date format specifiers. For recognized date formats, see https://github.com/dathere/qsv-dateparser?tab=readme-ov-file#accepted-date-formats See https://docs.rs/chrono/latest/chrono/format/strftime/ for accepted date format specifiers for --formatstr. Defaults to ISO 8601/RFC 3339 format when --formatstr is not specified. ( \"%Y-%m-%dT%H:%M:%S%z\" - e.g. 2001-07-08T00:34:60.026490+09:30 )",
   "category": "transformation",
   "command": {
@@ -118,40 +118,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "'Open Date' file.csv",
-      "command": "qsv datefmt 'Open Date' file.csv"
-    },
-    {
-      "description": "'Open Date,Modified Date,Closed Date' file.csv",
-      "command": "qsv datefmt 'Open Date,Modified Date,Closed Date' file.csv"
-    },
-    {
-      "description": "'/(?i)_date$/' file.csv",
-      "command": "qsv datefmt '/(?i)_date$/' file.csv"
-    },
-    {
-      "description": "OpenDate --formatstr '%Y-%m-%d' file.csv",
-      "command": "qsv datefmt OpenDate --formatstr '%Y-%m-%d' file.csv"
-    },
-    {
-      "description": "OpenDate,CloseDate,ReopenDate --formatstr '%Y-%m-%d' file.csv",
-      "command": "qsv datefmt OpenDate,CloseDate,ReopenDate --formatstr '%Y-%m-%d' file.csv"
-    },
-    {
-      "description": "OpenDate --formatstr '%V' --new-column week_number file.csv",
-      "command": "qsv datefmt OpenDate --formatstr '%V' --new-column week_number file.csv"
-    },
-    {
-      "description": "OpenDate,CloseDate --formatstr '%u' --rename Open_weekday,Close_weekday file.csv",
-      "command": "qsv datefmt OpenDate,CloseDate --formatstr '%u' --rename Open_weekday,Close_weekday file.csv"
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs",
-  "examples_ref": "examples/qsv-datefmt-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs"
 }

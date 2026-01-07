@@ -1,6 +1,6 @@
 {
   "name": "qsv-jsonl",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Convert newline-delimited JSON (JSONL/NDJSON) to CSV. The command tries to do its best but since it is not possible to straightforwardly convert JSON lines to CSV, the process might lose some complex fields from the input. Also, it will fail if the JSON documents are not consistent with one another, as the first JSON line will be used to infer the headers of the CSV output. For examples, see https://github.com/dathere/qsv/blob/master/tests/test_jsonl.rs.",
   "category": "conversion",
   "command": {
@@ -49,11 +49,9 @@
       }
     ]
   },
-  "examples": [],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_jsonl.rs",
-  "examples_ref": "examples/qsv-jsonl-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_jsonl.rs"
 }

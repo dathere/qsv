@@ -1,6 +1,6 @@
 {
   "name": "qsv-edit",
-  "version": "12.0.0",
+  "version": "13.0.0",
   "description": "Replace the value of a cell specified by its row and column. For example we have the following CSV file named items.csv: item,color shoes,blue flashlight,gray To output the data with the color of the shoes as green instead of blue, run: The following is returned as output: item,color shoes,green flashlight,gray You may also choose to specify the column name by its index (in this case 1). Specifying a column as a number is prioritized by index rather than name. If there is no newline (\\n) at the end of the input data, it may be added to the output.",
   "category": "utility",
   "command": {
@@ -8,14 +8,14 @@
     "subcommand": "edit",
     "args": [
       {
-        "name": "column",
-        "type": "string",
+        "name": "input",
+        "type": "file",
         "required": true,
         "description": ""
       },
       {
-        "name": "input",
-        "type": "file",
+        "name": "column",
+        "type": "string",
         "required": true,
         "description": ""
       },
@@ -55,16 +55,9 @@
       }
     ]
   },
-  "examples": [
-    {
-      "description": "items.csv color 0 green",
-      "command": "qsv edit items.csv color 0 green"
-    }
-  ],
   "hints": {
     "streamable": true,
     "memory": "constant"
   },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_edit.rs",
-  "examples_ref": "examples/qsv-edit-examples.json"
+  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_edit.rs"
 }

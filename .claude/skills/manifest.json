@@ -61,18 +61,18 @@
       "default": "qsv"
     },
     "working_dir": {
-      "type": "string",
+      "type": "directory",
       "title": "Default Working Directory",
-      "description": "Directory where qsv commands run by default",
-      "required": false,
-      "default": "${HOME}/Downloads"
+      "description": "Directory where qsv commands run by default. Extension only accesses files within this directory and allowed directories below.",
+      "required": true,
+      "default": "${DOWNLOADS}"
     },
     "allowed_dirs": {
-      "type": "string",
+      "type": "directory",
       "title": "Allowed Directories",
-      "description": "Colon-separated (Linux/Mac) or semicolon-separated (Windows) paths where qsv can access files. Leave empty to allow all directories.",
+      "description": "Additional directories where qsv can access files. Extension access is restricted to working directory and these directories only.",
       "required": false,
-      "default": "${HOME}/Downloads:${HOME}/Documents"
+      "multiple": true
     },
     "timeout_ms": {
       "type": "number",

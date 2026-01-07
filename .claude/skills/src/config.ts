@@ -165,10 +165,29 @@ export const config = {
   workingDir: getStringEnv('QSV_MCP_WORKING_DIR', process.cwd()),
 
   /**
-   * Allowed directories for file access (colon-separated on Unix, semicolon on Windows)
+   * Allowed directories for file access
+   * Can be either:
+   * - Colon/semicolon-separated paths (legacy MCP)
+   * - JSON array (Desktop extension with directory type)
    * Default: Empty array (only working directory allowed)
    */
-  allowedDirs: getStringArrayEnv('QSV_MCP_ALLOWED_DIRS', [], getPathDelimiter()),
+  allowedDirs: (() => {
+    const envValue = process.env['QSV_MCP_ALLOWED_DIRS'];
+    if (!envValue) return [];
+
+    // Try parsing as JSON array first (Desktop extension mode)
+    try {
+      const parsed = JSON.parse(envValue);
+      if (Array.isArray(parsed)) {
+        return parsed.map(p => expandTemplateVars(p));
+      }
+    } catch {
+      // Not JSON, treat as delimited string
+    }
+
+    // Fall back to delimited string (legacy MCP mode)
+    return getStringArrayEnv('QSV_MCP_ALLOWED_DIRS', [], getPathDelimiter());
+  })(),
 
   /**
    * Maximum size for converted file cache in GB

@@ -18,6 +18,61 @@ import { config } from './config.js';
 const AUTO_INDEX_SIZE_MB = 10;
 
 /**
+ * Commands that always return full CSV data and should use temp files
+ */
+const ALWAYS_FILE_COMMANDS = new Set([
+  'stats',
+  'moarstats',
+  'frequency',
+  'sort',
+  'dedup',
+  'join',
+  'joinp',
+  'select',
+  'search',
+  'searchset',
+  'apply',
+  'applydp',
+  'schema',
+  'validate',
+  'diff',
+  'cat',
+  'transpose',
+  'flatten',
+  'unflatten',
+  'partition',
+  'split',
+  'explode',
+  'pseudo',
+  'rename',
+  'replace',
+  'datefmt',
+  'formatters',
+  'reverse',
+  'safenames',
+  'sqlp',
+  'pivotp',
+  'to',
+  'tojsonl',
+]);
+
+/**
+ * Commands that return small metadata (not full CSV) and should use stdout
+ */
+const METADATA_COMMANDS = new Set([
+  'count',
+  'headers',
+  'index',
+  'slice',
+  'sample',
+]);
+
+/**
+ * Input file size threshold (in bytes) for auto temp file
+ */
+const LARGE_FILE_THRESHOLD_BYTES = 10 * 1024 * 1024; // 10MB
+
+/**
  * Track active child processes for graceful shutdown
  */
 const activeProcesses = new Set<ChildProcess>();
@@ -171,6 +226,35 @@ async function autoIndexIfNeeded(
 }
 
 /**
+ * Determine if a command should use a temp output file
+ *
+ * @param command - The qsv command name
+ * @param inputFile - Path to the input file
+ * @returns Promise<boolean> - true if temp file should be used
+ */
+async function shouldUseTempFile(command: string, inputFile: string): Promise<boolean> {
+  // Metadata commands always use stdout (small results)
+  if (METADATA_COMMANDS.has(command)) {
+    return false;
+  }
+
+  // Commands that always return full CSV data should use temp files
+  if (ALWAYS_FILE_COMMANDS.has(command)) {
+    return true;
+  }
+
+  // For other commands, check input file size
+  try {
+    const stats = await stat(inputFile);
+    return stats.size > LARGE_FILE_THRESHOLD_BYTES;
+  } catch (error) {
+    // If we can't stat the file, default to stdout
+    console.error(`[MCP Tools] Error checking file size for temp file decision:`, error);
+    return false;
+  }
+}
+
+/**
  * 20 most common qsv commands exposed as individual MCP tools
  */
 export const COMMON_COMMANDS = [
@@ -243,7 +327,7 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
   // Add output_file (optional for all commands)
   properties.output_file = {
     type: 'string',
-    description: 'Path to output CSV file (optional, returns to stdout if omitted)',
+    description: 'Path to output CSV file (optional). For large results or data transformation commands, a temp file is automatically used if omitted.',
   };
 
   return {
@@ -495,6 +579,21 @@ export async function handleToolCall(
       }
     }
 
+    // Determine if we should use a temp file for output
+    let autoCreatedTempFile = false;
+    if (!outputFile && await shouldUseTempFile(commandName, inputFile)) {
+      // Auto-create temp file
+      const { randomUUID } = await import('crypto');
+      const { tmpdir } = await import('os');
+      const { join } = await import('path');
+
+      const tempFileName = `qsv-output-${randomUUID()}.csv`;
+      outputFile = join(tmpdir(), tempFileName);
+      autoCreatedTempFile = true;
+
+      console.error(`[MCP Tools] Auto-created temp output file: ${outputFile}`);
+    }
+
     // Build args and options
     const args: Record<string, unknown> = {};
     const options: Record<string, unknown> = {};
@@ -542,15 +641,44 @@ export async function handleToolCall(
       let responseText = '';
 
       if (outputFile) {
-        responseText = `Successfully wrote output to: ${outputFile}\n\n`;
-        responseText += `Metadata:\n`;
-        responseText += `- Command: ${result.metadata.command}\n`;
-        responseText += `- Duration: ${result.metadata.duration}ms\n`;
-        if (result.metadata.rowsProcessed) {
-          responseText += `- Rows processed: ${result.metadata.rowsProcessed}\n`;
+        if (autoCreatedTempFile) {
+          // Read temp file contents and return them
+          try {
+            const { readFile, unlink } = await import('fs/promises');
+            const fileContents = await readFile(outputFile, 'utf-8');
+
+            // Clean up temp file
+            try {
+              await unlink(outputFile);
+              console.error(`[MCP Tools] Deleted temp file: ${outputFile}`);
+            } catch (unlinkError) {
+              console.error(`[MCP Tools] Failed to delete temp file:`, unlinkError);
+            }
+
+            // Return the file contents
+            responseText = fileContents;
+          } catch (readError) {
+            console.error(`[MCP Tools] Failed to read temp file:`, readError);
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Error reading output from temp file: ${readError instanceof Error ? readError.message : String(readError)}`,
+              }],
+              isError: true,
+            };
+          }
+        } else {
+          // User-specified output file - just report success
+          responseText = `Successfully wrote output to: ${outputFile}\n\n`;
+          responseText += `Metadata:\n`;
+          responseText += `- Command: ${result.metadata.command}\n`;
+          responseText += `- Duration: ${result.metadata.duration}ms\n`;
+          if (result.metadata.rowsProcessed) {
+            responseText += `- Rows processed: ${result.metadata.rowsProcessed}\n`;
+          }
         }
       } else {
-        // Return the CSV output
+        // Return the CSV output from stdout
         responseText = result.output;
       }
 
@@ -653,7 +781,7 @@ export function createGenericToolDefinition(loader: SkillLoader): McpToolDefinit
         },
         output_file: {
           type: 'string',
-          description: 'Path to output CSV file (optional, returns to stdout if omitted)',
+          description: 'Path to output CSV file (optional). For large results or data transformation commands, a temp file is automatically used if omitted.',
         },
       },
       required: ['command', 'input_file'],

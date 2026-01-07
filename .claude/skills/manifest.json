@@ -137,6 +137,18 @@
     }
   ],
   "tools_generated": true,
+  "prompts": [
+    {
+      "name": "welcome",
+      "description": "Welcome message and quick start guide for qsv",
+      "arguments": []
+    },
+    {
+      "name": "examples",
+      "description": "Show common qsv usage examples",
+      "arguments": []
+    }
+  ],
   "compatibility": {
     "platforms": ["darwin", "win32", "linux"]
   },

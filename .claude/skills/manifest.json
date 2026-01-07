@@ -1,0 +1,156 @@
+{
+  "manifest_version": "0.3",
+  "name": "qsv-data-wrangling",
+  "version": "13.0.0",
+  "description": "Complete CSV data-wrangling toolkit with 66 commands for transforming, analyzing, and validating tabular data. Process local CSV, Excel, and JSONL files without uploading.",
+  "author": {
+    "name": "Joel Natividad",
+    "url": "https://github.com/dathere/qsv"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dathere/qsv"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/dathere/qsv/tree/master/.claude/skills",
+  "documentation": "https://github.com/dathere/qsv/blob/master/.claude/skills/README.md",
+  "keywords": [
+    "csv",
+    "data-wrangling",
+    "data-analysis",
+    "tabular-data",
+    "excel",
+    "jsonl",
+    "etl",
+    "data-transformation"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "server/mcp-server.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/mcp-server.js"],
+      "env": {
+        "QSV_MCP_BIN_PATH": "${user_config.qsv_path}",
+        "QSV_MCP_WORKING_DIR": "${user_config.working_dir}",
+        "QSV_MCP_ALLOWED_DIRS": "${user_config.allowed_dirs}",
+        "QSV_MCP_TIMEOUT_MS": "${user_config.timeout_ms}",
+        "QSV_MCP_MAX_OUTPUT_SIZE": "${user_config.max_output_size}",
+        "QSV_MCP_AUTO_REGENERATE_SKILLS": "${user_config.auto_regenerate_skills}",
+        "QSV_MCP_CHECK_UPDATES_ON_STARTUP": "${user_config.check_updates}",
+        "QSV_MCP_NOTIFY_UPDATES": "${user_config.notify_updates}",
+        "MCPB_EXTENSION_MODE": "true"
+      },
+      "platform_overrides": {
+        "win32": {
+          "env": {
+            "QSV_MCP_BIN_PATH": "${user_config.qsv_path}",
+            "QSV_MCP_WORKING_DIR": "${user_config.working_dir}",
+            "QSV_MCP_ALLOWED_DIRS": "${user_config.allowed_dirs}"
+          }
+        }
+      }
+    }
+  },
+  "user_config": {
+    "qsv_path": {
+      "type": "string",
+      "title": "qsv Binary Path",
+      "description": "Path to qsv executable. Install qsv first from: https://github.com/dathere/qsv#installation",
+      "required": false,
+      "default": "qsv"
+    },
+    "working_dir": {
+      "type": "string",
+      "title": "Default Working Directory",
+      "description": "Directory where qsv commands run by default",
+      "required": false,
+      "default": "${HOME}/Downloads"
+    },
+    "allowed_dirs": {
+      "type": "string",
+      "title": "Allowed Directories",
+      "description": "Colon-separated (Linux/Mac) or semicolon-separated (Windows) paths where qsv can access files. Leave empty to allow all directories.",
+      "required": false,
+      "default": "${HOME}/Downloads:${HOME}/Documents"
+    },
+    "timeout_ms": {
+      "type": "number",
+      "title": "Command Timeout (milliseconds)",
+      "description": "Maximum time to wait for qsv commands to complete",
+      "required": false,
+      "default": 300000,
+      "min": 10000,
+      "max": 3600000
+    },
+    "max_output_size": {
+      "type": "number",
+      "title": "Max Output Size (bytes)",
+      "description": "Maximum size of command output. Large results are automatically saved to disk.",
+      "required": false,
+      "default": 52428800,
+      "min": 1048576,
+      "max": 104857600
+    },
+    "auto_regenerate_skills": {
+      "type": "boolean",
+      "title": "Auto-Regenerate Skills",
+      "description": "Automatically regenerate skills when qsv version changes (requires qsv repository)",
+      "required": false,
+      "default": false
+    },
+    "check_updates": {
+      "type": "boolean",
+      "title": "Check for qsv Updates",
+      "description": "Check for new qsv releases on startup",
+      "required": false,
+      "default": true
+    },
+    "notify_updates": {
+      "type": "boolean",
+      "title": "Show Update Notifications",
+      "description": "Display update notifications in logs",
+      "required": false,
+      "default": true
+    }
+  },
+  "tools": [
+    {
+      "name": "qsv_select",
+      "description": "Select, reorder, or exclude columns from CSV data"
+    },
+    {
+      "name": "qsv_stats",
+      "description": "Calculate statistics (sum, min, max, mean, etc.) for CSV columns"
+    },
+    {
+      "name": "qsv_search",
+      "description": "Filter CSV rows using regex patterns"
+    },
+    {
+      "name": "qsv_frequency",
+      "description": "Show frequency distribution of values in columns"
+    },
+    {
+      "name": "qsv_pipeline",
+      "description": "Execute complex multi-command qsv pipelines"
+    }
+  ],
+  "tools_generated": true,
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"]
+  },
+  "_meta": {
+    "com.dathere.qsv": {
+      "features": [
+        "66 CSV data-wrangling commands",
+        "Process local files (CSV, Excel, JSONL) without uploading",
+        "Smart caching with stats files",
+        "Pipeline composition for complex workflows",
+        "Automatic Excel and JSONL conversion",
+        "Filesystem resource browsing"
+      ],
+      "minimum_qsv_version": "0.130.0"
+    }
+  }
+}

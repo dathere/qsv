@@ -138,7 +138,7 @@ gzp = { version = "2", default-features = false, features = ["snappy_default"] }
 hostname-validator = "1.1"
 human-panic = "2"
 iana-time-zone = "0.1"
-indexmap = { version = "2.12", features = ["serde"] }
+indexmap = { version = "2.13", features = ["serde"] }
 indicatif = "0.18"
 itertools = "0.14"
 itoa = "1"

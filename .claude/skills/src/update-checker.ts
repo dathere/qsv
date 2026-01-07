@@ -228,7 +228,7 @@ export class UpdateChecker {
           `⚠️  qsv binary (${currentQsvVersion}) is newer than skills (${skillsVersion})`
         );
         recommendations.push(
-          `   Run: cargo run --bin qsv-skill-gen --features all_features`
+          `   Run: qsv --update-mcp-skills`
         );
         recommendations.push(
           `   Then restart the MCP server`
@@ -291,14 +291,12 @@ export class UpdateChecker {
     console.error('[UpdateChecker] Auto-regenerating skills...');
 
     return new Promise((resolve) => {
-      // Find the qsv repository root (should be ../.. from .claude/skills)
-      const repoRoot = join(this.skillsDir, '../..');
-
+      // Use qsv binary directly with --update-mcp-skills flag
+      // This is much simpler and doesn't require Rust toolchain
       const child = spawn(
-        'cargo',
-        ['run', '--bin', 'qsv-skill-gen', '--features', 'all_features'],
+        this.qsvBinaryPath,
+        ['--update-mcp-skills'],
         {
-          cwd: repoRoot,
           stdio: 'inherit'
         }
       );
@@ -314,7 +312,7 @@ export class UpdateChecker {
       });
 
       child.on('error', (error) => {
-        console.error('[UpdateChecker] ❌ Failed to spawn cargo:', error);
+        console.error('[UpdateChecker] ❌ Failed to spawn qsv:', error);
         resolve(false);
       });
     });

@@ -127,7 +127,7 @@ class QsvMcpServer {
           console.error('');
         } else {
           console.error('ℹ️  To update skills manually, run:');
-          console.error('   cargo run --bin qsv-skill-gen --features all_features');
+          console.error('   qsv --update-mcp-skills');
           console.error('   Then restart the MCP server');
           console.error('');
         }

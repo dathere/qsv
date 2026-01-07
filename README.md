@@ -121,12 +121,15 @@
 
 ### Option 0: qsv pro
 
-qsv's big brother - [qsv pro](https://qsvpro.dathere.com) is additionally available for download from its website and on the [Microsoft Store](https://apps.microsoft.com/detail/xpffdj3f1jsztf?mode=full). Apart from a Graphical User Interface, it's superpowered with additional features and capabilities - an API, [CKAN](https://ckan.org) integration, a Natural Language interface, no false-positive Windows Defender warnings and more!
+If you prefer to explore your data using a graphical interface instead of the command-line, feel free to try out **[qsv pro](https://qsvpro.dathere.com)**. Leveraging qsv, qsv pro can help you quickly analyze spreadsheet data by just dropping a file, along with many other interactive features. Learn more at [qsvpro.dathere.com](https://qsvpro.dathere.com) or download qsv pro directly by clicking one of the badges below.
 
-<a href="https://apps.microsoft.com/detail/xpffdj3f1jsztf?mode=full">
-<img
-src="https://get.microsoft.com/images/en-us%20light.svg"
-width="200"  /></a>
+<div style="display: flex; gap: 1rem;">
+<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro-windows"><img src="https://github.com/user-attachments/assets/59fa54f8-dba5-4cb4-b79e-73eabce6fccc" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro-macos"><img src="https://github.com/user-attachments/assets/397ae654-249c-457d-846a-ef805064c30e" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro-linux-deb"><img src="https://github.com/user-attachments/assets/fa3baab0-3cad-4551-8a6c-c662ab34f4fc" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro-linux-rpm"><img src="https://github.com/user-attachments/assets/03e55e06-2861-4e20-864d-14cb82859be1" width="200" /></a>
+<a target="_blank" href="https://qsv.dathere.com/download/qsv-pro-linux-appimage"><img src="https://github.com/user-attachments/assets/742d4a46-cfef-4d74-b4ab-8cbde5dc065f" width="200" /></a>
+</div>
 
 ### Option 1: Download Prebuilt Binaries
 

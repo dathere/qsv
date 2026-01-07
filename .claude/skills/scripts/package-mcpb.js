@@ -94,7 +94,11 @@ async function createArchive() {
     // Track progress
     let bytesProcessed = 0;
     archive.on('progress', (progress) => {
-      const percent = Math.round((progress.fs.processedBytes / progress.fs.totalBytes) * 100);
+      const totalBytes = progress.fs.totalBytes;
+      const percent =
+        totalBytes > 0
+          ? Math.round((progress.fs.processedBytes / totalBytes) * 100)
+          : 0;
       if (progress.fs.processedBytes !== bytesProcessed) {
         process.stdout.write(`\r   Progress: ${percent}% (${Math.round(progress.fs.processedBytes / 1024 / 1024)}MB)`);
         bytesProcessed = progress.fs.processedBytes;
@@ -136,12 +140,13 @@ async function createArchive() {
       // Exclude development dependencies and large files
       filter: (file) => {
         const name = file.name || '';
-        // Exclude source maps, TypeScript definitions, and dev files
+        const lowerName = name.toLowerCase();
+        // Exclude source maps, TypeScript definitions, and dev files (case-insensitive)
         return !name.endsWith('.map') &&
                !name.endsWith('.ts') &&
-               !name.includes('.github') &&
-               !name.includes('test') &&
-               !name.includes('example');
+               !lowerName.includes('.github') &&
+               !lowerName.includes('test') &&
+               !lowerName.includes('example');
       }
     });
 
@@ -206,7 +211,7 @@ async function main() {
     displaySummary();
 
   } catch (error) {
-    console.error('\n❌ Packaging failed:', error.message);
+    console.error('\n❌ Packaging failed:', error?.message || String(error));
     process.exit(1);
   }
 }

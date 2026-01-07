@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "qsv-data-wrangling",
   "version": "13.0.0",
-  "description": "Complete CSV data-wrangling toolkit with 66 commands for transforming, analyzing, and validating tabular data. Process local CSV, Excel, and JSONL files without uploading.",
+  "description": "Comprehensive data-wrangling toolkit for transforming, analyzing, querying,and validating tabular data. Process local CSV, TSV, SSV, Excel/ODS, and JSONL files w/o uploading. Despite the generic warning, will only access APPROVED DIRECTORIES on your computer.",
   "author": {
     "name": "datHere, Inc.",
     "url": "https://dathere.com"

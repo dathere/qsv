@@ -7,7 +7,7 @@
 
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 
 /**
  * Expand template variables in strings
@@ -169,8 +169,12 @@ export interface QsvValidationResult {
  */
 function detectQsvBinaryPath(): string | null {
   try {
-    const command = process.platform === 'win32' ? 'where qsv' : 'which qsv';
-    const result = execSync(command, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    // Use execFileSync instead of execSync for security best practice
+    const command = process.platform === 'win32' ? 'where' : 'which';
+    const result = execFileSync(command, ['qsv'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    });
     const path = result.trim().split('\n')[0]; // Take first result
     return path || null;
   } catch {
@@ -210,7 +214,8 @@ function compareVersions(v1: string, v2: string): number {
  */
 export function validateQsvBinary(binPath: string): QsvValidationResult {
   try {
-    const result = execSync(`"${binPath}" --version`, {
+    // Use execFileSync instead of execSync to prevent command injection
+    const result = execFileSync(binPath, ['--version'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 5000 // 5 second timeout

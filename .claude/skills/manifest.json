@@ -1,8 +1,9 @@
 {
   "manifest_version": "0.3",
-  "name": "qsv-data-wrangling",
+  "name": "qsv",
   "version": "13.0.0",
-  "description": "Comprehensive data-wrangling toolkit for transforming, analyzing, querying & validating tabular data. Process local CSV, TSV, SSV, Excel/ODS, and JSONL files w/o uploading. Despite the generic warning, will only access APPROVED DIRECTORIES on your computer.",
+  "description": "Blazingly fast Data Wrangling Toolkit for Tabular Data",
+  "long_description": "Comprehensive data-wrangling toolkit for transforming, analyzing, querying & validating tabular data. Process local CSV, TSV, SSV, Excel/ODS, and JSONL files w/o uploading. Despite the warning, only accesses APPROVED DIRECTORIES on your computer.",
   "author": {
     "name": "datHere, Inc.",
     "url": "https://dathere.com"
@@ -14,6 +15,12 @@
   "license": "MIT",
   "homepage": "https://github.com/dathere/qsv/tree/master/.claude/skills",
   "documentation": "https://github.com/dathere/qsv/blob/master/.claude/skills/README.md",
+  "icons": [
+    {
+      "src": "qsv-75x91.png",
+      "size": "75x91"
+    }
+  ],
   "keywords": [
     "csv",
     "data-wrangling",
@@ -63,9 +70,8 @@
     "working_dir": {
       "type": "directory",
       "title": "Default Working Directory",
-      "description": "Directory where qsv commands run by default. Extension only accesses files within this directory and allowed directories below.",
-      "required": true,
-      "default": "${DOWNLOADS}"
+      "description": "Directory where qsv commands run by default. Leave empty to use Downloads folder automatically. Extension only accesses files within this directory and allowed directories below.",
+      "required": false
     },
     "allowed_dirs": {
       "type": "directory",
@@ -137,18 +143,7 @@
     }
   ],
   "tools_generated": true,
-  "prompts": [
-    {
-      "name": "welcome",
-      "description": "Welcome message and quick start guide for qsv",
-      "arguments": []
-    },
-    {
-      "name": "examples",
-      "description": "Show common qsv usage examples",
-      "arguments": []
-    }
-  ],
+  "prompts_generated": false,
   "compatibility": {
     "platforms": ["darwin", "win32", "linux"]
   },
@@ -162,7 +157,7 @@
         "Automatic Excel and JSONL conversion",
         "Filesystem resource browsing"
       ],
-      "minimum_qsv_version": "0.130.0"
+      "minimum_qsv_version": "13.0.0"
     }
   }
 }

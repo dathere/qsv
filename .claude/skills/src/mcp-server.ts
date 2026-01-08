@@ -28,6 +28,10 @@ import {
   createGenericToolDefinition,
   handleToolCall,
   handleGenericCommand,
+  createWelcomeTool,
+  createExamplesTool,
+  handleWelcomeTool,
+  handleExamplesTool,
   initiateShutdown,
   killAllProcesses,
   getActiveProcessCount,
@@ -71,6 +75,7 @@ class QsvMcpServer {
     this.filesystemProvider = new FilesystemResourceProvider({
       workingDirectory: config.workingDir,
       allowedDirectories: config.allowedDirs,
+      qsvBinPath: config.qsvBinPath,
     });
 
     // Initialize update checker with environment configuration
@@ -90,6 +95,9 @@ class QsvMcpServer {
     const skills = await this.loader.loadAll();
     console.error(`Loaded ${skills.size} skills`);
 
+    // Validate qsv binary
+    this.logQsvValidation();
+
     // Check for updates (if enabled)
     await this.checkForUpdates();
 
@@ -103,12 +111,41 @@ class QsvMcpServer {
     this.registerResourceHandlers();
     console.error('Resource handlers registered');
 
-    // Register prompt handlers
-    console.error('About to register prompt handlers...');
-    this.registerPromptHandlers();
-    console.error('Prompt handlers registered');
+    // Prompts converted to tools (qsv_welcome and qsv_examples)
+    // Prompt handlers no longer needed
+    // console.error('About to register prompt handlers...');
+    // this.registerPromptHandlers();
+    // console.error('Prompt handlers registered');
 
     console.error('QSV MCP Server initialized successfully');
+  }
+
+  /**
+   * Log qsv binary validation results
+   */
+  private logQsvValidation(): void {
+    const validation = config.qsvValidation;
+
+    if (validation.valid) {
+      console.error('');
+      console.error('✅ qsv binary validated successfully');
+      console.error(`   Path: ${validation.path}`);
+      console.error(`   Version: ${validation.version}`);
+      console.error('');
+    } else {
+      console.error('');
+      console.error('❌ qsv binary validation FAILED');
+      console.error(`   ${validation.error}`);
+      console.error('');
+      console.error('⚠️  The MCP server may not function correctly without a valid qsv binary');
+      console.error('');
+      console.error('To fix this:');
+      console.error('   1. Install qsv from: https://github.com/dathere/qsv#installation');
+      console.error('   2. Ensure qsv is in your PATH, or');
+      console.error('   3. Set QSV_MCP_BIN_PATH to the absolute path of your qsv binary');
+      console.error('   4. Restart the MCP server or Claude Desktop');
+      console.error('');
+    }
   }
 
   /**
@@ -216,6 +253,17 @@ class QsvMcpServer {
         console.error('[Server] Pipeline tool added successfully');
       } catch (error) {
         console.error('[Server] Error creating pipeline tool:', error);
+        throw error;
+      }
+
+      // Add welcome and examples tools
+      console.error('[Server] Adding welcome and examples tools...');
+      try {
+        tools.push(createWelcomeTool());
+        tools.push(createExamplesTool());
+        console.error('[Server] Welcome and examples tools added successfully');
+      } catch (error) {
+        console.error('[Server] Error creating welcome/examples tools:', error);
         throw error;
       }
 
@@ -338,6 +386,16 @@ class QsvMcpServer {
           );
         }
 
+        // Handle welcome tool
+        if (name === 'qsv_welcome') {
+          return await handleWelcomeTool(this.filesystemProvider);
+        }
+
+        // Handle examples tool
+        if (name === 'qsv_examples') {
+          return await handleExamplesTool();
+        }
+
         // Handle common command tools
         if (name.startsWith('qsv_')) {
           return await handleToolCall(
@@ -422,230 +480,6 @@ class QsvMcpServer {
     });
   }
 
-  /**
-   * Register prompt handlers
-   */
-  private registerPromptHandlers(): void {
-    // List prompts handler
-    this.server.setRequestHandler(ListPromptsRequestSchema, async () => {
-      return {
-        prompts: [
-          {
-            name: 'welcome',
-            description: 'Welcome message and quick start guide for qsv',
-            arguments: [],
-          },
-          {
-            name: 'examples',
-            description: 'Show common qsv usage examples',
-            arguments: [],
-          },
-        ],
-      };
-    });
-
-    // Get prompt handler
-    this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-      const { name } = request.params;
-
-      if (name === 'welcome') {
-        return {
-          messages: [
-            {
-              role: 'user',
-              content: {
-                type: 'text',
-                text: 'Hello! Tell me about qsv and how to get started.',
-              },
-            },
-            {
-              role: 'assistant',
-              content: {
-                type: 'text',
-                text: `# Welcome to qsv Data Wrangling! 🎉
-
-I'm your qsv assistant, ready to help you wrangle CSV, Excel, and JSONL files with ease.
-
-## What is qsv?
-
-qsv is a blazingly-fast command-line toolkit with 66 commands for:
-- ✅ **Transforming** data (select, rename, replace, apply)
-- ✅ **Analyzing** data (stats, frequency, describe)
-- ✅ **Validating** data (schema, validate, safenames)
-- ✅ **Querying** data with SQL (sqlp, joinp)
-- ✅ **Converting** formats (Excel, JSONL, Parquet)
-
-## 🔒 Privacy & Security
-
-- **100% local processing** - your data never leaves your machine
-- **Restricted access** - only works with directories you approve
-- **No cloud uploads** - all operations happen on your computer
-
-## Quick Start
-
-**1. List your CSV files**
-\`\`\`
-List CSV files in my Downloads folder
-\`\`\`
-
-**2. Preview a file**
-\`\`\`
-Show me the first few rows of data.csv
-\`\`\`
-
-**3. Get statistics**
-\`\`\`
-Calculate statistics for the price column in sales.csv
-\`\`\`
-
-**4. Filter and transform**
-\`\`\`
-From customers.csv, remove duplicates and sort by revenue
-\`\`\`
-
-## Common Commands
-
-- **qsv_stats** - Calculate statistics (sum, mean, min, max, etc.)
-- **qsv_frequency** - Show value distributions
-- **qsv_search** - Filter rows with regex patterns
-- **qsv_select** - Select/exclude columns
-- **qsv_pipeline** - Chain multiple operations
-
-## Need Help?
-
-- Ask "Show me qsv examples" for more usage patterns
-- Say "List available qsv commands" to see all 66 commands
-- Ask about specific operations like "How do I deduplicate a CSV?"
-
-## Ready to Start?
-
-Just tell me what you want to do with your data, and I'll help you use qsv to get it done!`,
-              },
-            },
-          ],
-        };
-      }
-
-      if (name === 'examples') {
-        return {
-          messages: [
-            {
-              role: 'user',
-              content: {
-                type: 'text',
-                text: 'Show me common qsv usage examples',
-              },
-            },
-            {
-              role: 'assistant',
-              content: {
-                type: 'text',
-                text: `# Common qsv Usage Examples
-
-## Data Exploration
-
-**Preview a CSV file:**
-\`\`\`
-Show me the first 10 rows of data.csv
-\`\`\`
-
-**Get column statistics:**
-\`\`\`
-Calculate statistics for all columns in sales.csv
-\`\`\`
-
-**Show value frequency:**
-\`\`\`
-Show the frequency distribution of the 'status' column in orders.csv
-\`\`\`
-
-## Data Cleaning
-
-**Remove duplicates:**
-\`\`\`
-Remove duplicate rows from customers.csv and save as cleaned.csv
-\`\`\`
-
-**Filter rows:**
-\`\`\`
-From sales.csv, keep only rows where the price column is greater than 100
-\`\`\`
-
-**Fix column names:**
-\`\`\`
-Make all column names in data.csv safe (remove special characters)
-\`\`\`
-
-## Data Transformation
-
-**Select columns:**
-\`\`\`
-From users.csv, select only the name, email, and city columns
-\`\`\`
-
-**Rename columns:**
-\`\`\`
-In data.csv, rename 'old_name' to 'new_name'
-\`\`\`
-
-**Sort data:**
-\`\`\`
-Sort sales.csv by revenue in descending order
-\`\`\`
-
-## Complex Workflows
-
-**Multi-step pipeline:**
-\`\`\`
-From customers.csv:
-1. Remove duplicate emails
-2. Keep only customers from California
-3. Sort by revenue descending
-4. Take top 100
-5. Save as top_customers.csv
-\`\`\`
-
-**Join datasets:**
-\`\`\`
-Join orders.csv with customers.csv on customer_id
-\`\`\`
-
-## Data Validation
-
-**Check schema:**
-\`\`\`
-Validate sales.csv against this schema: price is number, date is date format
-\`\`\`
-
-**Find data quality issues:**
-\`\`\`
-Check products.csv for empty values, duplicates, and invalid data
-\`\`\`
-
-## Format Conversion
-
-**Excel to CSV:**
-\`\`\`
-Convert spreadsheet.xlsx to CSV format
-\`\`\`
-
-**CSV to JSONL:**
-\`\`\`
-Convert data.csv to JSONL format
-\`\`\`
-
----
-
-**Try any of these patterns with your own files!** Just describe what you want to do, and I'll use qsv to make it happen.`,
-              },
-            },
-          ],
-        };
-      }
-
-      throw new Error(`Unknown prompt: ${name}`);
-    });
-  }
 
   /**
    * Start the server

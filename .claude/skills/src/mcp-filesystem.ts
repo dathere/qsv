@@ -5,9 +5,10 @@
  * Claude Desktop to work with local files without uploading them.
  */
 
-import { readdir, stat, readFile, realpath } from 'fs/promises';
+import { readdir, stat, readFile, realpath, access } from 'fs/promises';
 import { join, resolve, relative, basename, extname } from 'path';
-import type { McpResource, McpResourceContent, FileInfo } from './types.js';
+import { spawn } from 'child_process';
+import type { McpResource, McpResourceContent, FileInfo, FileMetadata } from './types.js';
 import { formatBytes } from './utils.js';
 import { config } from './config.js';
 
@@ -37,6 +38,11 @@ export interface FilesystemConfig {
    * Number of preview lines to show (default: 20)
    */
   previewLines?: number;
+
+  /**
+   * Path to qsv binary (default: 'qsv')
+   */
+  qsvBinPath?: string;
 }
 
 export class FilesystemResourceProvider {
@@ -53,6 +59,8 @@ export class FilesystemResourceProvider {
   private allowedExtensions: Set<string>;
   private maxPreviewSize: number;
   private previewLines: number;
+  private qsvBinPath: string;
+  private metadataCache: Map<string, FileMetadata>;
 
   constructor(config: FilesystemConfig = {}) {
     this.workingDir = resolve(config.workingDirectory || process.cwd());
@@ -76,10 +84,13 @@ export class FilesystemResourceProvider {
     );
     this.maxPreviewSize = config.maxPreviewSize || 1024 * 1024; // 1MB
     this.previewLines = config.previewLines || 20;
+    this.qsvBinPath = config.qsvBinPath || 'qsv';
+    this.metadataCache = new Map();
 
     console.error(`Filesystem provider initialized:`);
     console.error(`  Working directory: ${this.workingDir}`);
     console.error(`  Allowed directories: ${this.allowedDirs.join(', ')}`);
+    console.error(`  QSV binary: ${this.qsvBinPath}`);
   }
 
   /**
@@ -239,6 +250,114 @@ export class FilesystemResourceProvider {
   }
 
   /**
+   * Get CSV metadata for a file (row count, columns, etc.)
+   * Results are cached for 60 seconds to avoid repeated qsv calls
+   */
+  async getFileMetadata(filePath: string): Promise<FileMetadata | null> {
+    const cacheKey = filePath;
+
+    // Check cache first
+    const cached = this.metadataCache.get(cacheKey);
+    if (cached) {
+      const age = Date.now() - cached.cachedAt;
+      // Cache for 60 seconds
+      if (age < 60000) {
+        console.error(`[Filesystem] Using cached metadata for ${basename(filePath)} (age: ${Math.round(age / 1000)}s)`);
+        return cached;
+      }
+      // Cache expired, remove it
+      this.metadataCache.delete(cacheKey);
+    }
+
+    const metadata: FileMetadata = {
+      rowCount: null,
+      columnCount: null,
+      columnNames: [],
+      hasStatsCache: false,
+      cachedAt: Date.now(),
+    };
+
+    try {
+      // Check for stats cache file
+      const statsFile = `${filePath}.stats.csv`;
+      try {
+        await access(statsFile);
+        metadata.hasStatsCache = true;
+        console.error(`[Filesystem] Stats cache found for ${basename(filePath)}`);
+      } catch {
+        // Stats cache doesn't exist - not an error
+      }
+
+      // Get row count using qsv count (fast - uses index if available)
+      try {
+        const countResult = await this.runQsvCommand(['count', filePath]);
+        const rowCount = parseInt(countResult.trim(), 10);
+        if (!isNaN(rowCount)) {
+          metadata.rowCount = rowCount;
+          console.error(`[Filesystem] Row count for ${basename(filePath)}: ${rowCount}`);
+        }
+      } catch (error) {
+        console.error(`[Filesystem] Failed to get row count for ${basename(filePath)}:`, error);
+      }
+
+      // Get column names using qsv headers --just-names (fast)
+      try {
+        const headersResult = await this.runQsvCommand(['headers', '--just-names', filePath]);
+        const columnNames = headersResult.trim().split('\n').filter(name => name.length > 0);
+        if (columnNames.length > 0) {
+          metadata.columnNames = columnNames;
+          metadata.columnCount = columnNames.length;
+          console.error(`[Filesystem] Column count for ${basename(filePath)}: ${columnNames.length}`);
+        }
+      } catch (error) {
+        console.error(`[Filesystem] Failed to get column names for ${basename(filePath)}:`, error);
+      }
+
+      // Cache the result
+      this.metadataCache.set(cacheKey, metadata);
+
+      return metadata;
+    } catch (error) {
+      console.error(`[Filesystem] Error getting metadata for ${basename(filePath)}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Run a qsv command and return stdout
+   */
+  private async runQsvCommand(args: string[]): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const proc = spawn(this.qsvBinPath, args, {
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout.on('data', chunk => {
+        stdout += chunk.toString();
+      });
+
+      proc.stderr.on('data', chunk => {
+        stderr += chunk.toString();
+      });
+
+      proc.on('close', exitCode => {
+        if (exitCode === 0) {
+          resolve(stdout);
+        } else {
+          reject(new Error(`qsv ${args[0]} failed with exit code ${exitCode}: ${stderr}`));
+        }
+      });
+
+      proc.on('error', err => {
+        reject(err);
+      });
+    });
+  }
+
+  /**
    * Recursively scan directory for tabular data files
    */
   private async scanDirectory(
@@ -369,6 +488,25 @@ export class FilesystemResourceProvider {
           command: conversionCmd,
           note: `This ${ext} file will be automatically converted to CSV using qsv ${conversionCmd} before processing`,
         };
+      }
+
+      // Get CSV metadata for native CSV formats (not Excel/JSONL that need conversion)
+      if (!conversionCmd) {
+        try {
+          const metadata = await this.getFileMetadata(resolved);
+          if (metadata && metadata.rowCount !== null && metadata.columnCount !== null) {
+            info.metadata = {
+              rowCount: metadata.rowCount,
+              columnCount: metadata.columnCount,
+              columnNames: metadata.columnNames,
+              hasStatsCache: metadata.hasStatsCache,
+            };
+            console.error(`[Filesystem] Added metadata to resource: ${metadata.rowCount} rows, ${metadata.columnCount} columns`);
+          }
+        } catch (error) {
+          // Metadata is optional - don't fail if we can't get it
+          console.error(`[Filesystem] Failed to get metadata (non-fatal):`, error);
+        }
       }
 
       return {

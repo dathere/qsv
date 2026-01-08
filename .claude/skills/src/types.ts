@@ -137,6 +137,17 @@ export interface McpPipelineStep {
 }
 
 /**
+ * CSV file metadata (cached from qsv commands)
+ */
+export interface FileMetadata {
+  rowCount: number | null;
+  columnCount: number | null;
+  columnNames: string[];
+  hasStatsCache: boolean;
+  cachedAt: number; // Timestamp for cache expiration
+}
+
+/**
  * File information structure for resource content
  */
 export interface FileInfo {
@@ -159,6 +170,12 @@ export interface FileInfo {
     command: string;
     note: string;
   };
+  metadata?: {
+    rowCount: number;
+    columnCount: number;
+    columnNames: string[];
+    hasStatsCache: boolean;
+  };
 }
 
 /**
@@ -169,4 +186,5 @@ export interface FilesystemProviderExtended {
   needsConversion: (path: string) => boolean;
   getConversionCommand: (path: string) => string | null;
   getWorkingDirectory: () => string;
+  listFiles: (directory?: string, recursive?: boolean) => Promise<{ resources: McpResource[] }>;
 }

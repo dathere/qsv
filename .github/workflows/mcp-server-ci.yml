@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-14, windows-latest]
         node-version: [18, 20, 22]
 
     defaults:
@@ -43,19 +43,21 @@ jobs:
         run: |
           QSV_VERSION=$(curl -s https://api.github.com/repos/dathere/qsv/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
           echo "Installing qsv $QSV_VERSION"
-          curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-x86_64-unknown-linux-gnu.zip" -o qsv.zip
-          unzip -q qsv.zip
+          ASSET_NAME="qsv-${QSV_VERSION}-x86_64-unknown-linux-gnu.zip"
+          curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
+          unzip -q "${ASSET_NAME}"
           chmod +x qsv
           echo "$PWD" >> $GITHUB_PATH
           ./qsv --version
 
       - name: Install qsv (macOS)
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-14'
         run: |
           QSV_VERSION=$(curl -s https://api.github.com/repos/dathere/qsv/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
           echo "Installing qsv $QSV_VERSION"
-          curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-x86_64-apple-darwin.zip" -o qsv.zip
-          unzip -q qsv.zip
+          ASSET_NAME="qsv-${QSV_VERSION}-aarch64-apple-darwin.zip"
+          curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
+          unzip -q "${ASSET_NAME}"
           chmod +x qsv
           echo "$PWD" >> $GITHUB_PATH
           ./qsv --version
@@ -66,9 +68,10 @@ jobs:
         run: |
           $QSV_VERSION = (Invoke-RestMethod -Uri "https://api.github.com/repos/dathere/qsv/releases/latest").tag_name
           Write-Host "Installing qsv $QSV_VERSION"
-          $url = "https://github.com/dathere/qsv/releases/download/$QSV_VERSION/qsv-$QSV_VERSION-x86_64-pc-windows-msvc.zip"
-          Invoke-WebRequest -Uri $url -OutFile qsv.zip
-          Expand-Archive -Path qsv.zip -DestinationPath . -Force
+          $ASSET_NAME = "qsv-$QSV_VERSION-x86_64-pc-windows-msvc.zip"
+          $url = "https://github.com/dathere/qsv/releases/download/$QSV_VERSION/$ASSET_NAME"
+          Invoke-WebRequest -Uri $url -OutFile $ASSET_NAME
+          Expand-Archive -Path $ASSET_NAME -DestinationPath . -Force
           Write-Output "$PWD" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           .\qsv.exe --version
 

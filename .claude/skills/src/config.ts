@@ -5,6 +5,41 @@
  * Supports both legacy MCP server and Desktop Extension modes.
  */
 
+import { homedir, tmpdir } from 'os';
+import { join } from 'path';
+import { execSync, execFileSync } from 'child_process';
+
+/**
+ * Timeout for qsv binary validation commands in milliseconds (5 seconds)
+ */
+const QSV_VALIDATION_TIMEOUT_MS = 5000;
+
+/**
+ * Expand template variables in strings
+ * Supports: ${HOME}, ${USERPROFILE}, ${DESKTOP}, ${DOCUMENTS}, ${DOWNLOADS}, ${TEMP}, ${TMPDIR}
+ */
+function expandTemplateVars(value: string): string {
+  if (!value) return value;
+
+  const home = homedir();
+
+  // Get special directories (currently same for all platforms)
+  const desktop = join(home, 'Desktop');
+  const documents = join(home, 'Documents');
+  const downloads = join(home, 'Downloads');
+  const temp = tmpdir();
+
+  // Replace template variables
+  return value
+    .replace(/\$\{HOME\}/g, home)
+    .replace(/\$\{USERPROFILE\}/g, home)
+    .replace(/\$\{DESKTOP\}/g, desktop)
+    .replace(/\$\{DOCUMENTS\}/g, documents)
+    .replace(/\$\{DOWNLOADS\}/g, downloads)
+    .replace(/\$\{TEMP\}/g, temp)
+    .replace(/\$\{TMPDIR\}/g, temp);
+}
+
 /**
  * Parse integer from environment variable with validation
  */
@@ -58,20 +93,38 @@ function parseFloatEnv(envVar: string, defaultValue: number, min?: number, max?:
 }
 
 /**
+ * Regular expression to detect unexpanded template variables from Claude Desktop
+ * Matches ${user_config.*} patterns that indicate an empty/unset configuration field
+ */
+const UNEXPANDED_TEMPLATE_REGEX = /\$\{user_config\.[^}]+\}/;
+
+/**
  * Get string from environment variable with default
+ * Expands template variables like ${HOME}, ${USERPROFILE}, etc.
  * Uses nullish coalescing (??) to allow empty strings while falling back for undefined/null
+ * Also treats empty strings and unexpanded template vars as missing values for user convenience
  */
 function getStringEnv(envVar: string, defaultValue: string): string {
-  return process.env[envVar] ?? defaultValue;
+  const value = process.env[envVar];
+  // Treat empty string, null, undefined, or unexpanded template as missing - use default
+  // Unexpanded template happens when Claude Desktop config field is empty
+  if (!value || value.trim() === '' || UNEXPANDED_TEMPLATE_REGEX.test(value)) {
+    return expandTemplateVars(defaultValue);
+  }
+  return expandTemplateVars(value);
 }
 
 /**
  * Get string array from environment variable (split by delimiter)
+ * Expands template variables in each path
  */
 function getStringArrayEnv(envVar: string, defaultValue: string[], delimiter: string): string[] {
   const value = process.env[envVar];
   if (!value) return defaultValue;
-  return value.split(delimiter).filter(s => s.length > 0);
+  return value
+    .split(delimiter)
+    .filter(s => s.length > 0)
+    .map(s => expandTemplateVars(s));
 }
 
 /**
@@ -97,6 +150,172 @@ function getBooleanEnv(envVar: string, defaultValue: boolean): boolean {
 }
 
 /**
+ * Minimum required qsv version
+ * Set to 13.0.0 to minimize support issues and encourage users to update
+ */
+export const MINIMUM_QSV_VERSION = '13.0.0';
+
+/**
+ * Validation result interface
+ */
+export interface QsvValidationResult {
+  valid: boolean;
+  version?: string;
+  path?: string;
+  error?: string;
+}
+
+/**
+ * Auto-detect absolute path to qsv binary
+ * Uses 'which' on Unix/macOS or 'where' on Windows
+ */
+function detectQsvBinaryPath(): string | null {
+  try {
+    // Use execFileSync instead of execSync for security best practice
+    const command = process.platform === 'win32' ? 'where' : 'which';
+    const result = execFileSync(command, ['qsv'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    });
+    const path = result.trim().split('\n')[0]; // Take first result
+    return path || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse version string from qsv --version output
+ * Examples:
+ *   "qsv 0.135.0" -> "0.135.0"
+ *   "qsv 0.135.0-alpha.1" -> "0.135.0-alpha.1"
+ *   "qsv 0.135.0+build.123" -> "0.135.0+build.123"
+ */
+function parseQsvVersion(versionOutput: string): string | null {
+  // Match semantic version with optional pre-release and build metadata
+  const match = versionOutput.match(/qsv\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Compare two semantic version strings
+ * Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
+ */
+function compareVersions(v1: string, v2: string): number {
+  const parts1 = v1.split('.').map(Number);
+  const parts2 = v2.split('.').map(Number);
+
+  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+    const part1 = parts1[i] || 0;
+    const part2 = parts2[i] || 0;
+    if (part1 < part2) return -1;
+    if (part1 > part2) return 1;
+  }
+  return 0;
+}
+
+/**
+ * Validate qsv binary at given path
+ * Runs 'qsv --version' to check if binary exists and meets minimum version
+ */
+export function validateQsvBinary(binPath: string): QsvValidationResult {
+  try {
+    // Use execFileSync instead of execSync to prevent command injection
+    const result = execFileSync(binPath, ['--version'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: QSV_VALIDATION_TIMEOUT_MS
+    });
+
+    const version = parseQsvVersion(result);
+    if (!version) {
+      return {
+        valid: false,
+        error: `Could not parse version from qsv output: ${result.trim()}`,
+      };
+    }
+
+    if (compareVersions(version, MINIMUM_QSV_VERSION) < 0) {
+      return {
+        valid: false,
+        version,
+        path: binPath,
+        error: `qsv version ${version} found, but ${MINIMUM_QSV_VERSION} or higher is required`,
+      };
+    }
+
+    return {
+      valid: true,
+      version,
+      path: binPath,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      valid: false,
+      error: `Failed to execute qsv binary at "${binPath}": ${errorMessage}`,
+    };
+  }
+}
+
+/**
+ * Initialize qsv binary path with auto-detection and validation
+ *
+ * This function runs at server startup and validates the qsv binary.
+ * In Extension Mode, Claude Desktop restarts the server whenever the user
+ * changes the qsv binary path setting, so validation occurs on every change.
+ *
+ * Priority:
+ * 1. Explicit QSV_MCP_BIN_PATH environment variable (user-configured path)
+ * 2. Auto-detected path from system PATH (via which/where command)
+ * 3. Fall back to 'qsv' (legacy MCP mode only)
+ *
+ * In Extension Mode, always requires a fully qualified path and valid qsv binary
+ * (version >= 13.0.0). Invalid paths or versions will fail validation with clear
+ * error messages shown in server logs.
+ */
+function initializeQsvBinaryPath(): { path: string; validation: QsvValidationResult } {
+  const inExtensionMode = getBooleanEnv('MCPB_EXTENSION_MODE', false);
+  const explicitPath = process.env['QSV_MCP_BIN_PATH'];
+
+  // If user explicitly configured a path (non-empty), use it
+  if (explicitPath && explicitPath.trim() !== '' && !UNEXPANDED_TEMPLATE_REGEX.test(explicitPath)) {
+    const expanded = expandTemplateVars(explicitPath);
+    const validation = validateQsvBinary(expanded);
+    return { path: expanded, validation };
+  }
+
+  // Try to auto-detect from PATH
+  const detectedPath = detectQsvBinaryPath();
+  if (detectedPath) {
+    const validation = validateQsvBinary(detectedPath);
+    if (validation.valid) {
+      // In extension mode, ensure path is fully qualified
+      return { path: detectedPath, validation };
+    }
+    // Detected but invalid version - continue to fallback
+  }
+
+  // Extension mode requires fully qualified, valid qsv binary
+  if (inExtensionMode) {
+    return {
+      path: detectedPath || 'qsv',
+      validation: {
+        valid: false,
+        error: detectedPath
+          ? `qsv binary found at ${detectedPath} but version validation failed. Please install qsv ${MINIMUM_QSV_VERSION} or higher from https://github.com/dathere/qsv#installation`
+          : `qsv binary not found in PATH. Extension mode requires qsv to be installed. Please install from https://github.com/dathere/qsv#installation and ensure it's in your system PATH.`,
+      },
+    };
+  }
+
+  // Legacy MCP mode: Fall back to 'qsv' (will work if in PATH, otherwise will fail)
+  const fallbackPath = 'qsv';
+  const validation = validateQsvBinary(fallbackPath);
+  return { path: fallbackPath, validation };
+}
+
+/**
  * Detect if running in Desktop Extension mode
  * Desktop extensions set MCPB_EXTENSION_MODE=true
  */
@@ -105,26 +324,59 @@ export function isExtensionMode(): boolean {
 }
 
 /**
+ * Initialize qsv binary path with auto-detection
+ */
+const qsvBinaryInit = initializeQsvBinaryPath();
+
+/**
  * Configuration object with all configurable settings
  */
 export const config = {
   /**
    * Path to qsv binary
-   * Default: 'qsv' (assumes qsv is in PATH)
+   * Auto-detected from PATH if not explicitly configured
    */
-  qsvBinPath: getStringEnv('QSV_MCP_BIN_PATH', 'qsv'),
+  qsvBinPath: qsvBinaryInit.path,
+
+  /**
+   * Validation result for qsv binary
+   * Contains version info and any errors
+   */
+  qsvValidation: qsvBinaryInit.validation,
 
   /**
    * Working directory for relative paths
    * Default: Current working directory
    */
-  workingDir: getStringEnv('QSV_MCP_WORKING_DIR', process.cwd()),
+  workingDir: getStringEnv('QSV_MCP_WORKING_DIR', '${DOWNLOADS}'),
 
   /**
-   * Allowed directories for file access (colon-separated on Unix, semicolon on Windows)
+   * Allowed directories for file access
+   * Can be either:
+   * - Colon/semicolon-separated paths (legacy MCP)
+   * - JSON array (Desktop extension with directory type)
    * Default: Empty array (only working directory allowed)
    */
-  allowedDirs: getStringArrayEnv('QSV_MCP_ALLOWED_DIRS', [], getPathDelimiter()),
+  allowedDirs: (() => {
+    const envValue = process.env['QSV_MCP_ALLOWED_DIRS'];
+    // Treat empty, undefined, or unexpanded template as empty array
+    if (!envValue || envValue.trim() === '' || UNEXPANDED_TEMPLATE_REGEX.test(envValue)) {
+      return [];
+    }
+
+    // Try parsing as JSON array first (Desktop extension mode)
+    try {
+      const parsed = JSON.parse(envValue);
+      if (Array.isArray(parsed)) {
+        return parsed.map(p => expandTemplateVars(p));
+      }
+    } catch {
+      // Not JSON, treat as delimited string
+    }
+
+    // Fall back to delimited string (legacy MCP mode)
+    return getStringArrayEnv('QSV_MCP_ALLOWED_DIRS', [], getPathDelimiter());
+  })(),
 
   /**
    * Maximum size for converted file cache in GB

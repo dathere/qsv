@@ -155,12 +155,12 @@ async function createArchive() {
     archive.directory(join(rootDir, 'qsv'), 'qsv');
 
     // Add icon if it exists
-    const iconPath = join(rootDir, 'icon.png');
+    const iconPath = join(rootDir, 'qsv-75x91.png');
     if (existsSync(iconPath)) {
-      console.log('   Adding icon.png...');
-      archive.file(iconPath, { name: 'icon.png' });
+      console.log('   Adding qsv-75x91.png...');
+      archive.file(iconPath, { name: 'qsv-75x91.png' });
     } else {
-      console.log('   ℹ️  No icon.png found (optional)');
+      console.log('   ℹ️  No qsv-75x91.png found (optional)');
     }
 
     // Finalize archive

@@ -11,12 +11,17 @@ import type { QsvSkill, Argument, Option, McpToolDefinition, McpToolProperty, Fi
 import type { SkillExecutor } from './executor.js';
 import type { SkillLoader } from './loader.js';
 import { config } from './config.js';
-import { formatBytes } from './utils.js';
+import { formatBytes, findSimilarFiles } from './utils.js';
 
 /**
  * Auto-indexing threshold in MB
  */
 const AUTO_INDEX_SIZE_MB = 10;
+
+/**
+ * Maximum number of files to show in welcome message
+ */
+const MAX_WELCOME_FILES = 10;
 
 /**
  * Commands that always return full CSV data and should use temp files
@@ -304,6 +309,11 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
   // Add positional arguments
   if (skill.command.args && Array.isArray(skill.command.args)) {
     for (const arg of skill.command.args) {
+      // Skip 'input' argument - we already have 'input_file' which maps to this
+      if (arg.name === 'input') {
+        continue;
+      }
+
       properties[arg.name] = {
         type: mapArgumentType(arg.type),
         description: arg.description,
@@ -389,7 +399,7 @@ export async function handleToolCall(
   params: Record<string, unknown>,
   executor: SkillExecutor,
   loader: SkillLoader,
-  filesystemProvider?: { resolvePath: (path: string) => Promise<string> },
+  filesystemProvider?: FilesystemProviderExtended,
 ) {
   // Check concurrent operation limit
   if (activeProcesses.size >= config.maxConcurrentOperations) {
@@ -581,10 +591,56 @@ export async function handleToolCall(
         }
       } catch (error) {
         console.error(`[MCP Tools] Error resolving file path:`, error);
+
+        // Build enhanced error message with file suggestions
+        let errorMessage = `Error resolving file path: ${error instanceof Error ? error.message : String(error)}`;
+
+        // Add file suggestions if this looks like a file-not-found error and we have filesystem provider
+        if (filesystemProvider && inputFile) {
+          const errorStr = error instanceof Error ? error.message : String(error);
+          if (errorStr.includes('outside allowed') ||
+              errorStr.includes('not exist') ||
+              errorStr.includes('cannot access') ||
+              errorStr.includes('ENOENT')) {
+            try {
+              // Get list of available files
+              const { resources } = await filesystemProvider.listFiles(undefined, false);
+
+              if (resources.length > 0) {
+                // Find similar files using fuzzy matching
+                const suggestions = findSimilarFiles(inputFile, resources, 3);
+
+                errorMessage += '\n\n';
+
+                // Show suggestions if we found close matches
+                if (suggestions.length > 0 && suggestions[0].distance <= inputFile.length / 2) {
+                  errorMessage += 'Did you mean one of these?\n';
+                  suggestions.forEach(({ name, distance }) => {
+                    errorMessage += `  - ${name}\n`;
+                  });
+                } else {
+                  // Show available files if no close matches
+                  errorMessage += `Available files in working directory (${filesystemProvider.getWorkingDirectory()}):\n`;
+                  resources.slice(0, 5).forEach(file => {
+                    errorMessage += `  - ${file.name}\n`;
+                  });
+
+                  if (resources.length > 5) {
+                    errorMessage += `  ... and ${resources.length - 5} more file${resources.length - 5 !== 1 ? 's' : ''}`;
+                  }
+                }
+              }
+            } catch (listError) {
+              // If listing files fails, just show the original error
+              console.error(`[MCP Tools] Failed to list files for suggestions:`, listError);
+            }
+          }
+        }
+
         return {
           content: [{
             type: 'text' as const,
-            text: `Error resolving file path: ${error instanceof Error ? error.message : String(error)}`,
+            text: errorMessage,
           }],
           isError: true,
         };
@@ -754,7 +810,7 @@ export async function handleGenericCommand(
   params: Record<string, unknown>,
   executor: SkillExecutor,
   loader: SkillLoader,
-  filesystemProvider?: { resolvePath: (path: string) => Promise<string> },
+  filesystemProvider?: FilesystemProviderExtended,
 ) {
   try {
     const commandName = params.command as string | undefined;
@@ -825,6 +881,268 @@ export function createGenericToolDefinition(loader: SkillLoader): McpToolDefinit
       },
       required: ['command', 'input_file'],
     },
+  };
+}
+
+/**
+ * Create qsv_welcome tool definition
+ */
+export function createWelcomeTool(): McpToolDefinition {
+  return {
+    name: 'qsv_welcome',
+    description: 'Display welcome message and quick start guide for qsv',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  };
+}
+
+/**
+ * Create qsv_examples tool definition
+ */
+export function createExamplesTool(): McpToolDefinition {
+  return {
+    name: 'qsv_examples',
+    description: 'Show common qsv usage examples and workflows',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  };
+}
+
+/**
+ * Handle qsv_welcome tool call
+ */
+export async function handleWelcomeTool(filesystemProvider?: FilesystemProviderExtended): Promise<{ content: Array<{ type: string; text: string }> }> {
+  // Get list of available files in working directory
+  let fileListingSection = '';
+
+  if (filesystemProvider) {
+    try {
+      const { resources } = await filesystemProvider.listFiles(undefined, false);
+
+      if (resources.length > 0) {
+        const filesToShow = resources.slice(0, MAX_WELCOME_FILES);
+        const workingDir = filesystemProvider.getWorkingDirectory();
+
+        fileListingSection = `\n## 📁 Available Files in Your Working Directory
+
+I found ${resources.length} file${resources.length !== 1 ? 's' : ''} in \`${workingDir}\`:
+
+| File | Size | Type | Modified |
+|------|------|------|----------|
+`;
+
+        filesToShow.forEach(file => {
+          const description = file.description || file.name;
+          const descMatch = description.match(/^(.+?) \((.+?) (\d{4}-\d{2}-\d{2})\)$/);
+          const fileName = descMatch ? descMatch[1] : file.name;
+          const fileSize = descMatch ? descMatch[2] : '';
+          const fileDate = descMatch ? descMatch[3] : '';
+
+          let fileType = 'CSV';
+          const mimeType = file.mimeType || '';
+          if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) {
+            fileType = 'Excel';
+          } else if (mimeType.includes('ndjson')) {
+            fileType = 'JSONL';
+          } else if (mimeType.includes('tab-separated')) {
+            fileType = 'TSV';
+          } else if (mimeType.includes('snappy')) {
+            fileType = 'Snappy';
+          }
+
+          fileListingSection += `| ${fileName} | ${fileSize} | ${fileType} | ${fileDate} |\n`;
+        });
+
+        if (resources.length > MAX_WELCOME_FILES) {
+          fileListingSection += `\n_... and ${resources.length - MAX_WELCOME_FILES} more file${resources.length - MAX_WELCOME_FILES !== 1 ? 's' : ''}_\n`;
+        }
+
+        if (filesToShow.length > 0) {
+          fileListingSection += `\n**Tip:** Use these file names in qsv commands, for example:\n- \`qsv_stats with input_file: "${filesToShow[0].name}"\`\n- \`qsv_headers with input_file: "${filesToShow[0].name}"\`\n`;
+        }
+      }
+    } catch (error) {
+      console.error('Error listing files for welcome tool:', error);
+    }
+  }
+
+  const welcomeText = `# Welcome to qsv Data Wrangling! 🎉
+
+I'm your qsv assistant, ready to help you wrangle CSV, Excel, and JSONL files with ease.
+
+## What is qsv?
+
+qsv is a blazingly-fast command-line toolkit with 66 commands for:
+- ✅ **Transforming** data (select, rename, replace, apply)
+- ✅ **Analyzing** data (stats, frequency, describe)
+- ✅ **Validating** data (schema, validate, safenames)
+- ✅ **Querying** data with SQL (sqlp, joinp)
+- ✅ **Converting** formats (Excel, JSONL, Parquet)
+
+## 🔒 Privacy & Security
+
+- **100% local processing** - your data never leaves your machine
+- **Restricted access** - only works with directories you approve
+- **No cloud uploads** - all operations happen on your computer
+${fileListingSection}
+## Quick Start
+
+**1. List your CSV files**
+\`\`\`
+List CSV files in my Downloads folder
+\`\`\`
+
+**2. Preview a file**
+\`\`\`
+Show me the first few rows of data.csv
+\`\`\`
+
+**3. Get statistics**
+\`\`\`
+Calculate statistics for sales.csv
+\`\`\`
+
+**4. Search and filter**
+\`\`\`
+Find all rows in orders.csv where status is 'pending'
+\`\`\`
+
+**5. Join files**
+\`\`\`
+Join customers.csv and orders.csv on customer_id
+\`\`\`
+
+## Pro Tips
+
+💡 **Auto-indexing**: Files over 10MB are automatically indexed for faster operations
+💡 **Stats cache**: Run \`qsv_stats\` first to speed up other commands
+💡 **Pipelines**: Combine multiple commands for complex workflows
+💡 **Excel support**: Works with .xlsx and .ods files automatically
+
+## Need Help?
+
+- Type \`qsv_examples\` to see common usage patterns
+- Ask me anything like "How do I filter rows?" or "Show me statistics for column X"
+- All 66 qsv commands are available - just describe what you want to do!
+
+Ready to start wrangling data? 🚀`;
+
+  return {
+    content: [{ type: 'text', text: welcomeText }],
+  };
+}
+
+/**
+ * Handle qsv_examples tool call
+ */
+export async function handleExamplesTool(): Promise<{ content: Array<{ type: string; text: string }> }> {
+  const examplesText = `# Common qsv Usage Examples
+
+## Data Exploration
+
+**Preview a CSV file:**
+\`\`\`
+Show me the first 10 rows of data.csv
+\`\`\`
+
+**Get column statistics:**
+\`\`\`
+Calculate statistics for all columns in sales.csv
+\`\`\`
+
+**Show value frequency:**
+\`\`\`
+Show the frequency distribution of the 'status' column in orders.csv
+\`\`\`
+
+## Data Cleaning
+
+**Remove duplicates:**
+\`\`\`
+Remove duplicate rows from customers.csv and save as cleaned.csv
+\`\`\`
+
+**Fill missing values:**
+\`\`\`
+Fill empty cells in the 'price' column with 0 in products.csv
+\`\`\`
+
+**Rename columns:**
+\`\`\`
+Rename column 'old_name' to 'new_name' in data.csv
+\`\`\`
+
+## Data Transformation
+
+**Select specific columns:**
+\`\`\`
+Select only 'name', 'email', and 'phone' columns from contacts.csv
+\`\`\`
+
+**Filter rows:**
+\`\`\`
+Filter rows where 'age' is greater than 25 in users.csv
+\`\`\`
+
+**Sort data:**
+\`\`\`
+Sort sales.csv by 'date' in descending order
+\`\`\`
+
+## Data Analysis
+
+**Join two files:**
+\`\`\`
+Join customers.csv and orders.csv on 'customer_id' column
+\`\`\`
+
+**Run SQL queries:**
+\`\`\`
+Run SQL: SELECT category, COUNT(*) as total FROM products.csv GROUP BY category
+\`\`\`
+
+**Calculate aggregates:**
+\`\`\`
+Calculate sum, average, min, and max for 'revenue' column in sales.csv
+\`\`\`
+
+## Advanced Workflows
+
+**Multi-step pipeline:**
+\`\`\`
+1. Filter sales.csv for rows where region='West'
+2. Select only date, product, and amount columns
+3. Sort by amount descending
+4. Save to west_sales.csv
+\`\`\`
+
+**Convert Excel to CSV:**
+\`\`\`
+Convert sheet 'Sales' from report.xlsx to sales.csv
+\`\`\`
+
+**Validate data schema:**
+\`\`\`
+Validate data.csv against schema.json and show validation errors
+\`\`\`
+
+## Tips for Better Results
+
+✅ **Be specific**: Include column names and file names in your requests
+✅ **Chain operations**: I can combine multiple steps into efficient pipelines
+✅ **Use natural language**: Describe what you want - I'll figure out the right qsv commands
+✅ **Check outputs**: I'll save results to files for you to review
+
+Need more help? Just ask! 🚀`;
+
+  return {
+    content: [{ type: 'text', text: examplesText }],
   };
 }
 

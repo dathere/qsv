@@ -66,6 +66,7 @@ export class FilesystemResourceProvider {
   private previewLines: number;
   private qsvBinPath: string;
   private metadataCache: Map<string, FileMetadata>;
+  private metadataCachePromises: Map<string, Promise<FileMetadata | null>>;
 
   constructor(config: FilesystemConfig = {}) {
     this.workingDir = resolve(config.workingDirectory || process.cwd());
@@ -91,6 +92,7 @@ export class FilesystemResourceProvider {
     this.previewLines = config.previewLines || 20;
     this.qsvBinPath = config.qsvBinPath || 'qsv';
     this.metadataCache = new Map();
+    this.metadataCachePromises = new Map();
 
     console.error(`Filesystem provider initialized:`);
     console.error(`  Working directory: ${this.workingDir}`);
@@ -257,6 +259,7 @@ export class FilesystemResourceProvider {
   /**
    * Get CSV metadata for a file (row count, columns, etc.)
    * Results are cached for 60 seconds to avoid repeated qsv calls
+   * Uses promise-based deduplication to prevent concurrent qsv calls for the same file
    */
   async getFileMetadata(filePath: string): Promise<FileMetadata | null> {
     const cacheKey = filePath;
@@ -274,6 +277,31 @@ export class FilesystemResourceProvider {
       this.metadataCache.delete(cacheKey);
     }
 
+    // Check if request already in progress (race condition prevention)
+    const inProgress = this.metadataCachePromises.get(cacheKey);
+    if (inProgress) {
+      console.error(`[Filesystem] Deduplicating concurrent metadata request for ${basename(filePath)}`);
+      return inProgress;
+    }
+
+    // Start new request and track it
+    const promise = this.fetchMetadata(filePath);
+    this.metadataCachePromises.set(cacheKey, promise);
+
+    try {
+      const result = await promise;
+      this.metadataCachePromises.delete(cacheKey);
+      return result;
+    } catch (error) {
+      this.metadataCachePromises.delete(cacheKey);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch metadata from qsv (internal helper, not cached)
+   */
+  private async fetchMetadata(filePath: string): Promise<FileMetadata | null> {
     const metadata: FileMetadata = {
       rowCount: null,
       columnCount: null,
@@ -319,7 +347,7 @@ export class FilesystemResourceProvider {
       }
 
       // Cache the result
-      this.metadataCache.set(cacheKey, metadata);
+      this.metadataCache.set(filePath, metadata);
 
       return metadata;
     } catch (error) {

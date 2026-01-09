@@ -356,6 +356,49 @@ test('filesystem provider caches metadata', { skip: !QSV_AVAILABLE }, async () =
   }
 });
 
+test('filesystem provider deduplicates concurrent metadata requests', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+
+  try {
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n'
+    );
+
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: testDir,
+      allowedDirectories: [testDir],
+    });
+
+    // Make 5 concurrent requests for the same file
+    // Only one qsv call should be made, others should wait for the same promise
+    const promises = Array.from({ length: 5 }, () => provider.getFileMetadata(csvPath));
+
+    const results = await Promise.all(promises);
+
+    // All results should be non-null
+    results.forEach((result, index) => {
+      assert.ok(result !== null, `Request ${index + 1} should return metadata`);
+    });
+
+    // All results should be identical (same reference or same values)
+    const firstResult = results[0];
+    results.forEach((result, index) => {
+      assert.strictEqual(result?.rowCount, firstResult?.rowCount, `Request ${index + 1} should have same row count`);
+      assert.strictEqual(result?.columnCount, firstResult?.columnCount, `Request ${index + 1} should have same column count`);
+      assert.deepStrictEqual(result?.columnNames, firstResult?.columnNames, `Request ${index + 1} should have same column names`);
+    });
+
+    // Verify the correct metadata was returned
+    assert.strictEqual(firstResult?.rowCount, 3, 'Should count 3 rows');
+    assert.strictEqual(firstResult?.columnCount, 3, 'Should count 3 columns');
+    assert.deepStrictEqual(firstResult?.columnNames, ['id', 'name', 'age'], 'Should list column names');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
 if (!QSV_AVAILABLE) {
   console.log('\n⚠️  qsv integration tests skipped - qsv binary not available or version too old');
   console.log(`   Current validation: ${JSON.stringify(config.qsvValidation, null, 2)}`);

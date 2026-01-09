@@ -333,24 +333,41 @@ export class FilesystemResourceProvider {
    *
    * @param args - Command arguments to pass to qsv binary
    * @returns Promise resolving to the command's stdout output
-   * @throws Error if the command fails or exits with non-zero code
+   * @throws Error if the command fails, times out, or exits with non-zero code
    *
    * @remarks
    * This method spawns the qsv binary specified in config and accumulates
    * stdout/stderr output in memory. For commands that may produce large
    * outputs, consider adding size limits or streaming mechanisms.
    *
-   * Note: This method does not set a timeout, so it may hang indefinitely
-   * if the qsv process becomes unresponsive.
+   * Includes a 60-second timeout to prevent indefinite hangs if qsv becomes
+   * unresponsive. The process is killed if the timeout is exceeded.
    */
   private async runQsvCommand(args: string[]): Promise<string> {
+    const METADATA_COMMAND_TIMEOUT_MS = 60000; // 60 seconds for metadata operations
+
     return new Promise((resolve, reject) => {
+      const abortController = new AbortController();
+      const { signal } = abortController;
+
       const proc = spawn(this.qsvBinPath, args, {
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe'],
+        signal,
       });
 
       let stdout = '';
       let stderr = '';
+      let timeoutId: NodeJS.Timeout | null = null;
+      let completed = false;
+
+      // Set timeout to kill process if it takes too long
+      timeoutId = setTimeout(() => {
+        if (!completed) {
+          completed = true;
+          abortController.abort();
+          reject(new Error(`qsv ${args[0]} timed out after ${METADATA_COMMAND_TIMEOUT_MS}ms`));
+        }
+      }, METADATA_COMMAND_TIMEOUT_MS);
 
       proc.stdout.on('data', chunk => {
         stdout += chunk.toString();
@@ -361,6 +378,10 @@ export class FilesystemResourceProvider {
       });
 
       proc.on('close', exitCode => {
+        if (completed) return;
+        completed = true;
+        if (timeoutId) clearTimeout(timeoutId);
+
         if (exitCode === 0) {
           resolve(stdout);
         } else {
@@ -369,7 +390,16 @@ export class FilesystemResourceProvider {
       });
 
       proc.on('error', err => {
-        reject(err);
+        if (completed) return;
+        completed = true;
+        if (timeoutId) clearTimeout(timeoutId);
+
+        // Check if error is due to abort (timeout)
+        if ((err as NodeJS.ErrnoException).code === 'ABORT_ERR') {
+          reject(new Error(`qsv ${args[0]} timed out after ${METADATA_COMMAND_TIMEOUT_MS}ms`));
+        } else {
+          reject(err);
+        }
       });
     });
   }

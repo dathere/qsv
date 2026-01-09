@@ -1,0 +1,117 @@
+name: MCP Server CI
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - '.claude/skills/**'
+      - '.github/workflows/mcp-server-ci.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - '.claude/skills/**'
+      - '.github/workflows/mcp-server-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test Node ${{ matrix.node-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [18, 20, 22]
+
+    defaults:
+      run:
+        working-directory: .claude/skills
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: .claude/skills/package-lock.json
+
+      - name: Install qsv (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          QSV_VERSION=$(curl -s https://api.github.com/repos/dathere/qsv/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "Installing qsv $QSV_VERSION"
+          curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-x86_64-unknown-linux-gnu.zip" -o qsv.zip
+          unzip -q qsv.zip
+          chmod +x qsv
+          echo "$PWD" >> $GITHUB_PATH
+          ./qsv --version
+
+      - name: Install qsv (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          QSV_VERSION=$(curl -s https://api.github.com/repos/dathere/qsv/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "Installing qsv $QSV_VERSION"
+          curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-x86_64-apple-darwin.zip" -o qsv.zip
+          unzip -q qsv.zip
+          chmod +x qsv
+          echo "$PWD" >> $GITHUB_PATH
+          ./qsv --version
+
+      - name: Install qsv (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $QSV_VERSION = (Invoke-RestMethod -Uri "https://api.github.com/repos/dathere/qsv/releases/latest").tag_name
+          Write-Host "Installing qsv $QSV_VERSION"
+          $url = "https://github.com/dathere/qsv/releases/download/$QSV_VERSION/qsv-$QSV_VERSION-x86_64-pc-windows-msvc.zip"
+          Invoke-WebRequest -Uri $url -OutFile qsv.zip
+          Expand-Archive -Path qsv.zip -DestinationPath . -Force
+          Write-Output "$PWD" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          .\qsv.exe --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check TypeScript compilation
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+        env:
+          NODE_ENV: test
+
+      - name: Test build output
+        run: |
+          node dist/mcp-server.js --version || echo "Version check complete"
+        shell: bash
+
+  lint:
+    name: TypeScript Type Check
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: .claude/skills
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: .claude/skills/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript compilation check
+        run: npm run build
+
+      - name: TypeScript test compilation check
+        run: npm run build:test

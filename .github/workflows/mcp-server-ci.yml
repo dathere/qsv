@@ -45,6 +45,7 @@ jobs:
           echo "Installing qsv $QSV_VERSION"
           ASSET_NAME="qsv-${QSV_VERSION}-x86_64-unknown-linux-gnu.zip"
           curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
+          rm -rf qsv qsvlite qsvdp
           unzip -qo "${ASSET_NAME}"
           chmod +x qsv
           echo "$PWD" >> $GITHUB_PATH
@@ -57,6 +58,7 @@ jobs:
           echo "Installing qsv $QSV_VERSION"
           ASSET_NAME="qsv-${QSV_VERSION}-aarch64-apple-darwin.zip"
           curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
+          rm -rf qsv qsvlite qsvdp
           unzip -qo "${ASSET_NAME}"
           chmod +x qsv
           echo "$PWD" >> $GITHUB_PATH
@@ -71,6 +73,7 @@ jobs:
           $ASSET_NAME = "qsv-$QSV_VERSION-x86_64-pc-windows-msvc.zip"
           $url = "https://github.com/dathere/qsv/releases/download/$QSV_VERSION/$ASSET_NAME"
           Invoke-WebRequest -Uri $url -OutFile $ASSET_NAME
+          Remove-Item -Path qsv.exe,qsvlite.exe,qsvdp.exe -ErrorAction SilentlyContinue
           Expand-Archive -Path $ASSET_NAME -DestinationPath . -Force
           Write-Output "$PWD" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           .\qsv.exe --version

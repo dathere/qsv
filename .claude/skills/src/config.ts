@@ -23,19 +23,10 @@ function expandTemplateVars(value: string): string {
 
   const home = homedir();
 
-  // Get platform-specific special directories
-  const desktop = process.platform === 'win32'
-    ? join(home, 'Desktop')
-    : join(home, 'Desktop');
-
-  const documents = process.platform === 'win32'
-    ? join(home, 'Documents')
-    : join(home, 'Documents');
-
-  const downloads = process.platform === 'win32'
-    ? join(home, 'Downloads')
-    : join(home, 'Downloads');
-
+  // Get special directories (currently same for all platforms)
+  const desktop = join(home, 'Desktop');
+  const documents = join(home, 'Documents');
+  const downloads = join(home, 'Downloads');
   const temp = tmpdir();
 
   // Replace template variables

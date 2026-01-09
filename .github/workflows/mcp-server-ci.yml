@@ -41,7 +41,7 @@ jobs:
       - name: Install qsv (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          QSV_VERSION=$(curl -s https://api.github.com/repos/dathere/qsv/releases/latest | grep '"tag_name"' | head -n 1 | cut -d '"' -f 4)
+          QSV_VERSION=$(curl -s https://api.github.com/repos/dathere/qsv/releases/latest | awk -F'"' '/tag_name/ {print $4; exit}')
           echo "Installing qsv $QSV_VERSION"
           ASSET_NAME="qsv-${QSV_VERSION}-x86_64-unknown-linux-gnu.zip"
           curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
@@ -54,7 +54,7 @@ jobs:
       - name: Install qsv (macOS)
         if: matrix.os == 'macos-14'
         run: |
-          QSV_VERSION=$(curl -s https://api.github.com/repos/dathere/qsv/releases/latest | grep '"tag_name"' | head -n 1 | cut -d '"' -f 4)
+          QSV_VERSION=$(curl -s https://api.github.com/repos/dathere/qsv/releases/latest | awk -F'"' '/tag_name/ {print $4; exit}')
           echo "Installing qsv $QSV_VERSION"
           ASSET_NAME="qsv-${QSV_VERSION}-aarch64-apple-darwin.zip"
           curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"

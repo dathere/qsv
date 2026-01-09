@@ -10,6 +10,11 @@ import { join } from 'path';
 import { execSync, execFileSync } from 'child_process';
 
 /**
+ * Timeout for qsv binary validation commands in milliseconds (5 seconds)
+ */
+const QSV_VALIDATION_TIMEOUT_MS = 5000;
+
+/**
  * Expand template variables in strings
  * Supports: ${HOME}, ${USERPROFILE}, ${DESKTOP}, ${DOCUMENTS}, ${DOWNLOADS}, ${TEMP}, ${TMPDIR}
  */
@@ -97,6 +102,12 @@ function parseFloatEnv(envVar: string, defaultValue: number, min?: number, max?:
 }
 
 /**
+ * Regular expression to detect unexpanded template variables from Claude Desktop
+ * Matches ${user_config.*} patterns that indicate an empty/unset configuration field
+ */
+const UNEXPANDED_TEMPLATE_REGEX = /\$\{user_config\.[^}]+\}/;
+
+/**
  * Get string from environment variable with default
  * Expands template variables like ${HOME}, ${USERPROFILE}, etc.
  * Uses nullish coalescing (??) to allow empty strings while falling back for undefined/null
@@ -106,7 +117,7 @@ function getStringEnv(envVar: string, defaultValue: string): string {
   const value = process.env[envVar];
   // Treat empty string, null, undefined, or unexpanded template as missing - use default
   // Unexpanded template happens when Claude Desktop config field is empty
-  if (!value || value.trim() === '' || value.includes('${user_config.')) {
+  if (!value || value.trim() === '' || UNEXPANDED_TEMPLATE_REGEX.test(value)) {
     return expandTemplateVars(defaultValue);
   }
   return expandTemplateVars(value);
@@ -184,10 +195,14 @@ function detectQsvBinaryPath(): string | null {
 
 /**
  * Parse version string from qsv --version output
- * Example: "qsv 0.135.0" -> "0.135.0"
+ * Examples:
+ *   "qsv 0.135.0" -> "0.135.0"
+ *   "qsv 0.135.0-alpha.1" -> "0.135.0-alpha.1"
+ *   "qsv 0.135.0+build.123" -> "0.135.0+build.123"
  */
 function parseQsvVersion(versionOutput: string): string | null {
-  const match = versionOutput.match(/qsv\s+(\d+\.\d+\.\d+)/);
+  // Match semantic version with optional pre-release and build metadata
+  const match = versionOutput.match(/qsv\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/);
   return match ? match[1] : null;
 }
 
@@ -218,7 +233,7 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
     const result = execFileSync(binPath, ['--version'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 5000 // 5 second timeout
+      timeout: QSV_VALIDATION_TIMEOUT_MS
     });
 
     const version = parseQsvVersion(result);
@@ -254,16 +269,26 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
 
 /**
  * Initialize qsv binary path with auto-detection and validation
+ *
+ * This function runs at server startup and validates the qsv binary.
+ * In Extension Mode, Claude Desktop restarts the server whenever the user
+ * changes the qsv binary path setting, so validation occurs on every change.
+ *
  * Priority:
- * 1. Explicit QSV_MCP_BIN_PATH environment variable
- * 2. Auto-detected path from system PATH
- * 3. Fall back to 'qsv' (will likely fail validation if not in PATH)
+ * 1. Explicit QSV_MCP_BIN_PATH environment variable (user-configured path)
+ * 2. Auto-detected path from system PATH (via which/where command)
+ * 3. Fall back to 'qsv' (legacy MCP mode only)
+ *
+ * In Extension Mode, always requires a fully qualified path and valid qsv binary
+ * (version >= 13.0.0). Invalid paths or versions will fail validation with clear
+ * error messages shown in server logs.
  */
 function initializeQsvBinaryPath(): { path: string; validation: QsvValidationResult } {
+  const inExtensionMode = getBooleanEnv('MCPB_EXTENSION_MODE', false);
   const explicitPath = process.env['QSV_MCP_BIN_PATH'];
 
-  // If user explicitly configured a path, use it
-  if (explicitPath) {
+  // If user explicitly configured a path (non-empty), use it
+  if (explicitPath && explicitPath.trim() !== '' && !UNEXPANDED_TEMPLATE_REGEX.test(explicitPath)) {
     const expanded = expandTemplateVars(explicitPath);
     const validation = validateQsvBinary(expanded);
     return { path: expanded, validation };
@@ -274,12 +299,26 @@ function initializeQsvBinaryPath(): { path: string; validation: QsvValidationRes
   if (detectedPath) {
     const validation = validateQsvBinary(detectedPath);
     if (validation.valid) {
+      // In extension mode, ensure path is fully qualified
       return { path: detectedPath, validation };
     }
-    // Detected but invalid - fall through to default
+    // Detected but invalid version - continue to fallback
   }
 
-  // Fall back to 'qsv' (will work if in PATH, otherwise will fail)
+  // Extension mode requires fully qualified, valid qsv binary
+  if (inExtensionMode) {
+    return {
+      path: detectedPath || 'qsv',
+      validation: {
+        valid: false,
+        error: detectedPath
+          ? `qsv binary found at ${detectedPath} but version validation failed. Please install qsv ${MINIMUM_QSV_VERSION} or higher from https://github.com/dathere/qsv#installation`
+          : `qsv binary not found in PATH. Extension mode requires qsv to be installed. Please install from https://github.com/dathere/qsv#installation and ensure it's in your system PATH.`,
+      },
+    };
+  }
+
+  // Legacy MCP mode: Fall back to 'qsv' (will work if in PATH, otherwise will fail)
   const fallbackPath = 'qsv';
   const validation = validateQsvBinary(fallbackPath);
   return { path: fallbackPath, validation };
@@ -330,7 +369,7 @@ export const config = {
   allowedDirs: (() => {
     const envValue = process.env['QSV_MCP_ALLOWED_DIRS'];
     // Treat empty, undefined, or unexpanded template as empty array
-    if (!envValue || envValue.trim() === '' || envValue.includes('${user_config.')) {
+    if (!envValue || envValue.trim() === '' || UNEXPANDED_TEMPLATE_REGEX.test(envValue)) {
       return [];
     }
 

@@ -19,6 +19,11 @@ import { formatBytes, findSimilarFiles } from './utils.js';
 const AUTO_INDEX_SIZE_MB = 10;
 
 /**
+ * Maximum number of files to show in welcome message
+ */
+const MAX_WELCOME_FILES = 10;
+
+/**
  * Commands that always return full CSV data and should use temp files
  */
 const ALWAYS_FILE_COMMANDS = new Set([
@@ -304,6 +309,11 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
   // Add positional arguments
   if (skill.command.args && Array.isArray(skill.command.args)) {
     for (const arg of skill.command.args) {
+      // Skip 'input' argument - we already have 'input_file' which maps to this
+      if (arg.name === 'input') {
+        continue;
+      }
+
       properties[arg.name] = {
         type: mapArgumentType(arg.type),
         description: arg.description,
@@ -916,8 +926,7 @@ export async function handleWelcomeTool(filesystemProvider?: FilesystemProviderE
       const { resources } = await filesystemProvider.listFiles(undefined, false);
 
       if (resources.length > 0) {
-        const maxFiles = 10;
-        const filesToShow = resources.slice(0, maxFiles);
+        const filesToShow = resources.slice(0, MAX_WELCOME_FILES);
         const workingDir = filesystemProvider.getWorkingDirectory();
 
         fileListingSection = `\n## 📁 Available Files in Your Working Directory
@@ -950,11 +959,13 @@ I found ${resources.length} file${resources.length !== 1 ? 's' : ''} in \`${work
           fileListingSection += `| ${fileName} | ${fileSize} | ${fileType} | ${fileDate} |\n`;
         });
 
-        if (resources.length > maxFiles) {
-          fileListingSection += `\n_... and ${resources.length - maxFiles} more file${resources.length - maxFiles !== 1 ? 's' : ''}_\n`;
+        if (resources.length > MAX_WELCOME_FILES) {
+          fileListingSection += `\n_... and ${resources.length - MAX_WELCOME_FILES} more file${resources.length - MAX_WELCOME_FILES !== 1 ? 's' : ''}_\n`;
         }
 
-        fileListingSection += `\n**Tip:** Use these file names in qsv commands, for example:\n- \`qsv_stats with input_file: "${filesToShow[0].name}"\`\n- \`qsv_headers with input_file: "${filesToShow[0].name}"\`\n`;
+        if (filesToShow.length > 0) {
+          fileListingSection += `\n**Tip:** Use these file names in qsv commands, for example:\n- \`qsv_stats with input_file: "${filesToShow[0].name}"\`\n- \`qsv_headers with input_file: "${filesToShow[0].name}"\`\n`;
+        }
       }
     } catch (error) {
       console.error('Error listing files for welcome tool:', error);

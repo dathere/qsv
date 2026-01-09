@@ -39,7 +39,6 @@
       "args": ["${__dirname}/server/mcp-server.js"],
       "env": {
         "QSV_MCP_BIN_PATH": "${user_config.qsv_path}",
-        "QSV_MCP_WORKING_DIR": "${user_config.working_dir}",
         "QSV_MCP_ALLOWED_DIRS": "${user_config.allowed_dirs}",
         "QSV_MCP_TIMEOUT_MS": "${user_config.timeout_ms}",
         "QSV_MCP_MAX_OUTPUT_SIZE": "${user_config.max_output_size}",
@@ -52,7 +51,6 @@
         "win32": {
           "env": {
             "QSV_MCP_BIN_PATH": "${user_config.qsv_path}",
-            "QSV_MCP_WORKING_DIR": "${user_config.working_dir}",
             "QSV_MCP_ALLOWED_DIRS": "${user_config.allowed_dirs}"
           }
         }
@@ -61,17 +59,16 @@
   },
   "user_config": {
     "qsv_path": {
-      "type": "string",
+      "type": "file",
       "title": "qsv Binary Path",
-      "description": "Path to qsv executable. Install qsv first from: https://github.com/dathere/qsv#installation",
-      "required": false,
-      "default": "qsv"
+      "description": "Full path to qsv executable. Click 'Browse' to locate it (usually /usr/local/bin/qsv or /opt/homebrew/bin/qsv on macOS). Install from: https://github.com/dathere/qsv#installation",
+      "required": true
     },
     "working_dir": {
       "type": "directory",
       "title": "Default Working Directory",
-      "description": "Directory where qsv commands run by default. Leave empty to use Downloads folder automatically. Extension only accesses files within this directory and allowed directories below.",
-      "required": false
+      "description": "Directory where qsv commands run by default. Click 'Browse' to select your Downloads folder or another directory. Extension only accesses files within this directory and allowed directories below.",
+      "required": true
     },
     "allowed_dirs": {
       "type": "directory",

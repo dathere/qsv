@@ -13,8 +13,6 @@ import {
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { SkillLoader } from './loader.js';
@@ -90,10 +88,17 @@ class QsvMcpServer {
    * Initialize the server and register handlers
    */
   async initialize(): Promise<void> {
+    console.error('');
+    console.error('='.repeat(60));
+    console.error('QSV MCP SERVER INITIALIZATION');
+    console.error('='.repeat(60));
+    console.error('');
+
     // Load all skills
-    console.error('Loading QSV skills...');
+    console.error('[Init] Loading QSV skills...');
     const skills = await this.loader.loadAll();
-    console.error(`Loaded ${skills.size} skills`);
+    console.error(`[Init] ✓ Loaded ${skills.size} skills`);
+    console.error('');
 
     // Validate qsv binary
     this.logQsvValidation();
@@ -102,22 +107,21 @@ class QsvMcpServer {
     await this.checkForUpdates();
 
     // Register tool handlers
-    console.error('About to register tool handlers...');
+    console.error('[Init] Registering tool handlers...');
     this.registerToolHandlers();
-    console.error('Tool handlers registered');
+    console.error('[Init] ✓ Tool handlers registered');
+    console.error('');
 
     // Register resource handlers
-    console.error('About to register resource handlers...');
+    console.error('[Init] Registering resource handlers...');
     this.registerResourceHandlers();
-    console.error('Resource handlers registered');
+    console.error('[Init] ✓ Resource handlers registered');
+    console.error('');
 
-    // Prompts converted to tools (qsv_welcome and qsv_examples)
-    // Prompt handlers no longer needed
-    // console.error('About to register prompt handlers...');
-    // this.registerPromptHandlers();
-    // console.error('Prompt handlers registered');
-
-    console.error('QSV MCP Server initialized successfully');
+    console.error('='.repeat(60));
+    console.error('✅ QSV MCP SERVER READY');
+    console.error('='.repeat(60));
+    console.error('');
   }
 
   /**
@@ -137,13 +141,23 @@ class QsvMcpServer {
       console.error('❌ qsv binary validation FAILED');
       console.error(`   ${validation.error}`);
       console.error('');
-      console.error('⚠️  The MCP server may not function correctly without a valid qsv binary');
+      console.error('⚠️  The extension will not function without a valid qsv binary');
       console.error('');
-      console.error('To fix this:');
-      console.error('   1. Install qsv from: https://github.com/dathere/qsv#installation');
-      console.error('   2. Ensure qsv is in your PATH, or');
-      console.error('   3. Set QSV_MCP_BIN_PATH to the absolute path of your qsv binary');
-      console.error('   4. Restart the MCP server or Claude Desktop');
+
+      if (config.isExtensionMode) {
+        console.error('To fix this in Claude Desktop:');
+        console.error('   1. Install qsv from: https://github.com/dathere/qsv#installation');
+        console.error('   2. Ensure qsv is in your system PATH');
+        console.error('   3. Open Claude Desktop Settings > Extensions > qsv');
+        console.error(`   4. Update "qsv Binary Path" to the correct path (or leave as "qsv" if in PATH)`);
+        console.error('   5. Save settings (extension will auto-restart and re-validate)');
+      } else {
+        console.error('To fix this:');
+        console.error('   1. Install qsv from: https://github.com/dathere/qsv#installation');
+        console.error('   2. Ensure qsv is in your PATH, or');
+        console.error('   3. Set QSV_MCP_BIN_PATH to the absolute path of your qsv binary');
+        console.error('   4. Restart the MCP server');
+      }
       console.error('');
     }
   }
@@ -224,13 +238,15 @@ class QsvMcpServer {
           if (skill) {
             const toolDef = createToolDefinition(skill);
             tools.push(toolDef);
+            console.error(`[Server] ✓ Loaded tool: ${toolDef.name}`);
           } else {
-            console.error(`Warning: Failed to load skill ${skillName}`);
+            console.error(`[Server] ✗ Failed to load skill: ${skillName}`);
           }
         } catch (error) {
-          console.error(`Error creating tool definition for ${skillName}:`, error);
+          console.error(`[Server] ✗ Error creating tool definition for ${skillName}:`, error);
         }
       }
+      console.error(`[Server] Loaded ${tools.length} common command tools`);
 
       // Add generic qsv_command tool
       console.error('[Server] Adding generic command tool...');
@@ -311,9 +327,13 @@ class QsvMcpServer {
         },
       });
 
-      console.error(`Registered ${tools.length} tools`);
+      console.error(`[Server] Registered ${tools.length} tools`);
+      console.error(`[Server] Tool names: ${tools.map(t => t.name).join(', ')}`);
 
-        return { tools };
+      const response = { tools };
+      console.error(`[Server] Returning ${response.tools.length} tools to client`);
+
+        return response;
       });
       console.error('[Server] Tool handlers registered successfully');
     } catch (error) {

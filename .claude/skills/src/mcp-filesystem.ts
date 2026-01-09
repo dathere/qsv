@@ -12,6 +12,11 @@ import type { McpResource, McpResourceContent, FileInfo, FileMetadata } from './
 import { formatBytes } from './utils.js';
 import { config } from './config.js';
 
+/**
+ * Cache expiration time in milliseconds (1 minute)
+ */
+const METADATA_CACHE_TTL_MS = 60000;
+
 export interface FilesystemConfig {
   /**
    * Working directory for relative paths (defaults to process.cwd())
@@ -261,7 +266,7 @@ export class FilesystemResourceProvider {
     if (cached) {
       const age = Date.now() - cached.cachedAt;
       // Cache for 60 seconds
-      if (age < 60000) {
+      if (age < METADATA_CACHE_TTL_MS) {
         console.error(`[Filesystem] Using cached metadata for ${basename(filePath)} (age: ${Math.round(age / 1000)}s)`);
         return cached;
       }
@@ -324,7 +329,19 @@ export class FilesystemResourceProvider {
   }
 
   /**
-   * Run a qsv command and return stdout
+   * Execute a qsv command and return its stdout output
+   *
+   * @param args - Command arguments to pass to qsv binary
+   * @returns Promise resolving to the command's stdout output
+   * @throws Error if the command fails or exits with non-zero code
+   *
+   * @remarks
+   * This method spawns the qsv binary specified in config and accumulates
+   * stdout/stderr output in memory. For commands that may produce large
+   * outputs, consider adding size limits or streaming mechanisms.
+   *
+   * Note: This method does not set a timeout, so it may hang indefinitely
+   * if the qsv process becomes unresponsive.
    */
   private async runQsvCommand(args: string[]): Promise<string> {
     return new Promise((resolve, reject) => {

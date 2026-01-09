@@ -21,7 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-14, windows-latest]
-        node-version: [18, 20, 22]
+        node-version: [22]
 
     defaults:
       run:
@@ -45,11 +45,11 @@ jobs:
           echo "Installing qsv $QSV_VERSION"
           ASSET_NAME="qsv-${QSV_VERSION}-x86_64-unknown-linux-gnu.zip"
           curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
-          rm -rf qsv qsvlite qsvdp
-          unzip -qo "${ASSET_NAME}"
-          chmod +x qsv
-          echo "$PWD" >> $GITHUB_PATH
-          ./qsv --version
+          mkdir -p bin
+          unzip -qo "${ASSET_NAME}" -d bin
+          chmod +x bin/qsv
+          echo "$PWD/bin" >> $GITHUB_PATH
+          bin/qsv --version
 
       - name: Install qsv (macOS)
         if: matrix.os == 'macos-14'
@@ -58,11 +58,11 @@ jobs:
           echo "Installing qsv $QSV_VERSION"
           ASSET_NAME="qsv-${QSV_VERSION}-aarch64-apple-darwin.zip"
           curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
-          rm -rf qsv qsvlite qsvdp
-          unzip -qo "${ASSET_NAME}"
-          chmod +x qsv
-          echo "$PWD" >> $GITHUB_PATH
-          ./qsv --version
+          mkdir -p bin
+          unzip -qo "${ASSET_NAME}" -d bin
+          chmod +x bin/qsv
+          echo "$PWD/bin" >> $GITHUB_PATH
+          bin/qsv --version
 
       - name: Install qsv (Windows)
         if: matrix.os == 'windows-latest'
@@ -73,10 +73,10 @@ jobs:
           $ASSET_NAME = "qsv-$QSV_VERSION-x86_64-pc-windows-msvc.zip"
           $url = "https://github.com/dathere/qsv/releases/download/$QSV_VERSION/$ASSET_NAME"
           Invoke-WebRequest -Uri $url -OutFile $ASSET_NAME
-          Remove-Item -Path qsv.exe,qsvlite.exe,qsvdp.exe -ErrorAction SilentlyContinue
-          Expand-Archive -Path $ASSET_NAME -DestinationPath . -Force
-          Write-Output "$PWD" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          .\qsv.exe --version
+          New-Item -ItemType Directory -Force -Path bin | Out-Null
+          Expand-Archive -Path $ASSET_NAME -DestinationPath bin -Force
+          Write-Output "$PWD\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          .\bin\qsv.exe --version
 
       - name: Install dependencies
         run: npm ci

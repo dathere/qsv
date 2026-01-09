@@ -16,13 +16,13 @@ Tests run across multiple environments to ensure broad compatibility:
 - ✅ Windows (x86_64)
 
 ### Node.js Versions
-- ✅ Node.js 18 (minimum supported)
-- ✅ Node.js 20 (LTS)
 - ✅ Node.js 22 (current)
 
-**Total**: 9 test combinations (3 OS × 3 Node versions)
+**Total**: 3 test combinations (3 OS × 1 Node version)
 
-**Note**: macOS tests run on ARM64 (Apple Silicon) runners to match available qsv builds.
+**Note**:
+- macOS tests run on ARM64 (Apple Silicon) runners to match available qsv builds
+- Testing on Node.js 22 only for faster CI runs; package.json still specifies `"engines": {"node": ">=18.0.0"}`
 
 ## What Gets Tested
 
@@ -106,9 +106,9 @@ npm run build:test
 ## Performance
 
 Typical CI run times:
-- **Test Job (per combination)**: 2-3 minutes
+- **Test Job (per OS)**: 2-3 minutes
 - **Lint Job**: 30-60 seconds
-- **Total (all jobs)**: ~3-5 minutes (parallel execution)
+- **Total (all jobs)**: ~2-3 minutes (parallel execution)
 
 ## Dependencies
 

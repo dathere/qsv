@@ -1708,8 +1708,9 @@ dependencies = [
 
 [[package]]
 name = "csvlens"
-version = "0.15.0"
-source = "git+https://github.com/YS-L/csvlens?rev=f15f55e#f15f55e68e2a8e60d7a368fff375fff66bf37627"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cc0010c301ab6cfe01f79b96dd9f694941822d163849ea6ad680d1276a07bda"
 dependencies = [
  "ansi-to-tui",
  "anyhow",

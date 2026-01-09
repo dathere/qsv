@@ -309,9 +309,6 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }
 
-# use upstream of blake3 with unreleased fixes
-blake3 = { git = "https://github.com/BLAKE3-team/BLAKE3", rev = "890050c" }
-
 # use fork with updated redis 1.0 dependency & client-side caching features
 cached = { git = "https://github.com/nihohit/cached", branch = "client-side-caching" }
 

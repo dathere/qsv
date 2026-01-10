@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::CliResult;
 
+const MAX_ITERATIONS: usize = 100; // Prevent infinite loops
+
 #[derive(Debug, Serialize, Deserialize)]
 struct SkillDefinition {
     name:        String,
@@ -604,7 +606,6 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     let original_dir = repo_root.clone();
 
     let mut iterations = 0;
-    const MAX_ITERATIONS: usize = 100; // Prevent infinite loops
 
     loop {
         if repo_root.join("Cargo.toml").exists() && repo_root.join("src/cmd").exists() {

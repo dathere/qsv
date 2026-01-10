@@ -51,6 +51,15 @@ jobs:
           echo "$PWD/bin" >> $GITHUB_PATH
           bin/qsv --version
 
+      - name: Fetch zipsign private key (macOS)
+        if: matrix.os == 'macos-14'
+        uses: mobiledevops/secret-to-file-action@v1
+        with:
+          base64-encoded-secret: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}
+          filename: "qsvpriv.key"
+          is-executable: false
+          working-directory: "."
+
       - name: Install qsv (macOS)
         if: matrix.os == 'macos-14'
         run: |

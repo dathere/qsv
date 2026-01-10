@@ -11,8 +11,8 @@
   "scripts": {
     "build": "tsc",
     "build:test": "tsc -p tsconfig.test.json",
-    "test": "npm run build:test && node --test dist/tests/**/*.test.js",
-    "test:watch": "node --test --watch dist/tests/**/*.test.js",
+    "test": "npm run build:test && node --test dist/tests/*.test.js",
+    "test:watch": "node --test --watch dist/tests/*.test.js",
     "test:examples": "node examples/basic.js",
     "test-pipeline": "node examples/pipeline.js",
     "test-update-checker": "node examples/update-checker-demo.js",

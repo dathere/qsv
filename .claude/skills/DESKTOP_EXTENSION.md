@@ -411,20 +411,31 @@ where qsv           # Windows
 
 ---
 
-## Comparison with Legacy MCP Server
+## Comparison with Other Installation Methods
 
-The Desktop Extension and legacy MCP server are **functionally identical** but differ in installation and configuration:
+All three installation methods provide **identical qsv functionality** but differ in installation, interface, and use cases:
 
-### When to Use Extension
+### Desktop Extension (This Guide)
 
 ✅ **Use Desktop Extension if**:
 - You want simplest installation
-- You prefer GUI configuration
-- You want automatic updates
+- You prefer GUI configuration and visual interface
+- You want automatic updates from marketplace
 - You're a non-technical user
-- You only use Claude Desktop
+- You work primarily in Claude Desktop
 
-### When to Use Legacy MCP Server
+### Claude Code (CLI)
+
+✅ **Use Claude Code if**:
+- You work primarily in the terminal
+- You need to automate data workflows
+- You work on remote servers via SSH
+- You want tighter git integration
+- You prefer keyboard-driven interfaces
+
+**Documentation**: [CLAUDE_CODE.md](./CLAUDE_CODE.md)
+
+### Legacy MCP Server
 
 ✅ **Use Legacy MCP Server if**:
 - You need maximum configuration flexibility
@@ -435,7 +446,7 @@ The Desktop Extension and legacy MCP server are **functionally identical** but d
 
 ### Migration
 
-**From Legacy MCP Server to Extension**:
+**From Legacy MCP Server to Desktop Extension**:
 1. Install extension (see [Installation](#installation))
 2. Configure settings to match your `claude_desktop_config.json`
 3. Remove legacy MCP server from config:
@@ -445,9 +456,17 @@ The Desktop Extension and legacy MCP server are **functionally identical** but d
    ```
 4. Restart Claude Desktop
 
-**From Extension to Legacy MCP Server**:
+**From Desktop Extension to Claude Code**:
+1. Build the MCP server: `cd .claude/skills && npm install && npm run build`
+2. Run installer: `npm run mcp:install` (detects Claude Code automatically)
+3. Keep or remove Desktop Extension (both can coexist)
+
+**From Desktop Extension to Legacy MCP Server**:
 1. Remove extension: Settings → Extensions → qsv → Remove
 2. Follow instructions in [README.md](./README.md#installation)
+
+**Using Multiple Methods Simultaneously**:
+You can use Desktop Extension and Claude Code at the same time - they use separate config files and don't conflict.
 
 ---
 

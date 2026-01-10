@@ -42,7 +42,7 @@ Each skill file provides:
 **Choose your installation method:**
 
 <details>
-<summary><b>🎁 Desktop Extension (Recommended)</b> - Easiest installation, automatic updates, zero configuration</summary>
+<summary><b>🎁 Desktop Extension (Recommended for GUI users)</b> - Easiest installation, automatic updates, zero configuration</summary>
 
 **Perfect for**: Most users, especially non-technical users
 
@@ -62,9 +62,35 @@ Each skill file provides:
 </details>
 
 <details>
-<summary><b>⚙️ Legacy MCP Server</b> - Maximum flexibility, for technical users</summary>
+<summary><b>💻 Claude Code (Recommended for CLI users)</b> - Terminal-based, perfect for developers</summary>
 
-**Perfect for**: Developers, users who want config file control, non-Claude Desktop MCP clients
+**Perfect for**: Developers, terminal users, automation, remote servers, SSH workflows
+
+**Requirements**: Claude Code CLI + Node.js ≥ 18.0.0 + qsv binary
+
+**Installation**:
+```bash
+cd .claude/skills
+npm install
+npm run build
+npm run mcp:install  # Detects and configures Claude Code automatically
+```
+
+**Benefits**:
+- ✅ Terminal integration - work with files in current directory
+- ✅ Scriptable - automate data workflows
+- ✅ Works over SSH - process data on remote servers
+- ✅ Git integration - see operations in repository context
+- ✅ Lightweight - no GUI overhead
+
+**Documentation**: [CLAUDE_CODE.md](./CLAUDE_CODE.md)
+
+</details>
+
+<details>
+<summary><b>⚙️ Legacy MCP Server</b> - Maximum flexibility, for advanced users</summary>
+
+**Perfect for**: Advanced users who want full config file control, using non-Claude MCP clients
 
 **Requirements**: Node.js ≥ 18.0.0 + npm + qsv binary
 
@@ -86,7 +112,7 @@ This will:
 
 </details>
 
-**Both methods provide identical functionality** - choose based on your preference for installation simplicity vs configuration control.
+**All methods provide identical qsv functionality** - choose based on your interface preference (GUI vs CLI) and use case.
 
 ### Run Examples (Legacy MCP Server only)
 

@@ -61,14 +61,16 @@
     "qsv_path": {
       "type": "file",
       "title": "qsv Binary Path",
-      "description": "Full path to qsv executable. Click 'Browse' to locate it (usually /usr/local/bin/qsv or /opt/homebrew/bin/qsv on macOS). Install from: https://github.com/dathere/qsv#installation",
-      "required": true
+      "description": "Full path to qsv executable. Leave empty to auto-detect from PATH, or click 'Browse' to specify (usually /usr/local/bin/qsv or /opt/homebrew/bin/qsv on macOS). Install from: https://github.com/dathere/qsv#installation",
+      "required": false,
+      "default": ""
     },
     "working_dir": {
       "type": "directory",
       "title": "Default Working Directory",
-      "description": "Directory where qsv commands run by default. Click 'Browse' to select your Downloads folder or another directory. Extension only accesses files within this directory and allowed directories below.",
-      "required": true
+      "description": "Directory where qsv commands run by default. Defaults to Downloads folder. Click 'Browse' to change. Extension only accesses files within this directory and allowed directories below.",
+      "required": false,
+      "default": "${HOME}/Downloads"
     },
     "allowed_dirs": {
       "type": "directory",
@@ -118,6 +120,10 @@
     }
   },
   "tools": [
+    {
+      "name": "qsv_config",
+      "description": "Display current qsv configuration (binary path, version, directories)"
+    },
     {
       "name": "qsv_select",
       "description": "Select, reorder, or exclude columns from CSV data"

@@ -8,6 +8,7 @@
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 import { execSync, execFileSync } from 'child_process';
+import { statSync } from 'fs';
 
 /**
  * Timeout for qsv binary validation commands in milliseconds (5 seconds)
@@ -165,23 +166,111 @@ export interface QsvValidationResult {
   error?: string;
 }
 
+// Global diagnostic info for auto-detection
+let lastDetectionDiagnostics: {
+  whichAttempted: boolean;
+  whichResult?: string;
+  whichError?: string;
+  locationsChecked: Array<{
+    path: string;
+    exists: boolean;
+    isFile?: boolean;
+    executable?: boolean;
+    error?: string;
+    version?: string;
+  }>;
+} = {
+  whichAttempted: false,
+  locationsChecked: []
+};
+
+/**
+ * Get diagnostic information about the last auto-detection attempt
+ */
+export function getDetectionDiagnostics() {
+  return lastDetectionDiagnostics;
+}
+
 /**
  * Auto-detect absolute path to qsv binary
- * Uses 'which' on Unix/macOS or 'where' on Windows
+ * 1. Uses 'which' on Unix/macOS or 'where' on Windows
+ * 2. If that fails, checks common installation locations
  */
 function detectQsvBinaryPath(): string | null {
+  // Reset diagnostics
+  lastDetectionDiagnostics = {
+    whichAttempted: true,
+    locationsChecked: []
+  };
+
+  // Try using which/where first
   try {
-    // Use execFileSync instead of execSync for security best practice
     const command = process.platform === 'win32' ? 'where' : 'which';
     const result = execFileSync(command, ['qsv'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore']
     });
     const path = result.trim().split('\n')[0]; // Take first result
-    return path || null;
-  } catch {
-    return null;
+    if (path) {
+      lastDetectionDiagnostics.whichResult = path;
+      return path;
+    }
+  } catch (error) {
+    lastDetectionDiagnostics.whichError = error instanceof Error ? error.message : String(error);
   }
+
+  // Check common installation locations
+  // This helps when running in desktop apps (like Claude Desktop) that don't have full PATH
+  const commonLocations = process.platform === 'win32'
+    ? [
+        'C:\\Program Files\\qsv\\qsv.exe',
+        'C:\\qsv\\qsv.exe',
+        join(homedir(), 'scoop', 'shims', 'qsv.exe'),
+        join(homedir(), 'AppData', 'Local', 'Programs', 'qsv', 'qsv.exe'),
+      ]
+    : [
+        '/usr/local/bin/qsv',
+        '/opt/homebrew/bin/qsv',  // Apple Silicon homebrew
+        '/usr/bin/qsv',
+        join(homedir(), '.cargo', 'bin', 'qsv'),
+        join(homedir(), '.local', 'bin', 'qsv'),
+      ];
+
+  // Try each common location
+  for (const location of commonLocations) {
+    const diagnostic: any = { path: location, exists: false };
+
+    try {
+      // Check if file exists and is executable
+      const stats = statSync(location);
+      diagnostic.exists = true;
+      diagnostic.isFile = stats.isFile();
+
+      if (stats.isFile()) {
+        // Verify it's actually qsv by trying to run it
+        try {
+          const versionOutput = execFileSync(location, ['--version'], {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+            timeout: QSV_VALIDATION_TIMEOUT_MS
+          });
+          diagnostic.executable = true;
+          diagnostic.version = versionOutput.trim().split('\n')[0];
+          lastDetectionDiagnostics.locationsChecked.push(diagnostic);
+          return location; // Found it!
+        } catch (execError) {
+          diagnostic.executable = false;
+          diagnostic.error = execError instanceof Error ? execError.message : String(execError);
+        }
+      }
+    } catch (statError) {
+      diagnostic.error = statError instanceof Error ? statError.message : String(statError);
+    }
+
+    lastDetectionDiagnostics.locationsChecked.push(diagnostic);
+  }
+
+  return null;
 }
 
 /**

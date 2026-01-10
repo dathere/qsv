@@ -26,8 +26,10 @@ import {
   createGenericToolDefinition,
   handleToolCall,
   handleGenericCommand,
+  createConfigTool,
   createWelcomeTool,
   createExamplesTool,
+  handleConfigTool,
   handleWelcomeTool,
   handleExamplesTool,
   initiateShutdown,
@@ -272,12 +274,13 @@ class QsvMcpServer {
         throw error;
       }
 
-      // Add welcome and examples tools
-      console.error('[Server] Adding welcome and examples tools...');
+      // Add welcome, config, and examples tools
+      console.error('[Server] Adding welcome, config, and examples tools...');
       try {
         tools.push(createWelcomeTool());
+        tools.push(createConfigTool());
         tools.push(createExamplesTool());
-        console.error('[Server] Welcome and examples tools added successfully');
+        console.error('[Server] Welcome, config, and examples tools added successfully');
       } catch (error) {
         console.error('[Server] Error creating welcome/examples tools:', error);
         throw error;
@@ -409,6 +412,11 @@ class QsvMcpServer {
         // Handle welcome tool
         if (name === 'qsv_welcome') {
           return await handleWelcomeTool(this.filesystemProvider);
+        }
+
+        // Handle config tool
+        if (name === 'qsv_config') {
+          return await handleConfigTool(this.filesystemProvider);
         }
 
         // Handle examples tool

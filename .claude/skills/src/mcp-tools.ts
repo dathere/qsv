@@ -10,7 +10,7 @@ import { ConvertedFileManager } from './converted-file-manager.js';
 import type { QsvSkill, Argument, Option, McpToolDefinition, McpToolProperty, FilesystemProviderExtended } from './types.js';
 import type { SkillExecutor } from './executor.js';
 import type { SkillLoader } from './loader.js';
-import { config } from './config.js';
+import { config, getDetectionDiagnostics } from './config.js';
 import { formatBytes, findSimilarFiles } from './utils.js';
 
 /**
@@ -885,6 +885,21 @@ export function createGenericToolDefinition(loader: SkillLoader): McpToolDefinit
 }
 
 /**
+ * Create qsv_config tool definition
+ */
+export function createConfigTool(): McpToolDefinition {
+  return {
+    name: 'qsv_config',
+    description: 'Display current qsv configuration (binary path, version, working directory, etc.)',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  };
+}
+
+/**
  * Create qsv_welcome tool definition
  */
 export function createWelcomeTool(): McpToolDefinition {
@@ -1035,6 +1050,132 @@ Ready to start wrangling data? 🚀`;
 
   return {
     content: [{ type: 'text', text: welcomeText }],
+  };
+}
+
+/**
+ * Handle qsv_config tool call
+ */
+export async function handleConfigTool(filesystemProvider?: FilesystemProviderExtended): Promise<{ content: Array<{ type: string; text: string }> }> {
+  const validation = config.qsvValidation;
+  const extensionMode = config.isExtensionMode;
+
+  let configText = `# qsv Configuration\n\n`;
+
+  // qsv Binary Information
+  configText += `## qsv Binary\n\n`;
+  if (validation.valid) {
+    configText += `✅ **Status:** Validated\n`;
+    configText += `📍 **Path:** \`${validation.path}\`\n`;
+    configText += `🏷️ **Version:** ${validation.version}\n`;
+  } else {
+    configText += `❌ **Status:** Validation Failed\n`;
+    configText += `⚠️ **Error:** ${validation.error}\n`;
+
+    // Show auto-detection diagnostics
+    const diagnostics = getDetectionDiagnostics();
+    if (diagnostics.whichAttempted) {
+      configText += `\n### 🔍 Auto-Detection Diagnostics\n\n`;
+
+      // Show which/where attempt
+      configText += `**PATH search (which/where):**\n`;
+      if (diagnostics.whichResult) {
+        configText += `✅ Found: \`${diagnostics.whichResult}\`\n\n`;
+      } else if (diagnostics.whichError) {
+        configText += `❌ Failed: ${diagnostics.whichError}\n\n`;
+      } else {
+        configText += `❌ Not found in PATH\n\n`;
+      }
+
+      // Show common locations checked
+      if (diagnostics.locationsChecked.length > 0) {
+        configText += `**Common locations checked:**\n\n`;
+        diagnostics.locationsChecked.forEach((loc) => {
+          configText += `- \`${loc.path}\`\n`;
+          if (loc.exists) {
+            configText += `  - ✅ File exists\n`;
+            if (loc.isFile !== undefined) {
+              configText += `  - ${loc.isFile ? '✅' : '❌'} Is regular file: ${loc.isFile}\n`;
+            }
+            if (loc.executable !== undefined) {
+              configText += `  - ${loc.executable ? '✅' : '❌'} Executable: ${loc.executable}\n`;
+            }
+            if (loc.version) {
+              configText += `  - ✅ Version: ${loc.version}\n`;
+            }
+            if (loc.error) {
+              configText += `  - ⚠️ Error: ${loc.error}\n`;
+            }
+          } else {
+            configText += `  - ❌ Does not exist\n`;
+            if (loc.error) {
+              configText += `  - ⚠️ Error: ${loc.error}\n`;
+            }
+          }
+        });
+        configText += `\n`;
+      }
+    }
+  }
+
+  // Working Directory
+  configText += `\n## Working Directory\n\n`;
+  if (filesystemProvider) {
+    const workingDir = filesystemProvider.getWorkingDirectory();
+    configText += `📁 **Current:** \`${workingDir}\`\n`;
+  } else {
+    configText += `📁 **Current:** \`${config.workingDir}\`\n`;
+  }
+
+  // Allowed Directories
+  configText += `\n## Allowed Directories\n\n`;
+  if (config.allowedDirs.length > 0) {
+    configText += `🔓 **Access granted to:**\n`;
+    config.allowedDirs.forEach(dir => {
+      configText += `   - \`${dir}\`\n`;
+    });
+  } else {
+    configText += `ℹ️ Only working directory is accessible\n`;
+  }
+
+  // Performance Settings
+  configText += `\n## Performance Settings\n\n`;
+  configText += `⏱️ **Timeout:** ${config.timeoutMs}ms (${Math.round(config.timeoutMs / 1000)}s)\n`;
+  configText += `💾 **Max Output Size:** ${formatBytes(config.maxOutputSize)}\n`;
+  configText += `🔧 **Auto-Regenerate Skills:** ${config.autoRegenerateSkills ? 'Enabled' : 'Disabled'}\n`;
+
+  // Update Check Settings
+  configText += `\n## Update Settings\n\n`;
+  configText += `🔍 **Check Updates on Startup:** ${config.checkUpdatesOnStartup ? 'Enabled' : 'Disabled'}\n`;
+  configText += `📢 **Update Notifications:** ${config.notifyUpdates ? 'Enabled' : 'Disabled'}\n`;
+
+  // Mode
+  configText += `\n## Deployment Mode\n\n`;
+  configText += `${extensionMode ? '🧩 **Desktop Extension Mode**' : '🖥️ **Legacy MCP Server Mode**'}\n`;
+
+  // Help Text
+  configText += `\n---\n\n`;
+  if (!validation.valid) {
+    configText += `### ⚠️ Action Required\n\n`;
+    if (extensionMode) {
+      configText += `To fix the qsv binary issue:\n`;
+      configText += `1. Install qsv from https://github.com/dathere/qsv#installation\n`;
+      configText += `2. Open Claude Desktop Settings > Extensions > qsv\n`;
+      configText += `3. Update "qsv Binary Path" or ensure qsv is in your system PATH\n`;
+      configText += `4. Save settings (extension will auto-restart)\n`;
+    } else {
+      configText += `To fix the qsv binary issue:\n`;
+      configText += `1. Install qsv from https://github.com/dathere/qsv#installation\n`;
+      configText += `2. Ensure qsv is in your PATH or set QSV_MCP_BIN_PATH\n`;
+      configText += `3. Restart the MCP server\n`;
+    }
+  } else {
+    configText += `### 💡 Tip\n\n`;
+    configText += `These are the actual resolved values used by the server. The configuration UI may show template variables like \`\${HOME}/Downloads\` which get expanded to the paths shown above.\n`;
+  }
+
+  return {
+    content: [{ type: 'text', text: configText }],
   };
 }
 

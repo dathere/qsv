@@ -86,7 +86,8 @@ npm run build:test
 ### qsv Installation Fails
 - Check that qsv releases are available on GitHub
 - Verify download URLs match current release naming convention: `qsv-{VERSION}-{TARGET}.zip`
-- Version extraction uses Python JSON parsing on Ubuntu/macOS for reliability
+- Version extraction uses `gh` CLI (GitHub CLI) which is pre-installed on all runners
+- Command: `gh release view --repo dathere/qsv --json tagName --jq .tagName`
 - Supported targets:
   - Ubuntu: `x86_64-unknown-linux-gnu`
   - macOS: `aarch64-apple-darwin` (ARM64 only)

@@ -41,7 +41,7 @@ jobs:
       - name: Install qsv (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          QSV_VERSION=$(curl -s https://api.github.com/repos/dathere/qsv/releases/latest | python3 -c "import sys, json; print(json.load(sys.stdin)['tag_name'])")
+          QSV_VERSION=$(gh release view --repo dathere/qsv --json tagName --jq .tagName)
           echo "Installing qsv $QSV_VERSION"
           ASSET_NAME="qsv-${QSV_VERSION}-x86_64-unknown-linux-gnu.zip"
           curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
@@ -50,11 +50,13 @@ jobs:
           chmod +x bin/qsv
           echo "$PWD/bin" >> $GITHUB_PATH
           bin/qsv --version
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Install qsv (macOS)
         if: matrix.os == 'macos-14'
         run: |
-          QSV_VERSION=$(curl -s https://api.github.com/repos/dathere/qsv/releases/latest | python3 -c "import sys, json; print(json.load(sys.stdin)['tag_name'])")
+          QSV_VERSION=$(gh release view --repo dathere/qsv --json tagName --jq .tagName)
           echo "Installing qsv $QSV_VERSION"
           ASSET_NAME="qsv-${QSV_VERSION}-aarch64-apple-darwin.zip"
           curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
@@ -63,12 +65,14 @@ jobs:
           chmod +x bin/qsv
           echo "$PWD/bin" >> $GITHUB_PATH
           bin/qsv --version
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Install qsv (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $QSV_VERSION = (Invoke-RestMethod -Uri "https://api.github.com/repos/dathere/qsv/releases/latest").tag_name
+          $QSV_VERSION = gh release view --repo dathere/qsv --json tagName --jq .tagName
           Write-Host "Installing qsv $QSV_VERSION"
           $ASSET_NAME = "qsv-$QSV_VERSION-x86_64-pc-windows-msvc.zip"
           $url = "https://github.com/dathere/qsv/releases/download/$QSV_VERSION/$ASSET_NAME"
@@ -77,6 +81,8 @@ jobs:
           Expand-Archive -Path $ASSET_NAME -DestinationPath bin -Force
           Write-Output "$PWD\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           .\bin\qsv.exe --version
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Install dependencies
         run: npm ci

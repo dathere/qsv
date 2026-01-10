@@ -40,9 +40,20 @@ When you select an Excel or JSONL file, the MCP server automatically:
 
 ## Quick Start
 
-### 1. Configure Your Claude Desktop
+### Desktop Extension (Recommended)
 
-Add the QSV MCP server to your Claude Desktop configuration with optional environment variables:
+**No configuration needed!** The Desktop Extension auto-detects qsv and uses smart defaults:
+
+1. Install the `.mcpb` file (see [DESKTOP_EXTENSION.md](./DESKTOP_EXTENSION.md))
+2. qsv path is auto-detected from PATH and common locations
+3. Working directory defaults to ~/Downloads
+4. Add more allowed directories in Settings if needed
+
+Use `qsv_config` tool to verify your configuration.
+
+### Legacy MCP Server (Manual Configuration)
+
+For legacy MCP server installations, add the QSV MCP server to your Claude Desktop configuration:
 
 **Location**: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 
@@ -68,17 +79,18 @@ Add the QSV MCP server to your Claude Desktop configuration with optional enviro
 - **macOS/Linux**: Use colons (`:`) to separate directories in `QSV_MCP_ALLOWED_DIRS`
 - **Windows**: Use semicolons (`;`) to separate directories, and use double backslashes in paths (e.g., `C:\\Users\\YourName\\Downloads`)
 
-### 2. Restart Claude Desktop
-
-After updating the configuration, restart Claude Desktop for the changes to take effect.
+**After configuration**: Restart Claude Desktop for the changes to take effect.
 
 ## Configuration Options
+
+> **Note**: These environment variables apply to **Legacy MCP Server** installations only. The **Desktop Extension** uses GUI settings with auto-detection instead.
 
 ### Environment Variables
 
 #### `QSV_MCP_BIN_PATH`
 - **Description**: Path to the qsv binary executable
-- **Default**: `qsv` (assumes qsv is in PATH)
+- **Default (Legacy MCP)**: `qsv` (assumes qsv is in PATH)
+- **Default (Desktop Extension)**: Auto-detected from PATH and common locations
 - **Example (Unix)**: `"/usr/local/bin/qsv"`
 - **Example (Windows)**: `"C:\\Program Files\\qsv\\qsv.exe"`
 - **Security Note**: This should only point to a trusted qsv binary from the official installation. Ensure the binary path is not writable by untrusted users.

@@ -42,7 +42,7 @@ Each skill file provides:
 **Choose your installation method:**
 
 <details>
-<summary><b>🎁 Desktop Extension (Recommended)</b> - Easiest installation, automatic updates</summary>
+<summary><b>🎁 Desktop Extension (Recommended)</b> - Easiest installation, automatic updates, zero configuration</summary>
 
 **Perfect for**: Most users, especially non-technical users
 
@@ -52,8 +52,10 @@ Each skill file provides:
 1. Install qsv: `brew install qsv` (macOS) or see [qsv installation](https://github.com/dathere/qsv#installation)
 2. Download `qsv-mcp-server.mcpb` from releases
 3. Double-click the `.mcpb` file (opens with Claude Desktop)
-4. Configure qsv binary path in settings
+4. **That's it!** qsv binary path is auto-detected, no manual configuration needed
 5. Restart Claude Desktop
+
+**New in 13.0.0**: Auto-detection finds qsv in standard locations (PATH, /usr/local/bin, ~/.cargo/bin, etc.)
 
 **Documentation**: [DESKTOP_EXTENSION.md](./DESKTOP_EXTENSION.md)
 

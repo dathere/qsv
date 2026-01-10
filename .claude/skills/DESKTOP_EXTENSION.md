@@ -76,28 +76,33 @@ The qsv Desktop Extension packages the MCP Server as a `.mcpb` file (MCP Bundle)
 2. **Double-click** the `.mcpb` file (opens with Claude Desktop), OR
 3. In Claude Desktop: Settings → Extensions → "Install from file" → select `.mcpb` file
 
-### Step 3: Configure Extension
+### Step 3: Configure Extension (Optional)
 
-After installation, Claude Desktop will prompt you to configure the extension:
+After installation, Claude Desktop will prompt you to configure the extension. **Good news: most settings have smart defaults and auto-detection!**
 
-1. **qsv Binary Path** (required)
-   - If qsv is in PATH: Leave as `qsv`
-   - Otherwise: Enter full path (e.g., `/usr/local/bin/qsv`)
+1. **qsv Binary Path** (optional - auto-detected!)
+   - **Leave empty** for automatic detection (recommended)
+   - Auto-detects from: PATH, `/usr/local/bin`, `/opt/homebrew/bin`, `~/.cargo/bin`
+   - Only set manually if auto-detection fails or you have a custom installation
+   - Example: `/usr/local/bin/qsv`
 
 2. **Default Working Directory** (optional)
-   - Default: `~/Downloads`
+   - Default: `${HOME}/Downloads` (auto-expands to your Downloads folder)
    - Where qsv commands run by default
+   - You can change this to any folder
 
 3. **Allowed Directories** (optional)
-   - Default: `~/Downloads:~/Documents`
-   - Colon-separated paths where qsv can access files
-   - Leave empty to allow all directories
+   - Default: Only working directory
+   - Add additional directories for file access (one per entry)
+   - Leave empty to restrict access to working directory only
 
 4. **Advanced Settings** (optional)
    - Command Timeout: 300000ms (5 minutes)
    - Max Output Size: 50MB
    - Auto-Regenerate Skills: false
    - Check for Updates: true
+
+💡 **Tip**: Use the `qsv_config` tool to verify your configuration and see detected paths!
 
 ### Step 4: Restart Claude Desktop
 
@@ -107,9 +112,23 @@ Close and reopen Claude Desktop to activate the extension.
 
 ## Verifying Installation
 
-### Test Extension is Active
+### Check Configuration
 
 In Claude Desktop chat:
+
+```
+qsv_config
+```
+
+Claude should show your configuration with:
+- ✅ qsv binary path (auto-detected or manually set)
+- 📍 Version number
+- 📁 Working directory
+- 🔓 Allowed directories
+
+**If auto-detection failed**, the diagnostics section will show which paths were checked and why detection failed.
+
+### Test Extension is Active
 
 ```
 List available qsv commands
@@ -201,17 +220,25 @@ For complete documentation, see [README.md](./README.md).
 
 **Purpose**: Location of qsv executable
 
-**Default**: `qsv` (assumes qsv is in PATH)
+**Default**: Auto-detection (recommended - leave empty)
 
-**Examples**:
+**Auto-detection checks** (in order):
+1. System PATH using `which qsv` (macOS/Linux) or `where qsv` (Windows)
+2. Common installation locations:
+   - macOS/Linux: `/usr/local/bin/qsv`, `/opt/homebrew/bin/qsv`, `~/.cargo/bin/qsv`, `~/.local/bin/qsv`
+   - Windows: `C:\Program Files\qsv\qsv.exe`, `C:\qsv\qsv.exe`, `%USERPROFILE%\scoop\shims\qsv.exe`
+
+**Manual override examples**:
 - macOS/Linux: `/usr/local/bin/qsv`
 - Windows: `C:\Program Files\qsv\qsv.exe`
 
-**Finding your path**:
+**Finding your path manually**:
 ```bash
 which qsv          # macOS/Linux
 where qsv           # Windows
 ```
+
+**Verification**: Use `qsv_config` tool to see detected path and diagnostics
 
 #### Working Directory
 
@@ -289,16 +316,26 @@ where qsv           # Windows
 **Symptom**: Extension installed but commands fail with "command not found"
 
 **Solutions**:
-1. **Verify qsv is installed**:
+1. **Check configuration and diagnostics**:
+   ```
+   qsv_config
+   ```
+   This shows:
+   - Whether qsv was detected
+   - Which paths were checked
+   - Why auto-detection failed (if it did)
+
+2. **Verify qsv is installed**:
    ```bash
    qsv --version
    ```
-2. **Check binary path in settings**:
-   - Settings → Extensions → qsv → Configuration
-   - Verify "qsv Binary Path" is correct
-3. **Use full path**:
+
+3. **Try manual path configuration**:
    - Find qsv location: `which qsv` (macOS/Linux) or `where qsv` (Windows)
-   - Update configuration with full path
+   - Settings → Extensions → qsv → Configuration
+   - Set "qsv Binary Path" to the full path (e.g., `/usr/local/bin/qsv`)
+   - Save and restart Claude Desktop
+
 4. **Reinstall qsv** if not found:
    - See [Prerequisites](#prerequisites) section
 
@@ -548,8 +585,11 @@ Yes! The extension is open source:
 
 ## Changelog
 
-### Version 13.0.0 (2026-01-07)
-- Initial Desktop Extension release
+### Version 13.0.0 (2026-01-10)
+- **Auto-detection of qsv binary path** - zero configuration for standard installations
+- **qsv_config diagnostic tool** - verify configuration and troubleshoot path issues
+- **Smart defaults** - working directory auto-expands to ~/Downloads
+- **Optional configuration fields** - leave empty for auto-detection
 - 66 qsv commands packaged as MCP tools
 - Filesystem resource browsing
 - Auto-conversion for Excel and JSONL files

@@ -92,6 +92,7 @@ jobs:
 
       - name: Run tests
         run: npm test
+        shell: bash
         env:
           NODE_ENV: test
 

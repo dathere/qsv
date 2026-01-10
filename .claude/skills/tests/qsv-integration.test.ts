@@ -290,9 +290,11 @@ test('qsv command with invalid file returns error', { skip: !QSV_AVAILABLE }, as
   );
 
   assert.strictEqual(result.isError, true, 'Should return error for nonexistent file');
+  const errorText = result.content[0].text?.toLowerCase() || '';
   assert.ok(
-    result.content[0].text?.toLowerCase().includes('not found') ||
-    result.content[0].text?.toLowerCase().includes('no such file'),
+    errorText.includes('not found') ||
+    errorText.includes('no such file') ||
+    errorText.includes('cannot find the path'),
     'Error message should mention file not found'
   );
 });

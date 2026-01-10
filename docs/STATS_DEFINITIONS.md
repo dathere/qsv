@@ -21,6 +21,7 @@
 - [moarstats](#moarstats)
   - [Derived Statistics](#derived-statistics)
   - [Advanced Statistics](#advanced-statistics)
+  - [Bivariate Statistics](#bivariate-statistics)
   - [Robust Statistics (Winsorized & Trimmed Means)](#robust-statistics-winsorized--trimmed-means)
   - [Outlier Statistics](#outlier-statistics)
     - [Outlier Counts](#outlier-counts)
@@ -28,6 +29,13 @@
     - [Outlier Variance/Spread Statistics](#outlier-variancespread-statistics)
     - [Outlier Impact Statistics](#outlier-impact-statistics)
     - [Outlier Boundary Statistics](#outlier-boundary-statistics)
+- [frequency](#frequency)
+  - [Frequency Table Output](#frequency-table-output)
+  - [Ranking Strategies](#ranking-strategies)
+  - [Weighted Frequencies](#weighted-frequencies)
+  - [Stats Cache Integration](#stats-cache-integration)
+  - [JSON/TOON Output](#jsontoon-output)
+  - [Memory-Aware Processing](#memory-aware-processing)
 
 ---
 
@@ -38,7 +46,7 @@ Each statistic is categorized by its relevant section, with its identifier (colu
 
 > **Note**: "Streaming" statistics are computed in constant memory. "Non-Streaming" statistics require loading the column data into memory (or multiple passes) and may use approximation or exact calculation depending on configuration.
 
-**Important:** Unlike the `sniff` command, `stats` data type inferences are **GUARANTEED**, as the entire file is scanned, not just sampled. This makes `stats` a central command in qsv that underpins other "smart" commands (`frequency`, `pivotp`, `sample`, `schema`, `validate`, `tojsonl`) which use cached statistical information to work smarter & faster.
+**Important:** Unlike the `sniff` command, `stats` data type inferences are **GUARANTEED**, as the entire file is scanned, not just sampled. This makes `stats` a central command in qsv that underpins other "smart" commands (`frequency`, `pivotp`, `sample`, `schema`, `validate`, `tojsonl`, `sqlp`, `joinp`) which use cached statistical information to work smarter & faster.
 
 The command supports various caching options to improve performance on subsequent runs. See `--stats-jsonl` and `--cache-threshold` options for details.
 
@@ -101,7 +109,6 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 |:---|:---:|:---|:---|
 | `field` | Variable | The name of the column/header (or its index if `--no-headers` is used). | Extracted from the CSV header row. |
 | `type` | Variable | Inferred data type of the column. | Inferred by checking values against: NULL, Integer, Float, Date, DateTime, Boolean (optional), and fallback to String. Data type inferences are **GUARANTEED** as `stats` scans the entire file. |
-| `subtype_xsd` | Variable | Inferred XSD data subtype (if enabled). | Refined inference for integers, representing XSD integer subtypes (`byte`, `short`, `int`, `long`) and the XSD decimal subtype (`decimal`). Note: This may not be actively used in the current implementation. |
 | `is_ascii` | Variable | Indicates if all characters in the string column are ASCII. | Checked during UTF-8 validation; true if bytes are valid ASCII. |
 
 **Date and DateTime Type Inference:**
@@ -188,7 +195,7 @@ Requires loading data into memory and sorting. When `--weight <column>` is speci
 | `lower_inner_fence` | Variable | Lower bound for outliers. | `q1 - (1.5 * iqr)`, used to identify mild outliers. For dates/datetimes, returned in RFC3339 format. |
 | `upper_inner_fence` | Variable | Upper bound for outliers. | `q3 + (1.5 * iqr)`, used to identify mild outliers. For dates/datetimes, returned in RFC3339 format. |
 | `upper_outer_fence` | Variable | Upper bound for extreme outliers. | `q3 + (3.0 * iqr)`, used to identify extreme outliers. For dates/datetimes, returned in RFC3339 format. |
-| `skewness` | Variable | Measure of asymmetry of the probability distribution. | Quantile-based skewness: `((q3 - q2) - (q2 - q1)) / iqr` or `(q3 - (2.0 * q2) + q1) / iqr`. |
+| `skewness` | Variable | Measure of asymmetry of the probability distribution. | Quantile-based skewness: `(q3 - (2.0 * q2) + q1) / iqr`. |
 
 ### Cardinality & Modes (Non-Streaming)
 
@@ -234,7 +241,7 @@ These statistics appear as additional rows with the prefix `qsv__` when `--datas
 | `qsv__rowcount` | File | Total number of rows (records). | Count of records processed (excluding header). |
 | `qsv__columncount` | File | Total number of columns. | Count of fields in the header/first record. |
 | `qsv__filesize_bytes` | File | Total file size in bytes. | Filesystem metadata size. |
-| `qsv__fingerprint_hash`| File | Cryptographic hash of the dataset's stats. | BLAKE3 hash (formerly SHA-256) of the first 26 columns ("streaming" stats) + dataset stats (rowcount, columncount, filesize_bytes). This allows users to quickly detect duplicate files without having to load the entire file to compute the hash. Especially useful for detecting duplicates of very large files with pre-existing stats cache metadata. |
+| `qsv__fingerprint_hash`| File | Cryptographic hash of the dataset's stats. | BLAKE3 hash of the first 26 columns ("streaming" stats) + dataset stats (rowcount, columncount, filesize_bytes). This allows users to quickly detect duplicate files without having to load the entire file to compute the hash. Especially useful for detecting duplicates of very large files with pre-existing stats cache metadata. |
 | `qsv__value` | File | The value column for dataset stats. | Holds the value for the `qsv__` row (e.g., the row count integer, column count, file size, or fingerprint hash). |
 
 ### Whitespace Visualization
@@ -262,7 +269,7 @@ The following whitespace markers are used (as defined in the [Rust reference](ht
 
 ### Performance & Caching
 
-The `stats` command is central to qsv and underpins other "smart" commands (`frequency`, `pivotp`, `sample`, `schema`, `validate`, `tojsonl`) that use cached statistical information to work smarter & faster.
+The `stats` command is central to qsv and underpins other "smart" commands (`frequency`, `pivotp`, `sample`, `schema`, `validate`, `tojsonl`, `sqlp`, `joinp`) that use cached statistical information to work smarter & faster.
 
 **Caching Behavior:**
 - Statistics are cached in `<FILESTEM>.stats.csv` and optionally `<FILESTEM>.stats.csv.data.jsonl` (with `--stats-jsonl`)
@@ -270,6 +277,11 @@ The `stats` command is central to qsv and underpins other "smart" commands (`fre
 - If stats have already been computed with similar arguments and the file hasn't changed, stats are loaded from cache instead of recomputing
 - Use `--force` to force recomputing stats even if valid cache exists
 - Use `--cache-threshold` to control caching behavior (default: 5000ms)
+
+**Memory-Aware Chunking:**
+- For non-streaming statistics, dynamically calculate chunk size based on available memory and record sampling
+- Override with `QSV_STATS_CHUNK_MEMORY_MB` environment variable (0 for dynamic sizing, positive for fixed limit, -1 for CPU-based chunking)
+- Enables processing of arbitrarily large "real-world" files
 
 ## `moarstats`
 Here are all the additional statistics produced by the `qsv moarstats` command, sourced from `src/cmd/moarstats.rs`.
@@ -307,7 +319,7 @@ These statistics are computed directly from existing stats columns without scann
 | `median_mean_ratio` | Variable | Median-to-Mean Ratio. Indicates skewness direction. Ratio < 1 suggests right skew, > 1 suggests left skew, = 1 suggests symmetry. | `median / mean`. Requires: `median` (or `q2_median`), `mean`. Returns `None` if mean is zero. |
 | `iqr_range_ratio` | Variable | IQR-to-Range Ratio. Measures concentration of data. Higher values (closer to 1) indicate more data concentrated in the middle 50%. | `iqr / range`. Requires: `iqr`, `range`. Returns `None` if range is zero. |
 | `mad_stddev_ratio` | Variable | MAD-to-StdDev Ratio. Compares robust vs non-robust spread measures. Higher values suggest presence of outliers affecting stddev. | `mad / stddev`. Requires: `mad`, `stddev`. Returns `None` if stddev is zero. |
-| `xsd_type` | Variable | Inferred W3C XML Schema datatype. Infers the most specific XSD type based on field type and min/max values. Works for **all field types**. | Computed from `type`, `min`, and `max` columns. For Integer types, refines to most specific type (e.g., `byte`, `short`, `int`, `long`, `unsignedByte`, `unsignedShort`, `unsignedInt`, `unsignedLong`, `positiveInteger`, `nonNegativeInteger`, `negativeInteger`, `nonPositiveInteger`, or `integer`) based on min/max ranges. For other types: Float → `decimal`, String → `string`, Date → `date`, DateTime → `dateTime`, Boolean → `boolean`, NULL → empty string. If min/max are not available for Integer types, defaults to `integer`. See: [XML Schema Part 2: Datatypes](https://www.w3.org/TR/xmlschema-2/) |
+| `xsd_type` | Variable | Inferred W3C XML Schema datatype. Infers the most specific XSD type based on field type and min/max values. Works for **all field types**. | Computed from `type`, `min`, and `max` columns. For Integer types, refines to most specific type (e.g., `byte`, `short`, `int`, `long`, `unsignedByte`, `unsignedShort`, `unsignedInt`, `unsignedLong`, `positiveInteger`, `nonNegativeInteger`, `negativeInteger`, `nonPositiveInteger`, or `integer`) based on min/max ranges. Also detects Gregorian date types (`gYear`, `gYearMonth`, `gMonthDay`, `gDay`, `gMonth`) with confidence markers (`?` = more confident from thorough scan, `??` = less confident from quick scan). For other types: Float → `decimal`, String → `string`, Date → `date`, DateTime → `dateTime`, Boolean → `boolean`, NULL → empty string. If min/max are not available for Integer types, defaults to `integer`. See: [XML Schema Part 2: Datatypes](https://www.w3.org/TR/xmlschema-2/) |
 
 ### Advanced Statistics
 
@@ -328,17 +340,33 @@ These statistics examine relationships between pairs of columns in a dataset. Th
 
 **Note**: Bivariate statistics require reading the entire CSV file and are computationally expensive. For large files (>= 10k records), parallel chunked processing is used when an index is available. For smaller files or when no index exists, sequential processing is used.
 
+**Performance Optimizations:**
+- Date parsing cache to avoid re-parsing same date strings
+- String interning to reduce allocations for repeated values
+- Batch string conversions to process multiple field pairs efficiently
+- Early termination for zero-variance fields (skip all correlation computations)
+- Streaming algorithms (Welford's online) for Pearson correlation and covariance
+- Lazy value collection (only store values if needed for Spearman/Kendall)
+
+**Multi-Dataset Bivariate Statistics**: When using `--join-inputs`, multiple datasets can be joined internally before computing relationships. This allows analyzing relationships across datasets that share common join keys. The joined dataset is automatically indexed before bivariate statistics computation. Output file: `<FILESTEM>.stats.bivariate.joined.csv`.
+
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
 | `pearson_correlation` | Pairwise | Pearson product-moment correlation coefficient. Measures linear correlation between two numeric/date fields. Values range from -1 (perfect negative correlation) to +1 (perfect positive correlation). 0 indicates no linear correlation. | Computed using Welford's online algorithm for efficient streaming computation across chunks. Requires both fields to be numeric or date types. Formula: `covariance / (stddev_x * stddev_y)`. See: [Pearson Correlation](https://en.wikipedia.org/wiki/Pearson_correlation_coefficient) |
 | `spearman_correlation` | Pairwise | Spearman's rank correlation coefficient. Measures monotonic relationship between two numeric/date fields (not just linear). Values range from -1 to +1. More robust to outliers than Pearson correlation. | Computed by ranking both fields and then computing Pearson correlation on the ranks. Handles ties by averaging ranks. Requires both fields to be numeric or date types. See: [Spearman's Rank Correlation](https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient) |
-| `kendall_tau` | Pairwise | Kendall's tau rank correlation coefficient. Measures ordinal association between two numeric/date fields. Values range from -1 to +1. More robust to outliers and handles ties better than Spearman. | Computed by counting concordant and discordant pairs. Formula accounts for ties in both variables. Requires both fields to be numeric or date types. See: [Kendall's Tau](https://en.wikipedia.org/wiki/Kendall_rank_correlation_coefficient) |
+| `kendall_tau` | Pairwise | Kendall's tau rank correlation coefficient. Measures ordinal association between two numeric/date fields. Values range from -1 to +1. More robust to outliers and handles ties better than Spearman. | Computed by counting concordant and discordant pairs using efficient O(n log n) merge sort algorithm. Formula accounts for ties in both variables. Requires both fields to be numeric or date types. See: [Kendall's Tau](https://en.wikipedia.org/wiki/Kendall_rank_correlation_coefficient) |
 | `covariance_sample` | Pairwise | Sample covariance. Measures how two numeric/date fields vary together. Positive values indicate positive relationship, negative values indicate inverse relationship. | Computed using Welford's online algorithm. Formula: `sum((x - mean_x) * (y - mean_y)) / (n - 1)`. Requires both fields to be numeric or date types. |
 | `covariance_population` | Pairwise | Population covariance. Same as sample covariance but uses population formula (divides by n instead of n-1). | Computed using Welford's online algorithm. Formula: `sum((x - mean_x) * (y - mean_y)) / n`. Requires both fields to be numeric or date types. |
-| `mutual_information` | Pairwise | Mutual Information. Measures the amount of information obtained about one field by observing another. Values range from 0 (independent) to positive infinity. Works for **all field types** (numeric, date, string). | Computed from joint and marginal probability distributions. Formula: `MI(X,Y) = sum(p(x,y) * log2(p(x,y) / (p(x) * p(y))))`. Higher values indicate stronger relationship. See: [Mutual Information](https://en.wikipedia.org/wiki/Mutual_information) |
+| `mutual_information` | Pairwise | Mutual Information. Measures the amount of information obtained about one field by observing another. Values range from 0 (independent) to positive infinity. Works for **all field types** (numeric, date, string). | Computed from joint and marginal probability distributions. Formula: `MI(X,Y) = sum(p(x,y) * log2(p(x,y) / (p(x) * p(y))))`. Higher values indicate stronger relationship. Can be expensive for high-cardinality fields (use `--cardinality-threshold` to skip). See: [Mutual Information](https://en.wikipedia.org/wiki/Mutual_information) |
+| `normalized_mutual_information` | Pairwise | Normalized Mutual Information. Normalized version of mutual information, scaled by the geometric mean of individual entropies. Values range from 0 (independent) to 1 (perfectly dependent). | Computed as `MI(X,Y) / sqrt(H(X) * H(Y))` where H(X) and H(Y) are Shannon entropies of individual fields. Requires mutual information computation. See: [Normalized Mutual Information](https://en.wikipedia.org/wiki/Mutual_information#Normalized_variants) |
 | `n_pairs` | Pairwise | Number of valid pairs used in computation. Indicates how many non-null value pairs were available for computing the relationship statistics. | Count of records where both fields have non-empty values. |
 
-**Multi-Dataset Bivariate Statistics**: When using `--join-inputs`, multiple datasets can be joined internally before computing relationships. This allows analyzing relationships across datasets that share common join keys. The joined dataset is automatically indexed before bivariate statistics computation.
+**Configuration Options:**
+- `--bivariate-stats`: Select specific statistics (pearson, spearman, kendall, covariance, mi, nmi) or use "all" or "fast" (pearson + covariance)
+- `--cardinality-threshold`: Skip mutual information for field pairs where either field exceeds cardinality threshold (default: 1,000,000)
+- `--join-inputs`: Join multiple datasets before computing bivariate statistics
+- `--join-keys`: Specify join keys for each dataset
+- `--join-type`: Specify join type (inner, left, right, full; default: inner)
 
 ### Robust Statistics (Winsorized & Trimmed Means)
 
@@ -440,3 +468,204 @@ See: [Outlier](https://en.wikipedia.org/wiki/Outlier)
 |:---|:---:|:---|:---|
 | `lower_outer_fence_zscore` | Variable | Z-score of the lower outer fence boundary. | `(lower_outer_fence - mean) / stddev`. Shows how extreme the lower outlier boundary is relative to the distribution. Returns `None` if stddev is zero. |
 | `upper_outer_fence_zscore` | Variable | Z-score of the upper outer fence boundary. | `(upper_outer_fence - mean) / stddev`. Shows how extreme the upper outlier boundary is relative to the distribution. Returns `None` if stddev is zero. |
+
+## `frequency`
+
+The `frequency` command computes exact frequency distribution tables for CSV columns, with support for multiple output formats, ranking strategies, and weighted frequencies.
+
+**Key Features:**
+- Computes exact frequency counts (unlike approximate sketches)
+- Multiple ranking strategies for handling tied values
+- Weighted frequency support using a specified weight column
+- CSV and JSON/TOON output modes
+- Integration with stats cache for memory optimization
+- Memory-aware chunking for large datasets
+- Parallel processing support with indexing
+
+**Stats Cache Integration:**
+When the stats cache exists (created by `qsv stats --stats-jsonl`), the frequency command uses it to:
+- Detect ID columns (cardinality == rowcount) and short-circuit frequency compilation
+- Pre-allocate appropriate hashmap capacity based on cardinality
+- Avoid building hashmaps for all-unique columns
+
+Without stats cache, frequency will compute frequencies for ALL columns, even ID columns, which can use significant memory.
+
+For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_frequency.rs.
+
+### Frequency Table Output
+
+In CSV output mode (default), the table is formatted as CSV data with the following columns:
+
+| Column | Description |
+|:---|:---|
+| `field` | Column name (or 1-based index if `--no-headers` is used) |
+| `value` | The value from the column |
+| `count` | Frequency count (or weighted sum if `--weight` is used) |
+| `percentage` | Percentage of total (count/total * 100) |
+| `rank` | Rank based on count (1 = most frequent, or least frequent if `--asc` is used) |
+
+**Special Values:**
+- `<ALL_UNIQUE>` (configurable via `--all-unique-text`): For ID columns detected via stats cache, indicates all values are unique. Count equals row count, percentage is 100%, rank is 0.
+- `Other (N)` (configurable via `--other-text`): When `--limit` is used, remaining values are grouped into this category. N indicates the count of unique values grouped. Rank is 0.
+- `(NULL)` (configurable via `--null-text`): Represents empty/missing values. Can be excluded with `--no-nulls`.
+
+**Limit Behavior:**
+- `--limit N` (positive): Keep only top N most frequent values
+- `--limit -N` (negative): Keep only values with count >= N
+- `--limit 0`: No limit, return all values
+- `--unq-limit N`: For all-unique columns, limit to N sample values (default: 10)
+- `--lmt-threshold N`: Only apply limits when unique count >= N (default: 0 = always apply)
+
+**Sorting:**
+- Default: Descending order by count (most frequent first)
+- `--asc`: Ascending order by count (least frequent first). Note: This also reverses ranking - least frequent values get rank 1.
+- `--other-sorted`: Include "Other" category in sorted order instead of at the end
+
+### Ranking Strategies
+
+The `--rank-strategy` option controls how ranks are assigned when multiple values have the same count. See https://en.wikipedia.org/wiki/Ranking for more info.
+
+| Strategy | Description | Example (counts: 4, 3, 3, 2) |
+|:---|:---|:---|
+| `dense` | Consecutive integers regardless of ties (1223 ranking) | 1, 2, 2, 3 |
+| `min` | Tied items receive minimum rank position (1224 ranking) | 1, 2, 2, 4 |
+| `max` | Tied items receive maximum rank position (1334 ranking) | 1, 3, 3, 4 |
+| `ordinal` | Next rank is current rank plus 1 (1234 ranking) | 1, 2, 3, 4 |
+| `average` | Tied items receive average of positions (1 2.5 2.5 4 ranking) | 1, 2.5, 2.5, 4 |
+
+**Note:** Tied values with the same rank are sorted alphabetically within their rank group.
+
+### Weighted Frequencies
+
+When the `--weight <column>` option is specified, frequency counts are multiplied by the weight value for each row.
+
+**Weight Handling:**
+- Weight column must be numeric
+- Weight column is automatically excluded from frequency computation
+- Missing or non-numeric weights default to 1.0
+- Zero, negative, NaN, and infinite weights are ignored and do not contribute to frequencies
+
+**Output:**
+- Count column shows weighted sum (displayed as rounded integer)
+- Percentage calculated as: `weight / total_weight * 100`
+- Ranking based on weighted sums
+
+### Stats Cache Integration
+
+The `frequency` command leverages the stats cache (created by `qsv stats --stats-jsonl`) to optimize memory usage and performance:
+
+**ID Column Detection:**
+When stats cache exists, columns where `cardinality == rowcount` are detected as ID columns. For these columns:
+- Frequency compilation is short-circuited (no hashmap built)
+- Output shows single `<ALL_UNIQUE>` entry with count = rowcount, percentage = 100%, rank = 0
+- Saves significant memory for large datasets with ID columns
+
+**Memory Optimization:**
+- Hashmap capacity pre-allocated based on cardinality from stats cache
+- For parallel processing, capacity divided by number of chunks
+- Reduces allocations and improves performance
+
+**Disabling Stats Cache:**
+Set `QSV_STATSCACHE_MODE=none` to force computing frequencies for ALL columns including ID columns. Useful when you need a "complete" frequency table even for ID columns. In this case, use `--unq-limit` to avoid memory issues with large cardinality columns.
+
+**Creating Stats Cache:**
+```bash
+# Create stats cache with cardinality for frequency optimization
+qsv stats --cardinality --stats-jsonl data.csv
+
+# Or create with all stats
+qsv stats --everything --stats-jsonl data.csv
+```
+
+### JSON/TOON Output
+
+The `--json` or `--pretty-json` flags output frequency tables as nested JSON. The `--toon` flag outputs in TOON format (compact, human-readable encoding for LLM prompts).
+
+**JSON Structure:**
+```json
+{
+  "input": "filename.csv",
+  "description": "command arguments",
+  "rowcount": 1000,
+  "fieldcount": 5,
+  "rank_strategy": "dense",
+  "fields": [
+    {
+      "field": "column_name",
+      "type": "String",
+      "cardinality": 10,
+      "nullcount": 0,
+      "sparsity": 0.0,
+      "uniqueness_ratio": 0.01,
+      "stats": [
+        {"name": "sum", "value": 1000},
+        {"name": "min", "value": "A"},
+        {"name": "max", "value": "Z"},
+        {"name": "range", "value": null},
+        {"name": "sort_order", "value": "UNSORTED"},
+        {"name": "mean", "value": null},
+        ...
+      ],
+      "frequencies": [
+        {"value": "A", "count": 500, "percentage": 50.0, "rank": 1},
+        {"value": "B", "count": 300, "percentage": 30.0, "rank": 2},
+        ...
+      ]
+    }
+  ]
+}
+```
+
+**Additional Stats in JSON Output:**
+When `--no-stats` is NOT set, JSON output includes 17 additional statistics per field:
+1. `sum` - Sum of numeric values
+2. `min` - Minimum value
+3. `max` - Maximum value
+4. `range` - Range (max - min)
+5. `sort_order` - ASCENDING, DESCENDING, or UNSORTED
+6. `mean` - Arithmetic mean
+7. `sem` - Standard error of the mean
+8. `geometric_mean` - Geometric mean
+9. `harmonic_mean` - Harmonic mean
+10. `stddev` - Standard deviation
+11. `variance` - Variance
+12. `cv` - Coefficient of variation
+13. String length stats (for String types): `min_length`, `max_length`, `avg_length`, `stddev_length`
+14. `nullcount` - Count of NULL values
+15. `sparsity` - Fraction of NULL values
+16. `max_precision` - Maximum decimal precision (for Float types)
+
+### Memory-Aware Processing
+
+The frequency command uses memory-aware chunking for large datasets to avoid out-of-memory errors.
+
+**Chunking Behavior:**
+- Automatically enabled for indexed files
+- Chunk size calculated based on:
+  - Available memory
+  - Record sampling (samples first 1000 records)
+  - Estimated hashmap overhead for frequency tables
+- Controlled by `QSV_FREQ_CHUNK_MEMORY_MB` environment variable:
+  - Not set or `0`: Dynamic sizing based on available memory and sampling
+  - Positive N: Fixed memory limit of N MB per chunk
+  - `-1`: CPU-based chunking (num_records / num_CPUs)
+
+**Parallel Processing:**
+- Requires an index file (`qsv index data.csv`)
+- Automatically enabled when index exists (disable with `--jobs 1`)
+- Each chunk processed independently, then merged
+- For unindexed files, falls back to sequential processing
+
+**Memory Estimation:**
+The command estimates memory per record as:
+- Base record size (sum of field lengths)
+- Hashmap overhead (~24 bytes per entry + value size)
+- Additional overhead for Vec capacity (~25%)
+
+**Auto-Index Creation:**
+If memory check fails and file is not indexed:
+- Attempts to auto-create index
+- Switches to parallel processing if successful
+- Falls back to sequential if index creation fails
+
+For configuration details, see https://github.com/dathere/qsv/blob/master/docs/ENVIRONMENT_VARIABLES.md

@@ -453,10 +453,19 @@ impl UsageParser {
     }
 
     fn extract_hints(&self) -> Option<BehavioralHints> {
-        // Look for emoji markers in usage text
+        // First try to look for emoji markers in usage text
         let has_memory_intensive = self.usage_text.contains("🤯");
-        let has_indexed = self.usage_text.contains("📇");
+        let has_indexed_in_usage = self.usage_text.contains("📇");
         let has_proportional_memory = self.usage_text.contains("😣");
+
+        // If not found in usage text, check README.md command table
+        let (readme_indexed, readme_memory_intensive, readme_proportional_memory) =
+            Self::extract_hints_from_readme(&self.command_name);
+
+        // Prefer usage text markers, fallback to README markers
+        let has_indexed = has_indexed_in_usage || readme_indexed;
+        let has_memory_intensive = has_memory_intensive || readme_memory_intensive;
+        let has_proportional_memory = has_proportional_memory || readme_proportional_memory;
 
         let memory = if has_memory_intensive {
             "full"
@@ -474,6 +483,37 @@ impl UsageParser {
             indexed: if has_indexed { Some(true) } else { None },
             memory: memory.to_string(),
         })
+    }
+
+    /// Extract hints from README.md command table
+    /// Returns (indexed, memory_intensive, proportional_memory)
+    fn extract_hints_from_readme(command_name: &str) -> (bool, bool, bool) {
+        // Try to find the README.md in the repo root
+        let readme_paths = [
+            "README.md",
+            "../README.md",
+            "../../README.md",
+        ];
+
+        for readme_path in &readme_paths {
+            if let Ok(readme_content) = fs::read_to_string(readme_path) {
+                // Find the line for this command in the table
+                // Format: | [command](/src/cmd/command.rs#L2)✨<br>📇🚀🧠🤖🔣👆| Description |
+                // Note: The #L2 line number varies, so we need to match more flexibly
+                let command_pattern = format!("| [{}](/src/cmd/{}.rs#", command_name, command_name);
+
+                if let Some(line) = readme_content.lines().find(|l| l.contains(&command_pattern)) {
+                    let indexed = line.contains("📇");
+                    let memory_intensive = line.contains("🤯");
+                    let proportional_memory = line.contains("😣");
+
+                    return (indexed, memory_intensive, proportional_memory);
+                }
+            }
+        }
+
+        // Fallback: no hints found
+        (false, false, false)
     }
 
     fn infer_category(&self) -> String {
@@ -533,7 +573,6 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // Get all commands from src/cmd/*.rs (excluding mod.rs and duplicates)
     let commands = vec![
         "apply",
-        "applydp",
         "behead",
         "cat",
         "clipboard",

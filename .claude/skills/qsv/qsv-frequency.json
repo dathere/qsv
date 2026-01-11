@@ -156,8 +156,9 @@
     ]
   },
   "hints": {
-    "streamable": true,
-    "memory": "constant"
+    "streamable": false,
+    "indexed": true,
+    "memory": "proportional"
   },
   "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_frequency.rs"
 }

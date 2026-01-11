@@ -16,27 +16,78 @@ import { config } from './config.js';
 export function createPipelineToolDefinition(): McpToolDefinition {
   return {
     name: 'qsv_pipeline',
-    description: 'Chain multiple qsv operations together in a single pipeline. Automatically pipes data between steps.',
+    description: `Execute multi-step qsv workflows by chaining commands together. Each step's output becomes the next step's input.
+
+💡 USE WHEN: You need 2+ operations in sequence (e.g., "remove duplicates, then sort by revenue DESC, then take top 100 rows").
+
+🚀 BENEFITS:
+- Automatic intermediate file management (you don't handle temp files)
+- Automatic indexing between steps for performance
+- Single coordinated operation from user perspective
+- More efficient than separate tool calls (no redundant I/O)
+- Better error handling (rollback on failure)
+
+📋 COMMON WORKFLOWS:
+1. **Data Cleaning**: dedup → select (remove columns) → validate
+2. **Analysis**: stats → frequency (on specific columns) → tojsonl
+3. **Filter & Sort**: search (filter rows) → select (pick columns) → sort → slice (top N)
+4. **Complex Query**: select → search → apply → sort
+5. **Aggregation**: sqlp (GROUP BY) → sort → slice
+
+⚠️  LIMITATIONS:
+- Max ${config.maxPipelineSteps} steps per pipeline (configurable)
+- Linear workflows only (A → B → C), not branching/parallel
+- Each step must succeed before next step runs
+- All steps share same timeout (${Math.round(config.operationTimeoutMs / 1000)}s total)
+
+⚠️  CAUTION:
+- Memory-intensive commands (dedup, sort) in pipeline still load full data
+- For very large files, consider breaking into separate operations
+- Pipeline fails if any step fails (atomic operation)
+
+📝 EXAMPLE - Top 10 Products by Revenue:
+{
+  "input_file": "sales.csv",
+  "steps": [
+    {
+      "command": "dedup",
+      "params": {}
+    },
+    {
+      "command": "select",
+      "params": {"selection": "product,revenue"}
+    },
+    {
+      "command": "sort",
+      "params": {"columns": "revenue", "reverse": true}
+    },
+    {
+      "command": "slice",
+      "params": {"end": 10}
+    }
+  ],
+  "output_file": "top_products.csv"
+}`,
     inputSchema: {
       type: 'object',
       properties: {
         input_file: {
           type: 'string',
-          description: 'Path to input CSV file (absolute or relative)',
+          description: 'Path to input CSV file (absolute or relative). Will be auto-indexed if >10MB for better performance.',
         },
         steps: {
           type: 'array',
-          description: 'Array of pipeline steps to execute in order',
+          description: `Array of pipeline steps to execute in order. Each step transforms the data and passes to next step. Max ${config.maxPipelineSteps} steps.`,
           items: {
             type: 'object',
             properties: {
               command: {
                 type: 'string',
-                description: 'The qsv command to execute (e.g., "select", "dedup", "stats")',
+                description: 'The qsv command name (without "qsv_" prefix). Examples: "select", "dedup", "stats", "search", "sort", "slice".',
               },
               params: {
                 type: 'object',
-                description: 'Parameters for this command (arguments and options)',
+                description: 'Parameters for this command. Keys are parameter names (use underscore for multi-word like "ignore_case"). Omit input_file (auto-piped from previous step).',
               },
             },
             required: ['command'],
@@ -44,7 +95,7 @@ export function createPipelineToolDefinition(): McpToolDefinition {
         },
         output_file: {
           type: 'string',
-          description: 'Path to output CSV file (optional, returns to stdout if omitted)',
+          description: 'Path to final output CSV file (optional). If omitted, small results (<850KB) return directly; large results auto-saved to working directory.',
         },
       },
       required: ['input_file', 'steps'],

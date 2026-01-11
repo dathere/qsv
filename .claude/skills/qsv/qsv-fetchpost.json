@@ -183,6 +183,7 @@
   },
   "hints": {
     "streamable": true,
+    "indexed": true,
     "memory": "constant"
   },
   "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fetchpost.rs"

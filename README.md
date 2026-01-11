@@ -196,6 +196,9 @@ brew install qsv
 # MacPorts on macOS (https://ports.macports.org/port/qsv/)
 sudo port install qsv
 
+# Mise on Linux/macOS/Windows (https://jdx.mise.dev)
+mise use -g qsv@latest
+
 # Nixpkgs on Linux/macOS (https://search.nixos.org/packages?channel=unstable&show=qsv&from=0&size=50&sort=relevance&type=packages&query=qsv)
 nix-shell -p qsv
 

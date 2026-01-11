@@ -489,11 +489,7 @@ impl UsageParser {
     /// Returns (indexed, memory_intensive, proportional_memory)
     fn extract_hints_from_readme(command_name: &str) -> (bool, bool, bool) {
         // Try to find the README.md in the repo root
-        let readme_paths = [
-            "README.md",
-            "../README.md",
-            "../../README.md",
-        ];
+        let readme_paths = ["README.md", "../README.md", "../../README.md"];
 
         for readme_path in &readme_paths {
             if let Ok(readme_content) = fs::read_to_string(readme_path) {
@@ -502,7 +498,10 @@ impl UsageParser {
                 // Note: The #L2 line number varies, so we need to match more flexibly
                 let command_pattern = format!("| [{}](/src/cmd/{}.rs#", command_name, command_name);
 
-                if let Some(line) = readme_content.lines().find(|l| l.contains(&command_pattern)) {
+                if let Some(line) = readme_content
+                    .lines()
+                    .find(|l| l.contains(&command_pattern))
+                {
                     let indexed = line.contains("📇");
                     let memory_intensive = line.contains("🤯");
                     let proportional_memory = line.contains("😣");

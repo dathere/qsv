@@ -463,7 +463,11 @@ impl UsageParser {
             Self::extract_hints_from_readme(&self.command_name);
 
         // Prefer usage text markers, fallback to README markers
-        let has_indexed = has_indexed_in_usage || readme_indexed;
+        let has_indexed = if has_indexed_in_usage {
+            true
+        } else {
+            readme_indexed
+        };
         let has_memory_intensive = has_memory_intensive || readme_memory_intensive;
         let has_proportional_memory = has_proportional_memory || readme_proportional_memory;
 
@@ -502,9 +506,23 @@ impl UsageParser {
                     .lines()
                     .find(|l| l.contains(&command_pattern))
                 {
-                    let indexed = line.contains("📇");
-                    let memory_intensive = line.contains("🤯");
-                    let proportional_memory = line.contains("😣");
+                    // Extract only the emoji marker section (between <br> and the next |)
+                    // to avoid matching emojis in the description text (e.g., "index" has 📇 in
+                    // description)
+                    let emoji_section = if let Some(br_pos) = line.find("<br>") {
+                        if let Some(pipe_pos) = line[br_pos..].find('|') {
+                            &line[br_pos..br_pos + pipe_pos]
+                        } else {
+                            &line[br_pos..]
+                        }
+                    } else {
+                        // No <br> marker means no emoji markers for this command
+                        ""
+                    };
+
+                    let indexed = emoji_section.contains("📇");
+                    let memory_intensive = emoji_section.contains("🤯");
+                    let proportional_memory = emoji_section.contains("😣");
 
                     return (indexed, memory_intensive, proportional_memory);
                 }

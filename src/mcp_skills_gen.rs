@@ -463,21 +463,11 @@ impl UsageParser {
             Self::extract_hints_from_readme(&self.command_name);
 
         // Prefer usage text markers, fallback to README markers
-        let has_indexed = if has_indexed_in_usage {
-            true
-        } else {
-            readme_indexed
-        };
-        let has_memory_intensive = if has_memory_intensive_in_usage {
-            true
-        } else {
-            readme_memory_intensive
-        };
-        let has_proportional_memory = if has_proportional_memory_in_usage {
-            true
-        } else {
-            readme_proportional_memory
-        };
+        let has_indexed = has_indexed_in_usage || (!has_indexed_in_usage && readme_indexed);
+        let has_memory_intensive = has_memory_intensive_in_usage
+            || (!has_memory_intensive_in_usage && readme_memory_intensive);
+        let has_proportional_memory = has_proportional_memory_in_usage
+            || (!has_proportional_memory_in_usage && readme_proportional_memory);
 
         let memory = if has_memory_intensive {
             "full"

@@ -105,7 +105,7 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
  * Common usage patterns to help Claude compose effective workflows
  */
 const COMMON_PATTERNS: Record<string, string> = {
-  'stats': 'Run SECOND on large files after running index - creates .stats.csv and .stats.csv.data.jsonl (with the --stats-jsonl option) cache used by frequency, schema, tojsonl, sqlp, joinp, diff, sample for faster processing.',
+  'stats': 'Run SECOND on large files after running index - creates .stats.csv and .stats.csv.data.jsonl cache (automatically via --stats-jsonl) used by frequency, schema, tojsonl, sqlp, joinp, diff, sample for faster processing.',
   'index': 'Run FIRST for files >10MB you\'ll query multiple times. Makes count instant, slice 100x faster, and enables efficient random access.',
   'select': 'Often first step in pipelines for column cleanup: select needed columns → filter rows → sort → output. Removing unused columns speeds up downstream operations.',
   'search': 'Combine with select for filtering: search for pattern to filter rows, then select to pick columns. For complex filters, use qsv_sqlp instead.',

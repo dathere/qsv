@@ -54,6 +54,25 @@ export class SkillExecutor {
   private buildArgs(skill: QsvSkill, params: SkillParams, forShellScript = false): string[] {
     const args: string[] = [skill.command.subcommand];
 
+    // For stats command, always ensure --stats-jsonl flag is set
+    // This creates the stats cache that other "smart" commands use
+    if (skill.command.subcommand === 'stats') {
+      // Check if --stats-jsonl is already in options
+      const hasStatsJsonl = params.options && (
+        params.options['stats-jsonl'] === true ||
+        params.options['stats_jsonl'] === true ||
+        params.options['--stats-jsonl'] === true
+      );
+
+      // If not present, add it to params.options
+      if (!hasStatsJsonl) {
+        if (!params.options) {
+          params.options = {};
+        }
+        params.options['stats-jsonl'] = true;
+      }
+    }
+
     // Add options/flags first
     if (params.options) {
       for (const [key, value] of Object.entries(params.options)) {

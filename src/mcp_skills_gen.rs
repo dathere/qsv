@@ -454,9 +454,9 @@ impl UsageParser {
 
     fn extract_hints(&self) -> Option<BehavioralHints> {
         // First try to look for emoji markers in usage text
-        let has_memory_intensive = self.usage_text.contains("🤯");
+        let has_memory_intensive_in_usage = self.usage_text.contains("🤯");
         let has_indexed_in_usage = self.usage_text.contains("📇");
-        let has_proportional_memory = self.usage_text.contains("😣");
+        let has_proportional_memory_in_usage = self.usage_text.contains("😣");
 
         // If not found in usage text, check README.md command table
         let (readme_indexed, readme_memory_intensive, readme_proportional_memory) =
@@ -468,8 +468,16 @@ impl UsageParser {
         } else {
             readme_indexed
         };
-        let has_memory_intensive = has_memory_intensive || readme_memory_intensive;
-        let has_proportional_memory = has_proportional_memory || readme_proportional_memory;
+        let has_memory_intensive = if has_memory_intensive_in_usage {
+            true
+        } else {
+            readme_memory_intensive
+        };
+        let has_proportional_memory = if has_proportional_memory_in_usage {
+            true
+        } else {
+            readme_proportional_memory
+        };
 
         let memory = if has_memory_intensive {
             "full"

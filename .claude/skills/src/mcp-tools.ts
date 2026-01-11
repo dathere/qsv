@@ -80,7 +80,7 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
   'select': 'Choosing specific columns. Use selection syntax: "1,3,5" for specific columns, "1-10" for ranges, "!SSN" to exclude sensitive columns.',
   'slice': 'Selecting specific rows by position. Use for "first N rows", "last N rows", "skip N", or "rows 10-20".',
   'search': 'Finding rows matching a pattern/regex. Use for filtering by text content. For complex conditions or multiple criteria, consider qsv_sqlp instead.',
-  'stats': 'Quick statistics on numeric columns (mean, min, max, stddev). Creates .stats.csv cache that speeds up other commands. Run this SECOND on new datasets after running index.',
+  'stats': 'Quick statistics on numeric columns (mean, min, max, stddev). Creates .stats.csv cache that speeds up other commands. Run this second (after index) on new datasets.',
   'moarstats': 'Comprehensive statistics with automatic data type inference. Slower than stats but provides richer analysis (additional statistics, bivariate analysis, outlier counts).',
   'frequency': 'Counting unique values and distributions. Best for categorical columns with limited cardinality (e.g., country, status, category). Avoid for high-cardinality columns like IDs.',
   'join': 'Fast CSV joins for small-medium files (<50MB). For large files or complex joins, use qsv_joinp (Polars-powered) instead.',
@@ -105,7 +105,7 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
  * Common usage patterns to help Claude compose effective workflows
  */
 const COMMON_PATTERNS: Record<string, string> = {
-  'stats': 'Run SECOND on large files after running index - creates .stats.csv and .stats.csv.data.jsonl cache (automatically via --stats-jsonl) used by frequency, schema, tojsonl, sqlp, joinp, diff, sample for faster processing.',
+  'stats': 'Run SECOND (after index) on large files - creates .stats.csv and .stats.csv.data.jsonl cache (automatically via --stats-jsonl) used by frequency, schema, tojsonl, sqlp, joinp, diff, sample for faster processing.',
   'index': 'Run FIRST for files >10MB you\'ll query multiple times. Makes count instant, slice 100x faster, and enables efficient random access.',
   'select': 'Often first step in pipelines for column cleanup: select needed columns → filter rows → sort → output. Removing unused columns speeds up downstream operations.',
   'search': 'Combine with select for filtering: search for pattern to filter rows, then select to pick columns. For complex filters, use qsv_sqlp instead.',
@@ -113,7 +113,7 @@ const COMMON_PATTERNS: Record<string, string> = {
   'schema': 'Use --polars flag to generate Polars-optimized schema, then use that schema with qsv_sqlp/joinp for faster queries with correct data types.',
   'sqlp': 'Replaces complex pipelines. Instead of: select → search → sort → slice, write single SQL: SELECT * FROM data WHERE x > 10 ORDER BY y LIMIT 100.',
   'join': 'For repeated joins on same files, run qsv_index first on both files to speed up the join operation.',
-  'sample': 'Use for quick file preview (--sample 100) or creating test datasets (--sample 1000). Much faster than qsv_slice for random rows.',
+  'sample': 'Use for quick file preview (sample size: 100) or creating test datasets (sample size: 1000). Much faster than qsv_slice for random rows.',
   'validate': 'Generate schema with qsv_schema first, then validate. Iterate: validate → fix issues → validate again until clean.',
   'dedup': 'Often followed by stats or frequency to analyze cleaned data: dedup → stats to see distribution after removing duplicates.',
   'sort': 'Commonly used before joins (sort join columns) or when taking top/bottom N with slice: sort by score DESC → slice --end 10.',

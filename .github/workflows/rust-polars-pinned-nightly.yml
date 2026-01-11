@@ -32,7 +32,7 @@ jobs:
       uses: dtolnay/rust-toolchain@master
       with:
         # set to the pinned nightly version known to work with polars
-        toolchain: nightly-2025-10-24
+        toolchain: nightly-2026-01-09
         components: rust-src
         target: x86_64-unknown-linux-gnu
     - name: Run tests

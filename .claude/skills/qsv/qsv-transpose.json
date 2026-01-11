@@ -48,8 +48,8 @@
     ]
   },
   "hints": {
-    "streamable": true,
-    "memory": "constant"
+    "streamable": false,
+    "memory": "full"
   },
   "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_transpose.rs"
 }

@@ -15,14 +15,16 @@ qsv has three binary variants with mutually exclusive feature flags:
 
 ```bash
 # qsv - full-featured variant (use for development)
-cargo build --release --locked --bin qsv -F all_features
+cargo build --locked --bin qsv -F all_features
 
 # qsvlite - minimal variant
-cargo build --release --locked --bin qsvlite -F lite
+cargo build --locked --bin qsvlite -F lite
 
 # qsvdp - DataPusher+ optimized variant
-cargo build --release --locked --bin qsvdp -F datapusher_plus
+cargo build --locked --bin qsvdp -F datapusher_plus
 ```
+
+Do not use the `cargo build --release` option during development as it takes a long time.
 
 ### Testing
 

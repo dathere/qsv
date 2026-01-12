@@ -19,6 +19,8 @@ const MAX_ITERATIONS: usize = 100; // Prevent infinite loops
 struct SkillDefinition {
     name:        String,
     version:     String,
+    /// Concise description from README.md command table
+    /// For detailed help, use `qsv <command> --help` via the qsv_help tool
     description: String,
     category:    String,
     command:     CommandSpec,
@@ -81,7 +83,15 @@ impl UsageParser {
     }
 
     fn parse(&self) -> Result<SkillDefinition, String> {
-        let description = self.extract_description()?;
+        // Extract concise description from README.md command table
+        // Falls back to first sentence of USAGE text if not found in README
+        let description = Self::extract_short_description_from_readme(&self.command_name)
+            .unwrap_or_else(|| {
+                // Fallback: extract first sentence from USAGE text
+                self.extract_description()
+                    .map(|d| d.split('.').next().unwrap_or(&d).trim().to_string() + ".")
+                    .unwrap_or_else(|_| format!("{} command", self.command_name))
+            });
 
         // Use qsv-docopt Parser to parse USAGE text
         let (args, options) = self.parse_with_docopt()?;
@@ -529,6 +539,97 @@ impl UsageParser {
 
         // Fallback: no hints found
         (false, false, false)
+    }
+
+    /// Extract short description from README.md command table
+    /// Returns concise description suitable for MCP tool listing
+    fn extract_short_description_from_readme(command_name: &str) -> Option<String> {
+        let readme_paths = ["README.md", "../README.md", "../../README.md"];
+
+        for readme_path in &readme_paths {
+            if let Ok(readme_content) = fs::read_to_string(readme_path) {
+                // Find the line for this command in the table
+                // Format: | [command](/src/cmd/command.rs#L2)✨<br>📇| Description |
+                let command_pattern = format!("| [{}](/src/cmd/{}.rs#", command_name, command_name);
+
+                if let Some(line) = readme_content
+                    .lines()
+                    .find(|l| l.contains(&command_pattern))
+                {
+                    // Extract description: everything after the second | and before trailing |
+                    // The format is: | command_cell | description |
+                    let parts: Vec<&str> = line.split('|').collect();
+                    if parts.len() >= 3 {
+                        let description = parts[2].trim();
+
+                        // Clean up the description:
+                        // 1. Remove markdown links: [text](url) -> text
+                        // 2. Remove HTML tags like <br>, <a name=...>
+                        // 3. Remove deeplink anchors
+                        let cleaned = Self::clean_readme_description(description);
+
+                        if !cleaned.is_empty() {
+                            return Some(cleaned);
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Clean README description by removing markdown links, HTML tags, etc.
+    fn clean_readme_description(description: &str) -> String {
+        let mut result = description.to_string();
+
+        // Remove <a name="..."></a> anchor tags
+        let anchor_re = regex::Regex::new(r#"<a name="[^"]*"></a>"#).unwrap();
+        result = anchor_re.replace_all(&result, "").to_string();
+
+        // Remove <a name=...> anchor tags (without closing tag)
+        let anchor_re2 = regex::Regex::new(r#"<a name=[^>]*>"#).unwrap();
+        result = anchor_re2.replace_all(&result, "").to_string();
+
+        // Remove markdown links: [text](url) -> text
+        let link_re = regex::Regex::new(r"\[([^\]]+)\]\([^)]+\)").unwrap();
+        result = link_re.replace_all(&result, "$1").to_string();
+
+        // Remove remaining HTML tags
+        let html_re = regex::Regex::new(r"<[^>]+>").unwrap();
+        result = html_re.replace_all(&result, " ").to_string();
+
+        // Remove emoji markers that might be in description
+        // (these are the behavioral hint emojis, not content emojis)
+        let emojis_to_remove = [
+            "📇",
+            "🤯",
+            "😣",
+            "🧠",
+            "🗄️",
+            "🗃️",
+            "🐻‍❄️",
+            "🤖",
+            "🏎️",
+            "🚀",
+            "🌐",
+            "🔣",
+            "👆",
+            "🪄",
+            "📚",
+            "🌎",
+            "⛩️",
+            "✨",
+        ];
+        for emoji in emojis_to_remove {
+            result = result.replace(emoji, "");
+        }
+
+        // Clean up whitespace
+        let whitespace_re = regex::Regex::new(r"\s+").unwrap();
+        result = whitespace_re.replace_all(&result, " ").to_string();
+
+        result.trim().to_string()
     }
 
     fn infer_category(&self) -> String {

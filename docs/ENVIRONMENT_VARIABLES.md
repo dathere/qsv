@@ -69,6 +69,83 @@ Several dependencies also have environment variables that influence qsv's perfor
 > ℹ️ **NOTE:** To get a list of all active qsv-relevant environment variables, run `qsv --envlist`.
 Relevant env vars are defined as anything that starts with `QSV_`, `MIMALLOC_` & the proxy variables listed above.
 
+## MCP Server Environment Variables
+
+The qsv MCP (Model Context Protocol) Server exposes qsv's capabilities to AI agents like Claude. It can be used as a standalone MCP server or as a Claude Desktop Extension (MCPB).
+
+These environment variables configure the MCP server behavior:
+
+### Core Configuration
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `QSV_MCP_BIN_PATH` | Full path to the qsv binary. If not set, auto-detects from PATH and common installation locations (`/usr/local/bin/qsv`, `/opt/homebrew/bin/qsv`, `~/.cargo/bin/qsv`, etc.). | Auto-detect |
+| `QSV_MCP_WORKING_DIR` | Default working directory for file operations. Supports template variables like `${HOME}`, `${DOWNLOADS}`, `${DOCUMENTS}`. | `${DOWNLOADS}` |
+| `QSV_MCP_ALLOWED_DIRS` | Additional directories where qsv can access files (colon-separated on Unix, semicolon on Windows, or JSON array). File access is restricted to working directory and these directories only. | Empty (working dir only) |
+
+### Performance Tuning
+
+| Variable | Description | Default | Range |
+| --- | --- | --- | --- |
+| `QSV_MCP_TIMEOUT_MS` | Command timeout in milliseconds. Used by Desktop extension mode. | 300,000 (5 min) | 10,000 - 3,600,000 |
+| `QSV_MCP_OPERATION_TIMEOUT_MS` | Operation timeout in milliseconds. Used by legacy MCP mode. | 120,000 (2 min) | 1,000 - 1,800,000 |
+| `QSV_MCP_MAX_OUTPUT_SIZE` | Maximum output size in bytes before results are automatically saved to disk. | 52,428,800 (50 MB) | 1,048,576 - 104,857,600 |
+| `QSV_MCP_CONVERTED_LIFO_SIZE_GB` | Maximum size for the converted file cache (Excel→CSV, JSONL→CSV) in GB. Uses LIFO eviction. | 1.0 | 0.1 - 100.0 |
+| `QSV_MCP_MAX_FILES_PER_LISTING` | Maximum number of files returned in a single directory listing. | 1,000 | 1 - 100,000 |
+| `QSV_MCP_MAX_PIPELINE_STEPS` | Maximum number of steps allowed in a single pipeline execution. | 50 | 1 - 1,000 |
+| `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | Maximum number of concurrent qsv operations. | 10 | 1 - 100 |
+
+### Update Checking
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | Check for new qsv releases on GitHub at startup. | `true` |
+| `QSV_MCP_NOTIFY_UPDATES` | Display update notifications in server logs when new versions are available. | `true` |
+| `QSV_MCP_AUTO_REGENERATE_SKILLS` | Automatically regenerate skill definitions when qsv version changes. Runs `qsv --update-mcp-skills`. | `false` |
+| `QSV_MCP_GITHUB_REPO` | GitHub repository for update checks. | `dathere/qsv` |
+
+### Desktop Extension Mode
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `MCPB_EXTENSION_MODE` | Set automatically by Claude Desktop when running as an extension. Enables stricter validation (requires fully qualified qsv path, version >= 13.0.0). | `false` |
+
+### Template Variables
+
+The following template variables can be used in `QSV_MCP_WORKING_DIR` and `QSV_MCP_ALLOWED_DIRS`:
+
+| Variable | Expands To |
+| --- | --- |
+| `${HOME}` | User's home directory |
+| `${USERPROFILE}` | User's home directory (Windows alias) |
+| `${DESKTOP}` | User's Desktop folder |
+| `${DOCUMENTS}` | User's Documents folder |
+| `${DOWNLOADS}` | User's Downloads folder |
+| `${TEMP}` / `${TMPDIR}` | System temporary directory |
+
+### Example Configuration
+
+**Legacy MCP mode** (claude_desktop_config.json):
+```json
+{
+  "mcpServers": {
+    "qsv": {
+      "command": "node",
+      "args": ["/path/to/.claude/skills/dist/mcp-server.js"],
+      "env": {
+        "QSV_MCP_BIN_PATH": "/usr/local/bin/qsv",
+        "QSV_MCP_WORKING_DIR": "${DOWNLOADS}",
+        "QSV_MCP_ALLOWED_DIRS": "${DOCUMENTS}:${DESKTOP}",
+        "QSV_MCP_TIMEOUT_MS": "300000",
+        "QSV_MCP_CHECK_UPDATES_ON_STARTUP": "true"
+      }
+    }
+  }
+}
+```
+
+**Desktop Extension mode**: Configuration is managed through Claude Desktop Settings → Extensions → qsv, which sets these environment variables automatically.
+
 ## .env File Support
 qsv supports the use of `.env` files to set environment variables. The `.env` file is a simple text file that contains key-value pairs, one per line. 
 

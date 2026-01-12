@@ -228,3 +228,80 @@ QSV_TIMEOUT = 30
 # Note that you have to copy the custom index file to the QSV_CACHE_DIR directory
 # for it to be used by qsv.
 # QSV_GEOCODE_INDEX_FILENAME = my-qsv-geocode-index.bincode
+
+# ==============================================================================
+# MCP SERVER ENVIRONMENT VARIABLES
+# ==============================================================================
+# These variables configure the qsv MCP (Model Context Protocol) Server,
+# which exposes qsv's capabilities to AI agents like Claude.
+# Used when running qsv as a Claude Desktop Extension or standalone MCP server.
+# ==============================================================================
+
+# --- Core Configuration ---
+
+# Full path to the qsv binary. If not set, auto-detects from PATH and common
+# installation locations (/usr/local/bin/qsv, /opt/homebrew/bin/qsv,
+# ~/.cargo/bin/qsv, etc.). Required for Claude Desktop Extension mode.
+# QSV_MCP_BIN_PATH = /usr/local/bin/qsv
+
+# Default working directory for file operations. Supports template variables:
+# ${HOME}, ${USERPROFILE}, ${DESKTOP}, ${DOCUMENTS}, ${DOWNLOADS}, ${TEMP}
+# (default: ${DOWNLOADS})
+# QSV_MCP_WORKING_DIR = ${DOWNLOADS}
+
+# Additional directories where qsv can access files. Use colon-separated paths
+# on Unix/macOS, semicolon on Windows, or a JSON array. File access is restricted
+# to working directory and these directories only for security.
+# (default: empty - only working directory allowed)
+# QSV_MCP_ALLOWED_DIRS = ${DOCUMENTS}:${DESKTOP}
+
+# --- Performance Tuning ---
+
+# Command timeout in milliseconds. Used by Desktop extension mode.
+# (default: 300000 (5 min), min: 10000, max: 3600000)
+# QSV_MCP_TIMEOUT_MS = 300000
+
+# Operation timeout in milliseconds. Used by legacy MCP mode.
+# (default: 120000 (2 min), min: 1000, max: 1800000)
+# QSV_MCP_OPERATION_TIMEOUT_MS = 120000
+
+# Maximum output size in bytes before results are automatically saved to disk.
+# (default: 52428800 (50 MB), min: 1048576, max: 104857600)
+# QSV_MCP_MAX_OUTPUT_SIZE = 52428800
+
+# Maximum size for the converted file cache (Excel→CSV, JSONL→CSV) in GB.
+# Uses LIFO (Last-In-First-Out) eviction when cache is full.
+# (default: 1.0, min: 0.1, max: 100.0)
+# QSV_MCP_CONVERTED_LIFO_SIZE_GB = 1.0
+
+# Maximum number of files returned in a single directory listing.
+# (default: 1000, min: 1, max: 100000)
+# QSV_MCP_MAX_FILES_PER_LISTING = 1000
+
+# Maximum number of steps allowed in a single pipeline execution.
+# (default: 50, min: 1, max: 1000)
+# QSV_MCP_MAX_PIPELINE_STEPS = 50
+
+# Maximum number of concurrent qsv operations.
+# (default: 10, min: 1, max: 100)
+# QSV_MCP_MAX_CONCURRENT_OPERATIONS = 10
+
+# --- Update Checking ---
+
+# If true, check for new qsv releases on GitHub at server startup.
+# (default: true)
+QSV_MCP_CHECK_UPDATES_ON_STARTUP = True
+
+# If true, display update notifications in server logs when new versions
+# are available.
+# (default: true)
+QSV_MCP_NOTIFY_UPDATES = True
+
+# If true, automatically regenerate skill definitions when qsv version changes.
+# Runs `qsv --update-mcp-skills` automatically.
+# (default: false - manual regeneration recommended)
+QSV_MCP_AUTO_REGENERATE_SKILLS = False
+
+# GitHub repository for update checks.
+# (default: dathere/qsv)
+# QSV_MCP_GITHUB_REPO = dathere/qsv

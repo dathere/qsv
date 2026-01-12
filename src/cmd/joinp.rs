@@ -883,7 +883,7 @@ impl Args {
             args: &Args,
             delim: u8,
         ) -> LazyCsvReader {
-            LazyCsvReader::new(PlPath::new(file_path))
+            LazyCsvReader::new(PlRefPath::new(file_path))
                 .with_has_header(true)
                 .with_missing_is_null(args.flag_nulls)
                 .with_comment_prefix(comment_char.cloned())

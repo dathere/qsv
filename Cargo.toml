@@ -72,7 +72,7 @@ panic    = "abort"
 
 [dependencies]
 arboard = { version = "3.6.1", default-features = false, optional = true }
-atoi_simd = "0.16"
+atoi_simd = "0.17"
 base62 = { version = "2.2", optional = true }
 base64-simd = { version = "0.8", optional = true }
 bitvec = "1"
@@ -312,6 +312,9 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # use fork with updated redis 1.0 dependency & client-side caching features
 cached = { git = "https://github.com/nihohit/cached", branch = "client-side-caching" }
 
+# use our patched fork of calamine with atoi_simd 0.17 dependency
+calamine = { git = "https://github.com/jqnatividad/calamine", branch = "deps-bump-calamine-0.16.0-to-0.17.0" }
+
 # use upstream of csvlens with new marked export feature
 csvlens = { git = "https://github.com/YS-L/csvlens", rev = "6b58904" }
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
@@ -357,9 +360,9 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parki
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=py-1.37.0:e9e20e4
+# QSV_POLARS_REV=py-1.37.0:451f247
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.37.0", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "e9e20e4", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "451f247", optional = true }
 
 [features]
 default = ["mimalloc"]

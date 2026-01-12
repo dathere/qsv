@@ -560,7 +560,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Create CSV reader config
-    let mut csv_reader = LazyCsvReader::new(PlPath::new(&args.arg_input))
+    let mut csv_reader = LazyCsvReader::new(PlRefPath::new(&args.arg_input))
         .with_has_header(true)
         .with_try_parse_dates(args.flag_try_parsedates)
         .with_decimal_comma(args.flag_decimal_comma)

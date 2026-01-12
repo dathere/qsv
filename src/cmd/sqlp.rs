@@ -756,7 +756,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 );
             }
 
-            let table_plpath = PlPath::new(&table.to_string_lossy());
+            let table_plpath = PlRefPath::new(&*table.to_string_lossy());
 
             let mut lf = if cache_schemas || valid_schema_exists {
                 let mut work_lf = LazyCsvReader::new(table_plpath)

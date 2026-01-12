@@ -119,7 +119,7 @@ Get statistics about loaded skills.
 const stats = loader.getStats();
 console.log(stats);
 // {
-//   total: 66,
+//   total: 65,
 //   byCategory: { selection: 5, aggregation: 8, ... },
 //   totalExamples: 200,
 //   totalOptions: 450,
@@ -434,7 +434,7 @@ Check the skills directory:
 
 ```bash
 ls -la .claude/skills/qsv/
-# Should show 66 .json files
+# Should show 65 .json files
 ```
 
 ## License

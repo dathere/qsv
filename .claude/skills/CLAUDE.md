@@ -520,24 +520,39 @@ This updates Claude Desktop's MCP configuration at:
 
 ## Auto-Generation from qsv Usage Text
 
-### Future Goals (See design docs)
+### Current Implementation
 
-The long-term vision is to auto-generate MCP tool definitions from qsv's USAGE text:
+Skill JSON files are **auto-generated** from qsv's USAGE text via the `qsv --update-mcp-skills` command:
 
-1. **Parser**: Extract from `static USAGE: &str` in Rust source
-2. **Generator**: Create TypeScript tool definitions
-3. **CI/CD**: Auto-update on qsv command changes
-4. **Validation**: Ensure examples execute successfully
+1. **Parser**: `src/mcp_skills_gen.rs` extracts from `static USAGE: &str` using qsv-docopt
+2. **Descriptions**: Concise descriptions from README.md command table (optimized for tokens)
+3. **Detailed Help**: Full documentation available via `qsv <command> --help`
+4. **Generator**: Creates JSON skill files in `.claude/skills/qsv/`
+5. **Enhancement**: `mcp-tools.ts` adds guidance hints (when-to-use, patterns, cautions)
 
-**Status**: Currently manual. See `docs/design/AGENT_SKILLS_DESIGN.md` for roadmap.
+**Regenerating Skills**:
+```bash
+# From qsv repo root
+cargo build --bin qsv -F all_features
+./target/debug/qsv --update-mcp-skills
+
+# Then rebuild TypeScript
+cd .claude/skills && npm run build
+```
+
+**Token Optimization**:
+- Skill descriptions use concise README text instead of verbose USAGE text
+- Guidance hints help Claude select the right tool
+- Full documentation available on-demand via `--help` flag
 
 ## Important Files
 
 - **`package.json`**: Dependencies, scripts, versioning
 - **`tsconfig.json`**: TypeScript compiler configuration
 - **`src/mcp-server.ts`**: Main entry point
-- **`src/mcp-tools.ts`**: Tool definitions (modify most frequently)
+- **`src/mcp-tools.ts`**: Tool definitions with guidance enhancement
 - **`src/config.ts`**: Environment and settings
+- **`../../src/mcp_skills_gen.rs`**: Rust skill generator (in main qsv repo)
 - **`docs/design/AGENT_SKILLS_DESIGN.md`**: Architecture vision
 - **`CLAUDE.md`**: This file
 
@@ -676,7 +691,7 @@ return {
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-01-10
+**Document Version**: 1.1
+**Last Updated**: 2026-01-11
 **Target qsv Version**: 13.0.0
 **Maintainer**: Joel Natividad

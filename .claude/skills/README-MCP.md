@@ -1,15 +1,24 @@
 # QSV MCP Server
 
-Model Context Protocol (MCP) server that exposes qsv's 66 CSV data-wrangling commands to Claude Desktop.
+Model Context Protocol (MCP) server that exposes qsv's 67 CSV data-wrangling commands to Claude Desktop.
 
 ## Overview
 
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
-- **22 MCP Tools**: 20 common commands as individual tools + 1 generic tool + 1 pipeline tool
+- **25 MCP Tools**: 20 common commands as individual tools + 1 generic tool + 1 pipeline tool + 3 filesystem tools
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
 - **Pipeline Support**: Chain multiple operations together seamlessly
+- **Intelligent Guidance**: Enhanced tool descriptions help Claude make optimal decisions
+
+## What's New in 14.0.0
+
+- **MCP Desktop Extension (MCPB)** - One-click installation for Claude Desktop
+- **Enhanced Tool Descriptions** - USE WHEN guidance, COMMON PATTERNS, and ERROR PREVENTION hints
+- **Token Optimization** - Concise descriptions reduce token usage while maintaining accuracy
+- **Stats Cache Auto-Generation** - Automatically creates stats cache for "smart" commands
+- **Production-Ready CI/CD** - Comprehensive testing across Node.js 20, 22, 24 on all platforms
 
 ## Supported File Formats
 
@@ -28,21 +37,25 @@ Excel and JSONL files are automatically converted to CSV before processing - no 
 
 ## Installation
 
-### Prerequisites
+### Option 1: MCP Desktop Extension (Recommended)
 
-1. **qsv** must be installed:
-   ```bash
-   # macOS
-   brew install qsv
+The **MCP Desktop Extension** (MCPB) provides the easiest installation experience:
 
-   # Or download from https://github.com/dathere/qsv/releases
-   ```
+1. Download `qsv-mcp-server.mcpb` from [releases](https://github.com/dathere/qsv/releases)
+2. Open Claude Desktop Settings → Extensions
+3. Click "Install from file" and select the `.mcpb` file
+4. Configure your allowed directories when prompted
+5. Restart Claude Desktop
 
-2. **Node.js** >= 18.0.0
+The Desktop Extension:
+- **Auto-detects qsv** - Finds your qsv installation or offers to download it
+- **Cross-platform** - Works on macOS, Windows, and Linux
+- **Secure** - Uses `execFileSync` to prevent command injection
+- **Template Variables** - Supports `$HOME`, `${HOME}` in config paths
 
-3. **Claude Desktop** installed
+See the [MCP Bundle documentation](./README-MCPB.md) for detailed instructions.
 
-### Automated Installation
+### Option 2: Automated Installation (Developer)
 
 ```bash
 git clone https://github.com/dathere/qsv.git
@@ -57,7 +70,26 @@ This script will:
 3. Update Claude Desktop config
 4. Provide verification steps
 
-### Manual Installation
+### Option 3: Manual Installation
+
+#### Prerequisites
+
+1. **qsv** must be installed:
+   ```bash
+   # macOS
+   brew install qsv
+
+   # Or use mise (https://mise.jdx.dev)
+   mise use -g ubi:dathere/qsv
+
+   # Or download from https://github.com/dathere/qsv/releases
+   ```
+
+2. **Node.js** >= 18.0.0
+
+3. **Claude Desktop** installed
+
+#### Steps
 
 1. **Build the MCP server:**
    ```bash
@@ -101,6 +133,8 @@ This script will:
 > The MCP server executes this binary with user-provided file paths, so ensure it points to the
 > official qsv installation and is not writable by untrusted users.
 
+3. **Restart Claude Desktop**
+
 ### Environment Variables
 
 | Variable | Default | Description |
@@ -121,8 +155,6 @@ This script will:
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 
 **Auto-Update**: The server includes built-in update detection and can automatically regenerate skills when qsv is updated. See [AUTO_UPDATE.md](./AUTO_UPDATE.md) for details.
-
-3. **Restart Claude Desktop**
 
 ## Available Tools
 
@@ -155,7 +187,7 @@ Individual MCP tools for the most frequently used commands:
 
 ### Generic Command Tool
 
-`qsv_command` - Execute any of the remaining 46 qsv commands:
+`qsv_command` - Execute any of the remaining 47 qsv commands:
 - `to`, `tojsonl`, `flatten`, `partition`, `pseudo`, `reverse`, `sniff`, etc.
 - Full list: https://github.com/dathere/qsv#commands
 
@@ -168,6 +200,33 @@ User: "Remove duplicates from sales.csv, then calculate statistics on the revenu
 Claude executes pipeline:
 1. qsv dedup
 2. qsv stats -s revenue
+```
+
+### Filesystem Tools
+
+- `qsv_list_files` - List tabular data files in a directory
+- `qsv_set_working_dir` - Change working directory for file operations
+- `qsv_get_working_dir` - Get current working directory
+
+## Enhanced Tool Descriptions
+
+Tool descriptions include **intelligent contextual guidance** to help Claude make optimal decisions:
+
+- **💡 USE WHEN** - Specific use-case recommendations (e.g., when to use `join` vs `joinp`)
+- **📋 COMMON PATTERNS** - Workflow patterns showing command combinations
+- **⚠️ CAUTION** - Warnings about memory limits, file size constraints
+- **🚀 PERFORMANCE** - Index acceleration tips and cache strategies
+
+Example for `qsv_dedup`:
+```
+💡 USE WHEN: Removing duplicate rows. Memory-intensive - loads entire CSV.
+Good for small-medium files. For very large files (>1GB), use qsv_extdedup instead.
+
+📋 COMMON PATTERN: Often followed by stats or frequency to analyze cleaned data:
+dedup → stats to see distribution after removing duplicates.
+
+⚠️ CAUTION: Memory-intensive - loads entire file. For files >1GB, this may
+fail with OOM. Use qsv_extdedup for very large files.
 ```
 
 ## Usage Examples
@@ -241,6 +300,7 @@ Result: Parquet file created
 │          QSV MCP Server                     │
 │  • 22 MCP Tools (commands)                  │
 │  • 3 Filesystem Tools (list/browse files)  │
+│  • Enhanced descriptions & guidance        │
 │  • Local file access & validation          │
 └──────────────────┬──────────────────────────┘
                    │
@@ -269,11 +329,30 @@ Result: Parquet file created
 
 **Smart large file handling**: The server automatically detects when output would exceed Claude Desktop's limits and saves it to disk instead, preventing timeouts and memory issues.
 
+### Stats Cache Auto-Generation
+
+When running `qsv_stats`, the MCP server automatically enables `--stats-jsonl` to create cache files that speed up subsequent operations with "smart" commands (`frequency`, `schema`, `tojsonl`, `sqlp`, `joinp`, `pivotp`, `diff`, `sample`).
+
 ### File Paths
 
 - Relative paths resolved from Claude Desktop's working directory
 - Absolute paths recommended for clarity
 - Use forward slashes on all platforms (macOS, Windows, Linux)
+
+## Skills Auto-Update
+
+MCP Skills stay in sync with qsv commands via `qsv --update-mcp-skill`:
+
+- **Integrated Tool** - No separate binary needed (requires `mcp` feature flag)
+- **Auto-Generation** - Parses qsv USAGE text to generate skill definitions
+- **Performance Hints** - Extracts emoji legends (📇 indexed, 🤯 memory-intensive) from README
+- **Token Optimized** - Concise descriptions extracted from README command table
+
+To regenerate skills after updating qsv:
+```bash
+qsv --update-mcp-skill
+cd .claude/skills && npm run build
+```
 
 ## Troubleshooting
 
@@ -312,7 +391,7 @@ npm run mcp:start
 The server should start and log:
 ```
 Loading QSV skills...
-Loaded 66 skills
+Loaded 67 skills
 QSV MCP Server initialized successfully
 QSV MCP Server running on stdio
 ```
@@ -327,7 +406,7 @@ Press Ctrl+C to stop.
 .claude/skills/
 ├── src/
 │   ├── mcp-server.ts         # Main MCP server
-│   ├── mcp-tools.ts          # Tool definitions
+│   ├── mcp-tools.ts          # Tool definitions with guidance
 │   ├── mcp-filesystem.ts     # Filesystem resource provider
 │   ├── mcp-pipeline.ts       # Pipeline tool
 │   ├── types.ts              # Type definitions
@@ -335,9 +414,11 @@ Press Ctrl+C to stop.
 │   ├── executor.ts           # Skill executor
 │   └── pipeline.ts           # Pipeline API
 ├── scripts/
-│   └── install-mcp.js        # Installation helper
+│   ├── install-mcp.js        # Installation helper
+│   └── package-mcpb.js       # MCPB packaging script
 ├── mcp-config.json           # Config template
-└── README-MCP.md             # This file
+├── README-MCP.md             # This file
+└── README-MCPB.md            # Desktop Extension documentation
 ```
 
 ### Building
@@ -358,9 +439,14 @@ Test with Claude Desktop:
 2. Restart Claude Desktop
 3. Try commands like "select columns from data.csv"
 
+Run automated tests:
+```bash
+npm test
+```
+
 ## Performance
 
-- **Server Startup**: < 100ms (66 skills loaded)
+- **Server Startup**: < 100ms (67 skills loaded)
 - **Tool Execution**: < 10ms overhead + qsv processing time
 - **File Processing**: Depends on qsv performance (generally very fast)
 - **Streaming**: Large files processed efficiently by qsv
@@ -368,8 +454,10 @@ Test with Claude Desktop:
 ## Security Considerations
 
 - **Local Files Only**: qsv only accesses files on your local filesystem
+- **Directory Restrictions**: Only allowed directories can be accessed
 - **No Network Access**: MCP server does not make network requests
 - **User Control**: Claude Desktop prompts before executing tools
+- **Secure Execution**: Uses `execFileSync` to prevent command injection
 - **Sandboxing**: Consider running in restricted environment for untrusted data
 - **Binary Trust**: The `QSV_MCP_BIN_PATH` environment variable should only point to a trusted qsv binary from the official installation. Ensure the binary path is not writable by untrusted users.
 
@@ -377,12 +465,10 @@ Test with Claude Desktop:
 
 Potential additions for future versions:
 
-1. **Prompt Templates** - Pre-built workflows (e.g., "data cleaning pipeline")
-2. **Streaming Results** - For very large outputs
-3. **Inline CSV Support** - Process small CSV snippets without files
-4. **Progress Updates** - Track progress of long-running operations
-5. **Stats Cache Integration** - Leverage qsv's stats cache
-6. **Parallel Execution** - Run independent pipeline steps concurrently
+1. **Streaming Results** - For very large outputs
+2. **Inline CSV Support** - Process small CSV snippets without files
+3. **Progress Updates** - Track progress of long-running operations
+4. **Parallel Execution** - Run independent pipeline steps concurrently
 
 ## Resources
 
@@ -390,6 +476,7 @@ Potential additions for future versions:
 - [MCP Specification](https://modelcontextprotocol.io/)
 - [Claude Desktop](https://claude.ai/desktop)
 - [QSV Skills README](./README.md)
+- [MCP Desktop Extension](./README-MCPB.md)
 - [Filesystem Usage Guide](./FILESYSTEM_USAGE.md)
 - [Auto-Update Guide](./AUTO_UPDATE.md)
 
@@ -403,8 +490,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-01-07
-**Version**: 13.0.0
+**Updated**: 2026-01-12
+**Version**: 14.0.0
 **Tools**: 25 (20 common + 1 generic + 1 pipeline + 3 filesystem)
-**Skills**: 66 qsv commands
+**Skills**: 67 qsv commands
 **Status**: ✅ Production Ready

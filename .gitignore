@@ -44,3 +44,4 @@ tmp/*
 *.key
 *.psv
 scripts/benchmark_data.*
+.claude/skills/qsv-mcp-server.mcpb

@@ -164,6 +164,8 @@ export interface QsvValidationResult {
   version?: string;
   path?: string;
   error?: string;
+  totalMemory?: string;       // e.g., "64.00 GiB"
+  totalMemoryBytes?: number;  // Numeric value in bytes for comparisons
 }
 
 // Global diagnostic info for auto-detection
@@ -287,6 +289,48 @@ function parseQsvVersion(versionOutput: string): string | null {
 }
 
 /**
+ * Parse memory unit string to bytes
+ * Supports: B, KiB, MiB, GiB, TiB
+ */
+function parseMemoryToBytes(memoryStr: string): number | null {
+  const match = memoryStr.match(/^([\d.]+)\s*(B|KiB|MiB|GiB|TiB)$/i);
+  if (!match) return null;
+
+  const value = parseFloat(match[1]);
+  const unit = match[2].toLowerCase();
+
+  const multipliers: Record<string, number> = {
+    'b': 1,
+    'kib': 1024,
+    'mib': 1024 * 1024,
+    'gib': 1024 * 1024 * 1024,
+    'tib': 1024 * 1024 * 1024 * 1024,
+  };
+
+  return value * (multipliers[unit] || 1);
+}
+
+/**
+ * Parse total memory from qsv --version output
+ * Memory info format: maxInputSize-freeSwap-availableMemory-totalMemory
+ * Example: "51.20 GiB-0 B-13.94 GiB-64.00 GiB"
+ */
+function parseQsvMemoryInfo(versionOutput: string): { totalMemory: string; totalMemoryBytes: number } | null {
+  // Pattern: captures 4 memory values before the parentheses with system info
+  const memoryPattern = /([\d.]+\s*(?:B|KiB|MiB|GiB|TiB))-([\d.]+\s*(?:B|KiB|MiB|GiB|TiB))-([\d.]+\s*(?:B|KiB|MiB|GiB|TiB))-([\d.]+\s*(?:B|KiB|MiB|GiB|TiB))\s*\(/i;
+
+  const match = versionOutput.match(memoryPattern);
+  if (!match) return null;
+
+  const totalMemoryStr = match[4].trim();
+  const totalMemoryBytes = parseMemoryToBytes(totalMemoryStr);
+
+  if (totalMemoryBytes === null) return null;
+
+  return { totalMemory: totalMemoryStr, totalMemoryBytes };
+}
+
+/**
  * Compare two semantic version strings
  * Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
  */
@@ -333,10 +377,15 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
       };
     }
 
+    // Parse memory information from version output
+    const memoryInfo = parseQsvMemoryInfo(result);
+
     return {
       valid: true,
       version,
       path: binPath,
+      totalMemory: memoryInfo?.totalMemory,
+      totalMemoryBytes: memoryInfo?.totalMemoryBytes,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

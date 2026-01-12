@@ -77,7 +77,7 @@ const METADATA_COMMANDS = new Set([
  * Guidance for when to use each command - helps Claude make smart decisions
  */
 const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
-  'select': 'Choosing specific columns. Use selection syntax: "1,3,5" for specific columns, "1-10" for ranges, "!SSN" to exclude sensitive columns. _ is a special character for the last column. Can also select columns using a regex using "/<regex>/"',
+  'select': 'Choosing specific columns. Use selection syntax: "1,3,5" for specific columns, "1-10" for ranges, "!SSN" to exclude sensitive columns. Use "_" for the last column. You can also select columns using regex with the syntax "/<regex>/".',
   'slice': 'Selecting specific rows by position. Use for "first N rows", "last N rows", "skip N", or "rows 10-20".',
   'search': 'Finding rows matching a pattern/regex. Use for filtering by text content. For complex conditions or multiple criteria, consider qsv_sqlp instead.',
   'stats': 'Quick statistics on numeric columns (mean, min, max, stddev). Creates .stats.csv cache that speeds up other commands. Run this second (after index) on new datasets.',

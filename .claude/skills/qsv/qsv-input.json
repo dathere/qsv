@@ -1,7 +1,7 @@
 {
   "name": "qsv-input",
   "version": "13.0.0",
-  "description": "Read CSV data with special commenting, quoting, trimming, line-skipping & non UTF-8 encoding rules and transforms it to a \"normalized\", UTF-8 encoded CSV. Generally, all qsv commands support basic options like specifying the delimiter used in CSV data. However, this does not cover all possible types of CSV data. For example, some CSV files don't use '\"' for quotes or use different escaping styles. Also, CSVs with preamble lines can have them skipped with the --skip-lines & --auto-skip options. Similarly, --skip-lastlines allows epilogue lines to be skipped. Finally, non UTF-8 encoded files are \"lossy\" saved to UTF-8 by default, replacing all invalid UTF-8 sequences with �. Note though that this is not true transcoding. If you need to properly transcode non UTF-8 files, you'll need to use a tool like `iconv` before processing it with qsv - e.g. to convert an ISO-8859-1 encoded file to UTF-8: `iconv -f ISO-8859-1 -t UTF-8 input.csv -o utf8_output.csv`. You can change this behavior with the --encoding-errors option. See https://github.com/dathere/qsv#utf-8-encoding for more details. This command is typically used at the beginning of a data pipeline (thus the name `input`) to normalize & prepare CSVs for further processing with other qsv commands. For examples, see https://github.com/dathere/qsv/blob/master/tests/test_input.rs.",
+  "description": "Read CSV data with special commenting, quoting, trimming, line-skipping & non-UTF8 encoding handling rules. Typically used to \"normalize\" a CSV for further processing with other qsv commands.",
   "category": "conversion",
   "command": {
     "binary": "qsv",

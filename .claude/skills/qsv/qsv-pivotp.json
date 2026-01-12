@@ -1,7 +1,7 @@
 {
   "name": "qsv-pivotp",
   "version": "13.0.0",
-  "description": "Pivots CSV data using the Polars engine. The pivot operation consists of: - One or more index columns (these will be the new rows) - A column that will be pivoted (this will create the new columns) - A values column that will be aggregated - An aggregation function to apply. Features \"smart\" aggregation auto-selection. For examples, see https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs.",
+  "description": "Pivot CSV data. Features \"smart\" aggregation auto-selection based on data type & stats.",
   "category": "utility",
   "command": {
     "binary": "qsv",

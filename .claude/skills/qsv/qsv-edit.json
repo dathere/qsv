@@ -1,7 +1,7 @@
 {
   "name": "qsv-edit",
   "version": "13.0.0",
-  "description": "Replace the value of a cell specified by its row and column. For example we have the following CSV file named items.csv: item,color shoes,blue flashlight,gray To output the data with the color of the shoes as green instead of blue, run: The following is returned as output: item,color shoes,green flashlight,gray You may also choose to specify the column name by its index (in this case 1). Specifying a column as a number is prioritized by index rather than name. If there is no newline (\\n) at the end of the input data, it may be added to the output.",
+  "description": "Replace the value of a cell specified by its row and column.",
   "category": "utility",
   "command": {
     "binary": "qsv",

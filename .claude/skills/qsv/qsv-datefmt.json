@@ -1,7 +1,7 @@
 {
   "name": "qsv-datefmt",
   "version": "13.0.0",
-  "description": "Formats recognized date fields (19 formats recognized) to a specified date format using strftime date format specifiers. For recognized date formats, see https://github.com/dathere/qsv-dateparser?tab=readme-ov-file#accepted-date-formats See https://docs.rs/chrono/latest/chrono/format/strftime/ for accepted date format specifiers for --formatstr. Defaults to ISO 8601/RFC 3339 format when --formatstr is not specified. ( \"%Y-%m-%dT%H:%M:%S%z\" - e.g. 2001-07-08T00:34:60.026490+09:30 )",
+  "description": "Formats recognized date fields (19 formats recognized) to a specified date format using strftime date format specifiers.",
   "category": "transformation",
   "command": {
     "binary": "qsv",

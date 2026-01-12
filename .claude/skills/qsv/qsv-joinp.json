@@ -1,7 +1,7 @@
 {
   "name": "qsv-joinp",
   "version": "13.0.0",
-  "description": "Joins two sets of CSV data on the specified columns using the Polars engine. The default join operation is an 'inner' join. This corresponds to the intersection of rows on the keys specified. Unlike the join command, joinp can process files larger than RAM, is multithreaded, has join key validation, a maintain row order option, pre-join filtering, supports non-equi & asof joins and its output columns can be coalesced (no duplicate columns). Returns the shape of the join result (number of rows, number of columns) to stderr. For examples, see https://github.com/dathere/qsv/blob/master/tests/test_joinp.rs.",
+  "description": "Inner, outer, right, cross, anti, semi, non-equi & asof joins using the Pola.rs engine. Unlike the `join` command, `joinp` can process files larger than RAM, is multithreaded, has join key validation, a maintain row order option, pre and post-join filtering, join keys unicode normalization, supports \"special\" non-equi joins and asof joins (which is particularly useful for time series data) & its output columns can be coalesced.",
   "category": "joining",
   "command": {
     "binary": "qsv",

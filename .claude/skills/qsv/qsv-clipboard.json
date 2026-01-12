@@ -1,7 +1,7 @@
 {
   "name": "qsv-clipboard",
   "version": "13.0.0",
-  "description": "Provide input from the clipboard or save output to the clipboard. Note when saving to clipboard on Windows, line breaks may be represented as \\r\\n (CRLF). Meanwhile on Linux and macOS, they may be represented as \\n (LF).",
+  "description": "Provide input from the clipboard or save output to the clipboard.",
   "category": "utility",
   "command": {
     "binary": "qsv",

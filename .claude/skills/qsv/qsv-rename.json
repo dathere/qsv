@@ -1,7 +1,7 @@
 {
   "name": "qsv-rename",
   "version": "13.0.0",
-  "description": "Rename the columns of a CSV efficiently. It has two modes of operation: Positional mode (default): The new column names are given as a comma-separated list of names. The number of column names given MUST match the number of columns in the CSV unless \"_all_generic\" is used. Pairwise mode: The new column names are given as a comma-separated list of pairs of old and new column names. The format is \"old1,new1,old2,new2,...\".",
+  "description": "Rename the columns of a CSV efficiently.",
   "category": "transformation",
   "command": {
     "binary": "qsv",

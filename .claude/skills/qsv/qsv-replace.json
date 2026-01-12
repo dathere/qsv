@@ -1,7 +1,7 @@
 {
   "name": "qsv-replace",
   "version": "13.0.0",
-  "description": "Replace occurrences of a pattern across a CSV file. You can of course match groups using parentheses and use those in the replacement string. But don't forget to escape your $ in bash by using a backslash or by wrapping the replacement string into single quotes: Returns exitcode 0 when replacements are done, returning number of replacements to stderr. Returns exitcode 1 when no replacements are done, unless the '--not-one' flag is used. When the CSV is indexed, a faster parallel replace is used. If there were any replacements, the index will be refreshed.",
+  "description": "Replace CSV data using a regex. Applies the regex to each field individually.",
   "category": "transformation",
   "command": {
     "binary": "qsv",

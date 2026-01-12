@@ -6,17 +6,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [13.1.0] - 2026-01-07
-MCP Server fixes/improvements found during more rigorous testing.
-This placeholder entry is here to signal package maintainers to hold off on updating
-to 13.0.0.
+## [14.0.0] - 2026-01-12 📦 **_"The qsv MCP for Everyone Release"_** 🎁
 
-## What's Changed
-* build(deps): bump serde_json from 1.0.148 to 1.0.149 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3290
-* refactor: MCP by @jqnatividad in https://github.com/dathere/qsv/pull/3291
+Building on our 13.0.0 "AI-native Agent" milestone last week, **qsv 14.0.0** is dedicated to making AI integration **seamless, reliable, and easy for everyone**.
 
+Previously, installing the qsv MCP Server required a full-fledged development environment and familiarity with command line tools and was not readily usable by non-developers. 
 
-**Full Changelog**: https://github.com/dathere/qsv/compare/13.0.0...13.1.0
+This release transforms the qsv MCP Server from a powerful developer tool into a **user-friendly, transparently integrated Claude Desktop data-wrangling agent** with robust cross-platform support, automatic updates, and comprehensive testing infrastructure.
+
+### MCP Desktop Extension (Bundle) - One-Click Installation
+
+The new **MCP Desktop Extension** (MCPB) provides a streamlined installation experience for Claude Desktop users:
+
+- **User-Friendly Package** - Pre-configured bundle with automatic qsv binary detection - and if not found, provide installation guidance
+- **Cross-Platform Support** - Works seamlessly on macOS, Windows, and Linux
+- **Smart Data-wrangling** - it's deep knowledge of qsv insulates the User from the nitty-gritty details of the comprehensive toolkit with its hundreds of options, while ensuring fast, effective operations
+- **Token Efficient** - Despite this deep knowledge, the MCP server is still token efficient by including **intelligent contextual guidance** to help Claude make optimal decisions (USE WHEN, COMMON PATTERNS, ERROR PREVENTION, PERFORMANCE HINTS prompt guidance along with lazy-loading of full qsv `--help` text when more info is required)
+- **Security Enhanced** - Raw Data is not sent to the cloud LLM, only statistical metadata
+- **Welcome Experience** - Includes prompts and examples to get started quickly
+- **use with Claude Code!** - Coding often requires data-wrangling - let qsv MCP help!
+
+The Desktop Extension follows the [official MCP manifest specification v0.3](https://spec.modelcontextprotocol.io/specification/2025-11-05/architecture/), ensuring compatibility with Claude Desktop and future MCP-compatible applications.
+
+See the [MCP Bundle documentation](https://github.com/dathere/qsv/blob/master/.claude/skills/README-MCP.md) for installation instructions.
+
+### Breaking Changes
+
+- **MCP Skills**: `qsv-skill-gen` binary removed - use `qsv --update-mcp-skill` instead (requires `mcp` feature flag)
+
+---
+
+## Added
+* feat: MCP Desktop Extension - user friendly installation of qsv MCP Server https://github.com/dathere/qsv/pull/3296
+* feat: MCP Server: numerous QoL improvements to MCP Desktop Bundle https://github.com/dathere/qsv/pull/3298
+* feat: MCP skills auto update https://github.com/dathere/qsv/pull/3292
+* feat: MCP - add expert guidance, common patterns, MCP optimized descriptions & usage hints https://github.com/dathere/qsv/pull/3303
+* feat: MCP skills generator now extracts performance hints (📇 indexed, 🤯 memory-intensive, 😣 proportional memory) from README.md command table
+* feat: MCP Server automatically enables --stats-jsonl flag for stats command to create cache for smart commands
+* feat: MCP enhanced tool descriptions with intelligent guidance - USE WHEN, COMMON PATTERNS, ERROR PREVENTION hints
+* feat: MCP parameter enhancements with examples for common options (selection, delimiter, etc.)
+* feat: MCP comprehensive pipeline tool description with workflows and limitations
+* feat: MCP enhanced filesystem tools (list_files, set_working_dir, get_working_dir) with usage guidance
+* feat: MCP add auto-detection of qsv binary path for Desktop Extension https://github.com/dathere/qsv/commit/5c09672e
+* feat: MCP various Quality-of-Life UI/UX improvements https://github.com/dathere/qsv/commit/b5b338f6
+* feat: MCP enhance Desktop Extension with validation and fixes https://github.com/dathere/qsv/commit/e2e20551
+* feat: MCP add prompts for welcome message and examples https://github.com/dathere/qsv/commit/2672a74b
+* tests: MCP add CI test workflow for qsv MCP server https://github.com/dathere/qsv/commit/8732fee3
+* docs: MCP add comprehensive Claude Code (CLI) documentation https://github.com/dathere/qsv/commit/97a88c4e
+* docs: MCP add an MCP Server-specific CLAUDE.md https://github.com/dathere/qsv/commit/e7e5f9e1
+* docs: add qsv pro download badges to README and update description https://github.com/dathere/qsv/pull/3295
+* docs: add alt text to all download badges https://github.com/dathere/qsv/commit/cc1c3819
+* docs: add mise alternate installation documentation https://github.com/dathere/qsv/pull/3304
+* docs: MCP update skills markdown documentation https://github.com/dathere/qsv/pull/3308
+* docs: add MCP Server environment variables section to ENVIRONMENT_VARIABLES.md
+* docs: add MCP Server environment variables to dotenv.template
+
+## Changed
+* refactor: MCP Server - removed applydp command (datapusher+ specific, not needed for general use)
+* refactor: MCP use qsv --update-mcp-skill instead of separate qsv-skill-gen binary https://github.com/dathere/qsv/commit/13380ba1
+* refactor: MCP remove qsv-skill-gen binary, make it an option in qsv gated behind `mcp` feature flag https://github.com/dathere/qsv/commit/9c771ee6
+* refactor: MCP more robust output processing - use temp output file and stdout intelligently https://github.com/dathere/qsv/pull/3291
+* refactor: MCP qsv-skill-gen.rs to preserve positional docopt args when generating skills JSON file https://github.com/dathere/qsv/commit/9618a25c
+* refactor: MCP make output/temp file processing smarter https://github.com/dathere/qsv/commit/207274c7
+* refactor: MCP use directory type for filesystem config to clarify restricted access https://github.com/dathere/qsv/commit/9650fb41
+* refactor: MCP added null checks before iterating arrays https://github.com/dathere/qsv/commit/2d0747ab
+* refactor: MCP fixed TS output directory to account for prod and test builds https://github.com/dathere/qsv/commit/b0b12a40
+* refactor: MCP address all issues identified during Copilot review https://github.com/dathere/qsv/commit/27027e50
+* refactor: MCP optimize tokens use - extract concise command descriptions from README https://github.com/dathere/qsv/pull/3307
+* refactor: MCP fine-tune `select` guidance https://github.com/dathere/qsv/commit/37964123
+* docs: with MCP fully implemented - update the logo to make the horse robotic https://github.com/dathere/qsv/commit/33f3b9f5
+* docs: comprehensive STATS_DEFINITION.md update https://github.com/dathere/qsv/commit/b443ccc4
+* chore: address valid robustness issues in last Copilot review https://github.com/dathere/qsv/commit/55a5a300
+* chore: delete CITATION.cff file and just depend on Zenodo integration which auto-assigns a DOI on release https://github.com/dathere/qsv/commit/9b981b8c
+* deps: bump polars to 0.52.0 at py-1.37.0 https://github.com/dathere/qsv/pull/3302
+* deps: bump polars to latest before release https://github.com/dathere/qsv/commit/ae9da0bf
+* deps: bump data-encoding from 2.9.0 to 2.10.0 https://github.com/dathere/qsv/commit/09bf3c33
+* deps: bump unicase from 2.8.1 to 2.9.0 https://github.com/dathere/qsv/commit/99f66a3b
+* deps: bump csvlens to 15.1 and remove our patched fork https://github.com/dathere/qsv/commit/d588e36e
+* deps: use latest csvlens with marked row export https://github.com/dathere/qsv/commit/fd706255
+* deps: bump blake3 to 1.8.3 and remove our patched fork https://github.com/dathere/qsv/commit/05f0efbb
+* deps: bump toml from 0.9.10+spec-1.1.0 to 0.9.11+spec-1.1.0 https://github.com/dathere/qsv/commit/2330b1d2
+* deps: bump zerocopy from 0.8.32 to 0.8.33 https://github.com/dathere/qsv/commit/950564d1
+* build(deps): bump serde_json from 1.0.148 to 1.0.149 https://github.com/dathere/qsv/pull/3290
+* build(deps): bump @modelcontextprotocol/sdk from 1.25.1 to 1.25.2 https://github.com/dathere/qsv/pull/3293
+* build(deps): bump indexmap from 2.12.1 to 2.13.0 https://github.com/dathere/qsv/pull/3294
+* build(deps): bump libc from 0.2.179 to 0.2.180 https://github.com/dathere/qsv/pull/3299
+* build(deps): bump zmij from 1.0.12 to 1.0.13 https://github.com/dathere/qsv/pull/3305
+* build(deps): bump actions/checkout from 4 to 6 https://github.com/dathere/qsv/pull/3309
+* build(deps): bump actions/setup-node from 4 to 6 https://github.com/dathere/qsv/pull/3310
+* deps: bump nightly from 2025-10-24 to 2026-01-09; same as polars https://github.com/dathere/qsv/commit/f77ea524
+* bumped several indirect dependencies
+* applied select clippy & Codacy suggestions
+* applied several GH Copilot and Claude review suggestions
+* bumped nightly from 2025-10-24 to 2026-01-09, same as polars
+
+## Fixed
+* fix: `stats` use .get() instead of [] indexing to avoid panics on missing keys when using old stats cache file https://github.com/dathere/qsv/pull/3306
+* fix: force add tsconfig.json https://github.com/dathere/qsv/pull/3301
+* fix: correct manifest.json to match official spec v0.3 https://github.com/dathere/qsv/commit/c783cf2c
+* fix: expand template variables in config paths https://github.com/dathere/qsv/commit/3177cfe1
+* fix: address Copilot review issues in package-mcpb.js https://github.com/dathere/qsv/commit/ec37b7c7
+* fix: replace execSync with execFileSync for security reasons https://github.com/dathere/qsv/commit/5209c751
+* fix: add promise-based deduplication for metadata cache to prevent race conditions https://github.com/dathere/qsv/commit/b4de4cc2
+* fix: add cross-platform test runner for Node.js 20 compatibility https://github.com/dathere/qsv/commit/f96e32f6
+* fix: use bash shell for MCP CI tests to ensure consistent glob expansion https://github.com/dathere/qsv/commit/1dc9056a
+* fix: MCP Server CI tests to download the appropriate release binary archive https://github.com/dathere/qsv/commit/2d949088
+* fix: typo in mise installation docs (https://jdx.mise.dev -> https://mise.jdx.dev) https://github.com/dathere/qsv/pull/3304
+
+---
+
+## AI Contributors
+This release was developed with assistance from:
+- Claude Opus 4.5 (Anthropic) - Release notes, code review, and documentation
+- Claude 3.7 Sonnet (Anthropic) - Code review, refactoring, and testing improvements
+- GitHub Copilot - Code suggestions and documentation
+- Gemini - new robotic horse logo
+
+---
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/13.0.0...14.0.0
+
+---
 
 ## [13.0.0] - 2026-01-06 🦾 **_"The Statistical Data-Wrangling Agent Release"_** 🤖
 

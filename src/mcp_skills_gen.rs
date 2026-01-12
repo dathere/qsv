@@ -11,7 +11,7 @@ use std::{fs, path::Path};
 use qsv_docopt::parse::{Argument as DocoptArgument, Atom, Parser};
 use serde::{Deserialize, Serialize};
 
-use crate::{regex_oncelock, CliResult};
+use crate::{CliResult, regex_oncelock};
 
 const MAX_ITERATIONS: usize = 100; // Prevent infinite loops
 

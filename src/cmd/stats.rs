@@ -350,7 +350,7 @@ use rayon::{
 use serde::{Deserialize, Serialize};
 // Use serde_json on big-endian platforms (e.g. s390x) due to simd_json endianness issues
 #[cfg(target_endian = "little")]
-use simd_json::{OwnedValue, prelude::ValueAsScalar};
+use simd_json::{OwnedValue, prelude::ValueAsScalar, prelude::ValueObjectAccess};
 use smallvec::SmallVec;
 use stats::{Commute, MinMax, OnlineStats, Unsorted, merge_all};
 use tempfile::NamedTempFile;
@@ -435,62 +435,57 @@ struct StatsArgs {
 #[cfg(target_endian = "little")]
 impl StatsArgs {
     // this is for deserializing the stats.csv.jsonl file
+    // we use .get() instead of [] indexing to avoid panics on missing keys
+    // (e.g. when reading older cache files that don't have newer fields like flag_weight)
     fn from_owned_value(value: &OwnedValue) -> Result<Self, Box<dyn std::error::Error>> {
+        // helper closures for safe access - returns default if key is missing
+        let get_str = |key: &str| -> String {
+            value
+                .get(key)
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
+        let get_str_or = |key: &str, default: &str| -> String {
+            value
+                .get(key)
+                .and_then(|v| v.as_str())
+                .unwrap_or(default)
+                .to_string()
+        };
+        let get_bool =
+            |key: &str| -> bool { value.get(key).and_then(|v| v.as_bool()).unwrap_or_default() };
+        let get_u64 =
+            |key: &str| -> u64 { value.get(key).and_then(|v| v.as_u64()).unwrap_or_default() };
+
         Ok(Self {
-            arg_input:            value["arg_input"].as_str().unwrap_or_default().to_string(),
-            flag_select:          value["flag_select"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            flag_everything:      value["flag_everything"].as_bool().unwrap_or_default(),
-            flag_typesonly:       value["flag_typesonly"].as_bool().unwrap_or_default(),
-            flag_infer_boolean:   value["flag_infer_boolean"].as_bool().unwrap_or_default(),
-            flag_mode:            value["flag_mode"].as_bool().unwrap_or_default(),
-            flag_cardinality:     value["flag_cardinality"].as_bool().unwrap_or_default(),
-            flag_median:          value["flag_median"].as_bool().unwrap_or_default(),
-            flag_mad:             value["flag_mad"].as_bool().unwrap_or_default(),
-            flag_quartiles:       value["flag_quartiles"].as_bool().unwrap_or_default(),
-            flag_percentiles:     value["flag_percentiles"].as_bool().unwrap_or_default(),
-            flag_percentile_list: value["flag_percentile_list"]
-                .as_str()
-                .unwrap_or("5,10,40,60,90,95")
-                .to_string(),
-            flag_round:           value["flag_round"].as_u64().unwrap_or_default() as u32,
-            flag_nulls:           value["flag_nulls"].as_bool().unwrap_or_default(),
-            flag_infer_dates:     value["flag_infer_dates"].as_bool().unwrap_or_default(),
-            flag_dates_whitelist: value["flag_dates_whitelist"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            flag_prefer_dmy:      value["flag_prefer_dmy"].as_bool().unwrap_or_default(),
-            flag_no_headers:      value["flag_no_headers"].as_bool().unwrap_or_default(),
-            flag_delimiter:       value["flag_delimiter"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            flag_output_snappy:   value["flag_output_snappy"].as_bool().unwrap_or_default(),
-            canonical_input_path: value["canonical_input_path"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            canonical_stats_path: value["canonical_stats_path"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            record_count:         value["record_count"].as_u64().unwrap_or_default(),
-            date_generated:       value["date_generated"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            compute_duration_ms:  value["compute_duration_ms"].as_u64().unwrap_or_default(),
-            qsv_version:          value["qsv_version"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            flag_weight:          value["flag_weight"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
+            arg_input:            get_str("arg_input"),
+            flag_select:          get_str("flag_select"),
+            flag_everything:      get_bool("flag_everything"),
+            flag_typesonly:       get_bool("flag_typesonly"),
+            flag_infer_boolean:   get_bool("flag_infer_boolean"),
+            flag_mode:            get_bool("flag_mode"),
+            flag_cardinality:     get_bool("flag_cardinality"),
+            flag_median:          get_bool("flag_median"),
+            flag_mad:             get_bool("flag_mad"),
+            flag_quartiles:       get_bool("flag_quartiles"),
+            flag_percentiles:     get_bool("flag_percentiles"),
+            flag_percentile_list: get_str_or("flag_percentile_list", "5,10,40,60,90,95"),
+            flag_round:           get_u64("flag_round") as u32,
+            flag_nulls:           get_bool("flag_nulls"),
+            flag_infer_dates:     get_bool("flag_infer_dates"),
+            flag_dates_whitelist: get_str("flag_dates_whitelist"),
+            flag_prefer_dmy:      get_bool("flag_prefer_dmy"),
+            flag_no_headers:      get_bool("flag_no_headers"),
+            flag_delimiter:       get_str("flag_delimiter"),
+            flag_output_snappy:   get_bool("flag_output_snappy"),
+            canonical_input_path: get_str("canonical_input_path"),
+            canonical_stats_path: get_str("canonical_stats_path"),
+            record_count:         get_u64("record_count"),
+            date_generated:       get_str("date_generated"),
+            compute_duration_ms:  get_u64("compute_duration_ms"),
+            qsv_version:          get_str("qsv_version"),
+            flag_weight:          get_str("flag_weight"),
         })
     }
 }

@@ -1,7 +1,7 @@
 {
   "name": "qsv-extdedup",
   "version": "13.0.0",
-  "description": "Remove duplicate rows from an arbitrarily large CSV/text file using a memory-mapped, on-disk hash table. Unlike the 'dedup' command, this command does not load the entire file into memory to sort the CSV first before deduping it. This allows it to run in constant memory and the output will retain the input sort order. This command has TWO modes of operation. * CSV MODE when --select is set, it dedupes based on the given column/s. See `qsv select --help` for select syntax details. * LINE MODE when --select is NOT set, it deduplicates any input text file (not just CSVs) on a line-by-line basis. A duplicate count will be sent to <stderr>.",
+  "description": "Remove duplicate rows from an arbitrarily large CSV/text file using a memory-mapped, on-disk hash table. Unlike the `dedup` command, this command does not load the entire file into memory nor does it sort the deduped file.",
   "category": "utility",
   "command": {
     "binary": "qsv",

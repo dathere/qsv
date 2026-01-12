@@ -1,7 +1,7 @@
 {
   "name": "qsv-fmt",
   "version": "13.0.0",
-  "description": "Formats CSV data with a custom delimiter or CRLF line endings. Generally, all commands in qsv output CSV data in a default format, which is the same as the default format for reading CSV data. This makes it easy to pipe multiple qsv commands together. However, you may want the final result to have a specific delimiter or record separator, and this is where 'qsv fmt' is useful. For examples, see https://github.com/dathere/qsv/blob/master/tests/test_fmt.rs.",
+  "description": "Reformat a CSV with different delimiters, record terminators or quoting rules. (Supports ASCII delimited data.)",
   "category": "formatting",
   "command": {
     "binary": "qsv",

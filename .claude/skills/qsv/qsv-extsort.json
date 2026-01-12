@@ -1,7 +1,7 @@
 {
   "name": "qsv-extsort",
   "version": "13.0.0",
-  "description": "Sort an arbitrarily large CSV/text file using a multithreaded external sort algorithm. This command has TWO modes of operation. * CSV MODE when --select is set, it sorts based on the given column/s. Requires an index. See `qsv select --help` for select syntax details. * LINE MODE when --select is NOT set, it sorts any input text file (not just CSVs) on a line-by-line basis. If sorting a non-CSV file, be sure to set --no-headers, otherwise, the first line will not be included in the external sort.",
+  "description": "Sort an arbitrarily large CSV/text file using a multithreaded external merge sort algorithm.",
   "category": "utility",
   "command": {
     "binary": "qsv",

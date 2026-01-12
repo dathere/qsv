@@ -1,7 +1,7 @@
 {
   "name": "qsv-slice",
   "version": "13.0.0",
-  "description": "Returns the rows in the range specified (starting at 0, half-open interval). The range does not include headers. If the start of the range isn't specified, then the slice starts from the first record in the CSV data. If the end of the range isn't specified, then the slice continues to the last record in the CSV data. This operation can be made much faster by creating an index with 'qsv index' first. With an index, the command requires parsing just the rows that are sliced. Without an index, all rows up to the first row in the slice must be parsed.",
+  "description": "Slice rows from any part of a CSV. When an index is present, this only has to parse the rows in the slice (instead of all rows leading up to the start of the slice).",
   "category": "selection",
   "command": {
     "binary": "qsv",

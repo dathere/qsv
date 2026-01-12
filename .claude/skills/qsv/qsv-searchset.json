@@ -1,7 +1,7 @@
 {
   "name": "qsv-searchset",
   "version": "13.0.0",
-  "description": "Filters CSV data by whether the given regex set matches a row. Unlike the search operation, this allows regex matching of multiple regexes in a single pass. The regexset-file is a plain text file with multiple regexes, with a regex on each line. The regex set is applied to each field in each row, and if any field matches, then the row is written to the output, and the number of matches to stderr. The columns to search can be limited with the '--select' flag (but the full row is still written to the output if there is a match). Returns exitcode 0 when matches are found, returning number of matches to stderr. Returns exitcode 1 when no match is found, unless the '--not-one' flag is used. When --quick is enabled, no output is produced and exitcode 0 is returned on the first match. When the CSV is indexed, a faster parallel search is used. For examples, see https://github.com/dathere/qsv/blob/master/tests/test_searchset.rs.",
+  "description": "_Run multiple regexes over a CSV in a single pass._ Applies the regexes to each field individually & shows only matching rows.",
   "category": "filtering",
   "command": {
     "binary": "qsv",

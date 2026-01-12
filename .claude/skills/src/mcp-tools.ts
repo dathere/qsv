@@ -77,7 +77,7 @@ const METADATA_COMMANDS = new Set([
  * Guidance for when to use each command - helps Claude make smart decisions
  */
 const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
-  'select': 'Choosing specific columns. Use selection syntax: "1,3,5" for specific columns, "1-10" for ranges, "!SSN" to exclude sensitive columns.',
+  'select': 'Choosing specific columns. Use selection syntax: "1,3,5" for specific columns, "1-10" for ranges, "!SSN" to exclude sensitive columns. Use "_" for the last column. You can also select columns using regex with the syntax "/<regex>/".',
   'slice': 'Selecting specific rows by position. Use for "first N rows", "last N rows", "skip N", or "rows 10-20".',
   'search': 'Finding rows matching a pattern/regex. Use for filtering by text content. For complex conditions or multiple criteria, consider qsv_sqlp instead.',
   'stats': 'Quick statistics on numeric columns (mean, min, max, stddev). Creates .stats.csv cache that speeds up other commands. Run this second (after index) on new datasets.',
@@ -391,18 +391,24 @@ function enhanceParameterDescription(paramName: string, description: string): st
 
 /**
  * Enhance tool description with contextual guidance
+ *
+ * Uses concise description from README.md and adds guidance hints
+ * that help Claude select the right tool. For detailed help,
+ * use the qsv_help tool which calls `qsv <command> --help`.
  */
 function enhanceDescription(skill: QsvSkill): string {
   const commandName = skill.command.subcommand;
+
+  // Use concise description from README.md
   let description = skill.description;
 
-  // Add when-to-use guidance
+  // Add when-to-use guidance (critical for tool selection)
   const whenToUse = WHEN_TO_USE_GUIDANCE[commandName];
   if (whenToUse) {
     description += `\n\n💡 USE WHEN: ${whenToUse}`;
   }
 
-  // Add common patterns
+  // Add common patterns (helps Claude compose workflows)
   const patterns = COMMON_PATTERNS[commandName];
   if (patterns) {
     description += `\n\n📋 COMMON PATTERN: ${patterns}`;
@@ -425,11 +431,14 @@ function enhanceDescription(skill: QsvSkill): string {
     }
   }
 
-  // Add error prevention hints
+  // Add error prevention hints (important for avoiding common mistakes)
   const errorHint = ERROR_PREVENTION_HINTS[commandName];
   if (errorHint) {
     description += `\n\n⚠️  CAUTION: ${errorHint}`;
   }
+
+  // Add hint about getting detailed help
+  description += `\n\n❓ HELP: For detailed options and examples, use qsv_command with command="${commandName}" and options={"--help": true}`;
 
   return description;
 }
@@ -995,7 +1004,7 @@ export function createGenericToolDefinition(loader: SkillLoader): McpToolDefinit
 
   return {
     name: 'qsv_command',
-    description: `Execute any qsv command not exposed as a dedicated tool (${remainingCommands} additional commands available)`,
+    description: `Execute any qsv command not exposed as a dedicated tool (${remainingCommands} additional commands available). For detailed help on any command, use options={"--help": true}`,
     inputSchema: {
       type: 'object',
       properties: {

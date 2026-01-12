@@ -1,7 +1,7 @@
 {
   "name": "qsv-fixlengths",
   "version": "13.0.0",
-  "description": "Transforms CSV data so that all records have the same length. The length is the length of the longest record in the data (not counting trailing empty fields, but at least 1). Records with smaller lengths are padded with empty fields. This requires two complete scans of the CSV data: one for determining the record size and one for the actual transform. Because of this, the input given must be a file and not stdin. Alternatively, if --length is set, then all records are forced to that length. This requires a single pass and can be done with stdin.",
+  "description": "Force a CSV to have same-length records by either padding or truncating them.",
   "category": "formatting",
   "command": {
     "binary": "qsv",

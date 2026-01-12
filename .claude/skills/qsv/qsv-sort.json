@@ -1,7 +1,7 @@
 {
   "name": "qsv-sort",
   "version": "13.0.0",
-  "description": "Sorts CSV data in lexicographical, natural, numerical, reverse, unique or random order. Note that this requires reading all of the CSV data into memory. If you need to sort a large file that may not fit into memory, use the extsort command instead. For examples, see https://github.com/dathere/qsv/blob/master/tests/test_sort.rs.",
+  "description": "Sorts CSV data in lexicographical, natural, numerical, reverse, unique or random (with optional seed) order (Also see `extsort` & `sortcheck` commands).",
   "category": "utility",
   "command": {
     "binary": "qsv",

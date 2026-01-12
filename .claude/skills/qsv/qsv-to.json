@@ -1,7 +1,7 @@
 {
   "name": "qsv-to",
   "version": "13.0.0",
-  "description": "Convert CSV files to PostgreSQL, SQLite, Excel XLSX, ODS, Parquet and Data Package. POSTGRESQL ========== To convert to postgres you need to supply connection string. The format is described here - https://docs.rs/postgres/latest/postgres/config/struct.Config.html#examples-1. Additionally you can use `env=MY_ENV_VAR` and qsv will get the connection string from the environment variable `MY_ENV_VAR`. If using the `--dump` option instead of a connection string put a name of a file or `-` for stdout.",
+  "description": "Convert CSV files to Parquet, PostgreSQL, SQLite, Excel (XLSX), LibreOffice Calc (ODS) and Data Package.",
   "category": "conversion",
   "command": {
     "binary": "qsv",

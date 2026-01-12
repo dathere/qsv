@@ -65,7 +65,8 @@ Claude Code is Anthropic's official CLI for Claude - a powerful terminal-based i
 ### Step 1: Build the MCP Server
 
 ```bash
-cd /path/to/qsv/.claude/skills
+git clone https://github.com/dathere/qsv.git
+cd qsv/.claude/skills
 npm install
 npm run build
 ```

@@ -19,6 +19,7 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 - **Token Optimization** - Concise descriptions reduce token usage while maintaining accuracy
 - **Stats Cache Auto-Generation** - Automatically creates stats cache for "smart" commands
 - **Production-Ready CI/CD** - Comprehensive testing across Node.js 20, 22, 24 on all platforms
+- **Also works with Claude Code!** - wrangle data while wrangling code - [Install in Claude Code](CLAUDE_CODE.md)
 
 ## Supported File Formats
 

@@ -88,9 +88,10 @@ impl UsageParser {
         let description = Self::extract_short_description_from_readme(&self.command_name)
             .unwrap_or_else(|| {
                 // Fallback: extract first sentence from USAGE text
-                self.extract_description()
-                    .map(|d| d.split('.').next().unwrap_or(&d).trim().to_string() + ".")
-                    .unwrap_or_else(|_| format!("{} command", self.command_name))
+                self.extract_description().map_or_else(
+                    |_| format!("{} command", self.command_name),
+                    |d| d.split('.').next().unwrap_or(&d).trim().to_string() + ".",
+                )
             });
 
         // Use qsv-docopt Parser to parse USAGE text
@@ -473,11 +474,10 @@ impl UsageParser {
             Self::extract_hints_from_readme(&self.command_name);
 
         // Prefer usage text markers, fallback to README markers
-        let has_indexed = has_indexed_in_usage || (!has_indexed_in_usage && readme_indexed);
-        let has_memory_intensive = has_memory_intensive_in_usage
-            || (!has_memory_intensive_in_usage && readme_memory_intensive);
-        let has_proportional_memory = has_proportional_memory_in_usage
-            || (!has_proportional_memory_in_usage && readme_proportional_memory);
+        let has_indexed = has_indexed_in_usage || readme_indexed;
+        let has_memory_intensive = has_memory_intensive_in_usage || readme_memory_intensive;
+        let has_proportional_memory =
+            has_proportional_memory_in_usage || readme_proportional_memory;
 
         let memory = if has_memory_intensive {
             "full"
@@ -508,7 +508,7 @@ impl UsageParser {
                 // Find the line for this command in the table
                 // Format: | [command](/src/cmd/command.rs#L2)✨<br>📇🚀🧠🤖🔣👆| Description |
                 // Note: The #L2 line number varies, so we need to match more flexibly
-                let command_pattern = format!("| [{}](/src/cmd/{}.rs#", command_name, command_name);
+                let command_pattern = format!("| [{command_name}](/src/cmd/{command_name}.rs#");
 
                 if let Some(line) = readme_content
                     .lines()
@@ -550,7 +550,7 @@ impl UsageParser {
             if let Ok(readme_content) = fs::read_to_string(readme_path) {
                 // Find the line for this command in the table
                 // Format: | [command](/src/cmd/command.rs#L2)✨<br>📇| Description |
-                let command_pattern = format!("| [{}](/src/cmd/{}.rs#", command_name, command_name);
+                let command_pattern = format!("| [{command_name}](/src/cmd/{command_name}.rs#");
 
                 if let Some(line) = readme_content
                     .lines()

@@ -453,10 +453,18 @@ impl StatsArgs {
                 .unwrap_or(default)
                 .to_string()
         };
-        let get_bool =
-            |key: &str| -> bool { value.get(key).and_then(|v| v.as_bool()).unwrap_or_default() };
-        let get_u64 =
-            |key: &str| -> u64 { value.get(key).and_then(|v| v.as_u64()).unwrap_or_default() };
+        let get_bool = |key: &str| -> bool {
+            value
+                .get(key)
+                .and_then(simd_json::prelude::ValueAsScalar::as_bool)
+                .unwrap_or_default()
+        };
+        let get_u64 = |key: &str| -> u64 {
+            value
+                .get(key)
+                .and_then(simd_json::prelude::ValueAsScalar::as_u64)
+                .unwrap_or_default()
+        };
 
         Ok(Self {
             arg_input:            get_str("arg_input"),

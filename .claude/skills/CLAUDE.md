@@ -8,16 +8,28 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 
 **Key Components**:
 - **MCP Server**: Exposes qsv commands as MCP tools/resources
+- **MCP Desktop Extension (MCPB)**: One-click installation bundle for Claude Desktop
 - **Converted File Manager**: Tracks converted CSV files with automatic cleanup
 - **Pipeline System**: Composes multi-step qsv workflows
 - **Update Checker**: Monitors qsv binary versions and updates
 - **Type System**: Strong typing for qsv commands and parameters
+- **Guidance Enhancement**: Intelligent tool descriptions with USE WHEN, COMMON PATTERNS, and CAUTION hints
 
 **Goals**:
-1. Make all 67+ qsv commands discoverable and invokable by AI agents
+1. Make all 67 qsv commands discoverable and invokable by AI agents
 2. Auto-generate tool definitions from qsv usage text (zero documentation debt)
 3. Enable intelligent composition of complex data workflows
 4. Provide seamless integration with Claude Desktop and other MCP clients
+5. Help Claude make optimal tool choices through enhanced descriptions
+
+## What's New in 14.0.0
+
+- **MCP Desktop Extension (MCPB)** - User-friendly one-click installation
+- **Enhanced Tool Descriptions** - USE WHEN, COMMON PATTERNS, CAUTION guidance
+- **Token Optimization** - Concise descriptions from README command table
+- **Stats Cache Auto-Generation** - Automatically enables `--stats-jsonl`
+- **Production CI/CD** - Testing across Node.js 20, 22, 24 on all platforms
+- **Security Improvements** - `execFileSync` prevents command injection
 
 ## Build Commands
 
@@ -77,7 +89,7 @@ npm run mcpb:package
 .claude/skills/
 ├── src/                    # TypeScript source files
 │   ├── mcp-server.ts      # Main MCP server entry point
-│   ├── mcp-tools.ts       # MCP tool definitions and handlers
+│   ├── mcp-tools.ts       # MCP tool definitions with guidance enhancement
 │   ├── mcp-filesystem.ts  # Filesystem operations via MCP
 │   ├── mcp-pipeline.ts    # Multi-step pipeline execution
 │   ├── converted-file-manager.ts  # Tracks converted files
@@ -93,9 +105,15 @@ npm run mcpb:package
 ├── docs/                   # Design documentation
 │   └── design/            # Architecture and design docs
 ├── scripts/                # Build and deployment scripts
+│   ├── install-mcp.js     # Installation helper
+│   └── package-mcpb.js    # MCPB packaging script
+├── qsv/                    # Auto-generated skill JSON files
 ├── node_modules/          # Dependencies
 ├── package.json           # NPM package configuration
 ├── tsconfig.json          # TypeScript compiler config
+├── manifest.json          # MCP Bundle manifest (spec v0.3)
+├── README-MCP.md          # MCP Server documentation
+├── README-MCPB.md         # Desktop Extension documentation
 └── CLAUDE.md              # This file
 ```
 
@@ -106,6 +124,7 @@ npm run mcpb:package
 - Handles stdio communication with MCP clients (Claude Desktop)
 - Registers tools, resources, and prompts
 - Manages server lifecycle
+- Auto-enables `--stats-jsonl` for stats command
 
 **Key Functions**:
 ```typescript
@@ -118,18 +137,24 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - Defines all qsv commands as MCP tools
 - Handles tool invocation with parameter validation
 - Returns structured results (CSV data, file paths, stats)
+- **Adds guidance enhancement** (USE WHEN, COMMON PATTERNS, CAUTION hints)
 
-**Tool Structure**:
+**Tool Structure with Guidance**:
 ```typescript
 {
   name: "qsv_select",
-  description: "Select columns from CSV...",
+  description: `Select columns from CSV...
+
+💡 USE WHEN: Choosing specific columns. Use selection syntax: "1,3,5" for specific columns.
+
+📋 COMMON PATTERN: Often first step in pipelines for column cleanup.
+
+⚠️ CAUTION: Column indices are 1-based, not 0-based.`,
   inputSchema: {
     type: "object",
     properties: {
       input_file: { type: "string", description: "..." },
       selection: { type: "string", description: "..." },
-      // ... other parameters
     },
     required: ["input_file", "selection"]
   }
@@ -166,7 +191,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 ```
 
 #### `executor.ts` - Command Execution
-- Spawns qsv child processes
+- Spawns qsv child processes using `execFileSync` (secure)
 - Handles stdin/stdout/stderr streaming
 - Timeout management
 - Error parsing and reporting
@@ -178,10 +203,11 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - Performance tuning parameters
 
 **Key Environment Variables**:
-- `QSV_BIN_PATH`: Path to qsv binary
-- `QSV_AUTOINDEX_SIZE`: Auto-index threshold
-- `QSV_TEMP_DIR`: Temporary file location
-- `QSV_MAX_WORKERS`: Parallelism limit
+- `QSV_MCP_BIN_PATH`: Path to qsv binary
+- `QSV_MCP_WORKING_DIR`: Working directory for file operations
+- `QSV_MCP_ALLOWED_DIRS`: Colon-separated list of allowed directories
+- `QSV_MCP_OPERATION_TIMEOUT_MS`: Operation timeout (default: 120000)
+- `QSV_MCP_MAX_PIPELINE_STEPS`: Max pipeline steps (default: 50)
 
 ### Data Flow
 
@@ -201,7 +227,8 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
          ▼
 ┌─────────────────┐      ┌──────────────────┐
 │   mcp-tools     │─────▶│  executor.ts     │
-│  Validate args  │      │  Spawn qsv       │
+│  Validate args  │      │  execFileSync    │
+│  Add guidance   │      │  (secure spawn)  │
 └────────┬────────┘      └─────────┬────────┘
          │                         │
          │                         ▼
@@ -229,7 +256,13 @@ When qsv adds a new command or you need to expose an existing one:
    // Add to TOOL_DEFINITIONS array
    {
      name: "qsv_yourcommand",
-     description: "Brief description from qsv usage text",
+     description: `Brief description from qsv usage text
+
+💡 USE WHEN: Specific use case guidance.
+
+📋 COMMON PATTERN: How this fits into workflows.
+
+⚠️ CAUTION: Any warnings about memory, performance, etc.`,
      inputSchema: {
        type: "object",
        properties: {
@@ -282,6 +315,22 @@ When qsv adds a new command or you need to expose an existing one:
 
 5. **Update documentation**: Add example to relevant docs in `docs/`
 
+### Guidance Enhancement System
+
+Tool descriptions include intelligent guidance to help Claude make optimal decisions:
+
+- **💡 USE WHEN** - When to use this tool vs alternatives
+- **📋 COMMON PATTERN** - How this tool fits into workflows
+- **⚠️ CAUTION** - Memory limits, file size constraints, feature requirements
+- **🚀 PERFORMANCE** - Index acceleration tips, cache strategies
+
+**Guidelines for Writing Guidance**:
+1. Keep USE WHEN concise (1-2 sentences)
+2. Reference alternative tools when applicable (`join` vs `joinp`)
+3. Include file size thresholds for memory-intensive commands
+4. Mention when index acceleration is available (📇)
+5. Note if command loads entire file into memory (🤯)
+
 ### Modifying Existing Tools
 
 **IMPORTANT**: When updating tool definitions:
@@ -290,6 +339,7 @@ When qsv adds a new command or you need to expose an existing one:
 3. Mark required vs optional parameters correctly
 4. Include parameter validation (file existence, value ranges)
 5. Update tests to cover new parameters
+6. Update guidance hints if behavior changes
 
 ### Testing Conventions
 
@@ -298,6 +348,7 @@ When qsv adds a new command or you need to expose an existing one:
 - Use `workdir` helper for creating temporary test directories
 - Tests should clean up after themselves
 - Integration tests should use real qsv binary
+- CI runs on Node.js 20, 22, and 24 across macOS, Windows, Linux
 
 **Test Structure**:
 ```typescript
@@ -415,16 +466,20 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => ({
 }));
 ```
 
-### Prompts (Future)
+### Prompts
 
-Can expose qsv workflows as reusable prompts:
+Expose qsv workflows as reusable prompts:
 
 ```typescript
 server.setRequestHandler(ListPromptsRequestSchema, async () => ({
   prompts: [
     {
-      name: "data-cleaning-workflow",
-      description: "Clean CSV data: remove duplicates, validate, sort"
+      name: "qsv_welcome",
+      description: "Welcome message and quick start guide"
+    },
+    {
+      name: "qsv_examples",
+      description: "Common qsv usage examples"
     }
   ]
 }));
@@ -434,8 +489,8 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => ({
 
 ### File Size Thresholds
 
-- Use `QSV_AUTOINDEX_SIZE` to automatically index large files
-- Enable stats caching for files >100MB
+- Auto-indexing for files > 10MB improves performance
+- Enable stats caching via `--stats-jsonl` (auto-enabled by MCP server)
 - Consider memory limits when loading entire CSVs
 
 ### Parallelism
@@ -446,17 +501,17 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => ({
 
 ### Caching Strategies
 
-- **Stats Cache**: Reuse `.stats.csv.stats.jsonl` across tool calls
+- **Stats Cache**: Auto-generated `.stats.csv.data.jsonl` files
 - **Index Files**: Preserve `.csv.idx` files between operations
-- **Converted Files**: Cache Excel→CSV conversions
+- **Converted Files**: Cache Excel→CSV conversions (LIFO cache with configurable size)
 
 ## Integration with Main qsv Project
 
 ### Dependency Management
 
 This project depends on:
-1. **qsv binary**: Must be in PATH or specified via `QSV_BIN_PATH`
-2. **qsv version**: Should match package.json version (currently 13.0.0)
+1. **qsv binary**: Must be in PATH or specified via `QSV_MCP_BIN_PATH`
+2. **qsv version**: Should match package.json version (currently 14.0.0)
 3. **Feature flags**: Some tools require specific qsv features (Polars, etc.)
 
 ### Version Synchronization
@@ -474,6 +529,24 @@ if (!features.includes("polars")) {
 }
 ```
 
+### Skills Auto-Update
+
+Regenerate skills when qsv is updated:
+
+```bash
+# From qsv repo root (requires mcp feature flag)
+qsv --update-mcp-skill
+
+# Then rebuild TypeScript
+cd .claude/skills && npm run build
+```
+
+The skill generator:
+- Parses qsv USAGE text using qsv-docopt
+- Extracts concise descriptions from README command table
+- Extracts performance hints (📇 indexed, 🤯 memory-intensive) from README
+- Creates JSON skill files in `.claude/skills/qsv/`
+
 ## Deployment
 
 ### MCPB Packaging
@@ -486,11 +559,17 @@ npm run mcpb:package
 
 **Generated**:
 - `qsv-mcp-server.mcpb`: Bundled server + dependencies
-- `manifest.json`: Metadata for MCP registry
+- `manifest.json`: Metadata for MCP registry (spec v0.3)
 - Icons and assets
 
 **Installation**:
-Users can install via Claude Desktop or other MCP clients by pointing to the `.mcpb` file.
+Users can install via Claude Desktop Extensions by pointing to the `.mcpb` file.
+
+**Desktop Extension Features**:
+- Auto-detects qsv binary or offers to download
+- Template variable expansion (`$HOME`, `${HOME}`)
+- Cross-platform support (macOS, Windows, Linux)
+- Secure execution via `execFileSync`
 
 ### Claude Desktop Integration
 
@@ -511,7 +590,8 @@ This updates Claude Desktop's MCP configuration at:
       "command": "node",
       "args": ["/path/to/.claude/skills/dist/mcp-server.js"],
       "env": {
-        "QSV_BIN_PATH": "/usr/local/bin/qsv"
+        "QSV_MCP_BIN_PATH": "/usr/local/bin/qsv",
+        "QSV_MCP_ALLOWED_DIRS": "/Users/you/Downloads:/Users/you/Documents"
       }
     }
   }
@@ -522,19 +602,20 @@ This updates Claude Desktop's MCP configuration at:
 
 ### Current Implementation
 
-Skill JSON files are **auto-generated** from qsv's USAGE text via the `qsv --update-mcp-skills` command:
+Skill JSON files are **auto-generated** from qsv's USAGE text via the `qsv --update-mcp-skill` command:
 
 1. **Parser**: `src/mcp_skills_gen.rs` extracts from `static USAGE: &str` using qsv-docopt
 2. **Descriptions**: Concise descriptions from README.md command table (optimized for tokens)
-3. **Detailed Help**: Full documentation available via `qsv <command> --help`
-4. **Generator**: Creates JSON skill files in `.claude/skills/qsv/`
-5. **Enhancement**: `mcp-tools.ts` adds guidance hints (when-to-use, patterns, cautions)
+3. **Performance Hints**: Emoji legends (📇 indexed, 🤯 memory-intensive, 😣 proportional) from README
+4. **Detailed Help**: Full documentation available via `qsv <command> --help`
+5. **Generator**: Creates JSON skill files in `.claude/skills/qsv/`
+6. **Enhancement**: `mcp-tools.ts` adds guidance hints (when-to-use, patterns, cautions)
 
 **Regenerating Skills**:
 ```bash
 # From qsv repo root
 cargo build --bin qsv -F all_features
-./target/debug/qsv --update-mcp-skills
+./target/debug/qsv --update-mcp-skill
 
 # Then rebuild TypeScript
 cd .claude/skills && npm run build
@@ -549,11 +630,15 @@ cd .claude/skills && npm run build
 
 - **`package.json`**: Dependencies, scripts, versioning
 - **`tsconfig.json`**: TypeScript compiler configuration
+- **`manifest.json`**: MCP Bundle manifest (spec v0.3)
 - **`src/mcp-server.ts`**: Main entry point
 - **`src/mcp-tools.ts`**: Tool definitions with guidance enhancement
 - **`src/config.ts`**: Environment and settings
+- **`scripts/package-mcpb.js`**: MCPB packaging script
 - **`../../src/mcp_skills_gen.rs`**: Rust skill generator (in main qsv repo)
 - **`docs/design/AGENT_SKILLS_DESIGN.md`**: Architecture vision
+- **`README-MCP.md`**: MCP Server documentation
+- **`README-MCPB.md`**: Desktop Extension documentation
 - **`CLAUDE.md`**: This file
 
 ## Common Patterns
@@ -561,21 +646,19 @@ cd .claude/skills && npm run build
 ### Executing qsv Command
 
 ```typescript
-import { spawn } from "child_process";
+import { execFileSync } from "child_process";
 
-function executeQsv(args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const qsv = spawn("qsv", args);
-    let output = "";
-
-    qsv.stdout.on("data", (data) => output += data.toString());
-    qsv.stderr.on("data", (data) => console.error(data.toString()));
-
-    qsv.on("close", (code) => {
-      if (code === 0) resolve(output);
-      else reject(new Error(`qsv exited with code ${code}`));
+function executeQsv(args: string[]): string {
+  try {
+    const result = execFileSync("qsv", args, {
+      encoding: "utf-8",
+      timeout: 120000,
+      maxBuffer: 100 * 1024 * 1024 // 100MB
     });
-  });
+    return result;
+  } catch (error) {
+    throw new Error(`qsv failed: ${error.message}`);
+  }
 }
 ```
 
@@ -652,7 +735,7 @@ return {
 ### Common Issues
 
 **qsv not found**:
-- Set `QSV_BIN_PATH` environment variable
+- Set `QSV_MCP_BIN_PATH` environment variable
 - Ensure qsv is in PATH
 - Check qsv version: `qsv --version`
 
@@ -670,6 +753,11 @@ return {
 - Check MCP server logs in Claude Desktop developer console
 - Verify configuration in `claude_desktop_config.json`
 
+**MCPB installation issues**:
+- Ensure manifest.json follows spec v0.3
+- Check that qsv binary path is accessible
+- Verify allowed directories exist
+
 ## Development Best Practices
 
 1. **Always test with real qsv binary** - don't mock qsv in integration tests
@@ -680,6 +768,8 @@ return {
 6. **Document examples** - every tool should have usage examples
 7. **Clean up temporary files** - use ConvertedFileManager
 8. **Match qsv conventions** - parameter names, flag styles, output formats
+9. **Add guidance hints** - help Claude choose the right tool for the job
+10. **Use execFileSync** - secure execution prevents command injection
 
 ## Related Documentation
 
@@ -687,11 +777,13 @@ return {
 - [qsv Main Documentation](../../README.md)
 - [qsv Command Reference](../../docs/)
 - [Agent Skills Design](docs/design/AGENT_SKILLS_DESIGN.md)
+- [MCP Server README](./README-MCP.md)
+- [Desktop Extension README](./README-MCPB.md)
 - [Claude Desktop Integration](https://claude.ai/docs)
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: 2026-01-11
-**Target qsv Version**: 13.0.0
+**Document Version**: 1.2
+**Last Updated**: 2026-01-12
+**Target qsv Version**: 14.0.0
 **Maintainer**: Joel Natividad

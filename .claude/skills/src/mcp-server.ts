@@ -230,9 +230,14 @@ class QsvMcpServer {
         console.error('[Server] Handling tools/list request...');
         const tools = [];
 
-      // Add 20 common command tools
-      console.error('[Server] Loading common command tools...');
-      for (const command of COMMON_COMMANDS) {
+      // Add common command tools (filtered by available commands in qsv binary)
+      const availableCommands = config.qsvValidation.availableCommands;
+      const filteredCommands = availableCommands
+        ? COMMON_COMMANDS.filter(cmd => availableCommands.includes(cmd))
+        : COMMON_COMMANDS; // Fallback to all if availableCommands not detected
+
+      console.error(`[Server] Loading common command tools (${filteredCommands.length}/${COMMON_COMMANDS.length} available)...`);
+      for (const command of filteredCommands) {
         const skillName = `qsv-${command}`;
         try {
           const skill = await this.loader.load(skillName);
@@ -246,6 +251,14 @@ class QsvMcpServer {
           }
         } catch (error) {
           console.error(`[Server] ✗ Error creating tool definition for ${skillName}:`, error);
+        }
+      }
+
+      // Log any skipped commands
+      if (availableCommands) {
+        const skippedCommands = COMMON_COMMANDS.filter(cmd => !availableCommands.includes(cmd));
+        if (skippedCommands.length > 0) {
+          console.error(`[Server] ⚠ Skipped unavailable commands: ${skippedCommands.join(', ')}`);
         }
       }
       console.error(`[Server] Loaded ${tools.length} common command tools`);

@@ -166,6 +166,8 @@ export interface QsvValidationResult {
   error?: string;
   totalMemory?: string;       // e.g., "64.00 GiB"
   totalMemoryBytes?: number;  // Numeric value in bytes for comparisons
+  availableCommands?: string[];  // List of available qsv commands
+  commandCount?: number;         // Number of installed commands
 }
 
 // Global diagnostic info for auto-detection
@@ -331,6 +333,41 @@ function parseQsvMemoryInfo(versionOutput: string): { totalMemory: string; total
 }
 
 /**
+ * Parse available commands from qsv --list output
+ * Handles both formats:
+ *   qsv:     "Installed commands (63):"
+ *   qsvlite: "Installed commands:"
+ * Example output:
+ *       apply       Apply series of transformations to a column
+ *       behead      Drop header from CSV file
+ *       ...
+ */
+function parseQsvCommandList(listOutput: string): { commands: string[]; count: number } | null {
+  // Extract command count from header line (optional - qsvlite doesn't include count)
+  const headerMatch = listOutput.match(/Installed commands(?: \((\d+)\))?:/);
+  if (!headerMatch) return null;
+
+  const reportedCount = headerMatch[1] ? parseInt(headerMatch[1], 10) : 0;
+
+  // Extract command names (first word of each indented line)
+  const commands: string[] = [];
+  const lines = listOutput.split('\n');
+
+  for (const line of lines) {
+    // Match lines that start with whitespace followed by a command name
+    const match = line.match(/^\s{4}(\w+)\s+/);
+    if (match) {
+      commands.push(match[1]);
+    }
+  }
+
+  if (commands.length === 0) return null;
+
+  // Use reported count if available, otherwise use parsed count
+  return { commands, count: reportedCount || commands.length };
+}
+
+/**
  * Compare two semantic version strings
  * Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
  */
@@ -380,12 +417,27 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
     // Parse memory information from version output
     const memoryInfo = parseQsvMemoryInfo(result);
 
+    // Get list of available commands
+    let commandInfo: { commands: string[]; count: number } | null = null;
+    try {
+      const listResult = execFileSync(binPath, ['--list'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: QSV_VALIDATION_TIMEOUT_MS
+      });
+      commandInfo = parseQsvCommandList(listResult);
+    } catch {
+      // --list failed, but binary is still valid - commands info just won't be available
+    }
+
     return {
       valid: true,
       version,
       path: binPath,
       totalMemory: memoryInfo?.totalMemory,
       totalMemoryBytes: memoryInfo?.totalMemoryBytes,
+      availableCommands: commandInfo?.commands,
+      commandCount: commandInfo?.count,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

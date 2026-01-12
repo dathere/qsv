@@ -1218,6 +1218,9 @@ export async function handleConfigTool(filesystemProvider?: FilesystemProviderEx
     configText += `✅ **Status:** Validated\n`;
     configText += `📍 **Path:** \`${validation.path}\`\n`;
     configText += `🏷️ **Version:** ${validation.version}\n`;
+    if (validation.commandCount) {
+      configText += `🔧 **Available Commands:** ${validation.commandCount}\n`;
+    }
     if (validation.totalMemory) {
       configText += `💾 **System Total Memory:** ${validation.totalMemory}\n`;
     }

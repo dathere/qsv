@@ -1,6 +1,6 @@
 {
   "name": "qsv-select",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Select, re-order, reverse, duplicate or drop columns.",
   "category": "selection",
   "command": {

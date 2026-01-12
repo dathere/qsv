@@ -1,6 +1,6 @@
 {
   "name": "qsv-searchset",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "_Run multiple regexes over a CSV in a single pass._ Applies the regexes to each field individually & shows only matching rows.",
   "category": "filtering",
   "command": {

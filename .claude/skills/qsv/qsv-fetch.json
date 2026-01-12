@@ -1,6 +1,6 @@
 {
   "name": "qsv-fetch",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Send/Fetch data to/from web services for every row using **HTTP Get**. Comes with HTTP/2 adaptive flow control, jaq JSON query language support, dynamic throttling (RateLimit) & caching with available persistent caching using Redis or a disk-cache.",
   "category": "utility",
   "command": {

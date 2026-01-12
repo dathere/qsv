@@ -1,6 +1,6 @@
 {
   "name": "qsv-diff",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Find the difference between two CSVs with ludicrous speed! e.g. _compare two CSVs with 1M rows x 9 columns in under 600ms!_",
   "category": "utility",
   "command": {

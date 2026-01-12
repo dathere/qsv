@@ -1,6 +1,6 @@
 {
   "name": "qsv-foreach",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Execute a shell command once per record in a given CSV file.",
   "category": "utility",
   "command": {

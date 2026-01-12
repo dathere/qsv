@@ -1,6 +1,6 @@
 {
   "name": "qsv-table",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Align output of a CSV using elastic tabstops for viewing; or to create an \"aligned TSV\" file or Fixed Width Format file. To interactively view a CSV, use the `lens` command.",
   "category": "formatting",
   "command": {

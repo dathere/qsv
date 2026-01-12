@@ -1,6 +1,6 @@
 {
   "name": "qsv-behead",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Drop headers from a CSV.",
   "category": "utility",
   "command": {

@@ -1,6 +1,6 @@
 {
   "name": "qsv-datefmt",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Formats recognized date fields (19 formats recognized) to a specified date format using strftime date format specifiers.",
   "category": "transformation",
   "command": {

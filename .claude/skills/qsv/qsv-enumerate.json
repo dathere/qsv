@@ -1,6 +1,6 @@
 {
   "name": "qsv-enumerate",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Add a new column enumerating the lines of a CSV file.",
   "category": "utility",
   "command": {

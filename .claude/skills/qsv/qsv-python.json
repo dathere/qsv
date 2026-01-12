@@ -1,6 +1,6 @@
 {
   "name": "qsv-python",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Create a new computed column or filter rows by evaluating a Python expression on every row of a CSV file.",
   "category": "utility",
   "command": {

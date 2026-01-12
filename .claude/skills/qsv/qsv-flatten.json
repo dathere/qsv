@@ -1,6 +1,6 @@
 {
   "name": "qsv-flatten",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "A flattened view of CSV records. Useful for viewing one record at a time. e.g. `qsv slice -i 5 data.csv | qsv flatten`.",
   "category": "utility",
   "command": {

@@ -1,6 +1,6 @@
 {
   "name": "qsv-prompt",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Open a file dialog to either pick a file as input or save output to a file.",
   "category": "utility",
   "command": {

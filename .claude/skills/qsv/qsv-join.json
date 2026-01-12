@@ -1,6 +1,6 @@
 {
   "name": "qsv-join",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Inner, outer, right, cross, anti & semi joins. Automatically creates a simple, in-memory hash index to make it fast.",
   "category": "joining",
   "command": {

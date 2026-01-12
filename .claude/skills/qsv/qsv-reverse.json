@@ -1,6 +1,6 @@
 {
   "name": "qsv-reverse",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Reverse order of rows in a CSV. Unlike the `sort --reverse` command, it preserves the order of rows with the same key. If an index is present, it works with constant memory. Otherwise, it will load all the data into memory.",
   "category": "transformation",
   "command": {

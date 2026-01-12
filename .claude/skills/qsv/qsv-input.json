@@ -1,6 +1,6 @@
 {
   "name": "qsv-input",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Read CSV data with special commenting, quoting, trimming, line-skipping & non-UTF8 encoding handling rules. Typically used to \"normalize\" a CSV for further processing with other qsv commands.",
   "category": "conversion",
   "command": {

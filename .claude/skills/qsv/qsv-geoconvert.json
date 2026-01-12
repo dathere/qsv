@@ -1,6 +1,6 @@
 {
   "name": "qsv-geoconvert",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Convert between various spatial formats and CSV/SVG including GeoJSON, SHP, and more.",
   "category": "utility",
   "command": {

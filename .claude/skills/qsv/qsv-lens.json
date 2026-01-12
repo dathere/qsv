@@ -1,6 +1,6 @@
 {
   "name": "qsv-lens",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Interactively view, search & filter tabular data files (CSV, Arrow, Avro/IPC, Parquet, JSON Array and JSONL formats supported) using the csvlens engine.",
   "category": "utility",
   "command": {

@@ -1,6 +1,6 @@
 {
   "name": "qsv-edit",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Replace the value of a cell specified by its row and column.",
   "category": "utility",
   "command": {

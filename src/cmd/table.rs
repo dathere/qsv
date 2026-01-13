@@ -23,7 +23,7 @@ table options:
     -w, --width <arg>      The minimum width of each column.
                            [default: 2]
     -p, --pad <arg>        The minimum number of spaces between each column.
-                           [default: 2]
+                           [default: 0]
     -a, --align <arg>      How entries should be aligned in a column.
                            Options: "left", "right", "center". "leftendtab" & "leftfwf"
                            "leftendtab" is a special alignment that similar to "left"
@@ -51,9 +51,8 @@ Common options:
                            CSV into memory using CONSERVATIVE heuristics.
 "##;
 
-use std::{borrow::Cow, io::IsTerminal};
+use std::io::IsTerminal;
 
-use qsv_tabwriter::{Alignment, TabWriter};
 use serde::Deserialize;
 use textwrap;
 
@@ -86,18 +85,6 @@ enum Align {
     LeftFwf,
 }
 
-impl From<Align> for Alignment {
-    fn from(align: Align) -> Self {
-        match align {
-            Align::Left => Alignment::Left,
-            Align::Right => Alignment::Right,
-            Align::Center => Alignment::Center,
-            Align::LeftEndTab => Alignment::LeftEndTab,
-            Align::LeftFwf => Alignment::LeftFwf,
-        }
-    }
-}
-
 #[inline]
 fn field_width(field: &[u8]) -> usize {
     // Prefer char count for UTF-8 so emoji/wide chars don't explode layout.
@@ -118,10 +105,20 @@ fn autolayout(
         return None;
     }
 
-    // Available width after accounting for small safety fudge and padding.
+    // Available width after accounting for borders, separators, padding, inner padding, and fudge.
     let cols = max_widths.len();
+    let chrome = cols + 1; // borders + vertical separators
     let pad_total = pad.saturating_mul(cols.saturating_sub(1));
-    let available = screen_width.saturating_sub(FUDGE).saturating_sub(pad_total);
+    let inner_pad_total = 2 * INNER_PAD * cols;
+    let available_total = screen_width.saturating_sub(FUDGE);
+    if available_total <= chrome + pad_total + inner_pad_total {
+        return Some(vec![min_width; cols]);
+    }
+    // Available content width for fields (excluding inner padding, chrome, pad).
+    let available = available_total
+        .saturating_sub(chrome)
+        .saturating_sub(pad_total)
+        .saturating_sub(inner_pad_total);
 
     // Width of data as-is.
     let data_width: usize = max_widths.iter().sum();
@@ -130,7 +127,8 @@ fn autolayout(
     }
 
     // Lower bound per column tries to give every column a chance.
-    let lower_bound = (available / cols).clamp(2, 10).max(min_width);
+    // Ensure at least 3 to leave room for an ellipsis when truncated.
+    let lower_bound = (available / cols).clamp(2, 10).max(min_width.max(3));
 
     let min: Vec<usize> = max_widths.iter().map(|w| (*w).min(lower_bound)).collect();
     let max: Vec<usize> = max_widths.to_vec();
@@ -177,37 +175,177 @@ fn autolayout(
         }
     }
 
+    // Final safety: if rounding/ceil made us overflow, trim the widest columns
+    // (but never below min_width) until we fit within the terminal.
+    let chrome = cols + 1;
+    let inner_pad_total = 2 * INNER_PAD * cols;
+    let limit = screen_width.saturating_sub(FUDGE);
+    let total_with_pad: usize = widths.iter().sum::<usize>() + pad_total + chrome + inner_pad_total;
+    if total_with_pad > limit {
+        let mut order: Vec<usize> = (0..widths.len()).collect();
+        order.sort_by_key(|&i| std::cmp::Reverse(widths[i]));
+        let mut excess = total_with_pad - limit;
+        while excess > 0 {
+            let mut trimmed = false;
+            for &idx in &order {
+                if widths[idx] > min_width {
+                    widths[idx] -= 1;
+                    excess -= 1;
+                    trimmed = true;
+                    if excess == 0 {
+                        break;
+                    }
+                }
+            }
+            if !trimmed {
+                break;
+            }
+        }
+    }
+
     Some(widths)
 }
 
-fn write_row<W: std::io::Write>(
-    wtr: &mut csv::Writer<W>,
+const INNER_PAD: usize = 1; // spaces inside each cell on both sides.
+
+// Box-drawing characters for pretty separators.
+const BOX_TOP: (char, char, char, char) = ('╭', '┬', '╮', '─');
+const BOX_MID: (char, char, char, char) = ('├', '┼', '┤', '─');
+const BOX_BOT: (char, char, char, char) = ('╰', '┴', '╯', '─');
+
+fn make_border_line(
+    widths: &[usize],
+    pad: usize,
+    chars: (char, char, char, char),
+) -> Vec<String> {
+    let (left, mid, right, fill) = chars;
+    let mut fields = Vec::with_capacity(widths.len());
+    for (i, w) in widths.iter().enumerate() {
+        let mut s = String::new();
+        if i == 0 {
+            s.push(left);
+        } else {
+            s.push(mid);
+        }
+        s.extend(std::iter::repeat(fill).take(*w));
+        if i + 1 < widths.len() {
+            s.extend(std::iter::repeat(fill).take(pad));
+        }
+        if i + 1 == widths.len() {
+            s.push(right);
+        }
+        fields.push(s);
+    }
+    fields
+}
+
+fn align_cell(s: &str, width: usize, align: Align) -> String {
+    match align {
+        Align::Left | Align::LeftEndTab | Align::LeftFwf => format!("{s:<width$}"),
+        Align::Right => format!("{s:>width$}"),
+        Align::Center => {
+            if width == 0 {
+                return String::new();
+            }
+            let pad_total = width.saturating_sub(s.chars().count());
+            let left = pad_total / 2;
+            let right = pad_total - left;
+            format!(
+                "{left_spaces}{s}{right_spaces}",
+                left_spaces = " ".repeat(left),
+                right_spaces = " ".repeat(right)
+            )
+        },
+    }
+}
+
+fn colorize_field(
+    aligned: &str,
+    header: bool,
+    col_idx: usize,
+    theme: Theme,
+    color_enabled: bool,
+) -> String {
+    if !color_enabled {
+        return aligned.to_string();
+    }
+    let bytes = style_field(aligned.as_bytes(), header, col_idx, theme);
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+fn write_border_line<W: std::io::Write>(
+    out: &mut W,
+    widths: &[usize],
+    pad: usize,
+    chars: (char, char, char, char),
+    color_enabled: bool,
+) -> std::io::Result<()> {
+    let parts = make_border_line(widths, pad, chars);
+    let line = parts.join("");
+    if color_enabled {
+        writeln!(out, "\u{001b}[38;5;245m{line}\u{001b}[0m")
+    } else {
+        writeln!(out, "{line}")
+    }
+}
+
+fn condense_to_width(field: &[u8], width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    let s = String::from_utf8_lossy(field);
+    let len = s.chars().count();
+    if len <= width {
+        return s.into_owned();
+    }
+    if width == 1 {
+        return "…".to_string();
+    }
+    let mut out = String::new();
+    let mut used = 0;
+    for ch in s.chars() {
+        if used + 1 >= width {
+            break;
+        }
+        out.push(ch);
+        used += 1;
+    }
+    out.push('…');
+    out
+}
+
+fn write_row_string<W: std::io::Write>(
+    out: &mut W,
     record: &csv::ByteRecord,
-    condense: Option<&[usize]>,
+    widths: &[usize],
+    pad: usize,
+    align: Align,
     header: bool,
     color_enabled: bool,
     theme: Theme,
-) -> csv::Result<()> {
-    if !color_enabled {
-        return wtr.write_record(record.iter().enumerate().map(|(col_idx, f)| {
-            let per_col = condense.map(|v| {
-                let width = v[col_idx];
-                if width > 3 { width - 3 } else { width }
-            });
-            util::condense(Cow::Borrowed(f), per_col)
-        }));
+) -> std::io::Result<()> {
+    let mut line = String::new();
+    line.push('│');
+    for (i, field) in record.iter().enumerate() {
+        let col_width = widths[i];
+        let content_width = col_width.saturating_sub(2 * INNER_PAD);
+        let text = condense_to_width(field, content_width);
+        let aligned_inner = align_cell(&text, content_width, align);
+        let mut cell = String::new();
+        cell.push_str(&" ".repeat(INNER_PAD));
+        cell.push_str(&aligned_inner);
+        cell.push_str(&" ".repeat(INNER_PAD));
+        let styled = colorize_field(&cell, header, i, theme, color_enabled);
+        line.push_str(&styled);
+        if i + 1 < record.len() {
+            line.extend(std::iter::repeat(' ').take(pad));
+            line.push('│');
+        } else {
+            line.push('│');
+        }
     }
-
-    let mut styled = Vec::with_capacity(record.len());
-    for (col_idx, field) in record.iter().enumerate() {
-        let per_col = condense.map(|v| {
-            let width = v[col_idx];
-            if width > 3 { width - 3 } else { width }
-        });
-        let condensed = util::condense(Cow::Borrowed(field), per_col);
-        styled.push(style_field(condensed.as_ref(), header, col_idx, theme));
-    }
-    wtr.write_record(styled.iter())
+    line.push('\n');
+    out.write_all(line.as_bytes())
 }
 
 #[derive(Clone, Copy)]
@@ -289,13 +427,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     let wconfig = Config::new(args.flag_output.as_ref()).delimiter(Some(Delimiter(b'\t')));
-
-    let tw = TabWriter::new(wconfig.io_writer()?)
-        .minwidth(args.flag_width)
-        .padding(args.flag_pad)
-        .alignment(args.flag_align.into())
-        .ansi(color_enabled);
-    let mut wtr = wconfig.from_writer(tw);
+    let mut out = wconfig.io_writer()?;
     let mut rdr = rconfig.reader()?;
 
     // Load all records to measure column widths and layout.
@@ -330,40 +462,52 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     });
 
-    let condense_vec = if let Some(n) = args.flag_condense {
+    let content_widths = if let Some(n) = args.flag_condense {
         Some(vec![n.max(args.flag_width); max_widths.len()])
     } else {
         autolayout(&max_widths, args.flag_pad, args.flag_width, target_width)
     };
 
-    let condense_ref = condense_vec.as_deref();
+    let content_widths = content_widths.as_deref().unwrap_or(&max_widths);
+    let render_widths: Vec<usize> = content_widths
+        .iter()
+        .map(|w| w.saturating_add(2 * INNER_PAD))
+        .collect();
+
+    // Top border
+    write_border_line(&mut out, &render_widths, args.flag_pad, BOX_TOP, color_enabled)?;
 
     // Write header (first record)
-    write_row(
-        &mut wtr,
+    write_row_string(
+        &mut out,
         &records[0],
-        condense_ref,
+        &render_widths,
+        args.flag_pad,
+        args.flag_align,
         true,
         color_enabled,
         theme,
     )?;
 
-    if color_enabled {
-        let widths_for_sep = condense_ref.unwrap_or(&max_widths);
-        let sep_record: Vec<String> = widths_for_sep
-            .iter()
-            .map(|w| {
-                let sep_len = (*w).max(3);
-                let sep_str = "─".repeat(sep_len);
-                format!("\u{001b}[38;5;245m{sep_str}\u{001b}[0m")
-            })
-            .collect();
-        wtr.write_record(sep_record.iter())?;
-    }
+    // Header separator
+    write_border_line(&mut out, &render_widths, args.flag_pad, BOX_MID, color_enabled)?;
 
     for rec in records.iter().skip(1) {
-        write_row(&mut wtr, rec, condense_ref, false, color_enabled, theme)?;
+        write_row_string(
+            &mut out,
+            rec,
+            &render_widths,
+            args.flag_pad,
+            args.flag_align,
+            false,
+            color_enabled,
+            theme,
+        )?;
     }
 
-    Ok(wtr.flush()?)
+    // Bottom border
+    write_border_line(&mut out, &render_widths, args.flag_pad, BOX_BOT, color_enabled)?;
+
+    out.flush()?;
+    Ok(())
 }

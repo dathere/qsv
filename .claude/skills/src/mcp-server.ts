@@ -13,6 +13,8 @@ import {
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { SkillLoader } from './loader.js';
@@ -118,6 +120,12 @@ class QsvMcpServer {
     console.error('[Init] Registering resource handlers...');
     this.registerResourceHandlers();
     console.error('[Init] ✓ Resource handlers registered');
+    console.error('');
+
+    // Register prompt handlers
+    console.error('[Init] Registering prompt handlers...');
+    this.registerPromptHandlers();
+    console.error('[Init] ✓ Prompt handlers registered');
     console.error('');
 
     console.error('='.repeat(60));
@@ -568,6 +576,63 @@ class QsvMcpServer {
     });
   }
 
+  /**
+   * Register MCP prompt handlers
+   */
+  private registerPromptHandlers(): void {
+    // List prompts handler
+    this.server.setRequestHandler(ListPromptsRequestSchema, async () => {
+      console.error('Listing prompts...');
+
+      const prompts = [
+        {
+          name: 'qsv_welcome',
+          description: 'Welcome message and quick start guide for qsv',
+        },
+        {
+          name: 'qsv_examples',
+          description: 'Common qsv usage examples and workflows',
+        },
+      ];
+
+      console.error(`Returning ${prompts.length} prompts`);
+
+      return {
+        prompts,
+      };
+    });
+
+    // Get prompt handler
+    this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+      const { name } = request.params;
+
+      console.error(`Getting prompt: ${name}`);
+
+      // Handle welcome prompt
+      if (name === 'qsv_welcome') {
+        const result = await handleWelcomeTool(this.filesystemProvider);
+        return {
+          messages: [{
+            role: 'assistant',
+            content: result.content[0],
+          }],
+        };
+      }
+
+      // Handle examples prompt
+      if (name === 'qsv_examples') {
+        const result = await handleExamplesTool();
+        return {
+          messages: [{
+            role: 'assistant',
+            content: result.content[0],
+          }],
+        };
+      }
+
+      throw new Error(`Unknown prompt: ${name}`);
+    });
+  }
 
   /**
    * Start the server

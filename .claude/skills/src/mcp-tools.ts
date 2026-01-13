@@ -975,10 +975,40 @@ export async function handleGenericCommand(
       };
     }
 
-    // Forward to handleToolCall with the qsv_ prefix
+    // Flatten nested args and options objects into the params
+    // This handles cases where Claude passes:
+    // {"command": "apply", "args": {...}, "options": {...}, "input_file": "...", "output_file": "..."}
+    const flattenedParams: Record<string, unknown> = {};
+
+    // Copy top-level params (except 'args' and 'options')
+    for (const [key, value] of Object.entries(params)) {
+      if (key !== 'args' && key !== 'options') {
+        flattenedParams[key] = value;
+      }
+    }
+
+    // Flatten nested 'args' object
+    if (params.args && typeof params.args === 'object') {
+      const argsObj = params.args as Record<string, unknown>;
+      for (const [key, value] of Object.entries(argsObj)) {
+        flattenedParams[key] = value;
+      }
+    }
+
+    // Flatten nested 'options' object
+    if (params.options && typeof params.options === 'object') {
+      const optionsObj = params.options as Record<string, unknown>;
+      for (const [key, value] of Object.entries(optionsObj)) {
+        flattenedParams[key] = value;
+      }
+    }
+
+    console.error(`[handleGenericCommand] Flattened params:`, JSON.stringify(flattenedParams));
+
+    // Forward to handleToolCall with the qsv_ prefix and flattened params
     return await handleToolCall(
       `qsv_${commandName}`,
-      params,
+      flattenedParams,
       executor,
       loader,
       filesystemProvider,

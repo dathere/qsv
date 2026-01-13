@@ -255,7 +255,7 @@ fn truncate(field: &[u8], width: usize) -> String {
     out
 }
 
-fn colorize_field(text: &str, header: bool, col_idx: usize, theme: Option<&Theme>) -> String {
+fn format_field(text: &str, header: bool, col_idx: usize, theme: Option<&Theme>) -> String {
     let Some(theme) = theme else {
         return text.to_string();
     };
@@ -309,12 +309,10 @@ fn render_row<W: std::io::Write>(
 
     let mut line = String::new();
     line.push_str(&pipe_str);
-    for (i, field) in record.iter().enumerate() {
-        let col_width = widths[i];
-        let content_width = col_width;
-        let text = truncate(field, content_width);
-        let aligned_inner = align_cell(&text, content_width, align);
-        let styled = colorize_field(&aligned_inner, header, i, theme);
+    for (idx, field) in record.iter().enumerate() {
+        let text = truncate(field, widths[idx]);
+        let aligned = align_cell(&text, widths[idx], align);
+        let styled = format_field(&aligned, header, idx, theme);
         line.push_str(&" ");
         line.push_str(&styled);
         line.push_str(&" ");
@@ -350,7 +348,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return Ok(());
     }
 
-    // measure col widths
+    // measure column widths
     let mut columns: Vec<usize> = Vec::new();
     for rec in &records {
         if rec.len() > columns.len() {
@@ -364,6 +362,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
+    // determine theme
+    let theme: Option<&Theme> = if args.flag_monochrome {
+        None
+    } else if supports_color::on(Stream::Stdout).is_none() {
+        None
+    } else if let Ok(termbg::Theme::Light) = termbg::theme(std::time::Duration::from_millis(100)) {
+        Some(&LIGHT)
+    } else {
+        Some(&DARK)
+    };
+
     // layout
     let termwidth = if std::io::stdout().is_terminal() {
         textwrap::termwidth()
@@ -371,19 +380,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         80
     };
     let widths = autolayout(&columns, termwidth);
-
-    // determine theme
-    let theme: Option<&Theme> = if args.flag_monochrome {
-        None
-    } else if supports_color::on(Stream::Stdout).is_none() {
-        None
-    } else {
-        // Detect terminal background and choose appropriate theme
-        match termbg::theme(std::time::Duration::from_millis(100)) {
-            Ok(termbg::Theme::Light) => Some(&LIGHT),
-            _ => Some(&DARK),
-        }
-    };
 
     // write
     render_separator(&mut out, &widths, (NW, N, NE), theme)?;

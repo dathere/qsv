@@ -164,6 +164,10 @@ export interface QsvValidationResult {
   version?: string;
   path?: string;
   error?: string;
+  totalMemory?: string;       // e.g., "64.00 GiB"
+  totalMemoryBytes?: number;  // Numeric value in bytes for comparisons
+  availableCommands?: string[];  // List of available qsv commands
+  commandCount?: number;         // Number of installed commands
 }
 
 // Global diagnostic info for auto-detection
@@ -287,6 +291,90 @@ function parseQsvVersion(versionOutput: string): string | null {
 }
 
 /**
+ * Parse memory unit string to bytes
+ * Supports: B, KiB, MiB, GiB, TiB
+ * Exported for testing
+ */
+export function parseMemoryToBytes(memoryStr: string): number | null {
+  const match = memoryStr.match(/^([\d.]+)\s*(B|KiB|MiB|GiB|TiB)$/i);
+  if (!match) return null;
+
+  const value = parseFloat(match[1]);
+  // Validate parsed value
+  if (isNaN(value) || !isFinite(value) || value < 0) return null;
+
+  const unit = match[2].toLowerCase();
+
+  const multipliers: Record<string, number> = {
+    'b': 1,
+    'kib': 1024,
+    'mib': 1024 * 1024,
+    'gib': 1024 * 1024 * 1024,
+    'tib': 1024 * 1024 * 1024 * 1024,
+  };
+
+  return value * (multipliers[unit] || 1);
+}
+
+/**
+ * Parse total memory from qsv --version output
+ * Memory info format: maxInputSize-freeSwap-availableMemory-totalMemory
+ * Example: "51.20 GiB-0 B-13.94 GiB-64.00 GiB"
+ * Exported for testing
+ */
+export function parseQsvMemoryInfo(versionOutput: string): { totalMemory: string; totalMemoryBytes: number } | null {
+  // Pattern: captures 4 memory values before the parentheses with system info
+  const memoryPattern = /([\d.]+\s*(?:B|KiB|MiB|GiB|TiB))-([\d.]+\s*(?:B|KiB|MiB|GiB|TiB))-([\d.]+\s*(?:B|KiB|MiB|GiB|TiB))-([\d.]+\s*(?:B|KiB|MiB|GiB|TiB))\s*\(/i;
+
+  const match = versionOutput.match(memoryPattern);
+  if (!match) return null;
+
+  const totalMemoryStr = match[4].trim();
+  const totalMemoryBytes = parseMemoryToBytes(totalMemoryStr);
+
+  if (totalMemoryBytes === null) return null;
+
+  return { totalMemory: totalMemoryStr, totalMemoryBytes };
+}
+
+/**
+ * Parse available commands from qsv --list output
+ * Handles both formats:
+ *   qsv:     "Installed commands (63):"
+ *   qsvlite: "Installed commands:"
+ * Example output:
+ *       apply       Apply series of transformations to a column
+ *       behead      Drop header from CSV file
+ *       ...
+ * Exported for testing
+ */
+export function parseQsvCommandList(listOutput: string): { commands: string[]; count: number } | null {
+  // Extract command count from header line (optional - qsvlite doesn't include count)
+  const headerMatch = listOutput.match(/Installed commands(?: \((\d+)\))?:/);
+  if (!headerMatch) return null;
+
+  const reportedCount = headerMatch[1] ? parseInt(headerMatch[1], 10) : 0;
+
+  // Extract command names (first word of each indented line)
+  const commands: string[] = [];
+  const lines = listOutput.split('\n');
+
+  for (const line of lines) {
+    // Match lines that start with any whitespace followed by a command name
+    // Using \s+ instead of \s{4} for resilience to formatting variations
+    const match = line.match(/^\s+(\w+)\s+/);
+    if (match) {
+      commands.push(match[1]);
+    }
+  }
+
+  if (commands.length === 0) return null;
+
+  // Use reported count if available, otherwise use parsed count
+  return { commands, count: reportedCount || commands.length };
+}
+
+/**
  * Compare two semantic version strings
  * Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
  */
@@ -333,10 +421,30 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
       };
     }
 
+    // Parse memory information from version output
+    const memoryInfo = parseQsvMemoryInfo(result);
+
+    // Get list of available commands
+    let commandInfo: { commands: string[]; count: number } | null = null;
+    try {
+      const listResult = execFileSync(binPath, ['--list'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: QSV_VALIDATION_TIMEOUT_MS
+      });
+      commandInfo = parseQsvCommandList(listResult);
+    } catch {
+      // --list failed, but binary is still valid - commands info just won't be available
+    }
+
     return {
       valid: true,
       version,
       path: binPath,
+      totalMemory: memoryInfo?.totalMemory,
+      totalMemoryBytes: memoryInfo?.totalMemoryBytes,
+      availableCommands: commandInfo?.commands,
+      commandCount: commandInfo?.count,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

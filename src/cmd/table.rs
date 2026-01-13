@@ -268,7 +268,7 @@ fn format_field(text: &str, header: bool, col_idx: usize, theme: Option<&Theme>)
     }
 }
 
-fn render_separator<W: std::io::Write>(
+fn render_sep<W: std::io::Write>(
     out: &mut W,
     widths: &[usize],
     (left, mid, right): (char, char, char),
@@ -339,8 +339,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut rdr = rconfig.reader()?;
 
     // load all records
-    let mut record = csv::ByteRecord::new();
     let mut records: Vec<csv::ByteRecord> = Vec::new();
+    let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         records.push(record.clone());
     }
@@ -362,7 +362,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    // determine theme
+    // select theme, or None
     let theme: Option<&Theme> = if args.flag_monochrome {
         None
     } else if supports_color::on(Stream::Stdout).is_none() {
@@ -382,14 +382,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let widths = autolayout(&columns, termwidth);
 
     // write
-    render_separator(&mut out, &widths, (NW, N, NE), theme)?;
+    render_sep(&mut out, &widths, (NW, N, NE), theme)?;
     render_row(&mut out, &records[0], &widths, args.flag_align, true, theme)?;
-    render_separator(&mut out, &widths, (W, C, E), theme)?;
+    render_sep(&mut out, &widths, (W, C, E), theme)?;
     for rec in records.iter().skip(1) {
         render_row(&mut out, rec, &widths, args.flag_align, false, theme)?;
     }
-    render_separator(&mut out, &widths, (SW, S, SE), theme)?;
-
+    render_sep(&mut out, &widths, (SW, S, SE), theme)?;
     out.flush()?;
+
     Ok(())
 }

@@ -293,12 +293,16 @@ function parseQsvVersion(versionOutput: string): string | null {
 /**
  * Parse memory unit string to bytes
  * Supports: B, KiB, MiB, GiB, TiB
+ * Exported for testing
  */
-function parseMemoryToBytes(memoryStr: string): number | null {
+export function parseMemoryToBytes(memoryStr: string): number | null {
   const match = memoryStr.match(/^([\d.]+)\s*(B|KiB|MiB|GiB|TiB)$/i);
   if (!match) return null;
 
   const value = parseFloat(match[1]);
+  // Validate parsed value
+  if (isNaN(value) || !isFinite(value) || value < 0) return null;
+
   const unit = match[2].toLowerCase();
 
   const multipliers: Record<string, number> = {
@@ -316,8 +320,9 @@ function parseMemoryToBytes(memoryStr: string): number | null {
  * Parse total memory from qsv --version output
  * Memory info format: maxInputSize-freeSwap-availableMemory-totalMemory
  * Example: "51.20 GiB-0 B-13.94 GiB-64.00 GiB"
+ * Exported for testing
  */
-function parseQsvMemoryInfo(versionOutput: string): { totalMemory: string; totalMemoryBytes: number } | null {
+export function parseQsvMemoryInfo(versionOutput: string): { totalMemory: string; totalMemoryBytes: number } | null {
   // Pattern: captures 4 memory values before the parentheses with system info
   const memoryPattern = /([\d.]+\s*(?:B|KiB|MiB|GiB|TiB))-([\d.]+\s*(?:B|KiB|MiB|GiB|TiB))-([\d.]+\s*(?:B|KiB|MiB|GiB|TiB))-([\d.]+\s*(?:B|KiB|MiB|GiB|TiB))\s*\(/i;
 
@@ -341,8 +346,9 @@ function parseQsvMemoryInfo(versionOutput: string): { totalMemory: string; total
  *       apply       Apply series of transformations to a column
  *       behead      Drop header from CSV file
  *       ...
+ * Exported for testing
  */
-function parseQsvCommandList(listOutput: string): { commands: string[]; count: number } | null {
+export function parseQsvCommandList(listOutput: string): { commands: string[]; count: number } | null {
   // Extract command count from header line (optional - qsvlite doesn't include count)
   const headerMatch = listOutput.match(/Installed commands(?: \((\d+)\))?:/);
   if (!headerMatch) return null;
@@ -354,8 +360,9 @@ function parseQsvCommandList(listOutput: string): { commands: string[]; count: n
   const lines = listOutput.split('\n');
 
   for (const line of lines) {
-    // Match lines that start with whitespace followed by a command name
-    const match = line.match(/^\s{4}(\w+)\s+/);
+    // Match lines that start with any whitespace followed by a command name
+    // Using \s+ instead of \s{4} for resilience to formatting variations
+    const match = line.match(/^\s+(\w+)\s+/);
     if (match) {
       commands.push(match[1]);
     }

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Project Overview
 
-This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context Protocol) server that exposes qsv's CSV data-wrangling capabilities to AI agents like Claude. It enables agents to discover, invoke, and compose qsv commands through a standardized protocol.
+This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context Protocol) server that exposes qsv's tabular data-wrangling capabilities to AI agents like Claude. It enables agents to discover, invoke, and compose qsv commands through a standardized protocol for processing CSV, TSV, Excel, JSONL, and other tabular data formats.
 
 **Key Components**:
 - **MCP Server**: Exposes qsv commands as MCP tools/resources
@@ -18,9 +18,10 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 **Goals**:
 1. Make all 67 qsv commands discoverable and invokable by AI agents
 2. Auto-generate tool definitions from qsv usage text (zero documentation debt)
-3. Enable intelligent composition of complex data workflows
+3. Enable intelligent composition of complex data workflows with multi-format support
 4. Provide seamless integration with Claude Desktop and other MCP clients
 5. Help Claude make optimal tool choices through enhanced descriptions
+6. Support diverse tabular data formats (CSV, TSV, Excel, JSONL, SSV, etc.)
 
 ## What's New in 14.0.0
 
@@ -235,13 +236,16 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
          │                  ┌─────────────┐
          │                  │ qsv binary  │
          │                  │ (Rust)      │
+         │                  │ Multi-format│
+         │                  │ support     │
          │                  └─────────────┘
          │
          ▼
 ┌─────────────────┐
 │ converted-file- │
 │   manager.ts    │
-│ Track outputs   │
+│ Excel→CSV       │
+│ JSONL→CSV       │
 └─────────────────┘
 ```
 

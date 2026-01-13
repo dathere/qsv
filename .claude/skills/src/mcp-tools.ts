@@ -1158,9 +1158,9 @@ qsv is a blazingly-fast command-line toolkit with 66 commands for:
 ${fileListingSection}
 ## Quick Start
 
-**1. List your CSV files**
+**1. List your data files**
 \`\`\`
-List CSV files in my Downloads folder
+List data files in my Downloads folder
 \`\`\`
 
 **2. Preview a file**

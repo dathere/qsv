@@ -163,10 +163,10 @@ You should see:
 ### Test Basic Command
 
 ```
-List CSV files in my current directory
+List data files in my current directory
 ```
 
-Claude should use the `qsv_list_files` tool to show files.
+Claude should use the `qsv_list_files` tool to show tabular data files (CSV, Excel, TSV, JSONL, etc.).
 
 ### Test qsv Execution
 
@@ -599,7 +599,7 @@ claude
 
 Then use qsv tools as if local:
 ```
-List CSV files here and analyze the largest one
+List data files here and analyze the largest one
 ```
 
 **VS Code Remote SSH** with Claude Code:

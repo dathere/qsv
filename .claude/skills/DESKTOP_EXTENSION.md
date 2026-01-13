@@ -147,10 +147,10 @@ Claude should provide examples and offer to run commands.
 ### Test File Access
 
 ```
-List CSV files in my Downloads folder
+List data files in my Downloads folder
 ```
 
-Claude should use the `qsv_list_files` tool to show your CSV files.
+Claude should use the `qsv_list_files` tool to show your tabular data files (CSV, Excel, TSV, JSONL, etc.).
 
 ---
 

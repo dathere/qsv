@@ -1,20 +1,20 @@
 [package]
-name = "qsv"
-version = "14.0.0"                                                                         #:version
-authors = ["Joel Natividad <joel@datHere.com>"]
-description = "A Blazing-Fast Data-wrangling toolkit."
+name          = "qsv"
+version       = "14.0.0"                                                                    #:version
+authors       = ["Joel Natividad <joel@datHere.com>"]
+description   = "A Blazing-Fast Data-wrangling toolkit."
 documentation = "https://github.com/dathere/qsv#qsv-ultra-fast-csv-data-wrangling-toolkit"
-homepage = "https://qsv.dathere.com"
-repository = "https://github.com/dathere/qsv"
-readme = "README.md"
-keywords = ["csv", "geocode", "data-engineering", "etl", "opendata"]
-categories = ["command-line-utilities", "parser-implementations"]
-license = "MIT OR Unlicense"
-autotests = false
-edition = "2024"
-rust-version = "1.92"
-resolver = "3"
-autobins = false
+homepage      = "https://qsv.dathere.com"
+repository    = "https://github.com/dathere/qsv"
+readme        = "README.md"
+keywords      = ["csv", "geocode", "data-engineering", "etl", "opendata"]
+categories    = ["command-line-utilities", "parser-implementations"]
+license       = "MIT OR Unlicense"
+autotests     = false
+edition       = "2024"
+rust-version  = "1.92"
+resolver      = "3"
+autobins      = false
 
 include = [
     "src/**/*",
@@ -27,27 +27,27 @@ include = [
 ]
 
 [[bin]]
-name = "qsv"
-test = true
-bench = false
-doctest = false
-path = "src/main.rs"
+name              = "qsv"
+test              = true
+bench             = false
+doctest           = false
+path              = "src/main.rs"
 required-features = ["feature_capable"]
 
 [[bin]]
-name = "qsvlite"
-test = true
-bench = false
-doctest = false
-path = "src/mainlite.rs"
+name              = "qsvlite"
+test              = true
+bench             = false
+doctest           = false
+path              = "src/mainlite.rs"
 required-features = ["lite"]
 
 [[bin]]
-name = "qsvdp"
-test = true
-bench = false
-doctest = false
-path = "src/maindp.rs"
+name              = "qsvdp"
+test              = true
+bench             = false
+doctest           = false
+path              = "src/maindp.rs"
 required-features = ["datapusher_plus"]
 
 [[test]]
@@ -56,19 +56,19 @@ path = "tests/tests.rs"
 
 [profile.release]
 codegen-units = 1
-debug = false
-lto = true
-opt-level = 3
-strip = true
+debug         = false
+lto           = true
+opt-level     = 3
+strip         = true
 
 [profile.release-samply]
 inherits = "release"
-debug = true
-strip = false
+debug    = true
+strip    = false
 
 [profile.release-nightly]
 inherits = "release"
-panic = "abort"
+panic    = "abort"
 
 [dependencies]
 arboard = { version = "3.6.1", default-features = false, optional = true }
@@ -82,7 +82,11 @@ bytemuck = { version = "1.24", features = [
 ], optional = true }
 byteorder = "1.5"
 bytes = "1"
-cached = { version = "0.56", features = ["ahash", "disk_store", "redis_ahash"] }
+cached = { version = "0.56", features = [
+    "ahash",
+    "disk_store",
+    "redis_ahash",
+] }
 calamine = { version = "0.32", features = ["chrono"] }
 censor = { version = "0.3", optional = true }
 chrono = { version = "0.4", default-features = false }
@@ -149,10 +153,7 @@ jsonschema = { version = "0.38", features = [
 libc = "0.2"
 log = "0.4"
 memmap2 = "0.9"
-mimalloc = { version = "0.1", default-features = false, features = [
-    "extended",
-    "v3",
-], optional = true }
+mimalloc = { version = "0.1", default-features = false, features = ["extended", "v3"], optional = true }
 minijinja = { version = "2", features = [
     "json",
     "loop_controls",
@@ -294,7 +295,7 @@ newline-converter = "0.3"
 # postgres = "0.19"
 # rusqlite = { version = "0.32", features = ["bundled"] }
 
-quickcheck = { version = "1", default-features = false }
+quickcheck  = { version = "1", default-features = false }
 serial_test = { version = "3.3", features = ["file_locks"] }
 
 [patch.crates-io]
@@ -304,8 +305,8 @@ serial_test = { version = "3.3", features = ["file_locks"] }
 # non-allocating ByteRecord trim and StringRecord trim;
 # a faster `is_non_numeric()` helper;
 # and various clippy lint suggestions applied
-csv = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
-csv-core = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
+csv       = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
+csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
 csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
 # csv = { path = "../rust-csv" }
 # csv-core = { path = "../rust-csv/csv-core" }
@@ -332,7 +333,7 @@ geosuggest-utils = { git = "https://github.com/jqnatividad/geosuggest", branch =
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }
 
 # use latest upstream now that our PR has been merged while awaiting a new release
-kiddo = { git = "https://github.com/sdd/kiddo.git", rev = "2056051" }
+kiddo = { git = "https://github.com/sdd/kiddo.git", rev = "2056051"}
 
 # use upstream of mimalloc with unreleased fixes
 mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "7daf67f", optional = true }
@@ -350,7 +351,7 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parki
 # to take advantage of Polars' latest unreleased fixes and features.
 # Based on what's available at the time of qsv's release, we may need to pin polars to a py-polars tag
 # or a specific commit if more revisions have been made since the latest polars/py-polars release.
-# BUILD NOTE: Be sure to set QSV_POLARS_REV below to the latest commit short hash or tag
+# BUILD NOTE: Be sure to set QSV_POLARS_REV below to the latest commit short hash or tag 
 # of polars/py-polars before building qsv. This allows us to show the polars rev/tag in --version.
 # The convention to use for QSV_POLARS_REV is:
 # - if we are using a release version of Rust Polars, leave QSV_POLARS_REV empty
@@ -396,7 +397,13 @@ apply = [
     "whatlang",
 ]
 clipboard = ["arboard"]
-fetch = ["console", "flate2", "governor", "serde_urlencoded", "sled"]
+fetch = [
+    "console",
+    "flate2",
+    "governor",
+    "serde_urlencoded",
+    "sled",
+]
 foreach = []
 geocode = [
     "bytemuck",
@@ -427,25 +434,28 @@ nightly = [
     "foldhash/nightly",
 ]
 
-nightly-polars = ["polars/nightly", "polars/simd"]
+nightly-polars =[
+    "polars/nightly",
+    "polars/simd",
+]
 
 [package.metadata.deb]
-maintainer = "Konstantin Sivakov <konstantin@datHere.com>"
-copyright = "2024, datHere Inc. <www.dathere.com>"
+maintainer           = "Konstantin Sivakov <konstantin@datHere.com>"
+copyright            = "2024, datHere Inc. <www.dathere.com>"
 extended-description = """A high performance CSV data-wrangling toolkit."""
-depends = "$auto"
-section = "utility"
-priority = "optional"
+depends              = "$auto"
+section              = "utility"
+priority             = "optional"
 
 # Default feature and asset
 features = ["feature_capable"]
-assets = [["target/release/qsv", "/usr/local/bin/", "755"]]
+assets   = [["target/release/qsv", "/usr/local/bin/", "755"]]
 
 # Conditional features and assets
 [package.metadata.deb.variants.lite]
 features = ["lite"]
-assets = [["target/release/qsvlite", "/usr/local/bin/", "755"]]
+assets   = [["target/release/qsvlite", "/usr/local/bin/", "755"]]
 
 [package.metadata.deb.variants.datapusher_plus]
 features = ["datapusher_plus", "luau"]
-assets = [["target/release/qsvdp", "/usr/local/bin/", "755"]]
+assets   = [["target/release/qsvdp", "/usr/local/bin/", "755"]]

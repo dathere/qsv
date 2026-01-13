@@ -267,7 +267,8 @@ strum_macros = "0.27"
 sysinfo = "0.37"
 tempfile = "3.24"
 thousands = { version = "0.2", optional = true }
-textwrap = "0.16"
+textwrap = { version = "0.16", features = ["terminal_size"] }
+termbg = "0.6"
 threadpool = "1.8"
 titlecase = { version = "3", optional = true }
 tokio = { version = "1", features = ["parking_lot", "rt-multi-thread"] }

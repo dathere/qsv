@@ -342,13 +342,21 @@ fn apply_ops_encode64() {
         svec!["Mary", "Jane", "SmFuZQ=="],
         svec!["Sue", "Bird", "QmlyZA=="],
         svec!["Hopkins", "Jade", "SmFkZQ=="],
-        svec!["Long", "the quick brown fox jumped over the lazy by the zigzag quarry site.", 
-            "dGhlIHF1aWNrIGJyb3duIGZveCBqdW1wZWQgb3ZlciB0aGUgbGF6eSBieSB0aGUgemlnemFnIHF1YXJyeSBzaXRlLg=="],
-        svec!["With extended characters", "Y así mismo, aunque no son tan ágiles en el suelo como el vampiro común, son muy competentes al escalar por las ramas.", 
-            "WSBhc8OtIG1pc21vLCBhdW5xdWUgbm8gc29uIHRhbiDDoWdpbGVzIGVuIGVsIHN1ZWxvIGNvbW8gZWwgdmFtcGlybyBjb23Dum4sIHNvbiBtdXkgY29tcGV0ZW50ZXMgYWwgZXNjYWxhciBwb3IgbGFzIHJhbWFzLg=="],
-        svec!["Japanese", "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である", 
-            "UnVzdO+8iOODqeOCueODiO+8ieOBr+S4puWIl+OBi+OBpOODnuODq+ODgeODkeODqeODgOOCpOODoOOBruODl+ODreOCsOODqeODn+ODs+OCsOiogOiqnuOBp+OBguOCiw=="],
-
+        svec![
+            "Long",
+            "the quick brown fox jumped over the lazy by the zigzag quarry site.",
+            "dGhlIHF1aWNrIGJyb3duIGZveCBqdW1wZWQgb3ZlciB0aGUgbGF6eSBieSB0aGUgemlnemFnIHF1YXJyeSBzaXRlLg=="
+        ],
+        svec![
+            "With extended characters",
+            "Y así mismo, aunque no son tan ágiles en el suelo como el vampiro común, son muy competentes al escalar por las ramas.",
+            "WSBhc8OtIG1pc21vLCBhdW5xdWUgbm8gc29uIHRhbiDDoWdpbGVzIGVuIGVsIHN1ZWxvIGNvbW8gZWwgdmFtcGlybyBjb23Dum4sIHNvbiBtdXkgY29tcGV0ZW50ZXMgYWwgZXNjYWxhciBwb3IgbGFzIHJhbWFzLg=="
+        ],
+        svec![
+            "Japanese",
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である",
+            "UnVzdO+8iOODqeOCueODiO+8ieOBr+S4puWIl+OBi+OBpOODnuODq+ODgeODkeODqeODgOOCpOODoOOBruODl+ODreOCsOODqeODn+ODs+OCsOiogOiqnuOBp+OBguOCiw=="
+        ],
     ];
     assert_eq!(got, expected);
 }
@@ -387,15 +395,24 @@ fn apply_ops_decode64() {
         svec!["Mary", "Jane", "SmFuZQ==", "Jane"],
         svec!["Sue", "Bird", "QmlyZA==", "Bird"],
         svec!["Hopkins", "Jade", "SmFkZQ==", "Jade"],
-        svec!["Long", "the quick brown fox jumped over the lazy by the zigzag quarry site.", 
+        svec![
+            "Long",
+            "the quick brown fox jumped over the lazy by the zigzag quarry site.",
             "dGhlIHF1aWNrIGJyb3duIGZveCBqdW1wZWQgb3ZlciB0aGUgbGF6eSBieSB0aGUgemlnemFnIHF1YXJyeSBzaXRlLg==",
-            "the quick brown fox jumped over the lazy by the zigzag quarry site."],
-        svec!["With extended characters", "Y así mismo, aunque no son tan ágiles en el suelo como el vampiro común, son muy competentes al escalar por las ramas.", 
+            "the quick brown fox jumped over the lazy by the zigzag quarry site."
+        ],
+        svec![
+            "With extended characters",
+            "Y así mismo, aunque no son tan ágiles en el suelo como el vampiro común, son muy competentes al escalar por las ramas.",
             "WSBhc8OtIG1pc21vLCBhdW5xdWUgbm8gc29uIHRhbiDDoWdpbGVzIGVuIGVsIHN1ZWxvIGNvbW8gZWwgdmFtcGlybyBjb23Dum4sIHNvbiBtdXkgY29tcGV0ZW50ZXMgYWwgZXNjYWxhciBwb3IgbGFzIHJhbWFzLg==",
-            "Y así mismo, aunque no son tan ágiles en el suelo como el vampiro común, son muy competentes al escalar por las ramas."],
-        svec!["Japanese", "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である", 
+            "Y así mismo, aunque no son tan ágiles en el suelo como el vampiro común, son muy competentes al escalar por las ramas."
+        ],
+        svec![
+            "Japanese",
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である",
             "UnVzdO+8iOODqeOCueODiO+8ieOBr+S4puWIl+OBi+OBpOODnuODq+ODgeODkeODqeODgOOCpOODoOOBruODl+ODreOCsOODqeODn+ODs+OCsOiogOiqnuOBp+OBguOCiw==",
-            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である"],
+            "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である"
+        ],
     ];
     assert_eq!(got, expected);
 }

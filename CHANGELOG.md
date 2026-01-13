@@ -24,7 +24,7 @@ The new **MCP Desktop Extension** (MCPB) provides a streamlined installation exp
 - **Token Efficient** - Despite this deep knowledge, the MCP server is still token efficient by including **intelligent contextual guidance** to help Claude make optimal decisions (USE WHEN, COMMON PATTERNS, ERROR PREVENTION, PERFORMANCE HINTS prompt guidance along with lazy-loading of full qsv `--help` text when more info is required)
 - **Security Enhanced** - Raw Data is not sent to the cloud LLM, only statistical metadata
 - **Welcome Experience** - Includes prompts and examples to get started quickly
-- **use with Claude Code!** - Coding often requires data-wrangling - let qsv MCP help!
+- **Seamlessly works with both [Claude Code](https://code.claude.com/docs/en/overview) and the just launched [Claude Cowork](https://claude.com/blog/cowork-research-preview)!** Take qsv beyond data-wrangling chats and unlock even greater potential with qsv as an AI Agent.
 
 The Desktop Extension follows the [official MCP manifest specification v0.3](https://spec.modelcontextprotocol.io/specification/2025-11-05/architecture/), ensuring compatibility with Claude Desktop and future MCP-compatible applications.
 
@@ -51,6 +51,7 @@ See the [MCP Bundle documentation](https://github.com/dathere/qsv/blob/master/.c
 * feat: MCP various Quality-of-Life UI/UX improvements https://github.com/dathere/qsv/commit/b5b338f6
 * feat: MCP enhance Desktop Extension with validation and fixes https://github.com/dathere/qsv/commit/e2e20551
 * feat: MCP add prompts for welcome message and examples https://github.com/dathere/qsv/commit/2672a74b
+* feat: Claude Code GitHub App integration - PR review and issue assistance workflows https://github.com/dathere/qsv/pull/3312
 * tests: MCP add CI test workflow for qsv MCP server https://github.com/dathere/qsv/commit/8732fee3
 * docs: MCP add comprehensive Claude Code (CLI) documentation https://github.com/dathere/qsv/commit/97a88c4e
 * docs: MCP add an MCP Server-specific CLAUDE.md https://github.com/dathere/qsv/commit/e7e5f9e1
@@ -78,7 +79,8 @@ See the [MCP Bundle documentation](https://github.com/dathere/qsv/blob/master/.c
 * docs: comprehensive STATS_DEFINITION.md update https://github.com/dathere/qsv/commit/b443ccc4
 * chore: address valid robustness issues in last Copilot review https://github.com/dathere/qsv/commit/55a5a300
 * chore: delete CITATION.cff file and just depend on Zenodo integration which auto-assigns a DOI on release https://github.com/dathere/qsv/commit/9b981b8c
-* deps: bump polars to 0.52.0 at py-1.37.0 https://github.com/dathere/qsv/pull/3302
+* deps: bump polars to 0.52.0 at py-1.37.1 tag https://github.com/dathere/qsv/commit/3bbad1ea
+* deps: bump atoi_simd and calamine https://github.com/dathere/qsv/commit/c7cd928f
 * deps: bump polars to latest before release https://github.com/dathere/qsv/commit/ae9da0bf
 * deps: bump data-encoding from 2.9.0 to 2.10.0 https://github.com/dathere/qsv/commit/09bf3c33
 * deps: bump unicase from 2.8.1 to 2.9.0 https://github.com/dathere/qsv/commit/99f66a3b
@@ -118,7 +120,7 @@ See the [MCP Bundle documentation](https://github.com/dathere/qsv/blob/master/.c
 ## AI Contributors
 This release was developed with assistance from:
 - Claude Opus 4.5 (Anthropic) - Release notes, code review, and documentation
-- Claude 3.7 Sonnet (Anthropic) - Code review, refactoring, and testing improvements
+- Claude Sonnet 4 (Anthropic) - Code review, refactoring, and testing improvements
 - GitHub Copilot - Code suggestions and documentation
 - Gemini - new robotic horse logo
 

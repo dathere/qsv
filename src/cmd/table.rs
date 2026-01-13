@@ -56,11 +56,11 @@ use crate::{
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input: Option<String>,
-    flag_output: Option<String>,
-    flag_delimiter: Option<Delimiter>,
-    flag_align: Align,
-    flag_memcheck: bool,
+    arg_input:       Option<String>,
+    flag_output:     Option<String>,
+    flag_delimiter:  Option<Delimiter>,
+    flag_align:      Align,
+    flag_memcheck:   bool,
     flag_monochrome: bool,
 }
 
@@ -179,14 +179,14 @@ const PIPE: char = BOX[1][0];
 //
 
 struct Theme {
-    chrome: Rgb,
-    field: Rgb,
+    chrome:  Rgb,
+    field:   Rgb,
     headers: [Rgb; 6],
 }
 
 const DARK: Theme = Theme {
-    chrome: Rgb(0x6a, 0x72, 0x82), // gray-500
-    field: Rgb(0xe5, 0xe7, 0xeb),  // gray-200
+    chrome:  Rgb(0x6a, 0x72, 0x82), // gray-500
+    field:   Rgb(0xe5, 0xe7, 0xeb), // gray-200
     headers: [
         Rgb(0xff, 0x61, 0x88), // pink
         Rgb(0xfc, 0x98, 0x67), // orange
@@ -198,8 +198,8 @@ const DARK: Theme = Theme {
 };
 
 const LIGHT: Theme = Theme {
-    chrome: Rgb(0x6a, 0x72, 0x82), // gray-500
-    field: Rgb(0x1e, 0x29, 0x39),  // gray-800
+    chrome:  Rgb(0x6a, 0x72, 0x82), // gray-500
+    field:   Rgb(0x1e, 0x29, 0x39), // gray-800
     headers: [
         Rgb(0xee, 0x40, 0x66), // red
         Rgb(0xda, 0x76, 0x45), // orange

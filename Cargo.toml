@@ -176,6 +176,7 @@ mlua = { version = "0.11", features = [
 ], optional = true }
 num_cpus = "1"
 odht = "0.3"
+owo-colors = "4"
 phf = { version = "0.13", features = ["macros"] }
 polars = { version = "0.52", features = [
     "asof_join",
@@ -263,13 +264,12 @@ snap = "1"
 strsim = { version = "0.11", optional = true }
 strum = { version = "0.27", features = ["phf"] }
 strum_macros = "0.27"
+supports-color = "3"
 sysinfo = "0.37"
 tempfile = "3.24"
-thousands = { version = "0.2", optional = true }
-textwrap = { version = "0.16", features = ["terminal_size"] }
 termbg = "0.6"
-owo-colors = "4"
-supports-color = "3"
+textwrap = { version = "0.16", features = ["terminal_size"] }
+thousands = { version = "0.2", optional = true }
 threadpool = "1.8"
 titlecase = { version = "3", optional = true }
 tokio = { version = "1", features = ["parking_lot", "rt-multi-thread"] }

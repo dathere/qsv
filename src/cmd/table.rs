@@ -185,8 +185,8 @@ struct Theme {
 }
 
 const DARK: Theme = Theme {
-    chrome: Rgb(0xbb, 0xbb, 0xbb),
-    field: Rgb(0xe5, 0xe7, 0xeb), // gray-200
+    chrome: Rgb(0x6a, 0x72, 0x82), // gray-500
+    field: Rgb(0xe5, 0xe7, 0xeb),  // gray-200
     headers: [
         Rgb(0xff, 0x61, 0x88), // pink
         Rgb(0xfc, 0x98, 0x67), // orange
@@ -198,7 +198,7 @@ const DARK: Theme = Theme {
 };
 
 const LIGHT: Theme = Theme {
-    chrome: Rgb(0xfb, 0x72, 0x82), // gray-500
+    chrome: Rgb(0x6a, 0x72, 0x82), // gray-500
     field: Rgb(0x1e, 0x29, 0x39),  // gray-800
     headers: [
         Rgb(0xee, 0x40, 0x66), // red
@@ -301,18 +301,24 @@ fn render_row<W: std::io::Write>(
     header: bool,
     theme: Option<&Theme>,
 ) -> std::io::Result<()> {
+    let pipe_str = if let Some(theme) = theme {
+        format!("{}", PIPE.color(theme.chrome))
+    } else {
+        PIPE.to_string()
+    };
+
     let mut line = String::new();
-    line.push(PIPE);
+    line.push_str(&pipe_str);
     for (i, field) in record.iter().enumerate() {
-        line.push_str(&" ");
         let col_width = widths[i];
         let content_width = col_width;
         let text = truncate(field, content_width);
         let aligned_inner = align_cell(&text, content_width, align);
         let styled = colorize_field(&aligned_inner, header, i, theme);
+        line.push_str(&" ");
         line.push_str(&styled);
         line.push_str(&" ");
-        line.push(PIPE);
+        line.push_str(&pipe_str);
     }
     line.push('\n');
     out.write_all(line.as_bytes())

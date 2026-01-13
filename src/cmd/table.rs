@@ -43,7 +43,9 @@ Common options:
 
 use std::io::IsTerminal;
 
+use owo_colors::{OwoColorize, Rgb};
 use serde::Deserialize;
+use supports_color::Stream;
 use textwrap;
 
 use crate::{
@@ -80,13 +82,8 @@ fn field_width(field: &[u8]) -> usize {
 }
 
 // Fit columns into terminal width. This is copied from the very simple HTML
-// table column algorithm. Returns a vector of column widths, or None if no
-// adjustment is needed.
-fn autolayout(columns: &[usize], term_width: usize) -> Option<Vec<usize>> {
-    if columns.is_empty() {
-        return None;
-    }
-
+// table column algorithm. Returns a vector of column widths.
+fn autolayout(columns: &[usize], term_width: usize) -> Vec<usize> {
     // |•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|
     // ↑↑    ↑                                                 ↑
     // 12    3    <-   three chrome chars per column           │
@@ -97,9 +94,9 @@ fn autolayout(columns: &[usize], term_width: usize) -> Option<Vec<usize>> {
     // How much space is available, and do we already fit?
     const FUDGE: usize = 2;
     let available = term_width - chrome_width - FUDGE;
-    let data_width = columns.iter().sum();
+    let data_width: usize = columns.iter().sum();
     if available >= data_width {
-        return None;
+        return columns.to_vec();
     }
 
     // We don't fit, so we are going to shrink (truncate) some columns.
@@ -120,10 +117,12 @@ fn autolayout(columns: &[usize], term_width: usize) -> Option<Vec<usize>> {
     // col.width = col.min + ((col.max - col.min) * ratio)
     let min_sum: usize = min.iter().sum();
     let max_sum: usize = max.iter().sum();
-    let ratio = ((available - min_sum) as f64) / ((max_sum - min_sum) as f64);
+    let min_sum = min_sum as f64;
+    let max_sum = max_sum as f64;
+    let ratio = (available as f64 - min_sum) / (max_sum - min_sum);
     if ratio <= 0.0 {
         // even min doesn't fit, we gotta overflow
-        return Some(min);
+        return min;
     }
 
     let mut widths: Vec<usize> = min
@@ -134,13 +133,13 @@ fn autolayout(columns: &[usize], term_width: usize) -> Option<Vec<usize>> {
 
     // because we always round down, there might be some extra space to distribute
     let data_width: usize = widths.iter().sum();
-    let extra_space = available - data_width;
-    if extra_space > 0 {
+    if available > data_width {
+        let extra_space = available - data_width;
         let mut distribute: Vec<(usize, usize)> = max
             .iter()
             .zip(min.iter())
             .enumerate()
-            .map(|(ii, (max, min))| (max - min, ii))
+            .map(|(idx, (max, min))| (max - min, idx))
             .collect();
 
         // Sort by difference (descending), then by index (ascending) for stability
@@ -151,7 +150,7 @@ fn autolayout(columns: &[usize], term_width: usize) -> Option<Vec<usize>> {
         }
     }
 
-    Some(widths)
+    widths
 }
 
 // Box-drawing characters for pretty separators.
@@ -164,30 +163,52 @@ const BOX: [[char; 5]; 4] = [
 
 // take these from BOX
 const NW: char = BOX[0][0];
-const N: char = BOX[0][2];
 const NE: char = BOX[0][4];
+const SE: char = BOX[3][4];
+const SW: char = BOX[3][0];
+const N: char = BOX[0][2];
+const E: char = BOX[2][4];
+const S: char = BOX[3][2];
 const W: char = BOX[2][0];
 const C: char = BOX[2][2];
-const E: char = BOX[2][4];
-const SW: char = BOX[3][0];
-const S: char = BOX[3][2];
-const SE: char = BOX[3][4];
 const BAR: char = BOX[0][1];
 const PIPE: char = BOX[1][0];
 
-fn make_border_line(widths: &[usize], chars: (char, char, char)) -> String {
-    let (left, mid, right) = chars;
-    let mut line = String::new();
-    line.push(left);
-    for (idx, w) in widths.iter().enumerate() {
-        if idx > 0 {
-            line.push(mid);
-        }
-        line.extend(std::iter::repeat(BAR).take(*w + 2));
-    }
-    line.push(right);
-    line
+//
+// dark and light color themes
+//
+
+struct Theme {
+    chrome: Rgb,
+    field: Rgb,
+    headers: [Rgb; 6],
 }
+
+const DARK: Theme = Theme {
+    chrome: Rgb(0xbb, 0xbb, 0xbb),
+    field: Rgb(0xe5, 0xe7, 0xeb), // gray-200
+    headers: [
+        Rgb(0xff, 0x61, 0x88), // pink
+        Rgb(0xfc, 0x98, 0x67), // orange
+        Rgb(0xff, 0xd8, 0x66), // yellow
+        Rgb(0xa9, 0xdc, 0x76), // green
+        Rgb(0x78, 0xdc, 0xe8), // cyan
+        Rgb(0xab, 0x9d, 0xf2), // purple
+    ],
+};
+
+const LIGHT: Theme = Theme {
+    chrome: Rgb(0xfb, 0x72, 0x82), // gray-500
+    field: Rgb(0x1e, 0x29, 0x39),  // gray-800
+    headers: [
+        Rgb(0xee, 0x40, 0x66), // red
+        Rgb(0xda, 0x76, 0x45), // orange
+        Rgb(0xdd, 0xb6, 0x44), // yellow
+        Rgb(0x87, 0xba, 0x54), // green
+        Rgb(0x56, 0xba, 0xc6), // cyan
+        Rgb(0x89, 0x7b, 0xd0), // purple
+    ],
+};
 
 fn align_cell(s: &str, width: usize, align: Align) -> String {
     match align {
@@ -209,35 +230,7 @@ fn align_cell(s: &str, width: usize, align: Align) -> String {
     }
 }
 
-fn colorize_field(
-    aligned: &str,
-    header: bool,
-    col_idx: usize,
-    theme: Theme,
-    color_enabled: bool,
-) -> String {
-    if !color_enabled {
-        return aligned.to_string();
-    }
-    let bytes = style_field(aligned.as_bytes(), header, col_idx, theme);
-    String::from_utf8_lossy(&bytes).into_owned()
-}
-
-fn write_border_line<W: std::io::Write>(
-    out: &mut W,
-    widths: &[usize],
-    chars: (char, char, char),
-    color_enabled: bool,
-) -> std::io::Result<()> {
-    let line = make_border_line(widths, chars);
-    if color_enabled {
-        writeln!(out, "\u{001b}[38;5;245m{line}\u{001b}[0m")
-    } else {
-        writeln!(out, "{line}")
-    }
-}
-
-fn condense_to_width(field: &[u8], width: usize) -> String {
+fn truncate(field: &[u8], width: usize) -> String {
     if width == 0 {
         return String::new();
     }
@@ -262,108 +255,71 @@ fn condense_to_width(field: &[u8], width: usize) -> String {
     out
 }
 
-fn write_row_string<W: std::io::Write>(
+fn colorize_field(text: &str, header: bool, col_idx: usize, theme: Option<&Theme>) -> String {
+    let Some(theme) = theme else {
+        return text.to_string();
+    };
+
+    if header {
+        let color = theme.headers[col_idx % theme.headers.len()];
+        format!("{}", text.color(color).bold())
+    } else {
+        format!("{}", text.color(theme.field))
+    }
+}
+
+fn render_separator<W: std::io::Write>(
+    out: &mut W,
+    widths: &[usize],
+    (left, mid, right): (char, char, char),
+    theme: Option<&Theme>,
+) -> std::io::Result<()> {
+    // construct str
+    let mut str = String::new();
+    str.push(left);
+    for (idx, w) in widths.iter().enumerate() {
+        if idx > 0 {
+            str.push(mid);
+        }
+        str.extend(std::iter::repeat(BAR).take(*w + 2));
+    }
+    str.push(right);
+
+    // now write it
+    if let Some(theme) = theme {
+        writeln!(out, "{}", str.color(theme.chrome))
+    } else {
+        writeln!(out, "{str}")
+    }
+}
+
+fn render_row<W: std::io::Write>(
     out: &mut W,
     record: &csv::ByteRecord,
     widths: &[usize],
     align: Align,
     header: bool,
-    color_enabled: bool,
-    theme: Theme,
+    theme: Option<&Theme>,
 ) -> std::io::Result<()> {
-    const PAD: usize = 0;
     let mut line = String::new();
     line.push(PIPE);
     for (i, field) in record.iter().enumerate() {
+        line.push_str(&" ");
         let col_width = widths[i];
         let content_width = col_width;
-        let text = condense_to_width(field, content_width);
+        let text = truncate(field, content_width);
         let aligned_inner = align_cell(&text, content_width, align);
-        let mut cell = String::new();
-        cell.push_str(&" ");
-        cell.push_str(&aligned_inner);
-        cell.push_str(&" ");
-        let styled = colorize_field(&cell, header, i, theme, color_enabled);
+        let styled = colorize_field(&aligned_inner, header, i, theme);
         line.push_str(&styled);
-        if i + 1 < record.len() {
-            line.extend(std::iter::repeat(' ').take(PAD));
-            line.push(PIPE);
-        } else {
-            line.push(PIPE);
-        }
+        line.push_str(&" ");
+        line.push(PIPE);
     }
     line.push('\n');
     out.write_all(line.as_bytes())
 }
 
-#[derive(Clone, Copy)]
-enum Theme {
-    Light,
-    Dark,
-}
-
-fn choose_light_theme() -> bool {
-    // Use termbg detection; default to dark on failure.
-    match termbg::theme(std::time::Duration::from_millis(100)) {
-        Ok(termbg::Theme::Light) => true,
-        Ok(termbg::Theme::Dark) => false,
-        _ => false,
-    }
-}
-
-fn style_field(field: &[u8], header: bool, col_idx: usize, theme: Theme) -> Vec<u8> {
-    const RESET: &[u8] = b"\x1b[0m";
-    let header_palette_dark: [&[u8]; 6] = [
-        b"\x1b[38;5;204;1m",
-        b"\x1b[38;5;209;1m",
-        b"\x1b[38;5;221;1m",
-        b"\x1b[38;5;114;1m",
-        b"\x1b[38;5;81;1m",
-        b"\x1b[38;5;141;1m",
-    ];
-    let header_palette_light: [&[u8]; 6] = [
-        b"\x1b[38;5;203;1m",
-        b"\x1b[38;5;172;1m",
-        b"\x1b[38;5;130;1m",
-        b"\x1b[38;5;34;1m",
-        b"\x1b[38;5;31;1m",
-        b"\x1b[38;5;90;1m",
-    ];
-
-    let mut out = Vec::with_capacity(field.len() + 24);
-    if header {
-        let palette = match theme {
-            Theme::Dark => header_palette_dark,
-            Theme::Light => header_palette_light,
-        };
-        out.extend_from_slice(palette[col_idx % palette.len()]);
-    }
-    out.extend_from_slice(field);
-    out.extend_from_slice(RESET);
-    out
-}
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
-    let stdout_is_tty = std::io::stdout().is_terminal();
-    let force_color = std::env::var_os("FORCE_COLOR").is_some();
-    let no_color_env = std::env::var_os("NO_COLOR").is_some() || std::env::var_os("CI").is_some();
-    let color_enabled = if args.flag_monochrome {
-        false
-    } else if no_color_env {
-        false
-    } else if force_color {
-        true
-    } else if !stdout_is_tty {
-        false
-    } else {
-        true
-    };
-    let theme = if choose_light_theme() {
-        Theme::Light
-    } else {
-        Theme::Dark
-    };
-
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers(true)
@@ -378,17 +334,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut out = wconfig.io_writer()?;
     let mut rdr = rconfig.reader()?;
 
-    // Load all records to measure column widths and layout.
+    // load all records
     let mut record = csv::ByteRecord::new();
     let mut records: Vec<csv::ByteRecord> = Vec::new();
     while rdr.read_byte_record(&mut record)? {
         records.push(record.clone());
     }
-
     if records.is_empty() {
         return Ok(());
     }
 
+    // measure col widths
     let mut columns: Vec<usize> = Vec::new();
     for rec in &records {
         if rec.len() > columns.len() {
@@ -402,47 +358,35 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    let termwidth = if stdout_is_tty {
+    // layout
+    let termwidth = if std::io::stdout().is_terminal() {
         textwrap::termwidth()
     } else {
         80
     };
+    let widths = autolayout(&columns, termwidth);
 
-    let content_widths = autolayout(&columns, termwidth);
-    let content_widths = content_widths.as_deref().unwrap_or(&columns);
-    let render_widths: Vec<usize> = content_widths.iter().map(|w| w + 0).collect();
+    // determine theme
+    let theme: Option<&Theme> = if args.flag_monochrome {
+        None
+    } else if supports_color::on(Stream::Stdout).is_none() {
+        None
+    } else {
+        // Detect terminal background and choose appropriate theme
+        match termbg::theme(std::time::Duration::from_millis(100)) {
+            Ok(termbg::Theme::Light) => Some(&LIGHT),
+            _ => Some(&DARK),
+        }
+    };
 
-    // Top border
-    write_border_line(&mut out, &render_widths, (NW, N, NE), color_enabled)?;
-
-    // Write header (first record)
-    write_row_string(
-        &mut out,
-        &records[0],
-        &render_widths,
-        args.flag_align,
-        true,
-        color_enabled,
-        theme,
-    )?;
-
-    // Header separator
-    write_border_line(&mut out, &render_widths, (W, C, E), color_enabled)?;
-
+    // write
+    render_separator(&mut out, &widths, (NW, N, NE), theme)?;
+    render_row(&mut out, &records[0], &widths, args.flag_align, true, theme)?;
+    render_separator(&mut out, &widths, (W, C, E), theme)?;
     for rec in records.iter().skip(1) {
-        write_row_string(
-            &mut out,
-            rec,
-            &render_widths,
-            args.flag_align,
-            false,
-            color_enabled,
-            theme,
-        )?;
+        render_row(&mut out, rec, &widths, args.flag_align, false, theme)?;
     }
-
-    // Bottom border
-    write_border_line(&mut out, &render_widths, (SW, S, SE), color_enabled)?;
+    render_separator(&mut out, &widths, (SW, S, SE), theme)?;
 
     out.flush()?;
     Ok(())

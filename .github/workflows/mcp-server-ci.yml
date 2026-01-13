@@ -47,7 +47,7 @@ jobs:
           curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
           mkdir -p bin
           unzip -qo "${ASSET_NAME}" -d bin
-          chmod +x bin/qsv
+          chmod +x bin/qsv*
           echo "$PWD/bin" >> $GITHUB_PATH
           bin/qsv --version
         env:
@@ -62,7 +62,7 @@ jobs:
           curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
           mkdir -p bin
           unzip -qo "${ASSET_NAME}" -d bin
-          chmod +x bin/qsv
+          chmod +x bin/qsv*
           echo "$PWD/bin" >> $GITHUB_PATH
           bin/qsv --version
         env:

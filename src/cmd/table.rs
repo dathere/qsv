@@ -49,7 +49,7 @@ use serde::Deserialize;
 #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 use supports_color::Stream;
 #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
-use termbg;
+use terminal_colorsaurus::{QueryOptions, ThemeMode, theme_mode};
 use textwrap;
 
 use crate::{
@@ -416,7 +416,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         None
     } else if supports_color::on(Stream::Stdout).is_none() {
         None
-    } else if let Ok(termbg::Theme::Light) = termbg::theme(std::time::Duration::from_millis(100)) {
+    } else if let Ok(ThemeMode::Light) = theme_mode(QueryOptions::default()) {
         Some(&LIGHT)
     } else {
         Some(&DARK)

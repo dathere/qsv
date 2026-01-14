@@ -266,7 +266,6 @@ snap = "1"
 strsim = { version = "0.11", optional = true }
 strum = { version = "0.27", features = ["phf"] }
 strum_macros = "0.27"
-supports-color = { version = "3", optional = true }
 sysinfo = "0.37"
 tempfile = "3.24"
 terminal-colorsaurus = { version = "1.0", optional = true }
@@ -421,7 +420,7 @@ polars = ["dep:polars", "bytemuck"]
 
 prompt = ["rfd"]
 python = ["pyo3"]
-tablecolor = ["anstream", "crossterm", "supports-color", "terminal-colorsaurus"]
+tablecolor = ["anstream", "crossterm", "terminal-colorsaurus"]
 to = ["csvs_convert"]
 lens = ["csvlens"]
 lite = []

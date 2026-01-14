@@ -60,11 +60,11 @@ use crate::{
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input:       Option<String>,
-    flag_output:     Option<String>,
-    flag_delimiter:  Option<Delimiter>,
-    flag_align:      Align,
-    flag_memcheck:   bool,
+    arg_input: Option<String>,
+    flag_output: Option<String>,
+    flag_delimiter: Option<Delimiter>,
+    flag_align: Align,
+    flag_memcheck: bool,
     flag_monochrome: bool,
 }
 
@@ -81,6 +81,7 @@ enum Align {
 // dark and light color themes
 //
 
+#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 macro_rules! hex {
     ($hex:expr) => {{
         const fn parse_hex(str: &str) -> Color {
@@ -103,37 +104,43 @@ macro_rules! hex {
     }};
 }
 
+#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 macro_rules! fg {
     ($fg: expr) => {
         ContentStyle {
             foreground_color: Some($fg),
             background_color: None,
-            underline_color:  None,
-            attributes:       Attributes::none(),
+            underline_color: None,
+            attributes: Attributes::none(),
         }
     };
 }
 
+#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 macro_rules! bold {
     ($fg: expr) => {
         ContentStyle {
             foreground_color: Some($fg),
             background_color: None,
-            underline_color:  None,
-            attributes:       Attributes::none().with(Attribute::Bold),
+            underline_color: None,
+            attributes: Attributes::none().with(Attribute::Bold),
         }
     };
 }
 
 struct Theme {
-    chrome:  ContentStyle,
-    field:   ContentStyle,
+    #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
+    chrome: ContentStyle,
+    #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
+    field: ContentStyle,
+    #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
     headers: [ContentStyle; 6],
 }
 
+#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 const DARK: Theme = Theme {
-    chrome:  fg!(hex!("#6a7282")), // gray-500
-    field:   fg!(hex!("#e5e7eb")), // gray-200
+    chrome: fg!(hex!("#6a7282")), // gray-500
+    field: fg!(hex!("#e5e7eb")),  // gray-200
     headers: [
         bold!(hex!("#ff6188")), // pink
         bold!(hex!("#fc9867")), // orange
@@ -144,9 +151,10 @@ const DARK: Theme = Theme {
     ],
 };
 
+#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 const LIGHT: Theme = Theme {
-    chrome:  fg!(hex!("#6a7282")), // gray-500
-    field:   fg!(hex!("#1e2939")), // gray-800
+    chrome: fg!(hex!("#6a7282")), // gray-500
+    field: fg!(hex!("#1e2939")),  // gray-800
     headers: [
         bold!(hex!("#ee4066")), // red
         bold!(hex!("#da7645")), // orange
@@ -303,19 +311,27 @@ fn truncate(field: &[u8], width: usize) -> String {
     out
 }
 
+#[allow(unused_variables)]
 fn format_field(text: &str, header: bool, col_idx: usize, theme: Option<&Theme>) -> String {
-    let Some(theme) = theme else {
-        return text.to_string();
-    };
+    #[cfg(not(all(feature = "tablecolor", feature = "feature_capable")))]
+    return text.to_string();
 
-    let style = if header {
-        theme.headers[col_idx % theme.headers.len()]
-    } else {
-        theme.field
-    };
-    format!("{}", StyledContent::new(style, text))
+    #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
+    {
+        let Some(theme) = theme else {
+            return text.to_string();
+        };
+
+        let style = if header {
+            theme.headers[col_idx % theme.headers.len()]
+        } else {
+            theme.field
+        };
+        format!("{}", StyledContent::new(style, text))
+    }
 }
 
+#[allow(unused_variables)]
 fn render_sep<W: std::io::Write>(
     out: &mut W,
     widths: &[usize],
@@ -334,13 +350,20 @@ fn render_sep<W: std::io::Write>(
     text.push(right);
 
     // write
-    let Some(theme) = theme else {
-        return writeln!(out, "{text}");
-    };
+    #[cfg(not(all(feature = "tablecolor", feature = "feature_capable")))]
+    return writeln!(out, "{text}");
 
-    writeln!(out, "{}", StyledContent::new(theme.chrome, text))
+    #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
+    {
+        let Some(theme) = theme else {
+            return writeln!(out, "{text}");
+        };
+
+        writeln!(out, "{}", StyledContent::new(theme.chrome, text))
+    }
 }
 
+#[allow(unused_variables)]
 fn render_row<W: std::io::Write>(
     out: &mut W,
     record: &csv::ByteRecord,
@@ -349,6 +372,10 @@ fn render_row<W: std::io::Write>(
     header: bool,
     theme: Option<&Theme>,
 ) -> std::io::Result<()> {
+    #[cfg(not(all(feature = "tablecolor", feature = "feature_capable")))]
+    let pipe_str = PIPE.to_string();
+
+    #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
     let pipe_str = if let Some(theme) = theme {
         format!("{}", StyledContent::new(theme.chrome, PIPE))
     } else {
@@ -370,25 +397,30 @@ fn render_row<W: std::io::Write>(
     out.write_all(line.as_bytes())
 }
 
+#[allow(unused_variables)]
 fn get_theme(monochrome: bool, output: bool) -> Option<&'static Theme> {
-    if monochrome {
-        ColorChoice::Never.write_global();
-    } else if std::env::var_os("FORCE_COLOR").is_some() {
-        ColorChoice::Always.write_global();
-    } else if output {
-        ColorChoice::Never.write_global();
-    }
+    #[cfg(not(all(feature = "tablecolor", feature = "feature_capable")))]
+    return None;
 
-    if AutoStream::choice(&std::io::stdout()) == ColorChoice::Never {
-        None
-    } else if let Ok(ThemeMode::Light) = theme_mode(QueryOptions::default()) {
-        Some(&LIGHT)
-    } else {
-        Some(&DARK)
+    #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
+    {
+        if monochrome || output {
+            // disabled with --monochrome or --output
+            ColorChoice::Never.write_global();
+        } else if std::env::var_os("FORCE_COLOR").is_some() {
+            // anstream doesn't support FORCE_COLOR, but we want it
+            ColorChoice::Always.write_global();
+        }
+
+        if AutoStream::choice(&std::io::stdout()) == ColorChoice::Never {
+            None
+        } else if let Ok(ThemeMode::Light) = theme_mode(QueryOptions::default()) {
+            Some(&LIGHT)
+        } else {
+            Some(&DARK)
+        }
     }
 }
-
-// non_empty(std::env::var_os("NO_COLOR").as_deref())
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
@@ -430,8 +462,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    // Check if we're writing to stdout for AutoStream::choice
-    #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
     let theme = get_theme(args.flag_monochrome, args.flag_output.is_some());
 
     // layout

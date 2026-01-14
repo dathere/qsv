@@ -4,18 +4,16 @@
  * Manages .converted.csv files with LIFO cleanup based on total size threshold.
  * Reuses existing converted files if source hasn't changed (timestamp comparison).
  *
- * Phase 1 Enhancements:
+ * Key Features:
  * - File-based locking to prevent concurrent conversion race conditions
  * - Robust size tracking with atomic updates
  * - Cache corruption recovery with validation and backup
  * - UUID-based temp file names for collision prevention
  * - Conversion cleanup on failure with in-progress tracking
- *
- * Phase 2 Enhancements:
  * - Path validation to prevent directory traversal attacks
  * - Secure file permissions (0o600) for cache and lock files
  * - Enhanced change detection (mtime + size + inode + optional hash)
- * - Environment variable validation (completed in Phase 1)
+ * - Performance metrics tracking
  */
 
 import { stat, unlink, readFile, writeFile, access, rename, readdir, open, realpath, chmod } from 'fs/promises';
@@ -35,7 +33,7 @@ interface ConvertedFileCacheV1 {
   entries: ConvertedFileEntry[];
   totalSize: number;
   lastCleanup?: number;
-  nextSequence?: number; // Phase 3: Monotonic counter for stable LIFO sort
+  nextSequence?: number; // Monotonic counter for stable LIFO sort
 }
 
 /**
@@ -55,12 +53,12 @@ interface ConvertedFileEntry {
   convertedPath: string;
   sourcePath: string;
   sourceTimestamp: number;
-  sourceSize?: number;        // Phase 2: Enhanced change detection
-  sourceInode?: number;       // Phase 2: Unix inode for change detection
-  sourceHash?: string;        // Phase 2: Optional hash for critical files
+  sourceSize?: number;        // Enhanced change detection
+  sourceInode?: number;       // Unix inode for change detection
+  sourceHash?: string;        // Optional hash for critical files
   size: number;
   createdAt: number;
-  sequence?: number;          // Phase 3: Monotonic sequence for stable sort
+  sequence?: number;          // Monotonic sequence for stable LIFO sort
 }
 
 /**
@@ -78,7 +76,7 @@ interface ConversionTracker {
 }
 
 /**
- * Metrics for tracking cache performance (Phase 4)
+ * Metrics for tracking cache performance
  */
 export interface ConversionMetrics {
   conversions: {
@@ -263,7 +261,7 @@ export class ConvertedFileManager {
   private cacheFilePath: string;
   private conversionsFilePath: string;
   private workingDir: string;
-  private metrics: ConversionMetrics; // Phase 4: Performance tracking
+  private metrics: ConversionMetrics;
 
   constructor(workingDir: string, maxSizeGB?: number) {
     // Validate and sanitize size limit
@@ -276,7 +274,7 @@ export class ConvertedFileManager {
     this.cacheFilePath = join(workingDir, ConvertedFileManager.CACHE_FILE);
     this.conversionsFilePath = join(workingDir, ConvertedFileManager.CONVERSIONS_FILE);
 
-    // Initialize metrics (Phase 4)
+    // Initialize metrics
     this.metrics = {
       conversions: { total: 0, successful: 0, failed: 0 },
       cache: { hits: 0, misses: 0, evictions: 0, orphansRemoved: 0 },
@@ -286,7 +284,7 @@ export class ConvertedFileManager {
   }
 
   /**
-   * Validate size limit configuration (Phase 1)
+   * Validate size limit configuration
    * Valid range: 0.1-100 GB
    * Recommended range: 0.5-100 GB
    */
@@ -312,7 +310,7 @@ export class ConvertedFileManager {
   }
 
   /**
-   * Validate and canonicalize file path (Phase 2)
+   * Validate and canonicalize file path
    * Prevents directory traversal attacks and normalizes paths
    * @param filePath The path to validate
    * @param mustExist If true, throws error if file doesn't exist (default: false)
@@ -360,7 +358,7 @@ export class ConvertedFileManager {
   }
 
   /**
-   * Set secure permissions on a file (Phase 2)
+   * Set secure permissions on a file
    * Sets mode to 0o600 (owner read/write only)
    */
   private async setSecurePermissions(filePath: string): Promise<void> {
@@ -373,7 +371,7 @@ export class ConvertedFileManager {
   }
 
   /**
-   * Compute SHA-256 hash of first 4KB of file (Phase 2)
+   * Compute SHA-256 hash of first 4KB of file
    * Used for enhanced change detection on critical files
    */
   private async computeFileHash(filePath: string): Promise<string | null> {
@@ -400,7 +398,7 @@ export class ConvertedFileManager {
   }
 
   /**
-   * Check if source file has changed using enhanced detection (Phase 2)
+   * Check if source file has changed using enhanced detection
    * Uses multiple signals: inode > size+mtime > mtime-only
    *
    * Note: Hash comparison is intentionally NOT performed here as it's expensive.
@@ -478,8 +476,8 @@ export class ConvertedFileManager {
 
   /**
    * Validate cache structure and migrate from v0 to v1 if needed
-   * Enhanced with sequence initialization (Phase 3)
-   * Persists any corrections made during validation (Phase 5)
+   * Initializes sequence counter if missing
+   * Persists any corrections made during validation
    */
   private async validateCache(cache: any): Promise<ConvertedFileCacheV1> {
     // Check if this is v0 format (no version field)
@@ -669,8 +667,8 @@ export class ConvertedFileManager {
 
   /**
    * Save cache to disk using atomic write (temp file + rename)
-   * with UUID to prevent collisions (Phase 1)
-   * Enhanced with secure permissions (Phase 2)
+   * Uses UUID to prevent collisions
+   * Sets secure permissions (0o600)
    */
   private async saveCache(cache: ConvertedFileCacheV1): Promise<void> {
     try {
@@ -702,7 +700,7 @@ export class ConvertedFileManager {
 
   /**
    * Check if a converted file exists and is still valid (source hasn't changed)
-   * Enhanced with multi-factor change detection (Phase 2)
+   * Uses multi-factor change detection when cache entry is available
    */
   async getValidConvertedFile(sourcePath: string, convertedPath: string): Promise<string | null> {
     try {
@@ -724,20 +722,20 @@ export class ConvertedFileManager {
         // Use enhanced change detection if cache entry exists
         if (this.hasSourceChanged(entry, sourceStats)) {
           console.error(`[Converted File Manager] Source modified (enhanced check), reconverting: ${sourcePath}`);
-          this.metrics.cache.misses++; // Phase 4: Track cache miss
+          this.metrics.cache.misses++;
           return null; // Source has changed, need to reconvert
         }
       } else {
         // Fallback to simple mtime check if no cache entry
         if (sourceStats.mtime.getTime() > convertedStats.mtime.getTime()) {
           console.error(`[Converted File Manager] Source modified (mtime check), reconverting: ${sourcePath}`);
-          this.metrics.cache.misses++; // Phase 4: Track cache miss
+          this.metrics.cache.misses++;
           return null; // Source has changed, need to reconvert
         }
       }
 
       console.error(`[Converted File Manager] Reusing existing converted file: ${convertedPath}`);
-      this.metrics.cache.hits++; // Phase 4: Track cache hit
+      this.metrics.cache.hits++;
       return convertedPath;
 
     } catch (error) {
@@ -748,7 +746,7 @@ export class ConvertedFileManager {
 
   /**
    * Register a conversion as in-progress to enable cleanup on failure
-   * Also tracks metrics (Phase 4)
+   * Tracks conversion metrics
    */
   async registerConversionStart(sourcePath: string, convertedPath: string): Promise<void> {
     try {
@@ -764,7 +762,7 @@ export class ConvertedFileManager {
 
       await this.saveConversionTracker(tracker);
 
-      // Track conversion start (Phase 4)
+      // Track conversion start
       this.metrics.conversions.total++;
     } catch (error) {
       console.error('[Converted File Manager] Error registering conversion start:', error);
@@ -788,7 +786,7 @@ export class ConvertedFileManager {
   }
 
   /**
-   * Track a failed conversion (Phase 4)
+   * Track a failed conversion
    */
   trackConversionFailure(): void {
     this.metrics.conversions.failed++;
@@ -808,7 +806,7 @@ export class ConvertedFileManager {
 
   /**
    * Save conversion tracker
-   * Enhanced with secure permissions (Phase 2)
+   * Enhanced with secure permissions
    */
   private async saveConversionTracker(tracker: ConversionTracker): Promise<void> {
     try {
@@ -849,13 +847,13 @@ export class ConvertedFileManager {
           // Try to delete partial file
           try {
             await unlink(conversion.convertedPath);
-            this.metrics.cleanup.partialConversionsRemoved++; // Phase 4: Track partial cleanup
+            this.metrics.cleanup.partialConversionsRemoved++; // Track partial cleanup
           } catch (error: any) {
             if (error.code !== 'ENOENT') {
               console.error('[Converted File Manager] Failed to delete partial file:', error);
             } else {
               // File already gone
-              this.metrics.cleanup.partialConversionsRemoved++; // Phase 4: Track partial cleanup
+              this.metrics.cleanup.partialConversionsRemoved++; // Track partial cleanup
             }
           }
         } else {
@@ -876,7 +874,7 @@ export class ConvertedFileManager {
   /**
    * Register a newly created converted file and enforce LIFO size limit
    * Uses file locking to prevent race conditions
-   * Enhanced with multi-factor metadata (Phase 2)
+   * Enhanced with multi-factor metadata
    */
   async registerConvertedFile(
     sourcePath: string,
@@ -903,7 +901,7 @@ export class ConvertedFileManager {
           ? await this.computeFileHash(sourcePath)
           : null;
 
-        // Assign sequence for stable LIFO sort (Phase 3)
+        // Assign sequence for stable LIFO sort
         const sequence = cache.nextSequence ?? 0;
         cache.nextSequence = sequence + 1;
 
@@ -930,7 +928,7 @@ export class ConvertedFileManager {
 
         await this.saveCache(cache);
 
-        // Track successful conversion registration (Phase 4)
+        // Track successful conversion registration
         // Note: Conversion was already marked complete before calling this method
         this.metrics.conversions.successful++;
 
@@ -970,10 +968,10 @@ export class ConvertedFileManager {
   /**
    * Enforce LIFO size limit by deleting oldest files
    * Enhanced with robust error handling to prevent size tracking corruption
-   * Enhanced with stable sort using sequence counter (Phase 3)
+   * Enhanced with stable sort using sequence counter
    */
   private async enforceSizeLimit(cache: ConvertedFileCacheV1): Promise<void> {
-    // Hysteresis to prevent cleanup thrashing (Phase 3)
+    // Hysteresis to prevent cleanup thrashing
     // Decision tree:
     // 1. Size <= 100%: Don't clean (under limit)
     // 2. Size 100-110% AND cleaned <1hr ago: Don't clean (hysteresis band, prevent thrashing)
@@ -1035,7 +1033,7 @@ export class ConvertedFileManager {
       `deleting ${toDelete.length} oldest file(s)...`
     );
 
-    // Track cleanup run (Phase 4)
+    // Track cleanup run
     this.metrics.cleanup.runs++;
 
     // Delete files with robust error handling
@@ -1052,7 +1050,7 @@ export class ConvertedFileManager {
           deleted = true;
         } else {
           console.error(`[Converted File Manager] Failed to delete ${entry.convertedPath}:`, error);
-          this.metrics.errors.deletionErrors++; // Phase 4: Track deletion error
+          this.metrics.errors.deletionErrors++; // Track deletion error
         }
       } finally {
         // Always update cache to reflect actual state
@@ -1060,7 +1058,7 @@ export class ConvertedFileManager {
           cache.entries = cache.entries.filter(e => e.convertedPath !== entry.convertedPath);
           cache.totalSize -= entry.size;
 
-          // Track metrics (Phase 4)
+          // Track metrics
           this.metrics.cache.evictions++;
           this.metrics.cleanup.filesDeleted++;
           this.metrics.cleanup.bytesFreed += entry.size;
@@ -1099,7 +1097,7 @@ export class ConvertedFileManager {
         } catch {
           // File doesn't exist, skip it
           console.error(`[Converted File Manager] Removing orphaned entry: ${entry.convertedPath}`);
-          this.metrics.cache.orphansRemoved++; // Phase 4: Track orphan removal
+          this.metrics.cache.orphansRemoved++; // Track orphan removal
         }
       }
 
@@ -1144,14 +1142,14 @@ export class ConvertedFileManager {
   }
 
   /**
-   * Get current metrics snapshot (Phase 4)
+   * Get current metrics snapshot
    */
   getMetrics(): Readonly<ConversionMetrics> {
     return { ...this.metrics };
   }
 
   /**
-   * Reset metrics counters (Phase 4)
+   * Reset metrics counters
    */
   resetMetrics(): void {
     this.metrics = {

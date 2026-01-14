@@ -81,14 +81,12 @@ enum Align {
 // dark and light color themes
 //
 
-#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 struct Theme {
     chrome:  Rgb,
     field:   Rgb,
     headers: [Rgb; 6],
 }
 
-#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 const DARK: Theme = Theme {
     chrome:  Rgb(0x6a, 0x72, 0x82), // gray-500
     field:   Rgb(0xe5, 0xe7, 0xeb), // gray-200
@@ -102,7 +100,6 @@ const DARK: Theme = Theme {
     ],
 };
 
-#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 const LIGHT: Theme = Theme {
     chrome:  Rgb(0x6a, 0x72, 0x82), // gray-500
     field:   Rgb(0x1e, 0x29, 0x39), // gray-800
@@ -115,7 +112,6 @@ const LIGHT: Theme = Theme {
         Rgb(0x89, 0x7b, 0xd0), // purple
     ],
 };
-
 
 #[inline]
 fn field_width(field: &[u8]) -> usize {
@@ -293,12 +289,12 @@ fn render_sep<W: std::io::Write>(
     }
     str.push(right);
 
-    // now write it
-    if let Some(theme) = theme {
-        writeln!(out, "{}", str.color(theme.chrome))
-    } else {
-        writeln!(out, "{str}")
-    }
+    // write
+    let Some(theme) = theme else {
+        return writeln!(out, "{str}");
+    };
+
+    writeln!(out, "{}", str.color(theme.chrome))
 }
 
 fn render_row<W: std::io::Write>(

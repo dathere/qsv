@@ -1170,3 +1170,221 @@ fn test_base_url_flag_is_respected_issue_2976() {
         assert!(true, "Base URL flag appears to be working");
     }
 }
+
+// Test that CLI --base-url flag takes precedence over QSV_LLM_BASE_URL env var
+#[test]
+fn describegpt_baseurl_precedence_cli_over_env() {
+    let wrk = Workdir::new("describegpt_baseurl_precedence");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    // Set env var to one URL
+    cmd.env("QSV_LLM_BASE_URL", "http://env-var-url.example.com/v1")
+        // But explicitly override with CLI flag - this should take precedence
+        .args(["--base-url", "http://cli-flag-url.example.com/v1"])
+        .arg("in.csv")
+        .arg("--all")
+        .arg("--no-cache")
+        .args(["--api-key", "test"]);
+
+    let got = wrk.output_stderr(&mut cmd);
+    // The error should mention the CLI flag URL, not the env var URL
+    assert!(
+        got.contains("cli-flag-url.example.com"),
+        "CLI --base-url flag should take precedence over QSV_LLM_BASE_URL env var.\nGot: {}",
+        got
+    );
+    assert!(
+        !got.contains("env-var-url.example.com"),
+        "Should not use env var URL when CLI flag is provided.\nGot: {}",
+        got
+    );
+}
+
+// Test that QSV_LLM_BASE_URL env var is used when CLI flag uses default value
+#[test]
+fn describegpt_baseurl_precedence_env_over_default() {
+    let wrk = Workdir::new("describegpt_baseurl_env");
+    wrk.create_indexed(
+        "in.csv",
+        vec![svec!["letter", "number"], svec!["alpha", "13"]],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    // Set env var, don't pass --base-url flag (will use env var)
+    cmd.env("QSV_LLM_BASE_URL", "http://env-url.example.com/v1")
+        .arg("in.csv")
+        .arg("--all")
+        .arg("--no-cache")
+        .args(["--api-key", "test"]);
+
+    let got = wrk.output_stderr(&mut cmd);
+    // Should use env var URL, not the default OpenAI URL
+    assert!(
+        got.contains("env-url.example.com"),
+        "Should use QSV_LLM_BASE_URL env var when --base-url not explicitly provided.\nGot: {}",
+        got
+    );
+    assert!(
+        !got.contains("api.openai.com"),
+        "Should not use default OpenAI URL when env var is set.\nGot: {}",
+        got
+    );
+}
+
+// Test that CLI --model flag takes precedence over QSV_LLM_MODEL env var
+#[test]
+fn describegpt_model_precedence_cli_over_env() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_model_precedence");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    // Set env var to one model
+    cmd.env("QSV_LLM_MODEL", "env-var-model")
+        // But explicitly override with CLI flag - this should take precedence
+        .args(["--model", "deepseek/deepseek-r1-0528-qwen3-8b"])
+        .arg("in.csv")
+        .arg("--dictionary")
+        .arg("--no-cache");
+
+    // If the command succeeds or fails with model validation,
+    // it means it tried to use the CLI flag model, not the env var model
+    let got = wrk.output_stderr(&mut cmd);
+    // Should reference the CLI model or succeed
+    if got.contains("env-var-model") {
+        panic!(
+            "CLI --model flag should take precedence over QSV_LLM_MODEL env var.\nGot: {}",
+            got
+        );
+    }
+}
+
+// Test that QSV_LLM_MODEL env var is used when CLI flag uses default value
+#[test]
+#[serial]
+fn describegpt_model_precedence_env_over_default() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_model_env");
+    wrk.create_indexed(
+        "in.csv",
+        vec![svec!["letter", "number"], svec!["alpha", "13"]],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.env("QSV_TIMEOUT", "0")
+        .env("QSV_LLM_BASE_URL", "http://localhost:1234/v1")
+        // Set model via env var, don't pass --model flag
+        .env("QSV_LLM_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b")
+        .env("QSV_LLM_API_KEY", "")
+        .arg("in.csv")
+        .arg("--dictionary")
+        .arg("--no-cache");
+
+    // Should succeed using the env var model
+    wrk.assert_success(&mut cmd);
+}
+
+// Test that CLI --api-key flag takes precedence over QSV_LLM_APIKEY env var
+#[test]
+fn describegpt_apikey_precedence_cli_over_env() {
+    let wrk = Workdir::new("describegpt_apikey_precedence");
+    wrk.create_indexed(
+        "in.csv",
+        vec![svec!["letter", "number"], svec!["alpha", "13"]],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    // Set env var to NONE (which would suppress API key)
+    cmd.env("QSV_LLM_APIKEY", "NONE")
+        // But explicitly provide an API key via CLI - this should take precedence
+        .args(["--api-key", "cli-api-key"])
+        .args(["--base-url", "https://api.example.com/v1"])
+        .arg("in.csv")
+        .arg("--all")
+        .arg("--no-cache");
+
+    // Command should attempt to use the CLI api key (and fail with connection error)
+    // rather than treating it as NONE from env var
+    let got = wrk.output_stderr(&mut cmd);
+    // Should show it tried to connect (using the API key), not refuse due to NONE
+    assert!(
+        got.contains("api.example.com") || got.contains("HTTP"),
+        "CLI --api-key should take precedence over QSV_LLM_APIKEY env var.\nGot: {}",
+        got
+    );
+}
+
+// Test that localhost base URL allows empty API key even when env var is not set
+#[test]
+fn describegpt_localhost_allows_empty_apikey() {
+    let wrk = Workdir::new("describegpt_localhost_empty_key");
+    wrk.create_indexed(
+        "in.csv",
+        vec![svec!["letter", "number"], svec!["alpha", "13"]],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    // Don't set any API key env vars, use localhost URL
+    cmd.args(["--base-url", "http://localhost:9999/v1"])
+        .arg("in.csv")
+        .arg("--all")
+        .arg("--no-cache");
+
+    // Should not complain about missing API key since it's localhost
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        !got.contains("QSV_LLM_APIKEY"),
+        "Localhost base URL should allow empty API key.\nGot: {}",
+        got
+    );
+    assert!(
+        !got.contains("api-key"),
+        "Localhost base URL should not require API key.\nGot: {}",
+        got
+    );
+}
+
+// Test that non-localhost URL requires API key
+#[test]
+fn describegpt_non_localhost_requires_apikey() {
+    let wrk = Workdir::new("describegpt_requires_apikey");
+    wrk.create_indexed(
+        "in.csv",
+        vec![svec!["letter", "number"], svec!["alpha", "13"]],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    // Use non-localhost URL without API key - should fail
+    cmd.args(["--base-url", "https://api.example.com/v1"])
+        .arg("in.csv")
+        .arg("--all")
+        .arg("--no-cache");
+
+    let got = wrk.output_stderr(&mut cmd);
+    // Should complain about missing API key
+    assert!(
+        got.contains("QSV_LLM_APIKEY") || got.contains("QSV_LLM_BASE_URL"),
+        "Non-localhost base URL should require API key.\nGot: {}",
+        got
+    );
+}

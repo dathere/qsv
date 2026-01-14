@@ -28,13 +28,13 @@
       {
         "flag": "--group",
         "type": "string",
-        "description": "When concatenating with rowskey, you can specify a grouping value which will be used as the first column in the output. This is useful when you want to know which file a row came from. Valid values are 'fullpath', 'parentdirfname', 'parentdirfstem', 'fname', 'fstem' and 'none'. A new column will be added to the beginning of each row using --group-name. If 'none' is specified, no grouping column will be added. [default: none]",
+        "description": "When concatenating with rowskey, you can specify a grouping value which will be used as the first column in the output. This is useful when you want to know which file a row came from. Valid values are 'fullpath', 'parentdirfname', 'parentdirfstem', 'fname', 'fstem' and 'none'. A new column will be added to the beginning of each row using --group-name. If 'none' is specified, no grouping column will be added.",
         "default": "none"
       },
       {
         "flag": "--group-name",
         "type": "string",
-        "description": "When concatenating with rowskey, this flag provides the name for the new grouping column. [default: file]",
+        "description": "When concatenating with rowskey, this flag provides the name for the new grouping column.",
         "default": "file"
       },
       {
@@ -62,6 +62,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_cat.rs"
+  }
 }

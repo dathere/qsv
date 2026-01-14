@@ -53,7 +53,7 @@
       {
         "flag": "--freeze-columns",
         "type": "string",
-        "description": "Freeze the first N columns [default: 1]",
+        "description": "Freeze the first N columns",
         "default": "1"
       },
       {
@@ -94,7 +94,7 @@
       {
         "flag": "--wrap-mode",
         "type": "string",
-        "description": "Set the wrap mode for the output. Valid modes are: \"words\": Wrap at word boundaries \"chars\": Wrap at character boundaries \"disabled\": No wrapping For convenience, the first character can be used as a shortcut: qsv lens -W w data.csv // wrap at word boundaries [default: disabled]",
+        "description": "Set the wrap mode for the output. Valid modes are: \"words\": Wrap at word boundaries \"chars\": Wrap at character boundaries \"disabled\": No wrapping For convenience, the first character can be used as a shortcut: qsv lens -W w data.csv // wrap at word boundaries",
         "default": "disabled"
       }
     ]
@@ -102,6 +102,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_lens.rs"
+  }
 }

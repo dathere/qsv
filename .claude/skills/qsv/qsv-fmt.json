@@ -48,7 +48,7 @@
       {
         "flag": "--out-delimiter",
         "type": "string",
-        "description": "The field delimiter for writing CSV data. Must be a single character. If set to \"T\", uses tab as the delimiter. [default: ,]",
+        "description": "The field delimiter for writing CSV data. Must be a single character. If set to \"T\", uses tab as the delimiter.",
         "default": ","
       },
       {
@@ -59,7 +59,7 @@
       {
         "flag": "--quote",
         "type": "string",
-        "description": "The quote character to use. [default: \"]",
+        "description": "The quote character to use.",
         "default": "\""
       },
       {
@@ -77,6 +77,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fmt.rs"
+  }
 }

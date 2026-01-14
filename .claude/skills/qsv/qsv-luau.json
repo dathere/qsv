@@ -29,13 +29,13 @@
       {
         "flag": "--cache-dir",
         "type": "string",
-        "description": "The directory to use for caching downloaded lookup_table resources using the qsv_register_lookup() helper function. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. [default: ~/.qsv-cache]",
+        "description": "The directory to use for caching downloaded lookup_table resources using the qsv_register_lookup() helper function. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead.",
         "default": "~/.qsv-cache"
       },
       {
         "flag": "--ckan-api",
         "type": "string",
-        "description": "The URL of the CKAN API to use for downloading lookup_table resources using the qsv_register_lookup() helper function with the \"ckan://\" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. [default: https://data.dathere.com/api/3/action]",
+        "description": "The URL of the CKAN API to use for downloading lookup_table resources using the qsv_register_lookup() helper function with the \"ckan://\" scheme. If the QSV_CKAN_API envvar is set, it will be used instead.",
         "default": "https://data.dathere.com/api/3/action"
       },
       {
@@ -66,7 +66,7 @@
       {
         "flag": "--max-errors",
         "type": "string",
-        "description": "The maximum number of errors to tolerate before aborting. Set to zero to disable error limit. [default: 10]",
+        "description": "The maximum number of errors to tolerate before aborting. Set to zero to disable error limit.",
         "default": "10"
       },
       {
@@ -97,7 +97,7 @@
       {
         "flag": "--timeout",
         "type": "string",
-        "description": "Timeout for downloading lookup_tables using the qsv_register_lookup() helper function. [default: 60]",
+        "description": "Timeout for downloading lookup_tables using the qsv_register_lookup() helper function.",
         "default": "60"
       }
     ]
@@ -106,6 +106,5 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_luau.rs"
+  }
 }

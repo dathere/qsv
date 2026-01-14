@@ -18,7 +18,7 @@
       {
         "flag": "--dates-whitelist",
         "type": "string",
-        "description": "The case-insensitive patterns to look for when shortlisting fields for date inference. i.e. if the field's name has any of these patterns, it is shortlisted for date inferencing. Set to \"all\" to inspect ALL fields for date/datetime types. [default: date,time,due,open,close,created]",
+        "description": "The case-insensitive patterns to look for when shortlisting fields for date inference. i.e. if the field's name has any of these patterns, it is shortlisted for date inferencing. Set to \"all\" to inspect ALL fields for date/datetime types.",
         "default": "date,time,due,open,close,created"
       },
       {
@@ -29,7 +29,7 @@
       {
         "flag": "--enum-threshold",
         "type": "string",
-        "description": "Cardinality threshold for adding enum constraints. Enum constraints are compiled for String & Integer types. [default: 50]",
+        "description": "Cardinality threshold for adding enum constraints. Enum constraints are compiled for String & Integer types.",
         "default": "50"
       },
       {
@@ -103,6 +103,5 @@
     "streamable": false,
     "indexed": true,
     "memory": "proportional"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_schema.rs"
+  }
 }

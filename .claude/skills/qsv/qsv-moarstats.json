@@ -40,7 +40,7 @@
       {
         "flag": "--epsilon",
         "type": "string",
-        "description": "The Atkinson Index Inequality Aversion parameter. Epsilon controls the sensitivity of the Atkinson Index to inequality. The higher the epsilon, the more sensitive the index is to inequality. Typical values are 0.5 (standard in economic research), 1.0 (natural boundary), or 2.0 (useful for poverty analysis). [default: 1.0]",
+        "description": "The Atkinson Index Inequality Aversion parameter. Epsilon controls the sensitivity of the Atkinson Index to inequality. The higher the epsilon, the more sensitive the index is to inequality. Typical values are 0.5 (standard in economic research), 1.0 (natural boundary), or 2.0 (useful for poverty analysis).",
         "default": "1.0"
       },
       {
@@ -82,7 +82,7 @@
       {
         "flag": "--pct-thresholds",
         "type": "string",
-        "description": "Comma-separated percentile pair (e.g., \"10,90\") to use for winsorization/trimming when --use-percentiles is set. Both values must be between 0 and 100, and lower < upper. [default: 5,95]",
+        "description": "Comma-separated percentile pair (e.g., \"10,90\") to use for winsorization/trimming when --use-percentiles is set. Both values must be between 0 and 100, and lower < upper.",
         "default": "5,95"
       },
       {
@@ -93,13 +93,13 @@
       {
         "flag": "--round",
         "type": "string",
-        "description": "Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule. [default: 4]",
+        "description": "Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule.",
         "default": "4"
       },
       {
         "flag": "--stats-options",
         "type": "string",
-        "description": "Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace. [default: --infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl]",
+        "description": "Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace.",
         "default": "--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl"
       },
       {
@@ -110,7 +110,7 @@
       {
         "flag": "--xsd-gdate-scan",
         "type": "string",
-        "description": "Gregorian XSD date type detection mode. \"quick\": Fast detection using min/max values. Produces types with ?? suffix (less confident). \"thorough\": Comprehensive detection checking all percentile values. Slower but ensures all values match the pattern. Produces types with ? suffix (more confident). [default: quick]",
+        "description": "Gregorian XSD date type detection mode. \"quick\": Fast detection using min/max values. Produces types with ?? suffix (less confident). \"thorough\": Comprehensive detection checking all percentile values. Slower but ensures all values match the pattern. Produces types with ? suffix (more confident).",
         "default": "quick"
       }
     ]
@@ -118,6 +118,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_moarstats.rs"
+  }
 }

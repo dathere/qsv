@@ -44,7 +44,7 @@
       {
         "flag": "--disk-cache-dir",
         "type": "string",
-        "description": "The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different fetch jobs (e.g. one for geocoding, another for weather, etc.) [default: ~/.qsv/cache/fetch]",
+        "description": "The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different fetch jobs (e.g. one for geocoding, another for weather, etc.)",
         "default": "~/.qsv/cache/fetch"
       },
       {
@@ -75,19 +75,19 @@
       {
         "flag": "--max-errors",
         "type": "string",
-        "description": "Maximum number of errors before aborting. Set to zero (0) to continue despite errors. [default: 10 ]",
+        "description": "Maximum number of errors before aborting. Set to zero (0) to continue despite errors.",
         "default": "10"
       },
       {
         "flag": "--max-retries",
         "type": "string",
-        "description": "Maximum number of retries per record before an error is raised. [default: 5]",
+        "description": "Maximum number of retries per record before an error is raised.",
         "default": "5"
       },
       {
         "flag": "--mem-cache-size",
         "type": "string",
-        "description": "Maximum number of entries in the in-memory LRU cache. [default: 2000000]",
+        "description": "Maximum number of entries in the in-memory LRU cache.",
         "default": "2000000"
       },
       {
@@ -123,7 +123,7 @@
       {
         "flag": "--rate-limit",
         "type": "string",
-        "description": "Rate Limit in Queries Per Second (max: 1000). Note that fetch dynamically throttles as well based on rate-limit and retry-after response headers. Set to 0 to go as fast as possible, automatically throttling as required. CAUTION: Only use zero for APIs that use RateLimit and/or Retry-After headers, otherwise your fetch job may look like a Denial Of Service attack. Even though zero is the default, this is mitigated by --max-errors having a default of 10. [default: 0 ]",
+        "description": "Rate Limit in Queries Per Second (max: 1000). Note that fetch dynamically throttles as well based on rate-limit and retry-after response headers. Set to 0 to go as fast as possible, automatically throttling as required. CAUTION: Only use zero for APIs that use RateLimit and/or Retry-After headers, otherwise your fetch job may look like a Denial Of Service attack. Even though zero is the default, this is mitigated by --max-errors having a default of 10.",
         "default": "0"
       },
       {
@@ -134,7 +134,7 @@
       {
         "flag": "--report",
         "type": "string",
-        "description": "Creates a report of the fetch job. The report has the same name as the input file with the \".fetch-report\" suffix. There are two kinds of report - d for \"detailed\" & s for \"short\". The detailed report has the same columns as the input CSV with six additional columns - qsv_fetch_url, qsv_fetch_status, qsv_fetch_cache_hit, qsv_fetch_retries, qsv_fetch_elapsed_ms & qsv_fetch_response. The short report only has the six columns without the \"qsv_fetch_\" prefix. [default: none]",
+        "description": "Creates a report of the fetch job. The report has the same name as the input file with the \".fetch-report\" suffix. There are two kinds of report - d for \"detailed\" & s for \"short\". The detailed report has the same columns as the input CSV with six additional columns - qsv_fetch_url, qsv_fetch_status, qsv_fetch_cache_hit, qsv_fetch_retries, qsv_fetch_elapsed_ms & qsv_fetch_response. The short report only has the six columns without the \"qsv_fetch_\" prefix.",
         "default": "none"
       },
       {
@@ -145,7 +145,7 @@
       {
         "flag": "--timeout",
         "type": "string",
-        "description": "Timeout for each URL request. [default: 30 ]",
+        "description": "Timeout for each URL request.",
         "default": "30"
       },
       {
@@ -164,6 +164,5 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs"
+  }
 }

@@ -18,7 +18,7 @@
       {
         "flag": "--all-unique-text",
         "type": "string",
-        "description": "The text to use for the \"<ALL_UNIQUE>\" category. [default: <ALL_UNIQUE>]",
+        "description": "The text to use for the \"<ALL_UNIQUE>\" category.",
         "default": "<ALL_UNIQUE>"
       },
       {
@@ -54,13 +54,13 @@
       {
         "flag": "--limit",
         "type": "string",
-        "description": "Limit the frequency table to the N most common items. Set to '0' to disable a limit. If negative, only return values with an occurrence count >= absolute value of the negative limit. e.g. --limit -2 will only return values with an occurrence count >= 2. [default: 10]",
+        "description": "Limit the frequency table to the N most common items. Set to '0' to disable a limit. If negative, only return values with an occurrence count >= absolute value of the negative limit. e.g. --limit -2 will only return values with an occurrence count >= 2.",
         "default": "10"
       },
       {
         "flag": "--lmt-threshold",
         "type": "string",
-        "description": "The threshold for which --limit and --unq-limit will be applied. If the number of unique items in a column >= threshold, the limits will be applied. Set to '0' to disable the threshold and always apply limits. [default: 0]",
+        "description": "The threshold for which --limit and --unq-limit will be applied. If the number of unique items in a column >= threshold, the limits will be applied. Set to '0' to disable the threshold and always apply limits.",
         "default": "0"
       },
       {
@@ -91,7 +91,7 @@
       {
         "flag": "--null-text",
         "type": "string",
-        "description": "The text to use for NULL values. [default: (NULL)]",
+        "description": "The text to use for NULL values.",
         "default": "(NULL)"
       },
       {
@@ -102,7 +102,7 @@
       {
         "flag": "--other-text",
         "type": "string",
-        "description": "The text to use for the \"Other\" category. If set to \"<NONE>\", the \"Other\" category will not be included in the frequency table. [default: Other]",
+        "description": "The text to use for the \"Other\" category. If set to \"<NONE>\", the \"Other\" category will not be included in the frequency table.",
         "default": "Other"
       },
       {
@@ -113,7 +113,7 @@
       {
         "flag": "--pct-dec-places",
         "type": "string",
-        "description": "The number of decimal places to round the percentage to. If negative, the number of decimal places will be set automatically to the minimum number of decimal places needed to represent the percentage accurately, up to the absolute value of the negative number. [default: -5]",
+        "description": "The number of decimal places to round the percentage to. If negative, the number of decimal places will be set automatically to the minimum number of decimal places needed to represent the percentage accurately, up to the absolute value of the negative number.",
         "default": "-5"
       },
       {
@@ -140,7 +140,7 @@
       {
         "flag": "--unq-limit",
         "type": "string",
-        "description": "If a column has all unique values, limit the frequency table to a sample of N unique items. Set to '0' to disable a unique_limit. [default: 10]",
+        "description": "If a column has all unique values, limit the frequency table to a sample of N unique items. Set to '0' to disable a unique_limit.",
         "default": "10"
       },
       {
@@ -159,6 +159,5 @@
     "streamable": false,
     "indexed": true,
     "memory": "proportional"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_frequency.rs"
+  }
 }

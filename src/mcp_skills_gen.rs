@@ -26,8 +26,6 @@ struct SkillDefinition {
     command:     CommandSpec,
     #[serde(skip_serializing_if = "Option::is_none")]
     hints:       Option<BehavioralHints>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    test_file:   Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -112,10 +110,6 @@ impl UsageParser {
                 options,
             },
             hints,
-            test_file: Some(format!(
-                "https://github.com/dathere/qsv/blob/master/tests/test_{}.rs",
-                self.command_name
-            )),
         })
     }
 
@@ -204,7 +198,7 @@ impl UsageParser {
                         },
                     };
 
-                    let description = manual_descriptions
+                    let mut description = manual_descriptions
                         .get(&primary_flag)
                         .or_else(|| manual_descriptions.get(&flag_str))
                         .cloned()
@@ -214,6 +208,11 @@ impl UsageParser {
                         DocoptArgument::One(Some(d)) => Some(d.clone()),
                         _ => self.extract_default_value(&description),
                     };
+
+                    // Strip redundant [default: ...] from description if we have a default value
+                    if default.is_some() {
+                        description = Self::strip_default_from_description(&description);
+                    }
 
                     options.push(Option_ {
                         flag: primary_flag,
@@ -261,7 +260,7 @@ impl UsageParser {
                         },
                     };
 
-                    let description = manual_descriptions
+                    let mut description = manual_descriptions
                         .get(&flag_str)
                         .cloned()
                         .unwrap_or_default();
@@ -270,6 +269,11 @@ impl UsageParser {
                         DocoptArgument::One(Some(d)) => Some(d.clone()),
                         _ => self.extract_default_value(&description),
                     };
+
+                    // Strip redundant [default: ...] from description if we have a default value
+                    if default.is_some() {
+                        description = Self::strip_default_from_description(&description);
+                    }
 
                     options.push(Option_ {
                         flag: flag_str,
@@ -461,6 +465,29 @@ impl UsageParser {
             return Some(default_str.trim().to_string());
         }
         None
+    }
+
+    /// Remove [default: value] text from description to avoid redundancy
+    /// when we have a separate default field
+    fn strip_default_from_description(description: &str) -> String {
+        if let Some(start) = description.find("[default:")
+            && let Some(end) = description[start..].find(']')
+        {
+            // Remove the [default: ...] part and clean up extra whitespace
+            let before = description[..start].trim();
+            let after = description[start + end + 1..].trim();
+
+            // Join with a space, but avoid double spaces
+            if after.is_empty() {
+                before.to_string()
+            } else if before.is_empty() {
+                after.to_string()
+            } else {
+                format!("{before} {after}")
+            }
+        } else {
+            description.to_string()
+        }
     }
 
     fn extract_hints(&self) -> Option<BehavioralHints> {

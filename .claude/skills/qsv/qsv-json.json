@@ -33,7 +33,7 @@
       {
         "flag": "--select",
         "type": "string",
-        "description": "Select, reorder or drop columns for output. Otherwise, all the columns will be output in the same order as the first object's keys in the JSON data. See 'qsv select --help' for the full syntax. Note however that <cols> NEED to be a comma-delimited list of column NAMES and NOT column INDICES. [default: 1- ]",
+        "description": "Select, reorder or drop columns for output. Otherwise, all the columns will be output in the same order as the first object's keys in the JSON data. See 'qsv select --help' for the full syntax. Note however that <cols> NEED to be a comma-delimited list of column NAMES and NOT column INDICES.",
         "default": "1-"
       }
     ]
@@ -41,6 +41,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_json.rs"
+  }
 }

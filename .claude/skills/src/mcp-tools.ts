@@ -77,63 +77,63 @@ const METADATA_COMMANDS = new Set([
  * Guidance for when to use each command - helps Claude make smart decisions
  */
 const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
-  'select': 'Choosing specific columns. Use selection syntax: "1,3,5" for specific columns, "1-10" for ranges, "!SSN" to exclude sensitive columns. Use "_" for the last column. You can also select columns using regex with the syntax "/<regex>/".',
-  'slice': 'Selecting specific rows by position. Use for "first N rows", "last N rows", "skip N", or "rows 10-20".',
-  'search': 'Finding rows matching a pattern/regex. Use for filtering by text content. For complex conditions or multiple criteria, consider qsv_sqlp instead.',
-  'stats': 'Quick statistics on numeric columns (mean, min, max, stddev). Creates .stats.csv cache that speeds up other commands. Run this second (after index) on new datasets.',
-  'moarstats': 'Comprehensive statistics with automatic data type inference. Slower than stats but provides richer analysis (additional statistics, bivariate analysis, outlier counts).',
-  'frequency': 'Counting unique values and distributions. Best for categorical columns with limited cardinality (e.g., country, status, category). Avoid for high-cardinality columns like IDs.',
-  'join': 'Fast CSV joins for small-medium files (<50MB). For large files or complex joins, use qsv_joinp (Polars-powered) instead.',
-  'joinp': 'High-performance joins using Polars engine. Best for large files (>50MB), multiple join columns, or when you need SQL-like join types (inner, left, right, outer, cross).',
-  'dedup': 'Removing duplicate rows. Memory-intensive - loads entire CSV. Good for small-medium files. For very large files (>1GB), use qsv_extdedup instead.',
-  'sort': 'Sorting by one or more columns. Memory-intensive - loads entire file. For very large files (>1GB), use qsv_extsort instead.',
-  'count': 'Counting total rows. Extremely fast, especially with .idx index. Use qsv_index first for files >10MB.',
-  'headers': 'Viewing column names or renaming headers. Quick way to discover CSV structure before processing.',
-  'sample': 'Random sampling for getting representative subset. Fast and memory-efficient. Great for previewing large files or creating test datasets.',
-  'schema': 'Inferring data types and generating JSON Schema. Use --polars flag to create schema for qsv_joinp/sqlp optimization.',
-  'validate': 'Validating data against JSON Schema. Essential for data quality checks, detecting type mismatches, and ensuring data integrity.',
-  'sqlp': 'Running SQL queries using Polars engine. Best for complex operations: GROUP BY, aggregations, JOINs, WHERE with multiple conditions, calculated columns.',
-  'apply': 'Applying operations to columns (trim, upper, lower, squeeze, strip, etc.). For custom Lua logic, use qsv_luau instead.',
-  'rename': 'Renaming columns. Supports bulk renaming and regex patterns. For simple header changes, qsv_headers may be faster.',
-  'template': 'Generating formatted text from CSV using templates (Handlebars-like syntax). Perfect for creating reports, markdown tables, HTML, or custom formats.',
-  'index': 'Creating .idx index file for random access. ALWAYS run this first for files >10MB that you\'ll query multiple times. Enables instant row counts and fast slicing.',
-  'diff': 'Comparing two CSV files to identify differences (added, deleted, modified rows). Both files must have same schema.',
-  'cat': 'Concatenating multiple CSV files. Modes: rows (stack), rowskey (stack with source), columns (side-by-side). Files must have compatible schemas.',
+  'select': 'Choose columns. Syntax: "1,3,5" (specific), "1-10" (range), "!SSN" (exclude), "/<regex>/" (pattern), "_" (last).',
+  'slice': 'Select rows by position: first N, last N, skip N, range.',
+  'search': 'Filter rows matching pattern/regex. For complex conditions, use qsv_sqlp.',
+  'stats': 'Quick numeric stats (mean, min/max, stddev). Creates cache for other commands. Run 2nd after index.',
+  'moarstats': 'Comprehensive stats + data type inference. Slower but richer than stats.',
+  'frequency': 'Count unique values. Best for low-cardinality categorical columns. Avoid high-cardinality (IDs).',
+  'join': 'Join CSV files (<50MB). For large/complex joins, use qsv_joinp.',
+  'joinp': 'Fast Polars-powered joins for large files (>50MB) or SQL-like joins (inner/left/right/outer/cross).',
+  'dedup': 'Remove duplicates. Loads entire CSV. For large files (>1GB), use qsv_extdedup.',
+  'sort': 'Sort by columns. Loads entire file. For large files (>1GB), use qsv_extsort.',
+  'count': 'Count rows. Very fast with index. Run qsv_index first for files >10MB.',
+  'headers': 'View/rename column names. Quick CSV structure discovery.',
+  'sample': 'Random sampling. Fast, memory-efficient. Good for previews or test datasets.',
+  'schema': 'Infer data types, generate JSON Schema. Use --polars for qsv_sqlp/joinp optimization.',
+  'validate': 'Validate against JSON Schema. Check data quality, type correctness.',
+  'sqlp': 'Run SQL queries (Polars). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns.',
+  'apply': 'Transform columns (trim, upper, lower, squeeze, strip). For custom logic, use qsv_luau.',
+  'rename': 'Rename columns. Supports bulk/regex. For simple changes, qsv_headers faster.',
+  'template': 'Generate formatted output from CSV (Handlebars). For reports, markdown, HTML.',
+  'index': 'Create .idx index. Run FIRST for files >10MB queried multiple times. Enables instant counts, fast slicing.',
+  'diff': 'Compare CSV files (added/deleted/modified rows). Requires same schema.',
+  'cat': 'Concatenate CSV files. Modes: rows (stack), rowskey (with source), columns (side-by-side).',
 };
 
 /**
  * Common usage patterns to help Claude compose effective workflows
  */
 const COMMON_PATTERNS: Record<string, string> = {
-  'stats': 'Run SECOND (after index) on large files - creates .stats.csv and .stats.csv.data.jsonl cache (automatically via --stats-jsonl) used by frequency, schema, tojsonl, sqlp, joinp, diff, sample for faster processing.',
-  'index': 'Run FIRST for files >10MB you\'ll query multiple times. Makes count instant, slice 100x faster, and enables efficient random access.',
-  'select': 'Often first step in pipelines for column cleanup: select needed columns → filter rows → sort → output. Removing unused columns speeds up downstream operations.',
-  'search': 'Combine with select for filtering: search for pattern to filter rows, then select to pick columns. For complex filters, use qsv_sqlp instead.',
-  'frequency': 'Pair with stats for full analysis: stats for numeric summaries, frequency for categorical distributions. Run stats first to leverage cache.',
-  'schema': 'Use --polars flag to generate Polars-optimized schema, then use that schema with qsv_sqlp/joinp for faster queries with correct data types.',
-  'sqlp': 'Replaces complex pipelines. Instead of: select → search → sort → slice, write single SQL: SELECT * FROM data WHERE x > 10 ORDER BY y LIMIT 100.',
-  'join': 'For repeated joins on same files, run qsv_index first on both files to speed up the join operation.',
-  'sample': 'Use for quick file preview (sample size: 100) or creating test datasets (sample size: 1000). Much faster than qsv_slice for random rows.',
-  'validate': 'Generate schema with qsv_schema first, then validate. Iterate: validate → fix issues → validate again until clean.',
-  'dedup': 'Often followed by stats or frequency to analyze cleaned data: dedup → stats to see distribution after removing duplicates.',
-  'sort': 'Commonly used before joins (sort join columns) or when taking top/bottom N with slice: sort by score DESC → slice --end 10.',
+  'stats': 'Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, diff, sample.',
+  'index': 'Run 1st for files >10MB. Makes count instant, slice 100x faster.',
+  'select': 'First step: select columns → filter → sort → output. Speeds up downstream ops.',
+  'search': 'Combine with select: search (filter rows) → select (pick columns).',
+  'frequency': 'Pair with stats: stats for numeric, frequency for categorical. Run stats first.',
+  'schema': 'Use --polars for qsv_sqlp/joinp optimization.',
+  'sqlp': 'Replaces pipelines: "SELECT * FROM data WHERE x > 10 ORDER BY y LIMIT 100" vs select→search→sort→slice.',
+  'join': 'Run qsv_index first on both files for speed.',
+  'sample': 'Quick preview (100 rows) or test data (1000 rows). Faster than qsv_slice for random.',
+  'validate': 'Iterate: qsv_schema → validate → fix → validate until clean.',
+  'dedup': 'Often followed by stats: dedup → stats for distribution.',
+  'sort': 'Before joins or top-N: sort DESC → slice --end 10.',
 };
 
 /**
  * Error prevention hints for common mistakes
  */
 const ERROR_PREVENTION_HINTS: Record<string, string> = {
-  'join': 'Both files must have the join column(s). Use qsv_headers first if unsure of column names. Column names are case-sensitive.',
-  'joinp': 'Use --try-parsedates if joining on date columns. Requires qsv built with Polars feature.',
-  'dedup': 'Memory-intensive - loads entire file. For files >1GB, this may fail with OOM. Use qsv_extdedup for very large files.',
-  'sort': 'Memory-intensive - loads entire file. For files >1GB or with memory constraints, use qsv_extsort which uses external merge sort.',
-  'frequency': 'Memory usage proportional to unique values. Not recommended for high-cardinality columns (IDs, timestamps, emails). Use qsv_stats for cardinality first.',
-  'sqlp': 'Uses Polars SQL syntax (similar to PostgreSQL). Some SQL features differ from standard SQL. Requires qsv built with Polars feature.',
-  'schema': '--polars flag requires qsv built with Polars feature. Without --polars, generates standard JSON Schema.',
-  'moarstats': 'Requires qsv built with all_features. Slower than stats but provides richer analysis.',
-  'luau': 'Requires qsv built with Luau feature. For simple operations, qsv_apply is faster.',
-  'foreach': 'Spawns external commands - can be slow for large files. Use qsv_apply or qsv_luau when possible.',
-  'searchset': 'Requires external regex file. For simple patterns, qsv_search is easier.',
+  'join': 'Both files need join column(s). Column names case-sensitive. Check with qsv_headers.',
+  'joinp': 'Use --try-parsedates for date joins. Needs Polars feature.',
+  'dedup': 'May OOM on files >1GB. Use qsv_extdedup for large files.',
+  'sort': 'May OOM on files >1GB. Use qsv_extsort for large files.',
+  'frequency': 'Avoid high-cardinality columns (IDs, timestamps). Check cardinality with qsv_stats first.',
+  'sqlp': 'Polars SQL (PostgreSQL-like). Some features differ. Needs Polars feature.',
+  'schema': '--polars needs Polars feature.',
+  'moarstats': 'Needs all_features. Slower than stats.',
+  'luau': 'Needs Luau feature. qsv_apply faster for simple ops.',
+  'foreach': 'Slow for large files. Prefer qsv_apply or qsv_luau.',
+  'searchset': 'Needs regex file. qsv_search easier for simple patterns.',
 };
 
 /**
@@ -331,29 +331,24 @@ async function shouldUseTempFile(command: string, inputFile: string): Promise<bo
 }
 
 /**
- * 20 most common qsv commands exposed as individual MCP tools
+ * 11 most essential qsv commands exposed as individual MCP tools
+ * Optimized for token efficiency while maintaining high-value tool access
+ *
+ * Commands moved to qsv_command generic tool:
+ * join, sort, dedup, apply, rename, validate, sample, template, diff, cat, schema
  */
 export const COMMON_COMMANDS = [
   'select',      // Column selection (most frequently used)
-  'stats',       // Statistical analysis
-  'frequency',   // Value distribution
-  'search',      // Pattern-based filtering
-  'sort',        // Sorting operations
-  'dedup',       // Duplicate removal
-  'join',        // CSV joining
-  'count',       // Row counting
-  'headers',     // Header operations
-  'slice',       // Row selection
-  'apply',       // Column transformations
-  'rename',      // Column renaming
-  'schema',      // Schema inference
-  'validate',    // Data validation
-  'sample',      // Random sampling
+  'stats',       // Statistical analysis (creates cache)
   'moarstats',   // Comprehensive statistics with data type inference
-  'index',       // Create index for fast random access
-  'template',    // Template-based transformations
-  'diff',        // Compare two CSV files
-  'cat',         // Concatenate CSV files
+  'index',       // Create index for fast random access (run first)
+  'search',      // Pattern-based filtering
+  'frequency',   // Value distribution
+  'headers',     // Header operations (quick discovery)
+  'count',       // Row counting (instant with index)
+  'slice',       // Row selection
+  'sqlp',        // SQL queries (Polars engine)
+  'joinp',       // High-performance joins (Polars engine)
 ] as const;
 
 /**
@@ -365,29 +360,32 @@ function enhanceParameterDescription(paramName: string, description: string): st
   // Add examples for common parameters
   switch (paramName) {
     case 'delimiter':
-      enhanced += ' Common: "," (CSV), "\\t" (TSV), "|" (pipe), ";" (semicolon).';
+      enhanced += ' e.g. "," "\\t" "|" ";"';
       break;
     case 'select':
-    case 'selection':
-      enhanced += ' Examples: "1,3,5" (specific columns), "1-10" (range), "!SSN,!password" (exclude), "name,age,city" (by name).';
+      enhanced += ' e.g. "1,3,5" (specific columns), "1-10" (range), "!SSN,!password" (exclude), "name,age,city" (by name), "_" (last column), "/<regex>/" (regex).';
       break;
     case 'output':
     case 'output_file':
       enhanced += ' Tip: Omit for small results (returned directly), or specify for large datasets (auto-saved if >850KB).';
       break;
-    case 'jobs':
-      enhanced += ' Default: number of CPU cores. Higher values = faster processing but more memory usage.';
-      break;
     case 'no_headers':
       enhanced += ' Use when CSV has no header row. First row will be treated as data.';
       break;
     case 'ignore_case':
-      enhanced += ' Makes pattern matching case-insensitive. "hello" matches "Hello", "HELLO", "HeLLo".';
+      enhanced += ' Makes pattern matching case-insensitive.';
       break;
   }
 
   return enhanced;
 }
+
+/**
+ * Commands that need specific guidance hints
+ */
+const COMMANDS_NEEDING_MEMORY_WARNING = new Set(['dedup', 'sort', 'frequency', 'moarstats']);
+const COMMANDS_NEEDING_INDEX_HINT = new Set(['count', 'slice', 'stats', 'sample']);
+const COMMANDS_WITH_COMMON_MISTAKES = new Set(['join', 'joinp', 'sqlp', 'schema', 'moarstats', 'frequency']);
 
 /**
  * Enhance tool description with contextual guidance
@@ -405,40 +403,39 @@ function enhanceDescription(skill: QsvSkill): string {
   // Add when-to-use guidance (critical for tool selection)
   const whenToUse = WHEN_TO_USE_GUIDANCE[commandName];
   if (whenToUse) {
-    description += `\n\n💡 USE WHEN: ${whenToUse}`;
+    description += `\n\n💡 ${whenToUse}`;
   }
 
   // Add common patterns (helps Claude compose workflows)
   const patterns = COMMON_PATTERNS[commandName];
   if (patterns) {
-    description += `\n\n📋 COMMON PATTERN: ${patterns}`;
+    description += `\n\n📋 ${patterns}`;
   }
 
-  // Add performance hints from behavioral hints
+  // Add performance hints only for commands that benefit from indexing
   if (skill.hints) {
-    if (skill.hints.memory === 'full') {
-      description += '\n\n⚠️  MEMORY: Loads entire CSV into memory. Best for files <100MB. For larger files, consider alternatives or ensure sufficient RAM.';
-    } else if (skill.hints.memory === 'proportional') {
-      description += '\n\n⚠️  MEMORY: Memory usage proportional to unique values/cardinality. Monitor memory for high-cardinality columns.';
+    // Only show memory warnings for memory-intensive commands
+    if (COMMANDS_NEEDING_MEMORY_WARNING.has(commandName)) {
+      if (skill.hints.memory === 'full') {
+        description += '\n\n⚠️  Loads entire CSV. Best <100MB.';
+      } else if (skill.hints.memory === 'proportional') {
+        description += '\n\n⚠️  Memory ∝ unique values.';
+      }
     }
 
-    if (skill.hints.indexed) {
-      description += '\n\n🚀 PERFORMANCE: Supports index acceleration. Run qsv_index first on files >10MB for dramatically faster processing.';
-    }
-
-    if (!skill.hints.streamable) {
-      description += '\n\n⏱️  PROCESSING: Non-streaming operation. Processing time increases with file size.';
+    // Only show index hints for commands that are index-accelerated
+    if (COMMANDS_NEEDING_INDEX_HINT.has(commandName) && skill.hints.indexed) {
+      description += '\n\n🚀 Index-accelerated. Run qsv_index first on files >10MB.';
     }
   }
 
-  // Add error prevention hints (important for avoiding common mistakes)
-  const errorHint = ERROR_PREVENTION_HINTS[commandName];
-  if (errorHint) {
-    description += `\n\n⚠️  CAUTION: ${errorHint}`;
+  // Add error prevention hints only for commands with common mistakes
+  if (COMMANDS_WITH_COMMON_MISTAKES.has(commandName)) {
+    const errorHint = ERROR_PREVENTION_HINTS[commandName];
+    if (errorHint) {
+      description += `\n\n⚠️  ${errorHint}`;
+    }
   }
-
-  // Add hint about getting detailed help
-  description += `\n\n❓ HELP: For detailed options and examples, use qsv_command with command="${commandName}" and options={"--help": true}`;
 
   return description;
 }
@@ -1034,7 +1031,11 @@ export function createGenericToolDefinition(loader: SkillLoader): McpToolDefinit
 
   return {
     name: 'qsv_command',
-    description: `Execute any qsv command not exposed as a dedicated tool (${remainingCommands} additional commands available). For detailed help on any command, use options={"--help": true}`,
+    description: `Execute any qsv command not exposed as a dedicated tool (${remainingCommands} additional commands available).
+
+Common commands via this tool: join, sort, dedup, apply, rename, validate, sample, template, diff, cat, schema, and 40+ more.
+
+❓ HELP: For any command details, use options={"--help": true}. Example: command="apply", options={"--help": true}`,
     inputSchema: {
       type: 'object',
       properties: {

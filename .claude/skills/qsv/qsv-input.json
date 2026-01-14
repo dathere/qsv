@@ -33,7 +33,7 @@
       {
         "flag": "--encoding-errors",
         "type": "string",
-        "description": "How to handle UTF-8 encoding errors. Possible values: replace, skip, strict. replace: Replace invalid UTF-8 sequences with �. skip: Fields with encoding errors are \"<SKIPPED>\". strict: Fail on any encoding errors. [default: replace]",
+        "description": "How to handle UTF-8 encoding errors. Possible values: replace, skip, strict. replace: Replace invalid UTF-8 sequences with �. skip: Fields with encoding errors are \"<SKIPPED>\". strict: Fail on any encoding errors.",
         "default": "replace"
       },
       {
@@ -59,13 +59,13 @@
       {
         "flag": "--quote",
         "type": "string",
-        "description": "The quote character to use. [default: \"]",
+        "description": "The quote character to use.",
         "default": "\""
       },
       {
         "flag": "--quote-style",
         "type": "string",
-        "description": "The quoting style to use when writing CSV data. Possible values: all, necessary, nonnumeric and never. All: Quotes all fields. Necessary: Quotes fields only when necessary - when fields contain a quote, delimiter or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field). NonNumeric: Quotes all fields that are non-numeric. Never: Never write quotes. Even if it produces invalid CSV. [default: necessary]",
+        "description": "The quoting style to use when writing CSV data. Possible values: all, necessary, nonnumeric and never. All: Quotes all fields. Necessary: Quotes fields only when necessary - when fields contain a quote, delimiter or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field). NonNumeric: Quotes all fields that are non-numeric. Never: Never write quotes. Even if it produces invalid CSV.",
         "default": "necessary"
       },
       {
@@ -93,6 +93,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_input.rs"
+  }
 }

@@ -11,7 +11,7 @@
       {
         "flag": "--base-delay-ms",
         "type": "string",
-        "description": "The base delay in milliseconds to use when opening INPUT dialog. This is to ensure that the INPUT dialog is shown before/over the OUTPUT dialog when using the prompt command is used in both INPUT and OUTPUT modes in a single pipeline. [default: 200]",
+        "description": "The base delay in milliseconds to use when opening INPUT dialog. This is to ensure that the INPUT dialog is shown before/over the OUTPUT dialog when using the prompt command is used in both INPUT and OUTPUT modes in a single pipeline.",
         "default": "200"
       },
       {
@@ -47,13 +47,13 @@
       {
         "flag": "--save-fname",
         "type": "string",
-        "description": "The filename to save the output as when using --fd-output. [default: output.csv]",
+        "description": "The filename to save the output as when using --fd-output.",
         "default": "output.csv"
       },
       {
         "flag": "--workdir",
         "type": "string",
-        "description": "The directory to start the file dialog in. [default: .]",
+        "description": "The directory to start the file dialog in.",
         "default": "."
       }
     ]
@@ -61,6 +61,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_prompt.rs"
+  }
 }

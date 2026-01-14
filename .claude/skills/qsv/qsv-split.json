@@ -34,7 +34,7 @@
       {
         "flag": "--filename",
         "type": "string",
-        "description": "A filename template to use when constructing the names of the output files.  The string '{}' will be replaced by the zero-based row number of the first row in the chunk. [default: {}.csv]",
+        "description": "A filename template to use when constructing the names of the output files.  The string '{}' will be replaced by the zero-based row number of the first row in the chunk.",
         "default": "{}.csv"
       },
       {
@@ -75,7 +75,7 @@
       {
         "flag": "--pad",
         "type": "string",
-        "description": "The zero padding width that is used in the generated filename. [default: 0]",
+        "description": "The zero padding width that is used in the generated filename.",
         "default": "0"
       },
       {
@@ -86,7 +86,7 @@
       {
         "flag": "--size",
         "type": "string",
-        "description": "The number of records to write into each chunk. [default: 500]",
+        "description": "The number of records to write into each chunk.",
         "default": "500"
       }
     ]
@@ -95,6 +95,5 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_split.rs"
+  }
 }

@@ -360,7 +360,7 @@ function enhanceParameterDescription(paramName: string, description: string): st
   // Add examples for common parameters
   switch (paramName) {
     case 'delimiter':
-      enhanced += ' e.g. "," "\\t" "|" ";"';;
+      enhanced += ' e.g. "," "\\t" "|" ";"';
       break;
     case 'select':
       enhanced += ' e.g. "1,3,5" (specific columns), "1-10" (range), "!SSN,!password" (exclude), "name,age,city" (by name), "_" (last column), "/<regex>/" (regex).';

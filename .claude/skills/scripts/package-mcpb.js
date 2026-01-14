@@ -10,7 +10,7 @@
  * - icon.png (if exists)
  */
 
-import { createWriteStream, existsSync, mkdirSync, rmSync } from 'fs';
+import { createWriteStream, existsSync, mkdirSync, rmSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import archiver from 'archiver';
@@ -20,13 +20,18 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const rootDir = join(__dirname, '..');
 
+// Read version from package.json
+const packageJson = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf-8'));
+const version = packageJson.version;
+
 // Configuration
-const OUTPUT_FILE = 'qsv-mcp-server.mcpb';
+const OUTPUT_FILE = `qsv-mcp-server-${version}.mcpb`;
 const OUTPUT_PATH = join(rootDir, OUTPUT_FILE);
 const TEMP_DIR = join(rootDir, '.mcpb-build');
 
 console.log('🎁 QSV MCP Server - Desktop Extension Packager');
 console.log('='.repeat(50));
+console.log(`📦 Packaging version: ${version}`);
 
 /**
  * Clean up any existing build artifacts
@@ -36,9 +41,14 @@ function cleanup() {
   if (existsSync(TEMP_DIR)) {
     rmSync(TEMP_DIR, { recursive: true, force: true });
   }
+
+  // Remove current version file
   if (existsSync(OUTPUT_PATH)) {
     rmSync(OUTPUT_PATH);
+    console.log(`   Removed existing ${OUTPUT_FILE}`);
   }
+
+  console.log('✅ Cleanup complete');
 }
 
 /**

@@ -18,7 +18,7 @@
       {
         "flag": "--batch",
         "type": "string",
-        "description": "The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. [default: 50000]",
+        "description": "The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows.",
         "default": "50000"
       },
       {
@@ -67,6 +67,5 @@
     "streamable": false,
     "indexed": true,
     "memory": "proportional"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_tojsonl.rs"
+  }
 }

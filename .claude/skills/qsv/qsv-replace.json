@@ -35,7 +35,7 @@
       {
         "flag": "--dfa-size-limit",
         "type": "string",
-        "description": "Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. [default: 10]",
+        "description": "Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata.",
         "default": "10"
       },
       {
@@ -96,7 +96,7 @@
       {
         "flag": "--size-limit",
         "type": "string",
-        "description": "Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned. [default: 50]",
+        "description": "Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned.",
         "default": "50"
       },
       {
@@ -110,6 +110,5 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_replace.rs"
+  }
 }

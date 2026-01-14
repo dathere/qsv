@@ -33,7 +33,7 @@
       {
         "flag": "--insert",
         "type": "string",
-        "description": "If empty fields need to be inserted, insert them at <pos>. If <pos> is zero, then it is inserted at the end of each record. If <pos> is negative, it is inserted from the END of each record going backwards. If <pos> is positive, it is inserted from the BEGINNING of each record going forward. [default: 0]",
+        "description": "If empty fields need to be inserted, insert them at <pos>. If <pos> is zero, then it is inserted at the end of each record. If <pos> is negative, it is inserted from the END of each record going backwards. If <pos> is positive, it is inserted from the BEGINNING of each record going forward.",
         "default": "0"
       },
       {
@@ -54,7 +54,7 @@
       {
         "flag": "--quote",
         "type": "string",
-        "description": "The quote character to use. [default: \"]",
+        "description": "The quote character to use.",
         "default": "\""
       },
       {
@@ -67,6 +67,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_fixlengths.rs"
+  }
 }

@@ -28,25 +28,25 @@
       {
         "flag": "--backtrack-limit",
         "type": "string",
-        "description": "Set the approximate number of backtracking steps allowed. This is only used when --fancy-regex is set. [default: 1000000]",
+        "description": "Set the approximate number of backtracking steps allowed. This is only used when --fancy-regex is set.",
         "default": "1000000"
       },
       {
         "flag": "--batch",
         "type": "string",
-        "description": "The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. [default: 50000]",
+        "description": "The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows.",
         "default": "50000"
       },
       {
         "flag": "--cache-dir",
         "type": "string",
-        "description": "The directory to use for caching downloaded dynamicEnum resources. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. Not available on qsvlite. [default: ~/.qsv-cache]",
+        "description": "The directory to use for caching downloaded dynamicEnum resources. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. Not available on qsvlite.",
         "default": "~/.qsv-cache"
       },
       {
         "flag": "--ckan-api",
         "type": "string",
-        "description": "The URL of the CKAN API to use for downloading dynamicEnum resources with the \"ckan://\" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. Not available on qsvlite. [default: https://data.dathere.com/api/3/action]",
+        "description": "The URL of the CKAN API to use for downloading dynamicEnum resources with the \"ckan://\" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. Not available on qsvlite.",
         "default": "https://data.dathere.com/api/3/action"
       },
       {
@@ -62,7 +62,7 @@
       {
         "flag": "--dfa-size-limit",
         "type": "string",
-        "description": "Set the approximate capacity, in megabytes, of the cache of transitions used by the engine's lazy Discrete Finite Automata. [default: 10]",
+        "description": "Set the approximate capacity, in megabytes, of the cache of transitions used by the engine's lazy Discrete Finite Automata.",
         "default": "10"
       },
       {
@@ -78,7 +78,7 @@
       {
         "flag": "--email-min-subdomains",
         "type": "string",
-        "description": "Minimum number of subdomains required in the email. e.g. \"jdoe@example.com\" is INVALID if this option is set to 3, but \"jdoe@sub.example.com\" is VALID. [default: 2]",
+        "description": "Minimum number of subdomains required in the email. e.g. \"jdoe@example.com\" is INVALID if this option is set to 3, but \"jdoe@sub.example.com\" is VALID.",
         "default": "2"
       },
       {
@@ -104,7 +104,7 @@
       {
         "flag": "--invalid",
         "type": "string",
-        "description": "Invalid record output file suffix. [default: invalid]",
+        "description": "Invalid record output file suffix.",
         "default": "invalid"
       },
       {
@@ -145,13 +145,13 @@
       {
         "flag": "--size-limit",
         "type": "string",
-        "description": "Set the approximate size limit, in megabytes, of a compiled regex. [default: 50]",
+        "description": "Set the approximate size limit, in megabytes, of a compiled regex.",
         "default": "50"
       },
       {
         "flag": "--timeout",
         "type": "string",
-        "description": "Timeout for downloading json-schemas on URLs and for 'dynamicEnum' lookups on URLs. If 0, no timeout is used. [default: 30]",
+        "description": "Timeout for downloading json-schemas on URLs and for 'dynamicEnum' lookups on URLs. If 0, no timeout is used.",
         "default": "30"
       },
       {
@@ -162,7 +162,7 @@
       {
         "flag": "--valid",
         "type": "string",
-        "description": "Valid record output file suffix. [default: valid]",
+        "description": "Valid record output file suffix.",
         "default": "valid"
       },
       {
@@ -176,6 +176,5 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_validate.rs"
+  }
 }

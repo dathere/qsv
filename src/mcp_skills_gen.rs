@@ -26,8 +26,6 @@ struct SkillDefinition {
     command:     CommandSpec,
     #[serde(skip_serializing_if = "Option::is_none")]
     hints:       Option<BehavioralHints>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    test_file:   Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -112,10 +110,6 @@ impl UsageParser {
                 options,
             },
             hints,
-            test_file: Some(format!(
-                "https://github.com/dathere/qsv/blob/master/tests/test_{}.rs",
-                self.command_name
-            )),
         })
     }
 

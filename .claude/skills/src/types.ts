@@ -10,7 +10,6 @@ export interface QsvSkill {
   command: CommandSpec;
   examples: Example[];
   hints?: BehavioralHints;
-  test_file?: string;
 }
 
 export interface CommandSpec {

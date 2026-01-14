@@ -34,7 +34,7 @@
       {
         "flag": "--compression",
         "type": "string",
-        "description": "The compression codec to use when writing arrow or parquet files. For Arrow, valid values are: zstd, lz4, uncompressed For Avro, valid values are: deflate, snappy, uncompressed (default) For Parquet, valid values are: zstd, lz4raw, gzip, snappy, uncompressed [default: zstd]",
+        "description": "The compression codec to use when writing arrow or parquet files. For Arrow, valid values are: zstd, lz4, uncompressed For Avro, valid values are: deflate, snappy, uncompressed (default) For Parquet, valid values are: zstd, lz4raw, gzip, snappy, uncompressed",
         "default": "zstd"
       },
       {
@@ -55,7 +55,7 @@
       {
         "flag": "--delimiter",
         "type": "string",
-        "description": "The field delimiter for reading and writing CSV data. Must be a single character. [default: ,]",
+        "description": "The field delimiter for reading and writing CSV data. Must be a single character.",
         "default": ","
       },
       {
@@ -66,7 +66,7 @@
       {
         "flag": "--format",
         "type": "string",
-        "description": "The output format to use. Valid values are: csv      Comma-separated values json     JSON jsonl    JSONL (JSON Lines) parquet  Apache Parquet arrow    Apache Arrow IPC avro     Apache Avro [default: csv]",
+        "description": "The output format to use. Valid values are: csv      Comma-separated values json     JSON jsonl    JSONL (JSON Lines) parquet  Apache Parquet arrow    Apache Arrow IPC avro     Apache Avro",
         "default": "csv"
       },
       {
@@ -82,7 +82,7 @@
       {
         "flag": "--infer-len",
         "type": "string",
-        "description": "The number of rows to scan when inferring the schema of the CSV. Set to 0 to do a full table scan (warning: can be slow). [default: 10000]",
+        "description": "The number of rows to scan when inferring the schema of the CSV. Set to 0 to do a full table scan (warning: can be slow).",
         "default": "10000"
       },
       {
@@ -108,7 +108,7 @@
       {
         "flag": "--rnull-values",
         "type": "string",
-        "description": "The comma-delimited list of case-sensitive strings to consider as null values when READING CSV files (e.g. NULL, NONE, <empty string>). Use \"<empty string>\" to consider an empty string a null value. [default: <empty string>]",
+        "description": "The comma-delimited list of case-sensitive strings to consider as null values when READING CSV files (e.g. NULL, NONE, <empty string>). Use \"<empty string>\" to consider an empty string a null value.",
         "default": "<empty string>"
       },
       {
@@ -139,7 +139,7 @@
       {
         "flag": "--wnull-value",
         "type": "string",
-        "description": "The string to use when WRITING null values. [default: <empty string>]",
+        "description": "The string to use when WRITING null values.",
         "default": "<empty string>"
       }
     ]
@@ -148,6 +148,5 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_sqlp.rs"
+  }
 }

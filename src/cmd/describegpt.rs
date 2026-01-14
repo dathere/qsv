@@ -937,9 +937,10 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
         // Check if user explicitly provided --base-url (not the default value)
         if args.flag_base_url.as_deref() != Some(DEFAULT_BASE_URL) {
             // User explicitly provided a different base URL, use it
-            if let Some(base_url) = &args.flag_base_url {
-                prompt_file.base_url.clone_from(base_url);
-            }
+            // safety: args.flag_base_url is guaranteed to be Some here, as it
+            // differs from the docopt default DEFAULT_BASE_URL checked above.
+            let base_url = args.flag_base_url.as_ref().unwrap();
+            prompt_file.base_url.clone_from(base_url);
         } else if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {
             // User didn't provide explicit --base-url, but env var is set
             prompt_file.base_url = base_url;

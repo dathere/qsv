@@ -669,26 +669,58 @@ export class ConvertedFileManager {
    * Save cache to disk using atomic write (temp file + rename)
    * Uses UUID to prevent collisions
    * Sets secure permissions (0o600)
+   * Retries on Windows EPERM errors (common due to file locking/antivirus)
    */
   private async saveCache(cache: ConvertedFileCacheV1): Promise<void> {
-    try {
-      // Write to temporary file first with UUID for uniqueness
-      const tempPath = `${this.cacheFilePath}.tmp.${process.pid}.${randomUUID()}`;
-      await writeFile(tempPath, JSON.stringify(cache, null, 2));
+    const maxRetries = 3;
+    const baseDelay = 50; // ms
+    let lastError: Error | null = null;
 
-      // Set secure permissions on temp file
-      await this.setSecurePermissions(tempPath);
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Write to temporary file first with UUID for uniqueness
+        const tempPath = `${this.cacheFilePath}.tmp.${process.pid}.${randomUUID()}`;
+        await writeFile(tempPath, JSON.stringify(cache, null, 2));
 
-      // Atomic rename to actual cache file
-      await rename(tempPath, this.cacheFilePath);
+        // Set secure permissions on temp file
+        await this.setSecurePermissions(tempPath);
 
-      // Ensure secure permissions on final file
-      await this.setSecurePermissions(this.cacheFilePath);
-    } catch (error) {
-      this.metrics.errors.cacheSaveErrors++;
-      console.error('[Converted File Manager] Failed to save cache:', error);
-      throw error;
+        // Atomic rename to actual cache file
+        // On Windows, this can fail with EPERM due to aggressive file locking
+        await rename(tempPath, this.cacheFilePath);
+
+        // Ensure secure permissions on final file
+        await this.setSecurePermissions(this.cacheFilePath);
+
+        // Success - return early
+        return;
+      } catch (error) {
+        lastError = error as Error;
+
+        // Check if this is a retryable Windows EPERM error
+        const isEperm = (error as NodeJS.ErrnoException).code === 'EPERM';
+        const isWindows = process.platform === 'win32';
+        const shouldRetry = isEperm && isWindows && attempt < maxRetries;
+
+        if (shouldRetry) {
+          // Exponential backoff with jitter
+          const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 10;
+          await new Promise(resolve => setTimeout(resolve, delay));
+          // Try again
+          continue;
+        }
+
+        // Not retryable or max retries exceeded
+        this.metrics.errors.cacheSaveErrors++;
+        console.error('[Converted File Manager] Failed to save cache:', error);
+        throw error;
+      }
     }
+
+    // Should never reach here, but TypeScript needs it
+    this.metrics.errors.cacheSaveErrors++;
+    console.error('[Converted File Manager] Failed to save cache after retries:', lastError);
+    throw lastError || new Error('Failed to save cache');
   }
 
   /**

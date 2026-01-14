@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Versioned MCPB packaging - `.mcpb` files now include version in filename (e.g., `qsv-mcp-server-14.1.0.mcpb`)
 - Version display in packaging script output for better release tracking
+- Retry logic with exponential backoff for Windows EPERM errors in cache save operations
 
 ### Changed
 - Optimized tool definition token consumption by 66-76% through more concise descriptions
@@ -21,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Resolved critical MCP server errors affecting stability
 - Removed redundant semicolons in code for cleaner formatting
+- Fixed flaky Windows CI test by adding retry logic for file rename operations (EPERM errors)
 
 ## [14.0.0] - 2026-01-12
 

@@ -7,11 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [14.0.1] - 2026-01-13
+## [14.1.0] - 2026-01-13
+
+### Added
+- Versioned MCPB packaging - `.mcpb` files now include version in filename (e.g., `qsv-mcp-server-14.1.0.mcpb`)
+- Version display in packaging script output for better release tracking
 
 ### Changed
 - Optimized tool definition token consumption by 66-76% through more concise descriptions
 - Removed `test_file` fields from skill JSON files to reduce token usage
+- MCPB packaging script now reads version from `package.json` automatically
 
 ### Fixed
 - Resolved critical MCP server errors affecting stability

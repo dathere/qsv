@@ -96,6 +96,7 @@ const_format = "0.2"
 cpc = { version = "3", optional = true }
 crc32fast = { version = "1.4", optional = true }
 crossbeam-channel = "0.5"
+crossterm = { version = "0.28", optional = true }
 csv = "1.4"
 csv-diff = "0.1"
 csv-index = "0.1"
@@ -420,7 +421,7 @@ polars = ["dep:polars", "bytemuck"]
 
 prompt = ["rfd"]
 python = ["pyo3"]
-tablecolor = ["owo-colors", "supports-color", "termbg"]
+tablecolor = ["owo-colors", "crossterm", "supports-color", "termbg"]
 to = ["csvs_convert"]
 lens = ["csvlens"]
 lite = []

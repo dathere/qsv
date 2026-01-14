@@ -44,7 +44,7 @@ Common options:
 use std::io::IsTerminal;
 
 #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
-use owo_colors::{OwoColorize, Rgb};
+use crossterm::style::{Attribute, Attributes, Color, ContentStyle, StyledContent};
 use serde::Deserialize;
 #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 use supports_color::Stream;
@@ -81,35 +81,79 @@ enum Align {
 // dark and light color themes
 //
 
+macro_rules! hex {
+    ($hex:expr) => {{
+        const fn parse_hex(str: &str) -> Color {
+            let bytes = str.as_bytes();
+            let r = (hex_digit(bytes[1]) << 4) | hex_digit(bytes[2]);
+            let g = (hex_digit(bytes[3]) << 4) | hex_digit(bytes[4]);
+            let b = (hex_digit(bytes[5]) << 4) | hex_digit(bytes[6]);
+            Color::Rgb { r: r, g: g, b: b }
+        }
+
+        const fn hex_digit(ch: u8) -> u8 {
+            match ch {
+                b'0'..=b'9' => ch - b'0',
+                b'a'..=b'f' => ch - b'a' + 10,
+                _ => 0,
+            }
+        }
+
+        parse_hex($hex)
+    }};
+}
+
+macro_rules! fg {
+    ($fg: expr) => {
+        ContentStyle {
+            foreground_color: Some($fg),
+            background_color: None,
+            underline_color:  None,
+            attributes:       Attributes::none(),
+        }
+    };
+}
+
+macro_rules! bold {
+    ($fg: expr) => {
+        ContentStyle {
+            foreground_color: Some($fg),
+            background_color: None,
+            underline_color:  None,
+            attributes:       Attributes::none().with(Attribute::Bold),
+        }
+    };
+}
+
 struct Theme {
-    chrome:  Rgb,
-    field:   Rgb,
-    headers: [Rgb; 6],
+    chrome:  ContentStyle,
+    field:   ContentStyle,
+    headers: [ContentStyle; 6],
 }
 
 const DARK: Theme = Theme {
-    chrome:  Rgb(0x6a, 0x72, 0x82), // gray-500
-    field:   Rgb(0xe5, 0xe7, 0xeb), // gray-200
+    chrome:  fg!(hex!("#6a7282")), // gray-500
+    field:   fg!(hex!("#e5e7eb")), // gray-200
     headers: [
-        Rgb(0xff, 0x61, 0x88), // pink
-        Rgb(0xfc, 0x98, 0x67), // orange
-        Rgb(0xff, 0xd8, 0x66), // yellow
-        Rgb(0xa9, 0xdc, 0x76), // green
-        Rgb(0x78, 0xdc, 0xe8), // cyan
-        Rgb(0xab, 0x9d, 0xf2), // purple
+        bold!(hex!("#ff6188")), // pink
+        bold!(hex!("#fc9867")), // orange
+        bold!(hex!("#ffd866")), // yellow
+        bold!(hex!("#a9dc76")), // green
+        bold!(hex!("#78dce8")), // cyan
+        bold!(hex!("#ab9df2")), // purple
     ],
 };
 
 const LIGHT: Theme = Theme {
-    chrome:  Rgb(0x6a, 0x72, 0x82), // gray-500
-    field:   Rgb(0x1e, 0x29, 0x39), // gray-800
+    chrome:  fg!(hex!("#6a7282")), // gray-500
+    field:   fg!(hex!("#1e2939")), // gray-800
     headers: [
-        Rgb(0xee, 0x40, 0x66), // red
-        Rgb(0xda, 0x76, 0x45), // orange
-        Rgb(0xdd, 0xb6, 0x44), // yellow
-        Rgb(0x87, 0xba, 0x54), // green
-        Rgb(0x56, 0xba, 0xc6), // cyan
-        Rgb(0x89, 0x7b, 0xd0), // purple
+        bold!(hex!("#ee4066")), // red
+        bold!(hex!("#da7645")), // orange
+        bold!(hex!("#ddb644")), // yellow
+        bold!(hex!("#87ba54")), // green
+        bold!(hex!("#56bac6")), // cyan
+        bold!(hex!("#897bd0")), // purple
     ],
 };
 
@@ -264,12 +308,12 @@ fn format_field(text: &str, header: bool, col_idx: usize, theme: Option<&Theme>)
         return text.to_string();
     };
 
-    if header {
-        let color = theme.headers[col_idx % theme.headers.len()];
-        format!("{}", text.color(color).bold())
+    let style = if header {
+        theme.headers[col_idx % theme.headers.len()]
     } else {
-        format!("{}", text.color(theme.field))
-    }
+        theme.field
+    };
+    format!("{}", StyledContent::new(style, text))
 }
 
 fn render_sep<W: std::io::Write>(
@@ -279,22 +323,22 @@ fn render_sep<W: std::io::Write>(
     theme: Option<&Theme>,
 ) -> std::io::Result<()> {
     // construct str
-    let mut str = String::new();
-    str.push(left);
+    let mut text = String::new();
+    text.push(left);
     for (idx, w) in widths.iter().enumerate() {
         if idx > 0 {
-            str.push(mid);
+            text.push(mid);
         }
-        str.extend(std::iter::repeat(BAR).take(*w + 2));
+        text.extend(std::iter::repeat(BAR).take(*w + 2));
     }
-    str.push(right);
+    text.push(right);
 
     // write
     let Some(theme) = theme else {
-        return writeln!(out, "{str}");
+        return writeln!(out, "{text}");
     };
 
-    writeln!(out, "{}", str.color(theme.chrome))
+    writeln!(out, "{}", StyledContent::new(theme.chrome, text))
 }
 
 fn render_row<W: std::io::Write>(
@@ -306,7 +350,7 @@ fn render_row<W: std::io::Write>(
     theme: Option<&Theme>,
 ) -> std::io::Result<()> {
     let pipe_str = if let Some(theme) = theme {
-        format!("{}", PIPE.color(theme.chrome))
+        format!("{}", StyledContent::new(theme.chrome, PIPE))
     } else {
         PIPE.to_string()
     };

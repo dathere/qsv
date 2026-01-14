@@ -5619,6 +5619,7 @@ dependencies = [
  "cpc",
  "crc32fast",
  "crossbeam-channel",
+ "crossterm 0.28.1",
  "csv",
  "csv-diff",
  "csv-index",

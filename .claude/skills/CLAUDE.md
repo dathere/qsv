@@ -515,7 +515,7 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => ({
 
 This project depends on:
 1. **qsv binary**: Must be in PATH or specified via `QSV_MCP_BIN_PATH`
-2. **qsv version**: Should match package.json version (currently 14.0.0)
+2. **qsv version**: Should match package.json major version (currently 14)
 3. **Feature flags**: Some tools require specific qsv features (Polars, etc.)
 
 ### Version Synchronization
@@ -788,6 +788,6 @@ return {
 ---
 
 **Document Version**: 1.2
-**Last Updated**: 2026-01-12
-**Target qsv Version**: 14.0.0
+**Last Updated**: 2026-01-13
+**Target qsv Version**: 14.x
 **Maintainer**: Joel Natividad

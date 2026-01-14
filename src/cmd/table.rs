@@ -43,9 +43,13 @@ Common options:
 
 use std::io::IsTerminal;
 
+#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 use owo_colors::{OwoColorize, Rgb};
 use serde::Deserialize;
+#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 use supports_color::Stream;
+#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
+use termbg;
 use textwrap;
 
 use crate::{
@@ -72,6 +76,46 @@ enum Align {
     LeftEndTab,
     LeftFwf,
 }
+
+//
+// dark and light color themes
+//
+
+#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
+struct Theme {
+    chrome:  Rgb,
+    field:   Rgb,
+    headers: [Rgb; 6],
+}
+
+#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
+const DARK: Theme = Theme {
+    chrome:  Rgb(0x6a, 0x72, 0x82), // gray-500
+    field:   Rgb(0xe5, 0xe7, 0xeb), // gray-200
+    headers: [
+        Rgb(0xff, 0x61, 0x88), // pink
+        Rgb(0xfc, 0x98, 0x67), // orange
+        Rgb(0xff, 0xd8, 0x66), // yellow
+        Rgb(0xa9, 0xdc, 0x76), // green
+        Rgb(0x78, 0xdc, 0xe8), // cyan
+        Rgb(0xab, 0x9d, 0xf2), // purple
+    ],
+};
+
+#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
+const LIGHT: Theme = Theme {
+    chrome:  Rgb(0x6a, 0x72, 0x82), // gray-500
+    field:   Rgb(0x1e, 0x29, 0x39), // gray-800
+    headers: [
+        Rgb(0xee, 0x40, 0x66), // red
+        Rgb(0xda, 0x76, 0x45), // orange
+        Rgb(0xdd, 0xb6, 0x44), // yellow
+        Rgb(0x87, 0xba, 0x54), // green
+        Rgb(0x56, 0xba, 0xc6), // cyan
+        Rgb(0x89, 0x7b, 0xd0), // purple
+    ],
+};
+
 
 #[inline]
 fn field_width(field: &[u8]) -> usize {
@@ -173,42 +217,6 @@ const W: char = BOX[2][0];
 const C: char = BOX[2][2];
 const BAR: char = BOX[0][1];
 const PIPE: char = BOX[1][0];
-
-//
-// dark and light color themes
-//
-
-struct Theme {
-    chrome:  Rgb,
-    field:   Rgb,
-    headers: [Rgb; 6],
-}
-
-const DARK: Theme = Theme {
-    chrome:  Rgb(0x6a, 0x72, 0x82), // gray-500
-    field:   Rgb(0xe5, 0xe7, 0xeb), // gray-200
-    headers: [
-        Rgb(0xff, 0x61, 0x88), // pink
-        Rgb(0xfc, 0x98, 0x67), // orange
-        Rgb(0xff, 0xd8, 0x66), // yellow
-        Rgb(0xa9, 0xdc, 0x76), // green
-        Rgb(0x78, 0xdc, 0xe8), // cyan
-        Rgb(0xab, 0x9d, 0xf2), // purple
-    ],
-};
-
-const LIGHT: Theme = Theme {
-    chrome:  Rgb(0x6a, 0x72, 0x82), // gray-500
-    field:   Rgb(0x1e, 0x29, 0x39), // gray-800
-    headers: [
-        Rgb(0xee, 0x40, 0x66), // red
-        Rgb(0xda, 0x76, 0x45), // orange
-        Rgb(0xdd, 0xb6, 0x44), // yellow
-        Rgb(0x87, 0xba, 0x54), // green
-        Rgb(0x56, 0xba, 0xc6), // cyan
-        Rgb(0x89, 0x7b, 0xd0), // purple
-    ],
-};
 
 fn align_cell(s: &str, width: usize, align: Align) -> String {
     match align {
@@ -363,6 +371,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // select theme, or None
+    #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
     let theme: Option<&Theme> = if args.flag_monochrome {
         None
     } else if supports_color::on(Stream::Stdout).is_none() {

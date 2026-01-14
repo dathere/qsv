@@ -440,6 +440,7 @@ struct PromptFile {
 }
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+const DEFAULT_MODEL: &str = "openai/gpt-oss-20b";
 const LLM_APIKEY_ERROR: &str = r#"Error: Neither QSV_LLM_BASE_URL nor QSV_LLM_APIKEY environment variables are set.
 Either set `--base-url` to an address with "localhost" in it (indicating a local LLM), or set `--api-key`.
 If your Local LLM is not running on localhost, set QSV_LLM_APIKEY or `--api-key` to NONE.
@@ -947,16 +948,18 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
         }
         // else: keep the base_url from the prompt file
 
-        let model_to_use = env::var("QSV_LLM_MODEL")
-            .ok()
-            .or_else(|| args.flag_model.clone())
-            .or_else(|| {
-                args.flag_prompt_file
-                    .as_ref()
-                    .map(|_| prompt_file.model.clone())
-            })
-            // safety: model has a docopt default
-            .unwrap();
+        // Priority: Explicit CLI flag > Env var > Prompt file model
+        // The --model flag has a docopt default
+        let model_to_use = if args.flag_model.as_deref() != Some(DEFAULT_MODEL) {
+            // User explicitly provided a different model via CLI, use it
+            args.flag_model.clone().unwrap() // safety: flag_model has a docopt default
+        } else if let Ok(env_model) = env::var("QSV_LLM_MODEL") {
+            // User didn't provide explicit --model, but env var is set
+            env_model
+        } else {
+            // Use prompt file model or default
+            prompt_file.model.clone()
+        };
 
         prompt_file.model = model_to_use;
 

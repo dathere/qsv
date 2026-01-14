@@ -44,10 +44,10 @@ Common options:
 use std::io::IsTerminal;
 
 #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
+use anstream::{AutoStream, ColorChoice};
+#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 use crossterm::style::{Attribute, Attributes, Color, ContentStyle, StyledContent};
 use serde::Deserialize;
-#[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
-use supports_color::Stream;
 #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 use terminal_colorsaurus::{QueryOptions, ThemeMode, theme_mode};
 use textwrap;
@@ -370,6 +370,26 @@ fn render_row<W: std::io::Write>(
     out.write_all(line.as_bytes())
 }
 
+fn get_theme(monochrome: bool, output: bool) -> Option<&'static Theme> {
+    if monochrome {
+        ColorChoice::Never.write_global();
+    } else if std::env::var_os("FORCE_COLOR").is_some() {
+        ColorChoice::Always.write_global();
+    } else if output {
+        ColorChoice::Never.write_global();
+    }
+
+    if AutoStream::choice(&std::io::stdout()) == ColorChoice::Never {
+        None
+    } else if let Ok(ThemeMode::Light) = theme_mode(QueryOptions::default()) {
+        Some(&LIGHT)
+    } else {
+        Some(&DARK)
+    }
+}
+
+// non_empty(std::env::var_os("NO_COLOR").as_deref())
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     let rconfig = Config::new(args.arg_input.as_ref())
@@ -410,17 +430,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    // select theme, or None
+    // Check if we're writing to stdout for AutoStream::choice
     #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
-    let theme: Option<&Theme> = if args.flag_monochrome {
-        None
-    } else if supports_color::on(Stream::Stdout).is_none() {
-        None
-    } else if let Ok(ThemeMode::Light) = theme_mode(QueryOptions::default()) {
-        Some(&LIGHT)
-    } else {
-        Some(&DARK)
-    };
+    let theme = get_theme(args.flag_monochrome, args.flag_output.is_some());
 
     // layout
     let termwidth = if std::io::stdout().is_terminal() {

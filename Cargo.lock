@@ -5520,6 +5520,7 @@ version = "14.0.0"
 dependencies = [
  "actix-governor",
  "actix-web",
+ "anstream",
  "arboard",
  "assert-json-diff",
  "atoi_simd",

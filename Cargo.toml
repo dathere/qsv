@@ -71,6 +71,7 @@ inherits = "release"
 panic    = "abort"
 
 [dependencies]
+anstream = { version = "0.6", optional = true }
 arboard = { version = "3.6.1", default-features = false, optional = true }
 atoi_simd = "0.17"
 base62 = { version = "2.2", optional = true }
@@ -420,7 +421,7 @@ polars = ["dep:polars", "bytemuck"]
 
 prompt = ["rfd"]
 python = ["pyo3"]
-tablecolor = ["crossterm", "supports-color", "terminal-colorsaurus"]
+tablecolor = ["anstream", "crossterm", "supports-color", "terminal-colorsaurus"]
 to = ["csvs_convert"]
 lens = ["csvlens"]
 lite = []

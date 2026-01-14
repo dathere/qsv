@@ -495,8 +495,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-01-12
-**Version**: 14.0.0
+**Updated**: 2026-01-13
+**Version**: 14.1.0
 **Tools**: 25 (20 common + 1 generic + 1 pipeline + 3 filesystem)
 **Skills**: 67 qsv commands
 **Status**: ✅ Production Ready

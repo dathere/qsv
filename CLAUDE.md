@@ -106,6 +106,67 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 }
 ```
 
+### Commands with Subcommands
+
+Eight commands have subcommands that provide specialized functionality:
+
+1. **apply** (4 subcommands):
+   - `operations` - 40 string, format, currency, regex & NLP operators (multi-column capable)
+   - `emptyreplace` - replace empty cells with replacement string (multi-column capable)
+   - `dynfmt` - dynamically construct columns from templates using formatstr
+   - `calcconv` - parse and evaluate math expressions with units/conversions
+
+2. **luau** (2 subcommands):
+   - `map` - create new columns by mapping Luau script results for each row
+   - `filter` - filter rows using Luau scripts (rows returning true are kept)
+
+3. **cat** (3 subcommands):
+   - `rows` - concatenate by rows (requires same column order)
+   - `rowskey` - concatenate by rows (handles different columns/orders)
+   - `columns` - concatenate by columns
+
+4. **snappy** (4 subcommands):
+   - `compress` - compress input using Snappy framing format (multithreaded)
+   - `decompress` - decompress Snappy-compressed input
+   - `check` - quickly check if first 50 bytes are valid Snappy data
+   - `validate` - validate entire input is valid Snappy format
+
+5. **geocode** (12 subcommands):
+   - `suggest` - suggest city from partial name using Geonames index
+   - `suggestnow` - suggest city from command line (no CSV input)
+   - `reverse` - find city from WGS-84 coordinates using Geonames index
+   - `reversenow` - find city from command line coordinates
+   - `countryinfo` - get country info from ISO-3166 2-letter code
+   - `countryinfonow` - get country info from command line
+   - `iplookup` - lookup location from IP address using MaxMind GeoLite2
+   - `iplookupnow` - lookup location from command line IP
+   - `index-check` - check status of local Geonames index
+   - `index-update` - update local Geonames index
+   - `index-load` - load/rebuild local Geonames index
+   - `index-reset` - reset local Geonames index
+
+6. **to** (6 subcommands):
+   - `postgres` - convert CSV to PostgreSQL
+   - `sqlite` - convert CSV to SQLite
+   - `xlsx` - convert CSV to Excel XLSX
+   - `ods` - convert CSV to ODS (OpenDocument Spreadsheet)
+   - `parquet` - convert CSV to Apache Parquet
+   - `datapackage` - convert CSV to Frictionless Data Package
+
+7. **pro** (2 subcommands):
+   - `lens` - run csvlens in new Alacritty terminal window (Windows only)
+   - `workflow` - import file into qsv pro Workflow
+
+8. **validate** (1 subcommand):
+   - `schema` - validate JSON Schema itself (draft 2020-12)
+
+When working with these commands, note that subcommands are specified after the main command:
+```bash
+qsv apply operations trim,upper col1 file.csv
+qsv luau map newcol "a + b" file.csv
+qsv cat rows file1.csv file2.csv
+```
+
 ### Key Architectural Patterns
 
 **Streaming vs Memory-Intensive Commands**:

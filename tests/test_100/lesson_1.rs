@@ -103,14 +103,14 @@ fn fruits_table() {
     cmd.args(vec!["table", test_file.as_str()]);
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = r#"\
+    let expected = "\
 ╭────────────┬───────╮
 │ fruit      │ price │
 ├────────────┼───────┤
 │ apple      │ 2.50  │
 │ banana     │ 3.00  │
 │ strawberry │ 1.50  │
-╰────────────┴───────╯"#;
+╰────────────┴───────╯";
     assert_eq!(got, expected);
 }
 
@@ -124,14 +124,14 @@ fn fruits_table_align_right() {
     cmd.args(vec!["table", test_file.as_str(), "--align", "right"]);
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = r#"\
+    let expected = "\
 ╭────────────┬───────╮
 │      fruit │ price │
 ├────────────┼───────┤
 │      apple │  2.50 │
 │     banana │  3.00 │
 │ strawberry │  1.50 │
-╰────────────┴───────╯"#;
+╰────────────┴───────╯";
     assert_eq!(got, expected);
 }
 
@@ -145,7 +145,7 @@ fn fruits_extended_table() {
     cmd.args(vec!["table", test_file.as_str()]);
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = r#"\
+    let expected = "\
 ╭────────────┬───────┬────────┬──────────────╮
 │ fruit      │ price │ size   │ availability │
 ├────────────┼───────┼────────┼──────────────┤
@@ -158,7 +158,7 @@ fn fruits_extended_table() {
 │ mango      │ 1.80  │ medium │ available    │
 │ watermelon │ 6.00  │ large  │ available    │
 │ pear       │ 2.20  │ medium │ out of stock │
-╰────────────┴───────┴────────┴──────────────╯"#;
+╰────────────┴───────┴────────┴──────────────╯";
     assert_eq!(got, expected);
 }
 

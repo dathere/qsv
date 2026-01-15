@@ -7,10 +7,10 @@
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/29e587760af64abcb115ba23efe1b365)](https://app.codacy.com/gh/dathere/qsv/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 [![Crates.io](https://img.shields.io/crates/v/qsv.svg?logo=crates.io)](https://crates.io/crates/qsv)
 [![Discussions](https://img.shields.io/github/discussions/dathere/qsv)](https://github.com/dathere/qsv/discussions)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/dathere/qsv)
 [![Crates.io downloads](https://img.shields.io/crates/d/qsv?color=orange&label=crates.io%20downloads)](https://crates.io/crates/qsv)
 [![Minimum supported Rust version](https://img.shields.io/badge/Rust-1.92-red?logo=rust)](#minimum-supported-rust-version)
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fjqnatividad%2Fqsv.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fjqnatividad%2Fqsv?ref=badge_shield) [![DOI](https://zenodo.org/badge/320463703.svg)](https://doi.org/10.5281/zenodo.17851335)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/dathere/qsv)
 
 <div align="center">
 

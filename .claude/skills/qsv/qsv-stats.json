@@ -18,7 +18,7 @@
       {
         "flag": "--boolean-patterns",
         "type": "string",
-        "description": "Comma-separated list of boolean pattern pairs in the format \"true_pattern:false_pattern\". Each pattern can be a string of any length. The patterns are case-insensitive. If a pattern ends with a \"*\", it is treated as a prefix. For example, \"t*:f*,y*:n*\" will match \"true\", \"truthy\", \"Truth\" as boolean true values so long as the corresponding false pattern (e.g. False, f, etc.) is also matched & cardinality is 2. Ignored if --infer-boolean is false. [default: 1:0,t*:f*,y*:n*]",
+        "description": "Comma-separated list of boolean pattern pairs in the format \"true_pattern:false_pattern\". Each pattern can be a string of any length. The patterns are case-insensitive. If a pattern ends with a \"*\", it is treated as a prefix. For example, \"t*:f*,y*:n*\" will match \"true\", \"truthy\", \"Truth\" as boolean true values so long as the corresponding false pattern (e.g. False, f, etc.) is also matched & cardinality is 2. Ignored if --infer-boolean is false.",
         "default": "1:0,t*:f*,y*:n*"
       },
       {
@@ -116,7 +116,7 @@
       {
         "flag": "--percentile-list",
         "type": "string",
-        "description": "Comma-separated list of percentiles to compute. For example, \"5,10,40,60,90,95\" will compute percentiles 5th, 10th, 40th, 60th, 90th, and 95th. Multiple percentiles are separated by the QSV_STATS_SEPARATOR environment variable. If not set, the default separator is \"|\". It is ignored if --percentiles is not set. Special values \"deciles\" and \"quintiles\" are automatically expanded to \"10,20,30,40,50,60,70,80,90\" and \"20,40,60,80\" respectively. [default: 5,10,40,60,90,95]",
+        "description": "Comma-separated list of percentiles to compute. For example, \"5,10,40,60,90,95\" will compute percentiles 5th, 10th, 40th, 60th, 90th, and 95th. Multiple percentiles are separated by the QSV_STATS_SEPARATOR environment variable. If not set, the default separator is \"|\". It is ignored if --percentiles is not set. Special values \"deciles\" and \"quintiles\" are automatically expanded to \"10,20,30,40,50,60,70,80,90\" and \"20,40,60,80\" respectively.",
         "default": "5,10,40,60,90,95"
       },
       {
@@ -137,7 +137,7 @@
       {
         "flag": "--round",
         "type": "string",
-        "description": "Round statistics to <decimal_places>. Rounding is done following Midpoint Nearest Even (aka \"Bankers Rounding\") rule. https://docs.rs/rust_decimal/latest/rust_decimal/enum.RoundingStrategy.html If set to the sentinel value 9999, no rounding is done. For dates - range, stddev & IQR are always at least 5 decimal places as they are reported in days, and 5 places gives us millisecond precision. [default: 4]",
+        "description": "Round statistics to <decimal_places>. Rounding is done following Midpoint Nearest Even (aka \"Bankers Rounding\") rule. https://docs.rs/rust_decimal/latest/rust_decimal/enum.RoundingStrategy.html If set to the sentinel value 9999, no rounding is done. For dates - range, stddev & IQR are always at least 5 decimal places as they are reported in days, and 5 places gives us millisecond precision.",
         "default": "4"
       },
       {
@@ -171,6 +171,5 @@
     "streamable": false,
     "indexed": true,
     "memory": "full"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_stats.rs"
+  }
 }

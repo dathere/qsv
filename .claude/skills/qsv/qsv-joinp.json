@@ -122,7 +122,7 @@
       {
         "flag": "--infer-len",
         "type": "string",
-        "description": "The number of rows to scan when inferring the schema of the CSV. Set to 0 to do a full table scan (warning: very slow). Only used when --cache-schema is 0 or 1 and no cached schema exists or when --infer-len is 0. [default: 10000]",
+        "description": "The number of rows to scan when inferring the schema of the CSV. Set to 0 to do a full table scan (warning: very slow). Only used when --cache-schema is 0 or 1 and no cached schema exists or when --infer-len is 0.",
         "default": "10000"
       },
       {
@@ -153,7 +153,7 @@
       {
         "flag": "--maintain-order",
         "type": "string",
-        "description": "Which row order to preserve, if any. Valid values are: none, left, right, left_right, right_left Do not rely on any observed ordering without explicitly setting this parameter. Not specifying any order can improve performance. Supported for inner, left, right and full joins. [default: none]",
+        "description": "Which row order to preserve, if any. Valid values are: none, left, right, left_right, right_left Do not rely on any observed ordering without explicitly setting this parameter. Not specifying any order can improve performance. Supported for inner, left, right and full joins.",
         "default": "none"
       },
       {
@@ -174,7 +174,7 @@
       {
         "flag": "--norm-unicode",
         "type": "string",
-        "description": "When set, join keys are Unicode normalized. Valid values are: nfc - Normalization Form C nfd - Normalization Form D nfkc - Normalization Form KC nfkd - Normalization Form KD none - No normalization is performed. [default: none]",
+        "description": "When set, join keys are Unicode normalized. Valid values are: nfc - Normalization Form C nfd - Normalization Form D nfkc - Normalization Form KC nfkd - Normalization Form KD none - No normalization is performed.",
         "default": "none"
       },
       {
@@ -225,7 +225,7 @@
       {
         "flag": "--strategy",
         "type": "string",
-        "description": "The strategy to use for the asof join: backward - For each row in the first CSV data set, we find the last row in the second data set whose key is less than or equal to the key in the first data set. forward -  For each row in the first CSV data set, we find the first row in the second data set whose key is greater than or equal to the key in the first data set. nearest -  selects the last row in the second data set whose value is nearest to the value in the first data set. [default: backward]",
+        "description": "The strategy to use for the asof join: backward - For each row in the first CSV data set, we find the last row in the second data set whose key is less than or equal to the key in the first data set. forward -  For each row in the first CSV data set, we find the first row in the second data set whose key is greater than or equal to the key in the first data set. nearest -  selects the last row in the second data set whose value is nearest to the value in the first data set.",
         "default": "backward"
       },
       {
@@ -251,7 +251,7 @@
       {
         "flag": "--validate",
         "type": "string",
-        "description": "Validate the join keys BEFORE performing the join. Valid values are: none - No validation is performed. onetomany - join keys are unique in the left data set. manytoone - join keys are unique in the right data set. onetoone - join keys are unique in both left & right data sets. [default: none]",
+        "description": "Validate the join keys BEFORE performing the join. Valid values are: none - No validation is performed. onetomany - join keys are unique in the left data set. manytoone - join keys are unique in the right data set. onetoone - join keys are unique in both left & right data sets.",
         "default": "none"
       }
     ]
@@ -259,6 +259,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_joinp.rs"
+  }
 }

@@ -160,11 +160,11 @@ export async function executePipeline(
       return {
         content: [{
           type: 'text' as const,
-          text: `Error: Pipeline exceeds maximum step limit (${config.maxPipelineSteps}). Requested ${steps.length} steps.`,
-        }],
-        isError: true,
-      };
-    }
+            text: `Error: Pipeline exceeds maximum step limit (${config.maxPipelineSteps}). Requested ${steps.length} steps.`,
+          }],
+          isError: true,
+        };
+      }
 
     // Validate pipeline steps
     for (let i = 0; i < steps.length; i++) {
@@ -191,8 +191,11 @@ export async function executePipeline(
       }
     }
 
-    // Create pipeline
-    const pipeline = new QsvPipeline(loader);
+    // Create pipeline with executor that uses the configured qsv binary path
+    // This prevents 'spawn qsv ENOENT' errors when qsv is not in PATH
+    const { SkillExecutor } = await import('./executor.js');
+    const executor = new SkillExecutor(config.qsvBinPath);
+    const pipeline = new QsvPipeline(loader, executor);
 
     // Add steps to pipeline
     for (const step of steps) {

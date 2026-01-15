@@ -54,6 +54,36 @@ export class SkillExecutor {
   private buildArgs(skill: QsvSkill, params: SkillParams, forShellScript = false): string[] {
     const args: string[] = [skill.command.subcommand];
 
+    // Special handling for 'apply' command which has subcommands/modes
+    // qsv apply has four modes: operations, emptyreplace, dynfmt, calcconv
+    // The mode needs to be inserted after 'apply' but before the arguments
+    if (skill.command.subcommand === 'apply') {
+      // Determine which apply mode to use based on parameters
+      let applyMode: string | undefined;
+
+      if (params.args?.operations) {
+        // operations mode: qsv apply operations <operations> [options] <column> [<input>]
+        applyMode = 'operations';
+      } else if (params.options?.['replacement'] || params.options?.['--replacement']) {
+        // emptyreplace mode: qsv apply emptyreplace --replacement=<string> [options] <column> [<input>]
+        applyMode = 'emptyreplace';
+      } else if (params.options?.['formatstr'] || params.options?.['--formatstr']) {
+        // dynfmt or calcconv mode - both use --formatstr
+        // Default to operations if we have an operations arg, otherwise dynfmt
+        // User can override by passing the mode explicitly
+        applyMode = 'dynfmt';
+      }
+
+      // Add the mode as the next argument after 'apply'
+      if (applyMode) {
+        args.push(applyMode);
+        console.error(`[Executor] Added apply mode: ${applyMode}`);
+      } else {
+        console.error('[Executor] WARNING: apply command called without clear mode, defaulting to operations');
+        args.push('operations');
+      }
+    }
+
     // For stats command, always ensure --stats-jsonl flag is set
     // This creates the stats cache that other "smart" commands use
     if (skill.command.subcommand === 'stats') {

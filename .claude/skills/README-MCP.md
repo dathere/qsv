@@ -1,6 +1,6 @@
 # QSV MCP Server
 
-Model Context Protocol (MCP) server that exposes qsv's 67 CSV data-wrangling commands to Claude Desktop.
+Model Context Protocol (MCP) server that exposes qsv's 67 tabular data-wrangling commands to Claude Desktop.
 
 ## Overview
 
@@ -42,7 +42,7 @@ Excel and JSONL files are automatically converted to CSV before processing - no 
 
 The **MCP Desktop Extension** (MCPB) provides the easiest installation experience:
 
-1. Download `qsv-mcp-server.mcpb` from [releases](https://github.com/dathere/qsv/releases)
+1. Download `qsv-mcp-server.mcpb` from [releases](https://github.com/dathere/qsv/releases/download/14.0.0/qsv-mcp-server-14.1.0.mcpb)
 2. Open Claude Desktop Settings → Extensions
 3. Click "Install from file" and select the `.mcpb` file
 4. Configure your allowed directories when prompted
@@ -303,11 +303,13 @@ Result: Parquet file created
 │  • 3 Filesystem Tools (list/browse files)  │
 │  • Enhanced descriptions & guidance        │
 │  • Local file access & validation          │
+│  • Format auto-detection & conversion      │
 └──────────────────┬──────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────┐
 │          qsv Binary                         │
-│  (CSV processing on local filesystem)      │
+│  (Tabular data processing on local         │
+│   filesystem: CSV, TSV, SSV, Excel, JSONL) │
 └─────────────────────────────────────────────┘
 ```
 
@@ -316,7 +318,7 @@ Result: Parquet file created
 ### Input
 
 - Tools accept `input_file` parameter (absolute or relative path)
-- qsv reads directly from your local filesystem
+- qsv reads directly from your local filesystem (supports CSV, TSV/TAB, SSV, Excel, JSONL, and more)
 - No input file size limitations (qsv streams large files efficiently)
 - Auto-indexing for files > 10MB improves performance
 
@@ -329,6 +331,8 @@ Result: Parquet file created
   - Large outputs (> 850KB): Automatically saved to working directory with timestamped filename
 
 **Smart large file handling**: The server automatically detects when output would exceed Claude Desktop's limits and saves it to disk instead, preventing timeouts and memory issues.
+
+**Format auto-detection**: qsv automatically handles different formats (CSV, TSV, SSV, Excel, JSONL) based on file extensions or content sniffing. Excel and JSONL files are automatically converted to CSV for processing.
 
 ### Stats Cache Auto-Generation
 
@@ -491,8 +495,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-01-12
-**Version**: 14.0.0
+**Updated**: 2026-01-13
+**Version**: 14.1.0
 **Tools**: 25 (20 common + 1 generic + 1 pipeline + 3 filesystem)
 **Skills**: 67 qsv commands
 **Status**: ✅ Production Ready

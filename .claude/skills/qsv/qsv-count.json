@@ -18,7 +18,7 @@
       {
         "flag": "--delimiter",
         "type": "string",
-        "description": "The delimiter to use when reading CSV data. Must be a single character. [default: ,]",
+        "description": "The delimiter to use when reading CSV data. Must be a single character.",
         "default": ","
       },
       {
@@ -72,6 +72,5 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_count.rs"
+  }
 }

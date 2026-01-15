@@ -33,7 +33,8 @@ test('COMMON_COMMANDS is defined and non-empty', () => {
 });
 
 test('COMMON_COMMANDS contains expected core commands', () => {
-  const coreCommands = ['count', 'headers', 'stats', 'select', 'search', 'sort'];
+  // Updated for token-optimized list of 11 most essential commands
+  const coreCommands = ['count', 'headers', 'stats', 'select', 'search', 'index', 'frequency', 'slice', 'sqlp', 'joinp', 'moarstats'];
   const commandsArray: string[] = [...COMMON_COMMANDS]; // Convert to mutable string array
   for (const cmd of coreCommands) {
     assert.ok(commandsArray.includes(cmd), `Expected COMMON_COMMANDS to include '${cmd}'`);
@@ -82,9 +83,8 @@ test('filterCommands handles empty available commands', () => {
 });
 
 test('filterCommands simulates qsvlite filtering', () => {
-  // Simulate qsvlite which has fewer commands (no apply, no template, no moarstats, etc.)
-  // Note: COMMON_COMMANDS doesn't include polars commands (sqlp, joinp, pivotp) -
-  // those are added separately by the server when polars feature is available
+  // Simulate qsvlite which has fewer commands (no moarstats, no Polars commands)
+  // Updated for token-optimized COMMON_COMMANDS (11 essential commands)
   const qsvliteCommands = [
     'cat', 'count', 'dedup', 'diff', 'frequency', 'headers',
     'index', 'join', 'rename', 'sample', 'schema', 'search',
@@ -93,18 +93,18 @@ test('filterCommands simulates qsvlite filtering', () => {
 
   const { filtered, skipped } = filterCommands(qsvliteCommands, COMMON_COMMANDS);
 
-  // Feature-gated commands should be skipped for qsvlite
-  assert.ok(skipped.includes('apply'), 'apply should be skipped for qsvlite');
-  assert.ok(skipped.includes('template'), 'template should be skipped for qsvlite');
-  assert.ok(skipped.includes('moarstats'), 'moarstats should be skipped for qsvlite');
+  // Feature-gated commands in COMMON_COMMANDS should be skipped for qsvlite
+  assert.ok(skipped.includes('moarstats'), 'moarstats should be skipped for qsvlite (needs all_features)');
+  assert.ok(skipped.includes('sqlp'), 'sqlp should be skipped for qsvlite (needs Polars)');
+  assert.ok(skipped.includes('joinp'), 'joinp should be skipped for qsvlite (needs Polars)');
 
   // Core commands should be filtered in
   assert.ok(filtered.includes('count'), 'count should be available for qsvlite');
   assert.ok(filtered.includes('stats'), 'stats should be available for qsvlite');
   assert.ok(filtered.includes('select'), 'select should be available for qsvlite');
   assert.ok(filtered.includes('search'), 'search should be available for qsvlite');
-  assert.ok(filtered.includes('sort'), 'sort should be available for qsvlite');
-  assert.ok(filtered.includes('dedup'), 'dedup should be available for qsvlite');
+  assert.ok(filtered.includes('index'), 'index should be available for qsvlite');
+  assert.ok(filtered.includes('frequency'), 'frequency should be available for qsvlite');
 });
 
 test('filterCommands preserves order of COMMON_COMMANDS', () => {

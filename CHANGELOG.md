@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [14.0.0] - 2026-01-12 📦 **_"The qsv MCP for Everyone Release"_** 🎁
 
-Building on our 13.0.0 "AI-native Agent" milestone last week, **qsv 14.0.0** is dedicated to making AI integration **seamless, reliable, and easy for everyone**.
+Building on our 13.0.0 __"AI-native Agent"__ release last week, **qsv 14.0.0** is dedicated to making AI integration **seamless, reliable, and easy for everyone**.
 
 Previously, installing the qsv MCP Server required a full-fledged development environment and familiarity with command line tools and was not readily usable by non-developers. 
 
@@ -16,23 +16,25 @@ This release transforms the qsv MCP Server from a powerful developer tool into a
 
 ### MCP Desktop Extension (Bundle) - One-Click Installation
 
-The new **MCP Desktop Extension** (MCPB) provides a streamlined installation experience for Claude Desktop users:
+The new **MCP Desktop Extension** provides a streamlined installation experience for Claude Desktop users:
 
 - **User-Friendly Package** - Pre-configured bundle with automatic qsv binary detection - and if not found, provide installation guidance
 - **Cross-Platform Support** - Works seamlessly on macOS, Windows, and Linux
 - **Smart Data-wrangling** - it's deep knowledge of qsv insulates the User from the nitty-gritty details of the comprehensive toolkit with its hundreds of options, while ensuring fast, effective operations
 - **Token Efficient** - Despite this deep knowledge, the MCP server is still token efficient by including **intelligent contextual guidance** to help Claude make optimal decisions (USE WHEN, COMMON PATTERNS, ERROR PREVENTION, PERFORMANCE HINTS prompt guidance along with lazy-loading of full qsv `--help` text when more info is required)
-- **Security Enhanced** - Raw Data is not sent to the cloud LLM, only statistical metadata
+- **Security Enhanced** - Raw Data is not sent to Claude, only statistical metadata[^1]
 - **Welcome Experience** - Includes prompts and examples to get started quickly
-- **Seamlessly works with both [Claude Code](https://code.claude.com/docs/en/overview) and the just launched [Claude Cowork](https://claude.com/blog/cowork-research-preview)!** Take qsv beyond data-wrangling chats and unlock even greater potential with qsv as an AI Agent.
+- **Seamlessly works with both [Claude Code](https://code.claude.com/docs/en/overview) and the just launched [Claude Cowork](https://claude.com/blog/cowork-research-preview)!** Take qsv beyond data-wrangling chats and unlock even greater potential with an agentic qsv.
 
-The Desktop Extension follows the [official MCP manifest specification v0.3](https://spec.modelcontextprotocol.io/specification/2025-11-05/architecture/), ensuring compatibility with Claude Desktop and future MCP-compatible applications.
+The Desktop Extension follows the [official MCP Bundle (MCPB) manifest specification v0.3](https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md), ensuring compatibility with Claude Desktop and future MCP-compatible applications.
 
-See the [MCP Bundle documentation](https://github.com/dathere/qsv/blob/master/.claude/skills/README-MCP.md) for installation instructions.
+See the [MCP documentation](https://github.com/dathere/qsv/blob/master/.claude/skills/README-MCP.md) for installation instructions.
+
+[^1]: Note that statistical metadata is not anonymized and will disclose potentially sensitive information. See https://github.com/dathere/qsv/discussions/3289
 
 ### Breaking Changes
 
-- **MCP Skills**: `qsv-skill-gen` binary removed - use `qsv --update-mcp-skill` instead (requires `mcp` feature flag)
+- **MCP Skills**: `qsv-skill-gen` binary removed - use `qsv --update-mcp-skills` instead (requires `mcp` feature flag)
 
 ---
 
@@ -59,8 +61,7 @@ See the [MCP Bundle documentation](https://github.com/dathere/qsv/blob/master/.c
 * docs: add alt text to all download badges https://github.com/dathere/qsv/commit/cc1c3819
 * docs: add mise alternate installation documentation https://github.com/dathere/qsv/pull/3304
 * docs: MCP update skills markdown documentation https://github.com/dathere/qsv/pull/3308
-* docs: add MCP Server environment variables section to ENVIRONMENT_VARIABLES.md
-* docs: add MCP Server environment variables to dotenv.template
+* docs: add MCP Server environment variables section to ENVIRONMENT_VARIABLES.md & dotenv.template
 
 ## Changed
 * refactor: MCP Server - removed applydp command (datapusher+ specific, not needed for general use)
@@ -81,7 +82,6 @@ See the [MCP Bundle documentation](https://github.com/dathere/qsv/blob/master/.c
 * chore: delete CITATION.cff file and just depend on Zenodo integration which auto-assigns a DOI on release https://github.com/dathere/qsv/commit/9b981b8c
 * deps: bump polars to 0.52.0 at py-1.37.1 tag https://github.com/dathere/qsv/commit/3bbad1ea
 * deps: bump atoi_simd and calamine https://github.com/dathere/qsv/commit/c7cd928f
-* deps: bump polars to latest before release https://github.com/dathere/qsv/commit/ae9da0bf
 * deps: bump data-encoding from 2.9.0 to 2.10.0 https://github.com/dathere/qsv/commit/09bf3c33
 * deps: bump unicase from 2.8.1 to 2.9.0 https://github.com/dathere/qsv/commit/99f66a3b
 * deps: bump csvlens to 15.1 and remove our patched fork https://github.com/dathere/qsv/commit/d588e36e
@@ -104,18 +104,15 @@ See the [MCP Bundle documentation](https://github.com/dathere/qsv/blob/master/.c
 
 ## Fixed
 * fix: `stats` use .get() instead of [] indexing to avoid panics on missing keys when using old stats cache file https://github.com/dathere/qsv/pull/3306
-* fix: force add tsconfig.json https://github.com/dathere/qsv/pull/3301
-* fix: correct manifest.json to match official spec v0.3 https://github.com/dathere/qsv/commit/c783cf2c
-* fix: expand template variables in config paths https://github.com/dathere/qsv/commit/3177cfe1
-* fix: address Copilot review issues in package-mcpb.js https://github.com/dathere/qsv/commit/ec37b7c7
-* fix: replace execSync with execFileSync for security reasons https://github.com/dathere/qsv/commit/5209c751
-* fix: add promise-based deduplication for metadata cache to prevent race conditions https://github.com/dathere/qsv/commit/b4de4cc2
-* fix: add cross-platform test runner for Node.js 20 compatibility https://github.com/dathere/qsv/commit/f96e32f6
-* fix: use bash shell for MCP CI tests to ensure consistent glob expansion https://github.com/dathere/qsv/commit/1dc9056a
+* fix: MCP force add tsconfig.json https://github.com/dathere/qsv/pull/3301
+* fix: MCP correct manifest.json to match official spec v0.3 https://github.com/dathere/qsv/commit/c783cf2c
+* fix: MCP expand template variables in config paths https://github.com/dathere/qsv/commit/3177cfe1
+* fix: MCP address Copilot review issues in package-mcpb.js https://github.com/dathere/qsv/commit/ec37b7c7
+* fix: MCP replace execSync with execFileSync for security reasons https://github.com/dathere/qsv/commit/5209c751
+* fix: MCP add promise-based deduplication for metadata cache to prevent race conditions https://github.com/dathere/qsv/commit/b4de4cc2
+* fix: MCP add cross-platform test runner for Node.js 20 compatibility https://github.com/dathere/qsv/commit/f96e32f6
 * fix: MCP Server CI tests to download the appropriate release binary archive https://github.com/dathere/qsv/commit/2d949088
 * fix: typo in mise installation docs (https://jdx.mise.dev -> https://mise.jdx.dev) https://github.com/dathere/qsv/pull/3304
-
----
 
 ## AI Contributors
 This release was developed with assistance from:

@@ -18,13 +18,13 @@
       {
         "flag": "--batch",
         "type": "string",
-        "description": "The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. [default: 50000]",
+        "description": "The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch.",
         "default": "50000"
       },
       {
         "flag": "--delimiter",
         "type": "string",
-        "description": "The delimiter to use when writing CSV data. Must be a single character. [default: ,]",
+        "description": "The delimiter to use when writing CSV data. Must be a single character.",
         "default": ","
       },
       {
@@ -52,6 +52,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_jsonl.rs"
+  }
 }

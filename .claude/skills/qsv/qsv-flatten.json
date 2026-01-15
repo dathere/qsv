@@ -43,7 +43,7 @@
       {
         "flag": "--separator",
         "type": "string",
-        "description": "A string of characters to write after each record. When non-empty, a new line is automatically appended to the separator. [default: #]",
+        "description": "A string of characters to write after each record. When non-empty, a new line is automatically appended to the separator.",
         "default": "#"
       }
     ]
@@ -51,6 +51,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_flatten.rs"
+  }
 }

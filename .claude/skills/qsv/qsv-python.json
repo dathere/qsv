@@ -24,7 +24,7 @@
       {
         "flag": "--batch",
         "type": "string",
-        "description": "The number of rows per batch to process before releasing memory and acquiring a new GILpool. Set to 0 to process the entire file in one batch. [default: 50000]",
+        "description": "The number of rows per batch to process before releasing memory and acquiring a new GILpool. Set to 0 to process the entire file in one batch.",
         "default": "50000"
       },
       {
@@ -62,6 +62,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_python.rs"
+  }
 }

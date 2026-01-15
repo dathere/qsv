@@ -24,13 +24,13 @@
       {
         "flag": "--agg",
         "type": "string",
-        "description": "The aggregation function to use: first - First value encountered last - Last value encountered sum - Sum of values min - Minimum value max - Maximum value mean - Average value median - Median value len - Count of values item - Get single value from group. Raises error if there are multiple values. smart - use value column data type & statistics to pick an aggregation. Will only work if there is one value column, otherwise it falls back to `first` [default: smart]",
+        "description": "The aggregation function to use: first - First value encountered last - Last value encountered sum - Sum of values min - Minimum value max - Maximum value mean - Average value median - Median value len - Count of values item - Get single value from group. Raises error if there are multiple values. smart - use value column data type & statistics to pick an aggregation. Will only work if there is one value column, otherwise it falls back to `first`",
         "default": "smart"
       },
       {
         "flag": "--col-separator",
         "type": "string",
-        "description": "The separator in generated column names in case of multiple --values columns. [default: _]",
+        "description": "The separator in generated column names in case of multiple --values columns.",
         "default": "_"
       },
       {
@@ -61,7 +61,7 @@
       {
         "flag": "--infer-len",
         "type": "string",
-        "description": "Number of rows to scan when inferring schema. Set to 0 to scan entire file. [default: 10000]",
+        "description": "Number of rows to scan when inferring schema. Set to 0 to scan entire file.",
         "default": "10000"
       },
       {
@@ -104,6 +104,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs"
+  }
 }

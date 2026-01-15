@@ -43,7 +43,7 @@
       {
         "flag": "--timeout",
         "type": "string",
-        "description": "Timeout for downloading URLs in seconds. [default: 60]",
+        "description": "Timeout for downloading URLs in seconds.",
         "default": "60"
       },
       {
@@ -56,6 +56,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_snappy.rs"
+  }
 }

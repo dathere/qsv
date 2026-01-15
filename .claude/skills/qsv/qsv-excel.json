@@ -28,7 +28,7 @@
       {
         "flag": "--delimiter",
         "type": "string",
-        "description": "The delimiter to use when writing CSV data. Must be a single character. [default: ,]",
+        "description": "The delimiter to use when writing CSV data. Must be a single character.",
         "default": ","
       },
       {
@@ -86,7 +86,7 @@
       {
         "flag": "--sheet",
         "type": "string",
-        "description": "Name (case-insensitive) or zero-based index of sheet to export. Negative indices start from the end (-1 = last sheet). If the sheet cannot be found, qsv will read the first sheet. [default: 0]",
+        "description": "Name (case-insensitive) or zero-based index of sheet to export. Negative indices start from the end (-1 = last sheet). If the sheet cannot be found, qsv will read the first sheet.",
         "default": "0"
       },
       {
@@ -104,6 +104,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_excel.rs"
+  }
 }

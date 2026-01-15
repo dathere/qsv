@@ -23,7 +23,7 @@
       {
         "flag": "--addl-cols-list",
         "type": "string",
-        "description": "A comma-separated list of additional stats columns to add to the dictionary. The columns must be present in the Summary Statistics. If the columns are not present in the Summary Statistics or already in the dictionary, they will be ignored. CONVENIENCE VALUES: These values are case-insensitive and automatically set the --addl-cols option to true. \"everything\" can be used to add all 45 \"available\" statistics columns. You can adjust the available columns with --stats-options. \"everything!\" automatically sets --stats-options to compute \"all\" 51 supported stats. The 6 addl cols are the mode/s & antimode/s stats with each having counts & occurrences. \"moar\" gets you even moar stats, with detailed outliers info. \"moar!\" gets you even moar with --advanced stats (Kurtosis, Gini Coefficient & Shannon Entropy) [default: sort_order, sortiness, mean, median, mad, stddev, variance, cv]",
+        "description": "A comma-separated list of additional stats columns to add to the dictionary. The columns must be present in the Summary Statistics. If the columns are not present in the Summary Statistics or already in the dictionary, they will be ignored. CONVENIENCE VALUES: These values are case-insensitive and automatically set the --addl-cols option to true. \"everything\" can be used to add all 45 \"available\" statistics columns. You can adjust the available columns with --stats-options. \"everything!\" automatically sets --stats-options to compute \"all\" 51 supported stats. The 6 addl cols are the mode/s & antimode/s stats with each having counts & occurrences. \"moar\" gets you even moar stats, with detailed outliers info. \"moar!\" gets you even moar with --advanced stats (Kurtosis, Gini Coefficient & Shannon Entropy)",
         "default": "sort_order, sortiness, mean, median, mad, stddev, variance, cv"
       },
       {
@@ -44,19 +44,19 @@
       {
         "flag": "--base-url",
         "type": "string",
-        "description": "The LLM API URL. Supports APIs & local LLMs compatible with the OpenAI API specification (Ollama, Jan, LM Studio, TogetherAI, etc.). The default base URL for Ollama is http://localhost:11434/v1. The default for Jan is https://localhost:1337/v1. The default for LM Studio is http://localhost:1234/v1. The base URL will be the base URL of the prompt file. If the QSV_LLM_BASE_URL environment variable is set, it'll be used instead. [default: https://api.openai.com/v1]",
+        "description": "The LLM API URL. Supports APIs & local LLMs compatible with the OpenAI API specification (Ollama, Jan, LM Studio, TogetherAI, etc.). The default base URL for Ollama is http://localhost:11434/v1. The default for Jan is https://localhost:1337/v1. The default for LM Studio is http://localhost:1234/v1. The base URL will be the base URL of the prompt file. If the QSV_LLM_BASE_URL environment variable is set, it'll be used instead.",
         "default": "https://api.openai.com/v1"
       },
       {
         "flag": "--cache-dir",
         "type": "string",
-        "description": "The directory to use for caching downloaded tag vocabulary resources. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. [default: ~/.qsv-cache]",
+        "description": "The directory to use for caching downloaded tag vocabulary resources. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead.",
         "default": "~/.qsv-cache"
       },
       {
         "flag": "--ckan-api",
         "type": "string",
-        "description": "The URL of the CKAN API to use for downloading tag vocabulary resources with the \"ckan://\" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. [default: https://data.dathere.com/api/3/action]",
+        "description": "The URL of the CKAN API to use for downloading tag vocabulary resources with the \"ckan://\" scheme. If the QSV_CKAN_API envvar is set, it will be used instead.",
         "default": "https://data.dathere.com/api/3/action"
       },
       {
@@ -77,13 +77,13 @@
       {
         "flag": "--disk-cache-dir",
         "type": "string",
-        "description": "The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different describegpt jobs (e.g. one for a data portal, another for internal data exchange, etc.) [default: ~/.qsv/cache/describegpt]",
+        "description": "The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different describegpt jobs (e.g. one for a data portal, another for internal data exchange, etc.)",
         "default": "~/.qsv/cache/describegpt"
       },
       {
         "flag": "--enum-threshold",
         "type": "string",
-        "description": "The threshold for compiling Enumerations with the frequency command before bucketing other unique values into the \"Other\" category. [default: 10]",
+        "description": "The threshold for compiling Enumerations with the frequency command before bucketing other unique values into the \"Other\" category.",
         "default": "10"
       },
       {
@@ -109,7 +109,7 @@
       {
         "flag": "--format",
         "type": "string",
-        "description": "Output format: Markdown, TSV, JSON, or TOON. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See https://toonformat.dev/ for more info. [default: Markdown]",
+        "description": "Output format: Markdown, TSV, JSON, or TOON. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See https://toonformat.dev/ for more info.",
         "default": "Markdown"
       },
       {
@@ -130,13 +130,13 @@
       {
         "flag": "--max-tokens",
         "type": "string",
-        "description": "Limits the number of generated tokens in the output. Set to 0 to disable token limits. If the --base-url is localhost, indicating a local LLM, the default is automatically set to 0. [default: 10000]",
+        "description": "Limits the number of generated tokens in the output. Set to 0 to disable token limits. If the --base-url is localhost, indicating a local LLM, the default is automatically set to 0.",
         "default": "10000"
       },
       {
         "flag": "--model",
         "type": "string",
-        "description": "The model to use for inferencing. If the QSV_LLM_MODEL environment variable is set, it'll be used instead. [default: openai/gpt-oss-20b]",
+        "description": "The model to use for inferencing. If the QSV_LLM_MODEL environment variable is set, it'll be used instead.",
         "default": "openai/gpt-oss-20b"
       },
       {
@@ -147,13 +147,13 @@
       {
         "flag": "--num-examples",
         "type": "string",
-        "description": "The number of Example values to include in the dictionary. [default: 5]",
+        "description": "The number of Example values to include in the dictionary.",
         "default": "5"
       },
       {
         "flag": "--num-tags",
         "type": "string",
-        "description": "The maximum number of tags to infer when the --tags option is used. Maximum allowed value is 50. [default: 10]",
+        "description": "The maximum number of tags to infer when the --tags option is used. Maximum allowed value is 50.",
         "default": "10"
       },
       {
@@ -184,7 +184,7 @@
       {
         "flag": "--sample-size",
         "type": "string",
-        "description": "The number of rows to randomly sample from the input file for the sample data. Uses the INDEXED sampling method with the qsv sample command. [default: 100]",
+        "description": "The number of rows to randomly sample from the input file for the sample data. Uses the INDEXED sampling method with the qsv sample command.",
         "default": "100"
       },
       {
@@ -195,7 +195,7 @@
       {
         "flag": "--session-len",
         "type": "string",
-        "description": "Maximum number of recent messages to keep in session context before summarizing older messages. Only used when --session is specified. [default: 10]",
+        "description": "Maximum number of recent messages to keep in session context before summarizing older messages. Only used when --session is specified.",
         "default": "10"
       },
       {
@@ -206,7 +206,7 @@
       {
         "flag": "--stats-options",
         "type": "string",
-        "description": "Options for the stats command used to generate summary statistics. [default: --infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl]",
+        "description": "Options for the stats command used to generate summary statistics.",
         "default": "--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl"
       },
       {
@@ -222,13 +222,13 @@
       {
         "flag": "--timeout",
         "type": "string",
-        "description": "Timeout for completions in seconds. If 0, no timeout is used. [default: 300]",
+        "description": "Timeout for completions in seconds. If 0, no timeout is used.",
         "default": "300"
       },
       {
         "flag": "--truncate-str",
         "type": "string",
-        "description": "The maximum length of an Example value in the dictionary. An ellipsis is appended to the truncated value. If zero, no truncation is performed. [default: 25]",
+        "description": "The maximum length of an Example value in the dictionary. An ellipsis is appended to the truncated value. If zero, no truncation is performed.",
         "default": "25"
       },
       {
@@ -241,6 +241,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs"
+  }
 }

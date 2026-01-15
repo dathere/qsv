@@ -39,13 +39,13 @@
       {
         "flag": "--prefix",
         "type": "string",
-        "description": "Certain systems do not allow header names to start with \"_\" (e.g. CKAN Datastore). This option allows the specification of the unsafe prefix to use when a header starts with \"_\". [default: unsafe_]",
+        "description": "Certain systems do not allow header names to start with \"_\" (e.g. CKAN Datastore). This option allows the specification of the unsafe prefix to use when a header starts with \"_\".",
         "default": "unsafe_"
       },
       {
         "flag": "--reserved",
         "type": "string",
-        "description": "Comma-delimited list of additional case-insensitive reserved names that should be considered \"unsafe.\" If a header name is found in the reserved list, it will be prefixed with \"reserved_\". [default: _id]",
+        "description": "Comma-delimited list of additional case-insensitive reserved names that should be considered \"unsafe.\" If a header name is found in the reserved list, it will be prefixed with \"reserved_\".",
         "default": "_id"
       }
     ]
@@ -53,6 +53,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_safenames.rs"
+  }
 }

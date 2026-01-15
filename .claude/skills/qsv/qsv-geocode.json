@@ -29,19 +29,19 @@
       {
         "flag": "--batch",
         "type": "string",
-        "description": "The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. [default: 50000]",
+        "description": "The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch.",
         "default": "50000"
       },
       {
         "flag": "--cache-dir",
         "type": "string",
-        "description": "The directory to use for caching the Geonames cities index. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. [default: ~/.qsv-cache]",
+        "description": "The directory to use for caching the Geonames cities index. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead.",
         "default": "~/.qsv-cache"
       },
       {
         "flag": "--cities-url",
         "type": "string",
-        "description": "The URL to download the Geonames cities file from. There are several available at https://download.geonames.org/export/dump/. cities500.zip   - cities with populations > 500; ~200k cities, 56mb cities1000.zip  - population > 1000; ~140k cities, 44mb cities5000.zip  - population > 5000; ~53k cities, 21mb cities15000.zip - population > 15000; ~26k cities, 13mb Note that the more cities are included, the larger the local index file will be, lookup times will be slower, and the search results will be different. For convenience, if this is set to 500, 1000, 5000 or 15000, it will be converted to a geonames cities URL. [default: https://download.geonames.org/export/dump/cities15000.zip]",
+        "description": "The URL to download the Geonames cities file from. There are several available at https://download.geonames.org/export/dump/. cities500.zip   - cities with populations > 500; ~200k cities, 56mb cities1000.zip  - population > 1000; ~140k cities, 44mb cities5000.zip  - population > 5000; ~53k cities, 21mb cities15000.zip - population > 15000; ~26k cities, 13mb Note that the more cities are included, the larger the local index file will be, lookup times will be slower, and the search results will be different. For convenience, if this is set to 500, 1000, 5000 or 15000, it will be converted to a geonames cities URL.",
         "default": "https://download.geonames.org/export/dump/cities15000.zip"
       },
       {
@@ -88,19 +88,19 @@
       {
         "flag": "--language",
         "type": "string",
-        "description": "The language to use when geocoding. The language is specified as a ISO 639-1 code. Note that the Geonames index must have been built with the specified language using the `index-update` subcommand with the --languages option. If the language is not available, the first language in the index is used. [default: en]",
+        "description": "The language to use when geocoding. The language is specified as a ISO 639-1 code. Note that the Geonames index must have been built with the specified language using the `index-update` subcommand with the --languages option. If the language is not available, the first language in the index is used.",
         "default": "en"
       },
       {
         "flag": "--languages",
         "type": "string",
-        "description": "The comma-delimited, case-insensitive list of languages to use when building the Geonames cities index. The languages are specified as a comma-separated list of ISO 639-2 codes. See https://download.geonames.org/export/dump/iso-languagecodes.txt to look up codes and https://download.geonames.org/export/dump/alternatenames/ for the supported language files. 253 languages are currently supported. [default: en]",
+        "description": "The comma-delimited, case-insensitive list of languages to use when building the Geonames cities index. The languages are specified as a comma-separated list of ISO 639-2 codes. See https://download.geonames.org/export/dump/iso-languagecodes.txt to look up codes and https://download.geonames.org/export/dump/alternatenames/ for the supported language files. 253 languages are currently supported.",
         "default": "en"
       },
       {
         "flag": "--min-score",
         "type": "string",
-        "description": "The minimum Jaro-Winkler distance score. [default: 0.8]",
+        "description": "The minimum Jaro-Winkler distance score.",
         "default": "0.8"
       },
       {
@@ -126,7 +126,7 @@
       {
         "flag": "--timeout",
         "type": "string",
-        "description": "Timeout for downloading Geonames cities index. [default: 120]",
+        "description": "Timeout for downloading Geonames cities index.",
         "default": "120"
       }
     ]
@@ -135,6 +135,5 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_geocode.rs"
+  }
 }

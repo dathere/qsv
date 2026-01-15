@@ -35,7 +35,7 @@
       {
         "flag": "--dry-run",
         "type": "string",
-        "description": "If set to true (the default for safety reasons), the commands are sent to stdout instead of executing them. If set to a file, the commands will be written to the specified text file instead of executing them. Only if set to false will the commands be actually executed. [default: true]",
+        "description": "If set to true (the default for safety reasons), the commands are sent to stdout instead of executing them. If set to a file, the commands will be written to the specified text file instead of executing them. Only if set to false will the commands be actually executed.",
         "default": "true"
       },
       {
@@ -69,6 +69,5 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_foreach.rs"
+  }
 }

@@ -24,7 +24,7 @@
       {
         "flag": "--batch",
         "type": "string",
-        "description": "The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. [default: 50000]",
+        "description": "The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows.",
         "default": "50000"
       },
       {
@@ -103,7 +103,7 @@
       {
         "flag": "--ts-resolution",
         "type": "string",
-        "description": "The resolution to use when parsing Unix timestamps. Valid values are \"sec\", \"milli\", \"micro\", \"nano\". [default: sec]",
+        "description": "The resolution to use when parsing Unix timestamps. Valid values are \"sec\", \"milli\", \"micro\", \"nano\".",
         "default": "sec"
       },
       {
@@ -122,6 +122,5 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs"
+  }
 }

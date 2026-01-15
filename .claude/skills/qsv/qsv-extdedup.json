@@ -44,7 +44,7 @@
       {
         "flag": "--memory-limit",
         "type": "string",
-        "description": "The maximum amount of memory to buffer the on-disk hash table. If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory. [default: 10]",
+        "description": "The maximum amount of memory to buffer the on-disk hash table. If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory.",
         "default": "10"
       },
       {
@@ -77,6 +77,5 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  },
-  "test_file": "https://github.com/dathere/qsv/blob/master/tests/test_extdedup.rs"
+  }
 }

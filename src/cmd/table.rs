@@ -21,15 +21,7 @@ Usage:
 
 table options:
     -a, --align <arg>      How entries should be aligned in a column.
-                           Options: "left", "right", "center". "leftendtab" & "leftfwf"
-                           "leftendtab" is a special alignment that similar to "left"
-                           but with whitespace padding ending with a tab character.
-                           The resulting output still validates as a valid TSV file,
-                           while also being more human-readable (aka "aligned" TSV).
-                           "leftfwf" is similar to "left" with Fixed Width Format allgnment.
-                           The first line is a comment (prefixed with "#") that enumerates
-                           the position (1-based, comma-separated) of each column.
-                           [default: left]
+                           Options: "left", "right", "center". [default: left]
     --monochrome           Force disable color output (default is auto-on).
 
 Common options:
@@ -60,11 +52,11 @@ use crate::{
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input: Option<String>,
-    flag_output: Option<String>,
-    flag_delimiter: Option<Delimiter>,
-    flag_align: Align,
-    flag_memcheck: bool,
+    arg_input:       Option<String>,
+    flag_output:     Option<String>,
+    flag_delimiter:  Option<Delimiter>,
+    flag_align:      Align,
+    flag_memcheck:   bool,
     flag_monochrome: bool,
 }
 
@@ -73,8 +65,6 @@ enum Align {
     Left,
     Right,
     Center,
-    LeftEndTab,
-    LeftFwf,
 }
 
 //
@@ -110,8 +100,8 @@ macro_rules! fg {
         ContentStyle {
             foreground_color: Some($fg),
             background_color: None,
-            underline_color: None,
-            attributes: Attributes::none(),
+            underline_color:  None,
+            attributes:       Attributes::none(),
         }
     };
 }
@@ -122,25 +112,27 @@ macro_rules! bold {
         ContentStyle {
             foreground_color: Some($fg),
             background_color: None,
-            underline_color: None,
-            attributes: Attributes::none().with(Attribute::Bold),
+            underline_color:  None,
+            attributes:       Attributes::none().with(Attribute::Bold),
         }
     };
 }
 
 struct Theme {
     #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
-    chrome: ContentStyle,
+    chrome:  ContentStyle,
     #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
-    field: ContentStyle,
+    field:   ContentStyle,
     #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
     headers: [ContentStyle; 6],
 }
 
+// colors courtesy of tabiew/monokai
+
 #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 const DARK: Theme = Theme {
-    chrome: fg!(hex!("#6a7282")), // gray-500
-    field: fg!(hex!("#e5e7eb")),  // gray-200
+    chrome:  fg!(hex!("#6a7282")), // gray-500
+    field:   fg!(hex!("#e5e7eb")), // gray-200
     headers: [
         bold!(hex!("#ff6188")), // pink
         bold!(hex!("#fc9867")), // orange
@@ -153,8 +145,8 @@ const DARK: Theme = Theme {
 
 #[cfg(all(feature = "tablecolor", feature = "feature_capable"))]
 const LIGHT: Theme = Theme {
-    chrome: fg!(hex!("#6a7282")), // gray-500
-    field: fg!(hex!("#1e2939")),  // gray-800
+    chrome:  fg!(hex!("#6a7282")), // gray-500
+    field:   fg!(hex!("#1e2939")), // gray-800
     headers: [
         bold!(hex!("#ee4066")), // red
         bold!(hex!("#da7645")), // orange
@@ -268,7 +260,7 @@ const PIPE: char = BOX[1][0];
 
 fn align_cell(s: &str, width: usize, align: Align) -> String {
     match align {
-        Align::Left | Align::LeftEndTab | Align::LeftFwf => format!("{s:<width$}"),
+        Align::Left => format!("{s:<width$}"),
         Align::Right => format!("{s:>width$}"),
         Align::Center => {
             if width == 0 {

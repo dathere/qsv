@@ -67,16 +67,19 @@ fn fruits_extended_select_1_4_table() {
     let output = table_child.wait_with_output().unwrap();
     let got = String::from_utf8_lossy(&output.stdout);
 
-    let expected = r#"fruit       availability
-apple       available
-banana      available
-strawberry  available
-orange      out of stock
-pineapple   available
-grape       out of stock
-mango       available
-watermelon  available
-pear        out of stock
+    let expected = r#"╭────────────┬──────────────╮
+│ fruit      │ availability │
+├────────────┼──────────────┤
+│ apple      │ available    │
+│ banana     │ available    │
+│ strawberry │ available    │
+│ orange     │ out of stock │
+│ pineapple  │ available    │
+│ grape      │ out of stock │
+│ mango      │ available    │
+│ watermelon │ available    │
+│ pear       │ out of stock │
+╰────────────┴──────────────╯
 "#;
     assert_eq!(got, expected);
 }
@@ -105,16 +108,19 @@ fn fruits_extended_select_1_2_table() {
     let output = table_child.wait_with_output().unwrap();
     let got = String::from_utf8_lossy(&output.stdout);
 
-    let expected = r#"fruit       price
-apple       2.50
-banana      3.00
-strawberry  1.50
-orange      2.00
-pineapple   3.50
-grape       4.00
-mango       1.80
-watermelon  6.00
-pear        2.20
+    let expected = r#"╭────────────┬───────╮
+│ fruit      │ price │
+├────────────┼───────┤
+│ apple      │ 2.50  │
+│ banana     │ 3.00  │
+│ strawberry │ 1.50  │
+│ orange     │ 2.00  │
+│ pineapple  │ 3.50  │
+│ grape      │ 4.00  │
+│ mango      │ 1.80  │
+│ watermelon │ 6.00  │
+│ pear       │ 2.20  │
+╰────────────┴───────╯
 "#;
     assert_eq!(got, expected);
 }
@@ -155,8 +161,11 @@ fn fruits_extended_select_1_2_transpose_table() {
     let output = table_child.wait_with_output().unwrap();
     let got = String::from_utf8_lossy(&output.stdout);
 
-    let expected = r#"fruit  apple  banana  strawberry  orange  pineapple  grape  mango  watermelon  pear
-price  2.50   3.00    1.50        2.00    3.50       4.00   1.80   6.00        2.20
+    let expected = r#"╭──────┬──────┬───────┬────────┬──────┬────────┬──────┬──────┬────────┬──────╮
+│ fru… │ app… │ bana… │ straw… │ ora… │ pinea… │ gra… │ man… │ water… │ pear │
+├──────┼──────┼───────┼────────┼──────┼────────┼──────┼──────┼────────┼──────┤
+│ pri… │ 2.50 │ 3.00  │ 1.50   │ 2.00 │ 3.50   │ 4.00 │ 1.80 │ 6.00   │ 2.20 │
+╰──────┴──────┴───────┴────────┴──────┴────────┴──────┴──────┴────────┴──────╯
 "#;
     assert_eq!(got, expected);
 }

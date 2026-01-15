@@ -1,15 +1,6 @@
 static USAGE: &str = r##"
-Outputs CSV data as a table with columns in alignment.
-
-Though this command is primarily designed for DISPLAYING CSV data using
-"elastic tabstops" so its more human-readable, it can also be used to convert
-CSV data to other special machine-readable formats:
- -  a more human-readable TSV format with the "leftendtab" alignment option
- -  Fixed-Width format with the "leftfwf" alignment option - similar to "left",
-    but with the first line being a comment (prefixed with "#") that enumerates
-    the position (1-based, comma-separated) of each column (e.g. "#1,10,15").
-
-This will not work well if the CSV data contains large fields.
+Outputs CSV data as a pretty table that always tries to fit into the
+terminal.
 
 Note that formatting a table requires buffering all CSV data into memory.
 Therefore, you should use the 'sample' or 'slice' command to trim down large
@@ -21,7 +12,8 @@ Usage:
 
 table options:
     -a, --align <arg>      How entries should be aligned in a column.
-                           Options: "left", "right", "center". [default: left]
+                           Options: "left", "right", "center".
+                           [default: left]
     --monochrome           Force disable color output (default is auto-on).
 
 Common options:
@@ -177,7 +169,7 @@ fn autolayout(columns: &[usize], term_width: usize) -> Vec<usize> {
 
     // How much space is available, and do we already fit?
     const FUDGE: usize = 2;
-    let available = term_width - chrome_width - FUDGE;
+    let available = term_width.saturating_sub(chrome_width + FUDGE);
     let data_width: usize = columns.iter().sum();
     if available >= data_width {
         return columns.to_vec();
@@ -201,10 +193,8 @@ fn autolayout(columns: &[usize], term_width: usize) -> Vec<usize> {
     // col.width = col.min + ((col.max - col.min) * ratio)
     let min_sum: usize = min.iter().sum();
     let max_sum: usize = max.iter().sum();
-    let min_sum = min_sum as f64;
-    let max_sum = max_sum as f64;
-    let ratio = (available as f64 - min_sum) / (max_sum - min_sum);
-    if ratio <= 0.0 {
+    let ratio = (available.saturating_sub(min_sum) as f64) / ((max_sum - min_sum) as f64);
+    if ratio == 0.0 {
         // even min doesn't fit, we gotta overflow
         return min;
     }
@@ -217,8 +207,8 @@ fn autolayout(columns: &[usize], term_width: usize) -> Vec<usize> {
 
     // because we always round down, there might be some extra space to distribute
     let data_width: usize = widths.iter().sum();
-    if available > data_width {
-        let extra_space = available - data_width;
+    let extra_space = available.saturating_sub(data_width);
+    if extra_space > 0 {
         let mut distribute: Vec<(usize, usize)> = max
             .iter()
             .zip(min.iter())
@@ -237,7 +227,10 @@ fn autolayout(columns: &[usize], term_width: usize) -> Vec<usize> {
     widths
 }
 
+//
 // Box-drawing characters for pretty separators.
+//
+
 const BOX: [[char; 5]; 4] = [
     ['╭', '─', '┬', '─', '╮'], // 0
     ['│', ' ', '│', ' ', '│'], // 1
@@ -278,6 +271,8 @@ fn align_cell(s: &str, width: usize, align: Align) -> String {
     }
 }
 
+// NOTE: I wanted to use utils.condense, but it doesn't take the size of the
+// ellipse into account. It also uses three chars for the ellipsis.
 fn truncate(field: &[u8], width: usize) -> String {
     if width == 0 {
         return String::new();
@@ -313,7 +308,6 @@ fn format_field(text: &str, header: bool, col_idx: usize, theme: Option<&Theme>)
         let Some(theme) = theme else {
             return text.to_string();
         };
-
         let style = if header {
             theme.headers[col_idx % theme.headers.len()]
         } else {

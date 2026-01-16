@@ -570,6 +570,226 @@ test('executor handles geocode index-check subcommand', async () => {
   }
 });
 
+test('executor handles geocode suggestnow subcommand', async () => {
+  const executor = new SkillExecutor();
+
+  const geocodeSkill: QsvSkill = {
+    name: 'qsv-geocode',
+    version: '14.0.0',
+    description: 'Geocode operations',
+    category: 'utility',
+    command: {
+      binary: 'qsv',
+      subcommand: 'geocode',
+      args: [
+        {
+          name: 'subcommand',
+          type: 'string',
+          required: true,
+          description: 'Subcommand to execute',
+          enum: ['suggestnow']
+        },
+        {
+          name: 'location',
+          type: 'string',
+          required: true,
+          description: 'City name to geocode'
+        }
+      ],
+      options: []
+    },
+    examples: []
+  };
+
+  // Test suggestnow subcommand with city name
+  const result = await executor.execute(geocodeSkill, {
+    args: {
+      subcommand: 'suggestnow',
+      location: 'New York'
+    }
+  });
+
+  assert.strictEqual(result.success, true, 'geocode suggestnow should succeed');
+  assert.match(
+    result.metadata.command,
+    /qsv geocode suggestnow/,
+    'Command should include "geocode suggestnow" subcommand'
+  );
+  // Output should contain coordinates or location information
+  assert.match(result.output, /New York/i, 'Output should contain New York');
+  assert.ok(
+    result.output.includes(',') || result.output.includes('Location'),
+    'Output should contain coordinates or location data'
+  );
+});
+
+test('executor handles geocode reversenow subcommand', async () => {
+  const executor = new SkillExecutor();
+
+  const geocodeSkill: QsvSkill = {
+    name: 'qsv-geocode',
+    version: '14.0.0',
+    description: 'Geocode operations',
+    category: 'utility',
+    command: {
+      binary: 'qsv',
+      subcommand: 'geocode',
+      args: [
+        {
+          name: 'subcommand',
+          type: 'string',
+          required: true,
+          description: 'Subcommand to execute',
+          enum: ['reversenow']
+        },
+        {
+          name: 'location',
+          type: 'string',
+          required: true,
+          description: 'Coordinates to reverse geocode'
+        }
+      ],
+      options: []
+    },
+    examples: []
+  };
+
+  // Test reversenow subcommand with NYC coordinates
+  const result = await executor.execute(geocodeSkill, {
+    args: {
+      subcommand: 'reversenow',
+      location: '40.7128, -74.0060'
+    }
+  });
+
+  assert.strictEqual(result.success, true, 'geocode reversenow should succeed');
+  assert.match(
+    result.metadata.command,
+    /qsv geocode reversenow/,
+    'Command should include "geocode reversenow" subcommand'
+  );
+  // Output should contain New York area (could be New York, Manhattan, etc.)
+  assert.match(result.output, /New York/i, 'Output should contain New York area');
+});
+
+test('executor handles geocode suggest subcommand with CSV', async () => {
+  const executor = new SkillExecutor();
+
+  const geocodeSkill: QsvSkill = {
+    name: 'qsv-geocode',
+    version: '14.0.0',
+    description: 'Geocode operations',
+    category: 'utility',
+    command: {
+      binary: 'qsv',
+      subcommand: 'geocode',
+      args: [
+        {
+          name: 'subcommand',
+          type: 'string',
+          required: true,
+          description: 'Subcommand to execute',
+          enum: ['suggest']
+        },
+        {
+          name: 'column',
+          type: 'string',
+          required: true,
+          description: 'Column containing city names'
+        }
+      ],
+      options: []
+    },
+    examples: []
+  };
+
+  const testCSV = 'city\nNew York\nLos Angeles\nChicago\n';
+
+  // Test suggest subcommand with CSV data
+  const result = await executor.execute(geocodeSkill, {
+    args: {
+      subcommand: 'suggest',
+      column: 'city'
+    },
+    stdin: testCSV
+  });
+
+  assert.strictEqual(result.success, true, 'geocode suggest should succeed');
+  assert.match(
+    result.metadata.command,
+    /qsv geocode suggest/,
+    'Command should include "geocode suggest" subcommand'
+  );
+
+  // Output should contain coordinates for the cities
+  const lines = result.output.trim().split('\n');
+  assert.ok(lines.length >= 4, 'Should have header + 3 city rows');
+
+  // Check that coordinates are present (contains parentheses and commas for lat,long format)
+  const outputWithCoords = result.output.match(/\(/g);
+  assert.ok(outputWithCoords && outputWithCoords.length >= 3, 'Should contain coordinates for cities');
+});
+
+test('executor handles geocode reverse subcommand with CSV', async () => {
+  const executor = new SkillExecutor();
+
+  const geocodeSkill: QsvSkill = {
+    name: 'qsv-geocode',
+    version: '14.0.0',
+    description: 'Geocode operations',
+    category: 'utility',
+    command: {
+      binary: 'qsv',
+      subcommand: 'geocode',
+      args: [
+        {
+          name: 'subcommand',
+          type: 'string',
+          required: true,
+          description: 'Subcommand to execute',
+          enum: ['reverse']
+        },
+        {
+          name: 'column',
+          type: 'string',
+          required: true,
+          description: 'Column containing coordinates'
+        }
+      ],
+      options: []
+    },
+    examples: []
+  };
+
+  const testCSV = 'coords\n"40.7128, -74.0060"\n"34.0522, -118.2437"\n"41.8781, -87.6298"\n';
+
+  // Test reverse subcommand with coordinate CSV data
+  const result = await executor.execute(geocodeSkill, {
+    args: {
+      subcommand: 'reverse',
+      column: 'coords'
+    },
+    stdin: testCSV
+  });
+
+  assert.strictEqual(result.success, true, 'geocode reverse should succeed');
+  assert.match(
+    result.metadata.command,
+    /qsv geocode reverse/,
+    'Command should include "geocode reverse" subcommand'
+  );
+
+  // Output should contain city names
+  const lines = result.output.trim().split('\n');
+  assert.ok(lines.length >= 4, 'Should have header + 3 coordinate rows');
+
+  // Check that at least one known city is found
+  assert.ok(
+    result.output.includes('New York') || result.output.includes('Los Angeles') || result.output.includes('Chicago'),
+    'Should contain at least one major city name'
+  );
+});
+
 test('executor handles python (py) subcommands correctly', { skip: true }, async () => {
   // SKIP: This test requires qsv compiled with python feature
   // The py command may not be available in all qsv builds

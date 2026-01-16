@@ -8,6 +8,20 @@
     "subcommand": "to",
     "args": [
       {
+        "name": "subcommand",
+        "type": "string",
+        "required": true,
+        "description": "Subcommand to execute. Valid values: datapackage, ods, parquet, postgres, sqlite, xlsx",
+        "enum": [
+          "datapackage",
+          "ods",
+          "parquet",
+          "postgres",
+          "sqlite",
+          "xlsx"
+        ]
+      },
+      {
         "name": "postgres",
         "type": "string",
         "required": true,

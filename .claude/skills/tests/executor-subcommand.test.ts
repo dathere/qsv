@@ -459,6 +459,75 @@ test('executor validates subcommand against enum values', async () => {
   }
 });
 
+test('executor handles python (py) subcommands correctly', { skip: true }, async () => {
+  // SKIP: This test requires qsv compiled with python feature
+  // The py command may not be available in all qsv builds
+  const executor = new SkillExecutor();
+
+  const pySkill: QsvSkill = {
+    name: 'qsv-python',
+    version: '14.0.0',
+    description: 'Execute Python expressions',
+    category: 'utility',
+    command: {
+      binary: 'qsv',
+      subcommand: 'py',
+      args: [
+        {
+          name: 'subcommand',
+          type: 'string',
+          required: true,
+          description: 'Subcommand to execute',
+          enum: ['map', 'filter']
+        },
+        {
+          name: 'expression',
+          type: 'string',
+          required: true,
+          description: 'Python expression to execute'
+        },
+        {
+          name: 'input',
+          type: 'file',
+          required: false,
+          description: 'Input file'
+        }
+      ],
+      options: []
+    },
+    examples: []
+  };
+
+  const testFile = createTestCSV('a,b\n1,2\n3,4\n');
+
+  try {
+    // Test py filter subcommand
+    // Filter rows where column 'a' (as int) is greater than 1
+    const result = await executor.execute(pySkill, {
+      args: {
+        subcommand: 'filter',
+        expression: 'int(a) > 1'
+      },
+      stdin: fs.readFileSync(testFile)
+    });
+
+    assert.strictEqual(result.success, true, 'py filter should succeed');
+
+    // Verify the command included the subcommand
+    assert.match(
+      result.metadata.command,
+      /qsv py filter/,
+      'Command should include "py filter" subcommand'
+    );
+
+    // Should only have header and row with a=3 (3 > 1)
+    const lines = result.output.trim().split('\n');
+    assert.strictEqual(lines.length, 2, 'Should have header + 1 filtered row');
+  } finally {
+    cleanup(testFile);
+  }
+});
+
 test('buildCommand includes subcommand in generated command string', async () => {
   const executor = new SkillExecutor();
 

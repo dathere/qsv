@@ -40,7 +40,10 @@ function getSubcommand(skill: QsvSkill, params: SkillParams): string | null {
     }
 
     // Otherwise, throw error for missing required subcommand
-    const validSubcommands = (firstArg as any).enum || [];
+    const validSubcommands =
+      'enum' in firstArg && Array.isArray((firstArg as { enum?: unknown }).enum)
+        ? (firstArg as { enum: string[] }).enum
+        : [];
     throw new Error(
       `Missing required subcommand for ${skill.command.subcommand}. ` +
       `Valid subcommands: ${validSubcommands.join(', ')}`

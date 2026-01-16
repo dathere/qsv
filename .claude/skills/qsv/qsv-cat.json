@@ -8,6 +8,17 @@
     "subcommand": "cat",
     "args": [
       {
+        "name": "subcommand",
+        "type": "string",
+        "required": true,
+        "description": "Subcommand to execute. Valid values: columns, rows, rowskey",
+        "enum": [
+          "columns",
+          "rows",
+          "rowskey"
+        ]
+      },
+      {
         "name": "input",
         "type": "file",
         "required": true,

@@ -8,6 +8,16 @@
     "subcommand": "pro",
     "args": [
       {
+        "name": "subcommand",
+        "type": "string",
+        "required": true,
+        "description": "Subcommand to execute. Valid values: lens, workflow",
+        "enum": [
+          "lens",
+          "workflow"
+        ]
+      },
+      {
         "name": "input",
         "type": "file",
         "required": true,

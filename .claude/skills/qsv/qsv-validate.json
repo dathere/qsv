@@ -8,6 +8,15 @@
     "subcommand": "validate",
     "args": [
       {
+        "name": "subcommand",
+        "type": "string",
+        "required": false,
+        "description": "Subcommand to execute. Valid values: schema",
+        "enum": [
+          "schema"
+        ]
+      },
+      {
         "name": "json-schema",
         "type": "string",
         "required": true,

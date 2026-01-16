@@ -8,6 +8,18 @@
     "subcommand": "snappy",
     "args": [
       {
+        "name": "subcommand",
+        "type": "string",
+        "required": true,
+        "description": "Subcommand to execute. Valid values: check, compress, decompress, validate",
+        "enum": [
+          "check",
+          "compress",
+          "decompress",
+          "validate"
+        ]
+      },
+      {
         "name": "input",
         "type": "file",
         "required": true,

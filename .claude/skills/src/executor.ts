@@ -7,36 +7,52 @@ import { spawn } from 'child_process';
 import type { QsvSkill, SkillParams, SkillResult } from './types.js';
 
 /**
- * Determine which apply subcommand to use based on arguments and options
+ * Check if a skill has subcommands by examining its first argument
  *
- * qsv apply has four subcommands:
- *  1. operations   - qsv apply operations <operations> [options] <column> [<input>]
- *  2. emptyreplace - qsv apply emptyreplace --replacement=<string> [options] <column> [<input>]
- *  3. dynfmt       - qsv apply dynfmt --formatstr=<string> [options] --new-column=<name> [<input>]
- *  4. calcconv     - qsv apply calcconv --formatstr=<string> [options] --new-column=<name> [<input>]
- *
- * The JSON file merges all subcommands, so we need to infer which one based on parameters.
+ * Commands with subcommands have "subcommand" as the first argument name
+ * with an enum of valid subcommand values
  */
-function determineApplySubcommand(params: SkillParams): string {
-  // operations mode: has 'operations' argument
-  if (params.args?.operations) {
-    return 'operations';
+function hasSubcommands(skill: QsvSkill): boolean {
+  const firstArg = skill.command.args[0];
+  return firstArg?.name === 'subcommand' && 'enum' in firstArg;
+}
+
+/**
+ * Get the subcommand value from parameters
+ *
+ * For commands with subcommands, the first argument is always named "subcommand"
+ * and the user must provide a value from the enum (unless it's optional)
+ */
+function getSubcommand(skill: QsvSkill, params: SkillParams): string | null {
+  const firstArg = skill.command.args[0];
+
+  if (firstArg.name !== 'subcommand') {
+    throw new Error(`Internal error: expected first arg to be 'subcommand', got '${firstArg.name}'`);
   }
 
-  // emptyreplace mode: has --replacement option
-  if (params.options?.['replacement'] || params.options?.['--replacement']) {
-    return 'emptyreplace';
+  // Get the subcommand value from params
+  const subcommandValue = params.args?.subcommand;
+
+  if (!subcommandValue) {
+    // If subcommand is optional, return null (don't add to args)
+    if (!firstArg.required) {
+      return null;
+    }
+
+    // Otherwise, throw error for missing required subcommand
+    const validSubcommands = (firstArg as any).enum || [];
+    throw new Error(
+      `Missing required subcommand for ${skill.command.subcommand}. ` +
+      `Valid subcommands: ${validSubcommands.join(', ')}`
+    );
   }
 
-  // dynfmt or calcconv mode: has --formatstr option
-  // Default to dynfmt (user can override if needed)
-  if (params.options?.['formatstr'] || params.options?.['--formatstr']) {
-    return 'dynfmt';
-  }
+  const subcommand = String(subcommandValue);
 
-  // Default to operations if no clear indicators
-  console.error('[Executor] WARNING: apply command called without clear mode indicators, defaulting to operations');
-  return 'operations';
+  // Don't validate against enum - let qsv itself validate the subcommand
+  // The enum is for documentation/UI purposes only
+
+  return subcommand;
 }
 
 export class SkillExecutor {
@@ -87,13 +103,16 @@ export class SkillExecutor {
   private buildArgs(skill: QsvSkill, params: SkillParams, forShellScript = false): string[] {
     const args: string[] = [skill.command.subcommand];
 
-    // Handle 'apply' command which has subcommands
-    // The JSON merges all apply subcommands into one file, so we infer the subcommand
-    // from the arguments and options provided
-    if (skill.command.subcommand === 'apply') {
-      const applySubcommand = determineApplySubcommand(params);
-      args.push(applySubcommand);
-      console.error(`[Executor] Added apply subcommand: ${applySubcommand}`);
+    // Handle commands with subcommands
+    // Commands with subcommands have "subcommand" as the first argument with an enum
+    if (hasSubcommands(skill)) {
+      const subcommand = getSubcommand(skill, params);
+      if (subcommand) {
+        args.push(subcommand);
+        console.error(`[Executor] Added ${skill.command.subcommand} subcommand: ${subcommand}`);
+      } else {
+        console.error(`[Executor] No subcommand provided for ${skill.command.subcommand} (optional)`);
+      }
     }
 
     // For stats command, always ensure --stats-jsonl flag is set
@@ -143,7 +162,11 @@ export class SkillExecutor {
     }
 
     // Add positional arguments
-    for (const arg of skill.command.args) {
+    // For commands with subcommands, skip the first argument (it's the subcommand itself)
+    const startIndex = hasSubcommands(skill) ? 1 : 0;
+
+    for (let i = startIndex; i < skill.command.args.length; i++) {
+      const arg = skill.command.args[i];
       const value = params.args?.[arg.name];
 
       if (value !== undefined) {
@@ -240,6 +263,11 @@ export class SkillExecutor {
   private validateParams(skill: QsvSkill, params: SkillParams): void {
     // Validate required arguments
     for (const arg of skill.command.args) {
+      // Skip validation for 'subcommand' argument - handled separately in buildArgs
+      if (arg.name === 'subcommand' && hasSubcommands(skill)) {
+        continue;
+      }
+
       if (arg.required && !params.args?.[arg.name]) {
         // Skip input validation if stdin is provided
         if (arg.name === 'input' && params.stdin) {

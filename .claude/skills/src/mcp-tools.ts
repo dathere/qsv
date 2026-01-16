@@ -98,7 +98,8 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
   'template': 'Generate formatted output from CSV (Handlebars). For reports, markdown, HTML.',
   'index': 'Create .idx index. Run FIRST for files >10MB queried multiple times. Enables instant counts, fast slicing.',
   'diff': 'Compare CSV files (added/deleted/modified rows). Requires same schema.',
-  'cat': 'Concatenate CSV files. Modes: rows (stack), rowskey (with source), columns (side-by-side).',
+  'cat': 'Concatenate CSV files. Subcommands: rows (stack vertically), rowskey (different schemas), columns (side-by-side). Specify via subcommand parameter.',
+  'geocode': 'Geocode locations using Geonames/MaxMind. Subcommands: suggest, reverse, countryinfo, iplookup, index-* operations. Specify via subcommand parameter.',
 };
 
 /**
@@ -117,6 +118,8 @@ const COMMON_PATTERNS: Record<string, string> = {
   'validate': 'Iterate: qsv_schema → validate → fix → validate until clean.',
   'dedup': 'Often followed by stats: dedup → stats for distribution.',
   'sort': 'Before joins or top-N: sort DESC → slice --end 10.',
+  'cat': 'Combine files: cat rows → headers from first file only. cat rowskey → handles different schemas. cat columns → side-by-side merge.',
+  'geocode': 'Common: suggest for city lookup, reverse for lat/lon → city, iplookup for IP → location. Run index-update first for latest data.',
 };
 
 /**
@@ -134,6 +137,8 @@ const ERROR_PREVENTION_HINTS: Record<string, string> = {
   'luau': 'Needs Luau feature. qsv_apply faster for simple ops.',
   'foreach': 'Slow for large files. Prefer qsv_apply or qsv_luau.',
   'searchset': 'Needs regex file. qsv_search easier for simple patterns.',
+  'cat': 'rows mode requires same column order. Use rowskey for different schemas.',
+  'geocode': 'Needs Geonames index (auto-downloads on first use). iplookup needs MaxMind GeoLite2 DB.',
 };
 
 /**
@@ -331,11 +336,11 @@ async function shouldUseTempFile(command: string, inputFile: string): Promise<bo
 }
 
 /**
- * 11 most essential qsv commands exposed as individual MCP tools
+ * 13 most essential qsv commands exposed as individual MCP tools
  * Optimized for token efficiency while maintaining high-value tool access
  *
  * Commands moved to qsv_command generic tool:
- * join, sort, dedup, apply, rename, validate, sample, template, diff, cat, schema
+ * join, sort, dedup, apply, rename, validate, sample, template, diff, schema
  */
 export const COMMON_COMMANDS = [
   'select',      // Column selection (most frequently used)
@@ -349,6 +354,8 @@ export const COMMON_COMMANDS = [
   'slice',       // Row selection
   'sqlp',        // SQL queries (Polars engine)
   'joinp',       // High-performance joins (Polars engine)
+  'cat',         // Concatenate CSV files (rows/columns)
+  'geocode',     // Geocoding operations
 ] as const;
 
 /**
@@ -404,6 +411,13 @@ function enhanceDescription(skill: QsvSkill): string {
   const whenToUse = WHEN_TO_USE_GUIDANCE[commandName];
   if (whenToUse) {
     description += `\n\n💡 ${whenToUse}`;
+  }
+
+  // Add subcommand requirement for commands that need it
+  if (commandName === 'cat') {
+    description += `\n\n🔧 SUBCOMMAND: Pass subcommand via args (e.g., args: {subcommand: "rows", input: "file.csv"}). Defaults to "rows" if omitted.`;
+  } else if (commandName === 'geocode') {
+    description += `\n\n🔧 SUBCOMMAND: Must pass subcommand via args (e.g., args: {subcommand: "suggest", column: "city", input: "data.csv"}).`;
   }
 
   // Add common patterns (helps Claude compose workflows)
@@ -1033,7 +1047,7 @@ export function createGenericToolDefinition(loader: SkillLoader): McpToolDefinit
     name: 'qsv_command',
     description: `Execute any qsv command not exposed as a dedicated tool (${remainingCommands} additional commands available).
 
-Common commands via this tool: join, sort, dedup, apply, rename, validate, sample, template, diff, cat, schema, and 40+ more.
+Common commands via this tool: join, sort, dedup, apply, rename, validate, sample, template, diff, schema, and 40+ more.
 
 ❓ HELP: For any command details, use options={"--help": true}. Example: command="apply", options={"--help": true}`,
     inputSchema: {

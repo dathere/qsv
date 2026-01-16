@@ -415,7 +415,7 @@ function enhanceDescription(skill: QsvSkill): string {
 
   // Add subcommand requirement for commands that need it
   if (commandName === 'cat') {
-    description += `\n\n🔧 SUBCOMMAND: Pass subcommand via args (e.g., args: {subcommand: "rows", input: "file.csv"}). Defaults to "rows" if omitted.`;
+    description += `\n\n🔧 SUBCOMMAND: Must pass subcommand via args (e.g., args: {subcommand: "rows", input: "file.csv"}).`;
   } else if (commandName === 'geocode') {
     description += `\n\n🔧 SUBCOMMAND: Must pass subcommand via args (e.g., args: {subcommand: "suggest", column: "city", input: "data.csv"}).`;
   }

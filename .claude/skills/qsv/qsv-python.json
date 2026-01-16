@@ -8,6 +8,16 @@
     "subcommand": "python",
     "args": [
       {
+        "name": "subcommand",
+        "type": "string",
+        "required": true,
+        "description": "Subcommand to execute. Valid values: filter, map",
+        "enum": [
+          "filter",
+          "map"
+        ]
+      },
+      {
         "name": "expression",
         "type": "string",
         "required": true,

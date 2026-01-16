@@ -8,6 +8,15 @@
     "subcommand": "enumerate",
     "args": [
       {
+        "name": "subcommand",
+        "type": "string",
+        "required": true,
+        "description": "Subcommand to execute. Valid values: enum",
+        "enum": [
+          "enum"
+        ]
+      },
+      {
         "name": "input",
         "type": "file",
         "required": true,

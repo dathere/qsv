@@ -6,6 +6,39 @@
 import { spawn } from 'child_process';
 import type { QsvSkill, SkillParams, SkillResult } from './types.js';
 
+/**
+ * Determine which apply subcommand to use based on arguments and options
+ *
+ * qsv apply has four subcommands:
+ *  1. operations   - qsv apply operations <operations> [options] <column> [<input>]
+ *  2. emptyreplace - qsv apply emptyreplace --replacement=<string> [options] <column> [<input>]
+ *  3. dynfmt       - qsv apply dynfmt --formatstr=<string> [options] --new-column=<name> [<input>]
+ *  4. calcconv     - qsv apply calcconv --formatstr=<string> [options] --new-column=<name> [<input>]
+ *
+ * The JSON file merges all subcommands, so we need to infer which one based on parameters.
+ */
+function determineApplySubcommand(params: SkillParams): string {
+  // operations mode: has 'operations' argument
+  if (params.args?.operations) {
+    return 'operations';
+  }
+
+  // emptyreplace mode: has --replacement option
+  if (params.options?.['replacement'] || params.options?.['--replacement']) {
+    return 'emptyreplace';
+  }
+
+  // dynfmt or calcconv mode: has --formatstr option
+  // Default to dynfmt (user can override if needed)
+  if (params.options?.['formatstr'] || params.options?.['--formatstr']) {
+    return 'dynfmt';
+  }
+
+  // Default to operations if no clear indicators
+  console.error('[Executor] WARNING: apply command called without clear mode indicators, defaulting to operations');
+  return 'operations';
+}
+
 export class SkillExecutor {
   private qsvBinary: string;
 
@@ -54,34 +87,13 @@ export class SkillExecutor {
   private buildArgs(skill: QsvSkill, params: SkillParams, forShellScript = false): string[] {
     const args: string[] = [skill.command.subcommand];
 
-    // Special handling for 'apply' command which has subcommands/modes
-    // qsv apply has four modes: operations, emptyreplace, dynfmt, calcconv
-    // The mode needs to be inserted after 'apply' but before the arguments
+    // Handle 'apply' command which has subcommands
+    // The JSON merges all apply subcommands into one file, so we infer the subcommand
+    // from the arguments and options provided
     if (skill.command.subcommand === 'apply') {
-      // Determine which apply mode to use based on parameters
-      let applyMode: string | undefined;
-
-      if (params.args?.operations) {
-        // operations mode: qsv apply operations <operations> [options] <column> [<input>]
-        applyMode = 'operations';
-      } else if (params.options?.['replacement'] || params.options?.['--replacement']) {
-        // emptyreplace mode: qsv apply emptyreplace --replacement=<string> [options] <column> [<input>]
-        applyMode = 'emptyreplace';
-      } else if (params.options?.['formatstr'] || params.options?.['--formatstr']) {
-        // dynfmt or calcconv mode - both use --formatstr
-        // Default to operations if we have an operations arg, otherwise dynfmt
-        // User can override by passing the mode explicitly
-        applyMode = 'dynfmt';
-      }
-
-      // Add the mode as the next argument after 'apply'
-      if (applyMode) {
-        args.push(applyMode);
-        console.error(`[Executor] Added apply mode: ${applyMode}`);
-      } else {
-        console.error('[Executor] WARNING: apply command called without clear mode, defaulting to operations');
-        args.push('operations');
-      }
+      const applySubcommand = determineApplySubcommand(params);
+      args.push(applySubcommand);
+      console.error(`[Executor] Added apply subcommand: ${applySubcommand}`);
     }
 
     // For stats command, always ensure --stats-jsonl flag is set

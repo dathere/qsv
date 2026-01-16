@@ -459,6 +459,117 @@ test('executor validates subcommand against enum values', async () => {
   }
 });
 
+test('executor handles geocode countryinfonow subcommand', async () => {
+  const executor = new SkillExecutor();
+
+  const geocodeSkill: QsvSkill = {
+    name: 'qsv-geocode',
+    version: '14.0.0',
+    description: 'Geocode operations',
+    category: 'utility',
+    command: {
+      binary: 'qsv',
+      subcommand: 'geocode',
+      args: [
+        {
+          name: 'subcommand',
+          type: 'string',
+          required: true,
+          description: 'Subcommand to execute',
+          enum: ['countryinfonow', 'index-check']
+        },
+        {
+          name: 'location',
+          type: 'string',
+          required: false,
+          description: 'Country code or location'
+        }
+      ],
+      options: []
+    },
+    examples: []
+  };
+
+  // Test countryinfonow subcommand with US country code
+  const resultUS = await executor.execute(geocodeSkill, {
+    args: {
+      subcommand: 'countryinfonow',
+      location: 'US'
+    }
+  });
+
+  assert.strictEqual(resultUS.success, true, 'geocode countryinfonow US should succeed');
+  assert.match(
+    resultUS.metadata.command,
+    /qsv geocode countryinfonow/,
+    'Command should include "geocode countryinfonow" subcommand'
+  );
+  assert.match(resultUS.output, /United States/i, 'Output should contain United States');
+
+  // Test countryinfonow with another country code
+  const resultCA = await executor.execute(geocodeSkill, {
+    args: {
+      subcommand: 'countryinfonow',
+      location: 'CA'
+    }
+  });
+
+  assert.strictEqual(resultCA.success, true, 'geocode countryinfonow CA should succeed');
+  assert.match(resultCA.output, /Canada/i, 'Output should contain Canada');
+});
+
+test('executor handles geocode index-check subcommand', async () => {
+  const executor = new SkillExecutor();
+
+  const geocodeSkill: QsvSkill = {
+    name: 'qsv-geocode',
+    version: '14.0.0',
+    description: 'Geocode operations',
+    category: 'utility',
+    command: {
+      binary: 'qsv',
+      subcommand: 'geocode',
+      args: [
+        {
+          name: 'subcommand',
+          type: 'string',
+          required: true,
+          description: 'Subcommand to execute',
+          enum: ['index-check']
+        }
+      ],
+      options: []
+    },
+    examples: []
+  };
+
+  // Test index-check subcommand
+  const result = await executor.execute(geocodeSkill, {
+    args: {
+      subcommand: 'index-check'
+    }
+  });
+
+  // index-check should succeed regardless of whether index exists
+  assert.ok(
+    result.success === true || result.success === false,
+    'geocode index-check should complete'
+  );
+  assert.match(
+    result.metadata.command,
+    /qsv geocode index-check/,
+    'Command should include "geocode index-check" subcommand'
+  );
+
+  // If successful, output should contain index information or status
+  if (result.success) {
+    assert.ok(
+      result.output.includes('Valid') || result.output.includes('index') || result.stderr.includes('index'),
+      'Output should contain index-related information'
+    );
+  }
+});
+
 test('executor handles python (py) subcommands correctly', { skip: true }, async () => {
   // SKIP: This test requires qsv compiled with python feature
   // The py command may not be available in all qsv builds

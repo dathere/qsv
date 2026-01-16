@@ -289,8 +289,7 @@ use indicatif::HumanCount;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use jsonschema::{
-    EmailOptions, Keyword, PatternOptions, ValidationError, Validator,
-    paths::{LazyLocation, Location},
+    EmailOptions, Keyword, PatternOptions, ValidationError, Validator, paths::Location,
 };
 use log::debug;
 use qsv_currency::Currency;
@@ -334,12 +333,7 @@ macro_rules! fail_validation_error {
         use log::error;
         let err = format!($($t)*);
         error!("{err}");
-        Err(ValidationError::custom(
-            Location::default(),
-            Location::default(),
-            &Value::Null,
-            err,
-        ))
+        Err(ValidationError::custom(err))
     }};
 }
 
@@ -429,17 +423,12 @@ impl Keyword for DynEnumValidator {
     fn validate<'instance>(
         &self,
         instance: &'instance Value,
-        instance_path: &LazyLocation,
     ) -> Result<(), ValidationError<'instance>> {
         if self.dynenum_set.contains(instance.as_str().unwrap()) {
             Ok(())
         } else {
-            let error = ValidationError::custom(
-                Location::default(),
-                instance_path.into(),
-                instance,
-                format!("{instance} is not a valid dynamicEnum value"),
-            );
+            let error =
+                ValidationError::custom(format!("{instance} is not a valid dynamicEnum value"));
             Err(error)
         }
     }
@@ -474,16 +463,10 @@ impl Keyword for UniqueCombinedWithValidator {
     fn validate<'instance>(
         &self,
         instance: &'instance Value,
-        instance_path: &LazyLocation,
     ) -> Result<(), ValidationError<'instance>> {
-        let obj = instance.as_object().ok_or_else(|| {
-            ValidationError::custom(
-                Location::default(),
-                instance_path.into(),
-                instance,
-                "Instance must be an object",
-            )
-        })?;
+        let obj = instance
+            .as_object()
+            .ok_or_else(|| ValidationError::custom("Instance must be an object"))?;
 
         let mut values = Vec::with_capacity(self.column_names.len() + self.column_indices.len());
 
@@ -526,12 +509,9 @@ impl Keyword for UniqueCombinedWithValidator {
             }
 
             let column_desc = column_desc_parts.join(", ");
-            return Err(ValidationError::custom(
-                Location::default(),
-                instance_path.into(),
-                instance,
-                format!("Combination of values for columns {column_desc} is not unique"),
-            ));
+            return Err(ValidationError::custom(format!(
+                "Combination of values for columns {column_desc} is not unique"
+            )));
         }
 
         seen.insert(combination);
@@ -573,16 +553,11 @@ impl Keyword for UniqueCombinedWithValidator {
 fn unique_combined_with_validator_factory<'a>(
     _parent: &'a Map<String, Value>,
     value: &'a Value,
-    location: Location,
+    _location: Location,
 ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
     // Get the array of column names/indices
     let columns = value.as_array().ok_or_else(|| {
-        ValidationError::custom(
-            Location::default(),
-            location.clone(),
-            value,
-            "'uniqueCombinedWith' must be an array of column names or indices",
-        )
+        ValidationError::custom("'uniqueCombinedWith' must be an array of column names or indices")
     })?;
 
     let col_len = columns.len();
@@ -597,12 +572,7 @@ fn unique_combined_with_validator_factory<'a>(
         } else {
             // Try as string
             let name = col.as_str().ok_or_else(|| {
-                ValidationError::custom(
-                    Location::default(),
-                    location.clone(),
-                    col,
-                    "Column names must be strings or numbers",
-                )
+                ValidationError::custom("Column names must be strings or numbers")
             })?;
             column_names.push(name.to_string());
         }
@@ -611,9 +581,6 @@ fn unique_combined_with_validator_factory<'a>(
     // Validate that we have at least one column
     if column_names.is_empty() && column_indices.is_empty() {
         return Err(ValidationError::custom(
-            Location::default(),
-            location,
-            value,
             "'uniqueCombinedWith' must specify at least one column",
         ));
     }
@@ -888,13 +855,10 @@ fn test_parse_dynenum_uri() {
 fn dyn_enum_validator_factory<'a>(
     _parent: &'a Map<String, Value>,
     value: &'a Value,
-    location: Location,
+    _location: Location,
 ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
     let uri = value.as_str().ok_or_else(|| {
         ValidationError::custom(
-            Location::default(),
-            location,
-            value,
             "'dynamicEnum' must be set to a CSV file on the local filesystem or on a URL.",
         )
     })?;
@@ -978,7 +942,7 @@ fn dyn_enum_validator_factory<'a>(
 fn dyn_enum_validator_factory<'a>(
     _parent: &'a Map<String, Value>,
     value: &'a Value,
-    location: Location,
+    _location: Location,
 ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
     if let Value::String(uri) = value {
         let temp_download = match NamedTempFile::new() {
@@ -993,12 +957,7 @@ fn dyn_enum_validator_factory<'a>(
 
         let dynenum_path = if base_uri.starts_with("http") {
             let valid_url = reqwest::Url::parse(base_uri).map_err(|e| {
-                ValidationError::custom(
-                    Location::default(),
-                    location,
-                    value,
-                    format!("Error parsing dynamicEnum URL: {e}"),
-                )
+                ValidationError::custom(format!("Error parsing dynamicEnum URL: {e}"))
             })?;
 
             // download the CSV file from the URL
@@ -1076,9 +1035,6 @@ fn dyn_enum_validator_factory<'a>(
         Ok(Box::new(DynEnumValidator::new(enum_set)))
     } else {
         Err(ValidationError::custom(
-            Location::default(),
-            location,
-            value,
             "'dynamicEnum' must be set to a CSV file on the local filesystem or on a URL.",
         ))
     }
@@ -2576,7 +2532,7 @@ fn test_dyn_enum_validator() {
         Err(e) => {
             assert_eq!(
                 format!("{e:?}"),
-                r#"ValidationError { repr: ValidationErrorRepr { instance: String("lanzones"), kind: Custom { message: "\"lanzones\" is not a valid dynamicEnum value" }, instance_path: Location(""), schema_path: Location("") } }"#
+                r#"ValidationError { repr: ValidationErrorRepr { instance: String("lanzones"), kind: Custom { message: "\"lanzones\" is not a valid dynamicEnum value" }, instance_path: Location(""), schema_path: Location("/dynamicEnum"), tracker: SameAsSchemaPath } }"#
             );
         },
         _ => {

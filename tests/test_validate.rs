@@ -1539,7 +1539,8 @@ fn validate_invalid_json_schema_file() {
         got,
         "JSON Schema Meta-Reference Error: Resource \
          'https://json-schema.org/draft/2020-25/schema' is not present in a registry and \
-         retrieving it failed: error decoding response body\n"
+         retrieving it failed: error sending request for url \
+         (https://json-schema.org/draft/2020-25/schema)\n"
     );
 
     // Create schema with format validation
@@ -1751,7 +1752,8 @@ fn validate_schema_subcommand_invalid_draft() {
     let expected =
         "JSON Schema Meta-Reference Error: Resource \
          'https://json-schema.org/draft/2020-25/schema' is not present in a registry and \
-         retrieving it failed: error decoding response body\n";
+         retrieving it failed: error sending request for url \
+         (https://json-schema.org/draft/2020-25/schema)\n";
     assert_eq!(got, expected);
 }
 

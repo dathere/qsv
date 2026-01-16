@@ -146,7 +146,7 @@ jaq-core = "2"
 jaq-json = { version = "1", features = ["serde_json"] }
 jaq-std = "2"
 json-objects-to-csv = "0.1.3"
-jsonschema = { version = "0.38", features = [
+jsonschema = { version = "0.39", features = [
     "resolve-file",
     "resolve-http",
 ], default-features = false }

@@ -8,6 +8,18 @@
     "subcommand": "apply",
     "args": [
       {
+        "name": "subcommand",
+        "type": "string",
+        "required": true,
+        "description": "Subcommand to execute. Valid values: calcconv, dynfmt, emptyreplace, operations",
+        "enum": [
+          "calcconv",
+          "dynfmt",
+          "emptyreplace",
+          "operations"
+        ]
+      },
+      {
         "name": "operations",
         "type": "string",
         "required": true,

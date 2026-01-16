@@ -8,6 +8,16 @@
     "subcommand": "luau",
     "args": [
       {
+        "name": "subcommand",
+        "type": "string",
+        "required": true,
+        "description": "Subcommand to execute. Valid values: filter, map",
+        "enum": [
+          "filter",
+          "map"
+        ]
+      },
+      {
         "name": "main-script",
         "type": "string",
         "required": true,

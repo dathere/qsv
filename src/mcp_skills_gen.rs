@@ -45,6 +45,8 @@ struct Argument {
     description: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     examples:    Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    r#enum:      Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -145,9 +147,32 @@ impl UsageParser {
 
         let mut args_map = std::collections::HashMap::new();
         let mut options = Vec::new();
+        let mut subcommands = Vec::new();
 
         // Also parse manually to get descriptions
         let manual_descriptions = self.extract_descriptions_from_text();
+
+        // First pass: collect all subcommands
+        for (atom, _opts) in parser.descs.iter() {
+            if let Atom::Command(cmd_name) = atom {
+                // Filter out invalid/spurious subcommands:
+                // - The main command name itself
+                // - "--" (docopt option separator)
+                // - Very short names that are likely not subcommands
+                // - Names that look like options or arguments
+                if cmd_name != &self.command_name
+                    && cmd_name != "--"
+                    && cmd_name.len() > 2
+                    && !cmd_name.starts_with('-')
+                {
+                    subcommands.push(cmd_name.clone());
+                }
+            }
+        }
+
+        // Remove duplicates and sort for consistent output
+        subcommands.sort();
+        subcommands.dedup();
 
         // Iterate over parsed atoms from docopt
         for (atom, opts) in parser.descs.iter() {
@@ -301,6 +326,7 @@ impl UsageParser {
                             required: !opts.arg.has_default(), // If it has a default, it's optional
                             description,
                             examples: Vec::new(),
+                            r#enum: None,
                         },
                     );
                 },
@@ -314,6 +340,27 @@ impl UsageParser {
         // Reorder args based on their appearance in the USAGE line
         let arg_order = self.extract_arg_order_from_usage();
         let mut args = Vec::new();
+
+        // If subcommands were detected, add a synthetic subcommand argument first
+        if !subcommands.is_empty() {
+            let subcommand_desc = format!(
+                "Subcommand to execute. Valid values: {}",
+                subcommands.join(", ")
+            );
+
+            // Special case: validate command has optional schema subcommand
+            let is_optional = self.command_name == "validate" && subcommands.len() == 1;
+
+            args.push(Argument {
+                name:        "subcommand".to_string(),
+                arg_type:    "string".to_string(),
+                required:    !is_optional,
+                description: subcommand_desc,
+                examples:    Vec::new(),
+                r#enum:      Some(subcommands),
+            });
+        }
+
         for arg_name in arg_order {
             if let Some(arg) = args_map.remove(&arg_name) {
                 args.push(arg);

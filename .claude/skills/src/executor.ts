@@ -54,33 +54,26 @@ export class SkillExecutor {
   private buildArgs(skill: QsvSkill, params: SkillParams, forShellScript = false): string[] {
     const args: string[] = [skill.command.subcommand];
 
-    // Special handling for 'apply' command which has subcommands/modes
-    // qsv apply has four modes: operations, emptyreplace, dynfmt, calcconv
-    // The mode needs to be inserted after 'apply' but before the arguments
-    if (skill.command.subcommand === 'apply') {
-      // Determine which apply mode to use based on parameters
-      let applyMode: string | undefined;
+    // Generic handling for commands with explicit subcommand arguments
+    // If the first argument in the skill definition is named "subcommand", extract and insert it
+    if (skill.command.args.length > 0 && skill.command.args[0].name === 'subcommand') {
+      const subcommandValue = params.args?.subcommand;
 
-      if (params.args?.operations) {
-        // operations mode: qsv apply operations <operations> [options] <column> [<input>]
-        applyMode = 'operations';
-      } else if (params.options?.['replacement'] || params.options?.['--replacement']) {
-        // emptyreplace mode: qsv apply emptyreplace --replacement=<string> [options] <column> [<input>]
-        applyMode = 'emptyreplace';
-      } else if (params.options?.['formatstr'] || params.options?.['--formatstr']) {
-        // dynfmt or calcconv mode - both use --formatstr
-        // Default to operations if we have an operations arg, otherwise dynfmt
-        // User can override by passing the mode explicitly
-        applyMode = 'dynfmt';
-      }
+      if (subcommandValue) {
+        // Insert subcommand after the main command
+        args.push(String(subcommandValue));
+        console.error(`[Executor] Added ${skill.command.subcommand} subcommand: ${subcommandValue}`);
 
-      // Add the mode as the next argument after 'apply'
-      if (applyMode) {
-        args.push(applyMode);
-        console.error(`[Executor] Added apply mode: ${applyMode}`);
-      } else {
-        console.error('[Executor] WARNING: apply command called without clear mode, defaulting to operations');
-        args.push('operations');
+        // Remove from params.args so it's not added again as a positional argument
+        if (params.args) {
+          delete params.args.subcommand;
+        }
+      } else if (skill.command.args[0].required) {
+        // Subcommand is required but not provided
+        throw new Error(
+          `Missing required subcommand for '${skill.command.subcommand}'. ` +
+          `Valid subcommands: ${skill.command.args[0].enum?.join(', ') || 'see --help'}`
+        );
       }
     }
 
@@ -132,6 +125,11 @@ export class SkillExecutor {
 
     // Add positional arguments
     for (const arg of skill.command.args) {
+      // Skip subcommand - it's already been handled above
+      if (arg.name === 'subcommand') {
+        continue;
+      }
+
       const value = params.args?.[arg.name];
 
       if (value !== undefined) {
@@ -231,6 +229,10 @@ export class SkillExecutor {
       if (arg.required && !params.args?.[arg.name]) {
         // Skip input validation if stdin is provided
         if (arg.name === 'input' && params.stdin) {
+          continue;
+        }
+        // Skip subcommand validation - it's handled specially in buildArgs
+        if (arg.name === 'subcommand') {
           continue;
         }
         throw new Error(`Missing required argument: ${arg.name}`);

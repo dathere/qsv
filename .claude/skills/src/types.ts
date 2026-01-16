@@ -25,6 +25,7 @@ export interface Argument {
   required: boolean;
   description: string;
   examples?: string[];
+  enum?: string[];
 }
 
 export interface Option {

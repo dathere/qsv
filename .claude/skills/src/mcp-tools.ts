@@ -479,6 +479,12 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
         type: mapArgumentType(arg.type),
         description: arg.description,
       };
+
+      // Add enum if present (for subcommands)
+      if ('enum' in arg && Array.isArray(arg.enum) && arg.enum.length > 0) {
+        properties[arg.name].enum = arg.enum;
+      }
+
       if (arg.required) {
         required.push(arg.name);
       }

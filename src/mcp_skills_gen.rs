@@ -45,6 +45,8 @@ struct Argument {
     description: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     examples:    Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    r#enum:      Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -145,6 +147,7 @@ impl UsageParser {
 
         let mut args_map = std::collections::HashMap::new();
         let mut options = Vec::new();
+        let mut subcommands = Vec::new();
 
         // Also parse manually to get descriptions
         let manual_descriptions = self.extract_descriptions_from_text();
@@ -320,19 +323,51 @@ impl UsageParser {
                             required: !opts.arg.has_default(), // If it has a default, it's optional
                             description,
                             examples: Vec::new(),
+                            r#enum: None,
                         },
                     );
                 },
-                Atom::Command(_) => {
-                    // Skip commands - we're only interested in args/options
-                    continue;
+                Atom::Command(cmd_name) => {
+                    // Collect subcommand names (e.g., "rows", "rowskey", "columns" for cat command)
+                    // Skip the main command name itself (e.g., skip "cat" when parsing cat command)
+                    // Also skip "--" which is just a docopt separator, not a real subcommand
+                    if cmd_name != &self.command_name && cmd_name != "--" {
+                        subcommands.push(cmd_name.clone());
+                    }
                 },
             }
+        }
+
+        // If subcommands were found, create a special "subcommand" argument
+        // This should be the first argument in the list
+        if !subcommands.is_empty() {
+            // Extract description for subcommands from USAGE text
+            let subcommand_desc = self.extract_subcommand_description(&subcommands);
+
+            // Create subcommand argument with enum of valid values
+            let subcommand_arg = Argument {
+                name:        "subcommand".to_string(),
+                arg_type:    "string".to_string(),
+                required:    true, // Subcommands are typically required
+                description: subcommand_desc,
+                examples:    Vec::new(),
+                r#enum:      Some(subcommands),
+            };
+
+            // Insert at the beginning of args_map (will be reordered below)
+            args_map.insert("subcommand".to_string(), subcommand_arg);
         }
 
         // Reorder args based on their appearance in the USAGE line
         let arg_order = self.extract_arg_order_from_usage();
         let mut args = Vec::new();
+
+        // If we have subcommands, add the subcommand argument first
+        if let Some(subcommand_arg) = args_map.remove("subcommand") {
+            args.push(subcommand_arg);
+        }
+
+        // Then add other args in their USAGE order
         for arg_name in arg_order {
             if let Some(arg) = args_map.remove(&arg_name) {
                 args.push(arg);
@@ -343,6 +378,21 @@ impl UsageParser {
         options.sort_by(|a, b| a.flag.cmp(&b.flag));
 
         Ok((args, options))
+    }
+
+    /// Extract description for subcommand argument
+    /// Creates a helpful description listing available subcommands
+    fn extract_subcommand_description(&self, subcommands: &[String]) -> String {
+        if subcommands.is_empty() {
+            return String::new();
+        }
+
+        // Simple and clean: just list the valid subcommand values
+        // Detailed help for each subcommand is available via --help
+        format!(
+            "Subcommand to execute. Valid values: {}",
+            subcommands.join(", ")
+        )
     }
 
     /// Extract descriptions from the usage text manually

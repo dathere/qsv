@@ -968,11 +968,8 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         eprintln!("Processing: {cmd_name}");
 
         // Find command file
-        // Note: enumerate.rs is invoked as "enum", so we need to use the file name
+        // Note: enumerate.rs is invoked as "enum", python.rs as "py"
         let cmd_file = repo_root.join(format!("src/cmd/{cmd_name}.rs"));
-
-        // Get the actual command name from USAGE (for enumerate -> enum mapping)
-        let actual_cmd_name = cmd_name;
 
         if !cmd_file.exists() {
             eprintln!("  ❌ File not found: {}", cmd_file.display());
@@ -999,7 +996,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         } else if usage_text.contains("qsv py ") {
             "py"
         } else {
-            actual_cmd_name
+            cmd_name
         };
 
         let parser = UsageParser::new(usage_text, invocation_name.to_string());

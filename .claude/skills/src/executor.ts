@@ -70,7 +70,8 @@ export class SkillExecutor {
    */
   async execute(skill: QsvSkill, params: SkillParams): Promise<SkillResult> {
     // Skip validation when --help is requested (no input file needed for help)
-    const isHelpRequest = params.options?.['help'] || params.options?.['--help'] || params.options?.['-h'];
+    // Note: mcp-tools.ts normalizes all help requests to options['help'] = true
+    const isHelpRequest = params.options?.['help'] === true;
 
     if (!isHelpRequest) {
       // Validate parameters only when not requesting help
@@ -112,7 +113,8 @@ export class SkillExecutor {
     const args: string[] = [skill.command.subcommand];
 
     // Check if this is a help request
-    const isHelpRequest = params.options?.['help'] || params.options?.['--help'] || params.options?.['-h'];
+    // Note: mcp-tools.ts normalizes all help requests to options['help'] = true
+    const isHelpRequest = params.options?.['help'] === true;
 
     // Handle commands with subcommands
     // Commands with subcommands have "subcommand" as the first argument with an enum
@@ -152,7 +154,8 @@ export class SkillExecutor {
         const normalizedKey = key.startsWith('--') ? key.substring(2) : key.startsWith('-') ? key.substring(1) : key;
 
         // --help is universally available for all qsv commands, even if not in skill definition
-        if (normalizedKey === 'help' || key === '--help' || key === '-h') {
+        // Note: mcp-tools.ts normalizes all help requests to options['help'] = true
+        if (normalizedKey === 'help') {
           if (value) args.push('--help');
           continue;
         }

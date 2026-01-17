@@ -257,16 +257,56 @@ const PIPE: char = BOX[1][0];
 // fill
 //
 
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+fn truncate_to_display_width(s: &str, max_width: usize) -> &str {
+    if max_width == 0 {
+        return "";
+    }
+
+    let mut width = 0;
+    let mut end = 0;
+
+    for (idx, ch) in s.char_indices() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + ch_width > max_width {
+            break;
+        }
+        width += ch_width;
+        end = idx + ch.len_utf8();
+    }
+
+    &s[..end]
+}
+
 fn fill(s: &str, width: usize) -> String {
     if width == 0 {
         return String::new();
     }
 
     let s = s.trim();
-    match s.chars().count() {
-        len if len == width => s.to_string(),
-        len if len < width => format!("{s:<width$}"),
-        _ => format!("{}…", &s[..s.floor_char_boundary(width - 1)]),
+    let display_width = UnicodeWidthStr::width(s);
+
+    match display_width.cmp(&width) {
+        std::cmp::Ordering::Equal => s.to_string(),
+        std::cmp::Ordering::Less => {
+            let pad = width - display_width;
+            let mut result = String::with_capacity(s.len() + pad);
+            result.push_str(s);
+            result.extend(std::iter::repeat(' ').take(pad));
+            result
+        }
+        std::cmp::Ordering::Greater => {
+            if width == 1 {
+                "…".to_string()
+            } else {
+                let prefix = truncate_to_display_width(s, width - 1);
+                let mut result = String::with_capacity(prefix.len() + '…'.len_utf8());
+                result.push_str(prefix);
+                result.push('…');
+                result
+            }
+        }
     }
 }
 

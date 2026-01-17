@@ -369,51 +369,51 @@ enum OutputFormat {
 }
 #[derive(Debug, Deserialize)]
 struct Args {
-    arg_input:             Option<String>,
-    flag_dictionary:       bool,
-    flag_description:      bool,
-    flag_tags:             bool,
-    flag_all:              bool,
-    flag_num_tags:         u16,
-    flag_tag_vocab:        Option<String>,
+    arg_input:              Option<String>,
+    flag_dictionary:        bool,
+    flag_description:       bool,
+    flag_tags:              bool,
+    flag_all:               bool,
+    flag_num_tags:          u16,
+    flag_tag_vocab:         Option<String>,
     #[allow(dead_code)]
-    flag_cache_dir:        String,
+    flag_cache_dir:         String,
     #[allow(dead_code)]
-    flag_ckan_api:         String,
+    flag_ckan_api:          String,
     #[allow(dead_code)]
-    flag_ckan_token:       Option<String>,
-    flag_stats_options:    String,
+    flag_ckan_token:        Option<String>,
+    flag_stats_options:     String,
     flag_frequency_options: String,
-    flag_enum_threshold:   usize,
-    flag_num_examples:     u16,
-    flag_truncate_str:     usize,
-    flag_prompt:           Option<String>,
-    flag_sql_results:      Option<String>,
-    flag_prompt_file:      Option<String>,
-    flag_sample_size:      u16,
-    flag_fewshot_examples: bool,
-    flag_base_url:         Option<String>,
-    flag_model:            Option<String>,
-    flag_language:         Option<String>,
-    flag_addl_props:       Option<String>,
-    flag_api_key:          Option<String>,
-    flag_max_tokens:       u32,
-    flag_timeout:          u16,
-    flag_user_agent:       Option<String>,
-    flag_export_prompt:    Option<String>,
-    flag_no_cache:         bool,
-    flag_disk_cache_dir:   Option<String>,
-    flag_redis_cache:      bool,
-    flag_fresh:            bool,
-    flag_forget:           bool,
-    flag_flush_cache:      bool,
-    flag_format:           Option<String>,
-    flag_output:           Option<String>,
-    flag_quiet:            bool,
-    flag_addl_cols:        bool,
-    flag_addl_cols_list:   Option<String>,
-    flag_session:          Option<String>,
-    flag_session_len:      usize,
+    flag_enum_threshold:    usize,
+    flag_num_examples:      u16,
+    flag_truncate_str:      usize,
+    flag_prompt:            Option<String>,
+    flag_sql_results:       Option<String>,
+    flag_prompt_file:       Option<String>,
+    flag_sample_size:       u16,
+    flag_fewshot_examples:  bool,
+    flag_base_url:          Option<String>,
+    flag_model:             Option<String>,
+    flag_language:          Option<String>,
+    flag_addl_props:        Option<String>,
+    flag_api_key:           Option<String>,
+    flag_max_tokens:        u32,
+    flag_timeout:           u16,
+    flag_user_agent:        Option<String>,
+    flag_export_prompt:     Option<String>,
+    flag_no_cache:          bool,
+    flag_disk_cache_dir:    Option<String>,
+    flag_redis_cache:       bool,
+    flag_fresh:             bool,
+    flag_forget:            bool,
+    flag_flush_cache:       bool,
+    flag_format:            Option<String>,
+    flag_output:            Option<String>,
+    flag_quiet:             bool,
+    flag_addl_cols:         bool,
+    flag_addl_cols_list:    Option<String>,
+    flag_session:           Option<String>,
+    flag_session_len:       usize,
 }
 
 #[derive(Debug, Clone)]
@@ -2414,10 +2414,7 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
 fn get_analysis_cache_key(args: &Args, file_hash: &str) -> String {
     format!(
         "analysis_{:?}{:?}{:?}{:?}",
-        file_hash,
-        args.flag_stats_options,
-        args.flag_frequency_options,
-        args.flag_enum_threshold,
+        file_hash, args.flag_stats_options, args.flag_frequency_options, args.flag_enum_threshold,
     )
 }
 
@@ -5119,10 +5116,7 @@ fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults>
         frequency_args_vec
     } else {
         // Prepend --limit <enum_threshold> if not present
-        let mut combined = vec![
-            "--limit".to_string(),
-            args.flag_enum_threshold.to_string(),
-        ];
+        let mut combined = vec!["--limit".to_string(), args.flag_enum_threshold.to_string()];
         combined.extend(frequency_args_vec);
         combined
     };
@@ -5135,17 +5129,9 @@ fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults>
         None,
     );
 
-    let frequency_args_str: Vec<&str> = final_frequency_args
-        .iter()
-        .map(|s| s.as_str())
-        .collect();
+    let frequency_args_str: Vec<&str> = final_frequency_args.iter().map(|s| s.as_str()).collect();
 
-    let (frequency, _) = run_qsv_cmd(
-        "frequency",
-        &frequency_args_str,
-        input_path,
-        " ",
-    )?;
+    let (frequency, _) = run_qsv_cmd("frequency", &frequency_args_str, input_path, " ")?;
 
     // this is instantaneous, so no need to print start/end status
     let (headers, _) = run_qsv_cmd(

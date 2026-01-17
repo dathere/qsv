@@ -24,6 +24,9 @@
 | `QSV_LLM_MODEL` | The LLM Model to use with the `describegpt` command. |
 | `QSV_DESCRIBEGPT_DB_ENGINE` | The database engine to use for SQL query execution in the `describegpt` command. When set to a path containing "duckdb" (case-insensitive), DuckDB will be used instead of the default Polars SQL engine. The environment variable value should be the fully qualified path to the DuckDB binary. Note that all loaded DuckDB extensions will be sent as additional context to the LLM to let it know what functions (even UDFs!) it can use in the SQL queries it generates. |
 | `QSV_OUTPUT_BOM` | if set, the output will have a Byte Order Mark (BOM) at the beginning. This is used to generate Excel-friendly CSVs on Windows. |
+| `QSV_FORCE_COLOR` | if set, forces colorized output even when redirecting or running in CI. Used by the `color` command to override automatic color detection. |
+| `QSV_THEME` | sets the color theme for the `color` command. Valid values are DARK or LIGHT (case-insensitive). If not set, the theme is automatically detected based on the terminal background color. |
+| `QSV_TERMWIDTH` | overrides the detected terminal width for the `color` command. Must be a value between 1 and 1000. If not set, the terminal width is automatically detected or defaults to 80 when output is redirected. |
 | `QSV_POLARS_FLOAT_PRECISION` | The precision to use when converting Polars-enabled formats (Avro,Arrow,Parquet,JSON,JSONL and gz,zlib & zst compressed files) to CSV. If set, this will also override the --float-precision option of the `sqlp` command. |
 | `QSV_POLARS_DECIMAL_SCALE`  | The scale to use when using the Polars Decimal type. If not set, this defaults to 5. |
 | `QSV_PREFER_DMY` | if set, date parsing will use DMY format. Otherwise, use MDY format (used with `datefmt`, `schema`, `sniff` & `stats` commands). |

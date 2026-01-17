@@ -76,6 +76,20 @@ QSV_NO_HEADERS = False
 # This is useful when generating CSV files for Excel on Windows.
 # QSV_OUTPUT_BOM = False
 
+# if set, forces colorized output even when redirecting or running in CI.
+# Used by the `color` command to override automatic color detection.
+# QSV_FORCE_COLOR = 1
+
+# sets the color theme for the `color` command. Valid values are DARK or LIGHT
+# (case-insensitive). If not set, the theme is automatically detected based on
+# the terminal background color.
+# QSV_THEME = DARK
+
+# overrides the detected terminal width for the `color` command. Must be a value
+# between 1 and 1000. If not set, the terminal width is automatically detected or
+# defaults to 80 when output is redirected.
+# QSV_TERMWIDTH = 120
+
 # The directory to use for caching various qsv files.
 # Used by the `geocode` command for downloaded geocoding resources.
 # Used by the `luau`` command for downloaded lookup_table resources using

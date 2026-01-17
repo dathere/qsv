@@ -5105,7 +5105,7 @@ fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults>
     let frequency_args_vec: Vec<String> = args
         .flag_frequency_options
         .split_whitespace()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
 
     let contains_limit = frequency_args_vec
@@ -5129,7 +5129,10 @@ fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults>
         None,
     );
 
-    let frequency_args_str: Vec<&str> = final_frequency_args.iter().map(|s| s.as_str()).collect();
+    let frequency_args_str: Vec<&str> = final_frequency_args
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
 
     let (frequency, _) = run_qsv_cmd("frequency", &frequency_args_str, input_path, " ")?;
 

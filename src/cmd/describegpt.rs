@@ -100,6 +100,15 @@ Examples:
   # Flush/Remove ALL cached entries in the Redis cache
   $ qsv describegpt --redis-cache --flush-cache
 
+  # Exclude ID columns from frequency analysis to reduce overhead
+  $ qsv describegpt data.csv --dictionary --frequency-options "--select '!id,!uuid' --limit 20"
+
+  # Reduce frequency context by showing only top 5 values per field
+  $ qsv describegpt data.csv --all --frequency-options "--limit 5"
+
+  # Get weighted frequencies with ascending sort
+  $ qsv describegpt data.csv --description --frequency-options "--limit 50 --asc --weight count_column"
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs.
 
 For more detailed info on how describegpt works and how to prepare a prompt file,
@@ -168,8 +177,17 @@ describegpt options:
                            STATS/FREQUENCY OPTIONS:
     --stats-options <arg>  Options for the stats command used to generate summary statistics.
                            [default: --infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl]
+    --frequency-options <arg>
+                           Options for the frequency command used to generate frequency distributions.
+                           You can use this to exclude certain variable types from frequency analysis
+                           (e.g., --select '!id,!uuid'), limit results differently per use case, or
+                           control output format. If --limit is specified here, it takes precedence
+                           over --enum-threshold.
+                           [default: --limit 10 --rank-strategy dense]
     --enum-threshold <n>   The threshold for compiling Enumerations with the frequency command
                            before bucketing other unique values into the "Other" category.
+                           This is a convenience shortcut for --frequency-options --limit <n>.
+                           If --frequency-options contains --limit, this flag is ignored.
                            [default: 10]
 
                            CUSTOM PROMPT OPTIONS:
@@ -365,6 +383,7 @@ struct Args {
     #[allow(dead_code)]
     flag_ckan_token:       Option<String>,
     flag_stats_options:    String,
+    flag_frequency_options: String,
     flag_enum_threshold:   usize,
     flag_num_examples:     u16,
     flag_truncate_str:     usize,
@@ -2394,8 +2413,11 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
 
 fn get_analysis_cache_key(args: &Args, file_hash: &str) -> String {
     format!(
-        "analysis_{:?}{:?}{:?}",
-        file_hash, args.flag_stats_options, args.flag_enum_threshold,
+        "analysis_{:?}{:?}{:?}{:?}",
+        file_hash,
+        args.flag_stats_options,
+        args.flag_frequency_options,
+        args.flag_enum_threshold,
     )
 }
 
@@ -5080,21 +5102,47 @@ fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults>
         },
     };
 
+    // Build frequency command arguments with smart merging
+    // If --frequency-options contains --limit, use it as-is
+    // Otherwise, prepend --limit from --enum-threshold for backward compatibility
+    let frequency_args_vec: Vec<String> = args
+        .flag_frequency_options
+        .split_whitespace()
+        .map(|s| s.to_string())
+        .collect();
+
+    let contains_limit = frequency_args_vec
+        .iter()
+        .any(|arg| arg == "--limit" || arg == "-l");
+
+    let final_frequency_args: Vec<String> = if contains_limit {
+        frequency_args_vec
+    } else {
+        // Prepend --limit <enum_threshold> if not present
+        let mut combined = vec![
+            "--limit".to_string(),
+            args.flag_enum_threshold.to_string(),
+        ];
+        combined.extend(frequency_args_vec);
+        combined
+    };
+
     print_status(
         &format!(
-            "  Compiling Frequency Distribution (enum threshold: {})...",
-            args.flag_enum_threshold
+            "  Compiling Frequency Distribution (options: '{}')...",
+            final_frequency_args.join(" ")
         ),
         None,
     );
+
+    let frequency_args_str: Vec<&str> = final_frequency_args
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
+
     let (frequency, _) = run_qsv_cmd(
         "frequency",
-        &[
-            "--limit",
-            &args.flag_enum_threshold.to_string(),
-            "--rank-strategy",
-            "dense",
-        ],
+        &frequency_args_str,
         input_path,
         " ",
     )?;

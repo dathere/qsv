@@ -1,8 +1,11 @@
 static USAGE: &str = r#"
-Outputs CSV data as a pretty, colorized table that always fits into the
+Outputs tabular data as a pretty, colorized table that always fits into the
 terminal.
 
-Requires buffering all CSV data into memory. Therefore, you should use the
+Tabular data formats include CSV and its dialects, Arrow, Avro/IPC, Parquet,
+JSON Array & JSONL. Note that non-CSV formats require the "polars" feature.
+
+Requires buffering all tabular data into memory. Therefore, you should use the
 'sample' or 'slice' command to trim down large CSV data before formatting
 it with this command.
 

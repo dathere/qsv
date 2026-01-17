@@ -344,11 +344,15 @@ impl UsageParser {
             // Extract description for subcommands from USAGE text
             let subcommand_desc = self.extract_subcommand_description(&subcommands);
 
+            // Check if subcommand is optional by looking for usage patterns without it
+            // e.g., "qsv validate [options] [<input>...]" alongside "qsv validate schema ..."
+            let subcommand_optional = self.is_subcommand_optional(&subcommands);
+
             // Create subcommand argument with enum of valid values
             let subcommand_arg = Argument {
                 name:        "subcommand".to_string(),
                 arg_type:    "string".to_string(),
-                required:    true, // Subcommands are typically required
+                required:    !subcommand_optional, // Usually required, but can be optional
                 description: subcommand_desc,
                 examples:    Vec::new(),
                 r#enum:      Some(subcommands),
@@ -378,6 +382,37 @@ impl UsageParser {
         options.sort_by(|a, b| a.flag.cmp(&b.flag));
 
         Ok((args, options))
+    }
+
+    /// Check if subcommand is optional by looking for usage patterns without subcommands
+    /// e.g., validate command has both "qsv validate schema" and "qsv validate [<input>]"
+    fn is_subcommand_optional(&self, subcommands: &[String]) -> bool {
+        // Look for usage lines that don't include any subcommand
+        // These indicate the command can run without a subcommand
+        let usage_lines: Vec<&str> = self
+            .usage_text
+            .lines()
+            .skip_while(|l| !l.contains("Usage:"))
+            .skip(1) // Skip "Usage:" line itself
+            .take_while(|l| {
+                !l.trim().is_empty() && !l.contains("options:") && !l.contains("arguments:")
+            })
+            .collect();
+
+        // Check if any usage line has the command name but no subcommands
+        for line in usage_lines {
+            if line.contains(&format!("qsv {}", self.command_name)) {
+                // Check if this line contains any of the subcommand names
+                let has_subcommand = subcommands.iter().any(|sub| line.contains(sub));
+
+                // If line has the command but no subcommand, then subcommands are optional
+                if !has_subcommand {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     /// Extract description for subcommand argument
@@ -795,6 +830,7 @@ fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
 /// Called via `qsv --update-mcp-skills` flag
 pub fn generate_mcp_skills() -> CliResult<()> {
     // Get all commands from src/cmd/*.rs (excluding mod.rs and duplicates)
+    // Note: "enumerate" command is invoked as "enum" in qsv
     let commands = vec![
         "apply",
         "behead",
@@ -924,7 +960,11 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         eprintln!("Processing: {cmd_name}");
 
         // Find command file
+        // Note: enumerate.rs is invoked as "enum", so we need to use the file name
         let cmd_file = repo_root.join(format!("src/cmd/{cmd_name}.rs"));
+
+        // Get the actual command name from USAGE (for enumerate -> enum mapping)
+        let actual_cmd_name = cmd_name;
 
         if !cmd_file.exists() {
             eprintln!("  ❌ File not found: {}", cmd_file.display());
@@ -943,7 +983,18 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         };
 
         // Parse into skill definition
-        let parser = UsageParser::new(usage_text, cmd_name.to_string());
+        // For commands with aliases, extract the actual invocation name from USAGE
+        // - enumerate is invoked as "enum"
+        // - python is invoked as "py"
+        let invocation_name = if usage_text.contains("qsv enum ") {
+            "enum"
+        } else if usage_text.contains("qsv py ") {
+            "py"
+        } else {
+            actual_cmd_name
+        };
+
+        let parser = UsageParser::new(usage_text, invocation_name.to_string());
         let skill = match parser.parse() {
             Ok(s) => s,
             Err(e) => {

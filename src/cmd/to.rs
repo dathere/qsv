@@ -194,20 +194,20 @@ Usage:
     qsv to --help
 
 To options:
-    -k --print-package     Print statistics as datapackage, by default will print field summary.
-    -u --dump              Create database dump file for use with `psql` or `sqlite3` command line tools (postgres/sqlite only).
-    -a --stats             Produce extra statistics about the data beyond just type guessing.
-    -c --stats-csv <path>  Output stats as CSV to specified file.
-    -q --quiet             Do not print out field summary.
-    -s --schema <arg>      The schema to load the data into. (postgres only).
-    -d --drop              Drop tables before loading new data into them (postgres/sqlite only).
-    -e --evolve            If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only).
-    -i --pipe              For parquet, allow piping from stdin (using `-`) or from a named pipe.
-    -p --separator <arg>   For xlsx, use this character to help truncate xlsx sheet names.
-                           Defaults to space.
-    -A --all-strings       Convert all fields to strings.
-    -j, --jobs <arg>       The number of jobs to run in parallel.
-                           When not set, the number of jobs is set to the number of CPUs detected.
+  -k, --print-package     Print statistics as datapackage, by default will print field summary.
+  -u, --dump              Create database dump file for use with `psql` or `sqlite3` command line tools (postgres/sqlite only).
+  -a, --stats             Produce extra statistics about the data beyond just type guessing.
+  -c, --stats-csv <path>  Output stats as CSV to specified file.
+  -q, --quiet             Do not print out field summary.
+  -s, --schema <arg>      The schema to load the data into. (postgres only).
+  -d, --drop              Drop tables before loading new data into them (postgres/sqlite only).
+  -e, --evolve            If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only).
+  -i, --pipe              For parquet, allow piping from stdin (using `-`) or from a named pipe.
+  -p, --separator <arg>   For xlsx, use this character to help truncate xlsx sheet names.
+                          Defaults to space.
+  -A, --all-strings       Convert all fields to strings.
+  -j, --jobs <arg>        The number of jobs to run in parallel.
+                          When not set, the number of jobs is set to the number of CPUs detected.
 
 Common options:
     -h, --help             Display this message

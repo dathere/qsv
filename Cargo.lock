@@ -5515,6 +5515,7 @@ version = "14.0.0"
 dependencies = [
  "actix-governor",
  "actix-web",
+ "anstream",
  "arboard",
  "assert-json-diff",
  "atoi_simd",
@@ -5535,6 +5536,7 @@ dependencies = [
  "cpc",
  "crc32fast",
  "crossbeam-channel",
+ "crossterm 0.28.1",
  "csv",
  "csv-diff",
  "csv-index",
@@ -5621,6 +5623,7 @@ dependencies = [
  "strum_macros 0.27.2",
  "sysinfo",
  "tempfile",
+ "terminal-colorsaurus",
  "textwrap",
  "thousands",
  "threadpool",
@@ -7299,12 +7302,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "terminal_size"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60b8cb979cb11c32ce1603f8137b22262a9d131aaa5c37b5678025f22b8becd0"
+dependencies = [
+ "rustix 1.1.3",
+ "windows-sys 0.60.2",
+]
+
+[[package]]
 name = "textwrap"
 version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c13547615a44dc9c452a8a534638acdf07120d4b6847c8178705da06306a3057"
 dependencies = [
  "smawk",
+ "terminal_size",
  "unicode-linebreak",
  "unicode-width 0.2.0",
 ]

@@ -46,6 +46,8 @@ mod test_cat;
     feature = "clipboard",
 ))]
 mod test_clipboard;
+#[cfg(all(feature = "feature_capable", feature = "color"))]
+mod test_color;
 mod test_combos;
 mod test_comments;
 mod test_count;

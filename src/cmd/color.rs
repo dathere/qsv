@@ -1,0 +1,544 @@
+static USAGE: &str = r##"
+
+Outputs CSV data as a pretty, colorized table that always fits into the
+terminal.
+
+Requires buffering all CSV data into memory. Therefore, you should use the
+'sample' or 'slice' command to trim down large CSV data before formatting
+it with this command.
+
+Color is turned off when redirecting or running CI. Use env variables
+NO_COLOR=1, FORCE_COLOR=1 or CLICOLOR_FORCE=1 to override this behavior.
+
+The color theme is detected based on the current terminal background color
+if possible. Set QSV_THEME to DARK or LIGHT to skip detection. QSV_TERMWIDTH
+can be used to override terminal size.
+
+Usage:
+    qsv color [options] [<input>]
+    qsv color --help
+
+Common options:
+    -h, --help             Display this message
+    -o, --output <file>    Write output to <file> instead of stdout.
+    -d, --delimiter <arg>  The field delimiter for reading CSV data.
+                           Must be a single character. (default: ,)
+    --memcheck             Check if there is enough memory to load the entire
+                           CSV into memory using CONSERVATIVE heuristics.
+"##;
+
+use std::{io::IsTerminal, str::FromStr};
+
+use anstream::{AutoStream, ColorChoice};
+use crossterm::style::{Attribute, Attributes, Color, ContentStyle, StyledContent};
+use serde::Deserialize;
+use strum_macros::EnumString;
+use terminal_colorsaurus::{QueryOptions, ThemeMode, theme_mode};
+use textwrap;
+
+use crate::{
+    CliResult,
+    config::{Config, Delimiter},
+    util,
+};
+
+#[derive(Deserialize)]
+struct Args {
+    arg_input:      Option<String>,
+    flag_output:    Option<String>,
+    flag_delimiter: Option<Delimiter>,
+    flag_memcheck:  bool,
+}
+
+//
+// dark and light colors
+//
+
+macro_rules! hex {
+    ($hex:expr) => {{
+        const fn parse_hex(str: &str) -> Color {
+            let bytes = str.as_bytes();
+            assert!(bytes.len() == 7);
+            let r = (hex_digit(bytes[1]) << 4) | hex_digit(bytes[2]);
+            let g = (hex_digit(bytes[3]) << 4) | hex_digit(bytes[4]);
+            let b = (hex_digit(bytes[5]) << 4) | hex_digit(bytes[6]);
+            Color::Rgb { r, g, b }
+        }
+
+        const fn hex_digit(ch: u8) -> u8 {
+            match ch {
+                b'0'..=b'9' => ch - b'0',
+                b'A'..=b'F' => ch - b'A' + 10,
+                b'a'..=b'f' => ch - b'a' + 10,
+                _ => 0,
+            }
+        }
+
+        parse_hex($hex)
+    }};
+}
+
+macro_rules! fg {
+    ($fg: expr) => {
+        ContentStyle {
+            foreground_color: Some($fg),
+            background_color: None,
+            underline_color:  None,
+            attributes:       Attributes::none(),
+        }
+    };
+}
+
+macro_rules! bold {
+    ($fg: expr) => {
+        ContentStyle {
+            foreground_color: Some($fg),
+            background_color: None,
+            underline_color:  None,
+            attributes:       Attributes::none().with(Attribute::Bold),
+        }
+    };
+}
+
+struct Colors {
+    chrome:  ContentStyle,
+    field:   ContentStyle,
+    headers: [ContentStyle; 6],
+}
+
+// colors courtesy of tabiew/monokai
+const COLORS_DARK: Colors = Colors {
+    chrome:  fg!(hex!("#6a7282")), // gray-500
+    field:   fg!(hex!("#e5e7eb")), // gray-200
+    headers: [
+        bold!(hex!("#ff6188")), // pink
+        bold!(hex!("#fc9867")), // orange
+        bold!(hex!("#ffd866")), // yellow
+        bold!(hex!("#a9dc76")), // green
+        bold!(hex!("#78dce8")), // cyan
+        bold!(hex!("#ab9df2")), // purple
+    ],
+};
+
+// colors courtesy of tabiew/monokai
+const COLORS_LIGHT: Colors = Colors {
+    chrome:  fg!(hex!("#6a7282")), // gray-500
+    field:   fg!(hex!("#1e2939")), // gray-800
+    headers: [
+        bold!(hex!("#ee4066")), // red
+        bold!(hex!("#da7645")), // orange
+        bold!(hex!("#ddb644")), // yellow
+        bold!(hex!("#87ba54")), // green
+        bold!(hex!("#56bac6")), // cyan
+        bold!(hex!("#897bd0")), // purple
+    ],
+};
+
+// which theme are we using?
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString)]
+#[strum(ascii_case_insensitive)]
+enum Theme {
+    Dark,
+    Light,
+    None,
+}
+
+//
+// Autolayout columns into terminal width. This is copied from the very simple HTML table column
+// algorithm. Returns a vector of column widths.
+//
+
+fn autolayout(columns: &[usize], term_width: usize) -> Vec<usize> {
+    const FUDGE: usize = 2;
+
+    if columns.is_empty() {
+        // edge case
+        return columns.to_vec();
+    }
+
+    // |•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|
+    // ↑↑    ↑                                                 ↑
+    // 12    3    <-   three chrome chars per column           │
+    //                                                         │
+    //                                           extra chrome char at the end
+    let chrome_width = columns.len() * 3 + 1;
+
+    // How much space is available, and do we already fit?
+    let available = term_width.saturating_sub(chrome_width + FUDGE);
+    let data_width: usize = columns.iter().sum();
+    if available >= data_width {
+        return columns.to_vec();
+    }
+
+    // We don't fit, so we are going to shrink (truncate) some columns.
+    // Potentially all the way down to a lower bound. But what is the lower
+    // bound? It's nice to have a generous value so that narrow columns have a
+    // shot at avoiding truncation. That isn't always possible, though.
+    let lower_bound = (available / columns.len()).clamp(2, 10);
+
+    // Calculate a "min" and a "max" for each column, then allocate available
+    // space proportionally to each column. This is similar to the algorithm for
+    // HTML tables.
+    let min: Vec<usize> = columns.iter().map(|w| (*w).min(lower_bound)).collect();
+    let max: Vec<usize> = columns.to_vec();
+
+    // W = difference between the available space and the minimum table width
+    // D = difference between maximum and minimum table width
+    // ratio = W / D
+    // col.width = col.min + ((col.max - col.min) * ratio)
+    let min_sum: usize = min.iter().sum();
+    let max_sum: usize = max.iter().sum();
+    if min_sum == max_sum {
+        // edge case
+        return min;
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    let ratio = (available.saturating_sub(min_sum) as f64) / ((max_sum - min_sum) as f64);
+    if ratio == 0.0 {
+        // even min doesn't fit, we gotta overflow
+        return min;
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    let mut layout: Vec<usize> = min
+        .iter()
+        .zip(max.iter())
+        .map(|(min, max)| min + ((max - min) as f64 * ratio) as usize)
+        .collect();
+
+    // because we always round down, there might be some extra space to distribute
+    let data_width: usize = layout.iter().sum();
+    let extra_space = available.saturating_sub(data_width);
+    if extra_space > 0 {
+        let mut distribute: Vec<(usize, usize)> = max
+            .iter()
+            .zip(min.iter())
+            .enumerate()
+            .map(|(idx, (max, min))| (max - min, idx))
+            .collect();
+
+        // Sort by difference (descending), then by index (ascending) for stability
+        distribute.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+
+        for (_, idx) in distribute.into_iter().take(extra_space) {
+            layout[idx] += 1;
+        }
+    }
+
+    layout
+}
+
+//
+// Box-drawing characters for pretty separators.
+//
+
+const BOX: [[char; 5]; 4] = [
+    ['╭', '─', '┬', '─', '╮'], // 0
+    ['│', ' ', '│', ' ', '│'], // 1
+    ['├', '─', '┼', '─', '┤'], // 2
+    ['╰', '─', '┴', '─', '╯'], // 3
+];
+
+// take these from BOX
+const NW: char = BOX[0][0];
+const NE: char = BOX[0][4];
+const SE: char = BOX[3][4];
+const SW: char = BOX[3][0];
+const N: char = BOX[0][2];
+const E: char = BOX[2][4];
+const S: char = BOX[3][2];
+const W: char = BOX[2][0];
+const C: char = BOX[2][2];
+const BAR: char = BOX[0][1];
+const PIPE: char = BOX[1][0];
+
+//
+// fill
+//
+
+fn fill(s: &str, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+
+    let s = s.trim();
+    match s.chars().count() {
+        len if len == width => s.to_string(),
+        len if len < width => format!("{s:<width$}"),
+        _ => format!("{}…", &s[..s.floor_char_boundary(width - 1)]),
+    }
+}
+
+#[test]
+fn test_fill() {
+    assert_eq!(fill("", 0), "");
+    assert_eq!(fill("", 1), " ");
+    assert_eq!(fill("hello", 0), "");
+    assert_eq!(fill("hello", 1), "…");
+    assert_eq!(fill("hello", 3), "he…");
+    assert_eq!(fill("  hello  ", 3), "he…"); // trim
+    assert_eq!(fill("hello", 5), "hello");
+    assert_eq!(fill("hello", 8), "hello   ");
+}
+
+//
+// colorize
+//
+
+fn colorize(s: &str, header: bool, col_idx: usize, colors: Option<&Colors>) -> String {
+    let Some(colors) = colors else {
+        return s.to_string();
+    };
+    let style = if header {
+        colors.headers[col_idx % colors.headers.len()]
+    } else {
+        colors.field
+    };
+    format!("{}", StyledContent::new(style, s))
+}
+
+#[test]
+fn test_colorize() {
+    assert_eq!(
+        colorize("FOO", true, 0, Some(&COLORS_DARK)),
+        "\u{1b}[38;2;255;97;136m\u{1b}[1mFOO\u{1b}[0m"
+    );
+    assert_eq!(
+        colorize("BAR", false, 0, Some(&COLORS_LIGHT)),
+        "\u{1b}[38;2;30;41;57mBAR\u{1b}[39m"
+    );
+    assert_eq!(colorize("FOO", true, 0, None), "FOO");
+    assert_eq!(colorize("BAR", false, 0, None), "BAR");
+}
+
+//
+// field_width
+//
+
+#[inline]
+fn field_width(field: &[u8]) -> usize {
+    // Prefer char count for UTF-8 so emoji/wide chars don't explode layout.
+    std::str::from_utf8(field).map_or_else(|_| field.len(), |s| s.chars().count())
+}
+
+#[test]
+fn test_field_width() {
+    assert_eq!(field_width(b""), 0);
+    assert_eq!(field_width(b"hello"), 5);
+    assert_eq!(field_width(b"\xF0\x9F\x91\x8B\xF0\x9F\x8C\x8D"), 2); // Emoji
+}
+
+//
+// env helpers
+//
+
+fn force_color() -> bool {
+    std::env::var_os("FORCE_COLOR").is_some()
+}
+
+fn qsv_termwidth() -> Option<usize> {
+    match std::env::var("QSV_TERMWIDTH").ok() {
+        Some(s) => match s.parse::<usize>() {
+            Ok(val) if (1..500).contains(&val) => Some(val),
+            _ => None,
+        },
+        None => None,
+    }
+}
+
+fn qsv_theme() -> Theme {
+    match std::env::var("QSV_THEME").ok() {
+        Some(s) => Theme::from_str(&s).unwrap_or(Theme::None),
+        None => Theme::None,
+    }
+}
+
+//
+// get_termwidth
+//
+
+fn get_termwidth() -> usize {
+    get_termwidth_with_env(qsv_termwidth())
+}
+
+fn get_termwidth_with_env(qsv_termwidth: Option<usize>) -> usize {
+    if let Some(qsv_termwidth) = qsv_termwidth {
+        qsv_termwidth
+    } else if std::io::stdout().is_terminal() {
+        textwrap::termwidth()
+    } else {
+        80
+    }
+}
+
+#[test]
+fn test_termwidth() {
+    let default = textwrap::termwidth();
+    assert_eq!(get_termwidth_with_env(None), default);
+    assert_eq!(get_termwidth_with_env(Some(123)), 123);
+}
+
+//
+// get_theme
+//
+
+fn get_theme(output: bool) -> Theme {
+    get_theme_with_env(output, force_color(), qsv_theme())
+}
+
+fn get_theme_with_env(output: bool, force_color: bool, qsv_theme: Theme) -> Theme {
+    ColorChoice::Auto.write_global(); // reset (for tests)
+
+    // short circuit
+    if output {
+        ColorChoice::Never.write_global();
+    } else if force_color {
+        ColorChoice::Always.write_global();
+    }
+
+    if AutoStream::choice(&std::io::stdout()) == ColorChoice::Never {
+        Theme::None
+    } else if qsv_theme != Theme::None {
+        qsv_theme
+    } else if let Ok(ThemeMode::Light) = theme_mode(QueryOptions::default()) {
+        Theme::Light
+    } else {
+        Theme::Dark
+    }
+}
+
+#[test]
+fn test_get_theme() {
+    assert_eq!(Theme::Dark, get_theme_with_env(false, true, Theme::Dark));
+    assert_eq!(Theme::Light, get_theme_with_env(false, true, Theme::Light));
+    assert_eq!(Theme::None, get_theme_with_env(true, true, Theme::Dark));
+}
+
+//
+// render_xxx
+//
+
+fn render_sep<W: std::io::Write>(
+    out: &mut W,
+    layout: &[usize],
+    (left, mid, right): (char, char, char),
+    colors: Option<&Colors>,
+) -> std::io::Result<()> {
+    // construct str
+    let mut text = String::new();
+    text.push(left);
+    for (idx, w) in layout.iter().enumerate() {
+        if idx > 0 {
+            text.push(mid);
+        }
+        text.extend(std::iter::repeat_n(BAR, *w + 2));
+    }
+    text.push(right);
+
+    let Some(colors) = colors else {
+        return writeln!(out, "{text}");
+    };
+
+    writeln!(out, "{}", StyledContent::new(colors.chrome, text))
+}
+
+fn render_row<W: std::io::Write>(
+    out: &mut W,
+    record: &csv::ByteRecord,
+    layout: &[usize],
+    header: bool,
+    colors: Option<&Colors>,
+) -> std::io::Result<()> {
+    let pipe_str = if let Some(colors) = colors {
+        format!("{}", StyledContent::new(colors.chrome, PIPE))
+    } else {
+        PIPE.to_string()
+    };
+
+    let mut line = String::new();
+    line.push_str(&pipe_str);
+    for (idx, field) in record.iter().enumerate() {
+        let raw = String::from_utf8_lossy(field);
+        let str = fill(&raw, layout[idx]);
+        let styled = colorize(&str, header, idx, colors);
+        line.push(' ');
+        line.push_str(&styled);
+        line.push(' ');
+        line.push_str(&pipe_str);
+    }
+    line.push('\n');
+    out.write_all(line.as_bytes())
+}
+
+//
+// run
+//
+
+pub fn run(argv: &[&str]) -> CliResult<()> {
+    let args: Args = util::get_args(USAGE, argv)?;
+    let rconfig = Config::new(args.arg_input.as_ref())
+        .delimiter(args.flag_delimiter)
+        .no_headers(true)
+        .flexible(false); // don't support ragged csvs for now
+
+    // we're loading the entire file into memory, we need to check avail mem
+    if let Some(path) = rconfig.path.clone() {
+        util::mem_file_check(&path, false, args.flag_memcheck)?;
+    }
+
+    //
+    // read
+    //
+
+    let mut rdr = rconfig.reader()?;
+    let mut records: Vec<csv::ByteRecord> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        records.push(record.clone());
+    }
+    if records.is_empty() {
+        // edge case
+        return Ok(());
+    }
+    let headers = &records[0];
+    if headers.is_empty() {
+        // edge case
+        return Ok(());
+    }
+
+    //
+    // layout, look and feel
+    //
+
+    // measure the maximum width for each column. Never <2 chars
+    let mut columns: Vec<usize> = vec![2; headers.len()];
+    for rec in &records {
+        for (idx, field) in rec.iter().enumerate() {
+            columns[idx] = columns[idx].max(field_width(field));
+        }
+    }
+    let colors = match get_theme(args.flag_output.is_some()) {
+        Theme::Dark => Some(&COLORS_DARK),
+        Theme::Light => Some(&COLORS_LIGHT),
+        Theme::None => None,
+    };
+    let layout = autolayout(&columns, get_termwidth());
+
+    //
+    // write
+    //
+
+    let wconfig = Config::new(args.flag_output.as_ref()).delimiter(Some(Delimiter(b'\t')));
+    let mut out = wconfig.io_writer()?;
+    render_sep(&mut out, &layout, (NW, N, NE), colors)?;
+    render_row(&mut out, headers, &layout, true, colors)?;
+    render_sep(&mut out, &layout, (W, C, E), colors)?;
+    for rec in records.iter().skip(1) {
+        render_row(&mut out, rec, &layout, false, colors)?;
+    }
+    render_sep(&mut out, &layout, (SW, S, SE), colors)?;
+    out.flush()?;
+
+    Ok(())
+}

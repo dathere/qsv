@@ -71,6 +71,7 @@ inherits = "release"
 panic    = "abort"
 
 [dependencies]
+anstream = { version = "0.6", optional = true }
 arboard = { version = "3.6.1", default-features = false, optional = true }
 atoi_simd = "0.17"
 base62 = { version = "2.2", optional = true }
@@ -96,6 +97,7 @@ const_format = "0.2"
 cpc = { version = "3", optional = true }
 crc32fast = { version = "1.4", optional = true }
 crossbeam-channel = "0.5"
+crossterm = { version = "0.28", optional = true }
 csv = "1.4"
 csv-diff = "0.1"
 csv-index = "0.1"
@@ -266,8 +268,9 @@ strum = { version = "0.27", features = ["phf"] }
 strum_macros = "0.27"
 sysinfo = "0.37"
 tempfile = "3.24"
+terminal-colorsaurus = { version = "1.0", optional = true }
+textwrap = { version = "0.16", features = ["terminal_size"] }
 thousands = { version = "0.2", optional = true }
-textwrap = "0.16"
 threadpool = "1.8"
 titlecase = { version = "3", optional = true }
 tokio = { version = "1", features = ["parking_lot", "rt-multi-thread"] }
@@ -348,7 +351,7 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parki
 # to take advantage of Polars' latest unreleased fixes and features.
 # Based on what's available at the time of qsv's release, we may need to pin polars to a py-polars tag
 # or a specific commit if more revisions have been made since the latest polars/py-polars release.
-# BUILD NOTE: Be sure to set QSV_POLARS_REV below to the latest commit short hash or tag 
+# BUILD NOTE: Be sure to set QSV_POLARS_REV below to the latest commit short hash or tag
 # of polars/py-polars before building qsv. This allows us to show the polars rev/tag in --version.
 # The convention to use for QSV_POLARS_REV is:
 # - if we are using a release version of Rust Polars, leave QSV_POLARS_REV empty
@@ -394,6 +397,7 @@ apply = [
     "whatlang",
 ]
 clipboard = ["arboard"]
+color = ["anstream", "crossterm", "terminal-colorsaurus"]
 fetch = [
     "console",
     "flate2",
@@ -420,7 +424,7 @@ to = ["csvs_convert"]
 lens = ["csvlens"]
 lite = []
 datapusher_plus = ["geocode", "self_update"]
-ui = ["clipboard", "prompt", "lens"]
+ui = ["clipboard", "color", "prompt", "lens"]
 feature_capable = []
 nightly = [
     "crc32fast/nightly",

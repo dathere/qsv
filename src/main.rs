@@ -115,6 +115,9 @@ fn main() -> QsvExitCode {
     enabled_commands
         .push_str("    clipboard   Provide input from clipboard or output to clipboard\n");
 
+    #[cfg(all(feature = "color", feature = "feature_capable"))]
+    enabled_commands.push_str("    color       Print a pretty, colorized table\n");
+
     enabled_commands.push_str(
         "    count       Count records
     datefmt     Format date/datetime strings
@@ -376,6 +379,8 @@ enum Command {
     Cat,
     #[cfg(all(feature = "clipboard", feature = "feature_capable"))]
     Clipboard,
+    #[cfg(all(feature = "color", feature = "feature_capable"))]
+    Color,
     Count,
     Datefmt,
     Dedup,
@@ -475,6 +480,8 @@ impl Command {
             Command::Cat => cmd::cat::run(argv),
             #[cfg(all(feature = "clipboard", feature = "feature_capable"))]
             Command::Clipboard => cmd::clipboard::run(argv),
+            #[cfg(all(feature = "color", feature = "feature_capable"))]
+            Command::Color => cmd::color::run(argv),
             Command::Count => cmd::count::run(argv),
             Command::Datefmt => cmd::datefmt::run(argv),
             Command::Dedup => cmd::dedup::run(argv),

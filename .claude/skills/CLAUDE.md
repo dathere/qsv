@@ -550,6 +550,7 @@ The skill generator:
 - Extracts concise descriptions from README command table
 - Extracts performance hints (📇 indexed, 🤯 memory-intensive) from README
 - Creates JSON skill files in `.claude/skills/qsv/`
+- The skill generator is implemented in the `../../src/mcp_skills_gen.rs` Rust module which is called from `../../src/main.rs`
 
 ## Deployment
 

@@ -295,7 +295,7 @@ fn fill(s: &str, width: usize) -> String {
             result.push_str(s);
             result.extend(std::iter::repeat(' ').take(pad));
             result
-        }
+        },
         std::cmp::Ordering::Greater => {
             if width == 1 {
                 "…".to_string()
@@ -306,7 +306,7 @@ fn fill(s: &str, width: usize) -> String {
                 result.push('…');
                 result
             }
-        }
+        },
     }
 }
 
@@ -359,10 +359,13 @@ fn test_colorize() {
 #[inline]
 fn field_width(field: &[u8]) -> usize {
     // Use display width for UTF-8 so East Asian wide chars/emoji align correctly.
-    std::str::from_utf8(field).map_or_else(|_| field.len(), |s| {
-        use unicode_width::UnicodeWidthStr;
-        s.width()
-    })
+    std::str::from_utf8(field).map_or_else(
+        |_| field.len(),
+        |s| {
+            use unicode_width::UnicodeWidthStr;
+            s.width()
+        },
+    )
 }
 
 #[test]

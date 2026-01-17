@@ -274,7 +274,7 @@ thousands = { version = "0.2", optional = true }
 threadpool = "1.8"
 titlecase = { version = "3", optional = true }
 tokio = { version = "1", features = ["parking_lot", "rt-multi-thread"] }
-unicode-width = "0.2"
+unicode-width = { version = "0.2", optional = true }
 uuid = { version = "1", features = ["v4", "v7"] }
 url = "2.5"
 whatlang = { version = "0.18", optional = true }
@@ -398,7 +398,7 @@ apply = [
     "whatlang",
 ]
 clipboard = ["arboard"]
-color = ["anstream", "crossterm", "terminal-colorsaurus"]
+color = ["anstream", "crossterm", "terminal-colorsaurus", "unicode-width"]
 fetch = [
     "console",
     "flate2",

@@ -1388,3 +1388,150 @@ fn describegpt_non_localhost_requires_apikey() {
         got
     );
 }
+
+// Test --frequency-options with custom limit
+#[test]
+#[serial]
+fn describegpt_frequency_options_custom_limit() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_freq_opts_limit");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number", "color"],
+            svec!["alpha", "13", "red"],
+            svec!["beta", "24", "blue"],
+            svec!["gamma", "37", "green"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--frequency-options", "--limit 5 --rank-strategy min"]);
+
+    // Check that the command ran successfully
+    wrk.assert_success(&mut cmd);
+}
+
+// Test --frequency-options with column selection
+#[test]
+#[serial]
+fn describegpt_frequency_options_column_selection() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_freq_opts_select");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["id", "name", "city"],
+            svec!["1", "Alice", "NYC"],
+            svec!["2", "Bob", "LA"],
+            svec!["3", "Charlie", "NYC"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--frequency-options", "--select '!id' --limit 10"]);
+
+    // Check that the command ran successfully
+    wrk.assert_success(&mut cmd);
+}
+
+// Test --frequency-options without --limit uses --enum-threshold
+#[test]
+#[serial]
+fn describegpt_frequency_options_uses_enum_threshold() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_freq_opts_enum");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+            svec!["gamma", "37"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--enum-threshold", "20"])
+        .args(["--frequency-options", "--rank-strategy dense"]);
+
+    // Check that the command ran successfully
+    // The --enum-threshold of 20 should be used since --frequency-options
+    // doesn't contain --limit
+    wrk.assert_success(&mut cmd);
+}
+
+// Test --frequency-options with --limit overrides --enum-threshold
+#[test]
+#[serial]
+fn describegpt_frequency_options_overrides_enum_threshold() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_freq_opts_override");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+            svec!["gamma", "37"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--enum-threshold", "20"])
+        .args(["--frequency-options", "--limit 5 --asc"]);
+
+    // Check that the command ran successfully
+    // The --limit 5 from --frequency-options should override --enum-threshold 20
+    wrk.assert_success(&mut cmd);
+}
+
+// Test --frequency-options with -l short flag
+#[test]
+#[serial]
+fn describegpt_frequency_options_short_limit() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_freq_opts_short");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+            svec!["gamma", "37"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--enum-threshold", "20"])
+        .args(["--frequency-options", "-l 3"]);
+
+    // Check that the command ran successfully
+    // The -l 3 from --frequency-options should override --enum-threshold 20
+    wrk.assert_success(&mut cmd);
+}

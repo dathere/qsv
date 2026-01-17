@@ -292,7 +292,7 @@ fn fill(s: &str, width: usize) -> String {
             let pad = width - display_width;
             let mut result = String::with_capacity(s.len() + pad);
             result.push_str(s);
-            result.extend(std::iter::repeat(' ').take(pad));
+            result.extend(std::iter::repeat_n(' ', pad));
             result
         },
         std::cmp::Ordering::Greater => {

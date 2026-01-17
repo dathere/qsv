@@ -258,6 +258,9 @@ const PIPE: char = BOX[1][0];
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+const ELLIPSIS: &str = "…";
+const ELLIPSIS_WIDTH: usize = 1; // Display width of ellipsis
+
 fn truncate_to_display_width(s: &str, max_width: usize) -> &str {
     if max_width == 0 {
         return "";
@@ -278,31 +281,32 @@ fn truncate_to_display_width(s: &str, max_width: usize) -> &str {
     &s[..end]
 }
 
+#[inline]
 fn fill(s: &str, width: usize) -> String {
     if width == 0 {
         return String::new();
     }
 
-    let s = s.trim();
-    let display_width = UnicodeWidthStr::width(s);
+    let trimmed = s.trim();
+    let display_width = UnicodeWidthStr::width(trimmed);
 
     match display_width.cmp(&width) {
-        std::cmp::Ordering::Equal => s.to_string(),
+        std::cmp::Ordering::Equal => trimmed.to_string(),
         std::cmp::Ordering::Less => {
             let pad = width - display_width;
-            let mut result = String::with_capacity(s.len() + pad);
-            result.push_str(s);
+            let mut result = String::with_capacity(trimmed.len() + pad);
+            result.push_str(trimmed);
             result.extend(std::iter::repeat_n(' ', pad));
             result
         },
         std::cmp::Ordering::Greater => {
-            if width == 1 {
-                "…".to_string()
+            if width == ELLIPSIS_WIDTH {
+                ELLIPSIS.to_string()
             } else {
-                let prefix = truncate_to_display_width(s, width - 1);
-                let mut result = String::with_capacity(prefix.len() + '…'.len_utf8());
+                let prefix = truncate_to_display_width(trimmed, width - ELLIPSIS_WIDTH);
+                let mut result = String::with_capacity(prefix.len() + ELLIPSIS.len());
                 result.push_str(prefix);
-                result.push('…');
+                result.push_str(ELLIPSIS);
                 result
             }
         },

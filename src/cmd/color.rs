@@ -29,7 +29,7 @@ Common options:
                            CSV into memory using CONSERVATIVE heuristics.
 "#;
 
-use std::{io::IsTerminal, str::FromStr};
+use std::{fmt::Write, io::IsTerminal, str::FromStr};
 
 use anstream::{AutoStream, ColorChoice};
 use crossterm::style::{Attribute, Attributes, Color, ContentStyle, StyledContent};
@@ -40,7 +40,7 @@ use textwrap;
 
 use crate::{
     CliResult,
-    config::{Config, Delimiter},
+    config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
     util::{self, get_envvar_flag},
 };
 
@@ -182,7 +182,7 @@ fn autolayout(columns: &[usize], term_width: usize) -> Vec<usize> {
     // space proportionally to each column. This is similar to the algorithm for
     // HTML tables.
     let min: Vec<usize> = columns.iter().map(|w| (*w).min(lower_bound)).collect();
-    let max: Vec<usize> = columns.to_vec();
+    let max = columns; // Use reference to columns instead of cloning
 
     // W = difference between the available space and the minimum table width
     // D = difference between maximum and minimum table width
@@ -284,33 +284,37 @@ fn truncate_to_display_width(s: &str, max_width: usize) -> &str {
     &s[..end]
 }
 
+/// Fills a string to the given display width, writing to an existing buffer.
+/// This is the optimized version used in hot paths to avoid allocations.
 #[inline]
-fn fill(s: &str, width: usize) -> String {
+fn fill_into(s: &str, width: usize, buffer: &mut String) {
+    buffer.clear();
+
     if width == 0 {
-        return String::new();
+        return;
     }
 
     let trimmed = s.trim();
     let display_width = UnicodeWidthStr::width(trimmed);
 
     match display_width.cmp(&width) {
-        std::cmp::Ordering::Equal => trimmed.to_string(),
+        std::cmp::Ordering::Equal => {
+            buffer.push_str(trimmed);
+        },
         std::cmp::Ordering::Less => {
             let pad = width - display_width;
-            let mut result = String::with_capacity(trimmed.len() + pad);
-            result.push_str(trimmed);
-            result.extend(std::iter::repeat_n(' ', pad));
-            result
+            buffer.reserve(trimmed.len() + pad);
+            buffer.push_str(trimmed);
+            buffer.extend(std::iter::repeat_n(' ', pad));
         },
         std::cmp::Ordering::Greater => {
             if width == ELLIPSIS_WIDTH {
-                ELLIPSIS.to_string()
+                buffer.push_str(ELLIPSIS);
             } else {
                 let prefix = truncate_to_display_width(trimmed, width - ELLIPSIS_WIDTH);
-                let mut result = String::with_capacity(prefix.len() + ELLIPSIS.len());
-                result.push_str(prefix);
-                result.push_str(ELLIPSIS);
-                result
+                buffer.reserve(prefix.len() + ELLIPSIS.len());
+                buffer.push_str(prefix);
+                buffer.push_str(ELLIPSIS);
             }
         },
     }
@@ -318,44 +322,79 @@ fn fill(s: &str, width: usize) -> String {
 
 #[test]
 fn test_fill() {
-    assert_eq!(fill("", 0), "");
-    assert_eq!(fill("", 1), " ");
-    assert_eq!(fill("hello", 0), "");
-    assert_eq!(fill("hello", 1), "…");
-    assert_eq!(fill("hello", 3), "he…");
-    assert_eq!(fill("  hello  ", 3), "he…"); // trim
-    assert_eq!(fill("hello", 5), "hello");
-    assert_eq!(fill("hello", 8), "hello   ");
+    let mut buffer = String::new();
+
+    fill_into("", 0, &mut buffer);
+    assert_eq!(buffer, "");
+
+    fill_into("", 1, &mut buffer);
+    assert_eq!(buffer, " ");
+
+    fill_into("hello", 0, &mut buffer);
+    assert_eq!(buffer, "");
+
+    fill_into("hello", 1, &mut buffer);
+    assert_eq!(buffer, "…");
+
+    fill_into("hello", 3, &mut buffer);
+    assert_eq!(buffer, "he…");
+
+    fill_into("  hello  ", 3, &mut buffer); // trim
+    assert_eq!(buffer, "he…");
+
+    fill_into("hello", 5, &mut buffer);
+    assert_eq!(buffer, "hello");
+
+    fill_into("hello", 8, &mut buffer);
+    assert_eq!(buffer, "hello   ");
 }
 
 //
 // colorize
 //
 
-fn colorize(s: &str, header: bool, col_idx: usize, colors: Option<&Colors>) -> String {
+/// Colorizes a string and writes it to an existing buffer.
+/// This is the optimized version used in hot paths to avoid allocations.
+#[inline]
+fn colorize_into(
+    s: &str,
+    header: bool,
+    col_idx: usize,
+    colors: Option<&Colors>,
+    buffer: &mut String,
+) {
+    buffer.clear();
+
     let Some(colors) = colors else {
-        return s.to_string();
+        buffer.push_str(s);
+        return;
     };
+
     let style = if header {
         colors.headers[col_idx % colors.headers.len()]
     } else {
         colors.field
     };
-    format!("{}", StyledContent::new(style, s))
+
+    // Manually write ANSI codes instead of format!() to avoid allocation
+    let _ = write!(buffer, "{}", StyledContent::new(style, s));
 }
 
 #[test]
 fn test_colorize() {
-    assert_eq!(
-        colorize("FOO", true, 0, Some(&COLORS_DARK)),
-        "\u{1b}[38;2;255;97;136m\u{1b}[1mFOO\u{1b}[0m"
-    );
-    assert_eq!(
-        colorize("BAR", false, 0, Some(&COLORS_LIGHT)),
-        "\u{1b}[38;2;30;41;57mBAR\u{1b}[39m"
-    );
-    assert_eq!(colorize("FOO", true, 0, None), "FOO");
-    assert_eq!(colorize("BAR", false, 0, None), "BAR");
+    let mut buffer = String::new();
+
+    colorize_into("FOO", true, 0, Some(&COLORS_DARK), &mut buffer);
+    assert_eq!(buffer, "\u{1b}[38;2;255;97;136m\u{1b}[1mFOO\u{1b}[0m");
+
+    colorize_into("BAR", false, 0, Some(&COLORS_LIGHT), &mut buffer);
+    assert_eq!(buffer, "\u{1b}[38;2;30;41;57mBAR\u{1b}[39m");
+
+    colorize_into("FOO", true, 0, None, &mut buffer);
+    assert_eq!(buffer, "FOO");
+
+    colorize_into("BAR", false, 0, None, &mut buffer);
+    assert_eq!(buffer, "BAR");
 }
 
 //
@@ -502,22 +541,26 @@ fn render_row<W: std::io::Write>(
     layout: &[usize],
     header: bool,
     colors: Option<&Colors>,
+    pipe_str: &str,
+    fill_buffer: &mut String,
+    colorize_buffer: &mut String,
 ) -> std::io::Result<()> {
-    let pipe_str = if let Some(colors) = colors {
-        format!("{}", StyledContent::new(colors.chrome, PIPE))
-    } else {
-        PIPE.to_string()
-    };
+    // Pre-calculate approximate line size:
+    // layout.iter().sum() + (layout.len() * 3) for pipes/spaces + ANSI codes
+    let line_capacity = layout.iter().sum::<usize>() + (layout.len() * 3) + 100;
+    let mut line = String::with_capacity(line_capacity);
 
-    let mut line = String::new();
-    line.push_str(&pipe_str);
+    line.push_str(pipe_str);
     for (idx, field) in record.iter().enumerate() {
+        // safety: flexible(false) ensures all records have same field count as headers,
+        // so idx is always within bounds of layout (which is sized to headers.len())
         let raw = String::from_utf8_lossy(field);
-        let styled = colorize(&fill(&raw, layout[idx]), header, idx, colors);
+        fill_into(&raw, layout[idx], fill_buffer);
+        colorize_into(fill_buffer, header, idx, colors, colorize_buffer);
         line.push(' ');
-        line.push_str(&styled);
+        line.push_str(colorize_buffer);
         line.push(' ');
-        line.push_str(&pipe_str);
+        line.push_str(pipe_str);
     }
     line.push('\n');
     out.write_all(line.as_bytes())
@@ -544,11 +587,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     //
 
     let mut rdr = rconfig.reader()?;
-    let mut records: Vec<csv::ByteRecord> = Vec::new();
-    let mut record = csv::ByteRecord::new();
-    while rdr.read_byte_record(&mut record)? {
-        records.push(record.clone());
-    }
+    let records = rdr.byte_records().collect::<Result<Vec<_>, _>>()?;
     if records.is_empty() {
         // edge case
         return Ok(());
@@ -581,13 +620,45 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // write
     //
 
-    let wconfig = Config::new(args.flag_output.as_ref()).delimiter(Some(Delimiter(b'\t')));
+    let wconfig = Config::new(args.flag_output.as_ref())
+        .delimiter(Some(Delimiter(b'\t')))
+        .set_write_buffer(DEFAULT_WTR_BUFFER_CAPACITY * 4);
     let mut out = wconfig.io_writer()?;
+
+    // Cache pipe_str to avoid repeated allocations
+    let pipe_str = if let Some(colors) = colors {
+        format!("{}", StyledContent::new(colors.chrome, PIPE))
+    } else {
+        PIPE.to_string()
+    };
+
+    // Create reusable buffers for fill and colorize operations
+    let mut fill_buffer = String::new();
+    let mut colorize_buffer = String::new();
+
     render_sep(&mut out, &layout, (NW, N, NE), colors)?;
-    render_row(&mut out, headers, &layout, true, colors)?;
+    render_row(
+        &mut out,
+        headers,
+        &layout,
+        true,
+        colors,
+        &pipe_str,
+        &mut fill_buffer,
+        &mut colorize_buffer,
+    )?;
     render_sep(&mut out, &layout, (W, C, E), colors)?;
     for rec in records.iter().skip(1) {
-        render_row(&mut out, rec, &layout, false, colors)?;
+        render_row(
+            &mut out,
+            rec,
+            &layout,
+            false,
+            colors,
+            &pipe_str,
+            &mut fill_buffer,
+            &mut colorize_buffer,
+        )?;
     }
     render_sep(&mut out, &layout, (SW, S, SE), colors)?;
     out.flush()?;

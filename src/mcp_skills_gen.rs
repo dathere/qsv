@@ -341,6 +341,9 @@ impl UsageParser {
         // If subcommands were found, create a special "subcommand" argument
         // This should be the first argument in the list
         if !subcommands.is_empty() {
+            // Sort subcommands alphabetically for deterministic output
+            subcommands.sort_unstable();
+
             // Extract description for subcommands from USAGE text
             let subcommand_desc = self.extract_subcommand_description(&subcommands);
 

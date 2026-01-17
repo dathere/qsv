@@ -76,7 +76,7 @@ XX╰─────┴────╯YY";
     wrk.create_from_string("in.csv", INPUT);
     let mut cmd = wrk.command("color");
     cmd.arg("in.csv");
-    cmd.env("FORCE_COLOR", "1");
+    cmd.env("QSV_FORCE_COLOR", "1");
     cmd.env("QSV_THEME", "DARK");
     cmd.env("QSV_TERMWIDTH", "100");
     let got: String = wrk.stdout(&mut cmd);

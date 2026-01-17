@@ -1,5 +1,4 @@
-static USAGE: &str = r##"
-
+static USAGE: &str = r#"
 Outputs CSV data as a pretty, colorized table that always fits into the
 terminal.
 
@@ -7,8 +6,8 @@ Requires buffering all CSV data into memory. Therefore, you should use the
 'sample' or 'slice' command to trim down large CSV data before formatting
 it with this command.
 
-Color is turned off when redirecting or running CI. Use env variables
-NO_COLOR=1, FORCE_COLOR=1 or CLICOLOR_FORCE=1 to override this behavior.
+Color is turned off when redirecting or running CI. Set QSV_FORCE_COLOR=1
+to override this behavior.
 
 The color theme is detected based on the current terminal background color
 if possible. Set QSV_THEME to DARK or LIGHT to skip detection. QSV_TERMWIDTH
@@ -25,7 +24,7 @@ Common options:
                            Must be a single character. (default: ,)
     --memcheck             Check if there is enough memory to load the entire
                            CSV into memory using CONSERVATIVE heuristics.
-"##;
+"#;
 
 use std::{io::IsTerminal, str::FromStr};
 
@@ -380,7 +379,7 @@ fn test_field_width() {
 //
 
 fn force_color() -> bool {
-    std::env::var_os("FORCE_COLOR").is_some()
+    std::env::var_os("QSV_FORCE_COLOR").is_some()
 }
 
 fn qsv_termwidth() -> Option<usize> {

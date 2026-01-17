@@ -318,15 +318,18 @@ fn test_colorize() {
 
 #[inline]
 fn field_width(field: &[u8]) -> usize {
-    // Prefer char count for UTF-8 so emoji/wide chars don't explode layout.
-    std::str::from_utf8(field).map_or_else(|_| field.len(), |s| s.chars().count())
+    // Use display width for UTF-8 so East Asian wide chars/emoji align correctly.
+    std::str::from_utf8(field).map_or_else(|_| field.len(), |s| {
+        use unicode_width::UnicodeWidthStr;
+        s.width()
+    })
 }
 
 #[test]
 fn test_field_width() {
     assert_eq!(field_width(b""), 0);
     assert_eq!(field_width(b"hello"), 5);
-    assert_eq!(field_width(b"\xF0\x9F\x91\x8B\xF0\x9F\x8C\x8D"), 2); // Emoji
+    assert_eq!(field_width(b"\xF0\x9F\x91\x8B\xF0\x9F\x8C\x8D"), 4); // Emoji 👋🌍 (2 cols each)
 }
 
 //

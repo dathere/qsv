@@ -539,7 +539,7 @@ Regenerate skills when qsv is updated:
 
 ```bash
 # From qsv repo root (requires mcp feature flag)
-qsv --update-mcp-skill
+qsv --update-mcp-skills
 
 # Then rebuild TypeScript
 cd .claude/skills && npm run build
@@ -606,7 +606,7 @@ This updates Claude Desktop's MCP configuration at:
 
 ### Current Implementation
 
-Skill JSON files are **auto-generated** from qsv's USAGE text via the `qsv --update-mcp-skill` command:
+Skill JSON files are **auto-generated** from qsv's USAGE text via the `qsv --update-mcp-skills` command:
 
 1. **Parser**: `src/mcp_skills_gen.rs` extracts from `static USAGE: &str` using qsv-docopt
 2. **Descriptions**: Concise descriptions from README.md command table (optimized for tokens)
@@ -619,7 +619,7 @@ Skill JSON files are **auto-generated** from qsv's USAGE text via the `qsv --upd
 ```bash
 # From qsv repo root
 cargo build --bin qsv -F all_features
-./target/debug/qsv --update-mcp-skill
+./target/debug/qsv --update-mcp-skills
 
 # Then rebuild TypeScript
 cd .claude/skills && npm run build

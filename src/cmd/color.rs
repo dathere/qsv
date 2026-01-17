@@ -41,7 +41,7 @@ use textwrap;
 use crate::{
     CliResult,
     config::{Config, Delimiter},
-    util,
+    util::{self, get_envvar_flag},
 };
 
 #[derive(Deserialize)]
@@ -386,7 +386,7 @@ fn test_field_width() {
 //
 
 fn force_color() -> bool {
-    std::env::var_os("QSV_FORCE_COLOR").is_some()
+    get_envvar_flag("QSV_FORCE_COLOR")
 }
 
 fn qsv_termwidth() -> Option<usize> {

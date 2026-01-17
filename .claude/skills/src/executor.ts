@@ -69,8 +69,13 @@ export class SkillExecutor {
    * Execute a skill with given parameters
    */
   async execute(skill: QsvSkill, params: SkillParams): Promise<SkillResult> {
-    // Validate parameters
-    this.validateParams(skill, params);
+    // Skip validation when --help is requested (no input file needed for help)
+    const isHelpRequest = params.options?.['help'] || params.options?.['--help'] || params.options?.['-h'];
+
+    if (!isHelpRequest) {
+      // Validate parameters only when not requesting help
+      this.validateParams(skill, params);
+    }
 
     // Build command arguments
     const args = this.buildArgs(skill, params);
@@ -105,6 +110,9 @@ export class SkillExecutor {
    */
   private buildArgs(skill: QsvSkill, params: SkillParams, forShellScript = false): string[] {
     const args: string[] = [skill.command.subcommand];
+
+    // Check if this is a help request
+    const isHelpRequest = params.options?.['help'] || params.options?.['--help'] || params.options?.['-h'];
 
     // Handle commands with subcommands
     // Commands with subcommands have "subcommand" as the first argument with an enum
@@ -143,6 +151,12 @@ export class SkillExecutor {
         // Handle keys that may already include the -- prefix
         const normalizedKey = key.startsWith('--') ? key.substring(2) : key.startsWith('-') ? key.substring(1) : key;
 
+        // --help is universally available for all qsv commands, even if not in skill definition
+        if (normalizedKey === 'help' || key === '--help' || key === '-h') {
+          if (value) args.push('--help');
+          continue;
+        }
+
         // Find option definition
         const option = skill.command.options.find(o =>
           o.flag === key ||
@@ -174,8 +188,8 @@ export class SkillExecutor {
 
       if (value !== undefined) {
         args.push(String(value));
-      } else if (arg.required && !forShellScript) {
-        // Skip input validation if stdin is provided
+      } else if (arg.required && !forShellScript && !isHelpRequest) {
+        // Skip input validation if stdin is provided or if --help is requested
         if (arg.name === 'input' && params.stdin) {
           continue;
         }

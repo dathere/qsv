@@ -513,6 +513,12 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
     description: 'Path to output CSV file (optional). For large results or data transformation commands, a temp file is automatically used if omitted.',
   };
 
+  // Add help flag (universally available for all qsv commands)
+  properties.help = {
+    type: 'boolean',
+    description: 'Display detailed help text for this command (equivalent to --help flag). Returns usage documentation instead of executing the command.',
+  };
+
   return {
     name: skill.name.replace('qsv-', 'qsv_'),
     description: enhanceDescription(skill),
@@ -602,18 +608,22 @@ export async function handleToolCall(
     let inputFile = params.input_file as string | undefined;
     let outputFile = params.output_file as string | undefined;
 
-    if (!inputFile) {
+    // Check if this is a help request
+    const isHelpRequest = params.help === true;
+
+    // Skip input_file requirement for help requests
+    if (!inputFile && !isHelpRequest) {
       return {
         content: [{
           type: 'text' as const,
-          text: 'Error: input_file parameter is required',
+          text: 'Error: input_file parameter is required (unless using help=true to view command documentation)',
         }],
         isError: true,
       };
     }
 
-    // Resolve file paths using filesystem provider if available
-    if (filesystemProvider) {
+    // Resolve file paths using filesystem provider if available (skip for help requests)
+    if (filesystemProvider && inputFile) {
       try {
         const originalInputFile = inputFile;
         inputFile = await filesystemProvider.resolvePath(inputFile);
@@ -743,7 +753,10 @@ export async function handleToolCall(
 
         // Auto-index native CSV files if they're large enough and not indexed
         // Note: Snappy-compressed files (.sz) cannot be indexed
-        await autoIndexIfNeeded(inputFile);
+        // Skip for help requests
+        if (!isHelpRequest) {
+          await autoIndexIfNeeded(inputFile);
+        }
 
         if (outputFile) {
           const originalOutputFile = outputFile;
@@ -808,9 +821,9 @@ export async function handleToolCall(
       }
     }
 
-    // Determine if we should use a temp file for output
+    // Determine if we should use a temp file for output (skip for help requests)
     let autoCreatedTempFile = false;
-    if (!outputFile && await shouldUseTempFile(commandName, inputFile)) {
+    if (!outputFile && !isHelpRequest && inputFile && await shouldUseTempFile(commandName, inputFile)) {
       // Auto-create temp file
       const { randomUUID } = await import('crypto');
       const { tmpdir } = await import('os');
@@ -834,9 +847,9 @@ export async function handleToolCall(
     }
 
     for (const [key, value] of Object.entries(params)) {
-      // Skip input_file and output_file (already handled)
+      // Skip input_file, output_file, and help (already handled)
       // Also skip 'input' if we already set it from input_file
-      if (key === 'input_file' || key === 'output_file' || (key === 'input' && args.input)) {
+      if (key === 'input_file' || key === 'output_file' || key === 'help' || (key === 'input' && args.input)) {
         continue;
       }
 
@@ -854,6 +867,11 @@ export async function handleToolCall(
     // Add output file option if provided
     if (outputFile) {
       options['--output'] = outputFile;
+    }
+
+    // Add help flag if requested
+    if (isHelpRequest) {
+      options['help'] = true;
     }
 
     console.error(`[MCP Tools] Executing skill with args:`, JSON.stringify(args));

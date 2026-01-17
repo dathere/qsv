@@ -340,7 +340,7 @@ fn force_color() -> bool {
 fn qsv_termwidth() -> Option<usize> {
     match std::env::var("QSV_TERMWIDTH").ok() {
         Some(s) => match s.parse::<usize>() {
-            Ok(val) if (1..500).contains(&val) => Some(val),
+            Ok(val) if (1..=1000).contains(&val) => Some(val),
             _ => None,
         },
         None => None,

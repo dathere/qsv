@@ -183,7 +183,7 @@ describegpt options:
                            (e.g., --select '!id,!uuid'), limit results differently per use case, or
                            control output format. If --limit is specified here, it takes precedence
                            over --enum-threshold.
-                           [default: --limit 10 --rank-strategy dense]
+                           [default: --rank-strategy dense]
     --enum-threshold <n>   The threshold for compiling Enumerations with the frequency command
                            before bucketing other unique values into the "Other" category.
                            This is a convenience shortcut for --frequency-options --limit <n>.

@@ -404,6 +404,11 @@ impl UsageParser {
 
         // Check if any usage line has the command name but no subcommands
         for line in usage_lines {
+            // Skip the --help line as it's not a real usage pattern
+            if line.contains("--help") {
+                continue;
+            }
+
             if line.contains(&format!("qsv {}", self.command_name)) {
                 // Check if this line contains any of the subcommand names
                 let has_subcommand = subcommands.iter().any(|sub| line.contains(sub));

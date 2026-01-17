@@ -11,10 +11,10 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: lens, workflow",
+        "description": "Subcommand to execute. Valid values: workflow, lens",
         "enum": [
-          "lens",
-          "workflow"
+          "workflow",
+          "lens"
         ]
       },
       {
@@ -24,13 +24,7 @@
         "description": "The input file path to send to the qsv pro API. This must be a local file path, not stdin. Workflow supports: CSV, TSV, SSV, TAB, XLSX, XLS, XLSB, XLSM, ODS."
       }
     ],
-    "options": [
-      {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      }
-    ]
+    "options": []
   },
   "hints": {
     "streamable": true,

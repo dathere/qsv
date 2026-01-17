@@ -26,11 +26,6 @@
         "description": "This is a convenience flag when using sniff in CKAN harvesters. It is equivalent to --quick --timeout 10 --stats-types --json and --user-agent \"CKAN-harvest/$QSV_VERSION ($QSV_TARGET; $QSV_BIN_NAME)\""
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--json",
         "type": "flag",
         "description": "Return results in JSON format."

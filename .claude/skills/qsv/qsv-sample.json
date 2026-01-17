@@ -42,11 +42,6 @@
         "description": "Do not use stats cache, even if its available."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--max-size",
         "type": "string",
         "description": "Maximum size of the file to download in MB before sampling. Will download the entire file if not specified. If the CSV is partially downloaded, the sample will be taken only from the downloaded portion."

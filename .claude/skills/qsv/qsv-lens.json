@@ -1,7 +1,7 @@
 {
   "name": "qsv-lens",
   "version": "14.0.0",
-  "description": "Interactively view, search & filter tabular data files (CSV, Arrow, Avro/IPC, Parquet, JSON Array and JSONL formats supported) using the csvlens engine.",
+  "description": "Interactively view, search & filter tabular data files using the csvlens engine. Apart from CSV and its dialects, Arrow, Avro/IPC, Parquet, JSON array & JSONL formats are supported with the \"polars\" feature.",
   "category": "utility",
   "command": {
     "binary": "qsv",
@@ -55,11 +55,6 @@
         "type": "string",
         "description": "Freeze the first N columns",
         "default": "1"
-      },
-      {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
       },
       {
         "flag": "--ignore-case",

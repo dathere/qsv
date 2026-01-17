@@ -11,20 +11,20 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: countryinfo, countryinfonow, index-check, index-load, index-reset, index-update, iplookup, iplookupnow, reverse, reversenow, suggest, suggestnow",
+        "description": "Subcommand to execute. Valid values: countryinfo, suggestnow, iplookupnow, index-update, iplookup, reverse, suggest, index-check, reversenow, countryinfonow, index-load, index-reset",
         "enum": [
           "countryinfo",
-          "countryinfonow",
-          "index-check",
-          "index-load",
-          "index-reset",
+          "suggestnow",
+          "iplookupnow",
           "index-update",
           "iplookup",
-          "iplookupnow",
           "reverse",
-          "reversenow",
           "suggest",
-          "suggestnow"
+          "index-check",
+          "reversenow",
+          "countryinfonow",
+          "index-load",
+          "index-reset"
         ]
       },
       {
@@ -84,11 +84,6 @@
         "type": "string",
         "description": "",
         "default": "%+"
-      },
-      {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
       },
       {
         "flag": "--invalid-result",

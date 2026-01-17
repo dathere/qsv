@@ -11,11 +11,11 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: check, compress, decompress, validate",
+        "description": "Subcommand to execute. Valid values: compress, decompress, check, validate",
         "enum": [
-          "check",
           "compress",
           "decompress",
+          "check",
           "validate"
         ]
       },
@@ -27,11 +27,6 @@
       }
     ],
     "options": [
-      {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
       {
         "flag": "--jobs",
         "type": "string",
@@ -46,11 +41,6 @@
         "flag": "--progressbar",
         "type": "flag",
         "description": "Show download progress bars. Only valid for URL input."
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": "Suppress status messages to stderr."
       },
       {
         "flag": "--timeout",

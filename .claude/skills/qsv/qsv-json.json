@@ -16,11 +16,6 @@
     ],
     "options": [
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--jaq",
         "type": "string",
         "description": "Filter JSON data using jaq syntax (https://github.com/01mf02/jaq), which is identical to the popular JSON command-line tool - jq. https://jqlang.github.io/jq/ Note that the filter is applied BEFORE converting JSON to CSV"

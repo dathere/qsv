@@ -21,11 +21,6 @@
         "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--long",
         "type": "string",
         "description": "Convert wide-format CSV to \"long\" format. Output format is three columns: field, attribute, value. Empty values are skipped. Mutually exclusive with --multipass."

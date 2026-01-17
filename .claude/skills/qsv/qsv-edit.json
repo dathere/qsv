@@ -34,11 +34,6 @@
     ],
     "options": [
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--in-place",
         "type": "flag",
         "description": "Overwrite the input file data with the output. The input file is renamed to a .bak file in the same directory."

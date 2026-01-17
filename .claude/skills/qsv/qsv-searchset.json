@@ -53,11 +53,6 @@
         "description": "When --flag is enabled, only rows that match are sent to output. Rows that do not match are filtered."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--ignore-case",
         "type": "flag",
         "description": "Case insensitive search. This is equivalent to prefixing the regex with '(?i)'."
@@ -106,11 +101,6 @@
         "flag": "--quick",
         "type": "flag",
         "description": "Return on first match with an exitcode of 0, returning the row number of the first match to stderr. Return exit code 1 if no match is found. No output is produced. Ignored if --json is enabled."
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": "Do not return number of matches to stderr."
       },
       {
         "flag": "--select",

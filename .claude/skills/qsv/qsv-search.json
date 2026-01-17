@@ -48,11 +48,6 @@
         "description": "If given, the command will not filter rows but will instead flag the found rows in a new column named <column>, with the row numbers of the matched rows and 0 for the non-matched rows. If column is named M, only the M column will be written to the output, and only matched rows are returned."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--ignore-case",
         "type": "flag",
         "description": "Case insensitive search. This is equivalent to prefixing the regex with '(?i)'."
@@ -106,11 +101,6 @@
         "flag": "--quick",
         "type": "flag",
         "description": "Return on first match with an exitcode of 0, returning the row number of the first match to stderr. Return exit code 1 if no match is found. No output is produced."
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": "Do not return number of matches to stderr."
       },
       {
         "flag": "--select",

@@ -49,11 +49,6 @@
         "description": "Force recomputing stats even if valid precomputed stats cache exists."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--jobs",
         "type": "string",
         "description": "The number of jobs to run in parallel. This works only when the given CSV has an index. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected."

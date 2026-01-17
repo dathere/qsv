@@ -8,6 +8,17 @@
     "subcommand": "python",
     "args": [
       {
+        "name": "subcommand",
+        "type": "string",
+        "required": true,
+        "description": "Subcommand to execute. Valid values: filter, py, map",
+        "enum": [
+          "filter",
+          "py",
+          "map"
+        ]
+      },
+      {
         "name": "expression",
         "type": "string",
         "required": true,
@@ -31,11 +42,6 @@
         "flag": "--delimiter",
         "type": "string",
         "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
-      },
-      {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
       },
       {
         "flag": "--helper",

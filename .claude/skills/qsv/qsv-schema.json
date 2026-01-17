@@ -38,11 +38,6 @@
         "description": "Force recomputing cardinality and unique values even if stats cache file exists and is current."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--ignore-case",
         "type": "flag",
         "description": "Ignore case when compiling unique values for enum constraints. Do note however that the `validate` command is case-sensitive when validating against enum constraints."

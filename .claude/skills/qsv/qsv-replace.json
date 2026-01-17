@@ -44,11 +44,6 @@
         "description": "Match the ENTIRE field exactly. Treats the pattern as a literal string (like --literal) and automatically anchors it to match the complete field value (^pattern$)."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--ignore-case",
         "type": "flag",
         "description": "Case insensitive search. This is equivalent to prefixing the regex with '(?i)'."
@@ -82,11 +77,6 @@
         "flag": "--progressbar",
         "type": "flag",
         "description": "Show progress bars. Not valid for stdin."
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": "Do not print number of replacements to stderr."
       },
       {
         "flag": "--select",

@@ -44,11 +44,6 @@
         "description": "The field delimiter for reading/writing CSV data. Must be a single character. (default: ,)"
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--ignore-errors",
         "type": "flag",
         "description": "Skip rows that can't be parsed."
@@ -73,11 +68,6 @@
         "flag": "--output",
         "type": "string",
         "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": "Do not return smart aggregation chosen nor pivot result shape to stderr."
       },
       {
         "flag": "--sort-columns",

@@ -21,11 +21,6 @@
         "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--mode",
         "type": "string",
         "description": "Rename header names to \"safe\" names - i.e. guaranteed \"database-ready\" names. It has six modes - conditional, always, verify, Verbose, with Verbose having two submodes - JSON & pretty JSON.",

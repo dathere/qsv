@@ -26,11 +26,6 @@
         "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--ignore-case",
         "type": "flag",
         "description": "Compare strings disregarding case"

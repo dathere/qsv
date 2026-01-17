@@ -11,12 +11,12 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: calcconv, dynfmt, emptyreplace, operations",
+        "description": "Subcommand to execute. Valid values: calcconv, operations, emptyreplace, dynfmt",
         "enum": [
           "calcconv",
-          "dynfmt",
+          "operations",
           "emptyreplace",
-          "operations"
+          "dynfmt"
         ]
       },
       {
@@ -59,11 +59,6 @@
         "flag": "--formatstr",
         "type": "string",
         "description": ""
-      },
-      {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
       },
       {
         "flag": "--jobs",

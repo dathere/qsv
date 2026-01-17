@@ -31,11 +31,6 @@
         "description": "A string of character to write between a column name and its value."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--no-headers",
         "type": "flag",
         "description": "When set, the first row will not be interpreted as headers. When set, the name of each field will be its index."

@@ -11,10 +11,10 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: columns, rows, rowskey",
+        "description": "Subcommand to execute. Valid values: rows, columns, rowskey",
         "enum": [
-          "columns",
           "rows",
+          "columns",
           "rowskey"
         ]
       },
@@ -47,11 +47,6 @@
         "type": "string",
         "description": "When concatenating with rowskey, this flag provides the name for the new grouping column.",
         "default": "file"
-      },
-      {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
       },
       {
         "flag": "--no-headers",

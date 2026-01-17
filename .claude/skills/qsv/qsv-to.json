@@ -11,14 +11,14 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: datapackage, ods, parquet, postgres, sqlite, xlsx",
+        "description": "Subcommand to execute. Valid values: xlsx, datapackage, parquet, ods, postgres, sqlite",
         "enum": [
+          "xlsx",
           "datapackage",
-          "ods",
           "parquet",
+          "ods",
           "postgres",
-          "sqlite",
-          "xlsx"
+          "sqlite"
         ]
       },
       {
@@ -38,7 +38,7 @@
       {
         "flag": "--all-strings",
         "type": "flag",
-        "description": ""
+        "description": "Convert all fields to strings."
       },
       {
         "flag": "--delimiter",
@@ -48,22 +48,17 @@
       {
         "flag": "--drop",
         "type": "flag",
-        "description": ""
+        "description": "Drop tables before loading new data into them (postgres/sqlite only)."
       },
       {
         "flag": "--dump",
         "type": "flag",
-        "description": ""
+        "description": "Create database dump file for use with `psql` or `sqlite3` command line tools (postgres/sqlite only)."
       },
       {
         "flag": "--evolve",
         "type": "flag",
-        "description": ""
-      },
-      {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
+        "description": "If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only)."
       },
       {
         "flag": "--jobs",
@@ -73,37 +68,32 @@
       {
         "flag": "--pipe",
         "type": "flag",
-        "description": ""
+        "description": "For parquet, allow piping from stdin (using `-`) or from a named pipe."
       },
       {
         "flag": "--print-package",
         "type": "flag",
-        "description": ""
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": ""
+        "description": "Print statistics as datapackage, by default will print field summary."
       },
       {
         "flag": "--schema",
         "type": "string",
-        "description": ""
+        "description": "The schema to load the data into. (postgres only)."
       },
       {
         "flag": "--separator",
         "type": "string",
-        "description": ""
+        "description": "For xlsx, use this character to help truncate xlsx sheet names. Defaults to space."
       },
       {
         "flag": "--stats",
         "type": "flag",
-        "description": ""
+        "description": "Produce extra statistics about the data beyond just type guessing."
       },
       {
         "flag": "--stats-csv",
         "type": "string",
-        "description": ""
+        "description": "Output stats as CSV to specified file."
       }
     ]
   },

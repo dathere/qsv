@@ -26,11 +26,6 @@
         "description": "Write duplicates to <file>."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--human-readable",
         "type": "flag",
         "description": "Comma separate duplicate count."
@@ -64,11 +59,6 @@
         "flag": "--output",
         "type": "string",
         "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": "Do not print duplicate count to stderr."
       },
       {
         "flag": "--select",

@@ -70,11 +70,6 @@
         "default": "csv"
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--ignore-errors",
         "type": "flag",
         "description": "Ignore errors when parsing CSVs. If set, rows with errors will be skipped. If not set, the query will fail. Only use this when debugging queries, as Polars does batched parsing and will skip the entire batch where the error occurred. To get more detailed error messages, set the environment variable POLARS_BACKTRACE_IN_ERR=1 before running the query."
@@ -99,11 +94,6 @@
         "flag": "--output",
         "type": "string",
         "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": "Do not return result shape to stderr."
       },
       {
         "flag": "--rnull-values",

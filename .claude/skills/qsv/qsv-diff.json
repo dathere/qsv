@@ -52,11 +52,6 @@
         "description": "Force diff and ignore stats caches for the left & right CSVs. Otherwise, if available, the stats cache will be used to: * short-circuit the diff if their fingerprint hashes are identical. * check for primary key uniqueness when only one --key column is specified."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--jobs",
         "type": "string",
         "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."

@@ -53,11 +53,6 @@
         "description": "Flush all the keys in the current cache on startup. This only applies to Disk and Redis caches."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--http-header",
         "type": "string",
         "description": "Append custom header(s) to the HTTP header. Pass multiple key-value pairs by adding this option multiple times, once for each pair. The key and value should be separated by a colon."

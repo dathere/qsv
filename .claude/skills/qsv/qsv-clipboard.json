@@ -9,11 +9,6 @@
     "args": [],
     "options": [
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--save",
         "type": "flag",
         "description": "Save output to clipboard. Common options:"

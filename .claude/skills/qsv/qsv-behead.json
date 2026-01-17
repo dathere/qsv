@@ -21,11 +21,6 @@
         "description": "Do not validate if the CSV has different number of fields per record, increasing performance."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--output",
         "type": "string",
         "description": "Write output to <file> instead of stdout."

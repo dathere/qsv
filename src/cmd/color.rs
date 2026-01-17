@@ -510,8 +510,7 @@ fn render_row<W: std::io::Write>(
     line.push_str(&pipe_str);
     for (idx, field) in record.iter().enumerate() {
         let raw = String::from_utf8_lossy(field);
-        let str = fill(&raw, layout[idx]);
-        let styled = colorize(&str, header, idx, colors);
+        let styled = colorize(&fill(&raw, layout[idx]), header, idx, colors);
         line.push(' ');
         line.push_str(&styled);
         line.push(' ');

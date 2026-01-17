@@ -8,6 +8,8 @@ pub mod behead;
 pub mod cat;
 #[cfg(feature = "clipboard")]
 pub mod clipboard;
+#[cfg(feature = "color")]
+pub mod color;
 pub mod count;
 pub mod datefmt;
 pub mod dedup;

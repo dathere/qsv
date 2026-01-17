@@ -442,6 +442,7 @@ fn get_theme_with_env(output: bool, force_color: bool, qsv_theme: Theme) -> Them
         ColorChoice::Always.write_global();
     }
 
+    #[allow(clippy::equatable_if_let)]
     if AutoStream::choice(&std::io::stdout()) == ColorChoice::Never {
         Theme::None
     } else if qsv_theme != Theme::None {

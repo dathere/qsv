@@ -25,6 +25,7 @@ export interface Argument {
   required: boolean;
   description: string;
   examples?: string[];
+  enum?: string[];
 }
 
 export interface Option {
@@ -96,6 +97,7 @@ export interface McpToolProperty {
   description?: string;
   default?: string | number | boolean;
   items?: Record<string, unknown>;
+  enum?: string[];
 }
 
 export interface McpToolDefinition {

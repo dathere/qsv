@@ -53,11 +53,6 @@
         "description": "Ignore errors when running the filter command. Only valid when --filter is used."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--jobs",
         "type": "string",
         "description": "The number of splitting jobs to run in parallel. This only works when the given CSV data has an index already created. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected."
@@ -77,11 +72,6 @@
         "type": "string",
         "description": "The zero padding width that is used in the generated filename.",
         "default": "0"
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": "Do not display an output summary to stderr."
       },
       {
         "flag": "--size",

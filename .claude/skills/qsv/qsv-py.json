@@ -1,12 +1,22 @@
 {
-  "name": "qsv-python",
+  "name": "qsv-py",
   "version": "14.0.0",
   "description": "Create a new computed column or filter rows by evaluating a Python expression on every row of a CSV file.",
   "category": "utility",
   "command": {
     "binary": "qsv",
-    "subcommand": "python",
+    "subcommand": "py",
     "args": [
+      {
+        "name": "subcommand",
+        "type": "string",
+        "required": true,
+        "description": "Subcommand to execute. Valid values: filter, map",
+        "enum": [
+          "filter",
+          "map"
+        ]
+      },
       {
         "name": "expression",
         "type": "string",
@@ -31,11 +41,6 @@
         "flag": "--delimiter",
         "type": "string",
         "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
-      },
-      {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
       },
       {
         "flag": "--helper",

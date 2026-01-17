@@ -106,11 +106,6 @@
         "description": "Use the fancy regex engine instead of the default regex engine for validation. The fancy engine supports advanced regex features such as lookaround and backreferences, but is not as performant as the default regex engine which guarantees linear-time matching, prevents DoS attacks, and is more efficient for simple patterns."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--invalid",
         "type": "string",
         "description": "Invalid record output file suffix.",
@@ -145,11 +140,6 @@
         "flag": "--progressbar",
         "type": "flag",
         "description": "Show progress bars. Not valid for stdin."
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": "Do not display validation summary message."
       },
       {
         "flag": "--size-limit",

@@ -44,11 +44,6 @@
         "default": "%+"
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--input-tz",
         "type": "string",
         "description": "",

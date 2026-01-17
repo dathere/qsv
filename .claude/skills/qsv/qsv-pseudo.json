@@ -33,11 +33,6 @@
         "default": "{}"
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--increment",
         "type": "string",
         "description": "The increment for the incremental identifier.",

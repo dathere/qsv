@@ -86,11 +86,6 @@
         "default": "%+"
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--invalid-result",
         "type": "string",
         "description": "The string to return when the geocode result is empty/invalid. If not set, the original value is used."

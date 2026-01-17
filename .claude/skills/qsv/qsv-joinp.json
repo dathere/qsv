@@ -100,11 +100,6 @@
         "description": "Do a 'full outer' join. This returns all rows in both data sets with matching records joined. If there is no match, the missing side will be padded out with empty fields."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--ignore-case",
         "type": "flag",
         "description": "When set, joins are done case insensitively."
@@ -191,11 +186,6 @@
         "flag": "--output",
         "type": "string",
         "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": "Do not return join shape to stderr."
       },
       {
         "flag": "--right",

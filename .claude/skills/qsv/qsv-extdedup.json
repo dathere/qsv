@@ -32,11 +32,6 @@
         "description": "Write duplicates to <file>. Note that the file will NOT be a valid CSV. It is a list of duplicate lines, with the row number of the duplicate separated by a tab from the duplicate line itself."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--human-readable",
         "type": "flag",
         "description": "Comma separate duplicate count."
@@ -56,11 +51,6 @@
         "flag": "--no-output",
         "type": "flag",
         "description": "Do not write deduplicated output to <output>. Use this if you only want to know the duplicate count."
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": "Do not print duplicate count to stderr."
       },
       {
         "flag": "--select",

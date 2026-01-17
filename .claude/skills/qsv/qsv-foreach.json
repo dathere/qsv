@@ -39,11 +39,6 @@
         "default": "true"
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--new-column",
         "type": "string",
         "description": "If unifying, add a new column with given name and copying the value of the current input file line."

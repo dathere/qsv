@@ -47,11 +47,6 @@
         "description": ""
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--no-headers",
         "type": "flag",
         "description": "When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.)"

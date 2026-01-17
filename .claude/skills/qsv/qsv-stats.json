@@ -59,11 +59,6 @@
         "description": "Force recomputing stats even if valid precomputed stats cache exists."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--infer-boolean",
         "type": "flag",
         "description": "Infer boolean data type. This automatically enables the --cardinality option. When a column's cardinality is 2, and the 2 values' are in the true/false patterns specified by --boolean-patterns, the data type is inferred as boolean."

@@ -42,11 +42,6 @@
         "description": "The escape character to use. When not specified, quotes are escaped by doubling them."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--no-quoting",
         "type": "flag",
         "description": "Disable quoting completely when reading CSV data."

@@ -74,11 +74,6 @@
         "description": "A JSON file containing global variables. When posting as an HTML Form, this file is added to the Form data. When constructing a payload using a MiniJinja template, the JSON properties can be accessed in templates using the \"qsv_g\" namespace (e.g. {{qsv_g.api_key}}, {{qsv_g.base_url}})."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--http-header",
         "type": "string",
         "description": "Append custom header(s) to the HTTP header. Pass multiple key-value pairs by adding this option multiple times, once for each pair. The key and value should be separated by a colon."

@@ -27,11 +27,6 @@
         "description": "Do not validate if the CSV has different number of fields per record, increasing performance when counting without an index."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--human-readable",
         "type": "flag",
         "description": "Comma separate counts."

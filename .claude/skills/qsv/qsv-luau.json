@@ -69,11 +69,6 @@
         "description": "Luau script/file to execute at the END, after processing the CSV with the main-script. Typically used for aggregations. The output of the END script is sent to stderr. Takes precedence over an embedded END script. If <script> begins with \"file:\" or ends with \".luau/.lua\", it's interpreted as a filepath from which to load the script."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--max-errors",
         "type": "string",
         "description": "The maximum number of errors to tolerate before aborting. Set to zero to disable error limit.",

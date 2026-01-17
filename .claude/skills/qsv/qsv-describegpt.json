@@ -118,11 +118,6 @@
         "description": "Send a fresh request to the LLM API, refreshing a cached response if it exists. When a --prompt SQL query fails, you can also use this option to request the LLM to generate a new SQL query."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--language",
         "type": "string",
         "description": "The output language/dialect to use for the response. (e.g., \"Spanish\", \"French\", \"Hindi\", \"Mandarin\", \"Italian\", \"Castilian\", \"Franglais\", \"Taglish\", \"Pig Latin\", \"Valley Girl\", \"Pirate\", \"Shakespearean English\", \"Chavacano\", \"Gen Z\", \"Yoda\", etc.)"
@@ -170,11 +165,6 @@
         "flag": "--prompt-file",
         "type": "string",
         "description": "The configurable TOML file containing prompts to use for inferencing. If no file is provided, default prompts will be used. The prompt file uses the Mini Jinja template engine (https://docs.rs/minijinja) See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml"
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": "Do not print status messages to stderr."
       },
       {
         "flag": "--redis-cache",

@@ -36,11 +36,6 @@
         "description": "The escape character to use. When not specified, quotes are escaped by doubling them."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--no-final-newline",
         "type": "flag",
         "description": "Do not write a newline at the end of the output. This makes it easier to paste the output into Excel."

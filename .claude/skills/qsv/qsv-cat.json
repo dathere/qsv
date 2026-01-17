@@ -49,11 +49,6 @@
         "default": "file"
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--no-headers",
         "type": "flag",
         "description": "When set, the first row will NOT be interpreted as column names. Note that this has no effect when concatenating columns."

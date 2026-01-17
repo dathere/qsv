@@ -1,11 +1,11 @@
 {
-  "name": "qsv-enumerate",
+  "name": "qsv-enum",
   "version": "14.0.0",
   "description": "Add a new column enumerating the lines of a CSV file.",
   "category": "utility",
   "command": {
     "binary": "qsv",
-    "subcommand": "enumerate",
+    "subcommand": "enum",
     "args": [
       {
         "name": "input",
@@ -34,11 +34,6 @@
         "flag": "--hash",
         "type": "string",
         "description": "Create a new column filled with the hash of the given column/s. Use \"1-\" to hash all columns. Changes the default column name to \"hash\" unless overridden by --new-column. Will remove an existing \"hash\" column if it exists."
-      },
-      {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
       },
       {
         "flag": "--increment",

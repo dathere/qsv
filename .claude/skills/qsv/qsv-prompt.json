@@ -25,11 +25,6 @@
         "description": "The filter to use for the INPUT file dialog. Set to \"None\" to disable filters. Filters are comma-delimited file extensions. Defaults to csv,tsv,tab,ssv,xls,xlsx,xlsm,xlsb,ods. If the polars feature is enabled, it adds avro,arrow,ipc,parquet, json,jsonl,ndjson & gz,zst,zlib compressed files to the filter."
       },
       {
-        "flag": "--help",
-        "type": "flag",
-        "description": "Display this message"
-      },
-      {
         "flag": "--msg",
         "type": "string",
         "description": "The prompt message to display in the file dialog title. When not using --fd-output, the default is \"Select a File\". When using --fd-output, the default is \"Save File As\"."
@@ -38,11 +33,6 @@
         "flag": "--output",
         "type": "string",
         "description": "Write output to <file> without showing a save dialog. Mutually exclusive with --fd-output."
-      },
-      {
-        "flag": "--quiet",
-        "type": "flag",
-        "description": "Do not print --fd-output message to stderr."
       },
       {
         "flag": "--save-fname",

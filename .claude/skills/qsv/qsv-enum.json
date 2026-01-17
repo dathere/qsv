@@ -1,21 +1,12 @@
 {
-  "name": "qsv-enumerate",
+  "name": "qsv-enum",
   "version": "14.0.0",
   "description": "Add a new column enumerating the lines of a CSV file.",
   "category": "utility",
   "command": {
     "binary": "qsv",
-    "subcommand": "enumerate",
+    "subcommand": "enum",
     "args": [
-      {
-        "name": "subcommand",
-        "type": "string",
-        "required": true,
-        "description": "Subcommand to execute. Valid values: enum",
-        "enum": [
-          "enum"
-        ]
-      },
       {
         "name": "input",
         "type": "file",

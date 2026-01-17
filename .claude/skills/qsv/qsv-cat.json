@@ -11,10 +11,10 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: rows, columns, rowskey",
+        "description": "Subcommand to execute. Valid values: columns, rows, rowskey",
         "enum": [
-          "rows",
           "columns",
+          "rows",
           "rowskey"
         ]
       },

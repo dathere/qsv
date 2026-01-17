@@ -11,10 +11,10 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: workflow, lens",
+        "description": "Subcommand to execute. Valid values: lens, workflow",
         "enum": [
-          "workflow",
-          "lens"
+          "lens",
+          "workflow"
         ]
       },
       {

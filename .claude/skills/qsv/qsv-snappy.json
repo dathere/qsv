@@ -11,11 +11,11 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: compress, decompress, check, validate",
+        "description": "Subcommand to execute. Valid values: check, compress, decompress, validate",
         "enum": [
+          "check",
           "compress",
           "decompress",
-          "check",
           "validate"
         ]
       },

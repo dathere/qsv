@@ -1,20 +1,19 @@
 {
-  "name": "qsv-python",
+  "name": "qsv-py",
   "version": "14.0.0",
   "description": "Create a new computed column or filter rows by evaluating a Python expression on every row of a CSV file.",
   "category": "utility",
   "command": {
     "binary": "qsv",
-    "subcommand": "python",
+    "subcommand": "py",
     "args": [
       {
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: filter, py, map",
+        "description": "Subcommand to execute. Valid values: filter, map",
         "enum": [
           "filter",
-          "py",
           "map"
         ]
       },

@@ -11,14 +11,14 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: xlsx, datapackage, parquet, ods, postgres, sqlite",
+        "description": "Subcommand to execute. Valid values: datapackage, ods, parquet, postgres, sqlite, xlsx",
         "enum": [
-          "xlsx",
           "datapackage",
-          "parquet",
           "ods",
+          "parquet",
           "postgres",
-          "sqlite"
+          "sqlite",
+          "xlsx"
         ]
       },
       {

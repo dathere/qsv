@@ -10,7 +10,7 @@
       {
         "name": "subcommand",
         "type": "string",
-        "required": true,
+        "required": false,
         "description": "Subcommand to execute. Valid values: schema",
         "enum": [
           "schema"

@@ -11,12 +11,12 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: calcconv, operations, emptyreplace, dynfmt",
+        "description": "Subcommand to execute. Valid values: calcconv, dynfmt, emptyreplace, operations",
         "enum": [
           "calcconv",
-          "operations",
+          "dynfmt",
           "emptyreplace",
-          "dynfmt"
+          "operations"
         ]
       },
       {

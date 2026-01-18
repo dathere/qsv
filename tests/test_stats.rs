@@ -5336,13 +5336,13 @@ fn stats_json_backward_compat() {
     // Run stats again - the cache comparison will fail due to qsv_version mismatch,
     // triggering recomputation. This tests that older cache files without the new fields
     // don't cause crashes during the comparison logic.
-    let mut cmd_3 = wrk.command("stats");
-    cmd_3
+    let mut recompute_stats_cmd = wrk.command("stats");
+    recompute_stats_cmd
         .arg("--dataset-stats")
         .args(["--cache-threshold", "1"])
         .arg(&test_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_3);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut recompute_stats_cmd);
     assert!(!got.is_empty(), "Stats should produce output");
 
     // Verify the JSON file now has the new fields again

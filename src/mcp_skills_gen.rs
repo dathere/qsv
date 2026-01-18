@@ -839,11 +839,15 @@ fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
 pub fn generate_mcp_skills() -> CliResult<()> {
     // Get all commands from src/cmd/*.rs (excluding mod.rs and duplicates)
     // Note: "enumerate" command is invoked as "enum" in qsv
+    // Commands excluded from MCP skills generation:
+    // - clipboard: not useful for AI agents (requires system clipboard)
+    // - color: not useful for AI agents (terminal color testing)
+    // - lens: interactive TUI viewer (requires terminal)
+    // - prompt: interactive prompt builder (requires terminal)
     let commands = vec![
         "apply",
         "behead",
         "cat",
-        "clipboard",
         "count",
         "datefmt",
         "dedup",
@@ -873,13 +877,11 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "joinp",
         "json",
         "jsonl",
-        "lens",
         "luau",
         "moarstats",
         "partition",
         "pivotp",
         "pro",
-        "prompt",
         "pseudo",
         "python",
         "rename",

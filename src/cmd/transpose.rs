@@ -37,6 +37,10 @@ transpose options:
                            process the transpose in memory.
                            Useful for really big datasets as the default
                            is to read the entire dataset into memory.
+    -s, --select <arg>     Select a subset of columns to transpose.
+                           When used with --long, this filters which columns
+                           become attribute rows (the field columns are unaffected).
+                           See 'qsv select --help' for the full selection syntax.
     --long <selection>     Convert wide-format CSV to "long" format.
                            Output format is three columns:
                            field, attribute, value. Empty values are skipped.
@@ -82,6 +86,7 @@ struct Args {
     flag_output:    Option<String>,
     flag_delimiter: Option<Delimiter>,
     flag_multipass: bool,
+    flag_select:    Option<SelectColumns>,
     flag_long:      Option<String>,
     flag_memcheck:  bool,
 }
@@ -149,6 +154,23 @@ impl Args {
         let field_column_set: std::collections::HashSet<usize> =
             field_column_indices.iter().copied().collect();
 
+        // Determine selected attribute columns if --select is specified
+        // --select filters which columns become attribute rows (field columns are unaffected)
+        let selected_attribute_set: Option<std::collections::HashSet<usize>> =
+            if let Some(ref sel) = self.flag_select {
+                let selection = sel
+                    .selection(&headers, true)
+                    .map_err(|e| CliError::Other(format!("Column selection error: {e}")))?;
+                if selection.is_empty() {
+                    return fail_incorrectusage_clierror!(
+                        "--select resulted in no columns to transpose."
+                    );
+                }
+                Some(selection.iter().copied().collect())
+            } else {
+                None
+            };
+
         // Write output headers
         let mut header_record = ByteRecord::with_capacity(64, 3);
         header_record.push_field(b"field");
@@ -187,10 +209,16 @@ impl Args {
                 concatenated
             };
 
-            // Iterate through all columns, skipping field columns
+            // Iterate through all columns, skipping field columns and non-selected columns
             for (i, attribute_header) in headers.iter().enumerate() {
                 // Skip if this is a field column
                 if field_column_set.contains(&i) {
+                    continue;
+                }
+                // Skip if --select is specified and this column is not in the selection
+                if let Some(ref sel_set) = selected_attribute_set
+                    && !sel_set.contains(&i)
+                {
                     continue;
                 }
                 if i < record.len() {
@@ -219,16 +247,28 @@ impl Args {
             return self.multipass_transpose_streaming();
         }
 
+        // Get selected column indices if --select is specified
+        let selected_indices = self.get_selected_indices()?;
+
         let mut rdr = self.rconfig().reader()?;
         let mut wtr = self.wconfig().writer()?;
         let nrows = rdr.byte_headers()?.len();
 
         let all = rdr.byte_records().collect::<Result<Vec<_>, _>>()?;
-        let mut record = ByteRecord::with_capacity(1024, nrows);
-        for i in 0..nrows {
+
+        // Determine which column indices to transpose
+        let indices: Vec<usize> = match &selected_indices {
+            Some(sel) => sel.clone(),
+            None => (0..nrows).collect(),
+        };
+
+        let mut record = ByteRecord::with_capacity(1024, all.len());
+        for i in indices {
             record.clear();
             for row in &all {
-                record.push_field(&row[i]);
+                if i < row.len() {
+                    record.push_field(&row[i]);
+                }
             }
             wtr.write_byte_record(&record)?;
         }
@@ -236,8 +276,17 @@ impl Args {
     }
 
     fn multipass_transpose_streaming(&self) -> CliResult<()> {
+        // Get selected column indices if --select is specified
+        let selected_indices = self.get_selected_indices()?;
+
         // Get the number of columns from the first row
         let nrows = self.rconfig().reader()?.byte_headers()?.len();
+
+        // Determine which column indices to transpose
+        let indices: Vec<usize> = match &selected_indices {
+            Some(sel) => sel.clone(),
+            None => (0..nrows).collect(),
+        };
 
         // Memory map the file for efficient access
         let file = File::open(self.arg_input.as_ref().unwrap())?;
@@ -247,7 +296,7 @@ impl Args {
 
         let mut record = ByteRecord::with_capacity(1024, nrows);
 
-        for i in 0..nrows {
+        for i in indices {
             record.clear();
 
             // Create a reader from the memory-mapped data
@@ -265,6 +314,30 @@ impl Args {
             wtr.write_byte_record(&record)?;
         }
         Ok(wtr.flush()?)
+    }
+
+    /// Compute which column indices should be transposed based on the --select flag.
+    /// Returns None if no selection was specified (meaning all columns).
+    fn get_selected_indices(&self) -> CliResult<Option<Vec<usize>>> {
+        if let Some(ref sel) = self.flag_select {
+            // Read headers with no_headers(false) to get actual column names
+            let mut rdr = Config::new(self.arg_input.as_ref())
+                .delimiter(self.flag_delimiter)
+                .no_headers(false)
+                .reader()?;
+            let headers = rdr.byte_headers()?.clone();
+            let selection = sel
+                .selection(&headers, true)
+                .map_err(|e| CliError::Other(format!("Column selection error: {e}")))?;
+            if selection.is_empty() {
+                return fail_incorrectusage_clierror!(
+                    "--select resulted in no columns to transpose."
+                );
+            }
+            Ok(Some(selection.iter().copied().collect()))
+        } else {
+            Ok(None)
+        }
     }
 
     fn wconfig(&self) -> Config {

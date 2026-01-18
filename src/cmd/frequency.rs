@@ -1981,6 +1981,7 @@ impl Args {
     /// # Returns
     /// A vector of indices (into the selected headers) of columns where the filter
     /// expression evaluated to `true` (meaning they should be excluded).
+    #[allow(clippy::unused_self)]
     #[cfg(feature = "luau")]
     fn compute_stats_filter_columns_to_skip(
         &self,

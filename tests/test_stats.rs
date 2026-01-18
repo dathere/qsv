@@ -5195,13 +5195,13 @@ fn stats_json_file_level_metadata() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     // Run stats with --dataset-stats to populate the new fields
-    let mut cmd_2 = wrk.command("stats");
-    cmd_2
+    let mut dataset_stats_cmd = wrk.command("stats");
+    dataset_stats_cmd
         .arg("--dataset-stats")
         .args(["--cache-threshold", "1"])
         .arg(&test_file);
 
-    wrk.run(&mut cmd_2);
+    wrk.run(&mut dataset_stats_cmd);
 
     // Read the JSON metadata file
     let json_path = wrk.path("boston311-100.stats.csv.json");

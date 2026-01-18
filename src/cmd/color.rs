@@ -20,6 +20,9 @@ Usage:
     qsv color [options] [<input>]
     qsv color --help
 
+color options:
+    -n, --row-numbers      Show row numbers.
+
 Common options:
     -h, --help             Display this message
     -o, --output <file>    Write output to <file> instead of stdout.
@@ -33,6 +36,7 @@ use std::{fmt::Write, io::IsTerminal, str::FromStr};
 
 use anstream::{AutoStream, ColorChoice};
 use crossterm::style::{Attribute, Attributes, Color, ContentStyle, StyledContent};
+use csv::ByteRecord;
 use serde::Deserialize;
 use strum_macros::EnumString;
 use terminal_colorsaurus::{QueryOptions, ThemeMode, theme_mode};
@@ -46,10 +50,24 @@ use crate::{
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input:      Option<String>,
-    flag_output:    Option<String>,
-    flag_delimiter: Option<Delimiter>,
-    flag_memcheck:  bool,
+    arg_input:        Option<String>,
+    flag_delimiter:   Option<Delimiter>,
+    flag_memcheck:    bool,
+    flag_output:      Option<String>,
+    flag_row_numbers: bool,
+}
+
+//
+// our state
+//
+
+struct ColorStruct<'a> {
+    colors:      Option<&'a Colors>,
+    headers:     ByteRecord,
+    layout:      Vec<usize>,
+    pipe:        String,
+    records:     Vec<ByteRecord>,
+    row_numbers: bool,
 }
 
 //
@@ -348,54 +366,6 @@ fn test_fill() {
 }
 
 //
-// colorize
-//
-
-/// Colorizes a string and writes it to an existing buffer.
-/// This is the optimized version used in hot paths to avoid allocations.
-#[inline]
-fn colorize_into(
-    s: &str,
-    header: bool,
-    col_idx: usize,
-    colors: Option<&Colors>,
-    buffer: &mut String,
-) {
-    buffer.clear();
-
-    let Some(colors) = colors else {
-        buffer.push_str(s);
-        return;
-    };
-
-    let style = if header {
-        colors.headers[col_idx % colors.headers.len()]
-    } else {
-        colors.field
-    };
-
-    // Manually write ANSI codes instead of format!() to avoid allocation
-    let _ = write!(buffer, "{}", StyledContent::new(style, s));
-}
-
-#[test]
-fn test_colorize() {
-    let mut buffer = String::new();
-
-    colorize_into("FOO", true, 0, Some(&COLORS_DARK), &mut buffer);
-    assert_eq!(buffer, "\u{1b}[38;2;255;97;136m\u{1b}[1mFOO\u{1b}[0m");
-
-    colorize_into("BAR", false, 0, Some(&COLORS_LIGHT), &mut buffer);
-    assert_eq!(buffer, "\u{1b}[38;2;30;41;57mBAR\u{1b}[39m");
-
-    colorize_into("FOO", true, 0, None, &mut buffer);
-    assert_eq!(buffer, "FOO");
-
-    colorize_into("BAR", false, 0, None, &mut buffer);
-    assert_eq!(buffer, "BAR");
-}
-
-//
 // field_width
 //
 
@@ -511,14 +481,13 @@ fn test_get_theme() {
 
 fn render_sep<W: std::io::Write>(
     out: &mut W,
-    layout: &[usize],
+    color_struct: &ColorStruct,
     (left, mid, right): (char, char, char),
-    colors: Option<&Colors>,
 ) -> std::io::Result<()> {
     // construct str
     let mut text = String::new();
     text.push(left);
-    for (idx, w) in layout.iter().enumerate() {
+    for (idx, w) in color_struct.layout.iter().enumerate() {
         if idx > 0 {
             text.push(mid);
         }
@@ -526,7 +495,7 @@ fn render_sep<W: std::io::Write>(
     }
     text.push(right);
 
-    let Some(colors) = colors else {
+    let Some(colors) = color_struct.colors else {
         return writeln!(out, "{text}");
     };
 
@@ -535,38 +504,98 @@ fn render_sep<W: std::io::Write>(
 
 fn render_row<W: std::io::Write>(
     out: &mut W,
-    record: &csv::ByteRecord,
-    layout: &[usize],
-    header: bool,
-    colors: Option<&Colors>,
-    pipe_str: &str,
+    color_struct: &ColorStruct,
+    row_idx: usize,
     fill_buffer: &mut String,
-    colorize_buffer: &mut String,
 ) -> std::io::Result<()> {
+    let layout = &color_struct.layout;
+
     // Pre-calculate approximate line size:
     // layout.iter().sum() + (layout.len() * 3) for pipes/spaces + ANSI codes
     let line_capacity = layout.iter().sum::<usize>() + (layout.len() * 3) + 100;
     let mut line = String::with_capacity(line_capacity);
+    line.push_str(&color_struct.pipe);
 
-    line.push_str(pipe_str);
-    for (idx, field) in record.iter().enumerate() {
-        // safety: flexible(false) ensures all records have same field count as headers,
-        // so idx is always within bounds of layout (which is sized to headers.len())
+    // Add row_numbers to line if necessary. Another approach would be to modify records earlier in
+    // the flow, but that would be expensive.
+    let mut col_idx = 0;
+    if color_struct.row_numbers {
+        let text = if row_idx == 0 {
+            "#" // header
+        } else {
+            &(row_idx).to_string() // field
+        };
+        render_cell(color_struct, text, row_idx, col_idx, fill_buffer, &mut line);
+        col_idx += 1;
+    }
+
+    let record = &color_struct.records[row_idx];
+    for field in record {
         let raw = String::from_utf8_lossy(field);
-        fill_into(&raw, layout[idx], fill_buffer);
-        colorize_into(fill_buffer, header, idx, colors, colorize_buffer);
-        line.push(' ');
-        line.push_str(colorize_buffer);
-        line.push(' ');
-        line.push_str(pipe_str);
+        render_cell(color_struct, &raw, row_idx, col_idx, fill_buffer, &mut line);
+        col_idx += 1;
     }
     line.push('\n');
     out.write_all(line.as_bytes())
 }
 
+fn render_cell(
+    color_struct: &ColorStruct,
+    cell: &str,
+    row_idx: usize,
+    col_idx: usize,
+    fill_buffer: &mut String,
+    line: &mut String,
+) {
+    // fill
+    fill_into(
+        cell,
+        // safety: flexible(false) ensures all records have same field count as headers, so col_idx
+        // is always within bounds of layout (which is sized to headers.len())
+        color_struct.layout[col_idx],
+        fill_buffer,
+    );
+
+    line.push(' ');
+    if let Some(colors) = color_struct.colors {
+        let style = if row_idx == 0 {
+            colors.headers[col_idx % colors.headers.len()]
+        } else if color_struct.row_numbers && col_idx == 0 {
+            colors.chrome
+        } else {
+            colors.field
+        };
+        let _ = write!(line, "{}", StyledContent::new(style, fill_buffer));
+    } else {
+        // no styling
+        line.push_str(fill_buffer);
+    }
+    line.push(' ');
+    line.push_str(&color_struct.pipe);
+}
+
 //
 // run
 //
+
+#[allow(clippy::cast_precision_loss)]
+fn num_digits(x: usize) -> usize {
+    if x == 0 {
+        // edge case
+        return 1;
+    }
+    ((x as f64).log10().floor() as usize) + 1
+}
+
+#[test]
+fn test_num_digits() {
+    assert_eq!(num_digits(0), 1);
+    assert_eq!(num_digits(1), 1);
+    assert_eq!(num_digits(9), 1);
+    assert_eq!(num_digits(10), 2);
+    assert_eq!(num_digits(9999), 4);
+    assert_eq!(num_digits(10000), 5);
+}
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
@@ -597,22 +626,42 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     //
-    // layout, look and feel
+    // ColorStruct (our state)
     //
 
+    let mut color_struct = ColorStruct {
+        headers:     headers.clone(),
+        records:     records.clone(),
+        row_numbers: args.flag_row_numbers,
+        // these get setup later
+        colors:      None,
+        layout:      Vec::new(),
+        pipe:        String::new(),
+    };
+    let mut fill_buffer = String::new();
+
     // measure the maximum width for each column. Never <2 chars
-    let mut columns: Vec<usize> = vec![2; headers.len()];
+    let mut columns: Vec<usize> = vec![2; color_struct.headers.len()];
     for rec in &records {
         for (idx, field) in rec.iter().enumerate() {
             columns[idx] = columns[idx].max(field_width(field));
         }
     }
-    let colors = match get_theme(args.flag_output.is_some()) {
+    if color_struct.row_numbers {
+        // prepend row number column
+        columns.insert(0, num_digits(color_struct.records.len() - 1));
+    }
+    color_struct.colors = match get_theme(args.flag_output.is_some()) {
         Theme::Dark => Some(&COLORS_DARK),
         Theme::Light => Some(&COLORS_LIGHT),
         Theme::None => None,
     };
-    let layout = autolayout(&columns, get_termwidth());
+    color_struct.layout = autolayout(&columns, get_termwidth());
+    color_struct.pipe = if let Some(colors) = color_struct.colors {
+        format!("{}", StyledContent::new(colors.chrome, PIPE))
+    } else {
+        PIPE.to_string()
+    };
 
     //
     // write
@@ -622,43 +671,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .delimiter(Some(Delimiter(b'\t')))
         .set_write_buffer(DEFAULT_WTR_BUFFER_CAPACITY * 4);
     let mut out = wconfig.io_writer()?;
-
-    // Cache pipe_str to avoid repeated allocations
-    let pipe_str = if let Some(colors) = colors {
-        format!("{}", StyledContent::new(colors.chrome, PIPE))
-    } else {
-        PIPE.to_string()
-    };
-
-    // Create reusable buffers for fill and colorize operations
-    let mut fill_buffer = String::new();
-    let mut colorize_buffer = String::new();
-
-    render_sep(&mut out, &layout, (NW, N, NE), colors)?;
-    render_row(
-        &mut out,
-        headers,
-        &layout,
-        true,
-        colors,
-        &pipe_str,
-        &mut fill_buffer,
-        &mut colorize_buffer,
-    )?;
-    render_sep(&mut out, &layout, (W, C, E), colors)?;
-    for rec in records.iter().skip(1) {
-        render_row(
-            &mut out,
-            rec,
-            &layout,
-            false,
-            colors,
-            &pipe_str,
-            &mut fill_buffer,
-            &mut colorize_buffer,
-        )?;
+    render_sep(&mut out, &color_struct, (NW, N, NE))?;
+    for (idx, _) in records.iter().enumerate() {
+        render_row(&mut out, &color_struct, idx, &mut fill_buffer)?;
+        if idx == 0 {
+            render_sep(&mut out, &color_struct, (W, C, E))?;
+        }
     }
-    render_sep(&mut out, &layout, (SW, S, SE), colors)?;
+    render_sep(&mut out, &color_struct, (SW, S, SE))?;
     out.flush()?;
 
     Ok(())

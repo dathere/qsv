@@ -10,27 +10,33 @@ abcdefg,a,ab
 a  ,abc,z";
 // ^^ notice whitespace in final row
 
-fn wrk_stdout(data: &str, termwidth: &str) -> String {
+fn wrk_stdout_all(data: &str, termwidth: &str, theme: Option<&str>, extra_args: &[&str]) -> String {
     let wrk = Workdir::new("color");
     wrk.create_from_string("in.csv", data);
+
     let mut cmd = wrk.command("color");
     cmd.env("QSV_TERMWIDTH", termwidth);
+
+    if let Some(theme_value) = theme {
+        cmd.env("QSV_THEME", theme_value);
+        cmd.env("QSV_FORCE_COLOR", "1");
+    }
+
+    cmd.args(extra_args); // Add all extra args
     cmd.arg("in.csv");
     wrk.stdout(&mut cmd)
+}
+
+fn wrk_stdout(data: &str, termwidth: &str) -> String {
+    wrk_stdout_all(data, termwidth, None, &[])
 }
 
 fn wrk_stdout_with_theme(data: &str, termwidth: &str, theme: &str) -> String {
-    let wrk = Workdir::new("color");
-    wrk.create_from_string("in.csv", data);
-    let mut cmd = wrk.command("color");
-    cmd.env("QSV_TERMWIDTH", termwidth);
-    cmd.env("QSV_THEME", theme);
-    cmd.env("QSV_FORCE_COLOR", "1");
-    cmd.arg("in.csv");
-    wrk.stdout(&mut cmd)
+    wrk_stdout_all(data, termwidth, Some(theme), &[])
 }
 
-//
+// wrk_stdout(data, "80", Some("dark"), &["--no-header", "--delimiter", "\t"])//
+
 // basic test
 //
 
@@ -60,6 +66,20 @@ fn color() {
 }
 
 #[test]
+fn color_row_numbers() {
+    static EXPECTED: &str = "\
+╭───┬─────────┬─────┬────╮
+│ # │ h       │ h2  │ h3 │
+├───┼─────────┼─────┼────┤
+│ 1 │ abcdefg │ a   │ ab │
+│ 2 │ a       │ abc │ z  │
+╰───┴─────────┴─────┴────╯";
+
+    let got = wrk_stdout_all(INPUT, "100", None, &["--row-numbers"]);
+    assert_eq!(got, EXPECTED);
+}
+
+#[test]
 fn color_ragged() {
     let wrk = Workdir::new("color").flexible(true);
     wrk.create_from_string("in.csv", "1\n1,2");
@@ -83,15 +103,7 @@ XX├─────┼────┤YY
 XX│YY EE[38;2;229;231;235ma  YY XX│YY EE[38;2;229;231;235mb YY XX│YY
 XX╰─────┴────╯YY";
 
-    let wrk = Workdir::new("color").flexible(true);
-    wrk.create_from_string("in.csv", INPUT);
-    let mut cmd = wrk.command("color");
-    cmd.arg("in.csv");
-    cmd.env("QSV_FORCE_COLOR", "1");
-    cmd.env("QSV_THEME", "DARK");
-    cmd.env("QSV_TERMWIDTH", "100");
-    let got: String = wrk.stdout(&mut cmd);
-
+    let got = wrk_stdout_all(INPUT, "100", Some("DARK"), &[]);
     let output = OUTPUT
         .replace("EE", "\u{1b}") // escape
         .replace("XX", "\u{1b}[38;2;106;114;130m") // chrome color
@@ -199,7 +211,6 @@ fn color_mixed_width_chars() {
 #[test]
 fn color_empty_cells() {
     static INPUT: &str = "a,b,c\n1,,3\n,2,";
-
     static EXPECTED: &str = "\
 ╭────┬────┬────╮
 │ a  │ b  │ c  │
@@ -207,22 +218,12 @@ fn color_empty_cells() {
 │ 1  │    │ 3  │
 │    │ 2  │    │
 ╰────┴────┴────╯";
-
     assert_eq!(wrk_stdout(INPUT, "100"), EXPECTED);
 }
 
 #[test]
 fn color_tsv() {
     static INPUT: &str = "a\tb\tc\n1\t2\t3";
-
-    let wrk = Workdir::new("color");
-    wrk.create_from_string("in.tsv", INPUT);
-    let mut cmd = wrk.command("color");
-    cmd.env("QSV_TERMWIDTH", "100");
-    cmd.arg("--delimiter").arg("\t");
-    cmd.arg("in.tsv");
-    let got: String = wrk.stdout(&mut cmd);
-
     static EXPECTED: &str = "\
 ╭────┬────┬────╮
 │ a  │ b  │ c  │
@@ -230,6 +231,7 @@ fn color_tsv() {
 │ 1  │ 2  │ 3  │
 ╰────┴────┴────╯";
 
+    let got = wrk_stdout_all(INPUT, "100", None, &["--delimiter", "\t"]);
     assert_eq!(got, EXPECTED);
 }
 

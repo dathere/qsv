@@ -5,7 +5,7 @@ use serial_test::serial;
 use crate::workdir::Workdir;
 
 /* NOTE: If you want to run these tests, set QSV_TEST_DESCRIBEGPT=1 and install
-LM Studio (https://lmstudio.ai), then load the openai/gpt-oss-20b models with
+LM Studio (https://lmstudio.ai), then load the openai/gpt-oss-20b model with
 context window set to at least 10,000 tokens.
 */
 

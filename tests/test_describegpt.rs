@@ -4,8 +4,8 @@ use serial_test::serial;
 
 use crate::workdir::Workdir;
 
-/* NOTE: If you want to run these tests, install LM Studio (https://lmstudio.ai)
-and load the deepseek/deepseek-r1-0528-qwen3-8b and openai/gpt-4o models with
+/* NOTE: If you want to run these tests, set QSV_TEST_DESCRIBEGPT=1 and install
+LM Studio (https://lmstudio.ai), then load the openai/gpt-oss-20b models with
 context window set to at least 10,000 tokens.
 */
 
@@ -22,6 +22,11 @@ fn is_local_llm_available() -> bool {
     static IS_LOCAL_LLM_AVAILABLE: OnceLock<bool> = OnceLock::new();
 
     *IS_LOCAL_LLM_AVAILABLE.get_or_init(|| {
+        // check if QSV_TEST_DESCRIBEGPT is set to enable these tests
+        if env::var("QSV_TEST_DESCRIBEGPT").is_err() {
+            return false;
+        }
+
         // check if QSV_LLM_BASE_URL is set and its on localhost
         if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {
             if base_url.contains("localhost") {
@@ -1211,6 +1216,9 @@ fn describegpt_baseurl_precedence_cli_over_env() {
 // Test that QSV_LLM_BASE_URL env var is used when CLI flag uses default value
 #[test]
 fn describegpt_baseurl_precedence_env_over_default() {
+    if !is_local_llm_available() {
+        return;
+    }
     let wrk = Workdir::new("describegpt_baseurl_env");
     wrk.create_indexed(
         "in.csv",
@@ -1660,6 +1668,9 @@ number,37,1,33.33,1
 // Test --stats-options with file: prefix pointing to non-existent file (should error)
 #[test]
 fn describegpt_stats_options_file_not_found() {
+    if !is_local_llm_available() {
+        return;
+    }
     let wrk = Workdir::new("describegpt_stats_file_notfound");
     wrk.create_indexed(
         "in.csv",
@@ -1683,6 +1694,9 @@ fn describegpt_stats_options_file_not_found() {
 // Test --freq-options with file: prefix pointing to non-existent file (should error)
 #[test]
 fn describegpt_freq_options_file_not_found() {
+    if !is_local_llm_available() {
+        return;
+    }
     let wrk = Workdir::new("describegpt_freq_file_notfound");
     wrk.create_indexed(
         "in.csv",

@@ -1535,3 +1535,170 @@ fn describegpt_freq_options_short_limit() {
     // The -l 3 from --freq-options should override --enum-threshold 20
     wrk.assert_success(&mut cmd);
 }
+
+// Test --stats-options with file: prefix to read stats from a file
+#[test]
+#[serial]
+fn describegpt_stats_options_file_prefix() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_stats_file");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+            svec!["gamma", "37"],
+        ],
+    );
+
+    // Create a pre-existing stats file
+    let stats_content = r#"field,type,is_ascii,sum,min,max,range,sort_order,min_length,max_length,sum_length,avg_length,mean,sem,geometric_mean,harmonic_mean,stddev,variance,cv,nullcount,max_precision,sparsity,mad,lower_outer_fence,lower_inner_fence,q1,q2_median,q3,iqr,upper_inner_fence,upper_outer_fence,skewness,cardinality,mode,mode_count,mode_occurrences,antimode,antimode_count,antimode_occurrences,sortiness
+letter,String,true,,alpha,gamma,,Ascending,4,5,14,4.67,,,,,,,,,0,0,0,,,,,,,,,,3,alpha,1,1,alpha,1,1,1
+number,Integer,true,74,13,37,24,Ascending,2,2,6,2,24.67,6.94,22.66,20.54,12.01,144.33,0.49,,0,0,0,-25.5,-7.5,10.5,24,34.5,24,70.5,106.5,0.1,3,13,1,1,13,1,1,1
+"#;
+    wrk.create_from_string("stats.csv", stats_content);
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--stats-options", "file:stats.csv"])
+        .arg("--no-cache");
+
+    wrk.assert_success(&mut cmd);
+}
+
+// Test --freq-options with file: prefix to read frequency from a file
+#[test]
+#[serial]
+fn describegpt_freq_options_file_prefix() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_freq_file");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+            svec!["gamma", "37"],
+        ],
+    );
+
+    // Create a pre-existing frequency file
+    let freq_content = r#"field,value,count,percentage,rank
+letter,alpha,1,33.33,1
+letter,beta,1,33.33,1
+letter,gamma,1,33.33,1
+number,13,1,33.33,1
+number,24,1,33.33,1
+number,37,1,33.33,1
+"#;
+    wrk.create_from_string("freq.csv", freq_content);
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--freq-options", "file:freq.csv"])
+        .arg("--no-cache");
+
+    wrk.assert_success(&mut cmd);
+}
+
+// Test both --stats-options and --freq-options with file: prefix
+#[test]
+#[serial]
+fn describegpt_both_file_prefixes() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_both_files");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+            svec!["gamma", "37"],
+        ],
+    );
+
+    // Create pre-existing stats file
+    let stats_content = r#"field,type,is_ascii,sum,min,max,range,sort_order,min_length,max_length,sum_length,avg_length,mean,sem,geometric_mean,harmonic_mean,stddev,variance,cv,nullcount,max_precision,sparsity,mad,lower_outer_fence,lower_inner_fence,q1,q2_median,q3,iqr,upper_inner_fence,upper_outer_fence,skewness,cardinality,mode,mode_count,mode_occurrences,antimode,antimode_count,antimode_occurrences,sortiness
+letter,String,true,,alpha,gamma,,Ascending,4,5,14,4.67,,,,,,,,,0,0,0,,,,,,,,,,3,alpha,1,1,alpha,1,1,1
+number,Integer,true,74,13,37,24,Ascending,2,2,6,2,24.67,6.94,22.66,20.54,12.01,144.33,0.49,,0,0,0,-25.5,-7.5,10.5,24,34.5,24,70.5,106.5,0.1,3,13,1,1,13,1,1,1
+"#;
+    wrk.create_from_string("stats.csv", stats_content);
+
+    // Create pre-existing frequency file
+    let freq_content = r#"field,value,count,percentage,rank
+letter,alpha,1,33.33,1
+letter,beta,1,33.33,1
+letter,gamma,1,33.33,1
+number,13,1,33.33,1
+number,24,1,33.33,1
+number,37,1,33.33,1
+"#;
+    wrk.create_from_string("freq.csv", freq_content);
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--stats-options", "file:stats.csv"])
+        .args(["--freq-options", "file:freq.csv"])
+        .arg("--no-cache");
+
+    wrk.assert_success(&mut cmd);
+}
+
+// Test --stats-options with file: prefix pointing to non-existent file (should error)
+#[test]
+fn describegpt_stats_options_file_not_found() {
+    let wrk = Workdir::new("describegpt_stats_file_notfound");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--stats-options", "file:nonexistent_stats.csv"])
+        .arg("--no-cache");
+
+    wrk.assert_err(&mut cmd);
+}
+
+// Test --freq-options with file: prefix pointing to non-existent file (should error)
+#[test]
+fn describegpt_freq_options_file_not_found() {
+    let wrk = Workdir::new("describegpt_freq_file_notfound");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--freq-options", "file:nonexistent_freq.csv"])
+        .arg("--no-cache");
+
+    wrk.assert_err(&mut cmd);
+}

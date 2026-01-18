@@ -430,6 +430,15 @@ struct StatsArgs {
     compute_duration_ms:  u64,
     qsv_version:          String,
     flag_weight:          String,
+    field_count:          u64,
+    filesize_bytes:       u64,
+    hash:                 FileHash,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Default)]
+struct FileHash {
+    #[serde(rename = "BLAKE3", skip_serializing_if = "String::is_empty")]
+    blake3: String,
 }
 
 #[cfg(target_endian = "little")]
@@ -465,6 +474,18 @@ impl StatsArgs {
                 .and_then(simd_json::prelude::ValueAsScalar::as_u64)
                 .unwrap_or_default()
         };
+        let get_hash = || -> FileHash {
+            value
+                .get("hash")
+                .map(|h| FileHash {
+                    blake3: h
+                        .get("BLAKE3")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                })
+                .unwrap_or_default()
+        };
 
         Ok(Self {
             arg_input:            get_str("arg_input"),
@@ -494,6 +515,9 @@ impl StatsArgs {
             compute_duration_ms:  get_u64("compute_duration_ms"),
             qsv_version:          get_str("qsv_version"),
             flag_weight:          get_str("flag_weight"),
+            field_count:          get_u64("field_count"),
+            filesize_bytes:       get_u64("filesize_bytes"),
+            hash:                 get_hash(),
         })
     }
 }
@@ -862,7 +886,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // save the current args, we'll use it to generate
     // the stats.csv.json file
     let mut current_stats_args = StatsArgs {
-        arg_input:            format!("{:?}", args.arg_input),
+        arg_input:            args.arg_input.clone().unwrap_or_default(),
         flag_select:          format!("{:?}", args.flag_select),
         flag_everything:      args.flag_everything,
         flag_typesonly:       args.flag_typesonly,
@@ -880,7 +904,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         flag_dates_whitelist: args.flag_dates_whitelist.clone(),
         flag_prefer_dmy:      args.flag_prefer_dmy,
         flag_no_headers:      args.flag_no_headers,
-        flag_delimiter:       format!("{:?}", args.flag_delimiter.clone()),
+        flag_delimiter:       args
+            .flag_delimiter
+            .as_ref()
+            .map(|d| (d.as_byte() as char).to_string())
+            .unwrap_or_default(),
         // when we write to stdout, we don't use snappy compression
         // when we write to a file with the --output option, we use
         // snappy compression if the file ends with ".sz"
@@ -900,6 +928,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // when the qsv version changes
         qsv_version:          env!("CARGO_PKG_VERSION").to_string(),
         flag_weight:          args.flag_weight.clone().unwrap_or_default(),
+        field_count:          0,
+        filesize_bytes:       0,
+        hash:                 FileHash::default(),
     };
 
     // create a temporary file to store the <FILESTEM>.stats.csv file
@@ -1092,6 +1123,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     stat_args.date_generated = String::new();
                     time_saved = stat_args.compute_duration_ms;
                     stat_args.compute_duration_ms = 0;
+                    stat_args.field_count = 0;
+                    stat_args.filesize_bytes = 0;
+                    stat_args.hash = FileHash::default();
                     stat_args
                 };
 
@@ -1338,6 +1372,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // write qsv__value as last column
                 dataset_stats_br.push_field(stats_hash.as_bytes());
                 wtr.write_byte_record(&dataset_stats_br)?;
+
+                // populate file-level metadata in the stats args json
+                current_stats_args.field_count = ds_column_count;
+                current_stats_args.filesize_bytes = ds_filesize_bytes;
+                current_stats_args.hash = FileHash {
+                    blake3: stats_hash.clone(),
+                };
             }
 
             // update the stats args json metadata ===============

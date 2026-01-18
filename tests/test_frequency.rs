@@ -3460,3 +3460,214 @@ fn frequency_weight_json_no_stats() {
     let val_20 = freqs.iter().find(|f| f["value"] == "20").unwrap();
     assert_eq!(val_20["count"], 1);
 }
+
+// --stats-filter tests (require luau feature)
+#[test]
+#[cfg(feature = "luau")]
+fn frequency_stats_filter_nullcount() {
+    // Test filtering columns by nullcount
+    let wrk = Workdir::new("frequency_stats_filter_nullcount");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age", "notes"],
+            svec!["Alice", "30", "active"],
+            svec!["Bob", "", ""], // age and notes have nulls
+            svec!["Carol", "25", "active"],
+            svec!["Dave", "", ""], // more nulls
+        ],
+    );
+
+    // First, create the stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("data.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.run(&mut stats_cmd);
+
+    // Now run frequency with --stats-filter to exclude columns with nullcount > 0
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("data.csv")
+        .args(["--stats-filter", "nullcount > 0"])
+        .args(["--limit", "0"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Only 'name' column should remain (no nulls)
+    // 'age' and 'notes' should be excluded (they have nulls)
+    assert!(!got.is_empty());
+    let headers: Vec<&str> = got.iter().skip(1).map(|row| row[0].as_str()).collect();
+    // All rows should be for the 'name' column only
+    for h in headers.iter() {
+        assert_eq!(*h, "name", "Only 'name' column should appear, got '{h}'");
+    }
+}
+
+#[test]
+#[cfg(feature = "luau")]
+fn frequency_stats_filter_type() {
+    // Test filtering columns by type
+    let wrk = Workdir::new("frequency_stats_filter_type");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "price", "quantity"],
+            svec!["Apple", "1.99", "10"],
+            svec!["Banana", "0.99", "25"],
+            svec!["Cherry", "3.49", "5"],
+        ],
+    );
+
+    // First, create the stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("data.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.run(&mut stats_cmd);
+
+    // Now run frequency with --stats-filter to exclude Float columns
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("data.csv")
+        .args(["--stats-filter", "type == 'Float'"])
+        .args(["--limit", "0"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Only 'name' and 'quantity' columns should remain (String and Integer)
+    // 'price' should be excluded (it's Float)
+    assert!(!got.is_empty());
+    let fields: std::collections::HashSet<&str> =
+        got.iter().skip(1).map(|row| row[0].as_str()).collect();
+    assert!(fields.contains("name"), "Expected 'name' column");
+    assert!(fields.contains("quantity"), "Expected 'quantity' column");
+    assert!(
+        !fields.contains("price"),
+        "Did not expect 'price' (Float) column"
+    );
+}
+
+#[test]
+#[cfg(feature = "luau")]
+fn frequency_stats_filter_compound_expression() {
+    // Test compound filter expression with and/or
+    let wrk = Workdir::new("frequency_stats_filter_compound");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "category", "status", "count"],
+            svec!["1", "A", "active", "10"],
+            svec!["2", "A", "", "20"], // status has null
+            svec!["3", "B", "active", "10"],
+            svec!["4", "B", "pending", "30"],
+        ],
+    );
+
+    // First, create the stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("data.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.run(&mut stats_cmd);
+
+    // Filter: exclude columns where cardinality == rowcount (unique IDs)
+    // or nullcount > 0
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("data.csv")
+        .args(["--stats-filter", "cardinality == 4 or nullcount > 0"])
+        .args(["--limit", "0"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // 'id' has cardinality 4 (== rowcount), should be excluded
+    // 'status' has nullcount > 0 and cardinality 4, should be excluded
+    // 'category' has cardinality 2, should remain
+    // 'count' has cardinality 3, should remain
+    assert!(!got.is_empty());
+    let fields: std::collections::HashSet<&str> =
+        got.iter().skip(1).map(|row| row[0].as_str()).collect();
+    assert!(fields.contains("category"), "Expected 'category' column");
+    assert!(fields.contains("count"), "Expected 'count' column");
+    assert!(
+        !fields.contains("id"),
+        "Did not expect 'id' column (unique)"
+    );
+    assert!(
+        !fields.contains("status"),
+        "Did not expect 'status' column (has nulls)"
+    );
+}
+
+#[test]
+#[cfg(feature = "luau")]
+fn frequency_stats_filter_invalid_expression() {
+    // Test that invalid filter expressions produce an error
+    let wrk = Workdir::new("frequency_stats_filter_invalid");
+    wrk.create(
+        "data.csv",
+        vec![svec!["name", "value"], svec!["A", "1"], svec!["B", "2"]],
+    );
+
+    // First, create the stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("data.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.run(&mut stats_cmd);
+
+    // Run frequency with an invalid filter expression
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("data.csv")
+        .args(["--stats-filter", "undefined_variable > 0"]);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+#[cfg(feature = "luau")]
+fn frequency_stats_filter_cardinality() {
+    // Test filtering by cardinality
+    let wrk = Workdir::new("frequency_stats_filter_cardinality");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["category", "subcategory", "item"],
+            svec!["A", "a1", "item1"],
+            svec!["A", "a1", "item2"],
+            svec!["A", "a2", "item3"],
+            svec!["B", "b1", "item4"],
+            svec!["B", "b2", "item5"],
+        ],
+    );
+
+    // First, create the stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("data.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.run(&mut stats_cmd);
+
+    // Filter: exclude columns with high cardinality (> 4)
+    // 'category' has cardinality 2 (A, B)
+    // 'subcategory' has cardinality 4 (a1, a2, b1, b2)
+    // 'item' has cardinality 5 (all unique), should be excluded
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("data.csv")
+        .args(["--stats-filter", "cardinality > 4"])
+        .args(["--limit", "0"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got.is_empty());
+    let fields: std::collections::HashSet<&str> =
+        got.iter().skip(1).map(|row| row[0].as_str()).collect();
+    assert!(fields.contains("category"), "Expected 'category' column");
+    assert!(
+        fields.contains("subcategory"),
+        "Expected 'subcategory' column"
+    );
+    assert!(
+        !fields.contains("item"),
+        "Did not expect 'item' column (high cardinality)"
+    );
+}

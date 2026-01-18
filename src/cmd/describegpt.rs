@@ -245,7 +245,7 @@ describegpt options:
                              Ollama: http://localhost:11434/v1
                              Jan: https://localhost:1337/v1
                              LM Studio: http://localhost:1234/v1
-                           NOTE: 
+                           NOTE:
                            If set, it will take precedence over the QSV_LLM_BASE_URL environment variable
                            and the base URL specified in the prompt file.
                            [default: http://localhost:1234/v1]

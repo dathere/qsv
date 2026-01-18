@@ -64,6 +64,11 @@
         "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics."
       },
       {
+        "flag": "--no-float",
+        "type": "string",
+        "description": "Exclude Float columns from frequency analysis. Floats typically contain continuous values where frequency tables are not meaningful. To exclude ALL Float columns, use --no-float \"*\" To exclude Floats except specific columns, specify a comma-separated list of Float columns to INCLUDE. e.g. \"--no-float *\" excludes all Floats \"--no-float price,rate\" excludes Floats except 'price' and 'rate' Requires stats cache for type detection."
+      },
+      {
         "flag": "--no-headers",
         "type": "flag",
         "description": "When set, the first row will NOT be included in the frequency table. Additionally, the 'field' column will be 1-based indices instead of header names."

@@ -3981,20 +3981,17 @@ fn frequency_no_other_flag() {
     assert_eq!(got[1][1], "a", "Only 'a' should appear");
     // Verify "Other" is not in the output
     let has_other = got.iter().any(|r| r.len() > 1 && r[1].starts_with("Other"));
-    assert!(!has_other, "Other category should not appear with --no-other");
+    assert!(
+        !has_other,
+        "Other category should not appear with --no-other"
+    );
 }
 
 #[test]
 fn frequency_no_other_equivalent_to_other_text_none() {
     // --no-other should produce the same result as --other-text "<NONE>"
     let wrk = Workdir::new("frequency_no_other_equivalent");
-    let rows = vec![
-        svec!["col"],
-        svec!["a"],
-        svec!["a"],
-        svec!["b"],
-        svec!["c"],
-    ];
+    let rows = vec![svec!["col"], svec!["a"], svec!["a"], svec!["b"], svec!["c"]];
     wrk.create("in.csv", rows);
 
     // Run with --no-other
@@ -4010,7 +4007,10 @@ fn frequency_no_other_equivalent_to_other_text_none() {
     let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
 
     // Results should be identical
-    assert_eq!(got1, got2, "--no-other should be equivalent to --other-text '<NONE>'");
+    assert_eq!(
+        got1, got2,
+        "--no-other should be equivalent to --other-text '<NONE>'"
+    );
 }
 
 #[test]
@@ -4035,7 +4035,10 @@ fn frequency_null_text_none() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     // NULL should not appear in the output
     let has_null = got.iter().any(|r| r.len() > 1 && r[1] == "(NULL)");
-    assert!(!has_null, "NULL should not appear with --null-text '<NONE>'");
+    assert!(
+        !has_null,
+        "NULL should not appear with --null-text '<NONE>'"
+    );
     // Should only have "a" and "b"
     let values: Vec<&str> = got.iter().skip(1).map(|r| r[1].as_str()).collect();
     assert!(values.contains(&"a"), "Should contain 'a'");

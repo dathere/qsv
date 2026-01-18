@@ -3388,3 +3388,75 @@ fn frequency_no_float_with_json() {
         "Should NOT include 'price' field"
     );
 }
+
+#[test]
+fn frequency_weight_json_no_stats() {
+    // Issue #3339: When using --weight --json, stats should be omitted
+    // because stats cache contains unweighted stats which would be misleading
+    let wrk = Workdir::new("frequency_weight_json_no_stats");
+
+    // Create CSV with numeric data that would have stats
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["10", "2.0"],
+            svec!["10", "3.0"],
+            svec!["20", "1.0"],
+        ],
+    );
+
+    // Run stats to create cache (this would normally provide stats for JSON output)
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run frequency with --weight and --json
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--select", "value"])
+        .args(["--weight", "weight"])
+        .arg("--json")
+        .args(["--limit", "0"]);
+
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value = serde_json::from_str(&got).expect("Valid JSON output");
+
+    // Verify the JSON structure is correct
+    assert_eq!(json["rowcount"], 3);
+    assert_eq!(json["fieldcount"], 1);
+
+    // Verify stats are empty or omitted for weighted mode
+    let fields = json["fields"]
+        .as_array()
+        .expect("fields should be an array");
+    assert_eq!(fields.len(), 1);
+
+    let field = &fields[0];
+    assert_eq!(field["field"], "value");
+
+    // Stats should either be missing or empty array
+    // (Empty arrays are removed from JSON output, so stats key should not exist)
+    let stats = field.get("stats");
+    assert!(
+        stats.is_none() || stats.unwrap().as_array().map_or(true, |a| a.is_empty()),
+        "Stats should be omitted or empty when using --weight --json"
+    );
+
+    // Verify frequencies are still correct (weighted)
+    let freqs = field["frequencies"]
+        .as_array()
+        .expect("frequencies should be an array");
+    assert_eq!(freqs.len(), 2);
+
+    // "10" should have weighted count of 5 (2.0 + 3.0)
+    let val_10 = freqs.iter().find(|f| f["value"] == "10").unwrap();
+    assert_eq!(val_10["count"], 5);
+
+    // "20" should have weighted count of 1
+    let val_20 = freqs.iter().find(|f| f["value"] == "20").unwrap();
+    assert_eq!(val_20["count"], 1);
+}

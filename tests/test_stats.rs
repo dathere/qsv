@@ -5304,12 +5304,11 @@ fn stats_json_backward_compat() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     // First, create a cache file
-    let mut cmd_2 = wrk.command("stats");
-    cmd_2
-        .arg("--dataset-stats")
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--dataset-stats")
         .args(["--cache-threshold", "1"])
         .arg(&test_file);
-    wrk.run(&mut cmd_2);
+    wrk.run(&mut cmd);
 
     let json_path = wrk.path("boston311-100.stats.csv.json");
     assert!(Path::new(&json_path).exists(), "JSON file should exist");

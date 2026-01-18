@@ -2032,90 +2032,92 @@ impl Args {
         let mut field_stats: Vec<FieldStats> = Vec::with_capacity(17);
 
         // Helper function to build a frequency field for JSON output
-        let build_frequency_field =
-            |field_name: String,
-             cardinality: u64,
-             processed_frequencies: &mut Vec<ProcessedFrequency>,
-             field_stats: &mut Vec<FieldStats>| {
-                // Sort frequencies by count if flag_other_sorted
-                if self.flag_other_sorted {
-                    if self.flag_asc {
-                        processed_frequencies.sort_unstable_by(|a, b| a.count.cmp(&b.count));
-                    } else {
-                        processed_frequencies.sort_unstable_by(|a, b| b.count.cmp(&a.count));
-                    }
+        let build_frequency_field = |field_name: String,
+                                     cardinality: u64,
+                                     processed_frequencies: &mut Vec<ProcessedFrequency>,
+                                     field_stats: &mut Vec<FieldStats>,
+                                     skip_stats: bool| {
+            // Sort frequencies by count if flag_other_sorted
+            if self.flag_other_sorted {
+                if self.flag_asc {
+                    processed_frequencies.sort_unstable_by(|a, b| a.count.cmp(&b.count));
+                } else {
+                    processed_frequencies.sort_unstable_by(|a, b| b.count.cmp(&a.count));
                 }
+            }
 
-                // Get stats record for this field
-                let stats_record = STATS_RECORDS
-                    .get()
-                    .and_then(|records| records.get(&field_name));
+            // Get stats record for this field
+            let stats_record = STATS_RECORDS
+                .get()
+                .and_then(|records| records.get(&field_name));
 
-                // Get data type and nullcount from stats record
-                let dtype = stats_record.map_or(String::new(), |sr| sr.r#type.clone());
-                let nullcount = stats_record.map_or(0, |sr| sr.nullcount);
-                let sparsity =
-                    fast_float2::parse(util::round_num(nullcount as f64 / rowcount as f64, 4))
-                        .unwrap_or(0.0);
-                let uniqueness_ratio =
-                    fast_float2::parse(util::round_num(cardinality as f64 / rowcount as f64, 4))
-                        .unwrap_or(0.0);
+            // Get data type and nullcount from stats record
+            let dtype = stats_record.map_or(String::new(), |sr| sr.r#type.clone());
+            let nullcount = stats_record.map_or(0, |sr| sr.nullcount);
+            let sparsity =
+                fast_float2::parse(util::round_num(nullcount as f64 / rowcount as f64, 4))
+                    .unwrap_or(0.0);
+            let uniqueness_ratio =
+                fast_float2::parse(util::round_num(cardinality as f64 / rowcount as f64, 4))
+                    .unwrap_or(0.0);
 
-                // Build stats vector from stats record if type is not empty and not NULL or Boolean
-                if !self.flag_no_stats
-                    && !dtype.is_empty()
-                    && dtype.as_str() != "NULL"
-                    && dtype.as_str() != "Boolean"
-                    && let Some(sr) = stats_record
-                {
-                    // Add all available stats if some
-                    add_stat(field_stats, "sum", sr.sum);
-                    add_stat(field_stats, "min", sr.min.clone());
-                    add_stat(field_stats, "max", sr.max.clone());
-                    add_stat(field_stats, "range", sr.range);
-                    add_stat(field_stats, "sort_order", sr.sort_order.clone());
+            // Build stats vector from stats record if type is not empty and not NULL or Boolean
+            // Skip stats when using weighted mode (stats would be misleading)
+            if !self.flag_no_stats
+                && !skip_stats
+                && !dtype.is_empty()
+                && dtype.as_str() != "NULL"
+                && dtype.as_str() != "Boolean"
+                && let Some(sr) = stats_record
+            {
+                // Add all available stats if some
+                add_stat(field_stats, "sum", sr.sum);
+                add_stat(field_stats, "min", sr.min.clone());
+                add_stat(field_stats, "max", sr.max.clone());
+                add_stat(field_stats, "range", sr.range);
+                add_stat(field_stats, "sort_order", sr.sort_order.clone());
 
-                    // String-specific length stats
-                    add_stat(field_stats, "min_length", sr.min_length);
-                    add_stat(field_stats, "max_length", sr.max_length);
-                    add_stat(field_stats, "sum_length", sr.sum_length);
-                    add_stat(field_stats, "avg_length", sr.avg_length);
-                    add_stat(field_stats, "stddev_length", sr.stddev_length);
-                    add_stat(field_stats, "variance_length", sr.variance_length);
-                    add_stat(field_stats, "cv_length", sr.cv_length);
+                // String-specific length stats
+                add_stat(field_stats, "min_length", sr.min_length);
+                add_stat(field_stats, "max_length", sr.max_length);
+                add_stat(field_stats, "sum_length", sr.sum_length);
+                add_stat(field_stats, "avg_length", sr.avg_length);
+                add_stat(field_stats, "stddev_length", sr.stddev_length);
+                add_stat(field_stats, "variance_length", sr.variance_length);
+                add_stat(field_stats, "cv_length", sr.cv_length);
 
-                    // Numeric-specific stats
-                    add_stat(field_stats, "mean", sr.mean);
-                    add_stat(field_stats, "sem", sr.sem);
-                    add_stat(field_stats, "stddev", sr.stddev);
-                    add_stat(field_stats, "variance", sr.variance);
-                    add_stat(field_stats, "cv", sr.cv);
-                }
+                // Numeric-specific stats
+                add_stat(field_stats, "mean", sr.mean);
+                add_stat(field_stats, "sem", sr.sem);
+                add_stat(field_stats, "stddev", sr.stddev);
+                add_stat(field_stats, "variance", sr.variance);
+                add_stat(field_stats, "cv", sr.cv);
+            }
 
-                FrequencyField {
-                    field: field_name,
-                    r#type: dtype,
-                    cardinality,
-                    nullcount,
-                    sparsity,
-                    uniqueness_ratio,
-                    stats: std::mem::take(field_stats),
-                    frequencies: processed_frequencies
-                        .iter()
-                        .map(|pf| FrequencyEntry {
-                            value:      if self.flag_vis_whitespace {
-                                util::visualize_whitespace(&String::from_utf8_lossy(&pf.value))
-                            } else {
-                                String::from_utf8_lossy(&pf.value).into_owned()
-                            },
-                            count:      pf.count,
-                            percentage: fast_float2::parse(&pf.formatted_percentage)
-                                .unwrap_or(pf.percentage),
-                            rank:       pf.rank,
-                        })
-                        .collect(),
-                }
-            };
+            FrequencyField {
+                field: field_name,
+                r#type: dtype,
+                cardinality,
+                nullcount,
+                sparsity,
+                uniqueness_ratio,
+                stats: std::mem::take(field_stats),
+                frequencies: processed_frequencies
+                    .iter()
+                    .map(|pf| FrequencyEntry {
+                        value:      if self.flag_vis_whitespace {
+                            util::visualize_whitespace(&String::from_utf8_lossy(&pf.value))
+                        } else {
+                            String::from_utf8_lossy(&pf.value).into_owned()
+                        },
+                        count:      pf.count,
+                        percentage: fast_float2::parse(&pf.formatted_percentage)
+                            .unwrap_or(pf.percentage),
+                        rank:       pf.rank,
+                    })
+                    .collect(),
+            }
+        };
 
         if let Some(weighted) = weighted_tables {
             // Process weighted frequencies for JSON output
@@ -2151,6 +2153,7 @@ impl Args {
                     cardinality,
                     &mut processed_frequencies,
                     &mut field_stats,
+                    true, // Skip stats for weighted mode
                 ));
 
                 processed_frequencies.clear(); // clear for next field
@@ -2186,6 +2189,7 @@ impl Args {
                     cardinality,
                     &mut processed_frequencies,
                     &mut field_stats,
+                    false, // Include stats for non-weighted mode
                 ));
 
                 processed_frequencies.clear(); // clear for next field

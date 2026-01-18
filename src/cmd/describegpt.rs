@@ -237,13 +237,18 @@ describegpt options:
 
                            LLM API OPTIONS:
     -u, --base-url <url>   The LLM API URL. Supports APIs & local LLMs compatible with
-                           the OpenAI API specification (Ollama, Jan, LM Studio, TogetherAI, etc.).
-                           The default base URL for Ollama is http://localhost:11434/v1.
-                           The default for Jan is https://localhost:1337/v1.
-                           The default for LM Studio is http://localhost:1234/v1.
-                           The base URL will be the base URL of the prompt file.
-                           If the QSV_LLM_BASE_URL environment variable is set, it'll be used instead.
-                           [default: https://api.openai.com/v1]
+                           the OpenAI API specification. Some common base URLs:
+                             OpenAI: https://api.openai.com/v1
+                             Gemini: https://generativelanguage.googleapis.com/v1beta/openai
+                             TogetherAI: https://api.together.ai/v1
+                           Local LLMs:
+                             Ollama: http://localhost:11434/v1
+                             Jan: https://localhost:1337/v1
+                             LM Studio: http://localhost:1234/v1
+                           NOTE:
+                           If set, it will take precedence over the QSV_LLM_BASE_URL environment variable
+                           and the base URL specified in the prompt file.
+                           [default: http://localhost:1234/v1]
     -m, --model <model>    The model to use for inferencing.
                            If the QSV_LLM_MODEL environment variable is set, it'll be used instead.
                            [default: openai/gpt-oss-20b]

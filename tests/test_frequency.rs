@@ -4000,11 +4000,12 @@ fn frequency_no_other_equivalent_to_other_text_none() {
     let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
 
     // Run with --other-text "<NONE>"
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv")
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2
+        .arg("in.csv")
         .args(["--limit", "1"])
         .args(["--other-text", "<NONE>"]);
-    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // Results should be identical
     assert_eq!(
@@ -4066,12 +4067,13 @@ fn frequency_null_text_none_equivalent_to_no_nulls() {
     let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
 
     // Run with --no-nulls
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv")
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2
+        .arg("in.csv")
         .args(["--limit", "0"])
         .args(["--select", "col"])
         .arg("--no-nulls");
-    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // Results should be identical
     assert_eq!(

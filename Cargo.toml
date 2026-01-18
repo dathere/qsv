@@ -97,7 +97,7 @@ const_format = "0.2"
 cpc = { version = "3", optional = true }
 crc32fast = { version = "1.4", optional = true }
 crossbeam-channel = "0.5"
-crossterm = { version = "0.28", optional = true }
+crossterm = { version = "0.29", optional = true }
 csv = "1.4"
 csv-diff = "0.1"
 csv-index = "0.1"

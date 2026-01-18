@@ -601,6 +601,7 @@ fn get_unique_values(
         flag_pct_dec_places: -5,
         flag_other_sorted: false,
         flag_other_text: "Other".to_string(),
+        flag_no_other: false,
         flag_null_sorted: false,
         flag_asc: false,
         flag_null_text: "(NULL)".to_string(),

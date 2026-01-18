@@ -120,6 +120,8 @@ frequency options:
     --other-text <arg>      The text to use for the "Other" category. If set to "<NONE>",
                             the "Other" category will not be included in the frequency table.
                             [default: Other]
+    --no-other              Don't include the "Other" category in the frequency table.
+                            This is equivalent to --other-text "<NONE>".
     --null-sorted           By default, the NULL category (controlled by --null-text)
                             is placed at the end of the frequency table for a field,
                             after "Other" if present. If this is enabled, the NULL
@@ -130,9 +132,12 @@ frequency options:
                             have a rank of 1.
     --no-trim               Don't trim whitespace from values when computing frequencies.
                             The default is to trim leading and trailing whitespaces.
-    --null-text <arg>       The text to use for NULL values.
+    --null-text <arg>       The text to use for NULL values. If set to "<NONE>",
+                            NULLs will not be included in the frequency table
+                            (equivalent to --no-nulls).
                             [default: (NULL)]
     --no-nulls              Don't include NULLs in the frequency table.
+                            This is equivalent to --null-text "<NONE>".
     -i, --ignore-case       Ignore case when computing frequencies.
     --no-float <cols>       Exclude Float columns from frequency analysis.
                             Floats typically contain continuous values where
@@ -253,6 +258,7 @@ pub struct Args {
     pub flag_pct_dec_places:  isize,
     pub flag_other_sorted:    bool,
     pub flag_other_text:      String,
+    pub flag_no_other:        bool,
     pub flag_null_sorted:     bool,
     pub flag_asc:             bool,
     pub flag_no_trim:         bool,
@@ -514,6 +520,17 @@ fn calculate_memory_aware_chunk_size_for_frequency(
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // Handle --no-other flag (alias for --other-text "<NONE>")
+    if args.flag_no_other {
+        args.flag_other_text = "<NONE>".to_string();
+    }
+
+    // Handle --null-text "<NONE>" (alias for --no-nulls)
+    if args.flag_null_text == "<NONE>" {
+        args.flag_no_nulls = true;
+    }
+
     let mut rconfig = args.rconfig();
 
     let is_stdin = rconfig.is_stdin();

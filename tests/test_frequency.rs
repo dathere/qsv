@@ -3954,3 +3954,158 @@ fn frequency_custom_null_text_sorted() {
         "Custom null text should be first when --null-sorted"
     );
 }
+
+// Tests for --no-other and --null-text <NONE> consistency (issue #3341)
+
+#[test]
+fn frequency_no_other_flag() {
+    // --no-other should exclude the "Other" category (equivalent to --other-text "<NONE>")
+    let wrk = Workdir::new("frequency_no_other_flag");
+    let rows = vec![
+        svec!["col"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec!["c"],
+        svec!["d"],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--limit", "1"]).arg("--no-other");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // With --no-other, only "a" should appear (no "Other" category)
+    assert_eq!(got.len(), 2, "Should only have header and one data row");
+    assert_eq!(got[1][1], "a", "Only 'a' should appear");
+    // Verify "Other" is not in the output
+    let has_other = got.iter().any(|r| r.len() > 1 && r[1].starts_with("Other"));
+    assert!(
+        !has_other,
+        "Other category should not appear with --no-other"
+    );
+}
+
+#[test]
+fn frequency_no_other_equivalent_to_other_text_none() {
+    // --no-other should produce the same result as --other-text "<NONE>"
+    let wrk = Workdir::new("frequency_no_other_equivalent");
+    let rows = vec![svec!["col"], svec!["a"], svec!["a"], svec!["b"], svec!["c"]];
+    wrk.create("in.csv", rows);
+
+    // Run with --no-other
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv").args(["--limit", "1"]).arg("--no-other");
+    let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
+
+    // Run with --other-text "<NONE>"
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2
+        .arg("in.csv")
+        .args(["--limit", "1"])
+        .args(["--other-text", "<NONE>"]);
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
+
+    // Results should be identical
+    assert_eq!(
+        got1, got2,
+        "--no-other should be equivalent to --other-text '<NONE>'"
+    );
+}
+
+#[test]
+fn frequency_null_text_none() {
+    // --null-text "<NONE>" should exclude NULL values (equivalent to --no-nulls)
+    let wrk = Workdir::new("frequency_null_text_none");
+    let rows = vec![
+        svec!["col", "other"],
+        svec!["a", "x"],
+        svec!["a", "x"],
+        svec!["", "x"], // NULL value
+        svec!["b", "x"],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "col"])
+        .args(["--null-text", "<NONE>"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // NULL should not appear in the output
+    let has_null = got.iter().any(|r| r.len() > 1 && r[1] == "(NULL)");
+    assert!(
+        !has_null,
+        "NULL should not appear with --null-text '<NONE>'"
+    );
+    // Should only have "a" and "b"
+    let values: Vec<&str> = got.iter().skip(1).map(|r| r[1].as_str()).collect();
+    assert!(values.contains(&"a"), "Should contain 'a'");
+    assert!(values.contains(&"b"), "Should contain 'b'");
+}
+
+#[test]
+fn frequency_null_text_none_equivalent_to_no_nulls() {
+    // --null-text "<NONE>" should produce the same result as --no-nulls
+    let wrk = Workdir::new("frequency_null_text_none_equivalent");
+    let rows = vec![
+        svec!["col", "other"],
+        svec!["a", "x"],
+        svec!["", "x"], // NULL value
+        svec!["b", "x"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Run with --null-text "<NONE>"
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "col"])
+        .args(["--null-text", "<NONE>"]);
+    let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
+
+    // Run with --no-nulls
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2
+        .arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "col"])
+        .arg("--no-nulls");
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
+
+    // Results should be identical
+    assert_eq!(
+        got1, got2,
+        "--null-text '<NONE>' should be equivalent to --no-nulls"
+    );
+}
+
+#[test]
+fn frequency_no_other_with_no_nulls() {
+    // Both --no-other and --no-nulls should work together
+    let wrk = Workdir::new("frequency_no_other_with_no_nulls");
+    let rows = vec![
+        svec!["col", "other"],
+        svec!["a", "x"],
+        svec!["a", "x"],
+        svec!["a", "x"],
+        svec!["", "x"], // NULL value
+        svec!["b", "x"],
+        svec!["c", "x"],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "1"])
+        .args(["--select", "col"])
+        .arg("--no-other")
+        .arg("--no-nulls");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should only have "a" (most frequent), no "Other", no NULL
+    assert_eq!(got.len(), 2, "Should only have header and one data row");
+    assert_eq!(got[1][1], "a", "Only 'a' should appear");
+}

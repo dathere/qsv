@@ -5252,13 +5252,13 @@ fn stats_json_arg_input_format() {
     let wrk = Workdir::new("stats_json_arg_input_format");
     let test_file = wrk.load_test_file("boston311-100.csv");
 
-    let mut cmd_2 = wrk.command("stats");
-    cmd_2
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
         .arg("--dataset-stats")
         .args(["--cache-threshold", "1"])
         .arg(&test_file);
 
-    wrk.run(&mut cmd_2);
+    wrk.run(&mut stats_cmd);
 
     let json_path = wrk.path("boston311-100.stats.csv.json");
     assert!(Path::new(&json_path).exists(), "JSON file should exist");

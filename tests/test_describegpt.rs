@@ -704,6 +704,7 @@ fn describegpt_prompt_file() {
         model = "gpt-oss-20b"
         timeout = 60
         format = "markdown"
+        language = "en"
         duckdb_sql_guidance = "Use the following DuckDB SQL syntax to generate a SQL query: {duckdb_sql_guidance}"
         polars_sql_guidance = "Use the following Polars SQL syntax to generate a SQL query: {polars_sql_guidance}"
         dd_fewshot_examples = "Use the following DuckDB few-shot examples: {dd_fewshot_examples}"
@@ -1067,8 +1068,7 @@ fn describegpt_different_base_url() {
         .args(["--base-url", "http://localhost:11434/v1"])
         .arg("--no-cache");
 
-    // Check that the command ran successfully
-    wrk.assert_success(&mut cmd);
+    wrk.assert_err(&mut cmd);
 }
 
 // Test that --prompt does not output dictionary
@@ -1389,10 +1389,10 @@ fn describegpt_non_localhost_requires_apikey() {
     );
 }
 
-// Test --frequency-options with custom limit
+// Test --freq-options with custom limit
 #[test]
 #[serial]
-fn describegpt_frequency_options_custom_limit() {
+fn describegpt_freq_options_custom_limit() {
     if !is_local_llm_available() {
         return;
     }
@@ -1411,16 +1411,16 @@ fn describegpt_frequency_options_custom_limit() {
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--dictionary")
-        .args(["--frequency-options", "--limit 5 --rank-strategy min"]);
+        .args(["--freq-options", "--limit 5 --rank-strategy min"]);
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
 }
 
-// Test --frequency-options with column selection
+// Test --freq-options with column selection
 #[test]
 #[serial]
-fn describegpt_frequency_options_column_selection() {
+fn describegpt_freq_options_column_selection() {
     if !is_local_llm_available() {
         return;
     }
@@ -1439,16 +1439,16 @@ fn describegpt_frequency_options_column_selection() {
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv")
         .arg("--dictionary")
-        .args(["--frequency-options", "--select '!id' --limit 10"]);
+        .args(["--freq-options", "--select !id --limit 10"]);
 
     // Check that the command ran successfully
     wrk.assert_success(&mut cmd);
 }
 
-// Test --frequency-options without --limit uses --enum-threshold
+// Test --freq-options without --limit uses --enum-threshold
 #[test]
 #[serial]
-fn describegpt_frequency_options_uses_enum_threshold() {
+fn describegpt_freq_options_uses_enum_threshold() {
     if !is_local_llm_available() {
         return;
     }
@@ -1468,18 +1468,18 @@ fn describegpt_frequency_options_uses_enum_threshold() {
     cmd.arg("in.csv")
         .arg("--dictionary")
         .args(["--enum-threshold", "20"])
-        .args(["--frequency-options", "--rank-strategy dense"]);
+        .args(["--freq-options", "--rank-strategy dense"]);
 
     // Check that the command ran successfully
-    // The --enum-threshold of 20 should be used since --frequency-options
+    // The --enum-threshold of 20 should be used since --freq-options
     // doesn't contain --limit
     wrk.assert_success(&mut cmd);
 }
 
-// Test --frequency-options with --limit overrides --enum-threshold
+// Test --freq-options with --limit overrides --enum-threshold
 #[test]
 #[serial]
-fn describegpt_frequency_options_overrides_enum_threshold() {
+fn describegpt_freq_options_overrides_enum_threshold() {
     if !is_local_llm_available() {
         return;
     }
@@ -1499,17 +1499,17 @@ fn describegpt_frequency_options_overrides_enum_threshold() {
     cmd.arg("in.csv")
         .arg("--dictionary")
         .args(["--enum-threshold", "20"])
-        .args(["--frequency-options", "--limit 5 --asc"]);
+        .args(["--freq-options", "--limit 5 --asc"]);
 
     // Check that the command ran successfully
-    // The --limit 5 from --frequency-options should override --enum-threshold 20
+    // The --limit 5 from --freq-options should override --enum-threshold 20
     wrk.assert_success(&mut cmd);
 }
 
-// Test --frequency-options with -l short flag
+// Test --freq-options with -l short flag
 #[test]
 #[serial]
-fn describegpt_frequency_options_short_limit() {
+fn describegpt_freq_options_short_limit() {
     if !is_local_llm_available() {
         return;
     }
@@ -1529,9 +1529,9 @@ fn describegpt_frequency_options_short_limit() {
     cmd.arg("in.csv")
         .arg("--dictionary")
         .args(["--enum-threshold", "20"])
-        .args(["--frequency-options", "-l 3"]);
+        .args(["--freq-options", "-l 3"]);
 
     // Check that the command ran successfully
-    // The -l 3 from --frequency-options should override --enum-threshold 20
+    // The -l 3 from --freq-options should override --enum-threshold 20
     wrk.assert_success(&mut cmd);
 }

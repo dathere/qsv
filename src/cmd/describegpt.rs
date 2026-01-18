@@ -42,6 +42,7 @@ SUPPORTED MODELS & LLM PROVIDERS:
 OpenAI's open-weights gpt-oss model (both 20b and 120b variants) was used during development &
 is recommended for most use cases.
 It was also tested with OpenAI, TogetherAI, OpenRouter and Google Gemini cloud providers.
+For Gemini, use the base URL "https://generativelanguage.googleapis.com/v1beta/openai".
 Local LLMs tested include Ollama, Jan and LM Studio.
 
 NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
@@ -101,13 +102,13 @@ Examples:
   $ qsv describegpt --redis-cache --flush-cache
 
   # Exclude ID columns from frequency analysis to reduce overhead
-  $ qsv describegpt data.csv --dictionary --frequency-options "--select '!id,!uuid' --limit 20"
+  $ qsv describegpt data.csv --dictionary --freq-options "--select '!id,!uuid' --limit 20"
 
   # Reduce frequency context by showing only top 5 values per field
-  $ qsv describegpt data.csv --all --frequency-options "--limit 5"
+  $ qsv describegpt data.csv --all --freq-options "--limit 5"
 
   # Get weighted frequencies with ascending sort
-  $ qsv describegpt data.csv --description --frequency-options "--limit 50 --asc --weight count_column"
+  $ qsv describegpt data.csv --description --freq-options "--limit 50 --asc --weight count_column"
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs.
 
@@ -177,8 +178,7 @@ describegpt options:
                            STATS/FREQUENCY OPTIONS:
     --stats-options <arg>  Options for the stats command used to generate summary statistics.
                            [default: --infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl]
-    --frequency-options <arg>
-                           Options for the frequency command used to generate frequency distributions.
+    --freq-options <arg>   Options for the frequency command used to generate frequency distributions.
                            You can use this to exclude certain variable types from frequency analysis
                            (e.g., --select '!id,!uuid'), limit results differently per use case, or
                            control output format. If --limit is specified here, it takes precedence
@@ -186,8 +186,8 @@ describegpt options:
                            [default: --rank-strategy dense]
     --enum-threshold <n>   The threshold for compiling Enumerations with the frequency command
                            before bucketing other unique values into the "Other" category.
-                           This is a convenience shortcut for --frequency-options --limit <n>.
-                           If --frequency-options contains --limit, this flag is ignored.
+                           This is a convenience shortcut for --freq-options --limit <n>.
+                           If --freq-options contains --limit, this flag is ignored.
                            [default: 10]
 
                            CUSTOM PROMPT OPTIONS:
@@ -369,51 +369,51 @@ enum OutputFormat {
 }
 #[derive(Debug, Deserialize)]
 struct Args {
-    arg_input:              Option<String>,
-    flag_dictionary:        bool,
-    flag_description:       bool,
-    flag_tags:              bool,
-    flag_all:               bool,
-    flag_num_tags:          u16,
-    flag_tag_vocab:         Option<String>,
+    arg_input:             Option<String>,
+    flag_dictionary:       bool,
+    flag_description:      bool,
+    flag_tags:             bool,
+    flag_all:              bool,
+    flag_num_tags:         u16,
+    flag_tag_vocab:        Option<String>,
     #[allow(dead_code)]
-    flag_cache_dir:         String,
+    flag_cache_dir:        String,
     #[allow(dead_code)]
-    flag_ckan_api:          String,
+    flag_ckan_api:         String,
     #[allow(dead_code)]
-    flag_ckan_token:        Option<String>,
-    flag_stats_options:     String,
-    flag_frequency_options: String,
-    flag_enum_threshold:    usize,
-    flag_num_examples:      u16,
-    flag_truncate_str:      usize,
-    flag_prompt:            Option<String>,
-    flag_sql_results:       Option<String>,
-    flag_prompt_file:       Option<String>,
-    flag_sample_size:       u16,
-    flag_fewshot_examples:  bool,
-    flag_base_url:          Option<String>,
-    flag_model:             Option<String>,
-    flag_language:          Option<String>,
-    flag_addl_props:        Option<String>,
-    flag_api_key:           Option<String>,
-    flag_max_tokens:        u32,
-    flag_timeout:           u16,
-    flag_user_agent:        Option<String>,
-    flag_export_prompt:     Option<String>,
-    flag_no_cache:          bool,
-    flag_disk_cache_dir:    Option<String>,
-    flag_redis_cache:       bool,
-    flag_fresh:             bool,
-    flag_forget:            bool,
-    flag_flush_cache:       bool,
-    flag_format:            Option<String>,
-    flag_output:            Option<String>,
-    flag_quiet:             bool,
-    flag_addl_cols:         bool,
-    flag_addl_cols_list:    Option<String>,
-    flag_session:           Option<String>,
-    flag_session_len:       usize,
+    flag_ckan_token:       Option<String>,
+    flag_stats_options:    String,
+    flag_freq_options:     String,
+    flag_enum_threshold:   usize,
+    flag_num_examples:     u16,
+    flag_truncate_str:     usize,
+    flag_prompt:           Option<String>,
+    flag_sql_results:      Option<String>,
+    flag_prompt_file:      Option<String>,
+    flag_sample_size:      u16,
+    flag_fewshot_examples: bool,
+    flag_base_url:         Option<String>,
+    flag_model:            Option<String>,
+    flag_language:         Option<String>,
+    flag_addl_props:       Option<String>,
+    flag_api_key:          Option<String>,
+    flag_max_tokens:       u32,
+    flag_timeout:          u16,
+    flag_user_agent:       Option<String>,
+    flag_export_prompt:    Option<String>,
+    flag_no_cache:         bool,
+    flag_disk_cache_dir:   Option<String>,
+    flag_redis_cache:      bool,
+    flag_fresh:            bool,
+    flag_forget:           bool,
+    flag_flush_cache:      bool,
+    flag_format:           Option<String>,
+    flag_output:           Option<String>,
+    flag_quiet:            bool,
+    flag_addl_cols:        bool,
+    flag_addl_cols_list:   Option<String>,
+    flag_session:          Option<String>,
+    flag_session_len:      usize,
 }
 
 #[derive(Debug, Clone)]
@@ -2414,7 +2414,7 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
 fn get_analysis_cache_key(args: &Args, file_hash: &str) -> String {
     format!(
         "analysis_{:?}{:?}{:?}{:?}",
-        file_hash, args.flag_stats_options, args.flag_frequency_options, args.flag_enum_threshold,
+        file_hash, args.flag_stats_options, args.flag_freq_options, args.flag_enum_threshold,
     )
 }
 
@@ -4999,12 +4999,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let sample_file_path = sample_file.path().display().to_string();
     if args.flag_prompt.is_some() {
         let sample_size = args.flag_sample_size.to_string();
-        run_qsv_cmd(
+        let sample_result = run_qsv_cmd(
             "sample",
             &[&sample_size, "--output", &sample_file_path],
             &input_path,
             &format!("Getting {sample_size} row sample data..."),
-        )?;
+        );
+
+        // If sample command fails, try slice as fallback
+        if sample_result.is_err() {
+            run_qsv_cmd(
+                "slice",
+                &["--len", &sample_size, "--output", &sample_file_path],
+                &input_path,
+                &format!("Getting {sample_size} row sample data (using slice)..."),
+            )?;
+        } else {
+            sample_result?;
+        }
+
         let _ = sample_file.keep();
         SAMPLE_FILE.set(sample_file_path)?;
     } else {
@@ -5100,10 +5113,10 @@ fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults>
     };
 
     // Build frequency command arguments with smart merging
-    // If --frequency-options contains --limit, use it as-is
+    // If --freq-options contains --limit, use it as-is
     // Otherwise, prepend --limit from --enum-threshold for backward compatibility
     let frequency_args_vec: Vec<String> = args
-        .flag_frequency_options
+        .flag_freq_options
         .split_whitespace()
         .map(std::string::ToString::to_string)
         .collect();

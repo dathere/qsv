@@ -5184,3 +5184,180 @@ fn stats_weighted_mixed_edge_cases() {
         mean_val
     );
 }
+
+#[test]
+fn stats_json_file_level_metadata() {
+    use std::path::Path;
+
+    use serde_json::Value;
+
+    let wrk = Workdir::new("stats_json_file_level_metadata");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Run stats with --dataset-stats to populate the new fields
+    let mut cmd_2 = wrk.command("stats");
+    cmd_2
+        .arg("--dataset-stats")
+        .args(["--cache-threshold", "1"])
+        .arg(&test_file);
+
+    wrk.run(&mut cmd_2);
+
+    // Read the JSON metadata file
+    let json_path = wrk.path("boston311-100.stats.csv.json");
+    assert!(Path::new(&json_path).exists(), "JSON file should exist");
+
+    let json_content = std::fs::read_to_string(&json_path).unwrap();
+    let json: Value = serde_json::from_str(&json_content).unwrap();
+
+    // Verify field_count is a positive integer (boston311-100.csv has 29 columns)
+    let field_count = json.get("field_count").expect("field_count should exist");
+    assert!(field_count.is_u64(), "field_count should be a number");
+    assert_eq!(
+        field_count.as_u64().unwrap(),
+        29,
+        "field_count should be 29"
+    );
+
+    // Verify filesize_bytes is a positive integer
+    let filesize_bytes = json
+        .get("filesize_bytes")
+        .expect("filesize_bytes should exist");
+    assert!(filesize_bytes.is_u64(), "filesize_bytes should be a number");
+    assert!(
+        filesize_bytes.as_u64().unwrap() > 0,
+        "filesize_bytes should be positive"
+    );
+
+    // Verify hash object exists and has BLAKE3 key
+    let hash = json.get("hash").expect("hash should exist");
+    assert!(hash.is_object(), "hash should be an object");
+    let blake3 = hash.get("BLAKE3").expect("hash.BLAKE3 should exist");
+    assert!(blake3.is_string(), "hash.BLAKE3 should be a string");
+    let blake3_str = blake3.as_str().unwrap();
+    assert!(!blake3_str.is_empty(), "hash.BLAKE3 should not be empty");
+    assert_eq!(
+        blake3_str.len(),
+        64,
+        "BLAKE3 hash should be 64 hex characters"
+    );
+}
+
+#[test]
+fn stats_json_arg_input_format() {
+    use std::path::Path;
+
+    use serde_json::Value;
+
+    let wrk = Workdir::new("stats_json_arg_input_format");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd_2 = wrk.command("stats");
+    cmd_2
+        .arg("--dataset-stats")
+        .args(["--cache-threshold", "1"])
+        .arg(&test_file);
+
+    wrk.run(&mut cmd_2);
+
+    let json_path = wrk.path("boston311-100.stats.csv.json");
+    assert!(Path::new(&json_path).exists(), "JSON file should exist");
+
+    let json_content = std::fs::read_to_string(&json_path).unwrap();
+    let json: Value = serde_json::from_str(&json_content).unwrap();
+
+    // Verify arg_input doesn't contain "Some(" wrapper
+    let arg_input = json.get("arg_input").expect("arg_input should exist");
+    assert!(arg_input.is_string(), "arg_input should be a string");
+    let arg_input_str = arg_input.as_str().unwrap();
+    assert!(
+        !arg_input_str.contains("Some("),
+        "arg_input should not contain 'Some('"
+    );
+    assert!(
+        arg_input_str.ends_with("boston311-100.csv"),
+        "arg_input should be a plain path"
+    );
+
+    // Verify flag_delimiter doesn't contain "None"
+    let flag_delimiter = json
+        .get("flag_delimiter")
+        .expect("flag_delimiter should exist");
+    assert!(
+        flag_delimiter.is_string(),
+        "flag_delimiter should be a string"
+    );
+    let flag_delimiter_str = flag_delimiter.as_str().unwrap();
+    assert!(
+        !flag_delimiter_str.contains("None"),
+        "flag_delimiter should not contain 'None'"
+    );
+}
+
+#[test]
+fn stats_json_backward_compat() {
+    use std::path::Path;
+
+    use serde_json::Value;
+
+    let wrk = Workdir::new("stats_json_backward_compat");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // First, create a cache file
+    let mut cmd_2 = wrk.command("stats");
+    cmd_2
+        .arg("--dataset-stats")
+        .args(["--cache-threshold", "1"])
+        .arg(&test_file);
+    wrk.run(&mut cmd_2);
+
+    let json_path = wrk.path("boston311-100.stats.csv.json");
+    assert!(Path::new(&json_path).exists(), "JSON file should exist");
+
+    // Read and modify the JSON to simulate an older cache file without new fields
+    let json_content = std::fs::read_to_string(&json_path).unwrap();
+    let mut json: Value = serde_json::from_str(&json_content).unwrap();
+
+    // Remove the new fields to simulate an older cache file
+    if let Value::Object(ref mut map) = json {
+        map.remove("field_count");
+        map.remove("filesize_bytes");
+        map.remove("hash");
+        // Change qsv_version to force cache invalidation and recomputation
+        map.insert(
+            "qsv_version".to_string(),
+            Value::String("0.0.0".to_string()),
+        );
+    }
+
+    // Write back the modified JSON
+    std::fs::write(&json_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+    // Run stats again - the cache comparison will fail due to qsv_version mismatch,
+    // triggering recomputation. This tests that older cache files without the new fields
+    // don't cause crashes during the comparison logic.
+    let mut cmd_3 = wrk.command("stats");
+    cmd_3
+        .arg("--dataset-stats")
+        .args(["--cache-threshold", "1"])
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_3);
+    assert!(!got.is_empty(), "Stats should produce output");
+
+    // Verify the JSON file now has the new fields again
+    let json_content = std::fs::read_to_string(&json_path).unwrap();
+    let json: Value = serde_json::from_str(&json_content).unwrap();
+    assert!(
+        json.get("field_count").is_some(),
+        "field_count should exist after recomputation"
+    );
+    assert!(
+        json.get("filesize_bytes").is_some(),
+        "filesize_bytes should exist after recomputation"
+    );
+    assert!(
+        json.get("hash").is_some(),
+        "hash should exist after recomputation"
+    );
+}

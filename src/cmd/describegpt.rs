@@ -177,12 +177,18 @@ describegpt options:
 
                            STATS/FREQUENCY OPTIONS:
     --stats-options <arg>  Options for the stats command used to generate summary statistics.
+                           If it starts with "file:" prefix, the statistics are read from the
+                           specified CSV file instead of running the stats command.
+                           e.g. "file:my_custom_stats.csv"
                            [default: --infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl]
     --freq-options <arg>   Options for the frequency command used to generate frequency distributions.
                            You can use this to exclude certain variable types from frequency analysis
                            (e.g., --select '!id,!uuid'), limit results differently per use case, or
                            control output format. If --limit is specified here, it takes precedence
                            over --enum-threshold.
+                           If it starts with "file:" prefix, the frequency data is read from the
+                           specified CSV file instead of running the frequency command.
+                           e.g. "file:my_custom_frequency.csv"
                            [default: --rank-strategy dense]
     --enum-threshold <n>   The threshold for compiling Enumerations with the frequency command
                            before bucketing other unique values into the "Other" category.
@@ -5070,84 +5076,117 @@ fn perform_analysis(args: &Args, input_path: &str) -> CliResult<AnalysisResults>
     // get the delimiter of the input file
     let delimiter = config.get_delimiter();
 
-    // Decide if we want to use moarstats or stats
-    let (stats, _) = match args
-        .flag_addl_cols_list
-        .as_deref()
-        .map(|s| s.trim().to_lowercase())
-    {
-        Some(ref addl) if addl == "moar" || addl == "moar!" => {
-            // Use moarstats when requested
-            let stats_cmd: Vec<&str> = if addl == "moar!" {
-                vec!["--advanced"] // also get gini coefficient, kurtosis, and shannon entropy
-            } else {
-                vec![]
-            };
-            print_status(
-                &format!("  Compiling Summary Statistics (options: '{addl}')..."),
-                None,
-            );
-            // moarstats writes output to <input>.stats.csv
-            run_qsv_cmd("moarstats", &stats_cmd, input_path, " ")?;
-            let stats_csv_path = Path::new(input_path).with_extension("stats.csv");
-            let stats = fs::read_to_string(&stats_csv_path).map_err(|e| {
-                CliError::Other(format!(
-                    "Failed to read moarstats output file '{}': {e}",
-                    stats_csv_path.display()
-                ))
-            })?;
-            (stats, String::new())
-        },
-        _ => {
-            // Use regular stats
-            print_status(
-                &format!(
-                    "  Compiling Summary Statistics (options: '{}')...",
-                    args.flag_stats_options
-                ),
-                None,
-            );
-            let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
-            run_qsv_cmd("stats", &stats_args_vec, input_path, " ")?
-        },
-    };
-
-    // Build frequency command arguments with smart merging
-    // If --freq-options contains --limit, use it as-is
-    // Otherwise, prepend --limit from --enum-threshold for backward compatibility
-    let frequency_args_vec: Vec<String> = args
-        .flag_freq_options
-        .split_whitespace()
-        .map(std::string::ToString::to_string)
-        .collect();
-
-    let contains_limit = frequency_args_vec
-        .iter()
-        .any(|arg| arg == "--limit" || arg == "-l");
-
-    let final_frequency_args: Vec<String> = if contains_limit {
-        frequency_args_vec
+    // Check if stats should be read from a file (file: prefix)
+    let stats = if let Some(stats_file) = args.flag_stats_options.strip_prefix("file:") {
+        let stats_path = Path::new(stats_file);
+        print_status(
+            &format!("  Reading Summary Statistics from file '{stats_file}'..."),
+            None,
+        );
+        fs::read_to_string(stats_path).map_err(|e| {
+            CliError::Other(format!(
+                "Failed to read stats file '{}': {e}",
+                stats_path.display()
+            ))
+        })?
     } else {
-        // Prepend --limit <enum_threshold> if not present
-        let mut combined = vec!["--limit".to_string(), args.flag_enum_threshold.to_string()];
-        combined.extend(frequency_args_vec);
-        combined
+        // Decide if we want to use moarstats or stats
+        let (stats_output, _) = match args
+            .flag_addl_cols_list
+            .as_deref()
+            .map(|s| s.trim().to_lowercase())
+        {
+            Some(ref addl) if addl == "moar" || addl == "moar!" => {
+                // Use moarstats when requested
+                let stats_cmd: Vec<&str> = if addl == "moar!" {
+                    vec!["--advanced"] // also get gini coefficient, kurtosis, and shannon entropy
+                } else {
+                    vec![]
+                };
+                print_status(
+                    &format!("  Compiling Summary Statistics (options: '{addl}')..."),
+                    None,
+                );
+                // moarstats writes output to <input>.stats.csv
+                run_qsv_cmd("moarstats", &stats_cmd, input_path, " ")?;
+                let stats_csv_path = Path::new(input_path).with_extension("stats.csv");
+                let stats = fs::read_to_string(&stats_csv_path).map_err(|e| {
+                    CliError::Other(format!(
+                        "Failed to read moarstats output file '{}': {e}",
+                        stats_csv_path.display()
+                    ))
+                })?;
+                (stats, String::new())
+            },
+            _ => {
+                // Use regular stats
+                print_status(
+                    &format!(
+                        "  Compiling Summary Statistics (options: '{}')...",
+                        args.flag_stats_options
+                    ),
+                    None,
+                );
+                let stats_args_vec: Vec<&str> =
+                    args.flag_stats_options.split_whitespace().collect();
+                run_qsv_cmd("stats", &stats_args_vec, input_path, " ")?
+            },
+        };
+        stats_output
     };
 
-    print_status(
-        &format!(
-            "  Compiling Frequency Distribution (options: '{}')...",
-            final_frequency_args.join(" ")
-        ),
-        None,
-    );
+    // Check if frequency should be read from a file (file: prefix)
+    let frequency = if let Some(freq_file) = args.flag_freq_options.strip_prefix("file:") {
+        let freq_path = Path::new(freq_file);
+        print_status(
+            &format!("  Reading Frequency Distribution from file '{freq_file}'..."),
+            None,
+        );
+        fs::read_to_string(freq_path).map_err(|e| {
+            CliError::Other(format!(
+                "Failed to read frequency file '{}': {e}",
+                freq_path.display()
+            ))
+        })?
+    } else {
+        // Build frequency command arguments with smart merging
+        // If --freq-options contains --limit, use it as-is
+        // Otherwise, prepend --limit from --enum-threshold for backward compatibility
+        let frequency_args_vec: Vec<String> = args
+            .flag_freq_options
+            .split_whitespace()
+            .map(std::string::ToString::to_string)
+            .collect();
 
-    let frequency_args_str: Vec<&str> = final_frequency_args
-        .iter()
-        .map(std::string::String::as_str)
-        .collect();
+        let contains_limit = frequency_args_vec
+            .iter()
+            .any(|arg| arg == "--limit" || arg == "-l");
 
-    let (frequency, _) = run_qsv_cmd("frequency", &frequency_args_str, input_path, " ")?;
+        let final_frequency_args: Vec<String> = if contains_limit {
+            frequency_args_vec
+        } else {
+            // Prepend --limit <enum_threshold> if not present
+            let mut combined = vec!["--limit".to_string(), args.flag_enum_threshold.to_string()];
+            combined.extend(frequency_args_vec);
+            combined
+        };
+
+        print_status(
+            &format!(
+                "  Compiling Frequency Distribution (options: '{}')...",
+                final_frequency_args.join(" ")
+            ),
+            None,
+        );
+
+        let frequency_args_str: Vec<&str> = final_frequency_args
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
+
+        let (freq_output, _) = run_qsv_cmd("frequency", &frequency_args_str, input_path, " ")?;
+        freq_output
+    };
 
     // this is instantaneous, so no need to print start/end status
     let (headers, _) = run_qsv_cmd(

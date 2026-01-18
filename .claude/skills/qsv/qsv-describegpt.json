@@ -83,7 +83,7 @@
       {
         "flag": "--enum-threshold",
         "type": "string",
-        "description": "The threshold for compiling Enumerations with the frequency command before bucketing other unique values into the \"Other\" category.",
+        "description": "The threshold for compiling Enumerations with the frequency command before bucketing other unique values into the \"Other\" category. This is a convenience shortcut for --freq-options --limit <n>. If --freq-options contains --limit, this flag is ignored.",
         "default": "10"
       },
       {
@@ -111,6 +111,12 @@
         "type": "string",
         "description": "Output format: Markdown, TSV, JSON, or TOON. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See https://toonformat.dev/ for more info.",
         "default": "Markdown"
+      },
+      {
+        "flag": "--freq-options",
+        "type": "string",
+        "description": "Options for the frequency command used to generate frequency distributions. You can use this to exclude certain variable types from frequency analysis (e.g., --select '!id,!uuid'), limit results differently per use case, or control output format. If --limit is specified here, it takes precedence over --enum-threshold. If it starts with \"file:\" prefix, the frequency data is read from the specified CSV file instead of running the frequency command. e.g. \"file:my_custom_frequency.csv\"",
+        "default": "--rank-strategy dense"
       },
       {
         "flag": "--fresh",
@@ -196,7 +202,7 @@
       {
         "flag": "--stats-options",
         "type": "string",
-        "description": "Options for the stats command used to generate summary statistics.",
+        "description": "Options for the stats command used to generate summary statistics. If it starts with \"file:\" prefix, the statistics are read from the specified CSV file instead of running the stats command. e.g. \"file:my_custom_stats.csv\"",
         "default": "--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl"
       },
       {

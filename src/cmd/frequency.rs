@@ -140,6 +140,16 @@ frequency options:
                                  "--no-float price,rate" excludes Floats
                                     except 'price' and 'rate'
                             Requires stats cache for type detection.
+    --stats-filter <expr>   Filter columns based on their statistics using a Luau expression.
+                            Columns where the expression evaluates to `true` are EXCLUDED.
+                            Available fields: field, type, is_ascii, cardinality, nullcount,
+                            sum, min, max, range, sort_order, min_length, max_length, mean,
+                            stddev, variance, cv, sparsity, q1, q2_median, q3, iqr, mad,
+                            skewness, mode, antimode, n_negative, n_zero, n_positive, etc.
+                            e.g. "nullcount > 1000" - exclude columns with many nulls
+                                 "type == 'Float'" - exclude Float columns
+                                 "cardinality > 500 and nullcount > 0" - compound expression
+                            Requires stats cache and the "luau" feature.
    --all-unique-text <arg>  The text to use for the "<ALL_UNIQUE>" category.
                             [default: <ALL_UNIQUE>]
     --vis-whitespace        Visualize whitespace characters in the output. See
@@ -245,6 +255,8 @@ pub struct Args {
     pub flag_no_nulls:        bool,
     pub flag_ignore_case:     bool,
     pub flag_no_float:        Option<String>,
+    #[cfg(feature = "luau")]
+    pub flag_stats_filter:    Option<String>,
     pub flag_all_unique_text: String,
     pub flag_jobs:            Option<usize>,
     pub flag_output:          Option<String>,
@@ -268,6 +280,8 @@ static UNIQUE_COLUMNS_VEC: OnceLock<Vec<usize>> = OnceLock::new();
 static COL_CARDINALITY_VEC: OnceLock<Vec<(String, u64)>> = OnceLock::new();
 static FREQ_ROW_COUNT: OnceLock<u64> = OnceLock::new();
 static FLOAT_COLUMNS_TO_SKIP: OnceLock<Vec<usize>> = OnceLock::new();
+#[cfg(feature = "luau")]
+static STATS_FILTER_COLUMNS_TO_SKIP: OnceLock<Vec<usize>> = OnceLock::new();
 static EMPTY_VEC: Vec<(String, u64)> = Vec::new();
 static ALL_UNIQUE_TEXT: OnceLock<Vec<u8>> = OnceLock::new();
 // FrequencyEntry, FrequencyField and FrequencyOutput are
@@ -1907,6 +1921,68 @@ impl Args {
         float_columns_to_skip
     }
 
+    /// Compute indices of columns that should be skipped based on the --stats-filter expression.
+    ///
+    /// # Arguments
+    /// * `headers` - The selected CSV headers
+    /// * `stats_records` - Map of column names to their stats data from stats cache
+    /// * `filter_expression` - The Luau expression to evaluate for each column
+    ///
+    /// # Returns
+    /// A vector of indices (into the selected headers) of columns where the filter
+    /// expression evaluated to `true` (meaning they should be excluded).
+    #[cfg(feature = "luau")]
+    fn compute_stats_filter_columns_to_skip(
+        &self,
+        headers: &Headers,
+        stats_records: &HashMap<String, StatsData>,
+        filter_expression: &str,
+    ) -> CliResult<Vec<usize>> {
+        use mlua::Lua;
+
+        // Create a single sandboxed Luau VM for all column evaluations
+        let lua = Lua::new();
+        lua.sandbox(true)
+            .map_err(|e| format!("Failed to enable Luau sandbox: {e}"))?;
+
+        let mut columns_to_skip = Vec::new();
+
+        for (i, header) in headers.iter().enumerate() {
+            let header_str = simdutf8::basic::from_utf8(header)
+                .unwrap_or(NON_UTF8_ERR)
+                .to_string();
+
+            // Look up the stats record for this column
+            if let Some(stats_data) = stats_records.get(&header_str) {
+                // Evaluate the filter expression against this column's stats
+                match evaluate_stats_filter(&lua, stats_data, filter_expression) {
+                    Ok(should_exclude) => {
+                        if should_exclude {
+                            log::debug!(
+                                "Column '{header_str}' excluded by --stats-filter expression"
+                            );
+                            columns_to_skip.push(i);
+                        }
+                    },
+                    Err(e) => {
+                        return fail_clierror!(
+                            "Error evaluating --stats-filter expression for column \
+                             '{header_str}': {e}"
+                        );
+                    },
+                }
+            } else {
+                // No stats available for this column - skip filtering for it
+                log::debug!(
+                    "No stats available for column '{header_str}', skipping --stats-filter \
+                     evaluation"
+                );
+            }
+        }
+
+        Ok(columns_to_skip)
+    }
+
     /// return the names of headers/columns that are unique identifiers
     /// (i.e. where cardinality == rowcount)
     /// Also stores the stats records in a hashmap for use when producing JSON output
@@ -1932,8 +2008,15 @@ impl Args {
             flag_output:          None,
         };
         let is_json = self.flag_json || self.flag_pretty_json || self.flag_toon;
+        // Check if we need to populate stats_records_hashmap
+        // We need it for JSON output and for --stats-filter
+        #[cfg(feature = "luau")]
+        let needs_stats_records = is_json || self.flag_stats_filter.is_some();
+        #[cfg(not(feature = "luau"))]
+        let needs_stats_records = is_json;
+
         // initialize the stats records hashmap
-        let mut stats_records_hashmap = if is_json {
+        let mut stats_records_hashmap = if needs_stats_records {
             HashMap::with_capacity(headers.len())
         } else {
             HashMap::new()
@@ -1963,8 +2046,9 @@ impl Args {
                 let col_name_str = simdutf8::basic::from_utf8(col_name)
                     .unwrap_or(NON_UTF8_ERR)
                     .to_string();
-                if is_json {
+                if needs_stats_records {
                     // Store the stats records hashmap for later use when producing JSON output
+                    // or for --stats-filter evaluation
                     stats_records_hashmap.insert(col_name_str.clone(), stats_record.clone());
                 }
                 // Store type info for Float column detection
@@ -1998,6 +2082,25 @@ impl Args {
             let float_columns_to_skip = self.compute_float_columns_to_skip(headers, &col_type_map);
             // safety: we only set this once per invocation
             let _ = FLOAT_COLUMNS_TO_SKIP.set(float_columns_to_skip);
+        }
+
+        // Compute stats filter columns to skip if --stats-filter is specified
+        #[cfg(feature = "luau")]
+        if let Some(ref filter_expression) = self.flag_stats_filter {
+            if stats_records_hashmap.is_empty() {
+                log::warn!(
+                    "Stats cache unavailable. Cannot apply --stats-filter. Run 'qsv stats \
+                     --cardinality --stats-jsonl' first."
+                );
+            } else {
+                let stats_filter_columns_to_skip = self.compute_stats_filter_columns_to_skip(
+                    headers,
+                    &stats_records_hashmap,
+                    filter_expression,
+                )?;
+                // safety: we only set this once per invocation
+                let _ = STATS_FILTER_COLUMNS_TO_SKIP.set(stats_filter_columns_to_skip);
+            }
         }
 
         COL_CARDINALITY_VEC.get_or_init(|| col_cardinality_vec);
@@ -2390,6 +2493,48 @@ impl Args {
             (sel, selected_headers)
         };
 
+        // Filter out stats-filtered columns if --stats-filter is specified
+        #[cfg(feature = "luau")]
+        let (final_sel, final_headers) = if self.flag_stats_filter.is_some() {
+            if let Some(stats_filter_cols_to_skip) = STATS_FILTER_COLUMNS_TO_SKIP.get() {
+                if stats_filter_cols_to_skip.is_empty() {
+                    (final_sel, final_headers)
+                } else {
+                    // Filter selection to exclude stats-filtered columns
+                    // stats_filter_cols_to_skip contains indices into selected_headers
+                    let sel_vec: Vec<usize> = final_sel
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .filter(|(i, _)| !stats_filter_cols_to_skip.contains(i))
+                        .map(|(_, idx)| idx)
+                        .collect();
+
+                    if sel_vec.is_empty() {
+                        return Err(crate::CliError::Other(
+                            "No columns remain after applying --stats-filter. Adjust your filter \
+                             expression to be less restrictive."
+                                .to_string(),
+                        ));
+                    }
+
+                    // safety: We know Selection is a tuple struct with a Vec<usize> field
+                    let new_sel = unsafe { std::mem::transmute::<Vec<usize>, Selection>(sel_vec) };
+                    let headers: csv::ByteRecord = new_sel.select(&full_headers).collect();
+                    (new_sel, headers)
+                }
+            } else {
+                // Stats cache unavailable for --stats-filter
+                log::warn!(
+                    "Stats cache unavailable. Cannot apply --stats-filter. Processing all \
+                     columns. Run 'qsv stats --cardinality --stats-jsonl' first."
+                );
+                (final_sel, final_headers)
+            }
+        } else {
+            (final_sel, final_headers)
+        };
+
         // Map original column indices to selected column indices
         let mapped_unique_headers: Vec<usize> = all_unique_headers_vec
             .iter()
@@ -2463,4 +2608,200 @@ fn trim_bs_whitespace(bytes: &[u8]) -> &[u8] {
 
     // safety: This slice is guaranteed to be in bounds due to our index calculations
     unsafe { bytes.get_unchecked(start..end) }
+}
+
+/// Evaluate a Luau expression against stats data for a column.
+/// Returns `true` if the column should be EXCLUDED from frequency analysis.
+/// The Lua VM is passed in to allow reuse across multiple column evaluations.
+#[cfg(feature = "luau")]
+fn evaluate_stats_filter(
+    lua: &mlua::Lua,
+    stats_data: &StatsData,
+    filter_expression: &str,
+) -> Result<bool, String> {
+    use mlua::Value;
+
+    // Set all StatsData fields as globals
+    let globals = lua.globals();
+
+    // Helper macros to reduce boilerplate
+    macro_rules! set_string {
+        ($name:ident) => {
+            globals
+                .set(stringify!($name), stats_data.$name.as_str())
+                .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+        };
+    }
+
+    macro_rules! set_u64 {
+        ($name:ident) => {
+            globals
+                .set(stringify!($name), stats_data.$name)
+                .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+        };
+    }
+
+    macro_rules! set_bool {
+        ($name:ident) => {
+            globals
+                .set(stringify!($name), stats_data.$name)
+                .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+        };
+    }
+
+    macro_rules! set_optional_f64 {
+        ($name:ident) => {
+            if let Some(val) = stats_data.$name {
+                globals
+                    .set(stringify!($name), val)
+                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+            } else {
+                globals
+                    .set(stringify!($name), Value::Nil)
+                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+            }
+        };
+    }
+
+    macro_rules! set_optional_u64 {
+        ($name:ident) => {
+            if let Some(val) = stats_data.$name {
+                globals
+                    .set(stringify!($name), val)
+                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+            } else {
+                globals
+                    .set(stringify!($name), Value::Nil)
+                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+            }
+        };
+    }
+
+    macro_rules! set_optional_usize {
+        ($name:ident) => {
+            if let Some(val) = stats_data.$name {
+                globals
+                    .set(stringify!($name), val)
+                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+            } else {
+                globals
+                    .set(stringify!($name), Value::Nil)
+                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+            }
+        };
+    }
+
+    macro_rules! set_optional_u32 {
+        ($name:ident) => {
+            if let Some(val) = stats_data.$name {
+                globals
+                    .set(stringify!($name), val)
+                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+            } else {
+                globals
+                    .set(stringify!($name), Value::Nil)
+                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+            }
+        };
+    }
+
+    macro_rules! set_optional_string {
+        ($name:ident) => {
+            if let Some(ref val) = stats_data.$name {
+                globals
+                    .set(stringify!($name), val.as_str())
+                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+            } else {
+                globals
+                    .set(stringify!($name), Value::Nil)
+                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+            }
+        };
+    }
+
+    // Set all fields from StatsData
+    // Basic fields
+    set_string!(field);
+    // 'type' is a reserved keyword in Rust, so we use r#type
+    globals
+        .set("type", stats_data.r#type.as_str())
+        .map_err(|e| format!("Failed to set type: {e}"))?;
+    set_bool!(is_ascii);
+
+    // Counts (non-optional)
+    set_u64!(cardinality);
+    set_u64!(nullcount);
+
+    // Optional numeric fields
+    set_optional_f64!(sum);
+    set_optional_string!(min);
+    set_optional_string!(max);
+    set_optional_f64!(range);
+    set_optional_string!(sort_order);
+
+    // String length stats
+    set_optional_usize!(min_length);
+    set_optional_usize!(max_length);
+    set_optional_usize!(sum_length);
+    set_optional_f64!(avg_length);
+    set_optional_f64!(stddev_length);
+    set_optional_f64!(variance_length);
+    set_optional_f64!(cv_length);
+
+    // Numeric stats
+    set_optional_f64!(mean);
+    set_optional_f64!(sem);
+    set_optional_f64!(stddev);
+    set_optional_f64!(variance);
+    set_optional_f64!(cv);
+
+    // Sign counts
+    set_optional_u64!(n_negative);
+    set_optional_u64!(n_zero);
+    set_optional_u64!(n_positive);
+
+    // Precision
+    set_optional_u32!(max_precision);
+
+    // Ratios
+    set_optional_f64!(sparsity);
+    set_optional_f64!(uniqueness_ratio);
+
+    // Distribution stats
+    set_optional_f64!(mad);
+    set_optional_f64!(lower_outer_fence);
+    set_optional_f64!(lower_inner_fence);
+    set_optional_f64!(q1);
+    set_optional_f64!(q2_median);
+    set_optional_f64!(q3);
+    set_optional_f64!(iqr);
+    set_optional_f64!(upper_inner_fence);
+    set_optional_f64!(upper_outer_fence);
+    set_optional_f64!(skewness);
+
+    // Mode/Antimode
+    set_optional_string!(mode);
+    set_optional_u64!(mode_count);
+    set_optional_u64!(mode_occurrences);
+    set_optional_string!(antimode);
+    set_optional_u64!(antimode_count);
+    set_optional_u64!(antimode_occurrences);
+
+    // Wrap the expression in a return statement to get the result
+    let wrapped_expr = format!("return {filter_expression}");
+
+    // Evaluate the expression
+    let result: Value = lua
+        .load(&wrapped_expr)
+        .eval()
+        .map_err(|e| format!("Failed to evaluate filter expression: {e}"))?;
+
+    // Convert result to boolean
+    match result {
+        Value::Boolean(b) => Ok(b),
+        Value::Nil => Ok(false), // nil is treated as false (don't exclude)
+        _ => Err(format!(
+            "Filter expression must return a boolean, got: {result:?}"
+        )),
+    }
 }

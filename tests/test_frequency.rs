@@ -3103,3 +3103,288 @@ fn frequency_weight_no_other_zero() {
         "Other entry should have weight 3 (c + d)"
     );
 }
+
+// ============================================================
+// --no-float tests
+// ============================================================
+
+#[test]
+fn frequency_no_float_basic() {
+    let wrk = Workdir::new("frequency_no_float_basic");
+
+    // Create CSV with String, Integer, Float columns
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["name", "age", "price"],
+            svec!["Alice", "30", "19.99"],
+            svec!["Bob", "25", "29.99"],
+            svec!["Alice", "30", "39.99"],
+        ],
+    );
+
+    // Run stats to create cache (required for type detection)
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run frequency with --no-float "*" to exclude all Float columns
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--no-float", "*"])
+        .args(["--limit", "0"]);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // Verify Float column 'price' is excluded from output
+    assert!(
+        !got.contains("price"),
+        "Float column 'price' should be excluded"
+    );
+    // Verify String column 'name' is included
+    assert!(
+        got.contains("name"),
+        "String column 'name' should be included"
+    );
+    // Verify Integer column 'age' is included
+    assert!(
+        got.contains("age"),
+        "Integer column 'age' should be included"
+    );
+}
+
+#[test]
+fn frequency_no_float_with_exceptions() {
+    let wrk = Workdir::new("frequency_no_float_with_exceptions");
+
+    // Create CSV with multiple Float columns
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["name", "price", "rate", "score"],
+            svec!["Alice", "19.99", "0.05", "8.5"],
+            svec!["Bob", "29.99", "0.10", "9.0"],
+            svec!["Carol", "39.99", "0.15", "7.5"],
+        ],
+    );
+
+    // Run stats to create cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run frequency with --no-float but exempt 'price'
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--no-float", "price"])
+        .args(["--limit", "0"]);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // Verify 'price' IS included (it's in the exception list)
+    assert!(
+        got.contains("price"),
+        "Exception column 'price' should be included"
+    );
+    // Verify 'rate' and 'score' are excluded (not in exception list)
+    assert!(
+        !got.contains(",rate,"),
+        "Float column 'rate' should be excluded"
+    );
+    assert!(
+        !got.contains(",score,"),
+        "Float column 'score' should be excluded"
+    );
+    // Verify 'name' is included (String type)
+    assert!(
+        got.contains("name"),
+        "String column 'name' should be included"
+    );
+}
+
+#[test]
+fn frequency_no_float_with_select() {
+    let wrk = Workdir::new("frequency_no_float_with_select");
+
+    // Create CSV with mixed types
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["name", "age", "price", "category"],
+            svec!["Alice", "30", "19.99", "A"],
+            svec!["Bob", "25", "29.99", "B"],
+            svec!["Carol", "35", "39.99", "A"],
+        ],
+    );
+
+    // Run stats to create cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run frequency with --select AND --no-float "*"
+    // Select columns: name, price, category
+    // --no-float should exclude 'price' from the selected columns
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--select", "name,price,category"])
+        .args(["--no-float", "*"])
+        .args(["--limit", "0"]);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // Verify 'price' is excluded even though it was selected
+    assert!(
+        !got.contains("price"),
+        "Float column 'price' should be excluded"
+    );
+    // Verify other selected columns are included
+    assert!(
+        got.contains("name"),
+        "Selected column 'name' should be included"
+    );
+    assert!(
+        got.contains("category"),
+        "Selected column 'category' should be included"
+    );
+    // Verify unselected column is not included
+    assert!(
+        !got.contains(",age,"),
+        "Unselected column 'age' should not be included"
+    );
+}
+
+#[test]
+fn frequency_no_float_all_floats_error() {
+    let wrk = Workdir::new("frequency_no_float_all_floats_error");
+
+    // Create CSV with only Float columns (except for what will become an ID)
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["price", "rate"],
+            svec!["19.99", "0.05"],
+            svec!["29.99", "0.10"],
+            svec!["39.99", "0.15"],
+        ],
+    );
+
+    // Run stats to create cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run frequency with --no-float "*" - should error because all columns are Float
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--no-float", "*"])
+        .args(["--limit", "0"]);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn frequency_no_float_auto_stats() {
+    let wrk = Workdir::new("frequency_no_float_auto_stats");
+
+    // Create CSV with mixed types but DON'T run stats first
+    // The frequency command will auto-create stats cache when needed
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["name", "price"],
+            svec!["Alice", "19.99"],
+            svec!["Bob", "29.99"],
+        ],
+    );
+
+    // Run frequency with --no-float "*" WITHOUT pre-existing stats cache
+    // Frequency will auto-create stats, so Float detection should still work
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--no-float", "*"])
+        .args(["--limit", "0"]);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // Stats cache is auto-created, so Float column 'price' should be excluded
+    assert!(
+        got.contains("name"),
+        "String column 'name' should be included"
+    );
+    // Float column 'price' should be excluded (stats were auto-created)
+    assert!(
+        !got.contains("price"),
+        "Float column 'price' should be excluded (stats auto-created)"
+    );
+}
+
+#[test]
+fn frequency_no_float_with_json() {
+    let wrk = Workdir::new("frequency_no_float_with_json");
+
+    // Create CSV with mixed types
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["name", "age", "price"],
+            svec!["Alice", "30", "19.99"],
+            svec!["Bob", "25", "29.99"],
+            svec!["Alice", "30", "39.99"],
+        ],
+    );
+
+    // Run stats to create cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run frequency with --no-float "*" and --json
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--no-float", "*"])
+        .arg("--json")
+        .args(["--limit", "0"]);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // Parse JSON to verify structure
+    let json: serde_json::Value = serde_json::from_str(&got).expect("Valid JSON output");
+
+    // Verify fields array exists and has expected count (2 fields: name, age - not price)
+    let fields = json["fields"]
+        .as_array()
+        .expect("fields should be an array");
+    assert_eq!(
+        fields.len(),
+        2,
+        "Should have 2 fields (name, age) after excluding Float column 'price'"
+    );
+
+    // Verify field names
+    let field_names: Vec<&str> = fields
+        .iter()
+        .map(|f| f["field"].as_str().unwrap())
+        .collect();
+    assert!(field_names.contains(&"name"), "Should include 'name' field");
+    assert!(field_names.contains(&"age"), "Should include 'age' field");
+    assert!(
+        !field_names.contains(&"price"),
+        "Should NOT include 'price' field"
+    );
+}

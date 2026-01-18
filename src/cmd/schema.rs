@@ -606,6 +606,7 @@ fn get_unique_values(
         flag_no_nulls:        true,
         flag_no_trim:         false,
         flag_ignore_case:     args.flag_ignore_case,
+        flag_no_float:        None,
         flag_all_unique_text: "<ALL UNIQUE>".to_string(),
         flag_jobs:            Some(util::njobs(args.flag_jobs)),
         flag_output:          None,

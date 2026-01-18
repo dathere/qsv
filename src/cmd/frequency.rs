@@ -130,6 +130,16 @@ frequency options:
                             [default: (NULL)]
     --no-nulls              Don't include NULLs in the frequency table.
     -i, --ignore-case       Ignore case when computing frequencies.
+    --no-float <cols>       Exclude Float columns from frequency analysis.
+                            Floats typically contain continuous values where
+                            frequency tables are not meaningful.
+                            To exclude ALL Float columns, use --no-float "*"
+                            To exclude Floats except specific columns, specify
+                            a comma-separated list of Float columns to INCLUDE.
+                            e.g. "--no-float *" excludes all Floats
+                                 "--no-float price,rate" excludes Floats
+                                    except 'price' and 'rate'
+                            Requires stats cache for type detection.
    --all-unique-text <arg>  The text to use for the "<ALL_UNIQUE>" category.
                             [default: <ALL_UNIQUE>]
     --vis-whitespace        Visualize whitespace characters in the output. See
@@ -172,7 +182,7 @@ Common options:
 use std::{fs, io, str::FromStr, sync::OnceLock};
 
 use crossbeam_channel;
-use foldhash::{HashMap, HashMapExt};
+use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use indicatif::HumanCount;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -234,6 +244,7 @@ pub struct Args {
     pub flag_null_text:       String,
     pub flag_no_nulls:        bool,
     pub flag_ignore_case:     bool,
+    pub flag_no_float:        Option<String>,
     pub flag_all_unique_text: String,
     pub flag_jobs:            Option<usize>,
     pub flag_output:          Option<String>,
@@ -256,6 +267,7 @@ static NULL_VAL: OnceLock<Vec<u8>> = OnceLock::new();
 static UNIQUE_COLUMNS_VEC: OnceLock<Vec<usize>> = OnceLock::new();
 static COL_CARDINALITY_VEC: OnceLock<Vec<(String, u64)>> = OnceLock::new();
 static FREQ_ROW_COUNT: OnceLock<u64> = OnceLock::new();
+static FLOAT_COLUMNS_TO_SKIP: OnceLock<Vec<usize>> = OnceLock::new();
 static EMPTY_VEC: Vec<(String, u64)> = Vec::new();
 static ALL_UNIQUE_TEXT: OnceLock<Vec<u8>> = OnceLock::new();
 // FrequencyEntry, FrequencyField and FrequencyOutput are
@@ -1841,6 +1853,60 @@ impl Args {
         freq_tables
     }
 
+    /// Compute indices of Float columns that should be skipped from frequency analysis.
+    ///
+    /// # Arguments
+    /// * `headers` - The selected CSV headers
+    /// * `col_type_map` - Map of column names to their data types from stats cache
+    ///
+    /// # Returns
+    /// A vector of indices (into the selected headers) of Float columns to skip.
+    /// Columns listed in the --no-float exception list are NOT included in the skip list.
+    fn compute_float_columns_to_skip(
+        &self,
+        headers: &Headers,
+        col_type_map: &HashMap<String, String>,
+    ) -> Vec<usize> {
+        // Parse exception columns from flag value
+        // If value is "*", exclude ALL Float columns (empty exception list)
+        // Otherwise, parse as comma-separated list of Float columns to INCLUDE
+        let exception_cols: HashSet<String> = self
+            .flag_no_float
+            .as_ref()
+            .map(|cols| {
+                let trimmed = cols.trim();
+                // "*" means exclude all floats (no exceptions)
+                if trimmed == "*" {
+                    HashSet::new()
+                } else {
+                    trimmed
+                        .split(',')
+                        .map(|s| s.trim().to_lowercase())
+                        .filter(|s| !s.is_empty() && s != "*")
+                        .collect()
+                }
+            })
+            .unwrap_or_default();
+
+        let mut float_columns_to_skip = Vec::new();
+
+        for (i, header) in headers.iter().enumerate() {
+            let header_str = simdutf8::basic::from_utf8(header)
+                .unwrap_or(NON_UTF8_ERR)
+                .to_string();
+
+            // Check if column is Float type and not in exception list
+            if let Some(col_type) = col_type_map.get(&header_str)
+                && col_type == "Float"
+                && !exception_cols.contains(&header_str.to_lowercase())
+            {
+                float_columns_to_skip.push(i);
+            }
+        }
+
+        float_columns_to_skip
+    }
+
     /// return the names of headers/columns that are unique identifiers
     /// (i.e. where cardinality == rowcount)
     /// Also stores the stats records in a hashmap for use when producing JSON output
@@ -1884,6 +1950,9 @@ impl Args {
             return Ok(Vec::new());
         }
 
+        // Build column name -> (cardinality, type) map for matching by name
+        let mut col_type_map: HashMap<String, String> = HashMap::with_capacity(csv_stats.len());
+
         let col_cardinality_vec: Vec<(String, u64)> = csv_stats
             .iter()
             .enumerate()
@@ -1898,6 +1967,8 @@ impl Args {
                     // Store the stats records hashmap for later use when producing JSON output
                     stats_records_hashmap.insert(col_name_str.clone(), stats_record.clone());
                 }
+                // Store type info for Float column detection
+                col_type_map.insert(col_name_str.clone(), stats_record.r#type.clone());
                 (col_name_str, stats_record.cardinality)
             })
             .collect();
@@ -1920,6 +1991,13 @@ impl Args {
             if cardinality == row_count {
                 all_unique_headers_vec.push(i);
             }
+        }
+
+        // Compute Float columns to skip if --no-float is specified
+        if self.flag_no_float.is_some() {
+            let float_columns_to_skip = self.compute_float_columns_to_skip(headers, &col_type_map);
+            // safety: we only set this once per invocation
+            let _ = FLOAT_COLUMNS_TO_SKIP.set(float_columns_to_skip);
         }
 
         COL_CARDINALITY_VEC.get_or_init(|| col_cardinality_vec);
@@ -2262,17 +2340,60 @@ impl Args {
         rdr: &mut csv::Reader<R>,
     ) -> CliResult<(csv::ByteRecord, Selection, Option<usize>)> {
         let full_headers = rdr.byte_headers()?.clone();
-        let (weight_col_idx, sel, selected_headers) =
+        let (weight_col_idx, mut sel, selected_headers) =
             self.process_headers_with_weight_exclusion(&full_headers)?;
 
         let all_unique_headers_vec = self.get_unique_headers(&selected_headers)?;
+
+        // Filter out Float columns if --no-float is specified
+        let (final_sel, final_headers) = if self.flag_no_float.is_some() {
+            if let Some(float_cols_to_skip) = FLOAT_COLUMNS_TO_SKIP.get() {
+                if float_cols_to_skip.is_empty() {
+                    (sel, selected_headers)
+                } else {
+                    // Filter selection to exclude Float columns
+                    // float_cols_to_skip contains indices into selected_headers
+                    let sel_vec: Vec<usize> = sel
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .filter(|(i, _)| !float_cols_to_skip.contains(i))
+                        .map(|(_, idx)| idx)
+                        .collect();
+
+                    if sel_vec.is_empty() {
+                        return Err(crate::CliError::Other(
+                            "No columns remain after excluding Float columns. Use --no-float with \
+                             exception columns to include specific Float columns."
+                                .to_string(),
+                        ));
+                    }
+
+                    // safety: We know Selection is a tuple struct with a Vec<usize> field
+                    sel = unsafe { std::mem::transmute::<Vec<usize>, Selection>(sel_vec) };
+                    let headers: csv::ByteRecord = sel.select(&full_headers).collect();
+                    (sel, headers)
+                }
+            } else {
+                // Stats cache unavailable for Float type detection
+                log::warn!(
+                    "Stats cache unavailable. Cannot detect Float columns for --no-float. \
+                     Processing all columns. Run 'qsv stats --cardinality --stats-jsonl' first."
+                );
+                (sel, selected_headers)
+            }
+        } else {
+            (sel, selected_headers)
+        };
 
         // Map original column indices to selected column indices
         let mapped_unique_headers: Vec<usize> = all_unique_headers_vec
             .iter()
             .filter_map(|&original_idx| {
                 // Find the position of this original index in the selection
-                sel.iter().position(|&sel_idx| sel_idx == original_idx)
+                final_sel
+                    .iter()
+                    .position(|&sel_idx| sel_idx == original_idx)
             })
             .collect();
 
@@ -2280,7 +2401,7 @@ impl Args {
             .set(mapped_unique_headers)
             .map_err(|_| "Cannot set UNIQUE_COLUMNS")?;
 
-        Ok((selected_headers, sel, weight_col_idx))
+        Ok((final_headers, final_sel, weight_col_idx))
     }
 }
 

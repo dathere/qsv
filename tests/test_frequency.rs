@@ -3702,7 +3702,10 @@ fn frequency_null_at_end_default() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     // The last row (excluding header) should be NULL
     let last_row = got.last().unwrap();
-    assert_eq!(last_row[1], "(NULL)", "NULL should be at the end by default");
+    assert_eq!(
+        last_row[1], "(NULL)",
+        "NULL should be at the end by default"
+    );
 }
 
 #[test]
@@ -3721,12 +3724,17 @@ fn frequency_null_sorted() {
     wrk.create("in.csv", rows);
 
     let mut cmd = wrk.command("frequency");
-    cmd.arg("in.csv").args(["--limit", "0"]).arg("--null-sorted");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .arg("--null-sorted");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     // With --null-sorted and descending order (default), NULL (3) should come first (rank 1)
     // then b (2), then a (1)
-    assert_eq!(got[1][1], "(NULL)", "NULL should be first when --null-sorted and most frequent");
+    assert_eq!(
+        got[1][1], "(NULL)",
+        "NULL should be first when --null-sorted and most frequent"
+    );
     assert_eq!(got[1][4], "1", "NULL should have rank 1");
 }
 
@@ -3833,7 +3841,10 @@ fn frequency_null_sorted_asc() {
     // With --asc, least frequent first: NULL (1), b (1), a (3)
     // NULL and b are tied with count 1, so they're sorted alphabetically
     // "(NULL)" < "b" alphabetically
-    assert_eq!(got[1][1], "(NULL)", "NULL should be first in ascending order (tied with b)");
+    assert_eq!(
+        got[1][1], "(NULL)",
+        "NULL should be first in ascending order (tied with b)"
+    );
 }
 
 #[test]

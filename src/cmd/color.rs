@@ -308,14 +308,12 @@ fn fill_into(s: &str, width: usize, buffer: &mut String) {
             buffer.extend(std::iter::repeat_n(' ', pad));
         },
         std::cmp::Ordering::Greater => {
-            if width == ELLIPSIS_WIDTH {
-                buffer.push_str(ELLIPSIS);
-            } else {
+            if width != ELLIPSIS_WIDTH {
                 let prefix = truncate_to_display_width(trimmed, width - ELLIPSIS_WIDTH);
                 buffer.reserve(prefix.len() + ELLIPSIS.len());
                 buffer.push_str(prefix);
-                buffer.push_str(ELLIPSIS);
             }
+            buffer.push_str(ELLIPSIS);
         },
     }
 }

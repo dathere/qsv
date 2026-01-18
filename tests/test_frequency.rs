@@ -835,10 +835,10 @@ fn frequency_vis_whitespace() {
     wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // NULL is now at the end by default (--null-sorted flag changes this behavior)
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
         svec!["header", "value", "8", "44.44444", "1"],
-        svec!["header", "(NULL)", "1", "5.55556", "2"],
         svec!["header", "no_whitespace", "1", "5.55556", "2"],
         svec!["header", "value《⍽》", "1", "5.55556", "2"],
         svec!["header", "value《emsp》", "1", "5.55556", "2"],
@@ -848,6 +848,7 @@ fn frequency_vis_whitespace() {
         svec!["header", "《emsp》value", "1", "5.55556", "2"],
         svec!["header", "《figsp》value", "1", "5.55556", "2"],
         svec!["header", "《zwsp》value", "1", "5.55556", "2"],
+        svec!["header", "(NULL)", "1", "5.55556", "2"],
     ];
 
     assert_eq!(got, expected);
@@ -937,14 +938,15 @@ fn frequency_vis_whitespace_ignore_case() {
         .arg("--ignore-case");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // NULL is now at the end by default (--null-sorted flag changes this behavior)
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
         svec!["header", "value", "12", "70.58824", "1"],
-        svec!["header", "(NULL)", "1", "5.88235", "2"],
         svec!["header", "no_whitespace", "1", "5.88235", "2"],
         svec!["header", "value《zwsp》", "1", "5.88235", "2"],
         svec!["header", "value《␎》", "1", "5.88235", "2"],
         svec!["header", "value《␏》", "1", "5.88235", "2"],
+        svec!["header", "(NULL)", "1", "5.88235", "2"],
     ];
 
     assert_eq!(got, expected);
@@ -999,12 +1001,13 @@ fn frequency_json_no_headers() {
     assert_eq!(field["field"], "1");
     assert_eq!(field["cardinality"], 5);
     let freqs = field["frequencies"].as_array().unwrap();
+    // NULL entries are now at the end by default (--null-sorted flag changes this behavior)
     let expected = vec![
         ("a", 4, 50.0, 1.0),
-        ("(NULL)", 1, 12.5, 2.0),
-        ("(NULL)", 1, 12.5, 2.0),
         ("b", 1, 12.5, 2.0),
         ("h1", 1, 12.5, 2.0),
+        ("(NULL)", 1, 12.5, 2.0),
+        ("(NULL)", 1, 12.5, 2.0),
     ];
     for (i, (val, count, pct, rank)) in expected.iter().enumerate() {
         assert_eq!(freqs[i]["value"], *val);
@@ -1135,10 +1138,11 @@ fn frequency_json_vis_whitespace() {
     assert_eq!(field["field"], "header");
     assert_eq!(field["cardinality"], 3);
     let freqs = field["frequencies"].as_array().unwrap();
+    // NULL is now at the end by default (--null-sorted flag changes this behavior)
     let expected = vec![
         ("value", 4, 66.66667),
-        ("(NULL)", 1, 16.66667),
         ("no_whitespace", 1, 16.66667),
+        ("(NULL)", 1, 16.66667),
     ];
     for (i, (val, count, pct)) in expected.iter().enumerate() {
         assert_eq!(freqs[i]["value"], *val);
@@ -1194,6 +1198,7 @@ fn frequency_toon_no_headers() {
         .arg("--no-headers")
         .arg("--toon");
     let got: String = wrk.stdout(&mut cmd);
+    // NULL entries are now at the end by default (--null-sorted flag changes this behavior)
     let expected = r#"input: in.csv
 description: "Generated with `qsv frequency in.csv --limit 0 --select 1 --no-headers --toon`"
 rowcount: 8
@@ -1207,10 +1212,10 @@ fields[1]:
     uniqueness_ratio: 0.625
     frequencies[5]{value,count,percentage,rank}:
     a,4,50,1
-    (NULL),1,12.5,2
-    (NULL),1,12.5,2
     b,1,12.5,2
     h1,1,12.5,2
+    (NULL),1,12.5,2
+    (NULL),1,12.5,2
 rank_strategy: dense"#
         .to_string();
     assert_eq!(got, expected);
@@ -1392,10 +1397,11 @@ fn frequency_toon_vis_whitespace() {
         "frequencies should be an array. Field keys: {:?}",
         field.as_object().map(|o| o.keys().collect::<Vec<_>>())
     ));
+    // NULL is now at the end by default (--null-sorted flag changes this behavior)
     let expected = vec![
         ("value", 4, 66.66667),
-        ("(NULL)", 1, 16.66667),
         ("no_whitespace", 1, 16.66667),
+        ("(NULL)", 1, 16.66667),
     ];
     for (i, (val, count, pct)) in expected.iter().enumerate() {
         assert_eq!(freqs[i]["value"], *val);
@@ -3669,5 +3675,282 @@ fn frequency_stats_filter_cardinality() {
     assert!(
         !fields.contains("item"),
         "Did not expect 'item' column (high cardinality)"
+    );
+}
+
+// Tests for --null-sorted flag
+
+#[test]
+fn frequency_null_at_end_default() {
+    // By default, NULL should be placed at the end of the frequency table
+    let wrk = Workdir::new("frequency_null_at_end_default");
+    let rows = vec![
+        svec!["col"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec!["b"],
+        svec![""], // NULL - appears twice, same count as 'b'
+        svec![""],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--limit", "0"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // The last row (excluding header) should be NULL
+    let last_row = got.last().unwrap();
+    assert_eq!(
+        last_row[1], "(NULL)",
+        "NULL should be at the end by default"
+    );
+}
+
+#[test]
+fn frequency_null_sorted() {
+    // With --null-sorted, NULL should be sorted with other values by count
+    let wrk = Workdir::new("frequency_null_sorted");
+    let rows = vec![
+        svec!["col"],
+        svec!["a"],
+        svec!["b"],
+        svec!["b"],
+        svec![""], // NULL - appears 3 times, most frequent
+        svec![""],
+        svec![""],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .arg("--null-sorted");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // With --null-sorted and descending order (default), NULL (3) should come first (rank 1)
+    // then b (2), then a (1)
+    assert_eq!(
+        got[1][1], "(NULL)",
+        "NULL should be first when --null-sorted and most frequent"
+    );
+    assert_eq!(got[1][4], "1", "NULL should have rank 1");
+}
+
+#[test]
+fn frequency_other_before_null_at_end() {
+    // When both Other and NULL are at the end (default), Other should appear before NULL
+    // NULL must be frequent enough to be in top N (not absorbed into Other)
+    let wrk = Workdir::new("frequency_other_before_null_at_end");
+    let rows = vec![
+        svec!["col"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec!["c"],
+        svec!["d"],
+        svec![""], // NULL - appears twice to be in top 2
+        svec![""],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--limit", "2"]); // Top 2: a (4) and NULL (2), rest to Other
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Expected order: a (most frequent), Other (b, c, d = 3 count), NULL (2)
+    // "a" should be first (rank 1)
+    assert_eq!(got[1][1], "a", "Most frequent value should be first");
+    // "Other" should be second (has count 3, more than NULL's 2)
+    assert!(
+        got[2][1].starts_with("Other"),
+        "Other should be second (count 3)"
+    );
+    // NULL should be last
+    assert_eq!(got[3][1], "(NULL)", "NULL should be last");
+}
+
+#[test]
+fn frequency_null_sorted_other_sorted() {
+    // With both --null-sorted and --other-sorted, natural sort order by count
+    let wrk = Workdir::new("frequency_null_sorted_other_sorted");
+    let rows = vec![
+        svec!["col"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec!["c"],
+        svec!["d"],
+        svec![""], // NULL - appears twice
+        svec![""],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "2"]) // Limit to top 2, so a and NULL stay, b/c/d go to Other
+        .arg("--null-sorted")
+        .arg("--other-sorted");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // With both flags and --limit 2:
+    // - a (3) is in top 2
+    // - NULL (2) is in top 2
+    // - b, c, d (1 each) go to Other (total count 3)
+    // With both flags enabled, output should be sorted by count descending:
+    // Other (3, rank 0), a (3, rank 1), NULL (2, rank 2)
+    // But since Other has rank 0 and --other-sorted is set, it sorts with others
+    let values: Vec<&str> = got.iter().skip(1).map(|r| r[1].as_str()).collect();
+    // All values should be present in some order determined by count
+    assert!(values.iter().any(|v| *v == "a"), "Expected 'a' in output");
+    assert!(
+        values.iter().any(|v| v.starts_with("Other")),
+        "Expected 'Other' in output"
+    );
+    assert!(
+        values.iter().any(|v| *v == "(NULL)"),
+        "Expected '(NULL)' in output"
+    );
+}
+
+#[test]
+fn frequency_null_sorted_asc() {
+    // With --null-sorted and --asc, NULL should be sorted in ascending order
+    let wrk = Workdir::new("frequency_null_sorted_asc");
+    let rows = vec![
+        svec!["col"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec![""], // NULL - appears once, least frequent
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .arg("--null-sorted")
+        .arg("--asc");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // With --asc, least frequent first: NULL (1), b (1), a (3)
+    // NULL and b are tied with count 1, so they're sorted alphabetically
+    // "(NULL)" < "b" alphabetically
+    assert_eq!(
+        got[1][1], "(NULL)",
+        "NULL should be first in ascending order (tied with b)"
+    );
+}
+
+#[test]
+fn frequency_no_nulls_with_null_sorted() {
+    // With --no-nulls, --null-sorted has no effect since NULL is excluded
+    let wrk = Workdir::new("frequency_no_nulls_with_null_sorted");
+    let rows = vec![
+        svec!["col"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec![""], // NULL - should be excluded
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .arg("--null-sorted")
+        .arg("--no-nulls");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // NULL should not appear at all
+    let has_null = got.iter().any(|r| r.len() > 1 && r[1] == "(NULL)");
+    assert!(!has_null, "NULL should not appear when --no-nulls is set");
+}
+
+#[test]
+fn frequency_json_null_sorted() {
+    // JSON output should respect --null-sorted flag
+    let wrk = Workdir::new("frequency_json_null_sorted");
+    let rows = vec![
+        svec!["col"],
+        svec!["a"],
+        svec![""], // NULL - appears twice, most frequent
+        svec![""],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .arg("--null-sorted")
+        .arg("--json");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value = serde_json::from_str(&got).unwrap();
+    let frequencies = json["fields"][0]["frequencies"].as_array().unwrap();
+    // With --null-sorted and descending order, NULL (2) should come first
+    assert_eq!(
+        frequencies[0]["value"].as_str().unwrap(),
+        "(NULL)",
+        "NULL should be first in JSON output when --null-sorted"
+    );
+}
+
+#[test]
+fn frequency_weight_null_sorted() {
+    // Weighted frequencies should respect --null-sorted flag
+    let wrk = Workdir::new("frequency_weight_null_sorted");
+    let rows = vec![
+        svec!["col", "weight"],
+        svec!["a", "1.0"],
+        svec!["a", "1.0"], // 'a' appears twice with total weight 2
+        svec!["", "5.0"],  // NULL with high weight
+        svec!["b", "2.0"],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "col"])
+        .args(["--weight", "weight"])
+        .arg("--null-sorted");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // With --null-sorted and descending order, NULL (weight 5) should come first
+    assert_eq!(
+        got[1][1], "(NULL)",
+        "NULL should be first when --null-sorted with high weight"
+    );
+}
+
+#[test]
+fn frequency_custom_null_text_sorted() {
+    // Custom null text should work with --null-sorted
+    let wrk = Workdir::new("frequency_custom_null_text_sorted");
+    let rows = vec![
+        svec!["col"],
+        svec!["a"],
+        svec![""], // NULL - appears twice
+        svec![""],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--null-text", "MISSING"])
+        .arg("--null-sorted");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // With --null-sorted and descending order, NULL (2) should come first
+    assert_eq!(
+        got[1][1], "MISSING",
+        "Custom null text should be first when --null-sorted"
     );
 }

@@ -120,6 +120,10 @@ frequency options:
     --other-text <arg>      The text to use for the "Other" category. If set to "<NONE>",
                             the "Other" category will not be included in the frequency table.
                             [default: Other]
+    --null-sorted           By default, the NULL category (controlled by --null-text)
+                            is placed at the end of the frequency table for a field,
+                            after "Other" if present. If this is enabled, the NULL
+                            category will be sorted with the rest of the values by count.
     -a, --asc               Sort the frequency tables in ascending order by count.
                             The default is descending order. Note that this option will
                             also reverse ranking - i.e. the LEAST frequent values will
@@ -249,6 +253,7 @@ pub struct Args {
     pub flag_pct_dec_places:  isize,
     pub flag_other_sorted:    bool,
     pub flag_other_text:      String,
+    pub flag_null_sorted:     bool,
     pub flag_asc:             bool,
     pub flag_no_trim:         bool,
     pub flag_null_text:       String,
@@ -1173,6 +1178,32 @@ impl Args {
         }
     }
 
+    /// Helper to move NULL category to end if not sorted.
+    /// Unlike `move_other_to_end_if_needed()` which only checks position 0 (since "Other" always
+    /// has rank 0 and appears first in ascending sort), NULL can appear anywhere based on its
+    /// count, so we need to search the entire list.
+    /// This function handles multiple NULL entries (e.g., when literal "(NULL)" values exist
+    /// in the data alongside empty strings that are converted to "(NULL)").
+    fn move_null_to_end_if_needed<T: Copy>(&self, counts: &mut Vec<(Vec<u8>, T, f64, f64)>) {
+        if self.flag_null_sorted {
+            return;
+        }
+        // safety: NULL_VAL is set in run()
+        let null_val = NULL_VAL.get().unwrap();
+        // Collect all NULL entries
+        let mut null_entries = Vec::new();
+        let mut i = 0;
+        while i < counts.len() {
+            if counts[i].0 == *null_val {
+                null_entries.push(counts.remove(i));
+            } else {
+                i += 1;
+            }
+        }
+        // Append all NULL entries at the end
+        counts.extend(null_entries);
+    }
+
     /// Process weighted frequencies
     fn process_frequencies_weighted(
         &self,
@@ -1209,6 +1240,7 @@ impl Args {
         // For non-all-unique columns, process individual weighted values
         let mut counts_to_process = self.counts_weighted(weighted_map);
         self.move_other_to_end_if_needed(&mut counts_to_process);
+        self.move_null_to_end_if_needed(&mut counts_to_process);
 
         // Convert to processed frequencies (count is f64, convert to u64 for display)
         for (value, weight, percentage, rank) in counts_to_process {
@@ -1251,6 +1283,7 @@ impl Args {
             // Process regular frequencies
             let mut counts_to_process = self.counts(ftab);
             self.move_other_to_end_if_needed(&mut counts_to_process);
+            self.move_null_to_end_if_needed(&mut counts_to_process);
 
             // Convert to processed frequencies
             for (value, count, percentage, rank) in counts_to_process {

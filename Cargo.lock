@@ -1775,21 +1775,6 @@ dependencies = [
 
 [[package]]
 name = "csv-nose"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "979e168e41b52cb55091f51e015273cf82ab3e7ab9d56f60d1878842e206e41e"
-dependencies = [
- "bytecount",
- "chardetng",
- "csv",
- "encoding_rs",
- "regex",
- "simdutf8",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "csv-nose"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78e7b41dafff70d2886011209bd4b08d25845a7ae2ce7703e257d62cb753cdc8"
@@ -1806,7 +1791,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.15.1"
-source = "git+https://github.com/jqnatividad/csvlens?branch=deps-replace_qsv-sniffer-with-csv_nose#c21cd6414aa88fc85f2aad462a881fdb6e868220"
+source = "git+https://github.com/jqnatividad/csvlens?branch=deps-replace_qsv-sniffer-with-csv_nose#cd889c362634c2ef56660552177eaa208ec71ef4"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
@@ -1815,7 +1800,7 @@ dependencies = [
  "crossterm 0.28.1",
  "csv",
  "csv-core",
- "csv-nose 0.1.0",
+ "csv-nose",
  "ratatui",
  "regex",
  "sorted-vec",
@@ -5661,7 +5646,7 @@ dependencies = [
  "csv",
  "csv-diff",
  "csv-index",
- "csv-nose 0.2.0",
+ "csv-nose",
  "csvlens",
  "csvs_convert",
  "directories",

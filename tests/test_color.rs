@@ -35,8 +35,7 @@ fn wrk_stdout_with_theme(data: &str, termwidth: &str, theme: &str) -> String {
     wrk_stdout_all(data, termwidth, Some(theme), &[])
 }
 
-// wrk_stdout(data, "80", Some("dark"), &["--no-header", "--delimiter", "\t"])//
-
+//
 // basic test
 //
 
@@ -77,6 +76,42 @@ fn color_row_numbers() {
 
     let got = wrk_stdout_all(INPUT, "100", None, &["--row-numbers"]);
     assert_eq!(got, EXPECTED);
+}
+
+#[test]
+fn color_title() {
+    static SMALL: &str = "\
+╭────────────────────╮
+│       hello        │
+├─────────┬─────┬────┤
+│ h       │ h2  │ h3 │
+├─────────┼─────┼────┤
+│ abcdefg │ a   │ ab │
+│ a       │ abc │ z  │
+╰─────────┴─────┴────╯";
+    assert_eq!(
+        wrk_stdout_all(INPUT, "100", None, &["--title", "hello"]),
+        SMALL
+    );
+
+    static LARGE: &str = "\
+╭────────────────────╮
+│ supercalifragilis… │
+├─────────┬─────┬────┤
+│ h       │ h2  │ h3 │
+├─────────┼─────┼────┤
+│ abcdefg │ a   │ ab │
+│ a       │ abc │ z  │
+╰─────────┴─────┴────╯";
+    assert_eq!(
+        wrk_stdout_all(
+            INPUT,
+            "100",
+            None,
+            &["--title", "supercalifragilisticexpialidocious"]
+        ),
+        LARGE
+    );
 }
 
 #[test]
@@ -215,8 +250,8 @@ fn color_empty_cells() {
 ╭────┬────┬────╮
 │ a  │ b  │ c  │
 ├────┼────┼────┤
-│ 1  │    │ 3  │
-│    │ 2  │    │
+│ 1  │ —  │ 3  │
+│ —  │ 2  │ —  │
 ╰────┴────┴────╯";
     assert_eq!(wrk_stdout(INPUT, "100"), EXPECTED);
 }

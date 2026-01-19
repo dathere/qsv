@@ -21,7 +21,10 @@ Usage:
     qsv color --help
 
 color options:
+    -C, --color            Force color on, even in situations where colors
+                           would normally be disabled.
     -n, --row-numbers      Show row numbers.
+    -t, --title <str>      Add a title row above the headers.
 
 Common options:
     -h, --help             Display this message
@@ -51,10 +54,12 @@ use crate::{
 #[derive(Deserialize)]
 struct Args {
     arg_input:        Option<String>,
+    flag_color:       bool,
     flag_delimiter:   Option<Delimiter>,
     flag_memcheck:    bool,
     flag_output:      Option<String>,
     flag_row_numbers: bool,
+    flag_title:       Option<String>,
 }
 
 //
@@ -123,13 +128,15 @@ macro_rules! bold {
 struct Colors {
     chrome:  ContentStyle,
     field:   ContentStyle,
+    title:   ContentStyle,
     headers: [ContentStyle; 6],
 }
 
 // colors courtesy of tabiew/monokai
 const COLORS_DARK: Colors = Colors {
-    chrome:  fg!(hex!("#6a7282")), // gray-500
-    field:   fg!(hex!("#e5e7eb")), // gray-200
+    chrome:  fg!(hex!("#6a7282")),   // gray-500
+    field:   fg!(hex!("#e5e7eb")),   // gray-200
+    title:   bold!(hex!("#60a5fa")), // blue-400
     headers: [
         bold!(hex!("#ff6188")), // pink
         bold!(hex!("#fc9867")), // orange
@@ -142,8 +149,9 @@ const COLORS_DARK: Colors = Colors {
 
 // colors courtesy of tabiew/monokai
 const COLORS_LIGHT: Colors = Colors {
-    chrome:  fg!(hex!("#6a7282")), // gray-500
-    field:   fg!(hex!("#1e2939")), // gray-800
+    chrome:  fg!(hex!("#6a7282")),   // gray-500
+    field:   fg!(hex!("#1e2939")),   // gray-800
+    title:   bold!(hex!("#2563eb")), // blue-600
     headers: [
         bold!(hex!("#ee4066")), // red
         bold!(hex!("#da7645")), // orange
@@ -176,17 +184,11 @@ fn autolayout(columns: &[usize], term_width: usize) -> Vec<usize> {
         return columns.to_vec();
     }
 
-    // |•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|
-    // ↑↑    ↑                                                 ↑
-    // 12    3    <-   three chrome chars per column           │
-    //                                                         │
-    //                                           extra chrome char at the end
-    let chrome_width = columns.len() * 3 + 1;
+    let chrome_width = get_chrome_width(columns);
 
     // How much space is available, and do we already fit?
     let available = term_width.saturating_sub(chrome_width + FUDGE);
-    let data_width: usize = columns.iter().sum();
-    if available >= data_width {
+    if available >= get_data_width(columns) {
         return columns.to_vec();
     }
 
@@ -228,8 +230,7 @@ fn autolayout(columns: &[usize], term_width: usize) -> Vec<usize> {
         .collect();
 
     // because we always round down, there might be some extra space to distribute
-    let data_width: usize = layout.iter().sum();
-    let extra_space = available.saturating_sub(data_width);
+    let extra_space = available.saturating_sub(get_data_width(&layout));
     if extra_space > 0 {
         let mut distribute: Vec<(usize, usize)> = max
             .iter()
@@ -247,6 +248,26 @@ fn autolayout(columns: &[usize], term_width: usize) -> Vec<usize> {
     }
 
     layout
+}
+
+// |•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|•xxxx•|
+// ↑↑    ↑                                                 ↑
+// 12    3    <-   three chrome chars per column           │
+//                                                         │
+//                                           extra chrome char at the end
+// total width of chrome in one row, according to this layout
+fn get_chrome_width(layout: &[usize]) -> usize {
+    layout.len() * 3 + 1
+}
+
+// width of all data in one row according to this layout
+fn get_data_width(layout: &[usize]) -> usize {
+    layout.iter().sum()
+}
+
+// total width of table, according to this layout
+fn get_table_width(layout: &[usize]) -> usize {
+    get_chrome_width(layout) + get_data_width(layout)
 }
 
 //
@@ -302,32 +323,47 @@ fn truncate_to_display_width(s: &str, max_width: usize) -> &str {
     &s[..end]
 }
 
+#[derive(Clone, Copy)]
+enum Align {
+    Left,
+    Center,
+}
+
 /// Fills a string to the given display width, writing to an existing buffer.
 /// This is the optimized version used in hot paths to avoid allocations.
 #[inline]
-fn fill_into(s: &str, width: usize, buffer: &mut String) {
+fn fill_into(s: &str, width: usize, align: Align, buffer: &mut String) {
     buffer.clear();
 
     if width == 0 {
         return;
     }
 
-    let trimmed = s.trim();
-    let display_width = UnicodeWidthStr::width(trimmed);
+    let display_width = UnicodeWidthStr::width(s);
 
     match display_width.cmp(&width) {
         std::cmp::Ordering::Equal => {
-            buffer.push_str(trimmed);
+            buffer.push_str(s);
         },
         std::cmp::Ordering::Less => {
+            buffer.reserve(width);
             let pad = width - display_width;
-            buffer.reserve(trimmed.len() + pad);
-            buffer.push_str(trimmed);
-            buffer.extend(std::iter::repeat_n(' ', pad));
+            match align {
+                Align::Left => {
+                    buffer.push_str(s);
+                    buffer.extend(std::iter::repeat_n(' ', pad));
+                },
+                Align::Center => {
+                    let half = pad / 2;
+                    buffer.extend(std::iter::repeat_n(' ', half));
+                    buffer.push_str(s);
+                    buffer.extend(std::iter::repeat_n(' ', pad - half));
+                },
+            }
         },
         std::cmp::Ordering::Greater => {
             if width != ELLIPSIS_WIDTH {
-                let prefix = truncate_to_display_width(trimmed, width - ELLIPSIS_WIDTH);
+                let prefix = truncate_to_display_width(s, width - ELLIPSIS_WIDTH);
                 buffer.reserve(prefix.len() + ELLIPSIS.len());
                 buffer.push_str(prefix);
             }
@@ -340,28 +376,25 @@ fn fill_into(s: &str, width: usize, buffer: &mut String) {
 fn test_fill() {
     let mut buffer = String::new();
 
-    fill_into("", 0, &mut buffer);
+    fill_into("", 0, Align::Left, &mut buffer);
     assert_eq!(buffer, "");
 
-    fill_into("", 1, &mut buffer);
+    fill_into("", 1, Align::Left, &mut buffer);
     assert_eq!(buffer, " ");
 
-    fill_into("hello", 0, &mut buffer);
+    fill_into("hello", 0, Align::Left, &mut buffer);
     assert_eq!(buffer, "");
 
-    fill_into("hello", 1, &mut buffer);
+    fill_into("hello", 1, Align::Left, &mut buffer);
     assert_eq!(buffer, "…");
 
-    fill_into("hello", 3, &mut buffer);
+    fill_into("hello", 3, Align::Left, &mut buffer);
     assert_eq!(buffer, "he…");
 
-    fill_into("  hello  ", 3, &mut buffer); // trim
-    assert_eq!(buffer, "he…");
-
-    fill_into("hello", 5, &mut buffer);
+    fill_into("hello", 5, Align::Left, &mut buffer);
     assert_eq!(buffer, "hello");
 
-    fill_into("hello", 8, &mut buffer);
+    fill_into("hello", 8, Align::Left, &mut buffer);
     assert_eq!(buffer, "hello   ");
 }
 
@@ -392,7 +425,7 @@ fn test_field_width() {
 // env helpers
 //
 
-fn force_color() -> bool {
+fn qsv_force_color() -> bool {
     get_envvar_flag("QSV_FORCE_COLOR")
 }
 
@@ -442,20 +475,7 @@ fn test_termwidth() {
 // get_theme
 //
 
-fn get_theme(output: bool) -> Theme {
-    get_theme_with_env(output, force_color(), qsv_theme())
-}
-
-fn get_theme_with_env(output: bool, force_color: bool, qsv_theme: Theme) -> Theme {
-    ColorChoice::Auto.write_global(); // reset (for tests)
-
-    // short circuit
-    if output {
-        ColorChoice::Never.write_global();
-    } else if force_color {
-        ColorChoice::Always.write_global();
-    }
-
+fn get_theme(qsv_theme: Theme) -> Theme {
     #[allow(clippy::equatable_if_let)]
     if AutoStream::choice(&std::io::stdout()) == ColorChoice::Never {
         Theme::None
@@ -470,9 +490,49 @@ fn get_theme_with_env(output: bool, force_color: bool, qsv_theme: Theme) -> Them
 
 #[test]
 fn test_get_theme() {
-    assert_eq!(Theme::Dark, get_theme_with_env(false, true, Theme::Dark));
-    assert_eq!(Theme::Light, get_theme_with_env(false, true, Theme::Light));
-    assert_eq!(Theme::None, get_theme_with_env(true, true, Theme::Dark));
+    ColorChoice::Always.write_global();
+    assert_eq!(Theme::Dark, get_theme(Theme::Dark));
+    assert_eq!(Theme::Light, get_theme(Theme::Light));
+    ColorChoice::Never.write_global();
+    assert_eq!(Theme::None, get_theme(Theme::Dark));
+}
+
+//
+// setup_color_choice
+//
+
+/// Determine if we should force color on or off. Cli flags always take precedence. Note that when
+/// using ColorChoice::Auto, anstyle makes its own decision based on stdout tty, common env
+/// variables, terminal detection, etc.
+fn setup_color_choice(flag_color: bool, flag_output: bool, qsv_force_color: bool) {
+    let color_choice = if flag_color {
+        ColorChoice::Always
+    } else if flag_output {
+        ColorChoice::Never
+    } else if qsv_force_color {
+        ColorChoice::Always
+    } else {
+        ColorChoice::Auto
+    };
+
+    // tell anstyle
+    color_choice.write_global();
+}
+
+#[test]
+fn test_get_color_choice() {
+    let test_cases = [
+        // (flag_color, flag_output, qsv_force_color, expected)
+        (false, false, false, ColorChoice::Auto),
+        (true, false, false, ColorChoice::Always),
+        (false, true, false, ColorChoice::Never),
+        (false, false, true, ColorChoice::Always),
+        (true, true, false, ColorChoice::Always),
+    ];
+    for (flag_color, flag_output, qsv_force_color, exp) in test_cases {
+        setup_color_choice(flag_color, flag_output, qsv_force_color);
+        assert_eq!(ColorChoice::global(), exp);
+    }
 }
 
 //
@@ -502,6 +562,35 @@ fn render_sep<W: std::io::Write>(
     writeln!(out, "{}", StyledContent::new(colors.chrome, text))
 }
 
+fn render_title<W: std::io::Write>(
+    out: &mut W,
+    color_struct: &ColorStruct,
+    title: &str,
+) -> std::io::Result<()> {
+    // center the title
+    const EDGES: usize = 4; // |•xxxxxx•|
+    let width = get_table_width(&color_struct.layout) - EDGES;
+    let mut buf = String::new();
+    fill_into(title, width, Align::Center, &mut buf);
+
+    let mut line = String::new();
+    line.push_str(&color_struct.pipe);
+    line.push(' ');
+    if let Some(colors) = color_struct.colors {
+        let _ = write!(
+            &mut line,
+            "{}",
+            StyledContent::new(colors.title, buf.as_str())
+        );
+    } else {
+        line.push_str(buf.as_str());
+    }
+    line.push(' ');
+    line.push_str(&color_struct.pipe);
+
+    writeln!(out, "{line}")
+}
+
 // row number header and display width
 const RN_HEADER: &str = "#";
 const RN_WIDTH: usize = 1;
@@ -514,9 +603,8 @@ fn render_row<W: std::io::Write>(
 ) -> std::io::Result<()> {
     let layout = &color_struct.layout;
 
-    // Pre-calculate approximate line size:
-    // layout.iter().sum() + (layout.len() * 3) for pipes/spaces + ANSI codes
-    let line_capacity = layout.iter().sum::<usize>() + (layout.len() * 3) + 100;
+    // Pre-calculate approximate line size: table + ANSI codes
+    let line_capacity = get_table_width(layout) + 100;
     let mut line = String::with_capacity(line_capacity);
     line.push_str(&color_struct.pipe);
 
@@ -540,8 +628,11 @@ fn render_row<W: std::io::Write>(
         col_idx += 1;
     }
     line.push('\n');
+
     out.write_all(line.as_bytes())
 }
+
+const PLACEHOLDER: &str = "—";
 
 fn render_cell(
     color_struct: &ColorStruct,
@@ -551,18 +642,23 @@ fn render_cell(
     fill_buffer: &mut String,
     line: &mut String,
 ) {
+    // switch to placeholder if necessary
+    let cell = cell.trim();
+    let placeholder = cell.is_empty();
+    let cell = if placeholder { PLACEHOLDER } else { cell };
+
     // fill
     // safety: flexible(false) ensures all records have same field count as headers, so col_idx is
     // always within bounds of layout. When row_numbers is enabled, layout is sized to headers.len()
     // + 1, with layout[0] reserved for the row number column; otherwise it is sized to
     // headers.len().
-    fill_into(cell, color_struct.layout[col_idx], fill_buffer);
+    fill_into(cell, color_struct.layout[col_idx], Align::Left, fill_buffer);
 
     line.push(' ');
     if let Some(colors) = color_struct.colors {
         let style = if row_idx == 0 {
             colors.headers[col_idx % colors.headers.len()]
-        } else if color_struct.row_numbers && col_idx == 0 {
+        } else if placeholder || (color_struct.row_numbers && col_idx == 0) {
             colors.chrome
         } else {
             colors.field
@@ -611,6 +707,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         util::mem_file_check(&path, false, args.flag_memcheck)?;
     }
 
+    // setup ColorChoice based on args/env
+    setup_color_choice(
+        args.flag_color,
+        args.flag_output.is_some(),
+        qsv_force_color(),
+    );
+
     //
     // read
     //
@@ -653,7 +756,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // prepend row number column
         columns.insert(0, num_digits(color_struct.records.len() - 1).max(RN_WIDTH));
     }
-    color_struct.colors = match get_theme(args.flag_output.is_some()) {
+    color_struct.colors = match get_theme(qsv_theme()) {
         Theme::Dark => Some(&COLORS_DARK),
         Theme::Light => Some(&COLORS_LIGHT),
         Theme::None => None,
@@ -673,7 +776,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .delimiter(Some(Delimiter(b'\t')))
         .set_write_buffer(DEFAULT_WTR_BUFFER_CAPACITY * 4);
     let mut out = wconfig.io_writer()?;
-    render_sep(&mut out, &color_struct, (NW, N, NE))?;
+
+    // title, or not
+    if let Some(title) = args.flag_title {
+        render_sep(&mut out, &color_struct, (NW, BAR, NE))?;
+        render_title(&mut out, &color_struct, &title)?;
+        render_sep(&mut out, &color_struct, (W, N, E))?;
+    } else {
+        render_sep(&mut out, &color_struct, (NW, N, NE))?;
+    }
+
     for (idx, _) in records.iter().enumerate() {
         render_row(&mut out, &color_struct, idx, &mut fill_buffer)?;
         if idx == 0 {

@@ -30,8 +30,8 @@
 | [applydp](/src/cmd/applydp.rs#L2)✨<br>📇🚀🔣👆 ![CKAN](docs/images/ckan.png)| <a name="applydp_deeplink"></a>applydp is a slimmed-down version of `apply` with only [Datapusher+](https://github.com/dathere/datapusher-plus) relevant subcommands/operations (`qsvdp` binary variant only). |
 | [behead](/src/cmd/behead.rs#L2) | Drop headers from a CSV.  |
 | [cat](/src/cmd/cat.rs#L2)<br>🗄️ | Concatenate CSV files by row or by column. |
-| [clipboard](/src/cmd/clipboard.rs#L2)✨ | Provide input from the clipboard or save output to the clipboard. |
-| [color](/src/cmd/color.rs#L2)✨<br>🐻‍❄️ | Outputs tabular data as a pretty, colorized table that always fits into the terminal. Apart from CSV and its dialects, Arrow, Avro/IPC, Parquet, JSON array & JSONL formats are supported with the "polars" feature. |
+| [clipboard](/src/cmd/clipboard.rs#L2)✨<br>🖥️ | Provide input from the clipboard or save output to the clipboard. |
+| [color](/src/cmd/color.rs#L2)✨<br>🐻‍❄️🖥️ | Outputs tabular data as a pretty, colorized table that always fits into the terminal. Apart from CSV and its dialects, Arrow, Avro/IPC, Parquet, JSON array & JSONL formats are supported with the "polars" feature. |
 | [count](/src/cmd/count.rs#L3)<br>📇🏎️🐻‍❄️ | Count the rows and optionally compile record width statistics of a CSV file. (11.87 seconds for a 15gb, 27m row NYC 311 dataset without an index. Instantaneous with an index.) If the `polars` feature is enabled, uses Polars' multithreaded, mem-mapped CSV reader for fast counts even without an index |
 | [datefmt](/src/cmd/datefmt.rs#L2)<br>📇🚀👆 | Formats recognized date fields ([19 formats recognized](https://docs.rs/qsv-dateparser/latest/qsv_dateparser/#accepted-date-formats)) to a specified date format using [strftime date format specifiers](https://docs.rs/chrono/latest/chrono/format/strftime/). |
 | [dedup](/src/cmd/dedup.rs#L2)<br>🤯🚀👆 | Remove duplicate rows (See also `extdedup`, `extsort`, `sort` & `sortcheck` commands). |
@@ -61,13 +61,13 @@
 | [joinp](/src/cmd/joinp.rs#L2)✨<br>🚀🐻‍❄️🪄 | Inner, outer, right, cross, anti, semi, non-equi & asof joins using the [Pola.rs](https://www.pola.rs) engine. Unlike the `join` command, `joinp` can process files larger than RAM, is multithreaded, has join key validation, a maintain row order option, pre and post-join filtering, join keys unicode normalization, supports "special" [non-equi joins](https://docs.pola.rs/user-guide/transformations/joins/#non-equi-joins) and [asof joins](https://docs.pola.rs/user-guide/transformations/joins/#asof-join) (which is [particularly useful for time series data](https://github.com/dathere/qsv/blob/30cc920d0812a854fcbfedc5db81788a0600c92b/tests/test_joinp.rs#L509-L983)) & its output columns can be coalesced. |
 | [json](/src/cmd/json.rs#L2)<br>👆 | Convert JSON to CSV.
 | [jsonl](/src/cmd/jsonl.rs#L2)<br>🚀🔣 | Convert newline-delimited JSON ([JSONL](https://jsonlines.org/)/[NDJSON](http://ndjson.org/)) to CSV. See `tojsonl` command to convert CSV to JSONL.
-| [lens](/src/cmd/lens.rs#L2)✨🗃️<br>🐻‍❄️ | Interactively view, search & filter tabular data files using the [csvlens](https://github.com/YS-L/csvlens#csvlens) engine. Apart from CSV and its dialects, Arrow, Avro/IPC, Parquet, JSON array & JSONL formats are supported with the "polars" feature. |
+| [lens](/src/cmd/lens.rs#L2)✨🗃️<br>🐻‍❄️🖥️ | Interactively view, search & filter tabular data files using the [csvlens](https://github.com/YS-L/csvlens#csvlens) engine. Apart from CSV and its dialects, Arrow, Avro/IPC, Parquet, JSON array & JSONL formats are supported with the "polars" feature. |
 | [luau](/src/cmd/luau.rs#L2) 👑✨<br>📇🌐🔣📚 ![CKAN](docs/images/ckan.png) | <a name="luau_deeplink"></a>Create multiple new computed columns, filter rows, compute aggregations and build complex data pipelines by executing a [Luau](https://luau-lang.org) [0.701](https://github.com/Roblox/luau/releases/tag/0.701) expression/script for every row of a CSV file ([sequential mode](https://github.com/dathere/qsv/blob/bb72c4ef369d192d85d8b7cc6e972c1b7df77635/tests/test_luau.rs#L254-L298)), or using [random access](https://www.webopedia.com/definitions/random-access/) with an index ([random access mode](https://github.com/dathere/qsv/blob/bb72c4ef369d192d85d8b7cc6e972c1b7df77635/tests/test_luau.rs#L367-L415)).<br>Can process a single Luau expression or [full-fledged data-wrangling scripts using lookup tables](https://github.com/dathere/qsv-lookup-tables#example) with discrete BEGIN, MAIN and END sections.<br> It is not just another qsv command, it is qsv's [Domain-specific Language](https://en.wikipedia.org/wiki/Domain-specific_language) (DSL) with [numerous qsv-specific helper functions](https://github.com/dathere/qsv/blob/113eee17b97882dc368b2e65fec52b86df09f78b/src/cmd/luau.rs#L1356-L2290) to build production data pipelines. |
 | [moarstats](/src/cmd/moarstats.rs)<br>📇🏎️ | Add additional stats and outlier metadata to an existing stats CSV file ([example](docs/moarstats/NYC_311_SR_2010-2020-sample-1M.stats.csv)).|
 | [partition](/src/cmd/partition.rs#L2)<br>👆 | Partition a CSV based on a column value. |
 | [pivotp](/src/cmd/pivotp.rs#L2)✨<br>🚀🐻‍❄️🪄 | Pivot CSV data. Features "smart" aggregation auto-selection based on data type & stats. |
 | [pro](/src/cmd/pro.rs#L2) | Interact with the [qsv pro](https://qsvpro.dathere.com) API. |
-| [prompt](/src/cmd/prompt.rs#L2)✨<br>🐻‍❄️ | Open a file dialog to either pick a file as input or save output to a file. |
+| [prompt](/src/cmd/prompt.rs#L2)✨<br>🐻‍❄️🖥️ | Open a file dialog to either pick a file as input or save output to a file. |
 | [pseudo](/src/cmd/pseudo.rs#L2)<br>🔣👆 | [Pseudonymise](https://en.wikipedia.org/wiki/Pseudonymization) the value of the given column by replacing them with an incremental identifier.  |
 | [py](/src/cmd/python.rs#L2)✨<br>📇🔣 | Create a new computed column or filter rows by evaluating a Python expression on every row of a CSV file. Python's [f-strings](https://www.freecodecamp.org/news/python-f-strings-tutorial-how-to-use-f-strings-for-string-formatting/) is particularly useful for extended formatting, [with the ability to evaluate Python expressions as well](https://github.com/dathere/qsv/blob/4cd00dca88addf0d287247fa27d40563b6d46985/src/cmd/python.rs#L23-L31). [Requires Python 3.8 or greater](https://github.com/dathere/qsv/blob/master/docs/INTERPRETERS.md#building-qsv-with-python-feature). |
 | [rename](/src/cmd/rename.rs#L2) |  Rename the columns of a CSV efficiently. |
@@ -115,7 +115,8 @@
 🪄: "automagical" commands that uses stats and/or frequency tables to work "smarter" & "faster".  
 📚: has lookup table support, enabling runtime "lookups" against local or remote reference CSVs.  
 🌎: has geospatial capabilities.  
-⛩️: uses [Mini Jinja](https://docs.rs/minijinja/latest/minijinja/) template engine
+⛩️: uses [Mini Jinja](https://docs.rs/minijinja/latest/minijinja/) template engine  
+🖥️: part of the User Interface (UI) feature group
 
 [^1]: see [`validate_index` benchmark](https://qsv.dathere.com/benchmarks)
 

@@ -101,6 +101,9 @@ crossterm = { version = "0.29", optional = true }
 csv = "1.4"
 csv-diff = "0.1"
 csv-index = "0.1"
+csv-nose = { version = "0.1", default-features = false, features = [
+    "runtime-dispatch-simd",
+] }
 csvlens = { version = "0.15", optional = true, default-features = false, features = [
     "clipboard",
 ] }
@@ -219,9 +222,6 @@ qsv-dateparser = "0.13"
 qsv_docopt = "1.9"
 qsv-stats = "0.45"
 qsv_currency = "0.7"
-qsv-sniffer = { version = "0.12", default-features = false, features = [
-    "runtime-dispatch-simd",
-] }
 qsv-tabwriter = "2"
 qsv_vader_sentiment_analysis = { version = "0.2", optional = true }
 rand = "0.9"

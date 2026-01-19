@@ -1126,7 +1126,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sled",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "web-time",
 ]
 
@@ -1216,6 +1216,17 @@ name = "cfg_aliases"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
+
+[[package]]
+name = "chardetng"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14b8f0b65b7b08ae3c8187e8d77174de20cb6777864c6b832d8ad365999cf1ea"
+dependencies = [
+ "cfg-if",
+ "encoding_rs",
+ "memchr",
+]
 
 [[package]]
 name = "chrono"
@@ -1749,7 +1760,7 @@ dependencies = [
  "csv",
  "mown",
  "rayon",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "xxhash-rust",
 ]
 
@@ -1760,6 +1771,21 @@ source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#fd9ed18ab47e8
 dependencies = [
  "byteorder",
  "csv",
+]
+
+[[package]]
+name = "csv-nose"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "979e168e41b52cb55091f51e015273cf82ab3e7ab9d56f60d1878842e206e41e"
+dependencies = [
+ "bytecount",
+ "chardetng",
+ "csv",
+ "encoding_rs",
+ "regex",
+ "simdutf8",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1780,7 +1806,7 @@ dependencies = [
  "sorted-vec",
  "tempfile",
  "terminal-colorsaurus",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "tui-input",
 ]
 
@@ -1812,7 +1838,7 @@ dependencies = [
  "spreadsheet-ods",
  "streaming-stats",
  "tempfile",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "threadpool",
  "typed-builder",
  "walkdir",
@@ -2152,7 +2178,7 @@ dependencies = [
  "erased-serde",
  "regex",
  "serde",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2458,7 +2484,7 @@ dependencies = [
  "crossbeam-queue",
  "flate2",
  "log",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2756,7 +2782,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2802,7 +2828,7 @@ dependencies = [
  "geojson",
  "log",
  "serde_json",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "wkt",
 ]
 
@@ -2927,7 +2953,7 @@ dependencies = [
  "log",
  "num_cpus",
  "snap",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -3579,7 +3605,7 @@ dependencies = [
  "flatten-json-object",
  "serde_json",
  "tempfile",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -4425,7 +4451,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "url",
@@ -5620,6 +5646,7 @@ dependencies = [
  "csv",
  "csv-diff",
  "csv-index",
+ "csv-nose",
  "csvlens",
  "csvs_convert",
  "directories",
@@ -5670,7 +5697,6 @@ dependencies = [
  "polars",
  "pyo3",
  "qsv-dateparser",
- "qsv-sniffer",
  "qsv-stats",
  "qsv-tabwriter",
  "qsv_currency",
@@ -5856,7 +5882,7 @@ dependencies = [
  "rustc-hash",
  "rustls",
  "socket2 0.6.1",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "web-time",
@@ -5878,7 +5904,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "tinyvec",
  "tracing",
  "web-time",
@@ -6176,7 +6202,7 @@ checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
 dependencies = [
  "getrandom 0.2.17",
  "libredox",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -7510,11 +7536,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.17"
+version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f63587ca0f12b72a0600bcba1d40081f830876000bb46dd2337a3051618f4fc8"
+checksum = "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4"
 dependencies = [
- "thiserror-impl 2.0.17",
+ "thiserror-impl 2.0.18",
 ]
 
 [[package]]
@@ -7530,9 +7556,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.17"
+version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ff15c8ecd7de3849db632e14d18d2571fa09dfc5ed93479bc4485c7a517c913"
+checksum = "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7793,7 +7819,7 @@ dependencies = [
  "indexmap",
  "serde",
  "serde_json",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -8877,7 +8903,7 @@ dependencies = [
  "log",
  "os_pipe",
  "rustix 1.1.3",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "tree_magic_mini",
  "wayland-backend",
  "wayland-client",
@@ -9100,7 +9126,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dba6063ff82cdbd9a765add16d369abe81e520f836054e997c2db217ceca40c0"
 dependencies = [
  "ed25519-dalek",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

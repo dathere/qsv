@@ -115,6 +115,14 @@ fn color_title() {
 }
 
 #[test]
+fn color_flag_color() {
+    let got = wrk_stdout_all(INPUT, "100", None, &[]);
+    assert!(!got.contains("\u{1b}"));
+    let got = wrk_stdout_all(INPUT, "100", None, &["--color"]);
+    assert!(got.contains("\u{1b}"));
+}
+
+#[test]
 fn color_ragged() {
     let wrk = Workdir::new("color").flexible(true);
     wrk.create_from_string("in.csv", "1\n1,2");

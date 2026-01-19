@@ -26,12 +26,17 @@ fn sniff() {
     let got: String = wrk.stdout(&mut cmd);
 
     let expected_end = dos2unix(
-        r#"Retrieved Size (bytes): 27
+        r#"Quote Char: "
+Flexible: false
+Is UTF8: true
+Detected Mime Type: application/csv
+Detected Kind: Other
+Retrieved Size (bytes): 27
 File Size (bytes): 27
 Sampled Records: 2
 Estimated: false
 Num Records: 2
-Avg Record Len (bytes): 6
+Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: false
 Fields:
@@ -54,12 +59,17 @@ fn sniff_stats_types() {
     let got: String = wrk.stdout(&mut cmd);
 
     let expected_end = dos2unix(
-        r#"Retrieved Size (bytes): 27
+        r#"Quote Char: "
+Flexible: false
+Is UTF8: true
+Detected Mime Type: application/csv
+Detected Kind: Other
+Retrieved Size (bytes): 27
 File Size (bytes): 27
 Sampled Records: 2
 Estimated: false
 Num Records: 2
-Avg Record Len (bytes): 6
+Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: true
 Fields:
@@ -143,7 +153,7 @@ fn sniff_url_snappy() {
     let expected_end = r#"Sampled Records: 100
 Estimated: false
 Num Records: 100
-Avg Record Len (bytes): 444
+Avg Record Len (bytes): 472
 Num Fields: 29
 Stats Types: false
 Fields:
@@ -209,7 +219,7 @@ fn sniff_file_snappy() {
     let expected_end = r#"Sampled Records: 100
 Estimated: false
 Num Records: 100
-Avg Record Len (bytes): 444
+Avg Record Len (bytes): 472
 Num Fields: 29
 Stats Types: false
 Fields:
@@ -259,7 +269,7 @@ fn sniff_tab() {
     let expected_end = r#"Delimiter: tab
 Header Row: true
 Preamble Rows: 0
-Quote Char: none
+Quote Char: "
 Flexible: false
 Is UTF8: true
 Detected Mime Type: text/plain
@@ -269,7 +279,7 @@ File Size (bytes): 27
 Sampled Records: 2
 Estimated: false
 Num Records: 2
-Avg Record Len (bytes): 6
+Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: false
 Fields:
@@ -328,7 +338,10 @@ fn sniff_json() {
     cmd.arg("--json").arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected_end: &str = r#"ampled_records":3,"estimated":false,"num_records":3,"avg_record_len":10,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
+    // TODO: fix this when csv-nose can detect preamble rows
+    // csv-nose doesn't YET detect preamble rows, so it sees all rows as data with generated field
+    // names
+    let expected_end: &str = r#"sampled_records":7,"estimated":false,"num_records":7,"avg_record_len":16,"num_fields":4,"stats_types":false,"fields":["field_1","field_2","field_3","field_4"],"types":["Text","Text","Text","Text"]}"#;
 
     assert!(got.ends_with(expected_end));
 }
@@ -343,7 +356,10 @@ fn sniff_flexible_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = r#"sampled_records":5,"estimated":false,"num_records":5,"avg_record_len":8,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
+    // TODO: fix this when csv-nose can detect preamble rows
+    // csv-nose doesn't YET detect preamble rows, so it sees all rows as data with generated field
+    // names
+    let expected_end = r#"sampled_records":9,"estimated":false,"num_records":9,"avg_record_len":15,"num_fields":4,"stats_types":false,"fields":["field_1","field_2","field_3","field_4"],"types":["Text","Text","Text","Text"]}"#;
 
     assert!(got.ends_with(expected_end));
 }
@@ -358,16 +374,17 @@ fn sniff_pretty_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 3,"quote_char": "none","flexible": false,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 116,"file_size": 116,"sampled_records": 3,"estimated": false,"num_records": 3,"avg_record_len": 10,"num_fields": 4,"stats_types": false,"fields": [
-    "h1",
-    "h2",
-    "h3",
-    "h4"
+    // csv-nose doesn't detect preamble rows, so it sees all rows as data with generated field names
+    let expected_end = r#""delimiter_char": ",","header_row": false,"preamble_rows": 0,"quote_char": "\"","flexible": true,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 116,"file_size": 116,"sampled_records": 7,"estimated": false,"num_records": 7,"avg_record_len": 16,"num_fields": 4,"stats_types": false,"fields": [
+    "field_1",
+    "field_2",
+    "field_3",
+    "field_4"
   ],"types": [
     "Text",
-    "Unsigned",
     "Text",
-    "Float"
+    "Text",
+    "Text"
   ]
 }"#;
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
@@ -386,7 +403,7 @@ fn sniff_sample() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 0,"quote_char": "none","flexible": false,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 9246,"file_size": 9246,"sampled_records": 7,"estimated": false,"num_records": 15,"avg_record_len": 555,"num_fields": 32,"stats_types": false,"fields": [
+    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 0,"quote_char": "\"","flexible": false,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 9246,"file_size": 9246,"sampled_records": 7,"estimated": false,"num_records": 15,"avg_record_len": 577,"num_fields": 32,"stats_types": false,"fields": [
     "ExtractDate",
     "OrganisationURI",
     "OrganisationLabel",
@@ -420,7 +437,7 @@ fn sniff_sample() {
     "GeoAreaURI",
     "GeoAreaLabel"
   ],"types": [
-    "Date",
+    "DateTime",
     "Text",
     "Text",
     "Text",
@@ -471,7 +488,7 @@ fn sniff_prefer_dmy() {
     let expected_end = r#"Sampled Records: 100
 Estimated: false
 Num Records: 100
-Avg Record Len (bytes): 444
+Avg Record Len (bytes): 472
 Num Fields: 29
 Stats Types: false
 Fields:
@@ -526,26 +543,28 @@ fn sniff_flaky_delimiter_guess() {
 fn sniff_consistent_results_issue_956() {
     let wrk = Workdir::new("sniff_consistent_results_issue_956");
 
+    // csv-nose can now handle these files that qsv-sniffer previously failed on
     let test_file = wrk.load_test_file("spendover25kdownloadSep.csv");
     let mut cmd = wrk.command("sniff");
     cmd.arg(test_file);
-    wrk.assert_err(&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     let test_file = wrk.load_test_file("311011.csv");
     let mut cmd = wrk.command("sniff");
     cmd.arg(test_file);
-    wrk.assert_err(&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     let test_file = wrk.load_test_file("FCOServices_TransparencySpend_May2011.csv");
     let mut cmd = wrk.command("sniff");
     cmd.arg(test_file);
-    wrk.assert_err(&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     let test_file = wrk.load_test_file("iwfg09_Phos_river_200911.csv");
     let mut cmd = wrk.command("sniff");
     cmd.arg(test_file);
-    wrk.assert_err(&mut cmd);
+    wrk.assert_success(&mut cmd);
 
+    // This file is still detected as application/octet-stream (not a valid CSV)
     let test_file = wrk.load_test_file("Inpatients_MHA_Machine_readable_dataset_1011.csv");
     let mut cmd = wrk.command("sniff");
     cmd.arg(test_file);

@@ -898,6 +898,7 @@ return {
 
 - [MCP Specification](https://modelcontextprotocol.io/)
 - [qsv Main Documentation](../../README.md)
+- [qsv Project CLAUDE.md](../../CLAUDE.md) - Main qsv development guide (build commands, architecture, code conventions)
 - [qsv Command Reference](../../docs/)
 - [Agent Skills Design](docs/design/AGENT_SKILLS_DESIGN.md)
 - [MCP Server README](./README-MCP.md)

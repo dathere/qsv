@@ -502,6 +502,10 @@ fn render_sep<W: std::io::Write>(
     writeln!(out, "{}", StyledContent::new(colors.chrome, text))
 }
 
+// row number header and display width
+const RN_HEADER: &str = "#";
+const RN_WIDTH: usize = 1;
+
 fn render_row<W: std::io::Write>(
     out: &mut W,
     color_struct: &ColorStruct,
@@ -521,9 +525,9 @@ fn render_row<W: std::io::Write>(
     let mut col_idx = 0;
     if color_struct.row_numbers {
         let text = if row_idx == 0 {
-            "#" // header
+            RN_HEADER
         } else {
-            &(row_idx).to_string() // field
+            &row_idx.to_string() // field
         };
         render_cell(color_struct, text, row_idx, col_idx, fill_buffer, &mut line);
         col_idx += 1;
@@ -548,13 +552,11 @@ fn render_cell(
     line: &mut String,
 ) {
     // fill
-    fill_into(
-        cell,
-        // safety: flexible(false) ensures all records have same field count as headers, so col_idx
-        // is always within bounds of layout (which is sized to headers.len())
-        color_struct.layout[col_idx],
-        fill_buffer,
-    );
+    // safety: flexible(false) ensures all records have same field count as headers, so col_idx is
+    // always within bounds of layout. When row_numbers is enabled, layout is sized to headers.len()
+    // + 1, with layout[0] reserved for the row number column; otherwise it is sized to
+    // headers.len().
+    fill_into(cell, color_struct.layout[col_idx], fill_buffer);
 
     line.push(' ');
     if let Some(colors) = color_struct.colors {
@@ -649,7 +651,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
     if color_struct.row_numbers {
         // prepend row number column
-        columns.insert(0, num_digits(color_struct.records.len() - 1));
+        columns.insert(0, num_digits(color_struct.records.len() - 1).max(RN_WIDTH));
     }
     color_struct.colors = match get_theme(args.flag_output.is_some()) {
         Theme::Dark => Some(&COLORS_DARK),

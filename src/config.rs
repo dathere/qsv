@@ -8,8 +8,8 @@ use std::{
     },
 };
 
+use csv_nose::{SampleSize, Sniffer};
 use log::{debug, info, warn};
-use qsv_sniffer::{SampleSize, Sniffer};
 use serde::de::{Deserialize, Deserializer, Error};
 
 use crate::{
@@ -24,7 +24,7 @@ pub const DEFAULT_RDR_BUFFER_CAPACITY: usize = 128 * (1 << 10);
 // previous wtr default in xsv is 32k, we're making it 512k
 pub const DEFAULT_WTR_BUFFER_CAPACITY: usize = 512 * (1 << 10);
 
-// number of rows for qsv_sniffer to sample
+// number of rows for csv-nose to sample
 const DEFAULT_SNIFFER_SAMPLE: usize = 100;
 
 // file size at which we warn user that a large file has not been indexed

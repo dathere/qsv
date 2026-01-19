@@ -109,13 +109,13 @@ use std::{
 };
 
 use bytes::Bytes;
+use csv_nose::{DatePreference, SampleSize, Sniffer};
 use file_format::FileFormat;
 use futures::executor::block_on;
 use futures_util::StreamExt;
 use indicatif::HumanCount;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{HumanBytes, ProgressBar, ProgressDrawTarget, ProgressStyle};
-use qsv_sniffer::{DatePreference, SampleSize, Sniffer};
 use qsv_tabwriter::TabWriter;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -283,7 +283,7 @@ struct SniffFileStruct {
 }
 
 const fn rowcount(
-    metadata: &qsv_sniffer::metadata::Metadata,
+    metadata: &csv_nose::metadata::Metadata,
     sniff_file_info: &SniffFileStruct,
     count: usize,
 ) -> (usize, bool) {
@@ -880,9 +880,9 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
 
     let quote_char = match args.flag_quote {
         Some(quote_char) => {
-            qsv_sniffer::metadata::Quote::Some(*quote_char.to_string().as_bytes().first().unwrap())
+            csv_nose::metadata::Quote::Some(*quote_char.to_string().as_bytes().first().unwrap())
         },
-        _ => qsv_sniffer::metadata::Quote::None,
+        _ => csv_nose::metadata::Quote::None,
     };
 
     // now that we have all the sniffing parameters, we can sniff the file
@@ -950,8 +950,8 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
                 header_row: metadata.dialect.header.has_header_row,
                 preamble_rows: metadata.dialect.header.num_preamble_rows,
                 quote_char: match metadata.dialect.quote {
-                    qsv_sniffer::metadata::Quote::Some(chr) => format!("{}", char::from(chr)),
-                    qsv_sniffer::metadata::Quote::None => "none".into(),
+                    csv_nose::metadata::Quote::Some(chr) => format!("{}", char::from(chr)),
+                    csv_nose::metadata::Quote::None => "none".into(),
                 },
                 flexible: metadata.dialect.flexible,
                 is_utf8: metadata.dialect.is_utf8,

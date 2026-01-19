@@ -76,7 +76,12 @@
       {
         "flag": "--no-nulls",
         "type": "flag",
-        "description": "Don't include NULLs in the frequency table."
+        "description": "Don't include NULLs in the frequency table. This is equivalent to --null-text \"<NONE>\"."
+      },
+      {
+        "flag": "--no-other",
+        "type": "flag",
+        "description": "Don't include the \"Other\" category in the frequency table. This is equivalent to --other-text \"<NONE>\"."
       },
       {
         "flag": "--no-stats",
@@ -89,9 +94,14 @@
         "description": "Don't trim whitespace from values when computing frequencies. The default is to trim leading and trailing whitespaces."
       },
       {
+        "flag": "--null-sorted",
+        "type": "flag",
+        "description": "By default, the NULL category (controlled by --null-text) is placed at the end of the frequency table for a field, after \"Other\" if present. If this is enabled, the NULL category will be sorted with the rest of the values by count."
+      },
+      {
         "flag": "--null-text",
         "type": "string",
-        "description": "The text to use for NULL values.",
+        "description": "The text to use for NULL values. If set to \"<NONE>\", NULLs will not be included in the frequency table (equivalent to --no-nulls).",
         "default": "(NULL)"
       },
       {
@@ -131,6 +141,11 @@
         "flag": "--select",
         "type": "string",
         "description": "Select a subset of columns to compute frequencies for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv frequency' will disable the use of indexing."
+      },
+      {
+        "flag": "--stats-filter",
+        "type": "string",
+        "description": "Filter columns based on their statistics using a Luau expression. Columns where the expression evaluates to `true` are EXCLUDED. Available fields: field, type, is_ascii, cardinality, nullcount, sum, min, max, range, sort_order, min_length, max_length, mean, stddev, variance, cv, sparsity, q1, q2_median, q3, iqr, mad, skewness, mode, antimode, n_negative, n_zero, n_positive, etc. e.g. \"nullcount > 1000\" - exclude columns with many nulls \"type == 'Float'\" - exclude Float columns \"cardinality > 500 and nullcount > 0\" - compound expression Requires stats cache and the \"luau\" feature."
       },
       {
         "flag": "--toon",

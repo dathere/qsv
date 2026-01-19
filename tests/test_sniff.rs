@@ -338,12 +338,11 @@ fn sniff_json() {
     cmd.arg("--json").arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
-    // TODO: fix this when csv-nose can detect preamble rows
-    // csv-nose doesn't YET detect preamble rows, so it sees all rows as data with generated field
-    // names
-    let expected_end: &str = r#"sampled_records":7,"estimated":false,"num_records":7,"avg_record_len":16,"num_fields":4,"stats_types":false,"fields":["field_1","field_2","field_3","field_4"],"types":["Text","Text","Text","Text"]}"#;
+
+    let expected_end: &str = r#"sampled_records":3,"estimated":false,"num_records":3,"avg_record_len":16,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
 
     assert!(got.ends_with(expected_end));
+    // assert_eq!(got, expected_end)
 }
 
 #[test]
@@ -356,10 +355,10 @@ fn sniff_flexible_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    // TODO: fix this when csv-nose can detect preamble rows
-    // csv-nose doesn't YET detect preamble rows, so it sees all rows as data with generated field
-    // names
-    let expected_end = r#"sampled_records":9,"estimated":false,"num_records":9,"avg_record_len":15,"num_fields":4,"stats_types":false,"fields":["field_1","field_2","field_3","field_4"],"types":["Text","Text","Text","Text"]}"#;
+    let expected_end = "sampled_records\":5,\"estimated\":false,\"num_records\":5,\"\
+                        avg_record_len\":15,\"num_fields\":4,\"stats_types\":false,\"fields\":[\"\
+                        h1\",\"h2\",\"h3\",\"h4\"],\"types\":[\"Text\",\"Unsigned\",\"Text\",\"\
+                        Float\"]}";
 
     assert!(got.ends_with(expected_end));
 }
@@ -374,17 +373,16 @@ fn sniff_pretty_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    // csv-nose doesn't detect preamble rows, so it sees all rows as data with generated field names
-    let expected_end = r#""delimiter_char": ",","header_row": false,"preamble_rows": 0,"quote_char": "\"","flexible": true,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 116,"file_size": 116,"sampled_records": 7,"estimated": false,"num_records": 7,"avg_record_len": 16,"num_fields": 4,"stats_types": false,"fields": [
-    "field_1",
-    "field_2",
-    "field_3",
-    "field_4"
+    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 3,"quote_char": "\"","flexible": true,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 116,"file_size": 116,"sampled_records": 3,"estimated": false,"num_records": 3,"avg_record_len": 16,"num_fields": 4,"stats_types": false,"fields": [
+    "h1",
+    "h2",
+    "h3",
+    "h4"
   ],"types": [
     "Text",
+    "Unsigned",
     "Text",
-    "Text",
-    "Text"
+    "Float"
   ]
 }"#;
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));

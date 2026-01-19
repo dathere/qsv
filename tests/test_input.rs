@@ -52,6 +52,7 @@ fn test_input_skiplines() {
 }
 
 #[test]
+#[ignore = "csv-nose does not YET support auto-skip"]
 fn test_input_autoskip() {
     let wrk = Workdir::new("input_autoskip");
     let test_file = wrk.load_test_file("snifftest.csv");

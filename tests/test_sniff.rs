@@ -338,7 +338,9 @@ fn sniff_json() {
     cmd.arg("--json").arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
-    // csv-nose doesn't detect preamble rows, so it sees all rows as data with generated field names
+    // TODO: fix this when csv-nose can detect preamble rows
+    // csv-nose doesn't YET detect preamble rows, so it sees all rows as data with generated field
+    // names
     let expected_end: &str = r#"sampled_records":7,"estimated":false,"num_records":7,"avg_record_len":16,"num_fields":4,"stats_types":false,"fields":["field_1","field_2","field_3","field_4"],"types":["Text","Text","Text","Text"]}"#;
 
     assert!(got.ends_with(expected_end));
@@ -354,7 +356,9 @@ fn sniff_flexible_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    // csv-nose doesn't detect preamble rows, so it sees all rows as data with generated field names
+    // TODO: fix this when csv-nose can detect preamble rows
+    // csv-nose doesn't YET detect preamble rows, so it sees all rows as data with generated field
+    // names
     let expected_end = r#"sampled_records":9,"estimated":false,"num_records":9,"avg_record_len":15,"num_fields":4,"stats_types":false,"fields":["field_1","field_2","field_3","field_4"],"types":["Text","Text","Text","Text"]}"#;
 
     assert!(got.ends_with(expected_end));

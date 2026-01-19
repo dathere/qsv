@@ -1775,9 +1775,9 @@ dependencies = [
 
 [[package]]
 name = "csv-nose"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78e7b41dafff70d2886011209bd4b08d25845a7ae2ce7703e257d62cb753cdc8"
+checksum = "fd7178f30f6152d534c7e51eba25444d12b1138c40210d9d1d3e00fd6e84d124"
 dependencies = [
  "bytecount",
  "chardetng",

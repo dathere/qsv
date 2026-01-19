@@ -1791,7 +1791,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.15.1"
-source = "git+https://github.com/YS-L/csvlens?rev=6b58904#6b589040037de402cb753afd681c60fcfd44e60b"
+source = "git+https://github.com/jqnatividad/csvlens?branch=deps-replace_qsv-sniffer-with-csv_nose#c21cd6414aa88fc85f2aad462a881fdb6e868220"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
@@ -1800,7 +1800,7 @@ dependencies = [
  "crossterm 0.28.1",
  "csv",
  "csv-core",
- "qsv-sniffer",
+ "csv-nose",
  "ratatui",
  "regex",
  "sorted-vec",
@@ -5756,24 +5756,6 @@ dependencies = [
  "chrono",
  "fast-float2",
  "regex",
-]
-
-[[package]]
-name = "qsv-sniffer"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a78937b2f303e65f6729979c37b5b544086121fcf482468fd38ba11f617ed0bb"
-dependencies = [
- "bitflags",
- "bytecount",
- "csv",
- "csv-core",
- "hashbrown 0.15.5",
- "memchr",
- "qsv-dateparser",
- "qsv-tabwriter",
- "regex",
- "simdutf8",
 ]
 
 [[package]]

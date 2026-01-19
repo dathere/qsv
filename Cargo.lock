@@ -790,9 +790,9 @@ dependencies = [
 
 [[package]]
 name = "az"
-version = "1.2.1"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b7e4c2464d97fe331d41de9d5db0def0a96f4d823b8b32a2efd503578988973"
+checksum = "be5eb007b7cacc6c660343e96f650fedf4b5a77512399eb952ca6642cf8d13f7"
 
 [[package]]
 name = "backtrace"
@@ -1149,7 +1149,7 @@ source = "git+https://github.com/nihohit/cached?branch=client-side-caching#1a3f1
 [[package]]
 name = "calamine"
 version = "0.32.0"
-source = "git+https://github.com/jqnatividad/calamine?branch=deps-bump-calamine-0.16.0-to-0.17.0#f6dfbb4009ed62a3851937733ddfc8955f9be4bf"
+source = "git+https://github.com/jqnatividad/calamine?branch=bump-atoi_simd-to-17.0#282c6bb1e44f7bfcf40cf33e689a3ce1f7095d45"
 dependencies = [
  "atoi_simd",
  "byteorder",
@@ -1791,7 +1791,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.15.1"
-source = "git+https://github.com/jqnatividad/csvlens?branch=deps-replace_qsv-sniffer-with-csv_nose#cd889c362634c2ef56660552177eaa208ec71ef4"
+source = "git+https://github.com/jqnatividad/csvlens?branch=deps-replace_qsv-sniffer-with-csv_nose#3856691acf0a118acd9edad190d513d6d2dd243f"
 dependencies = [
  "ansi-to-tui",
  "anyhow",

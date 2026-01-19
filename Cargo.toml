@@ -317,7 +317,7 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 cached = { git = "https://github.com/nihohit/cached", branch = "client-side-caching" }
 
 # use our patched fork of calamine with atoi_simd 0.17 dependency
-calamine = { git = "https://github.com/jqnatividad/calamine", branch = "deps-bump-calamine-0.16.0-to-0.17.0" }
+calamine = { git = "https://github.com/jqnatividad/calamine", branch = "bump-atoi_simd-to-17.0" }
 
 # use our patched fork of csvlens to replace qsv_sniffer with csv_nose until our PR is merged
 csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "deps-replace_qsv-sniffer-with-csv_nose" }

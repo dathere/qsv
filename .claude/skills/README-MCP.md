@@ -16,7 +16,7 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 
 - **Auto-Detect Claude Clients** - Automatically enables expose-all-tools mode for Claude Desktop, Claude Code, and Claude Cowork
 - **Smart Tool Selection** - No manual configuration needed - all 62+ tools automatically available for Claude clients
-- **Environment Override** - Explicit `QSV_MCP_EXPOSE_ALL_TOOLS=false` overrides auto-detection for unknown clients
+- **Environment Override** - Explicit `QSV_MCP_EXPOSE_ALL_TOOLS=false` disables auto-detection for all clients, forcing common-tools mode
 
 ## What's New in 14.0.0
 
@@ -234,7 +234,7 @@ The server automatically detects Claude clients and enables all 62+ tools:
 | Claude Code | Automatic | All 62+ tools |
 | Claude Cowork | Automatic | All 62+ tools |
 | Other Claude clients | Automatic | All 62+ tools |
-| Unknown clients | Manual config needed | 13 common tools |
+| Unknown clients | Automatic (safe default) | 13 common tools |
 
 **No configuration required** for Claude Desktop, Claude Code, or Claude Cowork - tools are auto-enabled.
 

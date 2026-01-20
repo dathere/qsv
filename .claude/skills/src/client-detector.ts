@@ -51,11 +51,19 @@ export function isToolSearchCapableClient(clientInfo?: Implementation): boolean 
   // Normalize client name: lowercase and replace spaces with hyphens
   const clientName = clientInfo.name.toLowerCase().replace(/\s+/g, '-');
 
-  return TOOL_SEARCH_CLIENTS.some(pattern => clientName.includes(pattern));
+  // Only treat as tool-search-capable if the name matches a known pattern
+  // exactly, or starts with the pattern (allowing suffixes like "-beta")
+  // This prevents false positives like "myclaude-wrapper" matching "claude"
+  return TOOL_SEARCH_CLIENTS.some(
+    pattern => clientName === pattern || clientName.startsWith(`${pattern}-`),
+  );
 }
 
 /**
  * Get the type of connected client
+ *
+ * Uses strict pattern matching to avoid misclassification.
+ * Client name must start with "claude" to be recognized as a Claude client.
  *
  * @param clientInfo - Client implementation info from MCP SDK
  * @returns Client type for logging and analytics
@@ -63,17 +71,26 @@ export function isToolSearchCapableClient(clientInfo?: Implementation): boolean 
 export function getClientType(clientInfo?: Implementation): ClientType {
   if (!clientInfo?.name) return 'unknown';
 
-  const name = clientInfo.name.toLowerCase();
+  // Normalize: lowercase and replace spaces with hyphens
+  const name = clientInfo.name.toLowerCase().replace(/\s+/g, '-');
 
-  // Must contain 'claude' to be recognized as a Claude client
-  if (!name.includes('claude')) return 'other';
+  // Must start with 'claude' to be recognized as a Claude client
+  // This prevents false positives like "my-desktop-app-claude"
+  if (!name.startsWith('claude')) return 'other';
 
-  // Now check for specific Claude client types
-  if (name.includes('desktop')) return 'claude-desktop';
-  if (name.includes('code')) return 'claude-code';
-  if (name.includes('cowork')) return 'claude-cowork';
+  // Check for specific Claude client types using prefix matching
+  // "claude-desktop" or "claude-desktop-beta" → claude-desktop
+  if (name === 'claude-desktop' || name.startsWith('claude-desktop-')) {
+    return 'claude-desktop';
+  }
+  if (name === 'claude-code' || name.startsWith('claude-code-')) {
+    return 'claude-code';
+  }
+  if (name === 'claude-cowork' || name.startsWith('claude-cowork-')) {
+    return 'claude-cowork';
+  }
 
-  // Generic Claude client
+  // Generic Claude client (e.g., "claude", "claude-client", "claude-app")
   return 'claude-generic';
 }
 

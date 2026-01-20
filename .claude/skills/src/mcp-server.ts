@@ -23,6 +23,11 @@ import { FilesystemResourceProvider } from './mcp-filesystem.js';
 import type { McpToolResult } from './types.js';
 import { config } from './config.js';
 import {
+  isToolSearchCapableClient,
+  getClientType,
+  formatClientInfo,
+} from './client-detector.js';
+import {
   COMMON_COMMANDS,
   createToolDefinition,
   createGenericToolDefinition,
@@ -56,6 +61,7 @@ class QsvMcpServer {
   private executor: SkillExecutor;
   private filesystemProvider: FilesystemResourceProvider;
   private updateChecker: UpdateChecker;
+  private loggedClientDetection: boolean = false;
 
   constructor() {
     this.server = new Server(
@@ -243,10 +249,46 @@ class QsvMcpServer {
       // Get available commands from qsv binary
       const availableCommands = config.qsvValidation.availableCommands;
 
+      // Determine if we should expose all tools
+      // Priority:
+      // 1. config.exposeAllTools === true → always expose all
+      // 2. config.exposeAllTools === false → always expose only common (override auto-detect)
+      // 3. config.exposeAllTools === undefined → auto-detect based on client
+      const clientInfo = this.server.getClientVersion();
+      let shouldExposeAll: boolean;
+      let reason: string;
+
+      if (config.exposeAllTools === true) {
+        shouldExposeAll = true;
+        reason = 'QSV_MCP_EXPOSE_ALL_TOOLS=true';
+      } else if (config.exposeAllTools === false) {
+        shouldExposeAll = false;
+        reason = 'QSV_MCP_EXPOSE_ALL_TOOLS=false (explicit disable)';
+      } else {
+        // Auto-detect based on client
+        shouldExposeAll = isToolSearchCapableClient(clientInfo);
+        reason = shouldExposeAll
+          ? `auto-detected ${getClientType(clientInfo)} client`
+          : 'unknown client (using common tools only)';
+      }
+
+      // Log client detection once per session
+      if (!this.loggedClientDetection) {
+        const clientDesc = formatClientInfo(clientInfo);
+        if (shouldExposeAll) {
+          console.error(`[Server] ✅ Enabling all tools mode (${reason})`);
+          console.error(`[Server]    Client: ${clientDesc}`);
+        } else {
+          console.error(`[Server] Using common tools mode (${reason})`);
+          console.error(`[Server]    Client: ${clientDesc}`);
+        }
+        this.loggedClientDetection = true;
+      }
+
       // Check if we should expose all tools (for clients with tool search support)
-      if (config.exposeAllTools) {
+      if (shouldExposeAll) {
         // Expose all available skills as individual tools
-        console.error('[Server] Expose all tools mode enabled - loading all skills...');
+        console.error('[Server] Expose all tools mode - loading all skills...');
 
         const allSkills = await this.loader.loadAll();
         let loadedCount = 0;

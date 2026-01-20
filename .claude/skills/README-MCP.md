@@ -12,6 +12,12 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 - **Pipeline Support**: Chain multiple operations together seamlessly
 - **Intelligent Guidance**: Enhanced tool descriptions help Claude make optimal decisions
 
+## What's New in 14.2.1
+
+- **Auto-Detect Claude Clients** - Automatically enables expose-all-tools mode for Claude Desktop, Claude Code, and Claude Cowork
+- **Smart Tool Selection** - No manual configuration needed - all 62+ tools automatically available for Claude clients
+- **Environment Override** - Explicit `QSV_MCP_EXPOSE_ALL_TOOLS=false` disables auto-detection for all clients, forcing common-tools mode
+
 ## What's New in 14.0.0
 
 - **MCP Desktop Extension (MCPB)** - One-click installation for Claude Desktop
@@ -152,7 +158,7 @@ This script will:
 | `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates when MCP server starts |
 | `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications in logs |
 | `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repository to check for releases |
-| `QSV_MCP_EXPOSE_ALL_TOOLS` | `false` | Expose all 62+ qsv tools instead of just common 13. Enable for clients with tool search/deferred loading support |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | auto-detect | Controls tool exposure mode. `true`: always expose all 62+ tools. `false`: always use 13 common tools (overrides auto-detect). Unset: auto-detect based on client (Claude clients get all tools automatically) |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 
@@ -216,18 +222,31 @@ Claude executes pipeline:
 
 ## Tool Search Support
 
-The MCP server supports two modes for tool discovery:
+The MCP server supports intelligent tool exposure based on the connected client:
 
-### Standard Mode (Default)
-Exposes 22 tools: 13 common commands + 1 generic + 1 pipeline + 4 utility + 3 filesystem tools.
+### Auto-Detection (Default)
+
+The server automatically detects Claude clients and enables all 62+ tools:
+
+| Client | Detection | Tools Exposed |
+|--------|-----------|---------------|
+| Claude Desktop | Automatic | All 62+ tools |
+| Claude Code | Automatic | All 62+ tools |
+| Claude Cowork | Automatic | All 62+ tools |
+| Other Claude clients | Automatic | All 62+ tools |
+| Unknown clients | Automatic (safe default) | 13 common tools |
+
+**No configuration required** for Claude Desktop, Claude Code, or Claude Cowork - tools are auto-enabled.
+
+### Standard Mode (Unknown Clients)
+For unknown clients, exposes 22 tools: 13 common commands + 1 generic + 1 pipeline + 4 utility + 3 filesystem tools.
 Optimized for token efficiency in typical workflows.
 
-### Expose All Tools Mode
-When `QSV_MCP_EXPOSE_ALL_TOOLS=true`, exposes all 62+ qsv command tools individually.
-Recommended for:
-- Clients with native tool search (Anthropic API Tool Search Tool)
-- Clients supporting deferred tool loading (`defer_loading: true`)
-- Advanced workflows requiring direct access to specialized commands
+### Manual Override
+Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override auto-detection:
+- `true`: Always expose all 62+ tools (even for unknown clients)
+- `false`: Always use 13 common tools (overrides auto-detection)
+- Unset: Auto-detect based on client (recommended)
 
 ### Built-in Tool Search (`qsv_search_tools`)
 
@@ -570,7 +589,7 @@ For issues or questions:
 ---
 
 **Updated**: 2026-01-19
-**Version**: 14.2.0
+**Version**: 14.2.1
 **Tools**: 26 standard mode (13 common + 1 generic + 1 pipeline + 1 search + 4 utility + 3 filesystem) or 62+ in expose-all mode
 **Skills**: 62 qsv commands
 **Status**: ✅ Production Ready

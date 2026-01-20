@@ -272,17 +272,21 @@ test('config.qsvValidation includes command info when available', () => {
 // Expose All Tools Config Tests
 // ============================================================================
 
-test('config.exposeAllTools exists and is boolean', () => {
+test('config.exposeAllTools exists and has valid type', () => {
   assert.ok('exposeAllTools' in config);
-  assert.strictEqual(typeof config.exposeAllTools, 'boolean');
+  // exposeAllTools can be boolean or undefined (for auto-detect)
+  const validTypes = ['boolean', 'undefined'];
+  assert.ok(validTypes.includes(typeof config.exposeAllTools),
+    `exposeAllTools should be boolean or undefined, got ${typeof config.exposeAllTools}`);
 });
 
-test('config.exposeAllTools defaults to false when env var not set', () => {
-  // Default should be false for backward compatibility
+test('config.exposeAllTools defaults to undefined when env var not set', () => {
+  // Default should be undefined for auto-detect behavior
+  // When undefined, the server auto-detects Claude clients
   // This test verifies the expected default behavior
-  // If env var was set, config.exposeAllTools may be true (which is also valid)
+  // If env var was set, config.exposeAllTools may be true/false (which is also valid)
   // The test documents expected default value
-  const expectedDefault = false;
+  const expectedDefault = undefined;
   if (config.exposeAllTools === expectedDefault) {
     assert.strictEqual(config.exposeAllTools, expectedDefault);
   }

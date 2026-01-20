@@ -103,7 +103,7 @@
 🧠: expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.  
 🗄️: [Extended input support](#extended-input-support).  
 🗃️: [Limited Extended input support](#limited-extended-input-support).  
-🐻‍❄️: command powered/accelerated by [![polars 0.52.0 at py-1.37.1:ecc2069](https://img.shields.io/badge/polars-0.52.0%20at%20py1.37.1:ecc2069-blue?logo=polars
+🐻‍❄️: command powered/accelerated by [![polars 0.52.0 at py-1.37.1:6e4ce4f](https://img.shields.io/badge/polars-0.52.0%20at%20py1.37.1:6e4ce4f-blue?logo=polars
 )](https://github.com/pola-rs/polars/releases/tag/py-1.37.1) vectorized query engine.  
 🤖: command uses Natural Language Processing or Generative AI.  
 🏎️: multithreaded and/or faster when an index (📇) is available.  
@@ -116,7 +116,7 @@
 📚: has lookup table support, enabling runtime "lookups" against local or remote reference CSVs.  
 🌎: has geospatial capabilities.  
 ⛩️: uses [Mini Jinja](https://docs.rs/minijinja/latest/minijinja/) template engine.  
-![Luau](docs/images/luau.png) : uses [Luau](https://luau.org/) language as an embedded scripting [DSL](https://en.wikipedia.org/wiki/Domain-specific_language).  
+![Luau](docs/images/luau.png) : uses [Luau](https://luau.org/) [0.701](https://github.com/Roblox/luau/releases/tag/0.701) as an embedded scripting [DSL](https://en.wikipedia.org/wiki/Domain-specific_language).  
 🖥️: part of the User Interface (UI) feature group
 
 [^1]: see [`validate_index` benchmark](https://qsv.dathere.com/benchmarks)

@@ -188,11 +188,18 @@ impl UsageParser {
                     // Skip options not relevant for AI agents using MCP
                     // --quiet: suppresses stderr output (not useful for agents)
                     // --help: universally available for all commands (handled by MCP server)
-                    if primary_flag == "--quiet" || primary_flag == "--help" {
+                    // --user-agent: infrastructure setting (set via environment)
+                    // --redis-cache: infrastructure setting (set via environment)
+                    // --jobs: infrastructure setting (auto-detected or set via environment)
+                    if matches!(
+                        primary_flag.as_str(),
+                        "--quiet" | "--help" | "--user-agent" | "--redis-cache" | "--jobs"
+                    ) {
                         continue;
                     }
                     if (flag_str == "-q" && long_flag.as_deref() == Some("--quiet"))
                         || (flag_str == "-h" && long_flag.as_deref() == Some("--help"))
+                        || (flag_str == "-j" && long_flag.as_deref() == Some("--jobs"))
                     {
                         continue;
                     }
@@ -248,7 +255,13 @@ impl UsageParser {
                     // Skip options not relevant for AI agents using MCP
                     // --quiet: suppresses stderr output (not useful for agents)
                     // --help: universally available for all commands (handled by MCP server)
-                    if flag_str == "--quiet" || flag_str == "--help" {
+                    // --user-agent: infrastructure setting (set via environment)
+                    // --redis-cache: infrastructure setting (set via environment)
+                    // --jobs: infrastructure setting (auto-detected or set via environment)
+                    if matches!(
+                        flag_str.as_str(),
+                        "--quiet" | "--help" | "--user-agent" | "--redis-cache" | "--jobs"
+                    ) {
                         continue;
                     }
 

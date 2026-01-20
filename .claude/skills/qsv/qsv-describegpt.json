@@ -37,11 +37,6 @@
         "description": "Shortcut for --dictionary --description --tags."
       },
       {
-        "flag": "--api-key",
-        "type": "string",
-        "description": "The API key to use. If set, takes precedence over the QSV_LLM_APIKEY envvar. Required when the base URL is not localhost. Set to NONE to suppress sending the API key."
-      },
-      {
         "flag": "--base-url",
         "type": "string",
         "description": "The LLM API URL. Supports APIs & local LLMs compatible with the OpenAI API specification. Some common base URLs: OpenAI: https://api.openai.com/v1 Gemini: https://generativelanguage.googleapis.com/v1beta/openai TogetherAI: https://api.together.ai/v1 Local LLMs: Ollama: http://localhost:11434/v1 Jan: https://localhost:1337/v1 LM Studio: http://localhost:1234/v1 NOTE: If set, takes precedence over the QSV_LLM_BASE_URL environment variable and the base URL specified in the prompt file.",
@@ -58,11 +53,6 @@
         "type": "string",
         "description": "The URL of the CKAN API to use for downloading tag vocabulary resources with the \"ckan://\" scheme. If the QSV_CKAN_API envvar is set, it will be used instead.",
         "default": "https://data.dathere.com/api/3/action"
-      },
-      {
-        "flag": "--ckan-token",
-        "type": "string",
-        "description": "The CKAN API token to use. Only required if downloading private resources. If the QSV_CKAN_TOKEN envvar is set, it will be used instead."
       },
       {
         "flag": "--description",

@@ -31,6 +31,9 @@
 # and `--delimiter` option. Note that this does not work with stdin.
 QSV_SNIFF_DELIMITER = False
 
+# if true, qsv will attempt to sniff the number of preamble rows.
+# QSV_SNIFF_PREAMBLE = False
+
 # if true, the first row will **NOT** be interpreted as headers.
 # Supersedes QSV_TOGGLE_HEADERS.
 QSV_NO_HEADERS = False
@@ -43,6 +46,13 @@ QSV_NO_HEADERS = False
 # set to the maximum number of characters when listing "antimodes" in `stats`. Otherwise, the default is 100.
 # set to 0 to disable length limiting
 # QSV_ANTIMODES_LEN = 100
+
+# the separator to use to delimit multiple MODE/ANTIMODE and PERCENTILE values.
+# QSV_STATS_SEPARATOR = |
+
+# Specifies the maximum string length for the "min"/"max" stats column.
+# When set, truncates String columns at the specified length and appends an ellipsis (...).
+# QSV_STATS_STRING_MAX_LENGTH = 0
 
 # Controls memory-aware chunk sizing for parallel statistics processing.
 # When set to a positive number, limits the maximum memory per chunk (in MB).
@@ -141,6 +151,9 @@ QSV_COMMENT_CHAR = '#'
 # The scale to use when using the Polars Decimal type. If not set, defaults to 5.
 # QSV_POLARS_DECIMAL_SCALE = 5
 
+# if true, skips mime-type checking of input files. 
+# QSV_SKIP_FORMAT_CHECK = False
+
 # if true, prohibit self-update version check for the latest qsv release 
 # published on GitHub.
 QSV_NO_UPDATE = False
@@ -199,7 +212,7 @@ QSV_LOG_UNBUFFERED = False
 QSV_PROGRESSBAR = False
 
 # set time-to-live of diskcache cached values (default (seconds): 2419200 (28 days)).
-QSV_DISKCACHE_TTL_SECONDS = 2419200
+QSV_DISKCACHE_TTL_SECS = 2419200
 
 # if true, enables cache hits to refresh TTL of diskcache cached values.
 QSV_DISKCACHE_TTL_REFRESH = False
@@ -215,11 +228,15 @@ QSV_REDIS_CONNSTR = redis:127.0.0.1:6379/1
 # database 2, as opposed to `fetch` which connects to database 1.
 QSV_FP_REDIS_CONNSTR = redis:127.0.0.1:6379/2
 
+# the `describegpt` command can also use Redis to cache responses
+# (default: `redis:127.0.0.1:6379/3`).
+QSV_DG_REDIS_CONNSTR = redis:127.0.0.1:6379/3
+
 # the maximum Redis connection pool size. (default: 20).
 QSV_REDIS_MAX_POOL_SIZE = 20
 
 # set time-to-live of Redis cached values (default (seconds): 2419200 (28 days)).
-QSV_REDIS_TTL_SECONDS = 2419200
+QSV_REDIS_TTL_SECS = 2419200
 
 # if true, enables cache hits to refresh TTL of Redis cached values.
 QSV_REDIS_TTL_REFRESH = False
@@ -242,6 +259,9 @@ QSV_TIMEOUT = 30
 # Note that you have to copy the custom index file to the QSV_CACHE_DIR directory
 # for it to be used by qsv.
 # QSV_GEOCODE_INDEX_FILENAME = my-qsv-geocode-index.bincode
+
+# the filename of the GeoIP2 database to use for the `geocode` command.
+# QSV_GEOIP2_FILENAME = GeoLite2-City.mmdb
 
 # ==============================================================================
 # MCP SERVER ENVIRONMENT VARIABLES

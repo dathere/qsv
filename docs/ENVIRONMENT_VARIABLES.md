@@ -5,6 +5,7 @@
 | `QSV_DOTENV_PATH` | The full pathname of the dotenv file to load, OVERRIDING existing environment variables. This takes precedence over any other dotenv files in the filesystem. Set to "<NONE>" to disable dotenv processing. |
 | `QSV_DEFAULT_DELIMITER` | single ascii character to use as delimiter.  Overrides `--delimiter` option. Defaults to "," (comma) for CSV files & "\t" (tab) for TSV files when not set. Note that this will also set the delimiter for qsv's output to stdout.<br>However, using the `--output` option, regardless of this environment variable, will automatically change the delimiter used in the generated file based on the file extension - i.e. comma for `.csv`; tab for `.tsv` & `.tab` ; and semicolon for `.ssv` files |
 | `QSV_SNIFF_DELIMITER` | if set, the delimiter is automatically detected. Overrides `QSV_DEFAULT_DELIMITER` & `--delimiter` option. Note that this does not work with stdin. |
+| `QSV_SNIFF_PREAMBLE` | if set, qsv will attempt to sniff the number of preamble rows. |
 | `QSV_NO_HEADERS` | if set, the first row will **NOT** be interpreted as headers. Supersedes `QSV_TOGGLE_HEADERS`. |
 | `QSV_TOGGLE_HEADERS` | if set to `1`, toggles header setting - i.e. inverts qsv header behavior, with no headers being the default, & setting `--no-headers` will actually mean headers will not be ignored. |
 | `QSV_ANTIMODES_LEN` | set to the maximum number of characters when listing "antimodes" in `stats`. Otherwise, the default is 100. Set to 0 to disable length limiting. |
@@ -41,16 +42,17 @@
 | `QSV_LOG_DIR` | when logging is enabled, the directory where the log files will be stored. If the specified directory does not exist, qsv will attempt to create it. If not set, the log files are created in the directory where qsv was started. See [Logging](docs/Logging.md#logging) for more info. |
 | `QSV_LOG_UNBUFFERED` | if set, log messages are written directly to disk, without buffering. Otherwise, log messages are buffered before being written to the log file (8k buffer, flushing every second). See [flexi_logger](https://docs.rs/flexi_logger/latest/flexi_logger/enum.WriteMode.html) for details. |
 | `QSV_PROGRESSBAR` | if set, enable the --progressbar option on the `apply`, `fetch`, `fetchpost`, `foreach`, `luau`, `py`, `replace`, `search`, `searchset`, `sortcheck` & `validate` commands.  |
-| `QSV_DISKCACHE_TTL_SECONDS` | set time-to-live of diskcache cached values (default (seconds): 2419200 (28 days)). |
+| `QSV_DISKCACHE_TTL_SECS` | set time-to-live of diskcache cached values (default (seconds): 2419200 (28 days)). |
 | `QSV_DISKCACHE_TTL_REFRESH`| if set, enables cache hits to refresh TTL of diskcache cached values. |
 | `QSV_REDIS_CONNSTR` | the `fetch` command can use [Redis](https://redis.io/) to cache responses. Set to connect to the desired Redis instance. (default: `redis:127.0.0.1:6379/1`). For more info on valid Redis connection string formats, click [here](https://docs.rs/redis/latest/redis/#connection-parameters). |
 | `QSV_FP_REDIS_CONNSTR` | the `fetchpost` command can also use Redis to cache responses (default: `redis:127.0.0.1:6379/2`). |
 | `QSV_DG_REDIS_CONNSTR` | the `describegpt` command can also use Redis to cache responses (default: `redis:127.0.0.1:6379/3`). |
 | `QSV_REDIS_MAX_POOL_SIZE` | the maximum Redis connection pool size. (default: 20). |
-| `QSV_REDIS_TTL_SECONDS` | set time-to-live of Redis cached values (default (seconds): 2419200 (28 days)). |
+| `QSV_REDIS_TTL_SECS` | set time-to-live of Redis cached values (default (seconds): 2419200 (28 days)). |
 | `QSV_REDIS_TTL_REFRESH`| if set, enables cache hits to refresh TTL of Redis cached values. |
 | `QSV_TIMEOUT`| for commands with a --timeout option (`fetch`, `fetchpost`, `luau`, `sniff` and `validate`), the number of seconds before a web request times out (default: 30). |
 | `QSV_USER_AGENT`| the user-agent to use for web requests. When specifying a custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME and $QSV_KIND. Try to conform to the [IETF RFC 72321 standard](https://tools.ietf.org/html/rfc7231#section-5.5.3). See [here](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent) for examples.<br>(default: $QSV_BIN_NAME/$QSV_VERSION ($QSV_TARGET; $QSV_KIND; https://github.com/dathere/qsv) - e.g.<br>`qsv/0.105.0 (x86_64-unknown-linux; prebuilt; https://github.com/dathere/qsv)`).|
+| `QSV_GEOIP2_FILENAME` | the filename of the GeoIP2 database to use for the `geocode` command. (default: `GeoLite2-City.mmdb`) |
 
 Several dependencies also have environment variables that influence qsv's performance & behavior:
 

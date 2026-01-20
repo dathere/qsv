@@ -61,11 +61,6 @@
         "description": "If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only)."
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
         "flag": "--pipe",
         "type": "flag",
         "description": "For parquet, allow piping from stdin (using `-`) or from a named pipe."

@@ -50,11 +50,6 @@
         "default": "UTC"
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
         "flag": "--keep-zero-time",
         "type": "flag",
         "description": "If a formatted date ends with \"T00:00:00+00:00\", keep the time instead of removing it."

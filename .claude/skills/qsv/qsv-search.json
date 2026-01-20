@@ -58,11 +58,6 @@
         "description": "Select only rows that did not match"
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected."
-      },
-      {
         "flag": "--json",
         "type": "flag",
         "description": "Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based). Automatically sets --quiet."

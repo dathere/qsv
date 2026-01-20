@@ -62,11 +62,6 @@
         "description": "A JSON file containing global variables to make available in templates. The JSON properties can be accessed in templates using the \"qsv_g\" namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}). This allows sharing common values across all template renders."
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
         "flag": "--no-headers",
         "type": "flag",
         "description": "When set, the first row will not be interpreted as headers. Templates must use numeric 1-based indices with the \"_c\" prefix.(e.g. col1: {{_c1}} col2: {{_c2}})"

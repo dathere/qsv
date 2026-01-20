@@ -121,11 +121,6 @@
         "default": "first"
       },
       {
-        "flag": "--user-agent",
-        "type": "string",
-        "description": "Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent"
-      },
-      {
         "flag": "--weighted",
         "type": "string",
         "description": "Use weighted sampling. The weight column is specified by <col>. Can be either a column name or 0-based column index. The column will be parsed as a number. Records with non-number weights will be skipped. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k)."

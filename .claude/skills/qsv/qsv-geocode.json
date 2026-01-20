@@ -91,11 +91,6 @@
         "description": "The string to return when the geocode result is empty/invalid. If not set, the original value is used."
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
         "flag": "--k_weight",
         "type": "string",
         "description": "Use population-weighted distance for reverse subcommand. (i.e. nearest.distance - k * city.population) Larger values will favor more populated cities. If not set (default), the population is not used and the nearest city is returned."

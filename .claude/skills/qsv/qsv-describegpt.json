@@ -39,12 +39,12 @@
       {
         "flag": "--api-key",
         "type": "string",
-        "description": "The API key to use. If the QSV_LLM_APIKEY envvar is set, it will be used instead. Required when the base URL is not localhost. Set to NONE to suppress sending the API key."
+        "description": "The API key to use. If set, takes precedence over the QSV_LLM_APIKEY envvar. Required when the base URL is not localhost. Set to NONE to suppress sending the API key."
       },
       {
         "flag": "--base-url",
         "type": "string",
-        "description": "The LLM API URL. Supports APIs & local LLMs compatible with the OpenAI API specification. Some common base URLs: OpenAI: https://api.openai.com/v1 Gemini: https://generativelanguage.googleapis.com/v1beta/openai TogetherAI: https://api.together.ai/v1 Local LLMs: Ollama: http://localhost:11434/v1 Jan: https://localhost:1337/v1 LM Studio: http://localhost:1234/v1 NOTE: If set, it will take precedence over the QSV_LLM_BASE_URL environment variable and the base URL specified in the prompt file.",
+        "description": "The LLM API URL. Supports APIs & local LLMs compatible with the OpenAI API specification. Some common base URLs: OpenAI: https://api.openai.com/v1 Gemini: https://generativelanguage.googleapis.com/v1beta/openai TogetherAI: https://api.together.ai/v1 Local LLMs: Ollama: http://localhost:11434/v1 Jan: https://localhost:1337/v1 LM Studio: http://localhost:1234/v1 NOTE: If set, takes precedence over the QSV_LLM_BASE_URL environment variable and the base URL specified in the prompt file.",
         "default": "http://localhost:1234/v1"
       },
       {
@@ -137,7 +137,7 @@
       {
         "flag": "--model",
         "type": "string",
-        "description": "The model to use for inferencing. If the QSV_LLM_MODEL environment variable is set, it'll be used instead.",
+        "description": "The model to use for inferencing. If set, takes precedence over the QSV_LLM_MODEL environment variable.",
         "default": "openai/gpt-oss-20b"
       },
       {
@@ -171,11 +171,6 @@
         "flag": "--prompt-file",
         "type": "string",
         "description": "The configurable TOML file containing prompts to use for inferencing. If no file is provided, default prompts will be used. The prompt file uses the Mini Jinja template engine (https://docs.rs/minijinja) See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml"
-      },
-      {
-        "flag": "--redis-cache",
-        "type": "flag",
-        "description": "Use Redis instead of the default disk cache to cache LLM completions. It connects to \"redis://127.0.0.1:6379/3\" by default, with a connection pool size of 20, with a TTL of 28 days, and cache hits NOT refreshing an existing cached value's TTL. This option automatically disables the disk cache."
       },
       {
         "flag": "--sample-size",
@@ -226,11 +221,6 @@
         "type": "string",
         "description": "The maximum length of an Example value in the dictionary. An ellipsis is appended to the truncated value. If zero, no truncation is performed.",
         "default": "25"
-      },
-      {
-        "flag": "--user-agent",
-        "type": "string",
-        "description": "Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent"
       }
     ]
   },

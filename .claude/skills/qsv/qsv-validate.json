@@ -112,11 +112,6 @@
         "default": "invalid"
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
         "flag": "--json",
         "type": "flag",
         "description": "When validating without a JSON Schema, return the RFC 4180 check as a JSON file instead of a message."

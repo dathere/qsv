@@ -37,11 +37,6 @@
         "description": "Ignore case when computing frequencies."
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected."
-      },
-      {
         "flag": "--json",
         "type": "flag",
         "description": "Output frequency table as nested JSON instead of CSV. The JSON output includes additional metadata: row count, field count, data type, cardinality, null count, sparsity, uniqueness_ratio and 17 additional stats (e.g. sum, min, max, range, sort_order, mean, sem, etc.)."

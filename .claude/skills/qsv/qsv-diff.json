@@ -52,11 +52,6 @@
         "description": "Force diff and ignore stats caches for the left & right CSVs. Otherwise, if available, the stats cache will be used to: * short-circuit the diff if their fingerprint hashes are identical. * check for primary key uniqueness when only one --key column is specified."
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
         "flag": "--key",
         "type": "string",
         "description": "The column indices that uniquely identify a record as a comma separated list of 0-based indices, e.g. 0,1,2 or column names, e.g. name,age. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. (default: 0)"

@@ -86,11 +86,6 @@
         "type": "string",
         "description": "Timeout when sniffing URLs in seconds. If 0, no timeout is used.",
         "default": "30"
-      },
-      {
-        "flag": "--user-agent",
-        "type": "string",
-        "description": "Specify custom user agent to use when sniffing a CSV on a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent"
       }
     ]
   },

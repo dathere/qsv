@@ -36,11 +36,6 @@
         "description": "Compare strings disregarding case."
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel when sorting an unsorted CSV, before deduping. When not set, the number of jobs is set to the number of CPUs detected. Does not work with --sorted option as its not multithreaded."
-      },
-      {
         "flag": "--memcheck",
         "type": "flag",
         "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics."

@@ -33,11 +33,6 @@
         "description": "Skip malformed input lines."
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
         "flag": "--output",
         "type": "string",
         "description": "Write output to <file> instead of stdout."

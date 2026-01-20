@@ -28,11 +28,6 @@
     ],
     "options": [
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel when compressing. When not set, its set to the number of CPUs - 1"
-      },
-      {
         "flag": "--output",
         "type": "string",
         "description": "Write output to <output> instead of stdout."
@@ -47,11 +42,6 @@
         "type": "string",
         "description": "Timeout for downloading URLs in seconds.",
         "default": "60"
-      },
-      {
-        "flag": "--user-agent",
-        "type": "string",
-        "description": "Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent"
       }
     ]
   },

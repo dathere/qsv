@@ -188,11 +188,26 @@ impl UsageParser {
                     // Skip options not relevant for AI agents using MCP
                     // --quiet: suppresses stderr output (not useful for agents)
                     // --help: universally available for all commands (handled by MCP server)
-                    if primary_flag == "--quiet" || primary_flag == "--help" {
+                    // --user-agent: infrastructure setting (set via environment)
+                    // --redis-cache: infrastructure setting (set via environment)
+                    // --jobs: infrastructure setting (auto-detected or set via environment)
+                    // --api-key: sensitive credential (set via environment)
+                    // --ckan-token: sensitive credential (set via environment)
+                    if matches!(
+                        primary_flag.as_str(),
+                        "--quiet"
+                            | "--help"
+                            | "--user-agent"
+                            | "--redis-cache"
+                            | "--jobs"
+                            | "--api-key"
+                            | "--ckan-token"
+                    ) {
                         continue;
                     }
                     if (flag_str == "-q" && long_flag.as_deref() == Some("--quiet"))
                         || (flag_str == "-h" && long_flag.as_deref() == Some("--help"))
+                        || (flag_str == "-j" && long_flag.as_deref() == Some("--jobs"))
                     {
                         continue;
                     }
@@ -248,7 +263,21 @@ impl UsageParser {
                     // Skip options not relevant for AI agents using MCP
                     // --quiet: suppresses stderr output (not useful for agents)
                     // --help: universally available for all commands (handled by MCP server)
-                    if flag_str == "--quiet" || flag_str == "--help" {
+                    // --user-agent: infrastructure setting (set via environment)
+                    // --redis-cache: infrastructure setting (set via environment)
+                    // --jobs: infrastructure setting (auto-detected or set via environment)
+                    // --api-key: sensitive credential (set via environment)
+                    // --ckan-token: sensitive credential (set via environment)
+                    if matches!(
+                        flag_str.as_str(),
+                        "--quiet"
+                            | "--help"
+                            | "--user-agent"
+                            | "--redis-cache"
+                            | "--jobs"
+                            | "--api-key"
+                            | "--ckan-token"
+                    ) {
                         continue;
                     }
 
@@ -331,7 +360,11 @@ impl UsageParser {
                     // Collect subcommand names (e.g., "rows", "rowskey", "columns" for cat command)
                     // Skip the main command name itself (e.g., skip "cat" when parsing cat command)
                     // Also skip "--" which is just a docopt separator, not a real subcommand
-                    if cmd_name != &self.command_name && cmd_name != "--" {
+                    // Skip geocode's "index-*" subcommands (index-check, index-update, index-load,
+                    // index-reset) as these are infrastructure commands not useful for AI agents
+                    let is_geocode_index_cmd =
+                        self.command_name == "geocode" && cmd_name.starts_with("index-");
+                    if cmd_name != &self.command_name && cmd_name != "--" && !is_geocode_index_cmd {
                         subcommands.push(cmd_name.clone());
                     }
                 },
@@ -406,6 +439,11 @@ impl UsageParser {
         for line in usage_lines {
             // Skip the --help line as it's not a real usage pattern
             if line.contains("--help") {
+                continue;
+            }
+
+            // Skip geocode's "index-*" usage lines as those subcommands are excluded
+            if self.command_name == "geocode" && line.contains("index-") {
                 continue;
             }
 

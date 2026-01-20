@@ -49,11 +49,6 @@
         "description": "Case insensitive search. This is equivalent to prefixing the regex with '(?i)'."
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected."
-      },
-      {
         "flag": "--literal",
         "type": "flag",
         "description": "Treat the regex pattern as a literal string. This allows you to search for matches that contain regex special characters."

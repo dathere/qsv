@@ -6,11 +6,17 @@ Model Context Protocol (MCP) server that exposes qsv's 67 tabular data-wrangling
 
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
-- **25 MCP Tools**: 20 common commands as individual tools + 1 generic tool + 1 pipeline tool + 3 filesystem tools
+- **26 MCP Tools**: 13 common commands as individual tools + 1 generic tool + 1 pipeline tool + 1 search tool + 4 utility + 3 filesystem tools (or 62+ in expose-all mode)
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
 - **Pipeline Support**: Chain multiple operations together seamlessly
 - **Intelligent Guidance**: Enhanced tool descriptions help Claude make optimal decisions
+
+## What's New in 14.2.1
+
+- **Auto-Detect Claude Clients** - Automatically enables expose-all-tools mode for Claude Desktop, Claude Code, and Claude Cowork
+- **Smart Tool Selection** - No manual configuration needed - all 62+ tools automatically available for Claude clients
+- **Environment Override** - Explicit `QSV_MCP_EXPOSE_ALL_TOOLS=false` disables auto-detection for all clients, forcing common-tools mode
 
 ## What's New in 14.0.0
 
@@ -152,6 +158,7 @@ This script will:
 | `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates when MCP server starts |
 | `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications in logs |
 | `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repository to check for releases |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | auto-detect | Controls tool exposure mode. `true`: always expose all 62+ tools. `false`: always use 13 common tools (overrides auto-detect). Unset: auto-detect based on client (Claude clients get all tools automatically) |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 
@@ -159,38 +166,38 @@ This script will:
 
 ## Available Tools
 
-### 20 Common Command Tools
+### 13 Common Command Tools
 
 Individual MCP tools for the most frequently used commands:
 
 | Tool | Description |
 |------|-------------|
 | `qsv_select` | Column selection (most frequently used) |
-| `qsv_stats` | Statistical analysis |
-| `qsv_frequency` | Value distribution |
-| `qsv_search` | Pattern-based filtering |
-| `qsv_sort` | Sorting operations |
-| `qsv_dedup` | Duplicate removal |
-| `qsv_join` | CSV joining |
-| `qsv_count` | Row counting |
-| `qsv_headers` | Header operations |
-| `qsv_slice` | Row selection |
-| `qsv_apply` | Column transformations |
-| `qsv_rename` | Column renaming |
-| `qsv_schema` | Schema inference |
-| `qsv_validate` | Data validation |
-| `qsv_sample` | Random sampling |
+| `qsv_stats` | Statistical analysis (creates cache) |
 | `qsv_moarstats` | Comprehensive statistics with data type inference |
 | `qsv_index` | Create index for fast random access |
-| `qsv_template` | Template-based transformations |
-| `qsv_diff` | Compare two CSV files |
+| `qsv_search` | Pattern-based filtering |
+| `qsv_frequency` | Value distribution |
+| `qsv_headers` | Header operations |
+| `qsv_count` | Row counting (instant with index) |
+| `qsv_slice` | Row selection |
+| `qsv_sqlp` | SQL queries (Polars engine) |
+| `qsv_joinp` | High-performance joins (Polars engine) |
 | `qsv_cat` | Concatenate CSV files |
+| `qsv_geocode` | Geocoding operations |
 
 ### Generic Command Tool
 
-`qsv_command` - Execute any of the remaining 47 qsv commands:
-- `to`, `tojsonl`, `flatten`, `partition`, `pseudo`, `reverse`, `sniff`, etc.
+`qsv_command` - Execute any of the remaining 49+ qsv commands not exposed as individual tools:
+- `to`, `tojsonl`, `flatten`, `partition`, `pseudo`, `reverse`, `sniff`, `sort`, `dedup`, `join`, `apply`, `rename`, `validate`, `sample`, `template`, `diff`, `schema`, etc.
 - Full list: https://github.com/dathere/qsv#commands
+
+### Utility Tools
+
+- `qsv_welcome` - Welcome message and quick start guide
+- `qsv_config` - Display current configuration
+- `qsv_examples` - Show common usage examples
+- `qsv_search_tools` - Search for qsv tools by keyword or category
 
 ### Pipeline Tool
 
@@ -208,6 +215,91 @@ Claude executes pipeline:
 - `qsv_list_files` - List tabular data files in a directory
 - `qsv_set_working_dir` - Change working directory for file operations
 - `qsv_get_working_dir` - Get current working directory
+
+### Tool Search Tool
+
+- `qsv_search_tools` - Search for qsv tools by keyword, category, or regex pattern
+
+## Tool Search Support
+
+The MCP server supports intelligent tool exposure based on the connected client:
+
+### Auto-Detection (Default)
+
+The server automatically detects Claude clients and enables all 62+ tools:
+
+| Client | Detection | Tools Exposed |
+|--------|-----------|---------------|
+| Claude Desktop | Automatic | All 62+ tools |
+| Claude Code | Automatic | All 62+ tools |
+| Claude Cowork | Automatic | All 62+ tools |
+| Other Claude clients | Automatic | All 62+ tools |
+| Unknown clients | Automatic (safe default) | 13 common tools |
+
+**No configuration required** for Claude Desktop, Claude Code, or Claude Cowork - tools are auto-enabled.
+
+### Standard Mode (Unknown Clients)
+For unknown clients, exposes 22 tools: 13 common commands + 1 generic + 1 pipeline + 4 utility + 3 filesystem tools.
+Optimized for token efficiency in typical workflows.
+
+### Manual Override
+Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override auto-detection:
+- `true`: Always expose all 62+ tools (even for unknown clients)
+- `false`: Always use 13 common tools (overrides auto-detection)
+- Unset: Auto-detect based on client (recommended)
+
+### Built-in Tool Search (`qsv_search_tools`)
+
+Search for qsv tools without exposing all tools:
+
+```
+User: "What tools can help me join two CSV files?"
+
+Claude calls: qsv_search_tools
+Parameters:
+  query: "join"
+
+Result:
+  **qsv_join** [joining]
+    Inner, outer, left, right, cross, anti & semi joins
+    💡 Join CSV files (<50MB). For large/complex joins, use qsv_joinp.
+
+  **qsv_joinp** [joining]
+    Polars-powered joins for large files
+    💡 Fast Polars-powered joins for large files (>50MB)
+```
+
+**Search Modes**:
+- **Keyword**: `query: "duplicate"` - matches names, descriptions, examples
+- **Category**: `query: "filter", category: "filtering"` - filter by category
+- **Regex**: `query: "/sort|order/"` - use regex patterns for advanced matching
+
+**Available Categories**: selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, analysis, utility
+
+### Anthropic API Integration
+
+For clients using the Anthropic API directly, configure Tool Search:
+
+```json
+{
+  "tool_choice": {
+    "type": "tool_search_tool_bm25_20251119",
+    "defer_loading": true
+  },
+  "mcp_toolset": {
+    "servers": [{
+      "name": "qsv",
+      "transport": {
+        "type": "stdio",
+        "command": "node",
+        "args": ["/path/to/mcp-server.js"]
+      }
+    }]
+  }
+}
+```
+
+With `defer_loading: true`, Claude discovers tools via search only when needed, reducing context usage.
 
 ## Enhanced Tool Descriptions
 
@@ -299,8 +391,9 @@ Result: Parquet file created
                    │ MCP Protocol (JSON-RPC 2.0)
 ┌──────────────────▼──────────────────────────┐
 │          QSV MCP Server                     │
-│  • 22 MCP Tools (commands)                  │
-│  • 3 Filesystem Tools (list/browse files)  │
+│  • 13 Common Tools + 1 Generic + 1 Pipeline │
+│  • 1 Search Tool + 4 Utility + 3 Filesystem │
+│  • 62+ tools in expose-all mode            │
 │  • Enhanced descriptions & guidance        │
 │  • Local file access & validation          │
 │  • Format auto-detection & conversion      │
@@ -495,8 +588,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-01-13
-**Version**: 14.1.0
-**Tools**: 25 (20 common + 1 generic + 1 pipeline + 3 filesystem)
-**Skills**: 67 qsv commands
+**Updated**: 2026-01-19
+**Version**: 14.2.1
+**Tools**: 26 standard mode (13 common + 1 generic + 1 pipeline + 1 search + 4 utility + 3 filesystem) or 62+ in expose-all mode
+**Skills**: 62 qsv commands
 **Status**: ✅ Production Ready

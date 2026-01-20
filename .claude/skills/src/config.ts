@@ -151,6 +151,22 @@ function getBooleanEnv(envVar: string, defaultValue: boolean): boolean {
 }
 
 /**
+ * Parse optional boolean from environment variable
+ * Returns undefined if not set, allowing auto-detection behavior
+ */
+function getOptionalBooleanEnv(envVar: string): boolean | undefined {
+  const value = process.env[envVar];
+  if (!value || value.trim() === '') return undefined;
+
+  const lower = value.toLowerCase();
+  if (lower === 'true' || lower === '1' || lower === 'yes') return true;
+  if (lower === 'false' || lower === '0' || lower === 'no') return false;
+
+  console.error(`[Config] Invalid boolean value for ${envVar}: ${value}, treating as unset`);
+  return undefined;
+}
+
+/**
  * Minimum required qsv version
  * Set to 13.0.0 to minimize support issues and encourage users to update
  */
@@ -677,4 +693,22 @@ export const config = {
    * Desktop extensions set MCPB_EXTENSION_MODE=true
    */
   isExtensionMode: isExtensionMode(),
+
+  /**
+   * Expose all tools mode
+   *
+   * Three-state configuration:
+   * - true: Always expose all 62+ qsv command tools
+   * - false: Always expose only 13 common tools (overrides auto-detect)
+   * - undefined: Auto-detect based on client (Claude clients get all tools)
+   *
+   * Auto-detection is enabled for:
+   * - Claude Desktop
+   * - Claude Code
+   * - Claude Cowork
+   * - Other Claude clients
+   *
+   * Default: undefined (auto-detect)
+   */
+  exposeAllTools: getOptionalBooleanEnv('QSV_MCP_EXPOSE_ALL_TOOLS'),
 } as const;

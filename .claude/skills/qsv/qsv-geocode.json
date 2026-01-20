@@ -11,14 +11,10 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: countryinfo, countryinfonow, index-check, index-load, index-reset, index-update, iplookup, iplookupnow, reverse, reversenow, suggest, suggestnow",
+        "description": "Subcommand to execute. Valid values: countryinfo, countryinfonow, iplookup, iplookupnow, reverse, reversenow, suggest, suggestnow",
         "enum": [
           "countryinfo",
           "countryinfonow",
-          "index-check",
-          "index-load",
-          "index-reset",
-          "index-update",
           "iplookup",
           "iplookupnow",
           "reverse",
@@ -89,11 +85,6 @@
         "flag": "--invalid-result",
         "type": "string",
         "description": "The string to return when the geocode result is empty/invalid. If not set, the original value is used."
-      },
-      {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
       },
       {
         "flag": "--k_weight",

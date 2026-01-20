@@ -69,11 +69,6 @@
         "description": "Infer date/datetime data types. This is an expensive option and should only be used when you know there are date/datetime fields. Also, if timezone is not specified in the data, it'll be set to UTC."
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. This works only when the given CSV has an index. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
         "flag": "--mad",
         "type": "flag",
         "description": "Compute the median absolute deviation (MAD). https://en.wikipedia.org/wiki/Median_absolute_deviation"

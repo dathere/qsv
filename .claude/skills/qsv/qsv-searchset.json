@@ -63,11 +63,6 @@
         "description": "Select only rows that did not match"
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected."
-      },
-      {
         "flag": "--json",
         "type": "flag",
         "description": "Return number of matches, number of rows with matches, and number of rows to stderr in JSON format."

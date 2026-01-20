@@ -53,11 +53,6 @@
         "description": "Ignore errors when running the filter command. Only valid when --filter is used."
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of splitting jobs to run in parallel. This only works when the given CSV data has an index already created. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
         "flag": "--kb-size",
         "type": "string",
         "description": "The size of each chunk in kilobytes. The number of rows in each chunk may vary, but the size of each chunk will not exceed the desired size. This option is mutually exclusive with --size and --chunks."

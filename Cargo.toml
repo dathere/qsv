@@ -101,7 +101,7 @@ crossterm = { version = "0.29", optional = true }
 csv = "1.4"
 csv-diff = "0.1"
 csv-index = "0.1"
-csv-nose = { version = "0.2", default-features = false, features = [
+csv-nose = { version = "0.3", default-features = false, features = [
     "runtime-dispatch-simd",
 ] }
 csvlens = { version = "0.15", optional = true, default-features = false, features = [
@@ -317,7 +317,7 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 cached = { git = "https://github.com/nihohit/cached", branch = "client-side-caching" }
 
 # use our patched fork of calamine with atoi_simd 0.17 dependency
-calamine = { git = "https://github.com/jqnatividad/calamine", branch = "deps-bump-calamine-0.16.0-to-0.17.0" }
+calamine = { git = "https://github.com/jqnatividad/calamine", branch = "bump-atoi_simd-to-17.0" }
 
 # use our patched fork of csvlens to replace qsv_sniffer with csv_nose until our PR is merged
 csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "deps-replace_qsv-sniffer-with-csv_nose" }
@@ -364,9 +364,9 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parki
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=py-1.37.1
-polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.37.1", optional = true }
-# polars = { git = "https://github.com/pola-rs/polars", rev = "451f247", optional = true }
+# QSV_POLARS_REV=py-1.37.1:6e4ce4f
+# polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.37.1", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "6e4ce4f", optional = true }
 
 [features]
 default = ["mimalloc"]

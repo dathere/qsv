@@ -148,11 +148,6 @@
         "default": "0"
       },
       {
-        "flag": "--redis-cache",
-        "type": "flag",
-        "description": "Use Redis to cache responses. It connects to \"redis://127.0.0.1:6379/2\" with a connection pool size of 20, with a TTL of 28 days, and a cache hit NOT renewing an entry's TTL. Adjust the QSV_FP_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS & QSV_REDIS_TTL_REFRESH respectively to change Redis settings."
-      },
-      {
         "flag": "--report",
         "type": "string",
         "description": "Creates a report of the fetchpost job. The report has the same name as the input file with the \".fetchpost-report\" suffix. There are two kinds of report - d for \"detailed\" & s for \"short\". The detailed report has the same columns as the input CSV with seven additional columns - qsv_fetchp_url, qsv_fetchp_form, qsv_fetchp_status, qsv_fetchp_cache_hit, qsv_fetchp_retries, qsv_fetchp_elapsed_ms & qsv_fetchp_response. The short report only has the seven columns without the \"qsv_fetchp_\" prefix.",
@@ -168,11 +163,6 @@
         "type": "string",
         "description": "Timeout for each URL request.",
         "default": "30"
-      },
-      {
-        "flag": "--user-agent",
-        "type": "string",
-        "description": "Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent"
       }
     ]
   },

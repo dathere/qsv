@@ -39,6 +39,11 @@
         "flag": "--output",
         "type": "string",
         "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select a subset of columns to transpose. When used with --long, this filters which columns become attribute rows (the field columns are unaffected). See 'qsv select --help' for the full selection syntax."
       }
     ]
   },

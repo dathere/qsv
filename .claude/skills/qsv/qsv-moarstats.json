@@ -1,7 +1,7 @@
 {
   "name": "qsv-moarstats",
   "version": "14.0.0",
-  "description": "Add dozens of additional statistics, including extended outlier & robust statistics to an existing stats CSV file.",
+  "description": "Add dozens of additional statistics, including extended outlier, robust & bivariate statistics to an existing stats CSV file.",
   "category": "aggregation",
   "command": {
     "binary": "qsv",
@@ -18,7 +18,7 @@
       {
         "flag": "--advanced",
         "type": "flag",
-        "description": "Compute Kurtosis, ShannonEntropy, Bimodality Coefficient, Gini Coefficient and Atkinson Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing."
+        "description": "Compute Kurtosis, Shannon Entropy, Bimodality Coefficient, Gini Coefficient and Atkinson Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing."
       },
       {
         "flag": "--bivariate",
@@ -47,11 +47,6 @@
         "flag": "--force",
         "type": "flag",
         "description": "Force recomputing stats even if valid precomputed stats cache exists."
-      },
-      {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. This works only when the given CSV has an index. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected."
       },
       {
         "flag": "--join-inputs",

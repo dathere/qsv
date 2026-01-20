@@ -92,9 +92,9 @@ export class SkillLoader {
       skill.name.toLowerCase().includes(lowerQuery) ||
       skill.description.toLowerCase().includes(lowerQuery) ||
       skill.category.toLowerCase().includes(lowerQuery) ||
-      skill.examples.some(ex =>
+      (skill.examples && skill.examples.some(ex =>
         ex.description.toLowerCase().includes(lowerQuery)
-      )
+      ))
     );
   }
 

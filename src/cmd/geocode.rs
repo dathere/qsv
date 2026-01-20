@@ -113,7 +113,7 @@ Accepts the same options as reverse, but does not require an input file.
 
   $ qsv geocode reversenow "40.71427, -74.00597"
   $ qsv geocode reversenow --country US -f %cityrecord "40.71427, -74.00597"
-  $ qsv geocode reversenow --admin1 "US:OH" "(39.32924, -82.10126)"
+  $ qsv geocode reversenow "(39.32924, -82.10126)"
 
 COUNTRYINFO
 Returns the country information for the specified ISO-3166 2-letter country code.

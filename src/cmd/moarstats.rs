@@ -1,6 +1,6 @@
 static USAGE: &str = r#"
-Add dozens of additional statistics, including extended outlier & robust statistics
-to an existing stats CSV file. It also maps the field type to the most specific
+Add dozens of additional statistics, including extended outlier, robust & bivariate
+statistics to an existing stats CSV file. It also maps the field type to the most specific
 W3C XML Schema Definition (XSD) datatype (https://www.w3.org/TR/xmlschema-2/).
 
 The `moarstats` command extends an existing stats CSV file (created by the `stats` command)
@@ -214,7 +214,7 @@ Usage:
     qsv moarstats --help
 
 moarstats options:
-    --advanced             Compute Kurtosis, ShannonEntropy, Bimodality Coefficient,
+    --advanced             Compute Kurtosis, Shannon Entropy, Bimodality Coefficient,
                            Gini Coefficient and Atkinson Index.
                            These advanced statistics computations require reading the
                            original CSV file to collect all values

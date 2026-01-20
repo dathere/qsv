@@ -48,11 +48,6 @@
         "description": "The header row. Set if other than the first non-empty row of the sheet."
       },
       {
-        "flag": "--jobs",
-        "type": "string",
-        "description": "The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected."
-      },
-      {
         "flag": "--keep-zero-time",
         "type": "flag",
         "description": "Keep the time part of a date-time field if it is 00:00:00. By default, qsv will remove the time part if it is 00:00:00."

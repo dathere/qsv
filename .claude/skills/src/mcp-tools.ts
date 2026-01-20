@@ -1541,3 +1541,189 @@ export function killAllProcesses(): void {
 export function getActiveProcessCount(): number {
   return activeProcesses.size;
 }
+
+/**
+ * Create qsv_search_tools tool definition
+ * Enables tool discovery for MCP clients without native tool search
+ */
+export function createSearchToolsTool(): McpToolDefinition {
+  return {
+    name: 'qsv_search_tools',
+    description: `Search for qsv tools by keyword, category, or use case.
+
+💡 USE WHEN:
+- Looking for the right qsv command for a specific task
+- Discovering available commands by category (filtering, transformation, etc.)
+- Finding commands by capability (regex, SQL, joins, etc.)
+
+🔍 SEARCH MODES:
+- **Keyword**: Matches tool names, descriptions, and examples
+- **Category**: Filter by category (selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, analysis, utility)
+- **Regex**: Use regex patterns for advanced matching
+
+📋 RETURNS: List of matching tools with names and descriptions, suitable for tool discovery.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query - keyword, regex pattern, or natural language description. Examples: "join", "duplicate", "SQL", "/sort|order/", "remove columns"',
+        },
+        category: {
+          type: 'string',
+          description: 'Filter by category: selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, analysis, utility',
+          enum: ['selection', 'filtering', 'transformation', 'aggregation', 'joining', 'validation', 'formatting', 'conversion', 'analysis', 'utility'],
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return (default: 5, max: 20)',
+        },
+      },
+      required: ['query'],
+    },
+  };
+}
+
+/**
+ * Handle qsv_search_tools call
+ * Searches loaded skills and returns matching tools
+ */
+export async function handleSearchToolsCall(
+  params: Record<string, unknown>,
+  loader: SkillLoader,
+): Promise<{ content: Array<{ type: string; text: string }> }> {
+  const query = params.query as string;
+  const category = params.category as string | undefined;
+  const limit = Math.min(Math.max(1, (params.limit as number) || 5), 20);
+
+  if (!query || query.trim().length === 0) {
+    return {
+      content: [{
+        type: 'text',
+        text: 'Error: query parameter is required',
+      }],
+    };
+  }
+
+  // Ensure all skills are loaded
+  await loader.loadAll();
+
+  // Search using the loader's search method
+  let results = loader.search(query);
+
+  // Apply category filter if specified
+  if (category) {
+    results = results.filter(skill => skill.category === category);
+  }
+
+  // Also check if query matches category name (for discovery)
+  const categories = ['selection', 'filtering', 'transformation', 'aggregation', 'joining', 'validation', 'formatting', 'conversion', 'analysis', 'utility'];
+  const queryLower = query.toLowerCase();
+  const matchedCategory = categories.find(cat => queryLower.includes(cat));
+
+  if (matchedCategory && !category) {
+    // Add skills from matching category that weren't already found
+    const categorySkills = loader.getByCategory(matchedCategory as any);
+    const existingNames = new Set(results.map(r => r.name));
+    for (const skill of categorySkills) {
+      if (!existingNames.has(skill.name)) {
+        results.push(skill);
+      }
+    }
+  }
+
+  // Try regex matching if query looks like a regex pattern
+  const isRegexPattern = query.startsWith('/') && query.endsWith('/');
+  if (isRegexPattern) {
+    try {
+      const regexStr = query.slice(1, -1);
+      const regex = new RegExp(regexStr, 'i');
+      const allSkills = loader.getAll();
+
+      results = allSkills.filter(skill =>
+        regex.test(skill.name) ||
+        regex.test(skill.description) ||
+        regex.test(skill.command.subcommand) ||
+        skill.examples.some(ex => regex.test(ex.description))
+      );
+    } catch (regexError) {
+      // Invalid regex, fall back to text search (already done above)
+    }
+  }
+
+  // Sort by relevance (exact name match first, then description match)
+  results.sort((a, b) => {
+    const queryLower = query.toLowerCase();
+    const aNameMatch = a.name.toLowerCase().includes(queryLower) ? 1 : 0;
+    const bNameMatch = b.name.toLowerCase().includes(queryLower) ? 1 : 0;
+    const aCommandMatch = a.command.subcommand.toLowerCase().includes(queryLower) ? 1 : 0;
+    const bCommandMatch = b.command.subcommand.toLowerCase().includes(queryLower) ? 1 : 0;
+
+    const aScore = aNameMatch * 2 + aCommandMatch * 2;
+    const bScore = bNameMatch * 2 + bCommandMatch * 2;
+
+    return bScore - aScore;
+  });
+
+  // Limit results
+  const limitedResults = results.slice(0, limit);
+
+  if (limitedResults.length === 0) {
+    // Provide helpful suggestions
+    const allCategories = loader.getCategories();
+    const totalSkills = loader.getStats().total;
+
+    return {
+      content: [{
+        type: 'text',
+        text: `No tools found matching "${query}".\n\n` +
+              `Try:\n` +
+              `- Different keywords (e.g., "filter", "join", "sort", "stats")\n` +
+              `- Category filter: ${allCategories.join(', ')}\n` +
+              `- Regex pattern: /pattern/\n\n` +
+              `Total available tools: ${totalSkills}`,
+      }],
+    };
+  }
+
+  // Format results as tool references
+  let resultText = `Found ${results.length} tool${results.length !== 1 ? 's' : ''} matching "${query}"`;
+  if (category) {
+    resultText += ` in category "${category}"`;
+  }
+  if (results.length > limit) {
+    resultText += ` (showing top ${limit})`;
+  }
+  resultText += ':\n\n';
+
+  for (const skill of limitedResults) {
+    const toolName = skill.name.replace('qsv-', 'qsv_');
+    // Truncate description to first sentence for conciseness
+    let shortDesc = skill.description.split('.')[0];
+    if (shortDesc.length > 100) {
+      shortDesc = shortDesc.substring(0, 97) + '...';
+    }
+
+    // Get when-to-use guidance if available
+    const whenToUse = WHEN_TO_USE_GUIDANCE[skill.command.subcommand];
+
+    resultText += `**${toolName}** [${skill.category}]\n`;
+    resultText += `  ${shortDesc}\n`;
+    if (whenToUse) {
+      resultText += `  💡 ${whenToUse}\n`;
+    }
+    resultText += '\n';
+  }
+
+  // Add tip for using the tools
+  resultText += `---\n`;
+  resultText += `💡 To use a tool, call it directly: e.g., \`qsv_${limitedResults[0].command.subcommand}\` with \`input_file\` parameter.\n`;
+  resultText += `📖 For detailed help on any command, use \`help: true\` parameter.`;
+
+  return {
+    content: [{
+      type: 'text',
+      text: resultText,
+    }],
+  };
+}

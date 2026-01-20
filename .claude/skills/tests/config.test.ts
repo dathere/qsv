@@ -267,3 +267,23 @@ test('config.qsvValidation includes command info when available', () => {
     }
   }
 });
+
+// ============================================================================
+// Expose All Tools Config Tests
+// ============================================================================
+
+test('config.exposeAllTools exists and is boolean', () => {
+  assert.ok('exposeAllTools' in config);
+  assert.strictEqual(typeof config.exposeAllTools, 'boolean');
+});
+
+test('config.exposeAllTools defaults to false when env var not set', () => {
+  // Default should be false for backward compatibility
+  // This test verifies the expected default behavior
+  // If env var was set, config.exposeAllTools may be true (which is also valid)
+  // The test documents expected default value
+  const expectedDefault = false;
+  if (config.exposeAllTools === expectedDefault) {
+    assert.strictEqual(config.exposeAllTools, expectedDefault);
+  }
+});

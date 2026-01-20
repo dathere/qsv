@@ -31,9 +31,11 @@ import {
   createConfigTool,
   createWelcomeTool,
   createExamplesTool,
+  createSearchToolsTool,
   handleConfigTool,
   handleWelcomeTool,
   handleExamplesTool,
+  handleSearchToolsCall,
   initiateShutdown,
   killAllProcesses,
   getActiveProcessCount,
@@ -238,38 +240,71 @@ class QsvMcpServer {
         console.error('[Server] Handling tools/list request...');
         const tools = [];
 
-      // Add common command tools (filtered by available commands in qsv binary)
+      // Get available commands from qsv binary
       const availableCommands = config.qsvValidation.availableCommands;
-      const filteredCommands = availableCommands
-        ? COMMON_COMMANDS.filter(cmd => availableCommands.includes(cmd))
-        : COMMON_COMMANDS; // Fallback to all if availableCommands not detected
 
-      console.error(`[Server] Loading common command tools (${filteredCommands.length}/${COMMON_COMMANDS.length} available)...`);
-      for (const command of filteredCommands) {
-        const skillName = `qsv-${command}`;
-        try {
-          const skill = await this.loader.load(skillName);
+      // Check if we should expose all tools (for clients with tool search support)
+      if (config.exposeAllTools) {
+        // Expose all available skills as individual tools
+        console.error('[Server] Expose all tools mode enabled - loading all skills...');
 
-          if (skill) {
+        const allSkills = await this.loader.loadAll();
+        let loadedCount = 0;
+        let skippedCount = 0;
+
+        for (const [skillName, skill] of allSkills) {
+          // Extract command name from skill name (qsv-select -> select)
+          const commandName = skillName.replace('qsv-', '');
+
+          // Skip if command not available in qsv binary
+          if (availableCommands && !availableCommands.includes(commandName)) {
+            skippedCount++;
+            continue;
+          }
+
+          try {
             const toolDef = createToolDefinition(skill);
             tools.push(toolDef);
-            console.error(`[Server] ✓ Loaded tool: ${toolDef.name}`);
-          } else {
-            console.error(`[Server] ✗ Failed to load skill: ${skillName}`);
+            loadedCount++;
+          } catch (error) {
+            console.error(`[Server] ✗ Error creating tool definition for ${skillName}:`, error);
           }
-        } catch (error) {
-          console.error(`[Server] ✗ Error creating tool definition for ${skillName}:`, error);
         }
-      }
 
-      // Log any skipped commands
-      if (availableCommands) {
-        const skippedCommands = COMMON_COMMANDS.filter(cmd => !availableCommands.includes(cmd));
-        if (skippedCommands.length > 0) {
-          console.error(`[Server] ⚠ Skipped unavailable commands: ${skippedCommands.join(', ')}`);
+        console.error(`[Server] ✓ Loaded ${loadedCount} tools (skipped ${skippedCount} unavailable commands)`);
+      } else {
+        // Standard mode: Only expose common command tools
+        const filteredCommands = availableCommands
+          ? COMMON_COMMANDS.filter(cmd => availableCommands.includes(cmd))
+          : COMMON_COMMANDS; // Fallback to all if availableCommands not detected
+
+        console.error(`[Server] Loading common command tools (${filteredCommands.length}/${COMMON_COMMANDS.length} available)...`);
+        for (const command of filteredCommands) {
+          const skillName = `qsv-${command}`;
+          try {
+            const skill = await this.loader.load(skillName);
+
+            if (skill) {
+              const toolDef = createToolDefinition(skill);
+              tools.push(toolDef);
+              console.error(`[Server] ✓ Loaded tool: ${toolDef.name}`);
+            } else {
+              console.error(`[Server] ✗ Failed to load skill: ${skillName}`);
+            }
+          } catch (error) {
+            console.error(`[Server] ✗ Error creating tool definition for ${skillName}:`, error);
+          }
         }
+
+        // Log any skipped commands
+        if (availableCommands) {
+          const skippedCommands = COMMON_COMMANDS.filter(cmd => !availableCommands.includes(cmd));
+          if (skippedCommands.length > 0) {
+            console.error(`[Server] ⚠ Skipped unavailable commands: ${skippedCommands.join(', ')}`);
+          }
+        }
+        console.error(`[Server] Loaded ${tools.length} common command tools`);
       }
-      console.error(`[Server] Loaded ${tools.length} common command tools`);
 
       // Add generic qsv_command tool
       console.error('[Server] Adding generic command tool...');
@@ -295,15 +330,16 @@ class QsvMcpServer {
         throw error;
       }
 
-      // Add welcome, config, and examples tools
-      console.error('[Server] Adding welcome, config, and examples tools...');
+      // Add welcome, config, examples, and search tools
+      console.error('[Server] Adding welcome, config, examples, and search tools...');
       try {
         tools.push(createWelcomeTool());
         tools.push(createConfigTool());
         tools.push(createExamplesTool());
-        console.error('[Server] Welcome, config, and examples tools added successfully');
+        tools.push(createSearchToolsTool());
+        console.error('[Server] Welcome, config, examples, and search tools added successfully');
       } catch (error) {
-        console.error('[Server] Error creating welcome/examples tools:', error);
+        console.error('[Server] Error creating welcome/examples/search tools:', error);
         throw error;
       }
 
@@ -490,6 +526,11 @@ class QsvMcpServer {
         // Handle examples tool
         if (name === 'qsv_examples') {
           return await handleExamplesTool();
+        }
+
+        // Handle search tools
+        if (name === 'qsv_search_tools') {
+          return await handleSearchToolsCall(args || {}, this.loader);
         }
 
         // Handle common command tools

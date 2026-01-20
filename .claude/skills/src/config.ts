@@ -677,4 +677,12 @@ export const config = {
    * Desktop extensions set MCPB_EXTENSION_MODE=true
    */
   isExtensionMode: isExtensionMode(),
+
+  /**
+   * Expose all tools mode
+   * When enabled, exposes all 62+ qsv command tools instead of just the common 13
+   * Useful when clients support tool search / deferred loading
+   * Default: false (backward compatible - only common tools exposed)
+   */
+  exposeAllTools: getBooleanEnv('QSV_MCP_EXPOSE_ALL_TOOLS', false),
 } as const;

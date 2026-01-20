@@ -25,6 +25,12 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 
 ## What's New
 
+### Version 14.2.0
+- **Tool Search Support** - New `qsv_search_tools` tool for discovering qsv commands by keyword, category, or regex
+- **Expose All Tools Mode** - `QSV_MCP_EXPOSE_ALL_TOOLS=true` exposes all 62+ qsv tools for clients with tool search/deferred loading
+- **Anthropic Tool Search Integration** - Compatible with Anthropic API Tool Search Tool (`tool_search_tool_bm25_20251119`)
+- **Improved Tool Discovery** - Search by category (selection, filtering, transformation, etc.) or use regex patterns
+
 ### Version 14.1.0
 - **Versioned MCPB Packaging** - `.mcpb` files now include version (e.g., `qsv-mcp-server-14.1.0.mcpb`)
 - **Token Optimization** - 66-76% reduction in tool description token usage

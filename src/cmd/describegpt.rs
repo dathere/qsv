@@ -245,12 +245,11 @@ describegpt options:
                              Ollama: http://localhost:11434/v1
                              Jan: https://localhost:1337/v1
                              LM Studio: http://localhost:1234/v1
-                           NOTE:
-                           If set, it will take precedence over the QSV_LLM_BASE_URL environment variable
+                           NOTE: If set, takes precedence over the QSV_LLM_BASE_URL environment variable
                            and the base URL specified in the prompt file.
                            [default: http://localhost:1234/v1]
     -m, --model <model>    The model to use for inferencing.
-                           If the QSV_LLM_MODEL environment variable is set, it'll be used instead.
+                           If set, takes precedence over the QSV_LLM_MODEL environment variable.
                            [default: openai/gpt-oss-20b]
     --language <lang>      The output language/dialect to use for the response. (e.g., "Spanish", "French",
                            "Hindi", "Mandarin", "Italian", "Castilian", "Franglais", "Taglish", "Pig Latin",
@@ -270,8 +269,8 @@ describegpt options:
                            For instance, gpt-oss-20b supports the "reasoning_effort" property.
                            e.g. to set the "reasoning_effort" property to "high" & "temperature"
                            to 0.5, use '{"reasoning_effort": "high", "temperature": 0.5}'
-    -k, --api-key <key>    The API key to use. If the QSV_LLM_APIKEY envvar is set,
-                           it will be used instead. Required when the base URL is not localhost.
+    -k, --api-key <key>    The API key to use. If set, takes precedence over the QSV_LLM_APIKEY envvar.
+                           Required when the base URL is not localhost.
                            Set to NONE to suppress sending the API key.
     -t, --max-tokens <n>   Limits the number of generated tokens in the output.
                            Set to 0 to disable token limits.

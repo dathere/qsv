@@ -652,7 +652,6 @@ fn stats_prefer_dmy() {
     let mut cmd = wrk.command("stats");
     cmd.arg("--infer-dates")
         .arg("--prefer-dmy")
-        .arg("--dataset-stats")
         .args(["--dates-whitelist", "_dT"])
         .arg(test_file);
 
@@ -679,7 +678,6 @@ fn stats_prefer_mdy() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--infer-dates")
-        .arg("--dataset-stats")
         .args(["--dates-whitelist", "_dt"])
         .arg(test_file);
 
@@ -706,7 +704,7 @@ fn stats_rounding() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(&["--everything", "--dataset-stats"])
+    cmd.args(&["--everything"])
         .args(&["--round", "8"])
         .arg(test_file);
 
@@ -753,8 +751,7 @@ fn stats_no_date_inference() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(&["--everything", "--dataset-stats"])
-        .arg(test_file);
+    cmd.args(&["--everything"]).arg(test_file);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -781,7 +778,6 @@ fn stats_with_date_inference() {
     cmd.arg("--everything")
         .arg(test_file)
         .arg("--infer-dates")
-        .arg("--dataset-stats")
         .args(["--dates-whitelist", "all"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -806,7 +802,7 @@ fn stats_with_date_inference_default_whitelist() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(&["--everything", "--dataset-stats"])
+    cmd.args(&["--everything"])
         .arg(test_file)
         .arg("--infer-dates");
 
@@ -836,8 +832,7 @@ fn stats_with_date_inference_variance_stddev() {
     cmd.arg("--everything")
         .arg(test_file)
         .arg("--infer-dates")
-        .args(["--dates-whitelist", "all"])
-        .arg("--dataset-stats");
+        .args(["--dates-whitelist", "all"]);
 
     wrk.assert_success(&mut cmd);
 
@@ -861,8 +856,7 @@ fn stats_with_date_type() {
     cmd.arg("--everything")
         .arg(test_file)
         .arg("--infer-dates")
-        .args(["--dates-whitelist", "all"])
-        .arg("--dataset-stats");
+        .args(["--dates-whitelist", "all"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -886,7 +880,7 @@ fn stats_typesonly() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(["--typesonly", "--dataset-stats"]).arg(test_file);
+    cmd.args(["--typesonly"]).arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
 
@@ -901,7 +895,7 @@ fn stats_typesonly_with_dates() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(["--typesonly", "--dataset-stats"])
+    cmd.args(["--typesonly"])
         .arg("--infer-dates")
         .args(["--dates-whitelist", "all"])
         .arg(test_file);
@@ -921,7 +915,7 @@ fn stats_typesonly_cache_threshold_zero() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(["--typesonly", "--dataset-stats"])
+    cmd.args(["--typesonly"])
         .arg("--infer-dates")
         .args(["--dates-whitelist", "all"])
         .args(&["--cache-threshold", "0"])
@@ -944,7 +938,7 @@ fn stats_typesonly_cache() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(["--typesonly", "--dataset-stats"])
+    cmd.args(["--typesonly"])
         .arg("--infer-dates")
         .args(["--dates-whitelist", "all"])
         .arg(test_file);
@@ -966,7 +960,6 @@ fn stats_cache() {
     let mut cmd = wrk.command("stats");
     cmd.arg("--infer-dates")
         .args(["--dates-whitelist", "all"])
-        .arg("--dataset-stats")
         // set cache threshold to 1 to force cache creation
         .args(&["--cache-threshold", "1"])
         .arg(test_file);
@@ -1039,7 +1032,6 @@ fn stats_cache_negative_threshold_unmet() {
     let mut cmd = wrk.command("stats");
     cmd.arg("--infer-dates")
         .args(["--dates-whitelist", "all"])
-        .arg("--dataset-stats")
         // set cache threshold to -51200 to set autoindex_size to 50 kb
         // and to force cache creation
         .args(&["--cache-threshold", "-51200"])
@@ -1115,7 +1107,7 @@ fn stats_antimodes_len_500() {
 
     let mut cmd = wrk.command("stats");
     cmd.env("QSV_ANTIMODES_LEN", "500")
-        .args(&["--everything", "--dataset-stats"])
+        .args(&["--everything"])
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
@@ -1131,9 +1123,7 @@ fn stats_infer_boolean_1_0() {
     let test_file = wrk.load_test_file("boston311-10-boolean-1or0.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("--infer-boolean")
-        .arg("--dataset-stats")
-        .arg(test_file);
+    cmd.arg("--infer-boolean").arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
 
@@ -1148,9 +1138,7 @@ fn stats_infer_boolean_t_f() {
     let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("--infer-boolean")
-        .arg("--dataset-stats")
-        .arg(test_file);
+    cmd.arg("--infer-boolean").arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
 
@@ -1168,7 +1156,6 @@ fn stats_infer_boolean_true_false() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg("true:false")
-        .arg("--dataset-stats")
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
@@ -1187,7 +1174,6 @@ fn stats_infer_boolean_true_false_error() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg("true:falsy")
-        .arg("--dataset-stats")
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
@@ -1206,7 +1192,6 @@ fn stats_infer_boolean_true_false_error_pattern_mismatch() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg("true:no")
-        .arg("--dataset-stats")
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
@@ -1222,10 +1207,7 @@ fn stats_typesonly_infer_boolean_t_f() {
     let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("--typesonly")
-        .arg("--infer-boolean")
-        .arg("--dataset-stats")
-        .arg(test_file);
+    cmd.arg("--typesonly").arg("--infer-boolean").arg(test_file);
 
     wrk.assert_success(&mut cmd);
 
@@ -1245,7 +1227,6 @@ fn stats_typesonly_infer_boolean_t_f_infer_dates() {
     cmd.arg("--typesonly")
         .arg("--infer-boolean")
         .arg("--infer-dates")
-        .arg("--dataset-stats")
         .arg(test_file);
 
     wrk.assert_success(&mut cmd);
@@ -1266,7 +1247,6 @@ fn stats_infer_boolean_invalid_pattern() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg(":false,yep:,1:0")
-        .arg("--dataset-stats")
         .arg(test_file);
 
     wrk.assert_err(&mut cmd);
@@ -1277,7 +1257,7 @@ fn stats_is_ascii() {
     let wrk = Workdir::new("stats_is_ascii");
     let test_file = wrk.load_test_file("boston311-100-with-nonascii.csv");
     let mut cmd = wrk.command("stats");
-    cmd.arg(test_file).arg("--dataset-stats").arg("--force");
+    cmd.arg(test_file).arg("--force");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -1330,9 +1310,7 @@ fn stats_leading_zero_handling() {
     );
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("--typesonly")
-        .arg("--dataset-stats")
-        .arg("data.csv");
+    cmd.arg("--typesonly").arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -1340,14 +1318,6 @@ fn stats_leading_zero_handling() {
         svec!["col1", "Integer"],
         svec!["col2", "Integer"],
         svec!["col3", "String"],
-        svec!["qsv__rowcount", "5"],
-        svec!["qsv__columncount", "3"],
-        svec!["qsv__filesize_bytes", "62"],
-        svec![
-            "qsv__fingerprint_hash",
-            //DevSkim::ignore DS173237
-            "e76ebf94f99791f11c35c429d54958b7317ac89b5511bf47dea80b7244a413da"
-        ],
     ];
     assert_eq!(got, expected);
 }
@@ -1369,7 +1339,7 @@ fn stats_zero_cv() {
     );
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("data.csv").arg("--dataset-stats");
+    cmd.arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -1402,8 +1372,7 @@ fn stats_zero_cv() {
             "n_zero",
             "n_positive",
             "max_precision",
-            "sparsity",
-            "qsv__value"
+            "sparsity"
         ],
         svec![
             "col1",
@@ -1434,8 +1403,7 @@ fn stats_zero_cv() {
             "0",
             "5",
             "",
-            "0",
-            ""
+            "0"
         ],
         svec![
             "col2",
@@ -1466,8 +1434,7 @@ fn stats_zero_cv() {
             "1",
             "2",
             "",
-            "0",
-            ""
+            "0"
         ],
         svec![
             "col3",
@@ -1498,141 +1465,12 @@ fn stats_zero_cv() {
             "1",
             "2",
             "2",
-            "0",
-            ""
+            "0"
         ],
         svec![
             "col4", "Integer", "", "935", "-900", "1000", "1900", "Unsorted", "-0.5", "", "", "",
             "", "", "", "", "187", "304.3603", "", "", "680.5703", "463176", "363.9414", "0", "1",
-            "1", "3", "", "0", ""
-        ],
-        svec![
-            "qsv__rowcount",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "5"
-        ],
-        svec![
-            "qsv__columncount",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "4"
-        ],
-        svec![
-            "qsv__filesize_bytes",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "93"
-        ],
-        svec![
-            "qsv__fingerprint_hash",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "e710e39fee131dfec40c956e1c7acd9c290fdd1e54538ba7f7cd1a1487604cb7"
+            "1", "3", "", "0"
         ],
     ];
     assert_eq!(got, expected);
@@ -1657,21 +1495,15 @@ fn stats_output_tab_delimited() {
     let out_file = wrk.path("output.tab").to_string_lossy().to_string();
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("data.csv")
-        .args(&["--output", &out_file])
-        .arg("--dataset-stats");
+    cmd.arg("data.csv").args(&["--output", &out_file]);
 
     wrk.assert_success(&mut cmd);
 
     let got = std::fs::read_to_string(out_file).unwrap();
-    let expected = r#"field	type	is_ascii	sum	min	max	range	sort_order	sortiness	min_length	max_length	sum_length	avg_length	stddev_length	variance_length	cv_length	mean	sem	geometric_mean	harmonic_mean	stddev	variance	cv	nullcount	n_negative	n_zero	n_positive	max_precision	sparsity	qsv__value
-col1	Integer		15	1	5	4	Ascending	1								3	0.6325	2.6052	2.1898	1.4142	2	47.1405	0	0	0	5		0	
-col2	Integer		10644	0	4321	4321	Descending	-1								2128.8	685.6979	0		1533.267	2350907.76	72.0249	0	0	1	4		0	
-col3	String	true		01	10		Ascending	1	2	2	10	2	0	0	0								0					0	
-qsv__rowcount																													5
-qsv__columncount																													3
-qsv__filesize_bytes																													62
-qsv__fingerprint_hash																													e31c3350e0b0bfed571dd7df649eef11f47cb07d3e3e11890f07da6bfbd6dd62
+    let expected = r#"field	type	is_ascii	sum	min	max	range	sort_order	sortiness	min_length	max_length	sum_length	avg_length	stddev_length	variance_length	cv_length	mean	sem	geometric_mean	harmonic_mean	stddev	variance	cv	nullcount	n_negative	n_zero	n_positive	max_precision	sparsity
+col1	Integer		15	1	5	4	Ascending	1								3	0.6325	2.6052	2.1898	1.4142	2	47.1405	0	0	0	5		0
+col2	Integer		10644	0	4321	4321	Descending	-1								2128.8	685.6979	0		1533.267	2350907.76	72.0249	0	0	1	4		0
+col3	String	true		01	10		Ascending	1	2	2	10	2	0	0	0								0					0
 "#;
     assert_eq!(got, expected);
 }
@@ -1695,21 +1527,15 @@ fn stats_output_ssv_delimited() {
     let out_file = wrk.path("output.ssv").to_string_lossy().to_string();
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("data.csv")
-        .args(&["--output", &out_file])
-        .arg("--dataset-stats");
+    cmd.arg("data.csv").args(&["--output", &out_file]);
 
     wrk.assert_success(&mut cmd);
 
     let got = std::fs::read_to_string(out_file).unwrap();
-    let expected = r#"field;type;is_ascii;sum;min;max;range;sort_order;sortiness;min_length;max_length;sum_length;avg_length;stddev_length;variance_length;cv_length;mean;sem;geometric_mean;harmonic_mean;stddev;variance;cv;nullcount;n_negative;n_zero;n_positive;max_precision;sparsity;qsv__value
-col1;Integer;;15;1;5;4;Ascending;1;;;;;;;;3;0.6325;2.6052;2.1898;1.4142;2;47.1405;0;0;0;5;;0;
-col2;Integer;;10644;0;4321;4321;Descending;-1;;;;;;;;2128.8;685.6979;0;;1533.267;2350907.76;72.0249;0;0;1;4;;0;
-col3;String;true;;01;10;;Ascending;1;2;2;10;2;0;0;0;;;;;;;;0;;;;;0;
-qsv__rowcount;;;;;;;;;;;;;;;;;;;;;;;;;;;;;5
-qsv__columncount;;;;;;;;;;;;;;;;;;;;;;;;;;;;;3
-qsv__filesize_bytes;;;;;;;;;;;;;;;;;;;;;;;;;;;;;62
-qsv__fingerprint_hash;;;;;;;;;;;;;;;;;;;;;;;;;;;;;e31c3350e0b0bfed571dd7df649eef11f47cb07d3e3e11890f07da6bfbd6dd62
+    let expected = r#"field;type;is_ascii;sum;min;max;range;sort_order;sortiness;min_length;max_length;sum_length;avg_length;stddev_length;variance_length;cv_length;mean;sem;geometric_mean;harmonic_mean;stddev;variance;cv;nullcount;n_negative;n_zero;n_positive;max_precision;sparsity
+col1;Integer;;15;1;5;4;Ascending;1;;;;;;;;3;0.6325;2.6052;2.1898;1.4142;2;47.1405;0;0;0;5;;0
+col2;Integer;;10644;0;4321;4321;Descending;-1;;;;;;;;2128.8;685.6979;0;;1533.267;2350907.76;72.0249;0;0;1;4;;0
+col3;String;true;;01;10;;Ascending;1;2;2;10;2;0;0;0;;;;;;;;0;;;;;0
 "#;
     assert_eq!(got, expected);
 }
@@ -1733,9 +1559,7 @@ fn stats_output_csvsz_delimited() {
     let out_file = wrk.path("output.csv.sz").to_string_lossy().to_string();
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("data.csv")
-        .args(&["--output", &out_file])
-        .arg("--dataset-stats");
+    cmd.arg("data.csv").args(&["--output", &out_file]);
 
     wrk.assert_success(&mut cmd);
 
@@ -1743,14 +1567,10 @@ fn stats_output_csvsz_delimited() {
     cmd.arg("decompress").arg(out_file.clone());
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = r#"field,type,is_ascii,sum,min,max,range,sort_order,sortiness,min_length,max_length,sum_length,avg_length,stddev_length,variance_length,cv_length,mean,sem,geometric_mean,harmonic_mean,stddev,variance,cv,nullcount,n_negative,n_zero,n_positive,max_precision,sparsity,qsv__value
-col1,Integer,,15,1,5,4,Ascending,1,,,,,,,,3,0.6325,2.6052,2.1898,1.4142,2,47.1405,0,0,0,5,,0,
-col2,Integer,,10644,0,4321,4321,Descending,-1,,,,,,,,2128.8,685.6979,0,,1533.267,2350907.76,72.0249,0,0,1,4,,0,
-col3,String,true,,01,10,,Ascending,1,2,2,10,2,0,0,0,,,,,,,,0,,,,,0,
-qsv__rowcount,,,,,,,,,,,,,,,,,,,,,,,,,,,,,5
-qsv__columncount,,,,,,,,,,,,,,,,,,,,,,,,,,,,,3
-qsv__filesize_bytes,,,,,,,,,,,,,,,,,,,,,,,,,,,,,62
-qsv__fingerprint_hash,,,,,,,,,,,,,,,,,,,,,,,,,,,,,e31c3350e0b0bfed571dd7df649eef11f47cb07d3e3e11890f07da6bfbd6dd62"#;
+    let expected = r#"field,type,is_ascii,sum,min,max,range,sort_order,sortiness,min_length,max_length,sum_length,avg_length,stddev_length,variance_length,cv_length,mean,sem,geometric_mean,harmonic_mean,stddev,variance,cv,nullcount,n_negative,n_zero,n_positive,max_precision,sparsity
+col1,Integer,,15,1,5,4,Ascending,1,,,,,,,,3,0.6325,2.6052,2.1898,1.4142,2,47.1405,0,0,0,5,,0
+col2,Integer,,10644,0,4321,4321,Descending,-1,,,,,,,,2128.8,685.6979,0,,1533.267,2350907.76,72.0249,0,0,1,4,,0
+col3,String,true,,01,10,,Ascending,1,2,2,10,2,0,0,0,,,,,,,,0,,,,,0"#;
     assert_eq!(got, expected);
 }
 
@@ -1823,7 +1643,6 @@ fn stats_vis_whitespace() {
     let mut cmd = wrk.command("stats");
     cmd.arg("--vis-whitespace")
         .arg("--everything")
-        .arg("--dataset-stats")
         .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1831,12 +1650,10 @@ fn stats_vis_whitespace() {
     // Create expected output with visualized whitespace using the exact markers
     #[rustfmt::skip]
     let expected = vec![
-        svec!["field", "type", "is_ascii", "sum", "min", "max", "range", "sort_order", "sortiness", "min_length", "max_length", "sum_length", "avg_length", "stddev_length", "variance_length", "cv_length", "mean", "sem", "geometric_mean", "harmonic_mean", "stddev", "variance", "cv", "nullcount", "n_negative", "n_zero", "n_positive", "max_precision", "sparsity", "mad", "lower_outer_fence", "lower_inner_fence", "q1", "q2_median", "q3", "iqr", "upper_inner_fence", "upper_outer_fence", "skewness", "cardinality", "uniqueness_ratio", "mode", "mode_count", "mode_occurrences", "antimode", "antimode_count", "antimode_occurrences", "percentiles", "qsv__value"], 
-        svec!["col1", "String", "false", "", "no_whitespace", "z obscure whitespace 《⋮》 《␌》 《→》 《␤》 《␎》 《␏》 《␊》 《␍》 are also visible", "", "Unsorted", "0.3333", "6", "62", "152", "21.7143", "22.883", "523.6327", "1.0538", "", "", "", "", "", "", "", "0", "", "", "", "", "0", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "value《¶》", "1", "2", "no_whitespace|the spaces in this field are visible as normal spaces|value《→》|value《⏎》|z obscure whitespa...", "5", "1", "", ""], 
-        svec!["col2", "String", "true", "", "《→》value", "also_none", "", "Unsorted", "0.2", "0", "9", "37", "5.2857", "2.5475", "6.4898", "0.482", "", "", "", "", "", "", "", "1", "", "", "", "", "0.1429", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "《¶》value", "1", "2", "NULL|《→》value|《⏎》value|    |also_none", "5", "1", "", ""], 
-        svec!["col3", "String", "true", "", "《→》value《→》", "the trailing spaces are left alone   ", "", "Unsorted", "0.3333", "5", "37", "80", "11.4286", "10.5269", "110.8163", "0.9211", "", "", "", "", "", "", "", "0", "", "", "", "", "0", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "《¶》value《¶》", "1", "2", "《→》value《→》|《⏎》value《⏎》|          |clean|the trailing spaces are left alone   ", "5", "1", "", ""], 
-        svec!["qsv__rowcount", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "7"], svec!["qsv__columncount", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "3"], 
-        svec!["qsv__filesize_bytes", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "323"], svec!["qsv__fingerprint_hash", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "04b6264caa1763c923b7fd9826a023b29135e96c33921b89a95b554fcbefccfa"]];
+        svec!["field", "type", "is_ascii", "sum", "min", "max", "range", "sort_order", "sortiness", "min_length", "max_length", "sum_length", "avg_length", "stddev_length", "variance_length", "cv_length", "mean", "sem", "geometric_mean", "harmonic_mean", "stddev", "variance", "cv", "nullcount", "n_negative", "n_zero", "n_positive", "max_precision", "sparsity", "mad", "lower_outer_fence", "lower_inner_fence", "q1", "q2_median", "q3", "iqr", "upper_inner_fence", "upper_outer_fence", "skewness", "cardinality", "uniqueness_ratio", "mode", "mode_count", "mode_occurrences", "antimode", "antimode_count", "antimode_occurrences", "percentiles"],
+        svec!["col1", "String", "false", "", "no_whitespace", "z obscure whitespace 《⋮》 《␌》 《→》 《␤》 《␎》 《␏》 《␊》 《␍》 are also visible", "", "Unsorted", "0.3333", "6", "62", "152", "21.7143", "22.883", "523.6327", "1.0538", "", "", "", "", "", "", "", "0", "", "", "", "", "0", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "value《¶》", "1", "2", "no_whitespace|the spaces in this field are visible as normal spaces|value《→》|value《⏎》|z obscure whitespa...", "5", "1", ""],
+        svec!["col2", "String", "true", "", "《→》value", "also_none", "", "Unsorted", "0.2", "0", "9", "37", "5.2857", "2.5475", "6.4898", "0.482", "", "", "", "", "", "", "", "1", "", "", "", "", "0.1429", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "《¶》value", "1", "2", "NULL|《→》value|《⏎》value|    |also_none", "5", "1", ""],
+        svec!["col3", "String", "true", "", "《→》value《→》", "the trailing spaces are left alone   ", "", "Unsorted", "0.3333", "5", "37", "80", "11.4286", "10.5269", "110.8163", "0.9211", "", "", "", "", "", "", "", "0", "", "", "", "", "0", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "《¶》value《¶》", "1", "2", "《→》value《→》|《⏎》value《⏎》|          |clean|the trailing spaces are left alone   ", "5", "1", ""]];
     //
     assert_eq!(got, expected);
 }
@@ -3047,7 +2864,6 @@ fn stats_infer_boolean_prefix_pattern() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg("t*:f*")
-        .arg("--dataset-stats")
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
@@ -3066,7 +2882,6 @@ fn stats_infer_boolean_multiple_patterns() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg("true:false,t*:f*,y*:n*")
-        .arg("--dataset-stats")
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
@@ -3085,7 +2900,6 @@ fn stats_infer_boolean_case_insensitive() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg("TRUE:FALSE")
-        .arg("--dataset-stats")
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
@@ -3115,7 +2929,6 @@ fn stats_infer_boolean_long_patterns() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg("truthy:falsy")
-        .arg("--dataset-stats")
         .arg("data.csv");
 
     let got: String = wrk.stdout(&mut cmd);
@@ -3162,7 +2975,6 @@ fn stats_infer_boolean_empty_pattern() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg("")
-        .arg("--dataset-stats")
         .arg(test_file);
 
     // This should fail with an error
@@ -3178,7 +2990,6 @@ fn stats_infer_boolean_missing_colon() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg("truefalse")
-        .arg("--dataset-stats")
         .arg(test_file);
 
     // This should fail with an error
@@ -3194,7 +3005,6 @@ fn stats_infer_boolean_missing_true_pattern() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg(":false")
-        .arg("--dataset-stats")
         .arg(test_file);
 
     // This should fail with an error
@@ -3210,7 +3020,6 @@ fn stats_infer_boolean_missing_false_pattern() {
     cmd.arg("--infer-boolean")
         .arg("--boolean-patterns")
         .arg("true:")
-        .arg("--dataset-stats")
         .arg(test_file);
 
     // This should fail with an error
@@ -5194,10 +5003,9 @@ fn stats_json_file_level_metadata() {
     let wrk = Workdir::new("stats_json_file_level_metadata");
     let test_file = wrk.load_test_file("boston311-100.csv");
 
-    // Run stats with --dataset-stats to populate the new fields
+    // Run stats to populate the cache fields
     let mut dataset_stats_cmd = wrk.command("stats");
     dataset_stats_cmd
-        .arg("--dataset-stats")
         .args(["--cache-threshold", "1"])
         .arg(&test_file);
 
@@ -5253,10 +5061,7 @@ fn stats_json_arg_input_format() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut stats_cmd = wrk.command("stats");
-    stats_cmd
-        .arg("--dataset-stats")
-        .args(["--cache-threshold", "1"])
-        .arg(&test_file);
+    stats_cmd.args(["--cache-threshold", "1"]).arg(&test_file);
 
     wrk.run(&mut stats_cmd);
 
@@ -5305,9 +5110,7 @@ fn stats_json_backward_compat() {
 
     // First, create a cache file
     let mut cmd = wrk.command("stats");
-    cmd.arg("--dataset-stats")
-        .args(["--cache-threshold", "1"])
-        .arg(&test_file);
+    cmd.args(["--cache-threshold", "1"]).arg(&test_file);
     wrk.run(&mut cmd);
 
     let json_path = wrk.path("boston311-100.stats.csv.json");
@@ -5337,7 +5140,6 @@ fn stats_json_backward_compat() {
     // don't cause crashes during the comparison logic.
     let mut recompute_stats_cmd = wrk.command("stats");
     recompute_stats_cmd
-        .arg("--dataset-stats")
         .args(["--cache-threshold", "1"])
         .arg(&test_file);
 

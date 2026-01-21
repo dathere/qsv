@@ -3438,12 +3438,13 @@ fn luau_string_find_issue_3089() {
     assert_eq!(got, expected);
 
     // Test with plain text mode
-    let mut cmd2 = wrk.command("luau");
-    cmd2.arg("map")
+    let mut cmd_2 = wrk.command("luau");
+    cmd_2
+        .arg("map")
         .arg("newpoints")
         .arg(r#"if string.find(Name,'DNE (2)', 1, true) then return 0 else return Points end"#)
         .arg("a.csv");
 
-    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
     assert_eq!(got2, expected);
 }

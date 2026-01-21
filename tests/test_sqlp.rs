@@ -903,10 +903,10 @@ fn sqlp_compress() {
 
     wrk.assert_success(&mut cmd);
 
-    let mut cmd2 = wrk.command("snappy"); // DevSkim: ignore DS126858
-    cmd2.arg("decompress").arg(out_file); // DevSkim: ignore DS126858
+    let mut cmd_2 = wrk.command("snappy"); // DevSkim: ignore DS126858
+    cmd_2.arg("decompress").arg(out_file); // DevSkim: ignore DS126858
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2); // DevSkim: ignore DS126858
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2); // DevSkim: ignore DS126858
     let expected = vec![
         svec!["column1", "column2"],
         svec!["e", "5"],

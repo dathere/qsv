@@ -1224,7 +1224,7 @@ fn fetchpost_simple_diskcache() {
 
     assert!(temp_dir.join("fetchpost_v1/conf").exists());
 
-    // let mut cmd2 = wrk.command("fetchpost");
+    // let mut cmd_2 = wrk.command("fetchpost");
     // cmd.arg("URL")
     //     .arg("bool_col,col1,number col")
     //     .arg("--jaq")
@@ -1238,7 +1238,7 @@ fn fetchpost_simple_diskcache() {
     //     // .args(&["--report", "short"])
     //     .arg("data.csv");
 
-    // let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    // let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // let mut got_parsed2: Vec<Vec<String>> = Vec::new();
     // let mut record_parsed2: Vec<String> = Vec::new();

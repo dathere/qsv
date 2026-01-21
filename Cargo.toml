@@ -279,7 +279,7 @@ uuid = { version = "1", features = ["v4", "v7"] }
 url = "2.5"
 whatlang = { version = "0.18", optional = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
-zip = "6"
+zip = "7"
 zmij = "1.0"
 
 [dev-dependencies]

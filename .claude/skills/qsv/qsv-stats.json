@@ -33,11 +33,6 @@
         "description": "Compute the cardinality and the uniqueness ratio. This is automatically enabled if --infer-boolean is enabled. https://en.wikipedia.org/wiki/Cardinality_(SQL_statements) Uses memory proportional to the number of unique values in each column."
       },
       {
-        "flag": "--dataset-stats",
-        "type": "flag",
-        "description": "Compute dataset statistics (e.g. row count, column count, file size and fingerprint hash) and add them as additional rows to the output, with the qsv__ prefix and an additional qsv__value column. The --everything option DOES NOT enable this option."
-      },
-      {
         "flag": "--dates-whitelist",
         "type": "string",
         "description": "The comma-separated, case-insensitive patterns to look for when shortlisting fields for date inferencing. i.e. if the field's name has any of these patterns, it is shortlisted for date inferencing. Set to \"all\" to inspect ALL fields for date/datetime types. Ignored if --infer-dates is false.",
@@ -51,7 +46,7 @@
       {
         "flag": "--everything",
         "type": "flag",
-        "description": "Compute all statistics available EXCEPT --dataset-stats."
+        "description": "Compute all statistics available."
       },
       {
         "flag": "--force",

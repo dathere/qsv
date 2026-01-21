@@ -122,6 +122,11 @@
         "default": "-5"
       },
       {
+        "flag": "--pct-nulls",
+        "type": "flag",
+        "description": "Include NULL values in percentage and rank calculations. When disabled (default), percentages are \"valid percentages\" calculated with NULLs excluded from the denominator, and NULL entries display empty percentage and rank values. When enabled, NULLs are included in the denominator (original behavior). Has no effect when --no-nulls is set."
+      },
+      {
         "flag": "--pretty-json",
         "type": "flag",
         "description": "Same as --json but pretty prints the JSON output."

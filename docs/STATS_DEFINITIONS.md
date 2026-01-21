@@ -15,7 +15,7 @@
   - [Median & Quartiles (Non-Streaming)](#median--quartiles-non-streaming)
   - [Cardinality & Modes (Non-Streaming)](#cardinality--modes-non-streaming)
   - [Percentiles (Non-Streaming)](#percentiles-non-streaming)
-  - [Dataset Statistics (File Level)](#dataset-statistics-file-level)
+  - [File-Level Metadata (JSON Cache)](#file-level-metadata-json-cache)
   - [Whitespace Visualization](#whitespace-visualization)
   - [Performance & Caching](#performance--caching)
 - [moarstats](#moarstats)
@@ -230,19 +230,16 @@ Computed using the [nearest-rank method](https://en.wikipedia.org/wiki/Percentil
 |:---|:---:|:---|:---|
 | `percentiles` | Variable | Custom percentiles of sorted values. | Nearest rank method for user-defined list. Weighted: weighted nearest-rank method. Multiple percentiles are separated by `QSV_STATS_SEPARATOR` (default: `|`). Special values: "deciles" expands to "10,20,30,40,50,60,70,80,90" and "quintiles" expands to "20,40,60,80". Default: "5,10,40,60,90,95". For dates/datetimes, values are returned in RFC3339 format. |
 
-### Dataset Statistics (File Level)
+### File-Level Metadata (JSON Cache)
 
-These statistics appear as additional rows with the prefix `qsv__` when `--dataset-stats` is enabled. The `qsv__value` column is added to hold the values for these dataset-level statistics.
+When stats are cached, the `.stats.csv.json` file includes file-level metadata that enables data fingerprinting and cache validation:
 
-**Note:** The `--everything` option does **NOT** enable `--dataset-stats`; it must be specified separately.
-
-| Identifier | Level | Summary | Computation |
-|:---|:---:|:---|:---|
-| `qsv__rowcount` | File | Total number of rows (records). | Count of records processed (excluding header). |
-| `qsv__columncount` | File | Total number of columns. | Count of fields in the header/first record. |
-| `qsv__filesize_bytes` | File | Total file size in bytes. | Filesystem metadata size. |
-| `qsv__fingerprint_hash`| File | Cryptographic hash of the dataset's stats. | BLAKE3 hash of the first 26 columns ("streaming" stats) + dataset stats (rowcount, columncount, filesize_bytes). This allows users to quickly detect duplicate files without having to load the entire file to compute the hash. Especially useful for detecting duplicates of very large files with pre-existing stats cache metadata. |
-| `qsv__value` | File | The value column for dataset stats. | Holds the value for the `qsv__` row (e.g., the row count integer, column count, file size, or fingerprint hash). |
+| Field | Description | Computation |
+|:---|:---|:---|
+| `record_count` | Total number of rows (records). | Count of records processed (excluding header). |
+| `field_count` | Total number of columns. | Count of fields in the header/first record. |
+| `filesize_bytes` | Total file size in bytes. | Filesystem metadata size. |
+| `hash.blake3` | BLAKE3 fingerprint hash of the dataset's stats. | BLAKE3 hash of the first 26 columns ("streaming" stats) + dataset stats (record_count, field_count, filesize_bytes). This allows users to quickly detect duplicate files without having to load the entire file to compute the hash. Especially useful for detecting duplicates of very large files with pre-existing stats cache metadata. |
 
 ### Whitespace Visualization
 

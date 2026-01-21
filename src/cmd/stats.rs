@@ -162,7 +162,7 @@ stats options:
                               See 'qsv select --help' for the format details.
                               This is provided here because piping 'qsv select'
                               into 'qsv stats' will prevent the use of indexing.
-    -E, --everything          Compute all statistics available EXCEPT --dataset-stats.
+    -E, --everything          Compute all statistics available.
     --typesonly               Infer data types only and do not compute statistics.
                               Note that if you want to infer dates and boolean types, you'll
                               still need to use the --infer-dates & --infer-boolean options.
@@ -288,10 +288,6 @@ stats options:
     --vis-whitespace          Visualize whitespace characters in the output.
                               See https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers
                               for the list of whitespace markers.
-    --dataset-stats           Compute dataset statistics (e.g. row count, column count, file size and
-                              fingerprint hash) and add them as additional rows to the output, with
-                              the qsv__ prefix and an additional qsv__value column.
-                              The --everything option DOES NOT enable this option.
 
 Common options:
     -h, --help             Display this message
@@ -394,7 +390,6 @@ pub struct Args {
     pub flag_delimiter:        Option<Delimiter>,
     pub flag_memcheck:         bool,
     pub flag_vis_whitespace:   bool,
-    pub flag_dataset_stats:    bool,
     pub flag_weight:           Option<String>,
 }
 
@@ -1304,82 +1299,45 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 stats_br_vec.push(work_br);
             }
 
-            if args.flag_dataset_stats {
-                // Add dataset-level stats as additional rows ====================
-                let num_stats_fields = stats_headers_sr.len();
-                let mut dataset_stats_br = csv::ByteRecord::with_capacity(128, num_stats_fields);
+            // Always compute file-level metadata for JSON cache
+            let ds_column_count = headers.len() as u64;
+            let ds_filesize_bytes = fs::metadata(&path)?.len();
 
-                // Helper closure to write a dataset stat row
-                let mut write_dataset_stat = |name: &[u8], value: u64| -> CliResult<()> {
-                    dataset_stats_br.clear();
-                    dataset_stats_br.push_field(name);
-                    // Fill middle columns with empty strings
-                    for _ in 2..num_stats_fields {
-                        dataset_stats_br.push_field(b"");
-                    }
-                    // write qsv__value as last column
-                    dataset_stats_br.push_field(itoa::Buffer::new().format(value).as_bytes());
-                    wtr.write_byte_record(&dataset_stats_br)
-                        .map_err(std::convert::Into::into)
-                };
+            // Compute hash of stats for data fingerprinting
+            let stats_hash = {
+                // the first FINGERPRINT_HASH_COLUMNS are used for the fingerprint hash
+                let mut hash_input = Vec::with_capacity(FINGERPRINT_HASH_COLUMNS);
 
-                // Write qsv__rowcount
-                write_dataset_stat(b"qsv__rowcount", record_count)?;
-
-                // Write qsv__columncount
-                let ds_column_count = headers.len() as u64;
-                write_dataset_stat(b"qsv__columncount", ds_column_count)?;
-
-                // Write qsv__filesize_bytes
-                let ds_filesize_bytes = fs::metadata(&path)?.len();
-                write_dataset_stat(b"qsv__filesize_bytes", ds_filesize_bytes)?;
-
-                // Compute hash of stats for data fingerprinting
-                let stats_hash = {
-                    // the first FINGERPRINT_HASH_COLUMNS are used for the fingerprint hash
-                    let mut hash_input = Vec::with_capacity(FINGERPRINT_HASH_COLUMNS);
-
-                    // First, create a stable representation of the stats
-                    for record in &stats_br_vec {
-                        // Take FINGERPRINT_HASH_COLUMNS columns only
-                        for field in record.iter().take(FINGERPRINT_HASH_COLUMNS) {
-                            let s = String::from_utf8_lossy(field);
-                            // Standardize number format
-                            if let Ok(f) = s.parse::<f64>() {
-                                hash_input.extend_from_slice(format!("{f:.10}").as_bytes());
-                            } else {
-                                hash_input.extend_from_slice(field);
-                            }
-                            hash_input.push(0x1F); // field separator
+                // First, create a stable representation of the stats
+                for record in &stats_br_vec {
+                    // Take FINGERPRINT_HASH_COLUMNS columns only
+                    for field in record.iter().take(FINGERPRINT_HASH_COLUMNS) {
+                        let s = String::from_utf8_lossy(field);
+                        // Standardize number format
+                        if let Ok(f) = s.parse::<f64>() {
+                            hash_input.extend_from_slice(format!("{f:.10}").as_bytes());
+                        } else {
+                            hash_input.extend_from_slice(field);
                         }
-                        hash_input.push(b'\n');
+                        hash_input.push(0x1F); // field separator
                     }
-
-                    // Add dataset stats
-                    hash_input.extend_from_slice(
-                        format!("{record_count}\x1F{ds_column_count}\x1F{ds_filesize_bytes}\n")
-                            .as_bytes(),
-                    );
-                    blake3::hash(hash_input.as_slice()).to_hex().to_string()
-                };
-
-                dataset_stats_br.clear();
-                dataset_stats_br.push_field(b"qsv__fingerprint_hash");
-                // Fill middle columns with empty strings
-                for _ in 2..num_stats_fields {
-                    dataset_stats_br.push_field(b"");
+                    hash_input.push(b'\n');
                 }
-                // write qsv__value as last column
-                dataset_stats_br.push_field(stats_hash.as_bytes());
-                wtr.write_byte_record(&dataset_stats_br)?;
 
-                // populate file-level metadata in the stats args json
-                current_stats_args.field_count = ds_column_count;
-                current_stats_args.filesize_bytes = ds_filesize_bytes;
-                current_stats_args.hash = FileHash {
-                    blake3: stats_hash.clone(),
-                };
-            }
+                // Add dataset stats
+                hash_input.extend_from_slice(
+                    format!("{record_count}\x1F{ds_column_count}\x1F{ds_filesize_bytes}\n")
+                        .as_bytes(),
+                );
+                blake3::hash(hash_input.as_slice()).to_hex().to_string()
+            };
+
+            // populate file-level metadata in the stats args json
+            current_stats_args.field_count = ds_column_count;
+            current_stats_args.filesize_bytes = ds_filesize_bytes;
+            current_stats_args.hash = FileHash {
+                blake3: stats_hash,
+            };
 
             // update the stats args json metadata ===============
             // if the stats run took longer than the cache threshold and the threshold > 0,
@@ -1804,7 +1762,6 @@ impl Args {
     fn stats_to_records(&self, stats: Vec<Stats>, visualize_ws: bool) -> Vec<csv::StringRecord> {
         let round_places = self.flag_round;
         let infer_boolean = self.flag_infer_boolean;
-        let dataset_stats = self.flag_dataset_stats;
         let mut records = Vec::with_capacity(stats.len());
         records.extend(repeat_n(csv::StringRecord::new(), stats.len()));
         let pool = ThreadPool::new(util::njobs(self.flag_jobs));
@@ -1815,7 +1772,7 @@ impl Args {
             pool.execute(move || {
                 // safety: this will only return an Error if the channel has been disconnected
                 // which will not happen in this case
-                send.send(stat.to_record(round_places, infer_boolean, visualize_ws, dataset_stats))
+                send.send(stat.to_record(round_places, infer_boolean, visualize_ws))
                     .unwrap();
             });
         }
@@ -2171,10 +2128,6 @@ impl Args {
         }
         if self.flag_percentiles || everything {
             fields.push("percentiles");
-        }
-        if self.flag_dataset_stats {
-            // we add the qsv__value field at the end for dataset-level stats
-            fields.push("qsv__value");
         }
 
         csv::StringRecord::from(fields)
@@ -3265,8 +3218,6 @@ impl Stats {
     /// * `round_places` - Number of decimal places to round numeric values to
     /// * `infer_boolean` - Whether to attempt boolean type inference for columns with cardinality 2
     /// * `visualize_ws` - Whether to visualize whitespace characters in string outputs
-    /// * `dataset_stats` - Whether to include dataset-level statistics (adds empty field for
-    ///   qsv__value)
     ///
     /// # Returns
     ///
@@ -3311,7 +3262,6 @@ impl Stats {
         round_places: u32,
         infer_boolean: bool,
         visualize_ws: bool,
-        dataset_stats: bool,
     ) -> csv::StringRecord {
         // empty string constant to avoid repeated allocations
         const EMPTY_STR: &str = "";
@@ -4174,11 +4124,6 @@ impl Stats {
                 },
                 _ => record.push_field(EMPTY_STR),
             }
-        }
-
-        if dataset_stats {
-            // add an empty field for qsv__value
-            record.push_field(EMPTY_STR);
         }
 
         record

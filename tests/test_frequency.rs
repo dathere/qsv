@@ -4223,8 +4223,8 @@ fn frequency_pct_nulls_sparse_data() {
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
-    // Total = 8, NULL count = 4, non-NULL total = 4
-    // a: 2/4 = 50%, b: 1/4 = 25%, (NULL): empty%
+    // Total = 7, NULL count = 4, non-NULL total = 3
+    // a: 2/3 = 66.67%, b: 1/3 = 33.33%, (NULL): empty%
     // Without --pct-nulls, percentages are calculated excluding NULLs
     // Now since percentages are "valid percentages" (of non-null values),
     // the sum of non-NULL percentages = 100%

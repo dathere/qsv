@@ -1335,9 +1335,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // populate file-level metadata in the stats args json
             current_stats_args.field_count = ds_column_count;
             current_stats_args.filesize_bytes = ds_filesize_bytes;
-            current_stats_args.hash = FileHash {
-                blake3: stats_hash,
-            };
+            current_stats_args.hash = FileHash { blake3: stats_hash };
 
             // update the stats args json metadata ===============
             // if the stats run took longer than the cache threshold and the threshold > 0,

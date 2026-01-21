@@ -751,8 +751,7 @@ fn stats_no_date_inference() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(&["--everything"])
-        .arg(test_file);
+    cmd.args(&["--everything"]).arg(test_file);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -1124,8 +1123,7 @@ fn stats_infer_boolean_1_0() {
     let test_file = wrk.load_test_file("boston311-10-boolean-1or0.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("--infer-boolean")
-        .arg(test_file);
+    cmd.arg("--infer-boolean").arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
 
@@ -1140,8 +1138,7 @@ fn stats_infer_boolean_t_f() {
     let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("--infer-boolean")
-        .arg(test_file);
+    cmd.arg("--infer-boolean").arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
 
@@ -1210,9 +1207,7 @@ fn stats_typesonly_infer_boolean_t_f() {
     let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("--typesonly")
-        .arg("--infer-boolean")
-        .arg(test_file);
+    cmd.arg("--typesonly").arg("--infer-boolean").arg(test_file);
 
     wrk.assert_success(&mut cmd);
 
@@ -1315,8 +1310,7 @@ fn stats_leading_zero_handling() {
     );
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("--typesonly")
-        .arg("data.csv");
+    cmd.arg("--typesonly").arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -1381,17 +1375,96 @@ fn stats_zero_cv() {
             "sparsity"
         ],
         svec![
-            "col1", "Integer", "", "15", "1", "5", "4", "Ascending", "1", "", "", "", "", "", "",
-            "", "3", "0.6325", "2.6052", "2.1898", "1.4142", "2", "47.1405", "0", "0", "0", "5", "",
+            "col1",
+            "Integer",
+            "",
+            "15",
+            "1",
+            "5",
+            "4",
+            "Ascending",
+            "1",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "3",
+            "0.6325",
+            "2.6052",
+            "2.1898",
+            "1.4142",
+            "2",
+            "47.1405",
+            "0",
+            "0",
+            "0",
+            "5",
+            "",
             "0"
         ],
         svec![
-            "col2", "Integer", "", "0", "-10", "10", "20", "Ascending", "1", "", "", "", "", "", "",
-            "", "0", "3.1623", "", "", "7.0711", "50", "", "0", "2", "1", "2", "", "0"
+            "col2",
+            "Integer",
+            "",
+            "0",
+            "-10",
+            "10",
+            "20",
+            "Ascending",
+            "1",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "0",
+            "3.1623",
+            "",
+            "",
+            "7.0711",
+            "50",
+            "",
+            "0",
+            "2",
+            "1",
+            "2",
+            "",
+            "0"
         ],
         svec![
-            "col3", "Float", "", "0", "-100.0", "100.0", "200", "Ascending", "1", "", "", "", "",
-            "", "", "", "0", "28.8472", "", "", "64.5043", "4160.801", "", "0", "2", "1", "2", "2",
+            "col3",
+            "Float",
+            "",
+            "0",
+            "-100.0",
+            "100.0",
+            "200",
+            "Ascending",
+            "1",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "0",
+            "28.8472",
+            "",
+            "",
+            "64.5043",
+            "4160.801",
+            "",
+            "0",
+            "2",
+            "1",
+            "2",
+            "2",
             "0"
         ],
         svec![
@@ -1422,8 +1495,7 @@ fn stats_output_tab_delimited() {
     let out_file = wrk.path("output.tab").to_string_lossy().to_string();
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("data.csv")
-        .args(&["--output", &out_file]);
+    cmd.arg("data.csv").args(&["--output", &out_file]);
 
     wrk.assert_success(&mut cmd);
 
@@ -1455,8 +1527,7 @@ fn stats_output_ssv_delimited() {
     let out_file = wrk.path("output.ssv").to_string_lossy().to_string();
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("data.csv")
-        .args(&["--output", &out_file]);
+    cmd.arg("data.csv").args(&["--output", &out_file]);
 
     wrk.assert_success(&mut cmd);
 
@@ -1488,8 +1559,7 @@ fn stats_output_csvsz_delimited() {
     let out_file = wrk.path("output.csv.sz").to_string_lossy().to_string();
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("data.csv")
-        .args(&["--output", &out_file]);
+    cmd.arg("data.csv").args(&["--output", &out_file]);
 
     wrk.assert_success(&mut cmd);
 
@@ -4991,9 +5061,7 @@ fn stats_json_arg_input_format() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut stats_cmd = wrk.command("stats");
-    stats_cmd
-        .args(["--cache-threshold", "1"])
-        .arg(&test_file);
+    stats_cmd.args(["--cache-threshold", "1"]).arg(&test_file);
 
     wrk.run(&mut stats_cmd);
 
@@ -5042,8 +5110,7 @@ fn stats_json_backward_compat() {
 
     // First, create a cache file
     let mut cmd = wrk.command("stats");
-    cmd.args(["--cache-threshold", "1"])
-        .arg(&test_file);
+    cmd.args(["--cache-threshold", "1"]).arg(&test_file);
     wrk.run(&mut cmd);
 
     let json_path = wrk.path("boston311-100.stats.csv.json");

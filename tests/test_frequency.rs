@@ -34,7 +34,8 @@ fn frequency_no_headers() {
     let (wrk, mut cmd) = setup("frequency_no_headers");
     cmd.args(["--limit", "0"])
         .args(["--select", "1"])
-        .arg("--no-headers");
+        .arg("--no-headers")
+        .arg("--pct-nulls");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got = got.into_iter().skip(1).collect();
@@ -194,6 +195,9 @@ fn frequency_no_nulls() {
 
 #[test]
 fn frequency_nulls() {
+    // With new default behavior, NULLs (empty strings) are excluded from percentage denominator
+    // and have empty percentage/rank. Literal "(NULL)" string is included normally.
+    // Data: a(4), b(1), ""(1), "(NULL)"(1) = 7 total, 6 non-NULL
     let (wrk, mut cmd) = setup("frequency_nulls");
     cmd.args(["--limit", "0"]).args(["--select", "h1"]);
 
@@ -201,10 +205,10 @@ fn frequency_nulls() {
     got.sort_unstable();
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
-        svec!["h1", "(NULL)", "1", "14.28571", "2"],
-        svec!["h1", "(NULL)", "1", "14.28571", "2"],
-        svec!["h1", "a", "4", "57.14286", "1"],
-        svec!["h1", "b", "1", "14.28571", "2"],
+        svec!["h1", "(NULL)", "1", "", ""], // empty string NULL - empty pct/rank
+        svec!["h1", "(NULL)", "1", "16.66667", "2"], // literal "(NULL)" string
+        svec!["h1", "a", "4", "66.66667", "1"],
+        svec!["h1", "b", "1", "16.66667", "2"],
     ];
     assert_eq!(got, expected);
 }
@@ -212,7 +216,7 @@ fn frequency_nulls() {
 #[test]
 fn frequency_limit() {
     let (wrk, mut cmd) = setup("frequency_limit");
-    cmd.args(["--limit", "1"]);
+    cmd.args(["--limit", "1"]).arg("--pct-nulls");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
@@ -229,7 +233,9 @@ fn frequency_limit() {
 #[test]
 fn frequency_pct_dec_places() {
     let (wrk, mut cmd) = setup("frequency_pct_dec_places");
-    cmd.args(["--limit", "1"]).args(["--pct-dec-places", "3"]);
+    cmd.args(["--limit", "1"])
+        .args(["--pct-dec-places", "3"])
+        .arg("--pct-nulls");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
@@ -246,7 +252,9 @@ fn frequency_pct_dec_places() {
 #[test]
 fn frequency_neg_pct_dec_places() {
     let (wrk, mut cmd) = setup("frequency_neg_pct_dec_places");
-    cmd.args(["--limit", "1"]).args(["--pct-dec-places", "-4"]);
+    cmd.args(["--limit", "1"])
+        .args(["--pct-dec-places", "-4"])
+        .arg("--pct-nulls");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
@@ -263,7 +271,9 @@ fn frequency_neg_pct_dec_places() {
 #[test]
 fn frequency_limit_no_other() {
     let (wrk, mut cmd) = setup("frequency_limit_no_other");
-    cmd.args(["--limit", "1"]).args(["--other-text", "<NONE>"]);
+    cmd.args(["--limit", "1"])
+        .args(["--other-text", "<NONE>"])
+        .arg("--pct-nulls");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
@@ -278,7 +288,7 @@ fn frequency_limit_no_other() {
 #[test]
 fn frequency_negative_limit() {
     let (wrk, mut cmd) = setup("frequency_negative_limit");
-    cmd.args(["--limit", "-4"]);
+    cmd.args(["--limit", "-4"]).arg("--pct-nulls");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
@@ -294,7 +304,9 @@ fn frequency_negative_limit() {
 #[test]
 fn frequency_limit_threshold() {
     let (wrk, mut cmd) = setup("frequency_limit_threshold");
-    cmd.args(["--limit", "-4"]).args(["--lmt-threshold", "4"]);
+    cmd.args(["--limit", "-4"])
+        .args(["--lmt-threshold", "4"])
+        .arg("--pct-nulls");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
@@ -310,7 +322,9 @@ fn frequency_limit_threshold() {
 #[test]
 fn frequency_limit_threshold_notmet() {
     let (wrk, mut cmd) = setup("frequency_limit_threshold_notmet");
-    cmd.args(["--limit", "-2"]).args(["--lmt-threshold", "3"]);
+    cmd.args(["--limit", "-2"])
+        .args(["--lmt-threshold", "3"])
+        .arg("--pct-nulls");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
@@ -367,7 +381,8 @@ fn frequency_custom_other_text() {
     let (wrk, mut cmd) = setup("frequency_custom_other_text");
     cmd.args(["--limit", "-4"])
         .args(["--lmt-threshold", "4"])
-        .args(["--other-text", "其他"]);
+        .args(["--other-text", "其他"])
+        .arg("--pct-nulls");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
@@ -386,7 +401,8 @@ fn frequency_custom_other_text_sorted() {
     cmd.args(["--limit", "-4"])
         .args(["--lmt-threshold", "4"])
         .args(["--other-text", "Ibang halaga"])
-        .arg("--other-sorted");
+        .arg("--other-sorted")
+        .arg("--pct-nulls");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
@@ -404,7 +420,8 @@ fn frequency_other_sorted() {
     let (wrk, mut cmd) = setup("frequency_other_sorted");
     cmd.args(["--limit", "-4"])
         .args(["--lmt-threshold", "4"])
-        .arg("--other-sorted");
+        .arg("--other-sorted")
+        .arg("--pct-nulls");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
@@ -422,7 +439,8 @@ fn frequency_other_text_none() {
     let (wrk, mut cmd) = setup("frequency_other_text_none");
     cmd.args(["--limit", "-4"])
         .args(["--lmt-threshold", "4"])
-        .args(["--other-text", "<NONE>"]);
+        .args(["--other-text", "<NONE>"])
+        .arg("--pct-nulls");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     got.sort_unstable();
@@ -499,7 +517,8 @@ fn frequency_custom_null_text() {
     let mut cmd = wrk.command("frequency");
     cmd.args(["--select", "fire_district"])
         .args(["--null-text", "<NADA Y MUCHO MAS>"])
-        .arg(testdata);
+        .arg(testdata)
+        .arg("--pct-nulls"); // Include NULLs in percentage/rank to test custom null text
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -830,7 +849,8 @@ fn frequency_vis_whitespace() {
     cmd.env("QSV_STATSCACHE_MODE", "none")
         .arg("in.csv")
         .args(["--limit", "0"])
-        .arg("--vis-whitespace");
+        .arg("--vis-whitespace")
+        .arg("--pct-nulls");
 
     wrk.assert_success(&mut cmd);
 
@@ -935,7 +955,8 @@ fn frequency_vis_whitespace_ignore_case() {
         .arg("in.csv")
         .args(["--limit", "0"])
         .arg("--vis-whitespace")
-        .arg("--ignore-case");
+        .arg("--ignore-case")
+        .arg("--pct-nulls");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     // NULL is now at the end by default (--null-sorted flag changes this behavior)
@@ -989,7 +1010,8 @@ fn frequency_json_no_headers() {
     cmd.args(["--limit", "0"])
         .args(["--select", "1"])
         .arg("--no-headers")
-        .arg("--json");
+        .arg("--json")
+        .arg("--pct-nulls");
     let got: String = wrk.stdout(&mut cmd);
     let v: Value = serde_json::from_str(&got).unwrap();
     assert!(v["input"].as_str().unwrap().ends_with("in.csv"));
@@ -1046,7 +1068,7 @@ fn frequency_json_ignore_case() {
 #[test]
 fn frequency_json_limit() {
     let (wrk, mut cmd) = setup("frequency_json_limit");
-    cmd.args(["--limit", "1"]).arg("--json");
+    cmd.args(["--limit", "1"]).arg("--json").arg("--pct-nulls");
     let got: String = wrk.stdout(&mut cmd);
     let v: Value = serde_json::from_str(&got).unwrap();
     assert!(v["input"].as_str().unwrap().ends_with("in.csv"));
@@ -1125,7 +1147,8 @@ fn frequency_json_vis_whitespace() {
         .arg("in.csv")
         .args(["--limit", "0"])
         .arg("--vis-whitespace")
-        .arg("--json");
+        .arg("--json")
+        .arg("--pct-nulls");
     wrk.assert_success(&mut cmd);
     let got: String = wrk.stdout(&mut cmd);
     let v: Value = serde_json::from_str(&got).unwrap();
@@ -1196,11 +1219,12 @@ fn frequency_toon_no_headers() {
     cmd.args(["--limit", "0"])
         .args(["--select", "1"])
         .arg("--no-headers")
-        .arg("--toon");
+        .arg("--toon")
+        .arg("--pct-nulls");
     let got: String = wrk.stdout(&mut cmd);
     // NULL entries are now at the end by default (--null-sorted flag changes this behavior)
     let expected = r#"input: in.csv
-description: "Generated with `qsv frequency in.csv --limit 0 --select 1 --no-headers --toon`"
+description: "Generated with `qsv frequency in.csv --limit 0 --select 1 --no-headers --toon --pct-nulls`"
 rowcount: 8
 fieldcount: 1
 fields[1]:
@@ -1263,10 +1287,10 @@ rank_strategy: dense"#
 #[test]
 fn frequency_toon_limit() {
     let (wrk, mut cmd) = setup("frequency_toon_limit");
-    cmd.args(["--limit", "1"]).arg("--toon");
+    cmd.args(["--limit", "1"]).arg("--toon").arg("--pct-nulls");
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"input: in.csv
-description: "Generated with `qsv frequency in.csv --limit 1 --toon`"
+description: "Generated with `qsv frequency in.csv --limit 1 --toon --pct-nulls`"
 rowcount: 7
 fieldcount: 2
 fields[2]:
@@ -1369,7 +1393,8 @@ fn frequency_toon_vis_whitespace() {
         .arg("in.csv")
         .args(["--limit", "0"])
         .arg("--vis-whitespace")
-        .arg("--toon");
+        .arg("--toon")
+        .arg("--pct-nulls");
     wrk.assert_success(&mut cmd);
     let got: String = wrk.stdout(&mut cmd);
     let v: Value = toon_format::decode(
@@ -3726,7 +3751,8 @@ fn frequency_null_sorted() {
     let mut cmd = wrk.command("frequency");
     cmd.arg("in.csv")
         .args(["--limit", "0"])
-        .arg("--null-sorted");
+        .arg("--null-sorted")
+        .arg("--pct-nulls"); // Include NULLs in percentage/rank to test sorting behavior
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     // With --null-sorted and descending order (default), NULL (3) should come first (rank 1)
@@ -3758,7 +3784,9 @@ fn frequency_other_before_null_at_end() {
     wrk.create("in.csv", rows);
 
     let mut cmd = wrk.command("frequency");
-    cmd.arg("in.csv").args(["--limit", "2"]); // Top 2: a (4) and NULL (2), rest to Other
+    cmd.arg("in.csv")
+        .args(["--limit", "2"]) // Top 2: a (4) and NULL (2), rest to Other
+        .arg("--pct-nulls"); // Include NULLs in percentage/rank
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     // Expected order: a (most frequent), Other (b, c, d = 3 count), NULL (2)
@@ -3835,7 +3863,8 @@ fn frequency_null_sorted_asc() {
     cmd.arg("in.csv")
         .args(["--limit", "0"])
         .arg("--null-sorted")
-        .arg("--asc");
+        .arg("--asc")
+        .arg("--pct-nulls"); // Include NULLs in percentage/rank to test sorting behavior
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     // With --asc, least frequent first: NULL (1), b (1), a (3)
@@ -4108,4 +4137,251 @@ fn frequency_no_other_with_no_nulls() {
     // Should only have "a" (most frequent), no "Other", no NULL
     assert_eq!(got.len(), 2, "Should only have header and one data row");
     assert_eq!(got[1][1], "a", "Only 'a' should appear");
+}
+
+#[test]
+fn frequency_pct_nulls_default() {
+    // Default behavior: NULLs excluded from percentage denominator
+    // NULL entries should have empty percentage and rank
+    let wrk = Workdir::new("frequency_pct_nulls_default");
+    let rows = vec![
+        svec!["h1"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec![""], // NULL - this should have empty pct and rank
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--limit", "0"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    // Total = 6, NULL count = 1, non-NULL total = 5
+    // a: 4/5 = 80%, b: 1/5 = 20%, (NULL): empty%, empty rank
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "(NULL)", "1", "", ""], // NULL has empty percentage and rank
+        svec!["h1", "a", "4", "80", "1"],
+        svec!["h1", "b", "1", "20", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_pct_nulls_enabled() {
+    // With --pct-nulls: original behavior, NULLs included in percentage calculation
+    let wrk = Workdir::new("frequency_pct_nulls_enabled");
+    let rows = vec![
+        svec!["h1"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec![""], // NULL
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--limit", "0"]).arg("--pct-nulls");
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    // Total = 6, all included in percentage
+    // a: 4/6 = 66.67%, b: 1/6 = 16.67%, (NULL): 1/6 = 16.67%
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "(NULL)", "1", "16.66667", "2"],
+        svec!["h1", "a", "4", "66.66667", "1"],
+        svec!["h1", "b", "1", "16.66667", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_pct_nulls_sparse_data() {
+    // Many NULLs - verify NULL doesn't dominate percentages
+    let wrk = Workdir::new("frequency_pct_nulls_sparse_data");
+    let rows = vec![
+        svec!["h1"],
+        svec!["a"],
+        svec!["a"],
+        svec![""], // NULL
+        svec![""], // NULL
+        svec![""], // NULL
+        svec![""], // NULL
+        svec!["b"],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--limit", "0"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    // Total = 8, NULL count = 4, non-NULL total = 4
+    // a: 2/4 = 50%, b: 1/4 = 25%, (NULL): empty%
+    // Without --pct-nulls, percentages are calculated excluding NULLs
+    // Now since percentages are "valid percentages" (of non-null values),
+    // the sum of non-NULL percentages = 100%
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        // NULL sorted at end with empty pct/rank, but when sorted alphabetically
+        // "(NULL)" comes before "a" and "b"
+        svec!["h1", "(NULL)", "4", "", ""],
+        svec!["h1", "a", "2", "66.66667", "1"],
+        svec!["h1", "b", "1", "33.33333", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_pct_nulls_all_nulls() {
+    // All NULL column - all percentages should be empty
+    let wrk = Workdir::new("frequency_pct_nulls_all_nulls");
+    let rows = vec![svec!["h1"], svec![""], svec![""], svec![""]];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--limit", "0"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // All values are NULL, so non-NULL total = 0
+    // (NULL) should have count but empty percentage
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "(NULL)", "3", "", ""],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_pct_nulls_json() {
+    // Verify JSON outputs null for percentage/rank when --pct-nulls is false
+    let wrk = Workdir::new("frequency_pct_nulls_json");
+    let rows = vec![
+        svec!["h1"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec![""], // NULL
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--limit", "0"]).arg("--json");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let json: Value = serde_json::from_str(&got).unwrap();
+
+    // Check that the NULL entry doesn't have percentage and rank fields
+    let frequencies = json["fields"][0]["frequencies"].as_array().unwrap();
+    let null_entry = frequencies
+        .iter()
+        .find(|f| f["value"].as_str() == Some("(NULL)"))
+        .unwrap();
+
+    // With skip_serializing_if, the fields should not be present
+    assert!(
+        null_entry.get("percentage").is_none(),
+        "NULL entry should not have percentage field in JSON"
+    );
+    assert!(
+        null_entry.get("rank").is_none(),
+        "NULL entry should not have rank field in JSON"
+    );
+
+    // Non-NULL entries should have percentage and rank
+    let a_entry = frequencies
+        .iter()
+        .find(|f| f["value"].as_str() == Some("a"))
+        .unwrap();
+    assert!(
+        a_entry.get("percentage").is_some(),
+        "Non-NULL entry should have percentage field"
+    );
+    assert!(
+        a_entry.get("rank").is_some(),
+        "Non-NULL entry should have rank field"
+    );
+}
+
+#[test]
+fn frequency_pct_nulls_with_no_nulls() {
+    // --pct-nulls should have no effect when --no-nulls is set
+    let wrk = Workdir::new("frequency_pct_nulls_with_no_nulls");
+    let rows = vec![
+        svec!["h1"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec![""], // NULL
+    ];
+    wrk.create("in.csv", rows);
+
+    // Run with just --no-nulls
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv").args(["--limit", "0"]).arg("--no-nulls");
+    let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
+
+    // Run with both --no-nulls and --pct-nulls
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv")
+        .args(["--limit", "0"])
+        .arg("--no-nulls")
+        .arg("--pct-nulls");
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+
+    // Results should be identical (--pct-nulls has no effect when --no-nulls is set)
+    assert_eq!(
+        got1, got2,
+        "--pct-nulls should have no effect when --no-nulls is set"
+    );
+}
+
+#[test]
+fn frequency_pct_nulls_with_limit() {
+    // Verify "Other" category percentage is correct with --pct-nulls=false
+    // Use multi-column CSV to ensure NULL is properly detected (single-column trailing
+    // empty lines are treated as EOF by the CSV parser)
+    let wrk = Workdir::new("frequency_pct_nulls_with_limit");
+    let rows = vec![
+        svec!["h1", "h2"],
+        svec!["a", "1"],
+        svec!["a", "2"],
+        svec!["a", "3"],
+        svec!["b", "4"],
+        svec!["c", "5"],
+        svec!["d", "6"],
+        svec!["", "7"], // NULL in h1
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--select", "h1", "--limit", "1"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Total = 7 records: a(3), b(1), c(1), d(1), NULL(1)
+    // Non-NULL total = 6
+    // With --limit 1: a(3) is top value
+    // Other(3) = b+c+d = 3 unique values, 3 total count
+    // NULL(1) has empty percentage and rank
+    //
+    // Percentages (denominator = 6 non-NULL):
+    // a: 3/6 = 50%
+    // Other: 100 - 50 = 50% (this represents b+c+d = 3/6 = 50%)
+    // NULL: empty (excluded from percentage calculation)
+
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h1", "a", "3", "50", "1"],
+        svec!["h1", "Other (3)", "3", "50", "0"],
+        svec!["h1", "(NULL)", "1", "", ""],
+    ];
+    assert_eq!(got, expected);
 }

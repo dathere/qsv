@@ -138,6 +138,13 @@ frequency options:
                             [default: (NULL)]
     --no-nulls              Don't include NULLs in the frequency table.
                             This is equivalent to --null-text "<NONE>".
+    --pct-nulls             Include NULL values in percentage and rank calculations.
+                            When disabled (default), percentages are "valid percentages"
+                            calculated with NULLs excluded from the denominator, and
+                            NULL entries display empty percentage and rank values.
+                            When enabled, NULLs are included in the denominator
+                            (original behavior).
+                            Has no effect when --no-nulls is set.
     -i, --ignore-case       Ignore case when computing frequencies.
     --no-float <cols>       Exclude Float columns from frequency analysis.
                             Floats typically contain continuous values where
@@ -264,6 +271,7 @@ pub struct Args {
     pub flag_no_trim:         bool,
     pub flag_null_text:       String,
     pub flag_no_nulls:        bool,
+    pub flag_pct_nulls:       bool,
     pub flag_ignore_case:     bool,
     pub flag_no_float:        Option<String>,
     #[cfg(feature = "luau")]
@@ -301,8 +309,10 @@ static ALL_UNIQUE_TEXT: OnceLock<Vec<u8>> = OnceLock::new();
 struct FrequencyEntry {
     value:      String,
     count:      u64,
-    percentage: f64,
-    rank:       f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    percentage: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rank:       Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -688,11 +698,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             for processed_freq in &processed_frequencies {
                 // Format rank: show as integer if whole number, otherwise with decimals
+                // Sentinel value -1.0 indicates NULL entry with --pct-nulls=false (empty rank)
                 rank_buffer.clear();
-                if processed_freq.rank.fract() == 0.0 {
-                    rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
-                } else {
-                    rank_buffer.push_str(zmij_buffer.format(processed_freq.rank));
+                if processed_freq.rank >= 0.0 {
+                    if processed_freq.rank.fract() == 0.0 {
+                        rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
+                    } else {
+                        rank_buffer.push_str(zmij_buffer.format(processed_freq.rank));
+                    }
                 }
 
                 row = vec![
@@ -732,11 +745,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             for processed_freq in &processed_frequencies {
                 // Format rank: show as integer if whole number, otherwise with decimals
+                // Sentinel value -1.0 indicates NULL entry with --pct-nulls=false (empty rank)
                 rank_buffer.clear();
-                if processed_freq.rank.fract() == 0.0 {
-                    rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
-                } else {
-                    rank_buffer.push_str(zmij_buffer.format(processed_freq.rank));
+                if processed_freq.rank >= 0.0 {
+                    if processed_freq.rank.fract() == 0.0 {
+                        rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
+                    } else {
+                        rank_buffer.push_str(zmij_buffer.format(processed_freq.rank));
+                    }
                 }
 
                 row = vec![
@@ -790,6 +806,7 @@ fn apply_ranking_strategy_unweighted(
     strategy: RankStrategy,
     pct_factor: f64,
     null_val: &[u8],
+    pct_nulls: bool,
 ) -> (Vec<(Vec<u8>, u64, f64, f64)>, u64, f64) {
     let mut counts_final: Vec<(Vec<u8>, u64, f64, f64)> =
         Vec::with_capacity(groups.iter().map(|(_, group)| group.len()).sum::<usize>() + 1);
@@ -804,12 +821,21 @@ fn apply_ranking_strategy_unweighted(
                 group.sort_unstable();
                 for byte_string in group {
                     count_sum += count;
-                    let pct = count as f64 * pct_factor;
-                    pct_sum += pct;
 
                     if byte_string.is_empty() {
-                        counts_final.push((null_val.to_vec(), count, pct, current_rank));
+                        if pct_nulls {
+                            // Original behavior: include NULL in percentage
+                            let pct = count as f64 * pct_factor;
+                            pct_sum += pct;
+                            counts_final.push((null_val.to_vec(), count, pct, current_rank));
+                        } else {
+                            // New behavior: exclude NULL from percentage/rank
+                            // Use -1.0 as sentinel values for empty percentage and rank
+                            counts_final.push((null_val.to_vec(), count, -1.0, -1.0));
+                        }
                     } else {
+                        let pct = count as f64 * pct_factor;
+                        pct_sum += pct;
                         counts_final.push((byte_string, count, pct, current_rank));
                     }
                 }
@@ -823,12 +849,18 @@ fn apply_ranking_strategy_unweighted(
                 let group_len = group.len();
                 for byte_string in group {
                     count_sum += count;
-                    let pct = count as f64 * pct_factor;
-                    pct_sum += pct;
 
                     if byte_string.is_empty() {
-                        counts_final.push((null_val.to_vec(), count, pct, current_rank));
+                        if pct_nulls {
+                            let pct = count as f64 * pct_factor;
+                            pct_sum += pct;
+                            counts_final.push((null_val.to_vec(), count, pct, current_rank));
+                        } else {
+                            counts_final.push((null_val.to_vec(), count, -1.0, -1.0));
+                        }
                     } else {
+                        let pct = count as f64 * pct_factor;
+                        pct_sum += pct;
                         counts_final.push((byte_string, count, pct, current_rank));
                     }
                 }
@@ -843,12 +875,18 @@ fn apply_ranking_strategy_unweighted(
                 let max_rank = current_rank + group_len as f64 - 1.0;
                 for byte_string in group {
                     count_sum += count;
-                    let pct = count as f64 * pct_factor;
-                    pct_sum += pct;
 
                     if byte_string.is_empty() {
-                        counts_final.push((null_val.to_vec(), count, pct, max_rank));
+                        if pct_nulls {
+                            let pct = count as f64 * pct_factor;
+                            pct_sum += pct;
+                            counts_final.push((null_val.to_vec(), count, pct, max_rank));
+                        } else {
+                            counts_final.push((null_val.to_vec(), count, -1.0, -1.0));
+                        }
                     } else {
+                        let pct = count as f64 * pct_factor;
+                        pct_sum += pct;
                         counts_final.push((byte_string, count, pct, max_rank));
                     }
                 }
@@ -861,12 +899,18 @@ fn apply_ranking_strategy_unweighted(
                 group.sort_unstable();
                 for byte_string in group {
                     count_sum += count;
-                    let pct = count as f64 * pct_factor;
-                    pct_sum += pct;
 
                     if byte_string.is_empty() {
-                        counts_final.push((null_val.to_vec(), count, pct, current_rank));
+                        if pct_nulls {
+                            let pct = count as f64 * pct_factor;
+                            pct_sum += pct;
+                            counts_final.push((null_val.to_vec(), count, pct, current_rank));
+                        } else {
+                            counts_final.push((null_val.to_vec(), count, -1.0, -1.0));
+                        }
                     } else {
+                        let pct = count as f64 * pct_factor;
+                        pct_sum += pct;
                         counts_final.push((byte_string, count, pct, current_rank));
                     }
                     current_rank += 1.0;
@@ -881,12 +925,18 @@ fn apply_ranking_strategy_unweighted(
                 let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
                 for byte_string in group {
                     count_sum += count;
-                    let pct = count as f64 * pct_factor;
-                    pct_sum += pct;
 
                     if byte_string.is_empty() {
-                        counts_final.push((null_val.to_vec(), count, pct, avg_rank));
+                        if pct_nulls {
+                            let pct = count as f64 * pct_factor;
+                            pct_sum += pct;
+                            counts_final.push((null_val.to_vec(), count, pct, avg_rank));
+                        } else {
+                            counts_final.push((null_val.to_vec(), count, -1.0, -1.0));
+                        }
                     } else {
+                        let pct = count as f64 * pct_factor;
+                        pct_sum += pct;
                         counts_final.push((byte_string, count, pct, avg_rank));
                     }
                 }
@@ -935,6 +985,7 @@ fn apply_ranking_strategy_weighted(
     strategy: RankStrategy,
     pct_factor: f64,
     null_val: &[u8],
+    pct_nulls: bool,
 ) -> (Vec<(Vec<u8>, f64, f64, f64)>, f64, f64) {
     let mut counts_final: Vec<(Vec<u8>, f64, f64, f64)> =
         Vec::with_capacity(groups.iter().map(|(_, group)| group.len()).sum::<usize>() + 1);
@@ -949,12 +1000,18 @@ fn apply_ranking_strategy_weighted(
                 group.sort_unstable();
                 for byte_string in group {
                     count_sum += weight;
-                    let pct = weight * pct_factor;
-                    pct_sum += pct;
 
                     if byte_string.is_empty() {
-                        counts_final.push((null_val.to_vec(), weight, pct, current_rank));
+                        if pct_nulls {
+                            let pct = weight * pct_factor;
+                            pct_sum += pct;
+                            counts_final.push((null_val.to_vec(), weight, pct, current_rank));
+                        } else {
+                            counts_final.push((null_val.to_vec(), weight, -1.0, -1.0));
+                        }
                     } else {
+                        let pct = weight * pct_factor;
+                        pct_sum += pct;
                         counts_final.push((byte_string, weight, pct, current_rank));
                     }
                 }
@@ -968,12 +1025,18 @@ fn apply_ranking_strategy_weighted(
                 let group_len = group.len();
                 for byte_string in group {
                     count_sum += weight;
-                    let pct = weight * pct_factor;
-                    pct_sum += pct;
 
                     if byte_string.is_empty() {
-                        counts_final.push((null_val.to_vec(), weight, pct, current_rank));
+                        if pct_nulls {
+                            let pct = weight * pct_factor;
+                            pct_sum += pct;
+                            counts_final.push((null_val.to_vec(), weight, pct, current_rank));
+                        } else {
+                            counts_final.push((null_val.to_vec(), weight, -1.0, -1.0));
+                        }
                     } else {
+                        let pct = weight * pct_factor;
+                        pct_sum += pct;
                         counts_final.push((byte_string, weight, pct, current_rank));
                     }
                 }
@@ -988,12 +1051,18 @@ fn apply_ranking_strategy_weighted(
                 let max_rank = current_rank + group_len as f64 - 1.0;
                 for byte_string in group {
                     count_sum += weight;
-                    let pct = weight * pct_factor;
-                    pct_sum += pct;
 
                     if byte_string.is_empty() {
-                        counts_final.push((null_val.to_vec(), weight, pct, max_rank));
+                        if pct_nulls {
+                            let pct = weight * pct_factor;
+                            pct_sum += pct;
+                            counts_final.push((null_val.to_vec(), weight, pct, max_rank));
+                        } else {
+                            counts_final.push((null_val.to_vec(), weight, -1.0, -1.0));
+                        }
                     } else {
+                        let pct = weight * pct_factor;
+                        pct_sum += pct;
                         counts_final.push((byte_string, weight, pct, max_rank));
                     }
                 }
@@ -1006,12 +1075,18 @@ fn apply_ranking_strategy_weighted(
                 group.sort_unstable();
                 for byte_string in group {
                     count_sum += weight;
-                    let pct = weight * pct_factor;
-                    pct_sum += pct;
 
                     if byte_string.is_empty() {
-                        counts_final.push((null_val.to_vec(), weight, pct, current_rank));
+                        if pct_nulls {
+                            let pct = weight * pct_factor;
+                            pct_sum += pct;
+                            counts_final.push((null_val.to_vec(), weight, pct, current_rank));
+                        } else {
+                            counts_final.push((null_val.to_vec(), weight, -1.0, -1.0));
+                        }
                     } else {
+                        let pct = weight * pct_factor;
+                        pct_sum += pct;
                         counts_final.push((byte_string, weight, pct, current_rank));
                     }
                     current_rank += 1.0;
@@ -1026,12 +1101,18 @@ fn apply_ranking_strategy_weighted(
                 let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
                 for byte_string in group {
                     count_sum += weight;
-                    let pct = weight * pct_factor;
-                    pct_sum += pct;
 
                     if byte_string.is_empty() {
-                        counts_final.push((null_val.to_vec(), weight, pct, avg_rank));
+                        if pct_nulls {
+                            let pct = weight * pct_factor;
+                            pct_sum += pct;
+                            counts_final.push((null_val.to_vec(), weight, pct, avg_rank));
+                        } else {
+                            counts_final.push((null_val.to_vec(), weight, -1.0, -1.0));
+                        }
                     } else {
+                        let pct = weight * pct_factor;
+                        pct_sum += pct;
                         counts_final.push((byte_string, weight, pct, avg_rank));
                     }
                 }
@@ -1317,6 +1398,10 @@ impl Args {
 
     /// Format percentage with proper decimal places
     fn format_percentage(&self, percentage: f64, abs_dec_places: u32) -> String {
+        // Sentinel value -1.0 indicates NULL entry with --pct-nulls=false
+        if percentage < 0.0 {
+            return String::new();
+        }
         let pct_decimal = Decimal::from_f64(percentage).unwrap_or_default();
         let pct_scale = if self.flag_pct_dec_places < 0 {
             let current_scale = pct_decimal.scale();
@@ -1361,12 +1446,28 @@ impl Args {
         // Calculate total weight (sum of all weights)
         let total_weight: f64 = weighted_map.values().sum();
 
+        // When --pct-nulls is false, extract NULL entries before ranking
+        // so that non-NULL values get correct ranks (excluding NULLs from ranking)
+        let null_entry = if !self.flag_pct_nulls {
+            counts
+                .iter()
+                .position(|(k, _)| k.is_empty())
+                .map(|pos| counts.remove(pos))
+        } else {
+            None
+        };
+
+        // Calculate NULL weight for adjusted percentage
+        let null_weight = null_entry.as_ref().map_or(0.0, |(_, w)| *w);
+
         // Apply limits
         let unique_counts_len = counts.len();
         apply_limits_weighted(&mut counts, self.flag_limit, self.flag_lmt_threshold);
 
-        let pct_factor = if total_weight > 0.0 {
-            100.0_f64 / total_weight
+        // Calculate pct_factor: when --pct-nulls is false, exclude NULLs from denominator
+        let adjusted_total = total_weight - null_weight;
+        let pct_factor = if adjusted_total > 0.0 {
+            100.0_f64 / adjusted_total
         } else {
             0.0_f64
         };
@@ -1399,22 +1500,63 @@ impl Args {
         // safety: NULL_VAL is set in the main function
         let null_val = NULL_VAL.get().unwrap();
 
-        // Apply ranking strategy
+        // Apply ranking strategy (NULLs already removed when pct_nulls is false)
         let (mut counts_final, count_sum, pct_sum) = apply_ranking_strategy_weighted(
             weight_groups,
             self.flag_rank_strategy,
             pct_factor,
             null_val,
+            self.flag_pct_nulls,
         );
 
-        let other_weight = total_weight - count_sum;
-        let other_unique_count = unique_counts_len - counts_final.len();
+        // Add NULL entry back with sentinel values when --pct-nulls is false
+        // Insert at the correct sorted position based on weight to preserve sort order
+        if let Some((_, null_weight_val)) = null_entry {
+            let null_entry_final = (null_val.to_vec(), null_weight_val, -1.0, -1.0);
+            // Find the correct insertion position based on weight (descending or ascending)
+            let insert_pos = if self.flag_asc {
+                // Ascending: find first position where weight > null_weight
+                counts_final
+                    .iter()
+                    .position(|(_, w, _, _)| *w > null_weight_val)
+                    .unwrap_or(counts_final.len())
+            } else {
+                // Descending: find first position where weight < null_weight
+                counts_final
+                    .iter()
+                    .position(|(_, w, _, _)| *w < null_weight_val)
+                    .unwrap_or(counts_final.len())
+            };
+            counts_final.insert(insert_pos, null_entry_final);
+        }
+
+        // Calculate "Other" category
+        // When NULL was extracted, adjust calculations to exclude it
+        let (adjusted_other_weight, adjusted_unique_len) = if null_weight > 0.0 {
+            // Subtract null_weight from other_weight since NULL is handled separately
+            (
+                total_weight - count_sum - null_weight,
+                unique_counts_len.saturating_sub(1), // NULL was removed from counts
+            )
+        } else {
+            (total_weight - count_sum, unique_counts_len)
+        };
+
+        // When NULL was extracted and re-added, don't count it as a "shown" entry
+        // because it's separate from the top-k values
+        let shown_count = if null_weight > 0.0 {
+            counts_final.len().saturating_sub(1)
+        } else {
+            counts_final.len()
+        };
+        let other_unique_count = adjusted_unique_len.saturating_sub(shown_count);
         // Only create Other entry if there are actually remaining unique values
         // and the weight is positive. This prevents "Other (0)" entries when
         // --limit 0 is used and all values are included.
         // Use 100.0 - pct_sum to ensure percentages sum exactly to 100%,
         // handling floating-point precision issues consistently with unweighted case.
-        if other_weight > 0.0 && other_unique_count > 0 && self.flag_other_text != "<NONE>" {
+        if adjusted_other_weight > 0.0 && other_unique_count > 0 && self.flag_other_text != "<NONE>"
+        {
             counts_final.push((
                 format!(
                     "{} ({})",
@@ -1423,11 +1565,12 @@ impl Args {
                 )
                 .as_bytes()
                 .to_vec(),
-                other_weight,
+                adjusted_other_weight,
                 100.0_f64 - pct_sum,
                 0.0,
             ));
         }
+
         counts_final
     }
 
@@ -1460,6 +1603,21 @@ impl Args {
             false
         };
 
+        // When --pct-nulls is false, extract NULL entries before ranking
+        // so that non-NULL values get correct ranks (excluding NULLs from ranking)
+        let null_entry = if !self.flag_pct_nulls {
+            // Find and remove NULL entry from counts
+            counts
+                .iter()
+                .position(|(k, _)| k.is_empty())
+                .map(|pos| counts.remove(pos))
+        } else {
+            None
+        };
+
+        // Calculate NULL count for adjusted percentage
+        let null_count = null_entry.as_ref().map_or(0, |(_, c)| *c);
+
         // Apply limits (including unique limit logic for all-unique columns)
         apply_limits_unweighted(
             &mut counts,
@@ -1469,8 +1627,10 @@ impl Args {
             all_unique,
         );
 
-        let pct_factor = if total_count > 0 {
-            100.0_f64 / total_count.to_f64().unwrap_or(1.0_f64)
+        // Calculate pct_factor: when --pct-nulls is false, exclude NULLs from denominator
+        let adjusted_total = total_count.saturating_sub(null_count);
+        let pct_factor = if adjusted_total > 0 {
+            100.0_f64 / adjusted_total.to_f64().unwrap_or(1.0_f64)
         } else {
             0.0_f64
         };
@@ -1481,17 +1641,59 @@ impl Args {
         // safety: NULL_VAL is set in the main function
         let null_val = NULL_VAL.get().unwrap();
 
-        // Apply ranking strategy
+        // Apply ranking strategy (NULLs already removed when pct_nulls is false)
         let (mut counts_final, count_sum, pct_sum) = apply_ranking_strategy_unweighted(
             count_groups,
             self.flag_rank_strategy,
             pct_factor,
             null_val,
+            self.flag_pct_nulls,
         );
 
-        let other_count = total_count - count_sum;
-        if other_count > 0 && self.flag_other_text != "<NONE>" {
-            let other_unique_count = unique_counts_len - counts_final.len();
+        // Add NULL entry back with sentinel values when --pct-nulls is false
+        // Insert at the correct sorted position based on count to preserve sort order
+        if let Some((_, null_count_val)) = null_entry {
+            let null_entry_final = (null_val.to_vec(), null_count_val, -1.0, -1.0);
+            // Find the correct insertion position based on count (descending or ascending)
+            let insert_pos = if self.flag_asc {
+                // Ascending: find first position where count > null_count
+                counts_final
+                    .iter()
+                    .position(|(_, c, _, _)| *c > null_count_val)
+                    .unwrap_or(counts_final.len())
+            } else {
+                // Descending: find first position where count < null_count
+                counts_final
+                    .iter()
+                    .position(|(_, c, _, _)| *c < null_count_val)
+                    .unwrap_or(counts_final.len())
+            };
+            counts_final.insert(insert_pos, null_entry_final);
+        }
+
+        // Calculate "Other" category
+        // When NULL was extracted, adjust calculations to exclude it
+        let (adjusted_other_count, adjusted_unique_len) = if null_count > 0 {
+            // Subtract null_count from other_count since NULL is handled separately
+            (
+                total_count
+                    .saturating_sub(count_sum)
+                    .saturating_sub(null_count),
+                unique_counts_len.saturating_sub(1), // NULL was removed from counts
+            )
+        } else {
+            (total_count - count_sum, unique_counts_len)
+        };
+
+        if adjusted_other_count > 0 && self.flag_other_text != "<NONE>" {
+            // When NULL was extracted and re-added, don't count it as a "shown" entry
+            // because it's separate from the top-k values
+            let shown_count = if null_count > 0 {
+                counts_final.len().saturating_sub(1)
+            } else {
+                counts_final.len()
+            };
+            let other_unique_count = adjusted_unique_len.saturating_sub(shown_count);
             counts_final.push((
                 format!(
                     "{} ({})",
@@ -1500,11 +1702,12 @@ impl Args {
                 )
                 .as_bytes()
                 .to_vec(),
-                other_count,
+                adjusted_other_count,
                 100.0_f64 - pct_sum,
                 0.0, // Special rank for "Other" category
             ));
         }
+
         counts_final
     }
 
@@ -2258,16 +2461,29 @@ impl Args {
                 stats: std::mem::take(field_stats),
                 frequencies: processed_frequencies
                     .iter()
-                    .map(|pf| FrequencyEntry {
-                        value:      if self.flag_vis_whitespace {
-                            util::visualize_whitespace(&String::from_utf8_lossy(&pf.value))
+                    .map(|pf| {
+                        // Sentinel value -1.0 indicates NULL entry with --pct-nulls=false
+                        let (pct_opt, rank_opt) = if pf.percentage < 0.0 {
+                            (None, None)
                         } else {
-                            String::from_utf8_lossy(&pf.value).into_owned()
-                        },
-                        count:      pf.count,
-                        percentage: fast_float2::parse(&pf.formatted_percentage)
-                            .unwrap_or(pf.percentage),
-                        rank:       pf.rank,
+                            (
+                                Some(
+                                    fast_float2::parse(&pf.formatted_percentage)
+                                        .unwrap_or(pf.percentage),
+                                ),
+                                Some(pf.rank),
+                            )
+                        };
+                        FrequencyEntry {
+                            value:      if self.flag_vis_whitespace {
+                                util::visualize_whitespace(&String::from_utf8_lossy(&pf.value))
+                            } else {
+                                String::from_utf8_lossy(&pf.value).into_owned()
+                            },
+                            count:      pf.count,
+                            percentage: pct_opt,
+                            rank:       rank_opt,
+                        }
                     })
                     .collect(),
             }

@@ -4329,12 +4329,12 @@ fn frequency_pct_nulls_with_no_nulls() {
     let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
 
     // Run with both --no-nulls and --pct-nulls
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv")
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv")
         .args(["--limit", "0"])
         .arg("--no-nulls")
         .arg("--pct-nulls");
-    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // Results should be identical (--pct-nulls has no effect when --no-nulls is set)
     assert_eq!(

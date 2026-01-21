@@ -606,6 +606,7 @@ fn get_unique_values(
         flag_asc: false,
         flag_null_text: "(NULL)".to_string(),
         flag_no_nulls: true,
+        flag_pct_nulls: false,
         flag_no_trim: false,
         flag_ignore_case: args.flag_ignore_case,
         flag_no_float: None,

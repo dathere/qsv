@@ -311,7 +311,7 @@ The `feature_capable`, `lite` and `datapusher_plus` are MUTUALLY EXCLUSIVE featu
 There are four binary variants of qsv:
 
 * `qsv` - [feature](#feature-flags)-capable(✨), with the [prebuilt binaries](https://github.com/dathere/qsv/releases/latest) enabling all applicable features except Python [^3]
-* `qsvpy` - same as `qsv` but with the Python feature enabled. Four subvariants are available - qsvpy310, qsvpy311, qsvpy312 & qsvpy313 - which are compiled with the latest patch version of Python 3.10, 3.11, 3.12 & 3.13 respectively. We need to have a binary for each Python version as Python is dynamically linked ([more info](docs/INTERPRETERS.md#building-qsv-with-python-feature)).
+* `qsvpy` - same as `qsv` but with the Python feature enabled. Three subvariants are available - qsvpy311, qsvpy312 & qsvpy313 - which are compiled with the latest patch version of Python 3.11, 3.12 & 3.13 respectively. We need to have a binary for each Python version as Python is dynamically linked ([more info](docs/INTERPRETERS.md#building-qsv-with-python-feature)).
 * `qsvlite` - all features disabled (~13% of the size of `qsv`)
 * `qsvdp` - optimized for use with [DataPusher+](https://github.com/dathere/datapusher-plus) with only DataPusher+ relevant commands; an embedded [`luau`](#luau_deeplink) interpreter; [`applydp`](#applydp_deeplink), a slimmed-down version of the `apply` feature; the `--progressbar` option disabled; and the self-update only checking for new releases, requiring an explicit `--update` (~12% of the the size of `qsv`).
 

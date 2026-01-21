@@ -4330,7 +4330,8 @@ fn frequency_pct_nulls_with_no_nulls() {
 
     // Run with both --no-nulls and --pct-nulls
     let mut cmd_2 = wrk.command("frequency");
-    cmd_2.arg("in.csv")
+    cmd_2
+        .arg("in.csv")
         .args(["--limit", "0"])
         .arg("--no-nulls")
         .arg("--pct-nulls");

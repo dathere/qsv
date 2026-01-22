@@ -89,5 +89,31 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  }
+  },
+  "examples": [
+    {
+      "description": "semicolon",
+      "command": "qsv excel input.ods -o output.csv"
+    },
+    {
+      "description": "tab",
+      "command": "qsv excel input.xlsx -d \";\" > output.csv"
+    },
+    {
+      "description": "this exports the 3nd sheet (0-based index)",
+      "command": "qsv excel --sheet \"Sheet 3\" input.xlsx"
+    },
+    {
+      "description": "short CSV mode is much faster, but doesn't contain as much metadata",
+      "command": "qsv excel --metadata c input.xlsx"
+    },
+    {
+      "description": "pretty-printed JSON - first letter is capital J",
+      "command": "qsv excel --metadata j input.xlsx"
+    },
+    {
+      "description": "short, minified JSON mode - first letter is capital S",
+      "command": "qsv excel --metadata J input.xlsx"
+    }
+  ]
 }

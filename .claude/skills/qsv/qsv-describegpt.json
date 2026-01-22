@@ -217,5 +217,63 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  }
+  },
+  "examples": [
+    {
+      "description": "Generate a Data Dictionary, Description & Tags of data.csv using default OpenAI gpt-oss-20b model (replace <API_KEY> with your OpenAI API key)",
+      "command": "qsv describegpt data.csv --api-key <API_KEY> --all"
+    },
+    {
+      "description": "Generate a Data Dictionary of data.csv using the DeepSeek R1:14b model on a local Ollama instance",
+      "command": "qsv describegpt data.csv -u http://localhost:11434/v1 --model deepseek-r1:14b --dictionary"
+    },
+    {
+      "description": "Ask questions about the sample NYC 311 dataset using LM Studio with the default gpt-oss-20b model. Questions that can be answered using the Summary Statistics & Frequency Distribution of the dataset.",
+      "command": "qsv describegpt NYC_311.csv --prompt \"What is the most common complaint?\""
+    },
+    {
+      "description": "Ask detailed questions that require SQL queries and auto-invoke SQL RAG mode Generate a DuckDB SQL query to answer the question",
+      "command": "qsv describegpt NYC_311.csv -p \"Can you tell me how many complaints were resolved?\""
+    },
+    {
+      "description": "Prompt requires a SQL query. Execute query and save results to a file with the --sql-results option. If generated SQL query runs successfully, the file is \"results.csv\". Otherwise, it is \"results.sql\".",
+      "command": "qsv describegpt NYC_311.csv -p \"What's the breakdown of complaint types by borough descending order?\""
+    },
+    {
+      "description": "Cache Dictionary, Description & Tags inference results using the Redis cache instead of the disk cache",
+      "command": "qsv describegpt NYC_311.csv -p \"Aggregate complaint types by community board\" --sql-results results"
+    },
+    {
+      "description": "Get fresh Description & Tags inference results from the LLM and refresh disk cache entries for both",
+      "command": "qsv describegpt data.csv --all --redis-cache"
+    },
+    {
+      "description": "Get fresh inference results from the LLM and refresh the Redis cache entries for all three",
+      "command": "qsv describegpt data.csv --description --tags --fresh"
+    },
+    {
+      "description": "Forget a cached response for data.csv's data dictionary if it exists and then exit",
+      "command": "qsv describegpt data.csv --all --redis-cache --fresh"
+    },
+    {
+      "description": "Flush/Remove ALL cached entries in the disk cache",
+      "command": "qsv describegpt data.csv --dictionary --forget"
+    },
+    {
+      "description": "Flush/Remove ALL cached entries in the Redis cache",
+      "command": "qsv describegpt --flush-cache"
+    },
+    {
+      "description": "Exclude ID columns from frequency analysis to reduce overhead",
+      "command": "qsv describegpt --redis-cache --flush-cache"
+    },
+    {
+      "description": "Reduce frequency context by showing only top 5 values per field",
+      "command": "qsv describegpt data.csv --dictionary --freq-options \"--select '!id,!uuid' --limit 20\""
+    },
+    {
+      "description": "Get weighted frequencies with ascending sort",
+      "command": "qsv describegpt data.csv --all --freq-options \"--limit 5\""
+    }
+  ]
 }

@@ -85,11 +85,6 @@
         "description": "Write output to <file> instead of stdout."
       },
       {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show progress bars. Not valid for stdin. Ignored in qsvdp. In SEQUENTIAL MODE, the progress bar will show the number of rows processed. In RANDOM ACCESS MODE, the progress bar will show the position of the current row being processed. Enabling this option will also suppress stderr output from the END script."
-      },
-      {
         "flag": "--remap",
         "type": "flag",
         "description": "Only the listed new columns are written to the output CSV. Only applies to \"map\" subcommand."

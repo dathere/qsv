@@ -56,11 +56,6 @@
         "flag": "--output",
         "type": "string",
         "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show progress bars. Not valid for stdin."
       }
     ]
   },

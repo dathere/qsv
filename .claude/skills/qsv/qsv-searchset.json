@@ -88,11 +88,6 @@
         "description": "Write output to <file> instead of stdout."
       },
       {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show progress bars. Not valid for stdin."
-      },
-      {
         "flag": "--quick",
         "type": "flag",
         "description": "Return on first match with an exitcode of 0, returning the row number of the first match to stderr. Return exit code 1 if no match is found. No output is produced. Ignored if --json is enabled."

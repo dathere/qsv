@@ -81,11 +81,6 @@
         "description": "Prefer to parse dates in dmy format. Otherwise, use mdy format."
       },
       {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show progress bars. Not valid for stdin."
-      },
-      {
         "flag": "--rename",
         "type": "string",
         "description": "New name for the transformed column."

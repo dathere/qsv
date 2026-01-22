@@ -76,11 +76,6 @@
         "description": "Write output to <file> instead of stdout."
       },
       {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show progress bars. Not valid for stdin."
-      },
-      {
         "flag": "--rename",
         "type": "string",
         "description": "New name for the transformed column."

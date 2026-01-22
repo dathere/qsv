@@ -46,11 +46,6 @@
         "description": "Same as --json but in pretty JSON format."
       },
       {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show progress bars. Not valid for stdin."
-      },
-      {
         "flag": "--select",
         "type": "string",
         "description": "Select a subset of columns to check for sort. See 'qsv select --help' for the format details."

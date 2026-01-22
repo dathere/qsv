@@ -88,11 +88,6 @@
         "description": "Preview the first N matches or all the matches found in N milliseconds, whichever occurs first. Returns the preview to stderr. Output is still written to stdout or --output as usual. Only applicable when CSV is NOT indexed, as it's read sequentially. Forces a sequential search, even if the CSV is indexed."
       },
       {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show progress bars. Not valid for stdin. Only applicable when CSV is NOT indexed."
-      },
-      {
         "flag": "--quick",
         "type": "flag",
         "description": "Return on first match with an exitcode of 0, returning the row number of the first match to stderr. Return exit code 1 if no match is found. No output is produced."

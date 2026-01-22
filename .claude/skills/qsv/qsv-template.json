@@ -79,11 +79,6 @@
         "default": "1000"
       },
       {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show progress bars. Not valid for stdin."
-      },
-      {
         "flag": "--template",
         "type": "string",
         "description": "MiniJinja template string to use (alternative to --template-file)"

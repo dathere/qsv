@@ -76,11 +76,6 @@
         "default": "5,95"
       },
       {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show progress bars when computing bivariate statistics."
-      },
-      {
         "flag": "--round",
         "type": "string",
         "description": "Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule.",

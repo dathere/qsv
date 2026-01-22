@@ -33,11 +33,6 @@
         "description": "Write output to <output> instead of stdout."
       },
       {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show download progress bars. Only valid for URL input."
-      },
-      {
         "flag": "--timeout",
         "type": "string",
         "description": "Timeout for downloading URLs in seconds.",

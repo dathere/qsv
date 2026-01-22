@@ -51,11 +51,6 @@
         "description": "Return results in pretty JSON format."
       },
       {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show progress bars. Only valid for URL input."
-      },
-      {
         "flag": "--quick",
         "type": "flag",
         "description": "When sniffing a non-CSV remote file, only download the first chunk of the file before attempting to detect the mime type. This is faster but less accurate as some mime types cannot be detected with just the first downloaded chunk."

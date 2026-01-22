@@ -120,11 +120,6 @@
         "description": "Write output to <file> instead of stdout."
       },
       {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin."
-      },
-      {
         "flag": "--rename",
         "type": "string",
         "description": "New name for the transformed column."

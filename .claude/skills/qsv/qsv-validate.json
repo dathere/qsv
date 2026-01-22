@@ -127,11 +127,6 @@
         "description": "Same as --json, but pretty printed."
       },
       {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show progress bars. Not valid for stdin."
-      },
-      {
         "flag": "--size-limit",
         "type": "string",
         "description": "Set the approximate size limit, in megabytes, of a compiled regex.",

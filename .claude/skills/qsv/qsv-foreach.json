@@ -49,11 +49,6 @@
         "description": "When set, the file will be considered to have no headers."
       },
       {
-        "flag": "--progressbar",
-        "type": "flag",
-        "description": "Show progress bars. Not valid for stdin."
-      },
-      {
         "flag": "--unify",
         "type": "flag",
         "description": "If the output of the executed command is a CSV, unify the result by skipping headers on each subsequent command. Does not work when --dry-run is true."

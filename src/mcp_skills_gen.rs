@@ -884,6 +884,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // Commands excluded from MCP skills generation:
     // - clipboard: not useful for AI agents (requires system clipboard)
     // - color: not useful for AI agents (terminal color testing)
+    // - geoconvert: experimental command (not yet stable)
     // - lens: interactive TUI viewer (requires terminal)
     // - prompt: interactive prompt builder (requires terminal)
     let commands = vec![
@@ -911,7 +912,6 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "foreach",
         "frequency",
         "geocode",
-        "geoconvert",
         "headers",
         "index",
         "input",

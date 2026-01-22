@@ -1448,13 +1448,13 @@ impl Args {
 
         // When --pct-nulls is false, extract NULL entries before ranking
         // so that non-NULL values get correct ranks (excluding NULLs from ranking)
-        let null_entry = if !self.flag_pct_nulls {
+        let null_entry = if self.flag_pct_nulls {
+            None
+        } else {
             counts
                 .iter()
                 .position(|(k, _)| k.is_empty())
                 .map(|pos| counts.remove(pos))
-        } else {
-            None
         };
 
         // Calculate NULL weight for adjusted percentage
@@ -1605,14 +1605,14 @@ impl Args {
 
         // When --pct-nulls is false, extract NULL entries before ranking
         // so that non-NULL values get correct ranks (excluding NULLs from ranking)
-        let null_entry = if !self.flag_pct_nulls {
+        let null_entry = if self.flag_pct_nulls {
+            None
+        } else {
             // Find and remove NULL entry from counts
             counts
                 .iter()
                 .position(|(k, _)| k.is_empty())
                 .map(|pos| counts.remove(pos))
-        } else {
-            None
         };
 
         // Calculate NULL count for adjusted percentage

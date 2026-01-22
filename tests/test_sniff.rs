@@ -36,7 +36,7 @@ File Size (bytes): 27
 Sampled Records: 2
 Estimated: false
 Num Records: 2
-Avg Record Len (bytes): 10
+Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: false
 Fields:
@@ -69,7 +69,7 @@ File Size (bytes): 27
 Sampled Records: 2
 Estimated: false
 Num Records: 2
-Avg Record Len (bytes): 10
+Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: true
 Fields:
@@ -153,7 +153,7 @@ fn sniff_url_snappy() {
     let expected_end = r#"Sampled Records: 100
 Estimated: false
 Num Records: 100
-Avg Record Len (bytes): 473
+Avg Record Len (bytes): 472
 Num Fields: 29
 Stats Types: false
 Fields:
@@ -219,7 +219,7 @@ fn sniff_file_snappy() {
     let expected_end = r#"Sampled Records: 100
 Estimated: false
 Num Records: 100
-Avg Record Len (bytes): 473
+Avg Record Len (bytes): 472
 Num Fields: 29
 Stats Types: false
 Fields:
@@ -279,7 +279,7 @@ File Size (bytes): 27
 Sampled Records: 2
 Estimated: false
 Num Records: 2
-Avg Record Len (bytes): 10
+Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: false
 Fields:
@@ -339,7 +339,7 @@ fn sniff_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end: &str = r#"sampled_records":3,"estimated":false,"num_records":3,"avg_record_len":17,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
+    let expected_end: &str = r#"sampled_records":3,"estimated":false,"num_records":3,"avg_record_len":16,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
 
     assert!(got.ends_with(expected_end));
 }
@@ -354,7 +354,7 @@ fn sniff_flexible_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = r#","delimiter_char":",","header_row":true,"preamble_rows":3,"quote_char":"\"","flexible":true,"is_utf8":true,"detected_mime":"application/csv","detected_kind":"Other","retrieved_size":135,"file_size":135,"sampled_records":5,"estimated":false,"num_records":5,"avg_record_len":16,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
+    let expected_end = r#","delimiter_char":",","header_row":true,"preamble_rows":3,"quote_char":"\"","flexible":true,"is_utf8":true,"detected_mime":"application/csv","detected_kind":"Other","retrieved_size":135,"file_size":135,"sampled_records":5,"estimated":false,"num_records":5,"avg_record_len":15,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
 
     assert!(got.ends_with(expected_end));
 }
@@ -369,7 +369,7 @@ fn sniff_pretty_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 3,"quote_char": "\"","flexible": true,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 116,"file_size": 116,"sampled_records": 3,"estimated": false,"num_records": 3,"avg_record_len": 17,"num_fields": 4,"stats_types": false,"fields": [
+    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 3,"quote_char": "\"","flexible": true,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 116,"file_size": 116,"sampled_records": 3,"estimated": false,"num_records": 3,"avg_record_len": 16,"num_fields": 4,"stats_types": false,"fields": [
     "h1",
     "h2",
     "h3",
@@ -482,7 +482,7 @@ fn sniff_prefer_dmy() {
     let expected_end = r#"Sampled Records: 100
 Estimated: false
 Num Records: 100
-Avg Record Len (bytes): 473
+Avg Record Len (bytes): 472
 Num Fields: 29
 Stats Types: false
 Fields:

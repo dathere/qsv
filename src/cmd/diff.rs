@@ -17,42 +17,38 @@ NOTE: diff does not support stdin. A file path is required for both arguments.
 
 Examples:
 
-Find the difference between two CSVs:
-    $ qsv diff left.csv right.csv
+# Find the difference between two CSVs
+qsv diff left.csv right.csv
 
-Find the difference between two CSVs. The right CSV has no headers:
-    $ qsv diff left.csv --no-headers-right right-noheaders.csv
+# Find the difference between two CSVs when the right CSV has no headers
+qsv diff left.csv --no-headers-right right-noheaders.csv
 
-Find the difference between two CSVs. The left CSV uses a tab as the delimiter:
-    $ qsv diff --delimiter-left '\t' left.csv right-tab.tsv
-    # or ';' as the delimiter
-    $ qsv diff --delimiter-left ';' left.csv right-semicolon.csv
+# Find the difference between two CSVs when the left CSV uses a tab delimiter
+qsv diff --delimiter-left '\t' left.csv right-tab.tsv
 
-Find the difference between two CSVs. The output CSV uses a tab as the delimiter
-and is written to a file:
-    $ qsv diff -o diff-tab.tsv --delimiter-output '\t' left.csv right.csv
-    # or ';' as the delimiter
-    $ qsv diff -o diff-semicolon.csv --delimiter-output ';' left.csv right.csv
+# Find the difference between two CSVs when the left CSV uses a semicolon delimiter
+qsv diff --delimiter-left ';' left.csv right-semicolon.csv
 
-Find the difference between two CSVs, comparing records that have the same values
-in the first two columns:
-    $ qsv diff --key 0,1 left.csv right.csv
+# Find the difference between two CSVs and write output with tab delimiter to a file
+qsv diff -o diff-tab.tsv --delimiter-output '\t' left.csv right.csv
 
-Find the difference between two CSVs, comparing records that have the same values
-in the first two columns and sort the result by the first two columns:
-    $ qsv diff -k 0,1 --sort-columns 0,1 left.csv right.csv
+# Find the difference between two CSVs and write output with semicolon delimiter to a file
+qsv diff -o diff-semicolon.csv --delimiter-output ';' left.csv right.csv
 
-Find the difference between two CSVs, but do not output equal field values
-in the result (equal field values are replaced with the empty string). Key
-field values _will_ appear in the output:
-    $ qsv diff --drop-equal-fields left.csv right.csv
+# Find the difference comparing records with the same values in the first two columns
+qsv diff --key 0,1 left.csv right.csv
 
-Find the difference between two CSVs, but do not output headers in the result:
-    $ qsv diff --no-headers-output left.csv right.csv
+# Find the difference using first two columns as key and sort result by those columns
+qsv diff -k 0,1 --sort-columns 0,1 left.csv right.csv
 
-Find the difference between two CSVs. Both CSVs have no headers, but the result should have
-headers, so generic headers will be used in the form of: _col_1, _col_2, etc.:
-    $ qsv diff --no-headers-left --no-headers-right left.csv right.csv
+# Find the difference but replace equal field values with empty string (key fields still appear)
+qsv diff --drop-equal-fields left.csv right.csv
+
+# Find the difference but do not output headers in the result
+qsv diff --no-headers-output left.csv right.csv
+
+# Find the difference when both CSVs have no headers (generic headers _col_1, _col_2, etc. are used)
+qsv diff --no-headers-left --no-headers-right left.csv right.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_diff.rs
 

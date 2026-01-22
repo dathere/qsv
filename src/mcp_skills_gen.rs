@@ -188,6 +188,7 @@ impl UsageParser {
                     // Skip options not relevant for AI agents using MCP
                     // --quiet: suppresses stderr output (not useful for agents)
                     // --help: universally available for all commands (handled by MCP server)
+                    // --progressbar: visual terminal output (not useful for agents)
                     // --user-agent: infrastructure setting (set via environment)
                     // --redis-cache: infrastructure setting (set via environment)
                     // --jobs: infrastructure setting (auto-detected or set via environment)
@@ -197,6 +198,7 @@ impl UsageParser {
                         primary_flag.as_str(),
                         "--quiet"
                             | "--help"
+                            | "--progressbar"
                             | "--user-agent"
                             | "--redis-cache"
                             | "--jobs"
@@ -263,6 +265,7 @@ impl UsageParser {
                     // Skip options not relevant for AI agents using MCP
                     // --quiet: suppresses stderr output (not useful for agents)
                     // --help: universally available for all commands (handled by MCP server)
+                    // --progressbar: visual terminal output (not useful for agents)
                     // --user-agent: infrastructure setting (set via environment)
                     // --redis-cache: infrastructure setting (set via environment)
                     // --jobs: infrastructure setting (auto-detected or set via environment)
@@ -272,6 +275,7 @@ impl UsageParser {
                         flag_str.as_str(),
                         "--quiet"
                             | "--help"
+                            | "--progressbar"
                             | "--user-agent"
                             | "--redis-cache"
                             | "--jobs"

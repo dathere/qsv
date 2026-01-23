@@ -12,6 +12,26 @@ Either way, the output will not only be deduplicated, it will also be sorted.
 
 A duplicate count will also be sent to <stderr>.
 
+Examples:
+
+  # Deduplicate an unsorted CSV file:
+  qsv dedup unsorted.csv -o deduped.csv
+
+  # Deduplicate a sorted CSV file:
+  qsv sort unsorted.csv | qsv dedup --sorted -o deduped.csv
+
+  # Deduplicate based on specific columns:
+  qsv dedup --select col1,col2 unsorted.csv -o deduped.csv
+
+  # Deduplicate based on numeric comparison of col1 and col2 columns:
+  qsv dedup -s col1,col2 --numeric unsorted.csv -o deduped.csv
+  
+  # Deduplicate ignoring case of col1 and col2 columns:
+  qsv dedup -s col1,col2 --ignore-case unsorted.csv -o deduped.csv
+
+  # Write duplicates to a separate file:
+  qsv dedup -s col1,col2 --dupes-output dupes.csv unsorted.csv -o deduped.csv
+
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_dedup.rs.
 
 Usage:

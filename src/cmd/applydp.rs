@@ -48,66 +48,10 @@ It has 18 supported operations:
   * copy: Mark a column for copying
 
 
-Examples:
-Trim, then transform to uppercase the surname field.
-
-  $ qsv applydp operations trim,upper surname file.csv
-
-Trim, then transform to uppercase the surname field and rename the column uppercase_clean_surname.
-
-  $ qsv applydp operations trim,upper surname -r uppercase_clean_surname file.csv
-
-Trim, then transform to uppercase the surname field and
-save it to a new column named uppercase_clean_surname.
-
-  $ qsv applydp operations trim,upper surname -c uppercase_clean_surname file.csv
-
-Trim, squeeze, then transform to uppercase in place ALL fields that end with "_name"
-
-  $ qsv applydp operations trim,squeeze,upper \_name$\ file.csv
-
-Trim, then transform to uppercase the firstname and surname fields and
-rename the columns ufirstname and usurname.
-
-  $ qsv applydp operations trim,upper firstname,surname -r ufirstname,usurname file.csv
-
-Trim parentheses & brackets from the description field.
-
-  $ qsv applydp operations mtrim description --comparand '()<>' file.csv
-
-Replace ' and ' with ' & ' in the description field.
-
-  $ qsv applydp replace description --comparand ' and ' --replacement ' & ' file.csv
-
-You can also use this subcommand command to make a copy of a column:
-
-  $ qsv applydp operations copy col_to_copy -c col_copy file.csv
-
 EMPTYREPLACE (multi-column capable)
 Replace empty cells with <--replacement> string.
 Non-empty cells are not modified. See the `fill` command for more complex empty field operations.
 
-Examples:
-Replace empty cells in file.csv Measurement column with 'None'.
-
-  $ qsv applydp emptyreplace Measurement --replacement None file.csv
-
-Replace empty cells in file.csv Measurement column with 'Unknown Measurement'.
-
-  $ qsv applydp emptyreplace Measurement --replacement 'Unknown Measurement' file.csv
-
-Replace empty cells in file.csv M1,M2 and M3 columns with 'None'.
-
-  $ qsv applydp emptyreplace M1,M2,M3 --replacement None file.csv
-
-Replace all empty cells in file.csv for columns that start with 'Measurement' with 'None'.
-
-  $ qsv applydp emptyreplace '/^Measurement/' --replacement None file.csv
-
-Replace all empty cells in file.csv for columns that start with 'observation'
-case insensitive with 'None'.
-
-  $ qsv applydp emptyreplace --replacement None '/(?i)^observation/' file.csv
 
 DYNFMT
 Dynamically constructs a new column from other columns using the <--formatstr> template.
@@ -117,14 +61,62 @@ column name in curly braces, replacing all non-alphanumeric characters with unde
 If you need to dynamically construct a column with more complex formatting requirements and
 computed values, check out the py command to take advantage of Python's f-string formatting.
 
+
 Examples:
-Create a new column 'mailing address' from 'house number', 'street', 'city' and 'zip-code' columns:
 
-  $ qsv applydp dynfmt --formatstr '{house_number} {street}, {city} {zip_code} USA' -c 'mailing address' file.csv
+== OPERATIONS ==
 
-Create a new column 'FullName' from 'FirstName', 'MI', and 'LastName' columns:
+  # Trim, then transform to uppercase the surname field.
+  qsv applydp operations trim,upper surname file.csv
 
-  $ qsv applydp dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullName file.csv
+  # Trim, then transform to uppercase the surname field and rename the column uppercase_clean_surname.
+  qsv applydp operations trim,upper surname -r uppercase_clean_surname file.csv
+
+  # Trim, then transform to uppercase the surname field and
+  # save it to a new column named uppercase_clean_surname.
+  qsv applydp operations trim,upper surname -c uppercase_clean_surname file.csv
+
+  # Trim, squeeze, then transform to uppercase in place ALL fields that end with "_name"
+  qsv applydp operations trim,squeeze,upper \_name$\ file.csv
+
+  # Trim, then transform to uppercase the firstname and surname fields and
+  # rename the columns ufirstname and usurname.
+  qsv applydp operations trim,upper firstname,surname -r ufirstname,usurname file.csv
+
+  # Trim parentheses & brackets from the description field.
+  qsv applydp operations mtrim description --comparand '()<>' file.csv
+
+  # Replace ' and ' with ' & ' in the description field.
+  qsv applydp replace description --comparand ' and ' --replacement ' & ' file.csv
+
+  # You can also use this subcommand command to make a copy of a column:
+  qsv applydp operations copy col_to_copy -c col_copy file.csv
+
+== EMPTYREPLACE ==
+
+  # Replace empty cells in file.csv Measurement column with 'None'.
+  qsv applydp emptyreplace Measurement --replacement None file.csv
+
+  # Replace empty cells in file.csv Measurement column with 'Unknown Measurement'.
+  qsv applydp emptyreplace Measurement --replacement 'Unknown Measurement' file.csv
+
+  # Replace empty cells in file.csv M1,M2 and M3 columns with 'None'.
+  qsv applydp emptyreplace M1,M2,M3 --replacement None file.csv
+
+  # Replace all empty cells in file.csv for columns that start with 'Measurement' with 'None'.
+  qsv applydp emptyreplace '/^Measurement/' --replacement None file.csv
+
+  # Replace all empty cells in file.csv for columns that start with 'observation'
+  # case insensitive with 'None'.
+  qsv applydp emptyreplace --replacement None '/(?i)^observation/' file.csv
+
+== DYNFMT ==
+
+  # Create a new column 'mailing address' from 'house number', 'street', 'city' and 'zip-code' columns:
+  qsv applydp dynfmt --formatstr '{house_number} {street}, {city} {zip_code} USA' -c 'mailing address' file.csv
+
+  # Create a new column 'FullName' from 'FirstName', 'MI', and 'LastName' columns:
+  qsv applydp dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullName file.csv
 
 For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_applydp.rs.
 

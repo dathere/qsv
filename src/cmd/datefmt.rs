@@ -11,33 +11,27 @@ Defaults to ISO 8601/RFC 3339 format when --formatstr is not specified.
 ( "%Y-%m-%dT%H:%M:%S%z" - e.g. 2001-07-08T00:34:60.026490+09:30 )
 
 Examples:
-Format dates in Open Date column to ISO 8601/RFC 3339 format:
 
-  $ qsv datefmt 'Open Date' file.csv
+  # Format dates in Open Date column to ISO 8601/RFC 3339 format:
+  qsv datefmt 'Open Date' file.csv
 
-Format multiple date columns in file.csv to ISO 8601/RFC 3339 format:
+  # Format multiple date columns in file.csv to ISO 8601/RFC 3339 format:
+  qsv datefmt 'Open Date,Modified Date,Closed Date' file.csv
 
-  $ qsv datefmt 'Open Date,Modified Date,Closed Date' file.csv
+  # Format all columns that end with "_date" case-insensitive in file.csv to ISO 8601/RFC 3339 format:
+  qsv datefmt '/(?i)_date$/' file.csv
 
-Format all columns that end with "_date" case-insensitive in file.csv to ISO 8601/RFC 3339 format:
+  # Format dates in OpenDate column using '%Y-%m-%d' format:
+  qsv datefmt OpenDate --formatstr '%Y-%m-%d' file.csv
 
-  $ qsv datefmt '/(?i)_date$/' file.csv
+  # Format multiple date columns using '%Y-%m-%d' format:
+  qsv datefmt OpenDate,CloseDate,ReopenDate --formatstr '%Y-%m-%d' file.csv
 
-Format dates in OpenDate column using '%Y-%m-%d' format:
+  # Get the week number for OpenDate and store it in the week_number column:
+  qsv datefmt OpenDate --formatstr '%V' --new-column week_number file.csv
 
-  $ qsv datefmt OpenDate --formatstr '%Y-%m-%d' file.csv
-
-Format multiple date columns using '%Y-%m-%d' format:
-
-  $ qsv datefmt OpenDate,CloseDate,ReopenDate --formatstr '%Y-%m-%d' file.csv
-
-Get the week number for OpenDate and store it in the week_number column:
-
-  $ qsv datefmt OpenDate --formatstr '%V' --new-column week_number file.csv
-
-Get the day of the week for several date columns and store it in the corresponding weekday columns:
-
-  $ qsv datefmt OpenDate,CloseDate --formatstr '%u' --rename Open_weekday,Close_weekday file.csv
+  # Get the day of the week for several date columns and store it in the corresponding weekday columns:
+  qsv datefmt OpenDate,CloseDate --formatstr '%u' --rename Open_weekday,Close_weekday file.csv
 
 For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs.
 

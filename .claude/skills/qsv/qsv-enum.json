@@ -75,5 +75,51 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  }
+  },
+  "examples": [
+    {
+      "description": "Add an incremental index column starting from 0 (default)",
+      "command": "qsv enum data.csv"
+    },
+    {
+      "description": "Add an incremental index column starting from 100 and incrementing by 10",
+      "command": "qsv enum --start 100 --increment 10 data.csv"
+    },
+    {
+      "description": "Add a uuid v4 column",
+      "command": "qsv enum --uuid4 data.csv"
+    },
+    {
+      "description": "Add a uuid v7 column",
+      "command": "qsv enum --uuid7 data.csv"
+    },
+    {
+      "description": "Add a constant column with the value \"active\"",
+      "command": "qsv enum --constant active data.csv"
+    },
+    {
+      "description": "Add a constant column with null values",
+      "command": "qsv enum --constant \"<NULL>\" data.csv"
+    },
+    {
+      "description": "Add a copy of the \"username\" column as \"username_copy\"",
+      "command": "qsv enum --copy username data.csv"
+    },
+    {
+      "description": "Add a hash column with the hash of columns \"first_name\" and \"last_name\"",
+      "command": "qsv enum --hash first_name,last_name data.csv"
+    },
+    {
+      "description": "Add a hash column with the hash of all columns except an existing \"hash\" column",
+      "command": "qsv enum --hash 1- data.csv"
+    },
+    {
+      "description": "Add a hash column with the hash of all columns except \"id\" and \"uuid\" columns",
+      "command": "qsv enum --hash \"!id,!uuid\" data.csv"
+    },
+    {
+      "description": "Add a hash column with the hash of all columns that match the regex \"record|name|address\"",
+      "command": "qsv enum --hash \"/record|name|address/\" data.csv"
+    }
+  ]
 }

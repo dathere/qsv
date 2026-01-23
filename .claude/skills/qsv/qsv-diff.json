@@ -86,5 +86,51 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  }
+  },
+  "examples": [
+    {
+      "description": "Find the difference between two CSVs",
+      "command": "qsv diff left.csv right.csv"
+    },
+    {
+      "description": "Find the difference between two CSVs when the right CSV has no headers",
+      "command": "qsv diff left.csv --no-headers-right right-noheaders.csv"
+    },
+    {
+      "description": "Find the difference between two CSVs when the left CSV uses a tab delimiter",
+      "command": "qsv diff --delimiter-left '\\t' left.csv right-tab.tsv"
+    },
+    {
+      "description": "Find the difference between two CSVs when the left CSV uses a semicolon delimiter",
+      "command": "qsv diff --delimiter-left ';' left.csv right-semicolon.csv"
+    },
+    {
+      "description": "Find the difference between two CSVs and write output with tab delimiter to a file",
+      "command": "qsv diff -o diff-tab.tsv --delimiter-output '\\t' left.csv right.csv"
+    },
+    {
+      "description": "Find the difference between two CSVs and write output with semicolon delimiter to a file",
+      "command": "qsv diff -o diff-semicolon.csv --delimiter-output ';' left.csv right.csv"
+    },
+    {
+      "description": "Find the difference comparing records with the same values in the first two columns",
+      "command": "qsv diff --key 0,1 left.csv right.csv"
+    },
+    {
+      "description": "Find the difference using first two columns as key and sort result by those columns",
+      "command": "qsv diff -k 0,1 --sort-columns 0,1 left.csv right.csv"
+    },
+    {
+      "description": "Find the difference but replace equal field values with empty string (key fields still appear)",
+      "command": "qsv diff --drop-equal-fields left.csv right.csv"
+    },
+    {
+      "description": "Find the difference but do not output headers in the result",
+      "command": "qsv diff --no-headers-output left.csv right.csv"
+    },
+    {
+      "description": "Find the difference when both CSVs have no headers (generic headers _col_1, _col_2, etc. are used)",
+      "command": "qsv diff --no-headers-left --no-headers-right left.csv right.csv"
+    }
+  ]
 }

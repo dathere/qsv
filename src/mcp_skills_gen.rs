@@ -26,6 +26,8 @@ struct SkillDefinition {
     command:     CommandSpec,
     #[serde(skip_serializing_if = "Option::is_none")]
     hints:       Option<BehavioralHints>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    examples:    Vec<Example>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -69,6 +71,12 @@ struct BehavioralHints {
     memory:     String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct Example {
+    description: String,
+    command:     String,
+}
+
 struct UsageParser {
     usage_text:   String,
     command_name: String,
@@ -99,6 +107,7 @@ impl UsageParser {
 
         let hints = self.extract_hints();
         let category = self.infer_category();
+        let examples = self.extract_examples();
 
         Ok(SkillDefinition {
             name: format!("qsv-{}", self.command_name),
@@ -112,6 +121,7 @@ impl UsageParser {
                 options,
             },
             hints,
+            examples,
         })
     }
 
@@ -841,6 +851,120 @@ impl UsageParser {
             _ => "utility",
         }
         .to_string()
+    }
+
+    /// Extract examples from the USAGE text in agent-understandable format.
+    ///
+    /// Format specification:
+    /// - Start markers: `Examples:` or `Examples (optional description):`
+    /// - End markers: `end Examples` OR `For more examples, see`
+    /// - Comments: Lines starting with `#` explain the following command
+    /// - Commands: Lines starting with `$ qsv` or just `qsv `
+    /// - Section Headers: Lines starting with `==` are ignored
+    /// - Continuations: Long commands use `\` for line continuation
+    fn extract_examples(&self) -> Vec<Example> {
+        let mut examples = Vec::new();
+        let lines: Vec<&str> = self.usage_text.lines().collect();
+
+        // Find the start of the Examples section
+        let examples_start = lines.iter().position(|line| {
+            let trimmed = line.trim();
+            trimmed.starts_with("Examples:") || trimmed.starts_with("Examples (")
+        });
+
+        let Some(start_idx) = examples_start else {
+            return examples;
+        };
+
+        // Collect lines until we hit an end marker or next section
+        let mut current_description = String::new();
+        let mut current_command = String::new();
+        let mut in_continuation = false;
+
+        for line in lines.iter().skip(start_idx + 1) {
+            let trimmed = line.trim();
+
+            // Skip section headers
+            if trimmed.starts_with("==") {
+                continue;
+            }
+
+            // Check for end markers
+            if trimmed.starts_with("end Examples")
+                || trimmed.starts_with("For more examples, see")
+                || trimmed.starts_with("Usage:")
+            {
+                break;
+            }
+
+            // Skip empty lines (but finalize any pending example)
+            if trimmed.is_empty() {
+                if !current_command.is_empty() && !current_description.is_empty() {
+                    examples.push(Example {
+                        description: current_description.trim().to_string(),
+                        command:     current_command.trim().to_string(),
+                    });
+                    current_description.clear();
+                    current_command.clear();
+                }
+                in_continuation = false;
+                continue;
+            }
+
+            // Handle line continuation
+            if in_continuation {
+                // Remove the trailing backslash from previous line if present
+                if current_command.ends_with('\\') {
+                    current_command.pop();
+                    current_command.push(' ');
+                }
+                current_command.push_str(trimmed);
+                in_continuation = trimmed.ends_with('\\');
+                continue;
+            }
+
+            // Comment line (description for next command)
+            if trimmed.starts_with('#') {
+                let comment_text = trimmed.trim_start_matches('#').trim();
+                if !current_description.is_empty() {
+                    current_description.push(' ');
+                }
+                current_description.push_str(comment_text);
+                continue;
+            }
+
+            // Command line
+            if trimmed.starts_with("$ qsv") || trimmed.starts_with("qsv ") {
+                // Finalize previous example if we have one
+                if !current_command.is_empty() && !current_description.is_empty() {
+                    examples.push(Example {
+                        description: current_description.trim().to_string(),
+                        command:     current_command.trim().to_string(),
+                    });
+                    current_description.clear();
+                    current_command.clear();
+                }
+
+                // Start new command, removing leading "$ " if present
+                let cmd = if trimmed.starts_with("$ ") {
+                    trimmed.trim_start_matches("$ ")
+                } else {
+                    trimmed
+                };
+                current_command = cmd.to_string();
+                in_continuation = trimmed.ends_with('\\');
+            }
+        }
+
+        // Don't forget the last example
+        if !current_command.is_empty() && !current_description.is_empty() {
+            examples.push(Example {
+                description: current_description.trim().to_string(),
+                command:     current_command.trim().to_string(),
+            });
+        }
+
+        examples
     }
 }
 

@@ -67,48 +67,56 @@ Examples:
 
   # Generate a Data Dictionary, Description & Tags of data.csv using default OpenAI gpt-oss-20b model
   # (replace <API_KEY> with your OpenAI API key)
-  $ qsv describegpt data.csv --api-key <API_KEY> --all
+  qsv describegpt data.csv --api-key <API_KEY> --all
 
   # Generate a Data Dictionary of data.csv using the DeepSeek R1:14b model on a local Ollama instance
-  $ qsv describegpt data.csv -u http://localhost:11434/v1 --model deepseek-r1:14b --dictionary
+  qsv describegpt data.csv -u http://localhost:11434/v1 --model deepseek-r1:14b --dictionary
 
   # Ask questions about the sample NYC 311 dataset using LM Studio with the default gpt-oss-20b model.
   # Questions that can be answered using the Summary Statistics & Frequency Distribution of the dataset.
-  $ export QSV_LLM_BASE_URL=http://localhost:1234/v1
-  $ qsv describegpt NYC_311.csv --prompt "What is the most common complaint?"
-  $ qsv describegpt NYC_311.csv --prompt "List the top 10 complaints."
-  $ qsv describegpt NYC_311.csv -p "Can you tell me how many complaints were resolved?"
+  qsv describegpt NYC_311.csv --prompt "What is the most common complaint?"
 
-  # Ask detailed questions that require SQL queries and auto-invoke SQL RAG mode
+  # Ask detailed natural language questions that require SQL queries and auto-invoke SQL RAG mode
   # Generate a DuckDB SQL query to answer the question
-  $ export QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb
-  $ qsv describegpt NYC_311.csv -p "What's the breakdown of complaint types by borough descending order?"
-  # Prompt requires a SQL query. Execute query and save results to a file with the --sql-results option.
-  # If generated SQL query runs successfully, the file is "results.csv". Otherwise, it is "results.sql".
-  $ qsv describegpt NYC_311.csv -p "Aggregate complaint types by community board" --sql-results results
+  QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb \
+  qsv describegpt NYC_311.csv -p "What's the breakdown of complaint types by borough descending order?"
+  
+  # Prompt requires a natural language query. Convert query to SQL using the LLM and save results to
+  # a file with the --sql-results option.  If generated SQL query runs successfully,
+  # the file is "results.csv". Otherwise, it is "results.sql".
+  qsv describegpt NYC_311.csv -p "Aggregate complaint types by community board" --sql-results results
 
   # Cache Dictionary, Description & Tags inference results using the Redis cache instead of the disk cache
-  $ qsv describegpt data.csv --all --redis-cache
+  qsv describegpt data.csv --all --redis-cache
+
   # Get fresh Description & Tags inference results from the LLM and refresh disk cache entries for both
-  $ qsv describegpt data.csv --description --tags --fresh
+  qsv describegpt data.csv --description --tags --fresh
+
   # Get fresh inference results from the LLM and refresh the Redis cache entries for all three
-  $ qsv describegpt data.csv --all --redis-cache --fresh
+  qsv describegpt data.csv --all --redis-cache --fresh
 
   # Forget a cached response for data.csv's data dictionary if it exists and then exit
-  $ qsv describegpt data.csv --dictionary --forget
+  qsv describegpt data.csv --dictionary --forget
+
   # Flush/Remove ALL cached entries in the disk cache
-  $ qsv describegpt --flush-cache
+  qsv describegpt --flush-cache
+
   # Flush/Remove ALL cached entries in the Redis cache
-  $ qsv describegpt --redis-cache --flush-cache
+  qsv describegpt --redis-cache --flush-cache
 
-  # Exclude ID columns from frequency analysis to reduce overhead
-  $ qsv describegpt data.csv --dictionary --freq-options "--select '!id,!uuid' --limit 20"
+  # Generate Data Dictionary but exclude ID columns from frequency analysis to reduce overhead
+  qsv describegpt data.csv --dictionary --freq-options "--select '!id,!uuid' --limit 20"
 
-  # Reduce frequency context by showing only top 5 values per field
-  $ qsv describegpt data.csv --all --freq-options "--limit 5"
+  # Generate Data Dictionary, Description & Tags but reduce frequency context
+  # by showing only top 5 values per field
+  qsv describegpt data.csv --all --freq-options "--limit 5"
 
-  # Get weighted frequencies with ascending sort
-  $ qsv describegpt data.csv --description --freq-options "--limit 50 --asc --weight count_column"
+  # Generate Description using weighted frequencies with ascending sort
+  qsv describegpt data.csv --description --freq-options "--limit 50 --asc --weight count_column"
+
+  # Generate a Data Dictionary, Description & Tags using a previously compiled stats CSV file and
+  # frequency CSV file instead of running the stats and frequency commands
+  qsv describegpt data.csv --all --stats-options "file:my_stats.csv" --freq-options "file:my_freq.csv"
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs.
 

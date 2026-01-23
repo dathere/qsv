@@ -689,6 +689,19 @@ export const config = {
   notifyUpdates: getBooleanEnv('QSV_MCP_NOTIFY_UPDATES', true),
 
   /**
+   * Maximum number of examples to show in tool descriptions
+   * More examples = better understanding but higher token usage
+   * Set to 0 to disable examples in descriptions
+   * Default: 5
+   */
+  maxExamples: parseIntEnv(
+    'QSV_MCP_MAX_EXAMPLES',
+    5,    // Default: 5 examples
+    0,    // Minimum: 0 (disabled)
+    20,   // Maximum: 20 examples
+  ),
+
+  /**
    * Detect if running in Desktop Extension mode
    * Desktop extensions set MCPB_EXTENSION_MODE=true
    */

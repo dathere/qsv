@@ -136,5 +136,15 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  }
+  },
+  "examples": [
+    {
+      "description": "using French place names. You'll need to rebuild the index with the --languages option first",
+      "command": "qsv geocode suggest city -f \"{name}, {admin1}, {country} in {timezone}\" file.csv"
+    },
+    {
+      "description": "or rebuild the index using the latest Geonames data with English, French, German & Spanish place names",
+      "command": "qsv geocode index-update"
+    }
+  ]
 }

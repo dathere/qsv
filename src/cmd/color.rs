@@ -256,7 +256,7 @@ fn autolayout(columns: &[usize], term_width: usize) -> Vec<usize> {
 //                                                         │
 //                                           extra chrome char at the end
 // total width of chrome in one row, according to this layout
-fn get_chrome_width(layout: &[usize]) -> usize {
+const fn get_chrome_width(layout: &[usize]) -> usize {
     layout.len() * 3 + 1
 }
 

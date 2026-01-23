@@ -30,6 +30,8 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 - **Expose All Tools Mode** - `QSV_MCP_EXPOSE_ALL_TOOLS=true` exposes all 62+ qsv tools for clients with tool search/deferred loading
 - **Anthropic Tool Search Integration** - Compatible with Anthropic API Tool Search Tool (`tool_search_tool_bm25_20251119`)
 - **Improved Tool Discovery** - Search by category (selection, filtering, transformation, etc.) or use regex patterns
+- **Client Auto-Detection** - Auto-detects Claude clients (Desktop, Code, Cowork) for expose-all-tools mode
+- **Configurable Examples** - `QSV_MCP_MAX_EXAMPLES` controls examples in tool descriptions (0-20, default: 5)
 
 ### Version 14.1.0
 - **Versioned MCPB Packaging** - `.mcpb` files now include version (e.g., `qsv-mcp-server-14.1.0.mcpb`)
@@ -110,15 +112,17 @@ npm run mcpb:package
 │   ├── mcp-pipeline.ts    # Multi-step pipeline execution
 │   ├── converted-file-manager.ts  # LIFO cache for converted files
 │   ├── config.ts          # Configuration and validation
+│   ├── client-detector.ts # Client detection for auto-enabling features
 │   ├── executor.ts        # qsv command execution (streaming)
 │   ├── update-checker.ts  # Version detection and skill regeneration
 │   ├── types.ts           # TypeScript type definitions
 │   ├── utils.ts           # Utility functions
 │   ├── version.ts         # Version management
-│   ├── loader.ts          # Dynamic skill loading
+│   ├── loader.ts          # Dynamic skill loading and searching
 │   └── index.ts           # Module exports
 ├── dist/                   # Compiled JavaScript output
 ├── tests/                  # Test files (TypeScript)
+│   ├── client-detector.test.ts
 │   ├── config.test.ts
 │   ├── converted-file-manager.test.ts
 │   ├── executor-subcommand.test.ts
@@ -157,6 +161,8 @@ npm run mcpb:package
 - Manages server lifecycle with graceful shutdown
 - Auto-enables `--stats-jsonl` for stats command
 - Integrates update checker for background version monitoring
+- **Client auto-detection**: Uses `client-detector.ts` to identify Claude clients
+- **Expose-all-tools mode**: Auto-enables for tool-search-capable clients
 
 **Key Functions**:
 ```typescript
@@ -276,13 +282,58 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - `QSV_MCP_BIN_PATH`: Path to qsv binary
 - `QSV_MCP_WORKING_DIR`: Working directory for file operations
 - `QSV_MCP_ALLOWED_DIRS`: Colon-separated list of allowed directories
-- `QSV_MCP_OPERATION_TIMEOUT_MS`: Operation timeout (default: 120000)
+- `QSV_MCP_OPERATION_TIMEOUT_MS`: Operation timeout (default: 120000ms)
+- `QSV_MCP_TIMEOUT_MS`: Alternative timeout for desktop extensions (default: 5 minutes)
 - `QSV_MCP_MAX_PIPELINE_STEPS`: Max pipeline steps (default: 50)
+- `QSV_MCP_MAX_FILES_PER_LISTING`: Max files in directory listing (default: 1000)
+- `QSV_MCP_MAX_CONCURRENT_OPERATIONS`: Max concurrent ops (default: 10)
+- `QSV_MCP_MAX_OUTPUT_SIZE`: Max output size in bytes (default: 50MB)
+- `QSV_MCP_MAX_EXAMPLES`: Max examples in tool descriptions (default: 5, range: 0-20)
+- `QSV_MCP_CONVERTED_LIFO_SIZE_GB`: Cache size in GB (default: 1.0)
 - `QSV_MCP_AUTO_REGENERATE_SKILLS`: Auto-regenerate on version change
 - `QSV_MCP_CHECK_UPDATES_ON_STARTUP`: Check for updates at startup
 - `QSV_MCP_NOTIFY_UPDATES`: Show update notifications
 - `QSV_MCP_GITHUB_REPO`: GitHub repo for update checks (default: dathere/qsv)
+- `QSV_MCP_EXPOSE_ALL_TOOLS`: Optional boolean for expose-all-tools (auto-detects by default)
 - `MCPB_EXTENSION_MODE`: Desktop extension mode flag
+
+#### `client-detector.ts` - Client Detection
+- Detects MCP client type (Claude Desktop, Code, Cowork)
+- Auto-enables expose-all-tools mode for known Claude clients
+- Uses strict pattern matching to avoid misclassification
+
+**Key Functions**:
+- `isToolSearchCapableClient(clientInfo)`: Check if client supports tool search
+- `getClientType(clientInfo)`: Get client type enum for logging/analytics
+- `formatClientInfo(clientInfo)`: Format client info for human-readable logging
+
+**Exports**:
+- `ClientType`: Type union of `'claude-desktop' | 'claude-code' | 'claude-cowork' | 'claude-generic' | 'other' | 'unknown'`
+
+#### `loader.ts` - Dynamic Skill Loading
+- Loads skill definitions from JSON files in `qsv/` directory
+- Provides skill searching and categorization
+- Supports dynamic skill discovery at runtime
+
+**Key Methods**:
+- `loadAll()`: Load all skills from JSON files
+- `load(skillName)`: Load a specific skill by name
+- `search(query)`: Search skills by name, description, or category
+- `getByCategory(category)`: Get skills filtered by category
+- `getCategories()`: Get all available categories
+- `getStats()`: Get statistics (total skills, examples, options, args)
+
+**Skill Categories** (10 categories):
+- `selection` - Column selection and reordering
+- `filtering` - Row filtering and search
+- `transformation` - Data transformation and modification
+- `aggregation` - Statistics and aggregation
+- `joining` - Joining and merging datasets
+- `validation` - Data validation and schema checking
+- `formatting` - Output formatting and display
+- `conversion` - Format conversion (CSV, JSON, Excel, etc.)
+- `analysis` - Data analysis and profiling
+- `utility` - Utility commands (index, count, headers, etc.)
 
 ### Data Flow
 
@@ -720,6 +771,8 @@ cd .claude/skills && npm run build
 - **`manifest.json`**: MCP Bundle manifest (spec v0.3)
 - **`src/mcp-server.ts`**: Main entry point
 - **`src/mcp-tools.ts`**: Tool definitions with guidance enhancement
+- **`src/client-detector.ts`**: Client detection for auto-enabling features
+- **`src/loader.ts`**: Dynamic skill loading and searching
 - **`src/executor.ts`**: Streaming command execution
 - **`src/update-checker.ts`**: Version management and skill regeneration
 - **`src/config.ts`**: Environment and settings
@@ -913,8 +966,8 @@ return {
 
 ---
 
-**Document Version**: 1.3
-**Last Updated**: 2026-01-19
+**Document Version**: 1.4
+**Last Updated**: 2026-01-23
 **Target qsv Version**: 14.x
 **Node.js Version**: >=18.0.0
 **MCP SDK Version**: ^1.25.2

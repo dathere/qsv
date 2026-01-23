@@ -1775,9 +1775,9 @@ dependencies = [
 
 [[package]]
 name = "csv-nose"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77aaa818e49327f6740b5d7685ac3c2f3960c3f063c4423857472ce1dc3866b8"
+checksum = "8e2c9bd95ff083a9bcb8f14f00f9d83d45fb6a59770b3891f1b87aaef4a16c39"
 dependencies = [
  "bytecount",
  "chardetng",
@@ -1791,7 +1791,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.15.1"
-source = "git+https://github.com/jqnatividad/csvlens?branch=deps-replace_qsv-sniffer-with-csv_nose#8320d72484b0bcccc33054dbbbba9d36ce4db5eb"
+source = "git+https://github.com/jqnatividad/csvlens?branch=deps-replace_qsv-sniffer-with-csv_nose#c69c192f1d695e7c2c9c677090ea017f5ea48763"
 dependencies = [
  "ansi-to-tui",
  "anyhow",

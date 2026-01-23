@@ -860,6 +860,7 @@ impl UsageParser {
     /// - End markers: `end Examples` OR `For more examples, see`
     /// - Comments: Lines starting with `#` explain the following command
     /// - Commands: Lines starting with `$ qsv` or just `qsv `
+    /// - Section Headers: Lines starting with `==` are ignored
     /// - Continuations: Long commands use `\` for line continuation
     fn extract_examples(&self) -> Vec<Example> {
         let mut examples = Vec::new();
@@ -882,6 +883,11 @@ impl UsageParser {
 
         for line in lines.iter().skip(start_idx + 1) {
             let trimmed = line.trim();
+
+            // Skip section headers
+            if trimmed.starts_with("==") {
+                continue;
+            }
 
             // Check for end markers
             if trimmed.starts_with("end Examples")

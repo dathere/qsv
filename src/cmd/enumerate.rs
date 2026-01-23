@@ -40,6 +40,43 @@ The enum function has four modes of operation:
   However, sorting on uuid7 identifiers will not work as they are time-based
   and monotonically increasing, and will not shuffle the lines.
 
+Examples:
+
+  # Add an incremental index column starting from 0 (default)
+  qsv enum data.csv
+
+  # Add an incremental index column starting from 100 and incrementing by 10
+  qsv enum --start 100 --increment 10 data.csv
+
+  # Add a uuid v4 column
+  qsv enum --uuid4 data.csv
+
+  # Add a uuid v7 column
+  qsv enum --uuid7 data.csv
+    
+  # Add a constant column with the value "active"
+  qsv enum --constant active data.csv
+    
+  # Add a constant column with null values
+  qsv enum --constant "<NULL>" data.csv
+    
+  # Add a copy of the "username" column as "username_copy"
+  qsv enum --copy username data.csv
+
+  # Add a hash column with the hash of columns "first_name" and "last_name"
+  qsv enum --hash first_name,last_name data.csv
+
+  # Add a hash column with the hash of all columns except an existing "hash" column
+  qsv enum --hash 1- data.csv
+
+  # Add a hash column with the hash of all columns except "id" and "uuid" columns
+  qsv enum --hash "!id,!uuid" data.csv
+
+  # Add a hash column with the hash of all columns that match the regex "record|name|address"
+  qsv enum --hash "/record|name|address/" data.csv
+
+For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_enumerate.rs.
+
 Usage:
     qsv enum [options] [<input>]
     qsv enum --help

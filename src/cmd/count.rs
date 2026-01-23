@@ -18,6 +18,26 @@ It has three modes of operation:
 Note that the count will not include the header row (unless --no-headers is
 given).
 
+Examples:
+
+  # Basic count of records in data.csv:
+  qsv count data.csv
+
+  # Count records in data.csv without headers:
+  qsv count --no-headers data.csv
+
+  # Count records in data.csv with human-readable output:
+  qsv count --human-readable data.csv
+
+  # Count records in data.csv with width statistics:
+  qsv count --width data.csv
+
+  # Count records in data.csv with width statistics (excluding delimiters):
+  qsv count --width-no-delims data.csv
+
+  # Count records in data.csv with width statistics in JSON format:
+  qsv count --width --json data.csv
+
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_count.rs.
 
 Usage:

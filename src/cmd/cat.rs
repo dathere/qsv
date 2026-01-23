@@ -22,6 +22,23 @@ Concatenating by rows can be done in two ways:
    empty field is written. If a column is missing in the header, an empty field
    is written for all rows.
 
+Examples:
+
+  # Concatenate CSV files by rows:
+  qsv cat rows file1.csv file2.csv -o combined.csv
+
+  # Concatenate CSV files by rows, adding a grouping column with the filename:
+  qsv cat rowskey --group fname --group-name source_file file1.csv file2.csv -o combined_with_keys.csv
+
+  # Concatenate CSV files by columns:
+  qsv cat columns file1.csv file2.csv -o combined_columns.csv
+
+  # Concatenate all CSV files in a directory by rows:
+  qsv cat rows path/to/csv_directory -o combined.csv
+
+  # Concatenate all CSV files listed in a .infile-list file by rows:
+  qsv cat rows path/to/files_to_combine.infile-list -o combined.csv
+
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_cat.rs.
 
 Usage:

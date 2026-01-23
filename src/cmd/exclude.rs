@@ -15,16 +15,36 @@ columns1 and columns2 must specify exactly the same number of columns.
 
 Examples:
 
-  $ qsv exclude id records.csv id previously-processed.csv
-  $ qsv exclude col1,col2 records.csv col1,col2 previously-processed.csv
-  $ qsv exclude col1-col5 records.csv col1-col5 previously-processed.csv
-  $ qsv exclude id records.csv id previously-processed.csv > new-records.csv
-  $ qsv exclude id records.csv id previously-processed.csv --output new-records.csv
-  $ qsv exclude -v id records.csv id previously-processed.csv -o intersection.csv
-  $ qsv exclude --ignore-case id records.csv id previously-processed.csv
-  $ qsv exclude id records.csv id previously-processed.csv |
+  # Remove all records in previously-processed.csv from records.csv
+  qsv exclude id records.csv id previously-processed.csv
+
+  # Remove all records in previously-processed.csv matching on multiple columns
+  qsv exclude col1,col2 records.csv col1,col2 previously-processed.csv
+
+  # Remove all records in previously-processed.csv matching on column ranges
+  qsv exclude col1-col5 records.csv col1-col5 previously-processed.csv
+
+  # Remove all records in previously-processed.csv with the same id from records.csv
+  # and write to new-records.csv
+  qsv exclude id records.csv id previously-processed.csv > new-records.csv
+
+  # Remove all records in previously-processed.csv with the same id from records.csv
+  # and write to new-records.csv
+  qsv exclude id records.csv id previously-processed.csv --output new-records.csv
+
+  # Get the intersection of records.csv and previously-processed.csv on id column
+  # (i.e., only records present in both files)
+  qsv exclude -v id records.csv id previously-processed.csv -o intersection.csv
+
+  # Do a case insensitive exclusion on the id column
+  qsv exclude --ignore-case id records.csv id previously-processed.csv
+
+  # Chain exclude with sort to create a new sorted records file without previously processed records
+  qsv exclude id records.csv id previously-processed.csv | \
       qsv sort > new-sorted-records.csv
-  $ qsv exclude id records.csv id previously-processed.csv | qsv sort |
+
+  # Chain exclude with sort and dedup to create a new sorted deduped records file
+  qsv exclude id records.csv id previously-processed.csv | qsv sort | \
       qsv --sorted dedup > new-sorted-deduped-records.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_exclude.rs.

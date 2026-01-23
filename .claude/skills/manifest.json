@@ -45,6 +45,7 @@
         "QSV_MCP_AUTO_REGENERATE_SKILLS": "${user_config.auto_regenerate_skills}",
         "QSV_MCP_CHECK_UPDATES_ON_STARTUP": "${user_config.check_updates}",
         "QSV_MCP_NOTIFY_UPDATES": "${user_config.notify_updates}",
+        "QSV_MCP_MAX_EXAMPLES": "${user_config.max_examples}",
         "MCPB_EXTENSION_MODE": "true"
       },
       "platform_overrides": {
@@ -117,6 +118,15 @@
       "description": "Display update notifications in logs",
       "required": false,
       "default": true
+    },
+    "max_examples": {
+      "type": "number",
+      "title": "Max Examples in Tool Descriptions",
+      "description": "Number of usage examples shown in tool descriptions. More examples = better understanding but higher token usage. Set to 0 to disable.",
+      "required": false,
+      "default": 5,
+      "min": 0,
+      "max": 20
     }
   },
   "tools": [

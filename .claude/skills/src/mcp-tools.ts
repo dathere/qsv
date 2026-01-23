@@ -451,6 +451,22 @@ function enhanceDescription(skill: QsvSkill): string {
     }
   }
 
+  // Add usage examples from skill JSON (if available)
+  // Configurable via QSV_MCP_MAX_EXAMPLES environment variable (default: 5, max: 20, 0 to disable)
+  if (skill.examples && skill.examples.length > 0 && config.maxExamples > 0) {
+    const maxExamples = config.maxExamples;
+    const examplesToShow = skill.examples.slice(0, maxExamples);
+
+    description += '\n\n📝 EXAMPLES:';
+    for (const example of examplesToShow) {
+      description += `\n• ${example.command}`;
+    }
+
+    if (skill.examples.length > maxExamples) {
+      description += `\n  (${skill.examples.length - maxExamples} more - use help=true for full list)`;
+    }
+  }
+
   return description;
 }
 

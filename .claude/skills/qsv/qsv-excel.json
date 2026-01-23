@@ -92,28 +92,80 @@
   },
   "examples": [
     {
-      "description": "semicolon",
+      "description": "Export the first sheet of an Excel file to a CSV file:",
+      "command": "qsv excel input.xlsx --output output.csv"
+    },
+    {
+      "description": "Export the first sheet of an ODS file to a CSV file:",
       "command": "qsv excel input.ods -o output.csv"
     },
     {
-      "description": "tab",
+      "description": "Export the first sheet of an Excel file to a CSV file with a custom delimiter:",
       "command": "qsv excel input.xlsx -d \";\" > output.csv"
     },
     {
-      "description": "this exports the 3nd sheet (0-based index)",
+      "description": "Export a sheet by name (case-insensitive):",
       "command": "qsv excel --sheet \"Sheet 3\" input.xlsx"
     },
     {
-      "description": "short CSV mode is much faster, but doesn't contain as much metadata",
-      "command": "qsv excel --metadata c input.xlsx"
+      "description": "Export a sheet by index: this exports the 3nd sheet (0-based index)",
+      "command": "qsv excel -s 2 input.xlsx"
     },
     {
-      "description": "pretty-printed JSON - first letter is capital J",
-      "command": "qsv excel --metadata j input.xlsx"
+      "description": "Export the last sheet (negative index)):",
+      "command": "qsv excel -s -1 input.xlsx"
     },
     {
-      "description": "short, minified JSON mode - first letter is capital S",
-      "command": "qsv excel --metadata J input.xlsx"
+      "description": "Export the second to last sheet:",
+      "command": "qsv excel -s -2 input.xls"
+    },
+    {
+      "description": "Export a table named \"Table1\" in an XLSX file. Note that --sheet is not required as the table definition includes the sheet.",
+      "command": "qsv excel --table \"Table1\" input.xlsx"
+    },
+    {
+      "description": "Export a range of cells in the first sheet:",
+      "command": "qsv excel --range C3:T25 input.xlsx"
+    },
+    {
+      "description": "Export a named range in the workbook. Note that --sheet is not required as named ranges include the sheet.",
+      "command": "qsv excel --range MyRange input.xlsx"
+    },
+    {
+      "description": "Export a range of cells in the second sheet:",
+      "command": "qsv excel --range C3:T25 -s 1 input.xlsx"
+    },
+    {
+      "description": "Export a range of cells in a sheet by name. Note the range name must be enclosed in single quotes in certain shells as it may contain special characters like ! and $:",
+      "command": "qsv excel --range 'Sheet2!C3:T25' input.xlsx"
+    },
+    {
+      "description": "Export the cell C3 in the first sheet:",
+      "command": "qsv excel --cell C3 input.xlsx"
+    },
+    {
+      "description": "Export a single cell from a specific sheet:",
+      "command": "qsv excel --cell 'Sheet2!C3' input.xlsx"
+    },
+    {
+      "description": "Export metadata for all sheets in CSV format:",
+      "command": "qsv excel --metadata csv input.xlsx"
+    },
+    {
+      "description": "Export metadata in short CSV mode which is much faster but doesn't contain as much metadata",
+      "command": "qsv excel --metadata short input.xlsx"
+    },
+    {
+      "description": "Export metadata for all sheets in JSON format:",
+      "command": "qsv excel --metadata json input.xlsx"
+    },
+    {
+      "description": "Export metadata to pretty-printed JSON - first letter is capital J",
+      "command": "qsv excel --metadata JSON input.xlsx"
+    },
+    {
+      "description": "Export metadata in short, minified JSON mode - first letter is capital S",
+      "command": "qsv excel --metadata Short input.xlsx"
     }
   ]
 }

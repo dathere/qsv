@@ -68,5 +68,27 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  }
+  },
+  "examples": [
+    {
+      "description": "Concatenate CSV files by rows:",
+      "command": "qsv cat rows file1.csv file2.csv -o combined.csv"
+    },
+    {
+      "description": "Concatenate CSV files by rows, adding a grouping column with the filename:",
+      "command": "qsv cat rowskey --group fname --group-name source_file file1.csv file2.csv -o combined_with_keys.csv"
+    },
+    {
+      "description": "Concatenate CSV files by columns:",
+      "command": "qsv cat columns file1.csv file2.csv -o combined_columns.csv"
+    },
+    {
+      "description": "Concatenate all CSV files in a directory by rows:",
+      "command": "qsv cat rows path/to/csv_directory -o combined.csv"
+    },
+    {
+      "description": "Concatenate all CSV files listed in a .infile-list file by rows:",
+      "command": "qsv cat rows path/to/files_to_combine.infile-list -o combined.csv"
+    }
+  ]
 }

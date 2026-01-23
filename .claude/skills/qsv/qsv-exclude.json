@@ -64,5 +64,43 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  }
+  },
+  "examples": [
+    {
+      "description": "Remove all records in previously-processed.csv from records.csv",
+      "command": "qsv exclude id records.csv id previously-processed.csv"
+    },
+    {
+      "description": "Remove all records in previously-processed.csv matching on multiple columns",
+      "command": "qsv exclude col1,col2 records.csv col1,col2 previously-processed.csv"
+    },
+    {
+      "description": "Remove all records in previously-processed.csv matching on column ranges",
+      "command": "qsv exclude col1-col5 records.csv col1-col5 previously-processed.csv"
+    },
+    {
+      "description": "Remove all records in previously-processed.csv with the same id from records.csv and write to new-records.csv",
+      "command": "qsv exclude id records.csv id previously-processed.csv > new-records.csv"
+    },
+    {
+      "description": "Remove all records in previously-processed.csv with the same id from records.csv and write to new-records.csv",
+      "command": "qsv exclude id records.csv id previously-processed.csv --output new-records.csv"
+    },
+    {
+      "description": "Get the intersection of records.csv and previously-processed.csv on id column (i.e., only records present in both files)",
+      "command": "qsv exclude -v id records.csv id previously-processed.csv -o intersection.csv"
+    },
+    {
+      "description": "Do a case insensitive exclusion on the id column",
+      "command": "qsv exclude --ignore-case id records.csv id previously-processed.csv"
+    },
+    {
+      "description": "Chain exclude with sort to create a new sorted records file without previously processed records",
+      "command": "qsv exclude id records.csv id previously-processed.csv |  qsv sort > new-sorted-records.csv"
+    },
+    {
+      "description": "Chain exclude with sort and dedup to create a new sorted deduped records file",
+      "command": "qsv exclude id records.csv id previously-processed.csv | qsv sort |  qsv --sorted dedup > new-sorted-deduped-records.csv"
+    }
+  ]
 }

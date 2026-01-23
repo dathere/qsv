@@ -67,5 +67,31 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  }
+  },
+  "examples": [
+    {
+      "description": "Basic count of records in data.csv:",
+      "command": "qsv count data.csv"
+    },
+    {
+      "description": "Count records in data.csv without headers:",
+      "command": "qsv count --no-headers data.csv"
+    },
+    {
+      "description": "Count records in data.csv with human-readable output:",
+      "command": "qsv count --human-readable data.csv"
+    },
+    {
+      "description": "Count records in data.csv with width statistics:",
+      "command": "qsv count --width data.csv"
+    },
+    {
+      "description": "Count records in data.csv with width statistics (excluding delimiters):",
+      "command": "qsv count --width-no-delims data.csv"
+    },
+    {
+      "description": "Count records in data.csv with width statistics in JSON format:",
+      "command": "qsv count --width --json data.csv"
+    }
+  ]
 }

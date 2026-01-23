@@ -107,5 +107,35 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  }
+  },
+  "examples": [
+    {
+      "description": "Format dates in Open Date column to ISO 8601/RFC 3339 format:",
+      "command": "qsv datefmt 'Open Date' file.csv"
+    },
+    {
+      "description": "Format multiple date columns in file.csv to ISO 8601/RFC 3339 format:",
+      "command": "qsv datefmt 'Open Date,Modified Date,Closed Date' file.csv"
+    },
+    {
+      "description": "Format all columns that end with \"_date\" case-insensitive in file.csv to ISO 8601/RFC 3339 format:",
+      "command": "qsv datefmt '/(?i)_date$/' file.csv"
+    },
+    {
+      "description": "Format dates in OpenDate column using '%Y-%m-%d' format:",
+      "command": "qsv datefmt OpenDate --formatstr '%Y-%m-%d' file.csv"
+    },
+    {
+      "description": "Format multiple date columns using '%Y-%m-%d' format:",
+      "command": "qsv datefmt OpenDate,CloseDate,ReopenDate --formatstr '%Y-%m-%d' file.csv"
+    },
+    {
+      "description": "Get the week number for OpenDate and store it in the week_number column:",
+      "command": "qsv datefmt OpenDate --formatstr '%V' --new-column week_number file.csv"
+    },
+    {
+      "description": "Get the day of the week for several date columns and store it in the corresponding weekday columns:",
+      "command": "qsv datefmt OpenDate,CloseDate --formatstr '%u' --rename Open_weekday,Close_weekday file.csv"
+    }
+  ]
 }

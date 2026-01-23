@@ -104,14 +104,19 @@ Examples:
   # Flush/Remove ALL cached entries in the Redis cache
   qsv describegpt --redis-cache --flush-cache
 
-  # Exclude ID columns from frequency analysis to reduce overhead
+  # Generate Data Dictionary but exclude ID columns from frequency analysis to reduce overhead
   qsv describegpt data.csv --dictionary --freq-options "--select '!id,!uuid' --limit 20"
 
-  # Reduce frequency context by showing only top 5 values per field
+  # Generate Data Dictionary, Description & Tags but reduce frequency context
+  # by showing only top 5 values per field
   qsv describegpt data.csv --all --freq-options "--limit 5"
 
-  # Get weighted frequencies with ascending sort
+  # Generate Description using weighted frequencies with ascending sort
   qsv describegpt data.csv --description --freq-options "--limit 50 --asc --weight count_column"
+
+  # Generate a Data Dictionary, Description & Tags using a previously compiled stats CSV file and
+  # frequency CSV file instead of running the stats and frequency commands
+  qsv describegpt data.csv --all --stats-options "file:my_stats.csv" --freq-options "file:my_freq.csv"
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs.
 

@@ -324,7 +324,8 @@ impl fmt::Display for SniffStruct {
 
             writeln!(
                 &mut tabwtr,
-                "\t{i}:\t{data_type}\t{}",
+                "\t{}:\t{data_type}\t{}",
+                i + 1,
                 self.fields.get(i).unwrap_or(&String::new())
             )
             .unwrap_or_default();

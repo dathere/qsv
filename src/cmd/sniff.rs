@@ -8,13 +8,13 @@ field names & data types) using a Viterbi algorithm. (https://en.wikipedia.org/w
 last modified date. If --no-infer is enabled, it doesn't even bother to infer the CSV's schema.
 This makes it useful for accelerated CKAN harvesting and for checking stale/broken resource URLs.
 
-When the `magika` feature is enabled (default for full qsv builds), it uses Google's Magika
+When qsv is compiled with the optional `magika` feature, it uses Google's Magika
 AI-powered content detection to identify file types with high accuracy. Magika detects over
 200 content types including CSV, MS Office/Open Document files, JSON, XML, PDF, PNG, JPEG
 and many more.
 See https://opensource.googleblog.com/2025/11/announcing-magika-10-now-faster-smarter.html.
 
-When the `magika` feature is not enabled (e.g., MUSL builds, qsvlite, qsvdp), it falls back
+When the `magika` feature is not enabled in a build (e.g., MUSL builds, qsvlite, qsvdp), it falls back
 to the file-format crate which provides basic MIME type detection.
 
 NOTE: This command "sniffs" a CSV's schema by sampling the first n rows (default: 1000)

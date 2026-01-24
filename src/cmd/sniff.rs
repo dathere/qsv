@@ -144,14 +144,33 @@ use crate::{
 static MAGIKA_SESSION: LazyLock<Result<Mutex<Session>, String>> =
     LazyLock::new(|| Session::new().map(Mutex::new).map_err(|e| e.to_string()));
 
+/// Get label from file-format, with special handling for CSV/TSV
+#[cfg(not(feature = "magika"))]
+fn get_label(fmt: &file_format::FileFormat, mime_type: &str) -> String {
+    // Special case for CSV/TSV which file-format doesn't specifically detect
+    if mime_type == "text/csv" || mime_type == "application/csv" {
+        return "csv".to_string();
+    }
+    if mime_type == "text/tab-separated-values" {
+        return "tsv".to_string();
+    }
+    // Use short_name if available, otherwise fall back to name
+    fmt.short_name()
+        .unwrap_or_else(|| fmt.name())
+        .to_lowercase()
+        .replace(' ', "-")
+}
+
 /// Detect mime type from bytes using available backend
+/// Returns (mime_type, label, inference_score)
 #[cfg(feature = "magika")]
-fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String) {
+fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String, f32) {
     // If Magika failed to initialize or the mutex is poisoned, fall back to a default mime type
     let default_mime = || {
         (
             "application/octet-stream".to_string(),
             "unknown".to_string(),
+            1.0_f32, // default score for fallback
         )
     };
 
@@ -160,7 +179,8 @@ fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String) {
             Ok(mut session) => match session.identify_content_sync(bytes) {
                 Ok(result) => (
                     result.info().mime_type.to_string(),
-                    result.info().group.to_string(),
+                    result.info().label.to_string(),
+                    result.score(),
                 ),
                 Err(_) => default_mime(),
             },
@@ -171,29 +191,42 @@ fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String) {
 }
 
 #[cfg(not(feature = "magika"))]
-fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String) {
+fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String, f32) {
     let fmt = FileFormat::from_bytes(bytes);
-    (fmt.media_type().to_string(), format!("{:?}", fmt.kind()))
+    let mime = fmt.media_type().to_string();
+    let label = get_label(&fmt, &mime);
+    (mime, label, 1.0)
 }
 
 /// Detect mime type from file using available backend
+/// Returns (mime_type, label, inference_score)
 #[cfg(feature = "magika")]
-fn detect_mime_from_file(path: &std::path::Path) -> Result<(String, String), String> {
+fn detect_mime_from_file(path: &std::path::Path) -> Result<(String, String, f32), String> {
     match &*MAGIKA_SESSION {
         Ok(mutex) => mutex
             .lock()
             .map_err(|_| "Magika session mutex poisoned".to_string())?
             .identify_file_sync(path)
-            .map(|r| (r.info().mime_type.to_string(), r.info().group.to_string()))
+            .map(|r| {
+                (
+                    r.info().mime_type.to_string(),
+                    r.info().label.to_string(),
+                    r.score(),
+                )
+            })
             .map_err(|e| format!("Magika detection error: {e}")),
         Err(err) => Err(format!("Magika initialization error: {err}")),
     }
 }
 
 #[cfg(not(feature = "magika"))]
-fn detect_mime_from_file(path: &std::path::Path) -> Result<(String, String), String> {
+fn detect_mime_from_file(path: &std::path::Path) -> Result<(String, String, f32), String> {
     FileFormat::from_file(path)
-        .map(|fmt| (fmt.media_type().to_string(), format!("{:?}", fmt.kind())))
+        .map(|fmt| {
+            let mime = fmt.media_type().to_string();
+            let label = get_label(&fmt, &mime);
+            (mime, label, 1.0)
+        })
         .map_err(|e| format!("File format detection error: {e}"))
 }
 
@@ -230,7 +263,8 @@ struct SniffStruct {
     flexible:        bool,
     is_utf8:         bool,
     detected_mime:   String,
-    detected_kind:   String,
+    detected_label:  String,
+    inference_score: Option<f32>,
     retrieved_size:  usize,
     file_size:       usize,
     sampled_records: usize,
@@ -282,7 +316,10 @@ impl fmt::Display for SniffStruct {
         writeln!(f, "Flexible: {}", self.flexible)?;
         writeln!(f, "Is UTF8: {}", self.is_utf8)?;
         writeln!(f, "Detected Mime Type: {}", self.detected_mime)?;
-        writeln!(f, "Detected Kind: {}", self.detected_kind)?;
+        writeln!(f, "Detected Label: {}", self.detected_label)?;
+        if let Some(score) = self.inference_score {
+            writeln!(f, "Inference Score: {}", util::round_num(score.into(), 4))?;
+        }
         writeln!(
             f,
             "Retrieved Size (bytes): {}",
@@ -344,7 +381,8 @@ struct SniffFileStruct {
     display_path:       String,
     file_to_sniff:      String,
     detected_mime:      String,
-    detected_kind:      String,
+    detected_label:     String,
+    inference_score:    Option<f32>,
     tempfile_flag:      bool,
     retrieved_size:     usize,
     file_size:          usize,
@@ -499,7 +537,7 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                     let chunk_len = chunk.len();
 
                     if downloaded == 0 && !snappy_flag && args.flag_quick {
-                        let (mime, _kind) = detect_mime_from_bytes(&chunk[..]);
+                        let (mime, _kind, _score) = detect_mime_from_bytes(&chunk[..]);
                         log::debug!("scanned first {chunk_len} bytes - detected mime: {mime}");
                         if !mime.starts_with("text/") && mime != "application/csv" {
                             downloaded = chunk_len;
@@ -551,12 +589,14 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                 let wtr_file_path;
                 let mut csv_candidate = true;
                 let mut detected_mime = String::new();
-                let mut detected_kind: String = String::new();
+                let mut detected_label: String = String::new();
 
+                let mut detected_score: Option<f32> = None;
                 if !args.flag_quick {
-                    let (mime, kind) = detect_mime_from_file(file.path())?;
+                    let (mime, label, score) = detect_mime_from_file(file.path())?;
                     detected_mime = mime;
-                    detected_kind = kind;
+                    detected_label = label;
+                    detected_score = Some(score);
                     csv_candidate =
                         detected_mime.starts_with("text/") || detected_mime == "application/csv";
                 }
@@ -634,7 +674,8 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                     display_path: url,
                     file_to_sniff: wtr_file_path,
                     detected_mime,
-                    detected_kind,
+                    detected_label,
+                    inference_score: detected_score,
                     tempfile_flag: true,
                     retrieved_size: downloaded,
                     file_size: if total_size == usize::MAX {
@@ -694,7 +735,8 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                     display_path: canonical_path,
                     file_to_sniff: path,
                     detected_mime: String::new(),
-                    detected_kind: String::new(),
+                    detected_label: String::new(),
+                    inference_score: None,
                     tempfile_flag: false,
                     retrieved_size: file_size,
                     file_size,
@@ -732,7 +774,8 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
             display_path: "stdin".to_string(),
             file_to_sniff: path_string,
             detected_mime: String::new(),
-            detected_kind: String::new(),
+            detected_label: String::new(),
+            inference_score: None,
             tempfile_flag: true,
             retrieved_size: file_size,
             file_size,
@@ -800,15 +843,19 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
 
     // if we don't have a mime type or its a snappy file and --no-infer is disabled,
     // let's try to infer the mime type
-    let file_kind: String;
+    let file_label: String;
+    let file_score: Option<f32>;
     let file_type = if sfile_info.detected_mime.is_empty()
         || sfile_info.detected_mime == "application/x-snappy-framed" && !args.flag_no_infer
     {
-        let (mime, kind) = detect_mime_from_file(std::path::Path::new(&sfile_info.file_to_sniff))?;
-        file_kind = kind;
+        let (mime, label, score) =
+            detect_mime_from_file(std::path::Path::new(&sfile_info.file_to_sniff))?;
+        file_label = label;
+        file_score = Some(score);
         mime
     } else {
-        file_kind = sfile_info.detected_kind.clone();
+        file_label = sfile_info.detected_label.clone();
+        file_score = sfile_info.inference_score;
         sfile_info.detected_mime.clone()
     };
 
@@ -830,7 +877,7 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
                     "title": "sniff mime type",
                     "meta": {
                         "detected_mime_type": file_type,
-                        "detected_kind": file_kind,
+                        "detected_label": file_label,
                         "size": size,
                         "last_modified": last_modified,
                     }
@@ -848,7 +895,7 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
                     "detail": format!("File is not a CSV file. Detected mime type: {file_type}"),
                     "meta": {
                         "detected_mime_type": file_type,
-                        "detected_kind": file_kind,
+                        "detected_label": file_label,
                         "size": size,
                         "last_modified": last_modified,
                     }
@@ -1030,7 +1077,17 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
                 } else {
                     file_type.clone()
                 },
-                detected_kind: file_kind.clone(),
+                detected_label: if delimiter_char == ',' {
+                    "csv".to_string()
+                } else if delimiter_char == '\t' {
+                    "tsv".to_string()
+                } else {
+                    file_label.clone()
+                },
+                inference_score: file_score.map(|score| {
+                    // round to 4 decimal places without string round-trip
+                    (score * 10_000.0).round() / 10_000.0
+                }),
                 retrieved_size: sfile_info.retrieved_size,
                 file_size: sfile_info.file_size,
                 sampled_records: if sampled_records > num_records {
@@ -1072,7 +1129,7 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
             "detail": format!("{}", sniff_error.unwrap()),
             "meta": {
                 "detected_mime_type": file_type,
-                "detected_kind": file_kind,
+                "detected_label": file_label,
                 "size": sfile_info.file_size,
                 "last_modified": sfile_info.last_modified,
             }

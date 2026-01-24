@@ -325,18 +325,28 @@ impl fmt::Display for SniffStruct {
             "Retrieved Size (bytes): {}",
             HumanCount(self.retrieved_size as u64)
         )?;
-        writeln!(
-            f,
-            "File Size (bytes): {}",
-            HumanCount(self.file_size as u64)
-        )?;
+        // show "Unknown" for usize::MAX (sentinel value when Content-Length is missing)
+        if self.file_size == usize::MAX {
+            writeln!(f, "File Size (bytes): Unknown")?;
+        } else {
+            writeln!(
+                f,
+                "File Size (bytes): {}",
+                HumanCount(self.file_size as u64)
+            )?;
+        }
         writeln!(
             f,
             "Sampled Records: {}",
             HumanCount(self.sampled_records as u64)
         )?;
         writeln!(f, "Estimated: {}", self.estimated)?;
-        writeln!(f, "Num Records: {}", HumanCount(self.num_records as u64))?;
+        // show "Unknown" when num_records was estimated from unknown file_size
+        if self.file_size == usize::MAX {
+            writeln!(f, "Num Records: Unknown")?;
+        } else {
+            writeln!(f, "Num Records: {}", HumanCount(self.num_records as u64))?;
+        }
         writeln!(
             f,
             "Avg Record Len (bytes): {}",

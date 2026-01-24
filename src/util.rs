@@ -443,6 +443,55 @@ pub fn create_reqwest_blocking_client(
     Ok(client)
 }
 
+/// Transforms a GitHub blob URL to a raw.githubusercontent.com URL.
+/// Returns the original URL unchanged if not a GitHub blob URL.
+///
+/// # Arguments
+///
+/// * `url` - The URL to potentially transform
+///
+/// # Returns
+///
+/// A String containing the transformed URL (for GitHub blob URLs)
+/// or the original URL (for all other URLs).
+///
+/// # Examples
+///
+/// ```
+/// // GitHub blob URLs are transformed to raw URLs:
+/// // https://github.com/user/repo/blob/branch/path/file.csv
+/// // becomes:
+/// // https://raw.githubusercontent.com/user/repo/branch/path/file.csv
+///
+/// // Non-GitHub URLs are returned unchanged
+/// ```
+#[inline]
+pub fn transform_github_url(url: &str) -> String {
+    // Pattern: https://github.com/USER/REPO/blob/BRANCH/PATH
+    // Transform: https://raw.githubusercontent.com/USER/REPO/BRANCH/PATH
+
+    let github_prefix_https = "https://github.com/";
+    let github_prefix_http = "http://github.com/";
+
+    let remainder = if let Some(r) = url.strip_prefix(github_prefix_https) {
+        r
+    } else if let Some(r) = url.strip_prefix(github_prefix_http) {
+        r
+    } else {
+        return url.to_string();
+    };
+
+    if let Some(blob_idx) = remainder.find("/blob/") {
+        let user_repo = &remainder[..blob_idx];
+        let branch_and_path = &remainder[blob_idx + 6..]; // skip "/blob/"
+        let raw_url = format!("https://raw.githubusercontent.com/{user_repo}/{branch_and_path}");
+        log::info!("Transformed GitHub blob URL to raw URL: {raw_url}");
+        raw_url
+    } else {
+        url.to_string()
+    }
+}
+
 pub fn version() -> String {
     let mut enabled_features = String::new();
 
@@ -3649,5 +3698,53 @@ mod tests {
             hash,
             "6cd27b8098295afc42527bcee267ce39e757345f9f82c20b66efc75ffe4c1631"
         );
+    }
+
+    #[test]
+    fn test_transform_github_url_blob() {
+        // Test GitHub blob URL transformation
+        let blob_url =
+            "https://github.com/dathere/qsv/blob/master/resources/test/boston311-100.csv";
+        let expected =
+            "https://raw.githubusercontent.com/dathere/qsv/master/resources/test/boston311-100.csv";
+        assert_eq!(transform_github_url(blob_url), expected);
+    }
+
+    #[test]
+    fn test_transform_github_url_blob_with_branch() {
+        // Test with a different branch name
+        let blob_url = "https://github.com/user/repo/blob/develop/path/to/file.csv";
+        let expected = "https://raw.githubusercontent.com/user/repo/develop/path/to/file.csv";
+        assert_eq!(transform_github_url(blob_url), expected);
+    }
+
+    #[test]
+    fn test_transform_github_url_blob_http() {
+        // Test HTTP (not HTTPS) URL transformation
+        let blob_url = "http://github.com/user/repo/blob/main/file.csv";
+        let expected = "https://raw.githubusercontent.com/user/repo/main/file.csv";
+        assert_eq!(transform_github_url(blob_url), expected);
+    }
+
+    #[test]
+    fn test_transform_github_url_raw() {
+        // Test that raw URLs are not modified
+        let raw_url =
+            "https://raw.githubusercontent.com/dathere/qsv/master/resources/test/boston311-100.csv";
+        assert_eq!(transform_github_url(raw_url), raw_url);
+    }
+
+    #[test]
+    fn test_transform_github_url_non_github() {
+        // Test that non-GitHub URLs are not modified
+        let other_url = "https://example.com/data/file.csv";
+        assert_eq!(transform_github_url(other_url), other_url);
+    }
+
+    #[test]
+    fn test_transform_github_url_no_blob() {
+        // Test that GitHub URLs without /blob/ are not modified
+        let repo_url = "https://github.com/dathere/qsv";
+        assert_eq!(transform_github_url(repo_url), repo_url);
     }
 }

@@ -674,3 +674,43 @@ fn sniff_consistent_results_issue_956() {
         wrk.assert_success(&mut cmd);
     }
 }
+
+// Test for GitHub blob URL auto-transformation to raw URL
+// This tests the fix for issue where GitHub blob URLs return HTML instead of CSV
+#[test]
+fn sniff_github_blob_url() {
+    let wrk = Workdir::new("sniff_github_blob_url");
+
+    // Use a GitHub blob URL (viewer page) instead of raw URL
+    // The sniff command should auto-transform this to raw.githubusercontent.com
+    let mut cmd = wrk.command("sniff");
+    cmd.arg("https://github.com/dathere/qsv/blob/master/resources/test/boston311-100.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // Should correctly sniff as CSV after auto-transforming to raw URL
+    assert!(got.contains("Num Fields: 29"));
+    assert!(got.contains("Unsigned  case_enquiry_id"));
+}
+
+// Test that raw GitHub URLs still work normally
+#[test]
+fn sniff_github_raw_url() {
+    let wrk = Workdir::new("sniff_github_raw_url");
+
+    // Use the raw URL directly - should not be modified
+    let mut cmd = wrk.command("sniff");
+    cmd.arg(
+        "https://raw.githubusercontent.com/dathere/qsv/master/resources/test/boston311-100.csv",
+    );
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // Should correctly sniff as CSV
+    assert!(got.contains("Num Fields: 29"));
+    assert!(got.contains("Unsigned  case_enquiry_id"));
+}

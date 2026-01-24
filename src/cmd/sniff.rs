@@ -423,6 +423,8 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
         match uri {
             // its a URL, download sample to temp file
             url if Url::parse(&url).is_ok() && url.starts_with("http") => {
+                // Transform GitHub blob URLs to raw URLs for direct file access
+                let url = util::transform_github_url(&url);
                 let snappy_flag = url.to_lowercase().ends_with(".sz");
 
                 // setup the reqwest client
@@ -441,6 +443,18 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                     ))
                     .send()
                     .await?;
+
+                // Check Content-Type header to detect HTML responses early
+                // This helps catch cases where URLs serve HTML pages instead of raw files
+                if let Some(content_type) = res.headers().get("content-type")
+                    && let Ok(ct_str) = content_type.to_str()
+                    && ct_str.contains("text/html")
+                {
+                    log::warn!(
+                        "Response Content-Type is text/html. URL may not point to raw file \
+                         content."
+                    );
+                }
 
                 let last_modified = match res.headers().get("Last-Modified") {
                     Some(lm) => match lm.to_str() {
@@ -641,7 +655,9 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                         // we say no_headers so we can just copy the downloaded file over
                         // including headers, to the exact sample size file
                         .no_headers(true)
-                        .flexible(true);
+                        .flexible(true)
+                        // skip format check since temp files don't have recognizable extensions
+                        .skip_format_check(true);
 
                     let mut rdr = config.reader()?;
 

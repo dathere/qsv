@@ -380,13 +380,12 @@ distrib_features = [
     "foreach",
     "geocode",
     "luau",
-    "magika",
     "mcp",
     "polars",
     "python",
     "to",
 ]
-all_features = ["distrib_features", "self_update", "ui"]
+all_features = ["distrib_features", "magika", "self_update", "ui"]
 apply = [
     "base62",
     "base64-simd",

@@ -30,7 +30,7 @@ fn sniff() {
 Flexible: false
 Is UTF8: true
 Detected Mime Type: application/csv
-Detected Kind: Other
+Detected Kind: code
 Retrieved Size (bytes): 27
 File Size (bytes): 27
 Sampled Records: 2
@@ -63,7 +63,7 @@ fn sniff_stats_types() {
 Flexible: false
 Is UTF8: true
 Detected Mime Type: application/csv
-Detected Kind: Other
+Detected Kind: code
 Retrieved Size (bytes): 27
 File Size (bytes): 27
 Sampled Records: 2
@@ -200,7 +200,8 @@ fn sniff_url_snappy_noinfer() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected = "Detected mime type: application/x-snappy-framed";
+    // magika detects the decompressed content type, not the snappy container
+    let expected = "Detected mime type: text/csv";
 
     assert!(got.starts_with(expected));
 }
@@ -266,14 +267,15 @@ fn sniff_tab() {
 
     let got: String = wrk.stdout(&mut cmd);
 
+    // magika correctly detects tab-separated files as text/tsv
     let expected_end = r#"Delimiter: tab
 Header Row: true
 Preamble Rows: 0
 Quote Char: "
 Flexible: false
 Is UTF8: true
-Detected Mime Type: text/plain
-Detected Kind: Other
+Detected Mime Type: text/tsv
+Detected Kind: code
 Retrieved Size (bytes): 27
 File Size (bytes): 27
 Sampled Records: 2
@@ -354,7 +356,7 @@ fn sniff_flexible_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = r#","delimiter_char":",","header_row":true,"preamble_rows":3,"quote_char":"\"","flexible":true,"is_utf8":true,"detected_mime":"application/csv","detected_kind":"Other","retrieved_size":135,"file_size":135,"sampled_records":5,"estimated":false,"num_records":5,"avg_record_len":15,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
+    let expected_end = r#","delimiter_char":",","header_row":true,"preamble_rows":3,"quote_char":"\"","flexible":true,"is_utf8":true,"detected_mime":"application/csv","detected_kind":"code","retrieved_size":135,"file_size":135,"sampled_records":5,"estimated":false,"num_records":5,"avg_record_len":15,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
 
     assert!(got.ends_with(expected_end));
 }
@@ -369,7 +371,7 @@ fn sniff_pretty_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 3,"quote_char": "\"","flexible": true,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 116,"file_size": 116,"sampled_records": 3,"estimated": false,"num_records": 3,"avg_record_len": 16,"num_fields": 4,"stats_types": false,"fields": [
+    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 3,"quote_char": "\"","flexible": true,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "code","retrieved_size": 116,"file_size": 116,"sampled_records": 3,"estimated": false,"num_records": 3,"avg_record_len": 16,"num_fields": 4,"stats_types": false,"fields": [
     "h1",
     "h2",
     "h3",
@@ -397,7 +399,7 @@ fn sniff_sample() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 0,"quote_char": "\"","flexible": false,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 9246,"file_size": 9246,"sampled_records": 7,"estimated": false,"num_records": 15,"avg_record_len": 577,"num_fields": 32,"stats_types": false,"fields": [
+    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 0,"quote_char": "\"","flexible": false,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "code","retrieved_size": 9246,"file_size": 9246,"sampled_records": 7,"estimated": false,"num_records": 15,"avg_record_len": 577,"num_fields": 32,"stats_types": false,"fields": [
     "ExtractDate",
     "OrganisationURI",
     "OrganisationLabel",
@@ -558,9 +560,10 @@ fn sniff_consistent_results_issue_956() {
     cmd.arg(test_file);
     wrk.assert_success(&mut cmd);
 
-    // This file is still detected as application/octet-stream (not a valid CSV)
+    // With magika, this file is now correctly detected as CSV (it was octet-stream with
+    // file-format)
     let test_file = wrk.load_test_file("Inpatients_MHA_Machine_readable_dataset_1011.csv");
     let mut cmd = wrk.command("sniff");
     cmd.arg(test_file);
-    wrk.assert_err(&mut cmd);
+    wrk.assert_success(&mut cmd);
 }

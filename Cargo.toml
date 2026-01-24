@@ -157,6 +157,7 @@ jsonschema = { version = "0.40", features = [
 ], default-features = false }
 libc = "0.2"
 log = "0.4"
+magika = { version = "1.0", optional = true }
 memmap2 = "0.9"
 mimalloc = { version = "0.1", default-features = false, features = ["extended", "v3"], optional = true }
 minijinja = { version = "2", features = [
@@ -182,6 +183,8 @@ mlua = { version = "0.11", features = [
 ], optional = true }
 num_cpus = "1"
 odht = "0.3"
+# ort is needed by magika for ONNX runtime; download-binaries fetches prebuilt binaries
+ort = { version = "2.0.0-rc.10", default-features = false, features = ["download-binaries"], optional = true }
 phf = { version = "0.13", features = ["macros"] }
 polars = { version = "0.52", features = [
     "asof_join",
@@ -377,6 +380,7 @@ distrib_features = [
     "foreach",
     "geocode",
     "luau",
+    "magika",
     "mcp",
     "polars",
     "python",
@@ -416,6 +420,7 @@ geocode = [
     "sled",
 ]
 luau = ["mlua", "sanitize-filename"]
+magika = ["dep:magika", "dep:ort"]
 mcp = []
 polars = ["dep:polars", "bytemuck"]
 

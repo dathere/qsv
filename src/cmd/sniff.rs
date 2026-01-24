@@ -8,9 +8,14 @@ field names & data types) using a Viterbi algorithm. (https://en.wikipedia.org/w
 last modified date. If --no-infer is enabled, it doesn't even bother to infer the CSV's schema.
 This makes it useful for accelerated CKAN harvesting and for checking stale/broken resource URLs.
 
-It detects more than 120 mime types, including CSV, MS Office/Open Document files, JSON, XML, 
-PDF, PNG, JPEG and specialized geospatial formats like GPX, GML, KML, TML, TMX, TSX, TTML.
-see https://docs.rs/file-format/latest/file_format/#reader-features
+When qsv is compiled with the optional `magika` feature, it uses Google's Magika
+AI-powered content detection to identify file types with high accuracy. Magika detects over
+200 content types including CSV, MS Office/Open Document files, JSON, XML, PDF, PNG, JPEG
+and many more.
+See https://opensource.googleblog.com/2025/11/announcing-magika-10-now-faster-smarter.html.
+
+When the `magika` feature is not enabled in a build (e.g., MUSL builds, qsvlite, qsvdp), it falls back
+to the file-format crate which provides basic MIME type detection.
 
 NOTE: This command "sniffs" a CSV's schema by sampling the first n rows (default: 1000)
 of a file. Its inferences are sometimes wrong if the the file is too small to infer a pattern
@@ -100,6 +105,8 @@ Common options:
     -p, --progressbar        Show progress bars. Only valid for URL input.
 "#;
 
+#[cfg(feature = "magika")]
+use std::sync::{LazyLock, Mutex};
 use std::{
     cmp::min,
     fmt, fs,
@@ -110,12 +117,15 @@ use std::{
 
 use bytes::Bytes;
 use csv_nose::{DatePreference, SampleSize, Sniffer};
+#[cfg(not(feature = "magika"))]
 use file_format::FileFormat;
 use futures::executor::block_on;
 use futures_util::StreamExt;
 use indicatif::HumanCount;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{HumanBytes, ProgressBar, ProgressDrawTarget, ProgressStyle};
+#[cfg(feature = "magika")]
+use magika::Session;
 use qsv_tabwriter::TabWriter;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -128,6 +138,61 @@ use crate::{
     util,
     util::format_systemtime,
 };
+
+// Magika ML session - lazy initialized and reused for all detections
+#[cfg(feature = "magika")]
+static MAGIKA_SESSION: LazyLock<Result<Mutex<Session>, String>> =
+    LazyLock::new(|| Session::new().map(Mutex::new).map_err(|e| e.to_string()));
+
+/// Detect mime type from bytes using available backend
+#[cfg(feature = "magika")]
+fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String) {
+    // If Magika failed to initialize or the mutex is poisoned, fall back to a default mime type
+    let default_mime = || {
+        (
+            "application/octet-stream".to_string(),
+            "unknown".to_string(),
+        )
+    };
+
+    match &*MAGIKA_SESSION {
+        Ok(mutex) => match mutex.lock() {
+            Ok(mut session) => match session.identify_content_sync(bytes) {
+                Ok(result) => (
+                    result.info().mime_type.to_string(),
+                    result.info().group.to_string(),
+                ),
+                Err(_) => default_mime(),
+            },
+            Err(_) => default_mime(),
+        },
+        Err(_) => default_mime(),
+    }
+}
+
+#[cfg(not(feature = "magika"))]
+fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String) {
+    let fmt = FileFormat::from_bytes(bytes);
+    (fmt.media_type().to_string(), format!("{:?}", fmt.kind()))
+}
+
+/// Detect mime type from file using available backend
+#[cfg(feature = "magika")]
+fn detect_mime_from_file(path: &std::path::Path) -> Result<(String, String), String> {
+    let mut session = MAGIKA_SESSION.lock().unwrap();
+    session
+        .identify_file_sync(path)
+        .map(|r| (r.info().mime_type.to_string(), r.info().group.to_string()))
+        .map_err(|e| format!("Magika detection error: {e}"))
+}
+
+#[cfg(not(feature = "magika"))]
+fn detect_mime_from_file(path: &std::path::Path) -> Result<(String, String), String> {
+    FileFormat::from_file(path)
+        .map(|fmt| (fmt.media_type().to_string(), format!("{:?}", fmt.kind())))
+        .map_err(|e| format!("File format detection error: {e}"))
+}
+
 #[allow(dead_code)]
 #[derive(Deserialize)]
 struct Args {
@@ -429,7 +494,7 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                     let chunk_len = chunk.len();
 
                     if downloaded == 0 && !snappy_flag && args.flag_quick {
-                        let mime = FileFormat::from_bytes(&chunk).media_type().to_string();
+                        let (mime, _kind) = detect_mime_from_bytes(&chunk[..]);
                         log::debug!("scanned first {chunk_len} bytes - detected mime: {mime}");
                         if !mime.starts_with("text/") && mime != "application/csv" {
                             downloaded = chunk_len;
@@ -484,9 +549,9 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                 let mut detected_kind: String = String::new();
 
                 if !args.flag_quick {
-                    let file_format = FileFormat::from_file(file.path())?;
-                    detected_mime = file_format.media_type().to_string();
-                    detected_kind = format!("{:?}", file_format.kind());
+                    let (mime, kind) = detect_mime_from_file(file.path())?;
+                    detected_mime = mime;
+                    detected_kind = kind;
                     csv_candidate =
                         detected_mime.starts_with("text/") || detected_mime == "application/csv";
                 }
@@ -734,9 +799,9 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
     let file_type = if sfile_info.detected_mime.is_empty()
         || sfile_info.detected_mime == "application/x-snappy-framed" && !args.flag_no_infer
     {
-        let file_format = FileFormat::from_file(&sfile_info.file_to_sniff)?;
-        file_kind = format!("{:?}", file_format.kind());
-        file_format.media_type().to_string()
+        let (mime, kind) = detect_mime_from_file(std::path::Path::new(&sfile_info.file_to_sniff))?;
+        file_kind = kind;
+        mime
     } else {
         file_kind = sfile_info.detected_kind.clone();
         sfile_info.detected_mime.clone()

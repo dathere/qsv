@@ -426,13 +426,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let path_string = if args.arg_input == "-" {
         let mut buffer = Vec::new();
         std::io::stdin().read_to_end(&mut buffer)?;
-        let fmt = FileFormat::from_bytes(&buffer);
-        let spreadsheet_kind = match fmt {
-            FileFormat::OfficeOpenXmlSpreadsheet => "xlsx",
-            FileFormat::MicrosoftExcelSpreadsheet => "xls",
-            FileFormat::OpendocumentSpreadsheet => "ods",
+
+        let mime_type = FileFormat::from_bytes(&buffer).media_type().to_string();
+
+        let spreadsheet_kind = match mime_type.as_str() {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "xlsx",
+            "application/vnd.ms-excel" => "xls",
+            "application/vnd.oasis.opendocument.spreadsheet" => "ods",
             _ => {
-                return fail_clierror!("Unsupported file format detected on stdin: {fmt:?}.");
+                return fail_clierror!("Unsupported file format detected on stdin: {mime_type}.");
             },
         };
 

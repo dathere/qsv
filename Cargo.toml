@@ -121,7 +121,6 @@ ext-sort = { version = "0.1", default-features = false }
 fast-float2 = "0.2"
 flate2 = { version = "1", optional = true }
 foldhash = "0.2"
-file-format = { version = "0.28", features = ["reader"] }
 filetime = "0.2"
 flexi_logger = { version = "0.31", features = [
     "async",
@@ -157,6 +156,7 @@ jsonschema = { version = "0.40", features = [
 ], default-features = false }
 libc = "0.2"
 log = "0.4"
+magika = "1.0"
 memmap2 = "0.9"
 mimalloc = { version = "0.1", default-features = false, features = ["extended", "v3"], optional = true }
 minijinja = { version = "2", features = [
@@ -182,6 +182,8 @@ mlua = { version = "0.11", features = [
 ], optional = true }
 num_cpus = "1"
 odht = "0.3"
+# ort is needed by magika for ONNX runtime; download-binaries fetches prebuilt binaries
+ort = { version = "2.0.0-rc.10", default-features = false, features = ["download-binaries"] }
 phf = { version = "0.13", features = ["macros"] }
 polars = { version = "0.52", features = [
     "asof_join",

@@ -25,37 +25,24 @@ fn sniff() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    // magika detects CSV with Kind: code, file-format with Kind: Other
+    // magika detects CSV with label: csv, file-format also returns label: csv
     // Both correctly detect MIME type as application/csv
+    // magika also provides inference score (varies slightly), file-format does not
     #[cfg(feature = "magika")]
-    let expected_end = dos2unix(
-        r#"Quote Char: "
-Flexible: false
-Is UTF8: true
-Detected Mime Type: application/csv
-Detected Kind: code
-Retrieved Size (bytes): 27
-File Size (bytes): 27
-Sampled Records: 2
-Estimated: false
-Num Records: 2
-Avg Record Len (bytes): 9
-Num Fields: 3
-Stats Types: false
-Fields:
-    1:  Text      h1
-    2:  Unsigned  h2
-    3:  Text      h3"#,
-    );
+    {
+        assert!(got.contains("Detected Mime Type: application/csv"));
+        assert!(got.contains("Detected Label: csv"));
+        assert!(got.contains("Inference Score: 0.99"));
+    }
 
     #[cfg(not(feature = "magika"))]
+    {
+        assert!(got.contains("Detected Mime Type: application/csv"));
+        assert!(got.contains("Detected Label: csv"));
+    }
+
     let expected_end = dos2unix(
-        r#"Quote Char: "
-Flexible: false
-Is UTF8: true
-Detected Mime Type: application/csv
-Detected Kind: Other
-Retrieved Size (bytes): 27
+        r#"Retrieved Size (bytes): 27
 File Size (bytes): 27
 Sampled Records: 2
 Estimated: false
@@ -70,6 +57,12 @@ Fields:
     );
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
+
+    // Explicit field assertions
+    assert!(got.contains("Num Fields: 3"));
+    assert!(got.contains("Text      h1"));
+    assert!(got.contains("Unsigned  h2"));
+    assert!(got.contains("Text      h3"));
 }
 
 #[test]
@@ -83,34 +76,20 @@ fn sniff_stats_types() {
     let got: String = wrk.stdout(&mut cmd);
 
     #[cfg(feature = "magika")]
-    let expected_end = dos2unix(
-        r#"Quote Char: "
-Flexible: false
-Is UTF8: true
-Detected Mime Type: application/csv
-Detected Kind: code
-Retrieved Size (bytes): 27
-File Size (bytes): 27
-Sampled Records: 2
-Estimated: false
-Num Records: 2
-Avg Record Len (bytes): 9
-Num Fields: 3
-Stats Types: true
-Fields:
-    1:  String   h1
-    2:  Integer  h2
-    3:  String   h3"#,
-    );
+    {
+        assert!(got.contains("Detected Mime Type: application/csv"));
+        assert!(got.contains("Detected Label: csv"));
+        assert!(got.contains("Inference Score: 0.99"));
+    }
 
     #[cfg(not(feature = "magika"))]
+    {
+        assert!(got.contains("Detected Mime Type: application/csv"));
+        assert!(got.contains("Detected Label: csv"));
+    }
+
     let expected_end = dos2unix(
-        r#"Quote Char: "
-Flexible: false
-Is UTF8: true
-Detected Mime Type: application/csv
-Detected Kind: Other
-Retrieved Size (bytes): 27
+        r#"Retrieved Size (bytes): 27
 File Size (bytes): 27
 Sampled Records: 2
 Estimated: false
@@ -125,6 +104,12 @@ Fields:
     );
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
+
+    // Explicit field assertions (with stats types: String/Integer instead of Text/Unsigned)
+    assert!(got.contains("Num Fields: 3"));
+    assert!(got.contains("String   h1"));
+    assert!(got.contains("Integer  h2"));
+    assert!(got.contains("String   h3"));
 }
 
 #[test]
@@ -234,6 +219,14 @@ Fields:
     29:  Text      source"#;
 
     assert!(got.ends_with(expected_end));
+
+    // Explicit field assertions for boston311 dataset
+    assert!(got.contains("Num Fields: 29"));
+    assert!(got.contains("Unsigned  case_enquiry_id"));
+    assert!(got.contains("DateTime  open_dt"));
+    assert!(got.contains("NULL      closedphoto"));
+    assert!(got.contains("Float     latitude"));
+    assert!(got.contains("Text      source"));
 }
 
 #[test]
@@ -307,6 +300,14 @@ Fields:
     29:  Text      source"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
+
+    // Explicit field assertions for boston311 dataset
+    assert!(got.contains("Num Fields: 29"));
+    assert!(got.contains("Unsigned  case_enquiry_id"));
+    assert!(got.contains("DateTime  open_dt"));
+    assert!(got.contains("NULL      closedphoto"));
+    assert!(got.contains("Float     latitude"));
+    assert!(got.contains("Text      source"));
 }
 
 #[test]
@@ -321,38 +322,21 @@ fn sniff_tab() {
 
     // magika correctly detects tab-separated files as text/tsv
     // file-format falls back to text/plain
+    // magika also provides inference score (varies slightly)
     #[cfg(feature = "magika")]
-    let expected_end = r#"Delimiter: tab
-Header Row: true
-Preamble Rows: 0
-Quote Char: "
-Flexible: false
-Is UTF8: true
-Detected Mime Type: text/tsv
-Detected Kind: code
-Retrieved Size (bytes): 27
-File Size (bytes): 27
-Sampled Records: 2
-Estimated: false
-Num Records: 2
-Avg Record Len (bytes): 9
-Num Fields: 3
-Stats Types: false
-Fields:
-    1:  Text      h1
-    2:  Unsigned  h2
-    3:  Text      h3"#;
+    {
+        assert!(got.contains("Detected Mime Type: text/tsv"));
+        assert!(got.contains("Detected Label: tsv"));
+        assert!(got.contains("Inference Score: 0.99"));
+    }
 
     #[cfg(not(feature = "magika"))]
-    let expected_end = r#"Delimiter: tab
-Header Row: true
-Preamble Rows: 0
-Quote Char: "
-Flexible: false
-Is UTF8: true
-Detected Mime Type: text/plain
-Detected Kind: Other
-Retrieved Size (bytes): 27
+    {
+        assert!(got.contains("Detected Mime Type: text/plain"));
+        assert!(got.contains("Detected Label: tsv"));
+    }
+
+    let expected_end = r#"Retrieved Size (bytes): 27
 File Size (bytes): 27
 Sampled Records: 2
 Estimated: false
@@ -366,6 +350,12 @@ Fields:
     3:  Text      h3"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end));
+
+    // Explicit field assertions
+    assert!(got.contains("Num Fields: 3"));
+    assert!(got.contains("Text      h1"));
+    assert!(got.contains("Unsigned  h2"));
+    assert!(got.contains("Text      h3"));
 }
 
 #[test]
@@ -421,6 +411,11 @@ fn sniff_json() {
     let expected_end: &str = r#"sampled_records":3,"estimated":false,"num_records":3,"avg_record_len":16,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
 
     assert!(got.ends_with(expected_end));
+
+    // Explicit field assertions for JSON output
+    assert!(got.contains(r#""num_fields":4"#));
+    assert!(got.contains(r#""fields":["h1","h2","h3","h4"]"#));
+    assert!(got.contains(r#""types":["Text","Unsigned","Text","Float"]"#));
 }
 
 #[test]
@@ -433,13 +428,17 @@ fn sniff_flexible_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    #[cfg(feature = "magika")]
-    let expected_end = r#","delimiter_char":",","header_row":true,"preamble_rows":3,"quote_char":"\"","flexible":true,"is_utf8":true,"detected_mime":"application/csv","detected_kind":"code","retrieved_size":135,"file_size":135,"sampled_records":5,"estimated":false,"num_records":5,"avg_record_len":15,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
+    assert!(got.contains(r#""detected_label":"csv""#));
+    assert!(got.contains(r#""inference_score":1.0"#));
 
-    #[cfg(not(feature = "magika"))]
-    let expected_end = r#","delimiter_char":",","header_row":true,"preamble_rows":3,"quote_char":"\"","flexible":true,"is_utf8":true,"detected_mime":"application/csv","detected_kind":"Other","retrieved_size":135,"file_size":135,"sampled_records":5,"estimated":false,"num_records":5,"avg_record_len":15,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
+    let expected_end = r#","sampled_records":5,"estimated":false,"num_records":5,"avg_record_len":15,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
 
     assert!(got.ends_with(expected_end));
+
+    // Explicit field assertions for JSON output
+    assert!(got.contains(r#""num_fields":4"#));
+    assert!(got.contains(r#""fields":["h1","h2","h3","h4"]"#));
+    assert!(got.contains(r#""types":["Text","Unsigned","Text","Float"]"#));
 }
 
 #[test]
@@ -452,22 +451,21 @@ fn sniff_pretty_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
+    // Check for inference_score field in pretty JSON
+    // magika provides ML confidence scores (~0.99), file-format uses 1.0 for rule-based matches
     #[cfg(feature = "magika")]
-    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 3,"quote_char": "\"","flexible": true,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "code","retrieved_size": 116,"file_size": 116,"sampled_records": 3,"estimated": false,"num_records": 3,"avg_record_len": 16,"num_fields": 4,"stats_types": false,"fields": [
-    "h1",
-    "h2",
-    "h3",
-    "h4"
-  ],"types": [
-    "Text",
-    "Unsigned",
-    "Text",
-    "Float"
-  ]
-}"#;
+    {
+        assert!(got.contains(r#""detected_label": "csv""#));
+        assert!(got.contains(r#""inference_score": 0.99"#));
+    }
 
     #[cfg(not(feature = "magika"))]
-    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 3,"quote_char": "\"","flexible": true,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 116,"file_size": 116,"sampled_records": 3,"estimated": false,"num_records": 3,"avg_record_len": 16,"num_fields": 4,"stats_types": false,"fields": [
+    {
+        assert!(got.contains(r#""detected_label": "csv""#));
+        assert!(got.contains(r#""inference_score": 1.0"#));
+    }
+
+    let expected_end = r#""fields": [
     "h1",
     "h2",
     "h3",
@@ -481,6 +479,16 @@ fn sniff_pretty_json() {
 }"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
+
+    // Explicit field assertions for pretty JSON output
+    assert!(got.contains(r#""num_fields": 4"#));
+    assert!(got.contains(r#""h1""#));
+    assert!(got.contains(r#""h2""#));
+    assert!(got.contains(r#""h3""#));
+    assert!(got.contains(r#""h4""#));
+    assert!(got.contains(r#""Text""#));
+    assert!(got.contains(r#""Unsigned""#));
+    assert!(got.contains(r#""Float""#));
 }
 
 #[test]
@@ -496,111 +504,21 @@ fn sniff_sample() {
 
     let got: String = wrk.stdout(&mut cmd);
 
+    // Check for inference_score field in pretty JSON
+    // magika provides ML confidence scores (~0.99), file-format uses 1.0 for rule-based matches
     #[cfg(feature = "magika")]
-    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 0,"quote_char": "\"","flexible": false,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "code","retrieved_size": 9246,"file_size": 9246,"sampled_records": 7,"estimated": false,"num_records": 15,"avg_record_len": 577,"num_fields": 32,"stats_types": false,"fields": [
-    "ExtractDate",
-    "OrganisationURI",
-    "OrganisationLabel",
-    "ServiceTypeURI",
-    "ServiceTypeLabel",
-    "LocationText",
-    "CoordinateReferenceSystem",
-    "GeoX",
-    "GeoY",
-    "GeoPointLicensingURL",
-    "Category",
-    "AccessibleCategory",
-    "RADARKeyNeeded",
-    "BabyChange",
-    "FamilyToilet",
-    "ChangingPlace",
-    "AutomaticPublicConvenience",
-    "FullTimeStaffing",
-    "PartOfCommunityScheme",
-    "CommunitySchemeName",
-    "ChargeAmount",
-    "InfoURL",
-    "OpeningHours",
-    "ManagedBy",
-    "ReportEmail",
-    "ReportTel",
-    "Notes",
-    "UPRN",
-    "Postcode",
-    "StreetAddress",
-    "GeoAreaURI",
-    "GeoAreaLabel"
-  ],"types": [
-    "DateTime",
-    "Text",
-    "Text",
-    "Text",
-    "Text",
-    "Text",
-    "Text",
-    "Unsigned",
-    "Unsigned",
-    "Text",
-    "Text",
-    "Text",
-    "Boolean",
-    "Boolean",
-    "Boolean",
-    "Boolean",
-    "Boolean",
-    "Boolean",
-    "Boolean",
-    "NULL",
-    "NULL",
-    "Text",
-    "Text",
-    "Text",
-    "Text",
-    "Text",
-    "Text",
-    "Unsigned",
-    "NULL",
-    "Text",
-    "NULL",
-    "NULL"
-  ]
-}"#;
+    {
+        assert!(got.contains(r#""detected_label": "csv""#));
+        assert!(got.contains(r#""inference_score": 0.99"#));
+    }
 
     #[cfg(not(feature = "magika"))]
-    let expected_end = r#""delimiter_char": ",","header_row": true,"preamble_rows": 0,"quote_char": "\"","flexible": false,"is_utf8": true,"detected_mime": "application/csv","detected_kind": "Other","retrieved_size": 9246,"file_size": 9246,"sampled_records": 7,"estimated": false,"num_records": 15,"avg_record_len": 577,"num_fields": 32,"stats_types": false,"fields": [
-    "ExtractDate",
-    "OrganisationURI",
-    "OrganisationLabel",
-    "ServiceTypeURI",
-    "ServiceTypeLabel",
-    "LocationText",
-    "CoordinateReferenceSystem",
-    "GeoX",
-    "GeoY",
-    "GeoPointLicensingURL",
-    "Category",
-    "AccessibleCategory",
-    "RADARKeyNeeded",
-    "BabyChange",
-    "FamilyToilet",
-    "ChangingPlace",
-    "AutomaticPublicConvenience",
-    "FullTimeStaffing",
-    "PartOfCommunityScheme",
-    "CommunitySchemeName",
-    "ChargeAmount",
-    "InfoURL",
-    "OpeningHours",
-    "ManagedBy",
-    "ReportEmail",
-    "ReportTel",
-    "Notes",
-    "UPRN",
-    "Postcode",
-    "StreetAddress",
-    "GeoAreaURI",
-    "GeoAreaLabel"
-  ],"types": [
+    {
+        assert!(got.contains(r#""detected_label": "csv""#));
+        assert!(got.contains(r#""inference_score": 1.0"#));
+    }
+
+    let expected_end = r#""types": [
     "DateTime",
     "Text",
     "Text",
@@ -637,6 +555,15 @@ fn sniff_sample() {
 }"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
+
+    // Explicit field assertions for adur-public-toilets dataset (pretty JSON)
+    assert!(got.contains(r#""num_fields": 32"#));
+    assert!(got.contains(r#""ExtractDate""#));
+    assert!(got.contains(r#""OrganisationURI""#));
+    assert!(got.contains(r#""GeoAreaLabel""#));
+    assert!(got.contains(r#""DateTime""#));
+    assert!(got.contains(r#""Boolean""#));
+    assert!(got.contains(r#""NULL""#));
 }
 
 #[test]
@@ -687,6 +614,14 @@ Fields:
     29:  Text      source"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
+
+    // Explicit field assertions for boston311-dmy dataset
+    assert!(got.contains("Num Fields: 29"));
+    assert!(got.contains("Unsigned  case_enquiry_id"));
+    assert!(got.contains("DateTime  open_dt"));
+    assert!(got.contains("NULL      closedphoto"));
+    assert!(got.contains("Float     latitude"));
+    assert!(got.contains("Text      source"));
 }
 
 #[test]

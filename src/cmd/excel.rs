@@ -157,14 +157,20 @@ Common options:
     -q, --quiet                Do not display export summary message.
 "#;
 
-use std::{cmp, fmt::Write, io::Read, path::PathBuf};
+use std::{
+    cmp,
+    fmt::Write,
+    io::Read,
+    path::PathBuf,
+    sync::{LazyLock, Mutex},
+};
 
 use calamine::{
     Data, Error, HeaderRow, Range, Reader, SheetType, Sheets, open_workbook, open_workbook_auto,
 };
-use file_format::FileFormat;
 use indicatif::HumanCount;
 use log::info;
+use magika::Session;
 use rayon::prelude::{IndexedParallelIterator, ParallelIterator, ParallelSlice};
 use serde::{Deserialize, Serialize};
 
@@ -173,6 +179,10 @@ use crate::{
     config::{Config, Delimiter},
     util,
 };
+
+// Magika ML session - lazy initialized and reused for all detections
+static MAGIKA_SESSION: LazyLock<Mutex<Session>> =
+    LazyLock::new(|| Mutex::new(Session::new().expect("Failed to initialize Magika session")));
 
 #[derive(Deserialize)]
 struct Args {
@@ -426,13 +436,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let path_string = if args.arg_input == "-" {
         let mut buffer = Vec::new();
         std::io::stdin().read_to_end(&mut buffer)?;
-        let fmt = FileFormat::from_bytes(&buffer);
-        let spreadsheet_kind = match fmt {
-            FileFormat::OfficeOpenXmlSpreadsheet => "xlsx",
-            FileFormat::MicrosoftExcelSpreadsheet => "xls",
-            FileFormat::OpendocumentSpreadsheet => "ods",
+
+        let mime_type = {
+            // safety: lock the session only for the duration of detection
+            let mut session = MAGIKA_SESSION.lock().unwrap();
+            session
+                .identify_content_sync(&buffer[..])
+                .map_or_else(|_| String::new(), |r| r.info().mime_type.to_string())
+        };
+
+        let spreadsheet_kind = match mime_type.as_str() {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "xlsx",
+            "application/vnd.ms-excel" => "xls",
+            "application/vnd.oasis.opendocument.spreadsheet" => "ods",
             _ => {
-                return fail_clierror!("Unsupported file format detected on stdin: {fmt:?}.");
+                return fail_clierror!("Unsupported file format detected on stdin: {mime_type}.");
             },
         };
 

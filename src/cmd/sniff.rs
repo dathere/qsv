@@ -141,22 +141,30 @@ use crate::{
 
 // Magika ML session - lazy initialized and reused for all detections
 #[cfg(feature = "magika")]
-static MAGIKA_SESSION: LazyLock<Mutex<Session>> =
-    LazyLock::new(|| Mutex::new(Session::new().expect("Failed to initialize Magika session")));
+static MAGIKA_SESSION: LazyLock<Result<Mutex<Session>, String>> = LazyLock::new(|| {
+    Session::new().map(Mutex::new).map_err(|e| e.to_string())
+});
 
 /// Detect mime type from bytes using available backend
 #[cfg(feature = "magika")]
 fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String) {
-    let mut session = MAGIKA_SESSION.lock().unwrap();
-    match session.identify_content_sync(bytes) {
-        Ok(result) => (
-            result.info().mime_type.to_string(),
-            result.info().group.to_string(),
-        ),
-        Err(_) => (
-            "application/octet-stream".to_string(),
-            "unknown".to_string(),
-        ),
+    // If Magika failed to initialize or the mutex is poisoned, fall back to a default mime type
+    let default_mime = || ("application/octet-stream".to_string(), "unknown".to_string());
+
+    match &*MAGIKA_SESSION {
+        Ok(mutex) => {
+            match mutex.lock() {
+                Ok(mut session) => match session.identify_content_sync(bytes) {
+                    Ok(result) => (
+                        result.info().mime_type.to_string(),
+                        result.info().group.to_string(),
+                    ),
+                    Err(_) => default_mime(),
+                },
+                Err(_) => default_mime(),
+            }
+        }
+        Err(_) => default_mime(),
     }
 }
 

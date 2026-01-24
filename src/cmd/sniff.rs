@@ -1085,9 +1085,8 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
                     file_label.clone()
                 },
                 inference_score: file_score.map(|score| {
-                    util::round_num(score as f64, 4)
-                        .parse::<f32>()
-                        .unwrap_or_default()
+                    // round to 4 decimal places without string round-trip
+                    (score * 10_000.0).round() / 10_000.0
                 }),
                 retrieved_size: sfile_info.retrieved_size,
                 file_size: sfile_info.file_size,

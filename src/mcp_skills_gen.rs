@@ -1183,8 +1183,9 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         fs::write(&output_file, json)?;
 
         eprintln!("  ✅ Generated: {}", output_file.display());
-        eprintln!("     - {} arguments", skill.command.args.len());
-        eprintln!("     - {} options", skill.command.options.len());
+        eprintln!("     - {} argument/s", skill.command.args.len());
+        eprintln!("     - {} option/s", skill.command.options.len());
+        eprintln!("     - {} example/s", skill.examples.len());
         eprintln!();
 
         success_count += 1;

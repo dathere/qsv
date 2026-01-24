@@ -577,15 +577,23 @@ impl UsageParser {
         let mut description_lines = Vec::new();
 
         for line in lines {
-            let trimmed = line.trim();
-            if trimmed.starts_with("Usage:") {
+            let trimmed_lower = line.trim().to_ascii_lowercase();
+            if trimmed_lower.starts_with("usage:")
+                || trimmed_lower.starts_with("note:")
+                || trimmed_lower.starts_with("options:")
+            {
                 break;
             }
-            if trimmed.starts_with("For more examples,") || trimmed.starts_with("Examples:") {
+            if trimmed_lower.starts_with("for more examples,")
+                || trimmed_lower.starts_with("examples:")
+            {
                 break;
             }
-            if !trimmed.is_empty() && !trimmed.starts_with('$') && !trimmed.starts_with('#') {
-                description_lines.push(trimmed);
+            if !trimmed_lower.is_empty()
+                && !trimmed_lower.starts_with('$')
+                && !trimmed_lower.starts_with('#')
+            {
+                description_lines.push(trimmed_lower);
             }
         }
 
@@ -1183,8 +1191,9 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         fs::write(&output_file, json)?;
 
         eprintln!("  ✅ Generated: {}", output_file.display());
-        eprintln!("     - {} arguments", skill.command.args.len());
-        eprintln!("     - {} options", skill.command.options.len());
+        eprintln!("     - {} argument/s", skill.command.args.len());
+        eprintln!("     - {} option/s", skill.command.options.len());
+        eprintln!("     - {} example/s", skill.examples.len());
         eprintln!();
 
         success_count += 1;

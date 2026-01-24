@@ -29,6 +29,20 @@ instead as they scan the entire file. However, they only work on local files and
 CSVs, unlike `sniff` which can work with remote files, various CSV dialects and is very fast
 regardless of file size.
 
+Examples:
+
+  # Sniff a local CSV file
+  qsv sniff data.csv
+
+  # Sniff a remote TSV file over HTTPS
+  qsv sniff https://example.com/data.tsv
+
+  # Get the mime type of a remote file without inferring the CSV schema
+  qsv sniff --no-infer https://example.com/data.xlsx
+
+  # Sniff the first 20 percent of a SSV file
+  qsv sniff --sample 0.20 data.ssv
+
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_sniff.rs.
 
 Usage:
@@ -70,7 +84,7 @@ sniff options:
                              Specify this when the delimiter is known beforehand,
                              as the delimiter inferencing algorithm can sometimes fail.
                              Must be a single ascii character.
-    --quote <arg>        The quote character for reading CSV data.
+    --quote <arg>            The quote character for reading CSV data.
                              Specify this when the quote character is known beforehand,
                              as the quote char inferencing algorithm can sometimes fail.
                              Must be a single ascii character - typically, double quote ("),

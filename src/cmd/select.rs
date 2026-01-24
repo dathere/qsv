@@ -7,53 +7,61 @@ name if there is a header row (duplicate column names can be disambiguated with
 more indexing). Column ranges can also be specified. Finally, columns can be
 selected using regular expressions.
 
-  Select the first and fourth columns:
-  $ qsv select 1,4
+Examples:
 
-  Select the first 4 columns (by index and by name):
-  $ qsv select 1-4
-  $ qsv select Header1-Header4
+  # Select the first and fourth columns
+  qsv select 1,4
 
-  Ignore the first 2 columns (by range and by omission):
-  $ qsv select 3-
-  $ qsv select '!1-2'
+  # Select the first 4 columns (by index)
+  qsv select 1-4
 
-  Select the third column named 'Foo':
-  $ qsv select 'Foo[2]'
+  # Select the first 4 columns (by name)
+  qsv select Header1-Header4
 
-  Select the first and last columns, _ is a special character for the last column:
-  $ qsv select 1,_
+  # Ignore the first 2 columns (by range)
+  qsv select 3-
 
-  Reverse the order of columns:
-  $ qsv select _-1
+  # Ignore the first 2 columns (by index)
+  qsv select '!1-2'
 
-  Sort the columns lexicographically (i.e. by their byte values)
-  $ qsv select 1- --sort
+  # Select the third column named 'Foo':
+  qsv select 'Foo[2]'
 
-  Select some columns and then sort them:
-  $ qsv select 1,4,5-7 --sort
+  # Select the first and last columns, _ is a special character for the last column:
+  qsv select 1,_
 
-  Randomly shuffle the columns:
-  $ qsv select 1- --random
-  # with a seed
-  $ qsv select 1- --random --seed 42
+  # Reverse the order of columns:
+  qsv select _-1
 
-  Select some columns and then shuffle them with a seed:
-  $ qsv select 1,4,5-7 --random --seed 42
+  # select columns starting with 'a' (regex)
+  qsv select /^a/
 
-  Select columns using a regex using '/<regex>/':
-  # select columns starting with 'a'
-  $ qsv select /^a/
-  # select columns with a digit
-  $ qsv select '/^.*\d.*$/'
-  # remove SSN, account_no and password columns
-  $ qsv select '!/SSN|account_no|password/'
+  # select columns with a digit (regex)
+  qsv select '/^.*\d.*$/'
 
-  Re-order and duplicate columns arbitrarily using different types of selectors:
-  $ qsv select 3-1,Header3-Header1,Header1,Foo[2],Header1
+  # remove SSN, account_no and password columns (regex)
+  qsv select '!/SSN|account_no|password/'
 
-  Quote column names that conflict with selector syntax:
-  $ qsv select '\"Date - Opening\",\"Date - Actual Closing\"'
+  # Sort the columns lexicographically (i.e. by their byte values)
+  qsv select 1- --sort
+
+  # Select some columns and then sort them
+  qsv select 1,4,5-7 --sort
+
+  # Randomly shuffle the columns:
+  qsv select 1- --random
+
+  # Randomly shuffle the columns with a seed
+  qsv select 1- --random --seed 42
+
+  # Select some columns and then shuffle them with a seed:
+  qsv select 1,4,5-7 --random --seed 42
+
+  # Re-order and duplicate columns arbitrarily using different types of selectors
+  qsv select 3-1,Header3-Header1,Header1,Foo[2],Header1
+
+  # Quote column names that conflict with selector syntax:
+  qsv select '\"Date - Opening\",\"Date - Actual Closing\"'
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_select.rs.
 

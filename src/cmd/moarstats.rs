@@ -192,22 +192,24 @@ The bivariate statistics are saved to `<FILESTEM>.stats.bivariate.joined.csv`.
 Examples:
 
   # Add moar stats to existing stats file
-  $ qsv moarstats data.csv
+  qsv moarstats data.csv
 
   # Generate baseline stats first with custom options, then add moar stats
-  $ qsv moarstats data.csv --stats-options "--everything --infer-dates"
+  qsv moarstats data.csv --stats-options "--everything --infer-dates"
 
   # Output to different file
-  $ qsv moarstats data.csv --output enhanced_stats.csv
+  qsv moarstats data.csv --output enhanced_stats.csv
 
   # Compute bivariate statistics between fields
-  $ qsv moarstats data.csv --bivariate
+  qsv moarstats data.csv --bivariate
 
   # Join multiple datasets and compute bivariate statistics
-  $ qsv moarstats data.csv -B --join-inputs customers.csv,products.csv --join-keys cust_id,prod_id
+  qsv moarstats data.csv -B --join-inputs customers.csv,products.csv --join-keys cust_id,prod_id
 
   # Join multiple datasets and compute bivariate statistics with different join type
-  $ qsv moarstats data.csv -B -J customers.csv,products.csv -K cust_id,prod_id -T left
+  qsv moarstats data.csv -B -J customers.csv,products.csv -K cust_id,prod_id -T left
+
+For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_moarstats.rs.
 
 Usage:
     qsv moarstats [options] [<input>]

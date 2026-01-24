@@ -86,40 +86,46 @@ https://github.com/dathere/qsv/blob/4529d51273218347fef6aca15ac24e22b85b2ec4/tes
 
 Examples:
 
-Compute "streaming" statistics for the "nyc311.csv" file:
-  $ qsv stats nyc311.csv
+  # Compute "streaming" statistics for "nyc311.csv"
+  qsv stats nyc311.csv
 
-Compute all statistics for the "nyc311.csv" file:
-  $ qsv stats --everything nyc311.csv
-  $ qsv stats -E nyc311.csv
-  $ qsv stats -E nyc311.tsv // Tab-separated
-  $ qsv stats -E nyc311.tab // Tab-separated
-  $ qsv stats -E nyc311.ssv // Semicolon-separated
-  $ qsv stats -E nyc311.csv.sz // Snappy-compressed CSV
-  $ qsv stats -E nyc311.tsv.sz // Snappy-compressed Tab-separated
-  $ qsv stats -E nyc311.ssv.sz // Snappy-compressed Semicolon-separated
+  # Compute all statistics for "nyc311.csv"
+  qsv stats --everything nyc311.csv
 
-Compute all statistics for "nyc311.tsv", inferring dates using default date column name patterns:
-  $ qsv stats -E --infer-dates nyc311.tsv
+  # Compute all statistics for "nyc311.tsv" (Tab-separated)
+  qsv stats -E nyc311.tsv
 
-Compute all statistics for "nyc311.tab", inferring dates only for columns with "_date" & "_dte"
-in the column names:
-  $ qsv stats -E --infer-dates --dates-whitelist _date,_dte nyc311.tab
+  # Compute all stats for "nyc311.tsv", inferring dates using default date column name patterns
+  qsv stats -E --infer-dates nyc311.tsv
 
-In addition, also infer boolean data types for "nyc311.ssv" file:
-  $ qsv stats -E --infer-dates --dates-whitelist _date --infer-boolean nyc311.ssv
+  # Compute all stats for "nyc311.tab", inferring dates only for columns
+  #  with "_date" & "_dte" in the column names
+  qsv stats -E --infer-dates --dates-whitelist _date,_dte nyc311.tab
 
-In addition to basic "streaming" stats, also compute cardinality for the "nyc311.csv" file:
-  $ qsv stats --cardinality nyc311.csv
+  # Compute all stats, infer dates and boolean data types for "nyc311.ssv" file
+  qsv stats -E --infer-dates --dates-whitelist _date --infer-boolean nyc311.ssv
 
-Prefer DMY format when inferring dates for the "nyc311.csv" file:
-  $ qsv stats -E --infer-dates --prefer-dmy nyc311.csv
+  # In addition to basic "streaming" stats, also compute cardinality for "nyc311.csv"
+  qsv stats --cardinality nyc311.csv
 
-Infer data types only for the "nyc311.csv" file:
-  $ qsv stats --typesonly nyc311.csv
+  # Prefer DMY format when inferring dates for the "nyc311.csv"
+  qsv stats -E --infer-dates --prefer-dmy nyc311.csv
 
-Infer data types only, including boolean and date types for the "nyc311.csv" file:
+  # Infer data types only for the "nyc311.csv" file:
+  qsv stats --typesonly nyc311.csv
+
+  # Infer data types only, including boolean and date types for "nyc311.csv"
   $ qsv stats --typesonly --infer-boolean --infer-dates nyc311.csv
+
+  # Automatically create an index for the "nyc311.csv" file to enable multithreading
+  # if it's larger than 5MB and there is no existing index file:
+  qsv stats -E --cache-threshold -5000000 nyc311.csv
+
+  # Auto-create a TEMPORARY index for the "nyc311.csv" file to enable multithreading
+  # if it's larger than 5MB and delete the index and the stats cache file after the stats run:
+  qsv stats -E --cache-threshold -5000005 nyc311.csv
+
+For more examples, see https://github.com/dathere/qsv/tree/master/resources/test
 
 If the polars feature is enabled, support additional tabular file formats and
 compression formats:
@@ -131,27 +137,7 @@ compression formats:
   $ qsv stats data.tab.zlib // Zlib-compressed Tab-separated
   $ qsv stats data.ssv.zst // Zstd-compressed Semicolon-separated
 
-Automatically create an index for the "nyc311.csv" file to enable multithreading
-if it's larger than 5MB and there is no existing index file:
-  $ qsv stats -E --cache-threshold -5000000 nyc311.csv
-
-Auto-create a TEMPORARY index for the "nyc311.csv" file to enable multithreading
-if it's larger than 5MB and delete the index and the stats cache file after the stats run:
-  $ qsv stats -E --cache-threshold -5000005 nyc311.csv
-
-Prompt for CSV/TSV/TAB file to compute stats for:
-  $ qsv prompt -F tsv,csv,tab | qsv stats -E | qsv table
-
-Prompt for a file to save the stats to in the ~/Documents directory:
-  $ qsv stats -E nyc311.csv | qsv prompt -d ~/Documents --fd-output
-
-Prompt for both INPUT and OUTPUT files in the ~/Documents dir with custom prompts:
-  $ qsv prompt -m 'Select a CSV file to summarize' -d ~/Documents -F csv | \
-      qsv stats -E --infer-dates | \
-      qsv prompt -m 'Save summary to...' -d ~/Documents --fd-output --save-fname summarystats.csv
-
-For more examples, see https://github.com/dathere/qsv/tree/master/resources/test
-For more info, see https://github.com/dathere/qsv/wiki/Supplemental#stats-command-output-explanation
+For more info, see https://github.com/dathere/qsv/blob/master/docs/STATS_DEFINITIONS.md
 
 Usage:
     qsv stats [options] [<input>]

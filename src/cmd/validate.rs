@@ -159,7 +159,24 @@ It also confirms if the CSV is UTF-8 encoded.
 For both modes, returns exit code 0 when the CSV file is valid, exitcode > 0 otherwise.
 If all records are valid, no output files are produced.
 
-For examples, see the tests included in this file (denoted by '#[test]') or see
+Examples:
+
+  # Validate a CSV file. Use this to check if a CSV file is readable by qsv. 
+  qsv validate data.csv
+
+  # Validate a TSV file against a JSON Schema
+  qsv validate data.tsv schema.json
+
+  # Validate multiple CSV files using various dialects against a JSON Schema
+  qsv validate data1.csv data2.tab data3.ssv schema.json
+
+  # Validate all CSV files in a directory against a JSON Schema
+  qsv validate /path/to/csv_directory schema.json
+
+  # Validate CSV files listed in a '.infile-list' file against a JSON Schema
+  qsv validate files.infile-list schema.json
+
+For more examples, see the tests included in this file (denoted by '#[test]') or see
 https://github.com/dathere/qsv/blob/master/tests/test_validate.rs.
 
 Usage:

@@ -2,7 +2,7 @@ static USAGE: &str = r#"
 Quickly sniff the first n rows and infer CSV metadata (delimiter, header row, number of
 preamble rows, quote character, flexible, is_utf8, average record length, number of records,
 content length and estimated number of records if sniffing a URL, file size, number of fields,
-field names & data types) using a Viterbi algorithm. (https://en.wikipedia.org/wiki/Viterbi_algorithm)
+field names & data types).
 
 `sniff` is also a mime type detector, returning the detected mime type, file size and
 last modified date. If --no-infer is enabled, it doesn't even bother to infer the CSV's schema.
@@ -179,11 +179,15 @@ fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String) {
 /// Detect mime type from file using available backend
 #[cfg(feature = "magika")]
 fn detect_mime_from_file(path: &std::path::Path) -> Result<(String, String), String> {
-    let mut session = MAGIKA_SESSION.lock().unwrap();
-    session
-        .identify_file_sync(path)
-        .map(|r| (r.info().mime_type.to_string(), r.info().group.to_string()))
-        .map_err(|e| format!("Magika detection error: {e}"))
+    match &*MAGIKA_SESSION {
+        Ok(mutex) => mutex
+            .lock()
+            .map_err(|_| "Magika session mutex poisoned".to_string())?
+            .identify_file_sync(path)
+            .map(|r| (r.info().mime_type.to_string(), r.info().group.to_string()))
+            .map_err(|e| format!("Magika detection error: {e}")),
+        Err(err) => Err(format!("Magika initialization error: {err}")),
+    }
 }
 
 #[cfg(not(feature = "magika"))]

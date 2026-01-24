@@ -3417,14 +3417,15 @@ impl Stats {
 
                         // Format antimodes
                         let antimodes_len = ANTIMODES_LEN.get_or_init(|| {
-                            std::env::var("QSV_ANTIMODES_LEN")
-                                .map(|val| {
+                            std::env::var("QSV_ANTIMODES_LEN").map_or(
+                                DEFAULT_ANTIMODES_LEN,
+                                |val| {
                                     let parsed = atoi_simd::parse::<usize>(val.as_bytes())
                                         .unwrap_or(DEFAULT_ANTIMODES_LEN);
                                     // if 0, disable length limiting
                                     if parsed == 0 { usize::MAX } else { parsed }
-                                })
-                                .unwrap_or(DEFAULT_ANTIMODES_LEN)
+                                },
+                            )
                         });
 
                         let mut antimodes_list = String::with_capacity(*antimodes_len);
@@ -3538,14 +3539,15 @@ impl Stats {
 
                             // antimode/s ============
                             let antimodes_len = ANTIMODES_LEN.get_or_init(|| {
-                                std::env::var("QSV_ANTIMODES_LEN")
-                                    .map(|val| {
+                                std::env::var("QSV_ANTIMODES_LEN").map_or(
+                                    DEFAULT_ANTIMODES_LEN,
+                                    |val| {
                                         let parsed = atoi_simd::parse::<usize>(val.as_bytes())
                                             .unwrap_or(DEFAULT_ANTIMODES_LEN);
                                         // if 0, disable length limiting
                                         if parsed == 0 { usize::MAX } else { parsed }
-                                    })
-                                    .unwrap_or(DEFAULT_ANTIMODES_LEN)
+                                    },
+                                )
                             });
 
                             let mut antimodes_list = String::with_capacity(*antimodes_len);

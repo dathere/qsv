@@ -719,6 +719,7 @@ fn parse_language_option(language: Option<&String>) -> (bool, f64, Option<String
 
 // Check if DuckDB should be used based on environment variable
 fn should_use_duckdb() -> bool {
+    #[allow(clippy::map_unwrap_or)]
     env::var(QSV_DESCRIBEGPT_DB_ENGINE_ENV)
         .map(|val| val.to_lowercase().contains("duckdb"))
         .unwrap_or(false)

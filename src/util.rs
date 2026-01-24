@@ -446,6 +446,12 @@ pub fn create_reqwest_blocking_client(
 /// Transforms a GitHub blob URL to a raw.githubusercontent.com URL.
 /// Returns the original URL unchanged if not a GitHub blob URL.
 ///
+/// Query parameters (e.g., `?ref=v1.0`) and fragments (e.g., `#L10-L20`) are stripped
+/// from the transformed URL since they don't apply to raw.githubusercontent.com.
+///
+/// Note: This only works for github.com URLs. GitHub Enterprise URLs
+/// (e.g., `https://github.company.com/...`) are not transformed.
+///
 /// # Arguments
 ///
 /// * `url` - The URL to potentially transform
@@ -483,7 +489,16 @@ pub fn transform_github_url(url: &str) -> String {
 
     if let Some(blob_idx) = remainder.find("/blob/") {
         let user_repo = &remainder[..blob_idx];
-        let branch_and_path = &remainder[blob_idx + 6..]; // skip "/blob/"
+        let mut branch_and_path = &remainder[blob_idx + 6..]; // skip "/blob/"
+
+        // Strip query parameters and fragments - they don't apply to raw.githubusercontent.com
+        if let Some(query_idx) = branch_and_path.find('?') {
+            branch_and_path = &branch_and_path[..query_idx];
+        }
+        if let Some(fragment_idx) = branch_and_path.find('#') {
+            branch_and_path = &branch_and_path[..fragment_idx];
+        }
+
         let raw_url = format!("https://raw.githubusercontent.com/{user_repo}/{branch_and_path}");
         log::info!("Transformed GitHub blob URL to raw URL: {raw_url}");
         raw_url
@@ -3746,5 +3761,29 @@ mod tests {
         // Test that GitHub URLs without /blob/ are not modified
         let repo_url = "https://github.com/dathere/qsv";
         assert_eq!(transform_github_url(repo_url), repo_url);
+    }
+
+    #[test]
+    fn test_transform_github_url_with_query_params() {
+        // Test that query parameters are stripped (they don't apply to raw.githubusercontent.com)
+        let blob_url = "https://github.com/user/repo/blob/main/file.csv?ref=v1.0";
+        let expected = "https://raw.githubusercontent.com/user/repo/main/file.csv";
+        assert_eq!(transform_github_url(blob_url), expected);
+    }
+
+    #[test]
+    fn test_transform_github_url_with_fragment() {
+        // Test that fragments (line highlighting) are stripped
+        let blob_url = "https://github.com/user/repo/blob/main/file.csv#L10-L20";
+        let expected = "https://raw.githubusercontent.com/user/repo/main/file.csv";
+        assert_eq!(transform_github_url(blob_url), expected);
+    }
+
+    #[test]
+    fn test_transform_github_url_with_query_and_fragment() {
+        // Test that both query parameters and fragments are stripped
+        let blob_url = "https://github.com/user/repo/blob/main/file.csv?ref=v1.0#L10";
+        let expected = "https://raw.githubusercontent.com/user/repo/main/file.csv";
+        assert_eq!(transform_github_url(blob_url), expected);
     }
 }

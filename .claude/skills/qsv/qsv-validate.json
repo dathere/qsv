@@ -160,5 +160,27 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  }
+  },
+  "examples": [
+    {
+      "description": "Validate a CSV file. Use this to check if a CSV file is readable by qsv.",
+      "command": "qsv validate data.csv"
+    },
+    {
+      "description": "Validate a TSV file against a JSON Schema",
+      "command": "qsv validate data.tsv schema.json"
+    },
+    {
+      "description": "Validate multiple CSV files using various dialects against a JSON Schema",
+      "command": "qsv validate data1.csv data2.tab data3.ssv schema.json"
+    },
+    {
+      "description": "Validate all CSV files in a directory against a JSON Schema",
+      "command": "qsv validate /path/to/csv_directory schema.json"
+    },
+    {
+      "description": "Validate CSV files listed in a '.infile-list' file against a JSON Schema",
+      "command": "qsv validate files.infile-list schema.json"
+    }
+  ]
 }

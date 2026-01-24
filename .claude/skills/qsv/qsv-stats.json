@@ -156,5 +156,55 @@
     "streamable": false,
     "indexed": true,
     "memory": "full"
-  }
+  },
+  "examples": [
+    {
+      "description": "Compute \"streaming\" statistics for \"nyc311.csv\"",
+      "command": "qsv stats nyc311.csv"
+    },
+    {
+      "description": "Compute all statistics for \"nyc311.csv\"",
+      "command": "qsv stats --everything nyc311.csv"
+    },
+    {
+      "description": "Compute all statistics for \"nyc311.tsv\" (Tab-separated)",
+      "command": "qsv stats -E nyc311.tsv"
+    },
+    {
+      "description": "Compute all stats for \"nyc311.tsv\", inferring dates using default date column name patterns",
+      "command": "qsv stats -E --infer-dates nyc311.tsv"
+    },
+    {
+      "description": "Compute all stats for \"nyc311.tab\", inferring dates only for columns with \"_date\" & \"_dte\" in the column names",
+      "command": "qsv stats -E --infer-dates --dates-whitelist _date,_dte nyc311.tab"
+    },
+    {
+      "description": "Compute all stats, infer dates and boolean data types for \"nyc311.ssv\" file",
+      "command": "qsv stats -E --infer-dates --dates-whitelist _date --infer-boolean nyc311.ssv"
+    },
+    {
+      "description": "In addition to basic \"streaming\" stats, also compute cardinality for \"nyc311.csv\"",
+      "command": "qsv stats --cardinality nyc311.csv"
+    },
+    {
+      "description": "Prefer DMY format when inferring dates for the \"nyc311.csv\"",
+      "command": "qsv stats -E --infer-dates --prefer-dmy nyc311.csv"
+    },
+    {
+      "description": "Infer data types only for the \"nyc311.csv\" file:",
+      "command": "qsv stats --typesonly nyc311.csv"
+    },
+    {
+      "description": "Infer data types only, including boolean and date types for \"nyc311.csv\"",
+      "command": "qsv stats --typesonly --infer-boolean --infer-dates nyc311.csv"
+    },
+    {
+      "description": "Automatically create an index for the \"nyc311.csv\" file to enable multithreading if it's larger than 5MB and there is no existing index file:",
+      "command": "qsv stats -E --cache-threshold -5000000 nyc311.csv"
+    },
+    {
+      "description": "Auto-create a TEMPORARY index for the \"nyc311.csv\" file to enable multithreading if it's larger than 5MB and delete the index and the stats cache file after the stats run:",
+      "command": "qsv stats -E --cache-threshold -5000005 nyc311.csv"
+    }
+  ]
 }

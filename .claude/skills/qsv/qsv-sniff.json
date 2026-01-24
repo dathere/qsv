@@ -88,5 +88,23 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  }
+  },
+  "examples": [
+    {
+      "description": "Sniff a local CSV file",
+      "command": "qsv sniff data.csv"
+    },
+    {
+      "description": "Sniff a remote TSV file over HTTPS",
+      "command": "qsv sniff https://example.com/data.tsv"
+    },
+    {
+      "description": "Get the mime type of a remote file without inferring the CSV schema",
+      "command": "qsv sniff --no-infer https://example.com/data.xlsx"
+    },
+    {
+      "description": "Sniff the first 20 percent of a SSV file",
+      "command": "qsv sniff --sample 0.20 data.ssv"
+    }
+  ]
 }

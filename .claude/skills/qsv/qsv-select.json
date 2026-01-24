@@ -56,5 +56,79 @@
   "hints": {
     "streamable": true,
     "memory": "constant"
-  }
+  },
+  "examples": [
+    {
+      "description": "Select the first and fourth columns",
+      "command": "qsv select 1,4"
+    },
+    {
+      "description": "Select the first 4 columns (by index)",
+      "command": "qsv select 1-4"
+    },
+    {
+      "description": "Select the first 4 columns (by name)",
+      "command": "qsv select Header1-Header4"
+    },
+    {
+      "description": "Ignore the first 2 columns (by range)",
+      "command": "qsv select 3-"
+    },
+    {
+      "description": "Ignore the first 2 columns (by index)",
+      "command": "qsv select '!1-2'"
+    },
+    {
+      "description": "Select the third column named 'Foo':",
+      "command": "qsv select 'Foo[2]'"
+    },
+    {
+      "description": "Select the first and last columns, _ is a special character for the last column:",
+      "command": "qsv select 1,_"
+    },
+    {
+      "description": "Reverse the order of columns:",
+      "command": "qsv select _-1"
+    },
+    {
+      "description": "select columns starting with 'a' (regex)",
+      "command": "qsv select /^a/"
+    },
+    {
+      "description": "select columns with a digit (regex)",
+      "command": "qsv select '/^.*\\d.*$/'"
+    },
+    {
+      "description": "remove SSN, account_no and password columns (regex)",
+      "command": "qsv select '!/SSN|account_no|password/'"
+    },
+    {
+      "description": "Sort the columns lexicographically (i.e. by their byte values)",
+      "command": "qsv select 1- --sort"
+    },
+    {
+      "description": "Select some columns and then sort them",
+      "command": "qsv select 1,4,5-7 --sort"
+    },
+    {
+      "description": "Randomly shuffle the columns:",
+      "command": "qsv select 1- --random"
+    },
+    {
+      "description": "Randomly shuffle the columns with a seed",
+      "command": "qsv select 1- --random --seed 42"
+    },
+    {
+      "description": "Select some columns and then shuffle them with a seed:",
+      "command": "qsv select 1,4,5-7 --random --seed 42"
+    },
+    {
+      "description": "Re-order and duplicate columns arbitrarily using different types of selectors",
+      "command": "qsv select 3-1,Header3-Header1,Header1,Foo[2],Header1"
+    },
+    {
+      "description": "Quote column names that conflict with selector syntax:",
+      "command": "qsv select '\\\"Date - Opening\\\",\\\"Date - Actual Closing\\\"'"
+    }
+  ]
 }

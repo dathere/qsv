@@ -1183,23 +1183,42 @@ fn parse_frequency_csv(frequency_csv: &str) -> CliResult<Vec<FrequencyRecord>> {
 
         let count = record
             .get(count_idx)
-            .ok_or_else(|| CliError::Other("Frequency CSV record missing count".to_string()))?
-            .parse::<u64>()
-            .map_err(|e| CliError::Other(format!("Failed to parse count in frequency CSV: {e}")))?;
+            .ok_or_else(|| CliError::Other("Frequency CSV record missing count".to_string()))
+            .and_then(|s| {
+                if s.is_empty() {
+                    Ok(0)
+                } else {
+                    s.parse::<u64>().map_err(|e| {
+                        CliError::Other(format!("Failed to parse count in frequency CSV: {e}"))
+                    })
+                }
+            })?;
 
         let percentage = record
             .get(percentage_idx)
-            .ok_or_else(|| CliError::Other("Frequency CSV record missing percentage".to_string()))?
-            .parse::<f64>()
-            .map_err(|e| {
-                CliError::Other(format!("Failed to parse percentage in frequency CSV: {e}"))
+            .ok_or_else(|| CliError::Other("Frequency CSV record missing percentage".to_string()))
+            .and_then(|s| {
+                if s.is_empty() {
+                    Ok(0.0)
+                } else {
+                    s.parse::<f64>().map_err(|e| {
+                        CliError::Other(format!("Failed to parse percentage in frequency CSV: {e}"))
+                    })
+                }
             })?;
 
         let rank = record
             .get(rank_idx)
-            .ok_or_else(|| CliError::Other("Frequency CSV record missing rank".to_string()))?
-            .parse::<f64>()
-            .map_err(|e| CliError::Other(format!("Failed to parse rank in frequency CSV: {e}")))?;
+            .ok_or_else(|| CliError::Other("Frequency CSV record missing rank".to_string()))
+            .and_then(|s| {
+                if s.is_empty() {
+                    Ok(0.0)
+                } else {
+                    s.parse::<f64>().map_err(|e| {
+                        CliError::Other(format!("Failed to parse rank in frequency CSV: {e}"))
+                    })
+                }
+            })?;
 
         records.push(FrequencyRecord {
             field,

@@ -325,18 +325,28 @@ impl fmt::Display for SniffStruct {
             "Retrieved Size (bytes): {}",
             HumanCount(self.retrieved_size as u64)
         )?;
-        writeln!(
-            f,
-            "File Size (bytes): {}",
-            HumanCount(self.file_size as u64)
-        )?;
+        // show "Unknown" for usize::MAX (sentinel value when Content-Length is missing)
+        if self.file_size == usize::MAX {
+            writeln!(f, "File Size (bytes): Unknown")?;
+        } else {
+            writeln!(
+                f,
+                "File Size (bytes): {}",
+                HumanCount(self.file_size as u64)
+            )?;
+        }
         writeln!(
             f,
             "Sampled Records: {}",
             HumanCount(self.sampled_records as u64)
         )?;
         writeln!(f, "Estimated: {}", self.estimated)?;
-        writeln!(f, "Num Records: {}", HumanCount(self.num_records as u64))?;
+        // show "Unknown" when num_records was estimated from unknown file_size
+        if self.file_size == usize::MAX {
+            writeln!(f, "Num Records: Unknown")?;
+        } else {
+            writeln!(f, "Num Records: {}", HumanCount(self.num_records as u64))?;
+        }
         writeln!(
             f,
             "Avg Record Len (bytes): {}",
@@ -423,6 +433,8 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
         match uri {
             // its a URL, download sample to temp file
             url if Url::parse(&url).is_ok() && url.starts_with("http") => {
+                // Transform GitHub blob URLs to raw URLs for direct file access
+                let url = util::transform_github_url(&url);
                 let snappy_flag = url.to_lowercase().ends_with(".sz");
 
                 // setup the reqwest client
@@ -441,6 +453,18 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                     ))
                     .send()
                     .await?;
+
+                // Check Content-Type header to detect HTML responses early
+                // This helps catch cases where URLs serve HTML pages instead of raw files
+                if let Some(content_type) = res.headers().get("content-type")
+                    && let Ok(ct_str) = content_type.to_str()
+                    && ct_str.contains("text/html")
+                {
+                    log::warn!(
+                        "Response Content-Type is text/html. URL may not point to raw file \
+                         content."
+                    );
+                }
 
                 let last_modified = match res.headers().get("Last-Modified") {
                     Some(lm) => match lm.to_str() {
@@ -641,7 +665,9 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                         // we say no_headers so we can just copy the downloaded file over
                         // including headers, to the exact sample size file
                         .no_headers(true)
-                        .flexible(true);
+                        .flexible(true)
+                        // skip format check since temp files don't have recognizable extensions
+                        .skip_format_check(true);
 
                     let mut rdr = config.reader()?;
 

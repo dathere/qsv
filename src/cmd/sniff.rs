@@ -8,9 +8,10 @@ field names & data types) using a Viterbi algorithm. (https://en.wikipedia.org/w
 last modified date. If --no-infer is enabled, it doesn't even bother to infer the CSV's schema.
 This makes it useful for accelerated CKAN harvesting and for checking stale/broken resource URLs.
 
-It detects more than 120 mime types, including CSV, MS Office/Open Document files, JSON, XML, 
-PDF, PNG, JPEG and specialized geospatial formats like GPX, GML, KML, TML, TMX, TSX, TTML.
-see https://docs.rs/file-format/latest/file_format/#reader-features
+It uses Google's Magika AI-powered content detection to identify file types with high accuracy.
+Magika detects over 200 content types including CSV, MS Office/Open Document files, JSON, XML,
+PDF, PNG, JPEG and many more.
+See https://opensource.googleblog.com/2025/11/announcing-magika-10-now-faster-smarter.html.
 
 NOTE: This command "sniffs" a CSV's schema by sampling the first n rows (default: 1000)
 of a file. Its inferences are sometimes wrong if the the file is too small to infer a pattern
@@ -105,17 +106,18 @@ use std::{
     fmt, fs,
     io::{Seek, SeekFrom, Write, copy},
     path::PathBuf,
+    sync::{LazyLock, Mutex},
     time::Duration,
 };
 
 use bytes::Bytes;
 use csv_nose::{DatePreference, SampleSize, Sniffer};
-use file_format::FileFormat;
 use futures::executor::block_on;
 use futures_util::StreamExt;
 use indicatif::HumanCount;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{HumanBytes, ProgressBar, ProgressDrawTarget, ProgressStyle};
+use magika::Session;
 use qsv_tabwriter::TabWriter;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -128,6 +130,11 @@ use crate::{
     util,
     util::format_systemtime,
 };
+
+// Magika ML session - lazy initialized and reused for all detections
+static MAGIKA_SESSION: LazyLock<Mutex<Session>> =
+    LazyLock::new(|| Mutex::new(Session::new().expect("Failed to initialize Magika session")));
+
 #[allow(dead_code)]
 #[derive(Deserialize)]
 struct Args {
@@ -429,7 +436,13 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                     let chunk_len = chunk.len();
 
                     if downloaded == 0 && !snappy_flag && args.flag_quick {
-                        let mime = FileFormat::from_bytes(&chunk).media_type().to_string();
+                        let mime = {
+                            let mut session = MAGIKA_SESSION.lock().unwrap();
+                            session.identify_content_sync(&chunk[..]).map_or_else(
+                                |_| "application/octet-stream".to_string(),
+                                |r| r.info().mime_type.to_string(),
+                            )
+                        };
                         log::debug!("scanned first {chunk_len} bytes - detected mime: {mime}");
                         if !mime.starts_with("text/") && mime != "application/csv" {
                             downloaded = chunk_len;
@@ -484,9 +497,14 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                 let mut detected_kind: String = String::new();
 
                 if !args.flag_quick {
-                    let file_format = FileFormat::from_file(file.path())?;
-                    detected_mime = file_format.media_type().to_string();
-                    detected_kind = format!("{:?}", file_format.kind());
+                    let result = {
+                        let mut session = MAGIKA_SESSION.lock().unwrap();
+                        session
+                            .identify_file_sync(file.path())
+                            .map_err(|e| format!("Magika detection error: {e}"))?
+                    };
+                    detected_mime = result.info().mime_type.to_string();
+                    detected_kind = result.info().group.to_string();
                     csv_candidate =
                         detected_mime.starts_with("text/") || detected_mime == "application/csv";
                 }
@@ -734,9 +752,14 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
     let file_type = if sfile_info.detected_mime.is_empty()
         || sfile_info.detected_mime == "application/x-snappy-framed" && !args.flag_no_infer
     {
-        let file_format = FileFormat::from_file(&sfile_info.file_to_sniff)?;
-        file_kind = format!("{:?}", file_format.kind());
-        file_format.media_type().to_string()
+        let result = {
+            let mut session = MAGIKA_SESSION.lock().unwrap();
+            session
+                .identify_file_sync(&sfile_info.file_to_sniff)
+                .map_err(|e| format!("Magika detection error: {e}"))?
+        };
+        file_kind = result.info().group.to_string();
+        result.info().mime_type.to_string()
     } else {
         file_kind = sfile_info.detected_kind.clone();
         sfile_info.detected_mime.clone()

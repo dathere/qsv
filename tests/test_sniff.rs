@@ -43,9 +43,9 @@ Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: false
 Fields:
-    0:  Text      h1
-    1:  Unsigned  h2
-    2:  Text      h3"#,
+    1:  Text      h1
+    2:  Unsigned  h2
+    3:  Text      h3"#,
     );
 
     #[cfg(not(feature = "magika"))]
@@ -64,9 +64,9 @@ Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: false
 Fields:
-    0:  Text      h1
-    1:  Unsigned  h2
-    2:  Text      h3"#,
+    1:  Text      h1
+    2:  Unsigned  h2
+    3:  Text      h3"#,
     );
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
@@ -98,9 +98,9 @@ Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: true
 Fields:
-    0:  String   h1
-    1:  Integer  h2
-    2:  String   h3"#,
+    1:  String   h1
+    2:  Integer  h2
+    3:  String   h3"#,
     );
 
     #[cfg(not(feature = "magika"))]
@@ -119,9 +119,9 @@ Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: true
 Fields:
-    0:  String   h1
-    1:  Integer  h2
-    2:  String   h3"#,
+    1:  String   h1
+    2:  Integer  h2
+    3:  String   h3"#,
     );
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
@@ -203,35 +203,35 @@ Avg Record Len (bytes): 472
 Num Fields: 29
 Stats Types: false
 Fields:
-    0:   Unsigned  case_enquiry_id
-    1:   DateTime  open_dt
-    2:   DateTime  target_dt
-    3:   DateTime  closed_dt
-    4:   Text      ontime
-    5:   Text      case_status
-    6:   Text      closure_reason
-    7:   Text      case_title
-    8:   Text      subject
-    9:   Text      reason
-    10:  Text      type
-    11:  Text      queue
-    12:  Text      department
-    13:  Text      submittedphoto
-    14:  NULL      closedphoto
-    15:  Text      location
-    16:  Unsigned  fire_district
-    17:  Text      pwd_district
-    18:  Unsigned  city_council_district
-    19:  Text      police_district
-    20:  Text      neighborhood
-    21:  Unsigned  neighborhood_services_district
-    22:  Text      ward
-    23:  Unsigned  precinct
-    24:  Text      location_street_name
-    25:  Unsigned  location_zipcode
-    26:  Float     latitude
-    27:  Float     longitude
-    28:  Text      source"#;
+    1:   Unsigned  case_enquiry_id
+    2:   DateTime  open_dt
+    3:   DateTime  target_dt
+    4:   DateTime  closed_dt
+    5:   Text      ontime
+    6:   Text      case_status
+    7:   Text      closure_reason
+    8:   Text      case_title
+    9:   Text      subject
+    10:  Text      reason
+    11:  Text      type
+    12:  Text      queue
+    13:  Text      department
+    14:  Text      submittedphoto
+    15:  NULL      closedphoto
+    16:  Text      location
+    17:  Unsigned  fire_district
+    18:  Text      pwd_district
+    19:  Unsigned  city_council_district
+    20:  Text      police_district
+    21:  Text      neighborhood
+    22:  Unsigned  neighborhood_services_district
+    23:  Text      ward
+    24:  Unsigned  precinct
+    25:  Text      location_street_name
+    26:  Unsigned  location_zipcode
+    27:  Float     latitude
+    28:  Float     longitude
+    29:  Text      source"#;
 
     assert!(got.ends_with(expected_end));
 }
@@ -276,35 +276,35 @@ Avg Record Len (bytes): 472
 Num Fields: 29
 Stats Types: false
 Fields:
-    0:   Unsigned  case_enquiry_id
-    1:   DateTime  open_dt
-    2:   DateTime  target_dt
-    3:   DateTime  closed_dt
-    4:   Text      ontime
-    5:   Text      case_status
-    6:   Text      closure_reason
-    7:   Text      case_title
-    8:   Text      subject
-    9:   Text      reason
-    10:  Text      type
-    11:  Text      queue
-    12:  Text      department
-    13:  Text      submittedphoto
-    14:  NULL      closedphoto
-    15:  Text      location
-    16:  Unsigned  fire_district
-    17:  Text      pwd_district
-    18:  Unsigned  city_council_district
-    19:  Text      police_district
-    20:  Text      neighborhood
-    21:  Unsigned  neighborhood_services_district
-    22:  Text      ward
-    23:  Unsigned  precinct
-    24:  Text      location_street_name
-    25:  Unsigned  location_zipcode
-    26:  Float     latitude
-    27:  Float     longitude
-    28:  Text      source"#;
+    1:   Unsigned  case_enquiry_id
+    2:   DateTime  open_dt
+    3:   DateTime  target_dt
+    4:   DateTime  closed_dt
+    5:   Text      ontime
+    6:   Text      case_status
+    7:   Text      closure_reason
+    8:   Text      case_title
+    9:   Text      subject
+    10:  Text      reason
+    11:  Text      type
+    12:  Text      queue
+    13:  Text      department
+    14:  Text      submittedphoto
+    15:  NULL      closedphoto
+    16:  Text      location
+    17:  Unsigned  fire_district
+    18:  Text      pwd_district
+    19:  Unsigned  city_council_district
+    20:  Text      police_district
+    21:  Text      neighborhood
+    22:  Unsigned  neighborhood_services_district
+    23:  Text      ward
+    24:  Unsigned  precinct
+    25:  Text      location_street_name
+    26:  Unsigned  location_zipcode
+    27:  Float     latitude
+    28:  Float     longitude
+    29:  Text      source"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
 }
@@ -339,9 +339,9 @@ Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: false
 Fields:
-    0:  Text      h1
-    1:  Unsigned  h2
-    2:  Text      h3"#;
+    1:  Text      h1
+    2:  Unsigned  h2
+    3:  Text      h3"#;
 
     #[cfg(not(feature = "magika"))]
     let expected_end = r#"Delimiter: tab
@@ -361,9 +361,9 @@ Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: false
 Fields:
-    0:  Text      h1
-    1:  Unsigned  h2
-    2:  Text      h3"#;
+    1:  Text      h1
+    2:  Unsigned  h2
+    3:  Text      h3"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end));
 }
@@ -656,35 +656,35 @@ Avg Record Len (bytes): 472
 Num Fields: 29
 Stats Types: false
 Fields:
-    0:   Unsigned  case_enquiry_id
-    1:   DateTime  open_dt
-    2:   DateTime  target_dt
-    3:   DateTime  closed_dt
-    4:   Text      ontime
-    5:   Text      case_status
-    6:   Text      closure_reason
-    7:   Text      case_title
-    8:   Text      subject
-    9:   Text      reason
-    10:  Text      type
-    11:  Text      queue
-    12:  Text      department
-    13:  Text      submittedphoto
-    14:  NULL      closedphoto
-    15:  Text      location
-    16:  Unsigned  fire_district
-    17:  Text      pwd_district
-    18:  Unsigned  city_council_district
-    19:  Text      police_district
-    20:  Text      neighborhood
-    21:  Unsigned  neighborhood_services_district
-    22:  Text      ward
-    23:  Unsigned  precinct
-    24:  Text      location_street_name
-    25:  Unsigned  location_zipcode
-    26:  Float     latitude
-    27:  Float     longitude
-    28:  Text      source"#;
+    1:   Unsigned  case_enquiry_id
+    2:   DateTime  open_dt
+    3:   DateTime  target_dt
+    4:   DateTime  closed_dt
+    5:   Text      ontime
+    6:   Text      case_status
+    7:   Text      closure_reason
+    8:   Text      case_title
+    9:   Text      subject
+    10:  Text      reason
+    11:  Text      type
+    12:  Text      queue
+    13:  Text      department
+    14:  Text      submittedphoto
+    15:  NULL      closedphoto
+    16:  Text      location
+    17:  Unsigned  fire_district
+    18:  Text      pwd_district
+    19:  Unsigned  city_council_district
+    20:  Text      police_district
+    21:  Text      neighborhood
+    22:  Unsigned  neighborhood_services_district
+    23:  Text      ward
+    24:  Unsigned  precinct
+    25:  Text      location_street_name
+    26:  Unsigned  location_zipcode
+    27:  Float     latitude
+    28:  Float     longitude
+    29:  Text      source"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
 }

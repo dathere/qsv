@@ -162,7 +162,7 @@ fn get_label(fmt: &file_format::FileFormat, mime_type: &str) -> String {
 }
 
 /// Detect mime type from bytes using available backend
-/// Returns (mime_type, kind, inference_score)
+/// Returns (mime_type, label, inference_score)
 #[cfg(feature = "magika")]
 fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String, f32) {
     // If Magika failed to initialize or the mutex is poisoned, fall back to a default mime type

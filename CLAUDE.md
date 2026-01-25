@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
+**Current Version**: 14.0.0 | **MSRV**: Rust 1.93
+
 qsv is a blazingly-fast command-line CSV data-wrangling toolkit written in Rust. It's a fork of xsv with extensive additional functionality, focusing on performance, reliability, and comprehensive data manipulation capabilities.
 It's the data-wrangling, analysis and FAIRification engine of several datHere products - qsv pro and Datapusher+, in particular.
 
@@ -60,7 +62,7 @@ cargo +nightly clippy -F all_features -- -W clippy::perf
 ### Source Code Organization
 
 - **`src/main.rs`**, **`src/mainlite.rs`**, **`src/maindp.rs`** - Entry points for the three binary variants
-- **`src/cmd/`** - Each command is a separate module (69 commands total)
+- **`src/cmd/`** - Each command is a separate module (67 commands total)
 - **`src/util.rs`** - Shared utility functions used across commands
 - **`src/config.rs`** - Configuration handling, CSV reader/writer setup
 - **`src/select.rs`** - Column selection DSL implementation
@@ -172,7 +174,7 @@ qsv cat rows file1.csv file2.csv
 
 **Streaming vs Memory-Intensive Commands**:
 - Most commands stream CSV data row-by-row for constant memory usage
-- Commands marked with 🤯 load entire CSV into memory (`dedup`, `reverse`, `sort`, `stats` with extended stats, `table`, `transpose`)
+- Commands marked with 🤯 load entire CSV into memory (`dedup`, `reverse`, `sort`, `stats` with extended stats, `table`, `transpose`) - streaming modes available for `dedup`, `stats`, and `transpose`
 - Commands marked with 😣 use memory proportional to column cardinality (`frequency`, `join`, `schema`, `tojsonl`)
 
 **Index-Accelerated Processing**:
@@ -263,7 +265,7 @@ cargo t test_count -F feature_capable,polars
 
 ### Dependency Management
 
-- qsv uses latest stable Rust
+- qsv uses latest stable Rust (current MSRV: **1.93**)
 - Uses Rust edition 2024
 - Aggressive MSRV policy - matches Homebrew's supported Rust version
 - Uses latest versions of dependencies when possible
@@ -271,15 +273,37 @@ cargo t test_count -F feature_capable,polars
 - Forks are often for PRs awaiting to be merged.
 - Polars pinned to specific commit/tag upstream of the latest Rust release as their Rust release cycle lags behind their Python binding's release cycle.
 
+### Feature-Gated Dependencies
+
+**Magika (AI-powered file type detection)**:
+- Requires `all_features` feature flag to enable
+- Used by `sniff` command for enhanced MIME type detection
+- Falls back to `file-format` crate in qsvlite/qsvdp variants
+- Important consideration for MUSL builds (Magika not available)
+
+### Key Environment Variables
+
+- `QSV_SNIFF_PREAMBLE` - Number of rows to sniff for preamble detection
+- `QSV_SKIP_FORMAT_CHECK` - Skip MIME type checking for faster processing
+- `QSV_FORCE_COLOR` - Force colorized output even when not TTY
+- `QSV_THEME` - Color theme (DARK/LIGHT)
+- `QSV_DISKCACHE_TTL_SECS` - Disk cache TTL for geocode/fetch commands
+- `QSV_MEMORY_CHECK` - Memory safety mode (NORMAL/CONSERVATIVE)
+- `QSV_AUTOINDEX_SIZE` - Auto-index files above this size threshold
+
+See `docs/ENVIRONMENT_VARIABLES.md` for complete list.
+
 ### Important Files
 
 - **`Cargo.toml`** - Extensive feature flags and patched dependencies
 - **`CLAUDE.md`** - This file - guidance for Claude Code when working with qsv
 - **`dotenv.template`** - All environment variables with defaults
+- **`docs/CHANGELOG.md`** - Version history and release notes
 - **`docs/ENVIRONMENT_VARIABLES.md`** - Environment variable documentation
 - **`docs/PERFORMANCE.md`** - Performance tuning guide
 - **`docs/FEATURES.md`** - Feature flag documentation
 - **`docs/COMMAND_DEPENDENCIES.md`** - Inter-command dependencies and stats cache relationships
+- **`resources/`** - Luau vendor files, template defaults, test data
 - **`README.md`** - Main project documentation with command list and examples
 
 ## Common Patterns
@@ -357,6 +381,8 @@ qsv --update-mcp-skills
 ```
 
 - Skills are generated from command USAGE text and README command table
+- **61 MCP skills** generated (vs 67 CLI commands - some internal commands excluded)
 - Examples sections in USAGE text are parsed for agent-friendly examples
+- Section headers (lines starting with "==") are skipped during parsing
 - Generated files are stored in `.claude/skills/qsv/`
 - See `.claude/skills/CLAUDE.md` for MCP server development guide

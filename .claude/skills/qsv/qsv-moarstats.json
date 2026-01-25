@@ -114,20 +114,20 @@
       "command": "qsv moarstats data.csv --stats-options \"--everything --infer-dates\""
     },
     {
-      "description": "Output to different file",
-      "command": "qsv moarstats data.csv --output enhanced_stats.csv"
-    },
-    {
       "description": "Compute bivariate statistics between fields",
       "command": "qsv moarstats data.csv --bivariate"
     },
     {
+      "description": "Compute even more bivariate statistics",
+      "command": "qsv moarstats data.csv --bivariate --bivariate-stats pearson,spearman,kendall,mi,nmi,covariance"
+    },
+    {
       "description": "Join multiple datasets and compute bivariate statistics",
-      "command": "qsv moarstats data.csv -B --join-inputs customers.csv,products.csv --join-keys cust_id,prod_id"
+      "command": "qsv moarstats data.csv --bivariate --join-inputs customers.csv,products.csv --join-keys cust_id,prod_id"
     },
     {
       "description": "Join multiple datasets and compute bivariate statistics with different join type",
-      "command": "qsv moarstats data.csv -B -J customers.csv,products.csv -K cust_id,prod_id -T left"
+      "command": "qsv moarstats data.csv --bivariate --join-inputs customers.csv,products.csv --join-keys cust_id,prod_id --join-type left"
     }
   ]
 }

@@ -126,6 +126,7 @@ npm run mcpb:package
 │   ├── client-detector.test.ts
 │   ├── config.test.ts
 │   ├── converted-file-manager.test.ts
+│   ├── executor.test.ts
 │   ├── mcp-filesystem.test.ts
 │   ├── mcp-pipeline.test.ts
 │   ├── mcp-tools.test.ts
@@ -515,11 +516,12 @@ node --inspect --test dist/tests/mcp-tools.test.js
 ### Type Safety
 
 - Use strict TypeScript configuration (see `tsconfig.json`)
-- Avoid `any` type - use unknown and type guards instead
+- Avoid `any` type - use `unknown` and type guards instead
 - Define interfaces for all qsv command parameters
 - Use discriminated unions for result types
+- Use type guards for error handling in catch blocks
 
-**Example**:
+**Example - Result Types**:
 ```typescript
 interface QsvSelectArgs {
   input_file: string;
@@ -532,6 +534,24 @@ interface QsvSelectArgs {
 type QsvResult =
   | { success: true; output: string; file_path?: string }
   | { success: false; error: string; exit_code: number };
+```
+
+**Example - Error Type Guard**:
+```typescript
+// Type guard for Node.js errors with error codes
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
+}
+
+// Usage in catch blocks
+try {
+  await someFileOperation();
+} catch (error: unknown) {
+  if (isNodeError(error) && error.code === 'ENOENT') {
+    // Handle file not found
+  }
+  throw error;
+}
 ```
 
 ### Error Handling
@@ -952,6 +972,7 @@ return {
 8. **Match qsv conventions** - parameter names, flag styles, output formats
 9. **Add guidance hints** - help Claude choose the right tool for the job
 10. **Use spawn for execution** - streaming output prevents memory issues
+11. **Use proper error typing** - use `error: unknown` with type guards instead of `error: any`
 
 ## Related Documentation
 
@@ -970,7 +991,7 @@ return {
 
 ---
 
-**Document Version**: 1.5
+**Document Version**: 1.6
 **Last Updated**: 2026-01-25
 **Target qsv Version**: 14.x
 **Node.js Version**: >=18.0.0

@@ -544,6 +544,8 @@ pub fn version() -> String {
             Err(e) => write!(enabled_features, "Luau - cannot retrieve version: {e};").unwrap(),
         }
     }
+    #[cfg(all(feature = "magika", feature = "feature_capable"))]
+    enabled_features.push_str("magika;");
     #[cfg(all(feature = "prompt", feature = "feature_capable"))]
     enabled_features.push_str("prompt;");
 

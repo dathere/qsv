@@ -16,7 +16,7 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 - **Guidance Enhancement**: Intelligent tool descriptions with USE WHEN, COMMON PATTERNS, and CAUTION hints
 
 **Goals**:
-1. Make all 67 qsv commands discoverable and invokable by AI agents
+1. Make all 61 qsv commands discoverable and invokable by AI agents
 2. Auto-generate tool definitions from qsv usage text (zero documentation debt)
 3. Enable intelligent composition of complex data workflows with multi-format support
 4. Provide seamless integration with Claude Desktop and other MCP clients
@@ -119,13 +119,13 @@ npm run mcpb:package
 │   ├── utils.ts           # Utility functions
 │   ├── version.ts         # Version management
 │   ├── loader.ts          # Dynamic skill loading and searching
+│   ├── pipeline.ts        # Fluent pipeline API for chaining qsv skills
 │   └── index.ts           # Module exports
 ├── dist/                   # Compiled JavaScript output
 ├── tests/                  # Test files (TypeScript)
 │   ├── client-detector.test.ts
 │   ├── config.test.ts
 │   ├── converted-file-manager.test.ts
-│   ├── executor-subcommand.test.ts
 │   ├── mcp-filesystem.test.ts
 │   ├── mcp-pipeline.test.ts
 │   ├── mcp-tools.test.ts
@@ -141,7 +141,7 @@ npm run mcpb:package
 │   ├── install-mcp.js     # Installation helper
 │   ├── package-mcpb.js    # MCPB packaging script
 │   └── run-tests.js       # Cross-platform test runner
-├── qsv/                    # Auto-generated skill JSON files (64+)
+├── qsv/                    # Auto-generated skill JSON files (61)
 ├── node_modules/          # Dependencies
 ├── package.json           # NPM package configuration
 ├── tsconfig.json          # TypeScript compiler config
@@ -960,14 +960,18 @@ return {
 - [qsv Project CLAUDE.md](../../CLAUDE.md) - Main qsv development guide (build commands, architecture, code conventions)
 - [qsv Command Reference](../../docs/)
 - [Agent Skills Design](docs/design/AGENT_SKILLS_DESIGN.md)
+- [Agent Skills Integration](docs/design/AGENT_SKILLS_INTEGRATION.md)
+- [Agent Skills POC Summary](docs/design/AGENT_SKILLS_POC_SUMMARY.md)
+- [Agent Skills Complete Summary](docs/design/AGENT_SKILLS_COMPLETE_SUMMARY.md)
+- [Filesystem Changelog](docs/design/CHANGELOG_FILESYSTEM.md)
 - [MCP Server README](./README-MCP.md)
 - [Desktop Extension README](./README-MCPB.md)
 - [Claude Desktop Integration](https://claude.ai/docs)
 
 ---
 
-**Document Version**: 1.4
-**Last Updated**: 2026-01-23
+**Document Version**: 1.5
+**Last Updated**: 2026-01-25
 **Target qsv Version**: 14.x
 **Node.js Version**: >=18.0.0
 **MCP SDK Version**: ^1.25.2

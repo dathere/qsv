@@ -4,20 +4,20 @@
 
 Successfully delivered a complete end-to-end system for auto-generating, loading, and executing Agent Skills from qsv command USAGE text, with a fluent pipeline composition API for Claude Agent SDK integration.
 
-**Date**: 2026-01-02
-**Status**: ✅ **COMPLETE**
-**Deliverables**: 3/3
+**Date**: 2026-01-02 (Original) | **Updated**: 2026-01-25
+**Status**: ✅ **COMPLETE** (v14.2.0)
+**Deliverables**: 3/3 + MCP Integration
 
 ---
 
 ## What Was Built
 
-### 1. ✅ Complete Skill Generation (66/66 skills)
+### 1. ✅ Complete Skill Generation (61 skills)
 
 **Generator**: `src/bin/qsv-skill-gen.rs` (418 lines)
 
 **Features**:
-- Parses USAGE text from all 66 qsv commands
+- Parses USAGE text from all 61 qsv commands
 - Handles multiple raw string delimiters (`r#"` and `r##"`)
 - Parses parameter types using qsv-docopt
 - Extracts performance hints from emoji markers
@@ -26,7 +26,7 @@ Successfully delivered a complete end-to-end system for auto-generating, loading
 
 **Generation Results**:
 ```
-✅ 66 skills generated successfully
+✅ 61 skills generated successfully
 ❌ 0 failures
 📁 Output: .claude/skills/qsv/*.json
 ⏱️  Generation time: ~3 seconds
@@ -283,7 +283,7 @@ const script = await pipeline.toShellScript();
 ## Generated Skill Statistics
 
 ```
-Total Skills: 66
+Total Skills: 61
 Total Examples: 256
 Total Options: 1,234
 Total Arguments: 87
@@ -318,7 +318,7 @@ await loader.loadAll();
 
 console.log(loader.getStats());
 // {
-//   total: 66,
+//   total: 61,
 //   byCategory: { ... },
 //   totalExamples: 256,
 //   totalOptions: 1234,
@@ -381,9 +381,58 @@ console.log(await pipeline.toShellScript());
 
 ---
 
-## Integration with Claude Agent SDK
+## What's New in v14.2.0
 
-The complete system is ready for Claude Agent SDK integration:
+Since the original implementation, significant enhancements have been added:
+
+### MCP Server Integration
+The system now uses **Model Context Protocol (MCP)** for Claude integration:
+- `mcp-server.ts` - Main MCP server entry point
+- `mcp-tools.ts` - Tool definitions with guidance enhancement
+- `mcp-pipeline.ts` - Pipeline execution via MCP
+
+### Tool Search Support
+New `qsv_search_tools` tool for discovering commands:
+```typescript
+// Search by keyword
+qsv_search_tools({ query: "duplicate" })
+
+// Search by category
+qsv_search_tools({ category: "transformation" })
+```
+
+### Client Auto-Detection
+Automatically detects Claude clients and enables expose-all-tools mode:
+- Claude Desktop
+- Claude Code
+- Claude Cowork
+
+### Guidance Enhancement
+Tool descriptions include intelligent hints:
+- 💡 **USE WHEN** - When to use this tool vs alternatives
+- 📋 **COMMON PATTERN** - How it fits into workflows
+- ⚠️ **CAUTION** - Memory limits, performance notes
+
+### MCPB Desktop Extension
+One-click installation bundle for Claude Desktop:
+- `qsv-mcp-server-14.2.0.mcpb`
+- See `README-MCPB.md` for details
+
+### Additional Improvements
+- Streaming executor with 50MB output limit
+- Windows EPERM retry with exponential backoff
+- Stats cache auto-generation
+- Converted file manager with LIFO cache
+
+---
+
+## Integration with MCP (Model Context Protocol)
+
+> **Note**: The original design referenced a hypothetical "Claude Agent SDK".
+> The actual implementation uses MCP. The examples below show the conceptual
+> design; see `mcp-server.ts` for the real implementation.
+
+The complete system is ready for MCP integration:
 
 ```typescript
 import { Agent } from '@anthropic-ai/agent-sdk';
@@ -426,7 +475,7 @@ await agent.chat("Filter for valid emails and sort by revenue");
 ### Skill Generation
 
 ```
-Commands processed: 66
+Commands processed: 61
 Time: ~3 seconds
 Success rate: 100%
 Average per command: ~45ms
@@ -466,7 +515,7 @@ qsv/
 ├── .claude/
 │   └── skills/
 │       ├── qsv/
-│       │   ├── qsv-select.json      # 66 skill files
+│       │   ├── qsv-select.json      # 61 skill files
 │       │   ├── qsv-stats.json
 │       │   ├── qsv-moarstats.json
 │       │   └── ...
@@ -520,10 +569,10 @@ node examples/pipeline.js
 QSV Skills - Basic Execution Example
 ====================================
 
-Loaded 66 skills
+Loaded 61 skills
 
 Skill Statistics:
-  Total skills: 66
+  Total skills: 61
   Total examples: 256
   Total options: 1234
   ...
@@ -563,7 +612,7 @@ Pipeline execution results:
 
 ### Immediate (Ready Now)
 
-1. ✅ **Generate all 66 skills** - COMPLETE
+1. ✅ **Generate all 61 skills** - COMPLETE
 2. ✅ **Build executor wrapper** - COMPLETE
 3. ✅ **Create pipeline API** - COMPLETE
 4. ✅ **Write documentation** - COMPLETE
@@ -598,13 +647,13 @@ Pipeline execution results:
 
 ### ✅ All Criteria Met
 
-- [x] Generate all qsv command skills (66/66)
+- [x] Generate all qsv command skills (61/61)
 - [x] Type-safe executor wrapper
 - [x] Fluent pipeline composition API
 - [x] Comprehensive documentation
 - [x] Working examples
 - [x] Zero manual skill creation
-- [x] Claude Agent SDK ready
+- [x] MCP integration complete
 - [x] Shell script generation
 - [x] Performance metrics
 - [x] Error handling throughout
@@ -625,7 +674,7 @@ The system provides:
 - ✅ **Discoverability**: Search, categorize, explore skills
 - ✅ **Composability**: Chain operations intuitively
 - ✅ **Performance**: Metrics, hints, optimization
-- ✅ **Integration**: Ready for Claude Agent SDK
+- ✅ **Integration**: MCP server complete
 
 **Lines of Code**:
 - Rust: 418 lines (generator)
@@ -635,7 +684,7 @@ The system provides:
 - **Total**: 4,968 lines
 
 **Generated Artifacts**:
-- 66 skill JSON files
+- 61 skill JSON files
 - Complete TypeScript package
 - Comprehensive documentation
 - Working examples

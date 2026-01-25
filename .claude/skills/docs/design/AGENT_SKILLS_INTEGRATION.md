@@ -1,5 +1,11 @@
 # QSV Skills Integration with Claude Agent SDK
 
+> **Note**: This document was written during the design phase. The actual
+> integration uses the Model Context Protocol (MCP) rather than a hypothetical
+> "Claude Agent SDK". See `README-MCP.md` for current implementation details.
+>
+> **Last Updated**: 2026-01-25 | **Version**: 14.2.0
+
 ## Overview
 
 This document demonstrates how qsv-generated Agent Skills integrate with the Claude Agent SDK, showing practical examples, API design, and developer workflows.
@@ -35,7 +41,9 @@ This document demonstrates how qsv-generated Agent Skills integrate with the Cla
 
 ```typescript
 // skills/loader.ts
-import { SkillRegistry } from '@anthropic-ai/agent-sdk';
+// Note: This example uses a hypothetical SDK API for illustration.
+// The actual implementation uses MCP (Model Context Protocol).
+// See src/mcp-server.ts for the real implementation.
 import { readdir, readFile } from 'fs/promises';
 import { join } from 'path';
 
@@ -1033,3 +1041,27 @@ The auto-generated skills from qsv usage text become first-class citizens in the
 ---
 
 **Next Steps**: Implement proof-of-concept parser and generate first 5 skills to validate this integration design.
+
+---
+
+## Current Implementation (v14.2.0)
+
+The design concepts in this document were implemented using the **Model Context
+Protocol (MCP)** rather than a standalone SDK. Key differences:
+
+| Design Concept | Actual Implementation |
+|----------------|----------------------|
+| `@anthropic-ai/agent-sdk` | `@modelcontextprotocol/sdk` |
+| SkillRegistry | MCP ListTools/CallTool handlers |
+| Agent.invokeSkill() | MCP tool invocation |
+| Pipeline builder | `mcp-pipeline.ts` |
+
+### New Features in v14.2.0
+
+- **Tool Search**: `qsv_search_tools` for discovering commands by keyword/category
+- **Expose-All-Tools Mode**: Auto-detection for tool-search-capable clients
+- **Client Detection**: Identifies Claude Desktop, Code, Cowork
+- **Guidance Enhancement**: USE WHEN, COMMON PATTERNS, CAUTION hints
+- **MCPB Packaging**: Desktop extension bundle for easy installation
+
+See `CLAUDE.md` and `README-MCP.md` for current documentation.

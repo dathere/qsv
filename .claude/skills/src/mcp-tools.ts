@@ -142,6 +142,16 @@ const ERROR_PREVENTION_HINTS: Record<string, string> = {
 };
 
 /**
+ * Hints for complementary MCP servers that can enhance qsv workflows
+ */
+const COMPLEMENTARY_SERVERS: Record<string, string> = {
+  'geocode': '🔗 CENSUS ENRICHMENT: After geocoding US locations, use Census MCP Server to add demographics. Tools: `resolve-geography-fips` (get FIPS codes), `fetch-aggregate-data` (population, income, education). US data only.',
+  'stats': '🔗 CENSUS VALIDATION: If stats show US geographic columns (city, state, county, FIPS), Census MCP Server can validate codes and fetch reference demographics for comparison.',
+  'moarstats': '🔗 CENSUS VALIDATION: If analyzing US geographic data, Census MCP Server can provide demographic baselines for statistical comparison.',
+  'frequency': '🔗 CENSUS INSIGHT: For US geographic columns, Census MCP Server can enrich frequency results with population/demographic data via `fetch-aggregate-data`.',
+};
+
+/**
  * Input file size threshold (in bytes) for auto temp file
  */
 const LARGE_FILE_THRESHOLD_BYTES = 10 * 1024 * 1024; // 10MB
@@ -465,6 +475,12 @@ function enhanceDescription(skill: QsvSkill): string {
     if (skill.examples.length > maxExamples) {
       description += `\n  (${skill.examples.length - maxExamples} more - use help=true for full list)`;
     }
+  }
+
+  // Add complementary server hints (Census MCP integration)
+  const censusHint = COMPLEMENTARY_SERVERS[commandName];
+  if (censusHint) {
+    description += `\n\n${censusHint}`;
   }
 
   return description;

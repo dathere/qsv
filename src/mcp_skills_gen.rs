@@ -1049,7 +1049,6 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "pivotp",
         "pro",
         "pseudo",
-        "python",
         "rename",
         "replace",
         "reverse",
@@ -1136,7 +1135,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         eprintln!("Processing: {cmd_name}");
 
         // Find command file
-        // Note: enumerate.rs is invoked as "enum", python.rs as "py"
+        // Note: enumerate.rs is invoked as "enum"
         let cmd_file = repo_root.join(format!("src/cmd/{cmd_name}.rs"));
 
         if !cmd_file.exists() {
@@ -1158,11 +1157,8 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         // Parse into skill definition
         // For commands with aliases, extract the actual invocation name from USAGE
         // - enumerate is invoked as "enum"
-        // - python is invoked as "py"
         let invocation_name = if usage_text.contains("qsv enum ") {
             "enum"
-        } else if usage_text.contains("qsv py ") {
-            "py"
         } else {
             cmd_name
         };

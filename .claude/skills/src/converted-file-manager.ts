@@ -26,6 +26,13 @@ import { formatBytes } from './utils.js';
 import { config } from './config.js';
 
 /**
+ * Type guard to check if an error is a NodeJS.ErrnoException
+ */
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
+}
+
+/**
  * Cache format version 1 with enhanced metadata
  */
 interface ConvertedFileCacheV1 {
@@ -164,8 +171,8 @@ class ConversionLock {
 
       console.error(`[ConversionLock] Acquired lock for: ${sourcePath}`);
       return true;
-    } catch (error: any) {
-      if (error.code === 'EEXIST') {
+    } catch (error: unknown) {
+      if (isNodeError(error) && error.code === 'EEXIST') {
         console.error(`[ConversionLock] Lock already held for: ${sourcePath}`);
         return false;
       }
@@ -192,8 +199,8 @@ class ConversionLock {
       try {
         await unlink(this.currentLockPath);
         console.error(`[ConversionLock] Released lock: ${basename(this.currentLockPath)}`);
-      } catch (error: any) {
-        if (error.code !== 'ENOENT') {
+      } catch (error: unknown) {
+        if (!isNodeError(error) || error.code !== 'ENOENT') {
           console.error('[ConversionLock] Error deleting lock file:', error);
         }
       }
@@ -217,15 +224,15 @@ class ConversionLock {
         try {
           await unlink(this.currentLockPath);
           console.error(`[ConversionLock] Cleaned up stale lock (${Math.round(age / 1000)}s old)`);
-        } catch (error: any) {
-          if (error.code !== 'ENOENT') {
+        } catch (error: unknown) {
+          if (!isNodeError(error) || error.code !== 'ENOENT') {
             // Ignore race where another process already removed the stale lock
             console.error('[ConversionLock] Error deleting stale lock file:', error);
           }
         }
       }
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
+    } catch (error: unknown) {
+      if (!isNodeError(error) || error.code !== 'ENOENT') {
         // Ignore missing files, log other errors
         console.error('[ConversionLock] Error checking stale lock:', error);
       }
@@ -330,8 +337,8 @@ export class ConvertedFileManager {
     try {
       const canonical = await realpath(filePath);
       return canonical;
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
+    } catch (error: unknown) {
+      if (isNodeError(error) && error.code === 'ENOENT') {
         // File doesn't exist - normalize it anyway to prevent directory traversal
         if (mustExist) {
           throw new Error(`File does not exist: ${filePath}`);
@@ -454,8 +461,8 @@ export class ConvertedFileManager {
 
       // Validate and migrate if needed
       return await this.validateCache(cache);
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
+    } catch (error: unknown) {
+      if (isNodeError(error) && error.code === 'ENOENT') {
         // Cache doesn't exist yet, return empty with initialized sequence
         return { version: 1, entries: [], totalSize: 0, nextSequence: 0 };
       }
@@ -880,8 +887,8 @@ export class ConvertedFileManager {
           try {
             await unlink(conversion.convertedPath);
             this.metrics.cleanup.partialConversionsRemoved++; // Track partial cleanup
-          } catch (error: any) {
-            if (error.code !== 'ENOENT') {
+          } catch (error: unknown) {
+            if (!isNodeError(error) || error.code !== 'ENOENT') {
               console.error('[Converted File Manager] Failed to delete partial file:', error);
             } else {
               // File already gone
@@ -1076,8 +1083,8 @@ export class ConvertedFileManager {
         await unlink(entry.convertedPath);
         deleted = true;
         console.error(`[Converted File Manager] Deleted: ${entry.convertedPath} (${formatBytes(entry.size)})`);
-      } catch (error: any) {
-        if (error.code === 'ENOENT') {
+      } catch (error: unknown) {
+        if (isNodeError(error) && error.code === 'ENOENT') {
           // File already gone, treat as deleted
           deleted = true;
         } else {

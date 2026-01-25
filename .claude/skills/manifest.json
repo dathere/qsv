@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.3",
   "name": "qsv",
-  "version": "14.1.0",
+  "version": "14.2.0",
   "description": "Blazingly fast Data Wrangling Toolkit for Tabular Data",
   "long_description": "Comprehensive data-wrangling toolkit for transforming, analyzing, querying & validating tabular data. Process local CSV, TSV, SSV, Excel/ODS, and JSONL files w/o uploading. Despite the warning, only accesses APPROVED DIRECTORIES on your computer.",
   "author": {
@@ -157,16 +157,6 @@
   ],
   "prompts": [
     {
-      "name": "qsv_welcome",
-      "description": "Welcome message and quick start guide for qsv",
-      "text": "Show me the qsv welcome guide with available files and quick start instructions."
-    },
-    {
-      "name": "qsv_examples",
-      "description": "Common qsv usage examples and workflows",
-      "text": "Show me common qsv usage examples for data exploration, cleaning, transformation, and analysis."
-    },
-    {
       "name": "qsv_census_integration",
       "description": "Guide for using Census MCP Server with qsv for US demographic enrichment",
       "text": "Show me how to use Census MCP Server with qsv to enrich data with US demographic information."
@@ -184,8 +174,7 @@
         "Process local files (CSV, Excel, JSONL) without uploading",
         "Smart caching with stats files",
         "Pipeline composition for complex workflows",
-        "Automatic Excel and JSONL conversion",
-        "Filesystem resource browsing"
+        "Automatic Excel and JSONL conversion"
       ],
       "minimum_qsv_version": "13.0.0"
     }

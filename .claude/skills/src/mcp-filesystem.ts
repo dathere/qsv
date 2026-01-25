@@ -233,6 +233,26 @@ export class FilesystemResourceProvider {
   }
 
   /**
+   * Check if a filename matches temporary/converted file patterns
+   * These files should be excluded from the MCP resource list
+   */
+  private isTemporaryFile(filename: string): boolean {
+    // Converted files: *.converted.{uuid}.csv
+    if (/\.converted\.[a-f0-9-]{36}\.csv$/i.test(filename)) {
+      return true;
+    }
+    // Temporary output files: qsv-output-{uuid}.csv
+    if (/^qsv-output-[a-f0-9-]+\.csv$/i.test(filename)) {
+      return true;
+    }
+    // Temp files with .tmp. pattern
+    if (filename.includes('.tmp.')) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Check if a file format requires conversion to CSV
    */
   needsConversion(filePath: string): boolean {
@@ -461,6 +481,10 @@ export class FilesystemResourceProvider {
         } else if (entry.isFile()) {
           const ext = this.getFileExtension(entry.name);
           if (ext && this.allowedExtensions.has(ext)) {
+            // Skip temporary/converted files to avoid cluttering the resource list
+            if (this.isTemporaryFile(entry.name)) {
+              continue;
+            }
             const relativePath = relative(this.workingDir, fullPath);
             const uri = this.pathToFileUri(fullPath);
 

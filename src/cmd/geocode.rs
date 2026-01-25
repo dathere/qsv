@@ -47,9 +47,8 @@ Geonames city name.
 The geocoded information is formatted based on --formatstr, returning it in 
 '%location' format (i.e. "(lat, long)") if not specified.
 
-Use the --new-column option if you want to keep the location column:
+Use the --new-column option if you want to keep the location column, e.g.
 
-Examples:
 Geocode file.csv city column and set the geocoded value to a new column named lat_long.
 
   $ qsv geocode suggest city --new-column lat_long file.csv
@@ -75,7 +74,9 @@ geocoded value a new column named state.
 Use dynamic formatting to create a custom format.
 
   $ qsv geocode suggest city -f "{name}, {admin1}, {country} in {timezone}" file.csv
-  # using French place names. You'll need to rebuild the index with the --languages option first
+
+Using French place names. You'll need to rebuild the index with the --languages option first
+
   $ qsv geocode suggest city -f "{name}, {admin1}, {country} in {timezone}" -l fr file.csv
 
 SUGGESTNOW
@@ -92,9 +93,8 @@ city record based on the Euclidean distance between the coordinate and the neare
 It accepts "lat, long" or "(lat, long)" format.
 
 The geocoded information is formatted based on --formatstr, returning it in
-'%city-admin1' format if not specified.
+'%city-admin1' format if not specified, e.g.
 
-Examples:
 Reverse geocode file.csv LatLong column. Set the geocoded value to a new column named City.
 
   $ qsv geocode reverse LatLong -c City file.csv
@@ -164,19 +164,33 @@ It has four operations:
             If set to 500, 1000, 5000 or 15000, it will download the corresponding English-only
             Geonames index rkyv file from the qsv GitHub repo for the current qsv version.
 
-Examples:
 Update the Geonames cities index with the latest changes.
 
   $ qsv geocode index-update
-  # or rebuild the index using the latest Geonames data
-  # with English, French, German & Spanish place names
+
+Rebuild the index using the latest Geonames data w/ English, French, German & Spanish place names
+
   $ qsv geocode index-update --languages en,fr,de,es
 
 Load an alternative Geonames cities index from a file, making it the default index going forward.
 
   $ qsv geocode index-load my_geonames_index.rkyv
 
-For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_geocode.rs.
+Examples:
+
+# For US places, you can retrieve the us_state_fips_code and us_county_fips_code fields of a US City
+# to help with Census data enrichment.
+qsv geocode suggest city_col --country US -f \
+"%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}"\
+    input_data.csv -o output_data_with_fips.csv
+
+# For US places, you can reverse geocode the us_state_fips_code and us_county_fips_code fields of a WGS 84 coordinate
+# to help with Census data enrichment. The coordinate can be in "lat, long" or "(lat, long)" format.
+qsv geocode reverse wgs84_coordinate_col --country US -f \
+"%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}"\
+    input_data.csv -o output_data_with_fips.csv
+
+For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_geocode.rs.
 
 Usage:
 qsv geocode suggest [--formatstr=<string>] [options] <column> [<input>]

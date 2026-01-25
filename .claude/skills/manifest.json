@@ -155,8 +155,25 @@
       "description": "Execute complex multi-command qsv pipelines"
     }
   ],
+  "prompts": [
+    {
+      "name": "qsv_welcome",
+      "description": "Welcome message and quick start guide for qsv",
+      "text": "Show me the qsv welcome guide with available files and quick start instructions."
+    },
+    {
+      "name": "qsv_examples",
+      "description": "Common qsv usage examples and workflows",
+      "text": "Show me common qsv usage examples for data exploration, cleaning, transformation, and analysis."
+    },
+    {
+      "name": "qsv_census_integration",
+      "description": "Guide for using Census MCP Server with qsv for US demographic enrichment",
+      "text": "Show me how to use Census MCP Server with qsv to enrich data with US demographic information."
+    }
+  ],
   "tools_generated": true,
-  "prompts_generated": false,
+  "prompts_generated": true,
   "compatibility": {
     "platforms": ["darwin", "win32", "linux"]
   },

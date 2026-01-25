@@ -77,36 +77,40 @@
       "command": "qsv slice --start 0 --end 2 data.csv"
     },
     {
-      "description": "Slice the last record",
-      "command": "qsv slice -l 3 data.csv"
+      "description": "Slice the first three records (using --len)",
+      "command": "qsv slice --len 3 data.csv"
     },
     {
-      "description": "Slice the last 10 records",
+      "description": "Slice the last record",
       "command": "qsv slice -s -1 data.csv"
     },
     {
-      "description": "Get everything except the last 10 records",
+      "description": "Slice the last 10 records",
       "command": "qsv slice -s -10 data.csv"
     },
     {
-      "description": "Slice the first three records of the last 10 records",
+      "description": "Get everything except the last 10 records",
       "command": "qsv slice -s -10 --invert data.csv"
     },
     {
-      "description": "Slice the second record",
+      "description": "Slice the first three records of the last 10 records",
       "command": "qsv slice -s -10 -l 3 data.csv"
     },
     {
-      "description": "Slice from the second record, two records",
-      "command": "qsv slice -i 1 data.csv"
+      "description": "Slice the second record",
+      "command": "qsv slice --index 1 data.csv"
     },
     {
-      "description": "Slice records 10 to 20 as JSON",
+      "description": "Slice from the second record, two records",
       "command": "qsv slice -s 1 --len 2 data.csv"
     },
     {
+      "description": "Slice records 10 to 20 as JSON",
+      "command": "qsv slice --start 9 --end 19 --json data.csv"
+    },
+    {
       "description": "Slice records 1 to 9 and 21 to the end as JSON",
-      "command": "qsv slice -s 9 -l 10 --json data.csv"
+      "command": "qsv slice --start 9 --len 10 --invert --json data.csv"
     }
   ]
 }

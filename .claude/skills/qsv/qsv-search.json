@@ -114,5 +114,39 @@
     "streamable": true,
     "indexed": true,
     "memory": "constant"
-  }
+  },
+  "examples": [
+    {
+      "description": "Search for rows where any field contains the regex 'foo.*bar' (case sensitive)",
+      "command": "qsv search 'foo.*bar' data.csv"
+    },
+    {
+      "description": "Case insensitive search for 'error' in the 'message' column",
+      "command": "qsv search -i 'error' -s message data.csv"
+    },
+    {
+      "description": "Search for exact matches of 'completed' in the 'status' column",
+      "command": "qsv search --exact 'completed' -s status data.csv"
+    },
+    {
+      "description": "Search for literal string 'a.b*c' in all columns",
+      "command": "qsv search --literal 'a.b*c' data.csv"
+    },
+    {
+      "description": "Invert match: select rows that do NOT match the regex 'test'",
+      "command": "qsv search --invert-match 'test' data.csv"
+    },
+    {
+      "description": "Flag matched rows in a new column named 'match_flag'",
+      "command": "qsv search --flag match_flag 'pattern' data.csv"
+    },
+    {
+      "description": "Quick search: return on first match of 'urgent' in the 'subject' column",
+      "command": "qsv search --quick 'urgent' -s subject data.csv"
+    },
+    {
+      "description": "Preview the first 5 matches of 'warning' in all columns",
+      "command": "qsv search --preview-match 5 'warning' data.csv"
+    }
+  ]
 }

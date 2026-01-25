@@ -709,6 +709,8 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
 - **Data Freshness**: Census data is typically 1-2 years behind current year
 - **Rate Limits**: Be mindful of Census API rate limits when making bulk requests
 - When retrieving data from the Census MCP Server, remember to save them locally as CSV in the qsv working directory so you don't fill up your context window with large JSON responses.
+- Refrain from using stdout for qsv commands. Save outputs to files in the qsv working directory and reference those files in subsequent commands.
+- Always save output files with descriptive names in the working directory for easy reference in subsequent commands.
 `
             }
           }],

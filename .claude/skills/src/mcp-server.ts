@@ -34,12 +34,8 @@ import {
   handleToolCall,
   handleGenericCommand,
   createConfigTool,
-  createWelcomeTool,
-  createExamplesTool,
   createSearchToolsTool,
   handleConfigTool,
-  handleWelcomeTool,
-  handleExamplesTool,
   handleSearchToolsCall,
   initiateShutdown,
   killAllProcesses,
@@ -372,16 +368,14 @@ class QsvMcpServer {
         throw error;
       }
 
-      // Add welcome, config, examples, and search tools
-      console.error('[Server] Adding welcome, config, examples, and search tools...');
+      // Add config and search tools
+      console.error('[Server] Adding config and search tools...');
       try {
-        tools.push(createWelcomeTool());
         tools.push(createConfigTool());
-        tools.push(createExamplesTool());
         tools.push(createSearchToolsTool());
-        console.error('[Server] Welcome, config, examples, and search tools added successfully');
+        console.error('[Server] config and search tools added successfully');
       } catch (error) {
-        console.error('[Server] Error creating welcome/examples/search tools:', error);
+        console.error('[Server] Error creating config/search tools:', error);
         throw error;
       }
 
@@ -560,19 +554,9 @@ class QsvMcpServer {
           );
         }
 
-        // Handle welcome tool
-        if (name === 'qsv_welcome') {
-          return await handleWelcomeTool(this.filesystemProvider);
-        }
-
         // Handle config tool
         if (name === 'qsv_config') {
           return await handleConfigTool(this.filesystemProvider);
-        }
-
-        // Handle examples tool
-        if (name === 'qsv_examples') {
-          return await handleExamplesTool();
         }
 
         // Handle search tools
@@ -617,110 +601,23 @@ class QsvMcpServer {
    * Register MCP resource handlers
    */
   private registerResourceHandlers(): void {
-    // List resources handler
-    this.server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
+    // List resources handler - no file resources exposed
+    this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
       console.error('Listing resources...');
-
-      // Only return filesystem files
-      const filesystemResult = await this.filesystemProvider.listFiles(undefined, false);
-
-      // Add Census integration guide resource
-      const integrationResources = [
-        {
-          uri: 'qsv://integrations/census',
-          name: 'Census MCP Integration Guide',
-          description: 'Guide for using Census MCP Server with qsv for US demographic data enrichment',
-          mimeType: 'text/markdown',
-        },
-      ];
-
-      console.error(`Returning ${filesystemResult.resources.length} file resources + ${integrationResources.length} integration resources`);
+      console.error('Returning 0 resources (file resources disabled)');
 
       return {
-        resources: [...filesystemResult.resources, ...integrationResources],
+        resources: [],
       };
     });
 
-    // Read resource handler
+    // Read resource handler - minimal implementation since no resources are exposed
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       const { uri } = request.params;
 
       console.error(`Reading resource: ${uri}`);
 
-      try {
-        // Handle Census integration resource
-        if (uri === 'qsv://integrations/census') {
-          return {
-            contents: [{
-              uri: 'qsv://integrations/census',
-              mimeType: 'text/markdown',
-              text: `# Census MCP Server Integration
-
-## Available Census Tools
-
-| Tool | Purpose |
-|------|---------|
-| \`resolve-geography-fips\` | Convert place names to FIPS codes |
-| \`fetch-aggregate-data\` | Get demographics for a geography |
-| \`list-datasets\` | List available Census datasets |
-| \`fetch-dataset-geography\` | List geographic levels for a dataset |
-
-## Integration Points with qsv
-
-### qsv_geocode -> Census enrichment
-After geocoding locations with qsv, use Census MCP to add:
-- Population data
-- Income statistics
-- Education levels
-- Housing information
-
-### qsv_stats / qsv_moarstats -> Census validation
-Compare your data statistics against Census baselines for:
-- Geographic code validation
-- Demographic reasonableness checks
-
-### qsv_frequency -> Census context
-For geographic columns, Census data provides:
-- Expected distributions
-- Population weighting
-
-## Pattern: Geographic Data Enhancement Pipeline
-
-\`\`\`
-1. qsv_headers -> Identify geographic columns
-2. qsv_frequency -> See unique values in geo columns
-3. Census resolve-geography-fips -> Get FIPS codes
-4. Census fetch-aggregate-data -> Get demographics
-5. qsv_joinp -> Join demographics back to original data
-\`\`\`
-`,
-            }],
-          };
-        }
-
-        // Only handle file:/// URIs
-        if (!uri.startsWith('file:///')) {
-          throw new Error(`Unsupported resource URI: ${uri}`);
-        }
-
-        const resource = await this.filesystemProvider.getFileContent(uri);
-
-        if (!resource) {
-          throw new Error(`Resource not found: ${uri}`);
-        }
-
-        return {
-          contents: [{
-            uri: resource.uri,
-            mimeType: resource.mimeType,
-            text: resource.text,
-          }],
-        };
-      } catch (error) {
-        console.error(`Error reading resource ${uri}:`, error);
-
-        throw error;
-      }
+      throw new Error(`Resource not found: ${uri}`);
     });
   }
 
@@ -733,14 +630,6 @@ For geographic columns, Census data provides:
       console.error('Listing prompts...');
 
       const prompts = [
-        {
-          name: 'qsv_welcome',
-          description: 'Welcome message and quick start guide for qsv',
-        },
-        {
-          name: 'qsv_examples',
-          description: 'Common qsv usage examples and workflows',
-        },
         {
           name: 'qsv_census_integration',
           description: 'Guide for using Census MCP Server with qsv for US demographic enrichment',
@@ -759,34 +648,6 @@ For geographic columns, Census data provides:
       const { name } = request.params;
 
       console.error(`Getting prompt: ${name}`);
-
-      // Handle welcome prompt
-      if (name === 'qsv_welcome') {
-        const result = await handleWelcomeTool(this.filesystemProvider);
-        return {
-          messages: [{
-            role: 'assistant' as const,
-            content: {
-              type: 'text' as const,
-              text: result.content[0].text,
-            },
-          }],
-        };
-      }
-
-      // Handle examples prompt
-      if (name === 'qsv_examples') {
-        const result = await handleExamplesTool();
-        return {
-          messages: [{
-            role: 'assistant' as const,
-            content: {
-              type: 'text' as const,
-              text: result.content[0].text,
-            },
-          }],
-        };
-      }
 
       // Handle Census integration prompt
       if (name === 'qsv_census_integration') {
@@ -844,7 +705,10 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
 ## Important Notes
 - **US Data Only**: Census MCP Server only provides US Census data
 - **FIPS Codes**: Many Census queries require FIPS codes - use resolve-geography-fips first
+- Alternatively, instead of resolve-geography-fips, the qsv_geocode command outputs FIPS codes.
 - **Data Freshness**: Census data is typically 1-2 years behind current year
+- **Rate Limits**: Be mindful of Census API rate limits when making bulk requests
+- When retrieving data from the Census MCP Server, remember to save them locally as CSV in the qsv working directory so you don't fill up your context window with large JSON responses.
 `
             }
           }],

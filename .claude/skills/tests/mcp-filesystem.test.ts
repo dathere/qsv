@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { FilesystemResourceProvider } from '../src/mcp-filesystem.js';
 import { config } from '../src/config.js';
-import { mkdtemp, writeFile, mkdir, rmdir, unlink } from 'fs/promises';
+import { mkdtemp, writeFile, rmdir, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -90,8 +90,116 @@ test('needsConversion detects Excel and JSONL formats', () => {
 
 test('getConversionCommand returns correct command', () => {
   const provider = new FilesystemResourceProvider();
-  
+
   assert.strictEqual(provider.getConversionCommand('file.xlsx'), 'excel');
   assert.strictEqual(provider.getConversionCommand('file.jsonl'), 'jsonl');
   assert.strictEqual(provider.getConversionCommand('file.csv'), null);
 });
+
+test('listFiles excludes converted files with UUID pattern', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+
+  try {
+    // Create a normal CSV file
+    await writeFile(join(tempDir, 'normal.csv'), 'col1,col2\nval1,val2\n');
+
+    // Create a converted file (UUID pattern from ConvertedFileManager)
+    await writeFile(
+      join(tempDir, 'data.xlsx.converted.06488439-4c06-4abc-999e-9e6af19b1234.csv'),
+      'col1,col2\nval1,val2\n'
+    );
+
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir,
+    });
+
+    const result = await provider.listFiles(undefined);
+
+    // Should only include the normal CSV, not the converted file
+    assert.strictEqual(result.resources.length, 1);
+    assert.strictEqual(result.resources[0].name, 'normal.csv');
+  } finally {
+    try {
+      const { readdir } = await import('fs/promises');
+      const files = await readdir(tempDir);
+      for (const file of files) {
+        await unlink(join(tempDir, file));
+      }
+      await rmdir(tempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+test('listFiles excludes qsv-output temporary files', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+
+  try {
+    // Create a normal CSV file
+    await writeFile(join(tempDir, 'normal.csv'), 'col1,col2\nval1,val2\n');
+
+    // Create a temporary output file
+    await writeFile(
+      join(tempDir, 'qsv-output-a1b2c3d4-e5f6-7890-abcd-ef1234567890.csv'),
+      'col1,col2\nval1,val2\n'
+    );
+
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir,
+    });
+
+    const result = await provider.listFiles(undefined);
+
+    // Should only include the normal CSV, not the temp output file
+    assert.strictEqual(result.resources.length, 1);
+    assert.strictEqual(result.resources[0].name, 'normal.csv');
+  } finally {
+    try {
+      const { readdir } = await import('fs/promises');
+      const files = await readdir(tempDir);
+      for (const file of files) {
+        await unlink(join(tempDir, file));
+      }
+      await rmdir(tempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+test('listFiles excludes files with .tmp. pattern', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+
+  try {
+    // Create a normal CSV file
+    await writeFile(join(tempDir, 'normal.csv'), 'col1,col2\nval1,val2\n');
+
+    // Create a temp file with .tmp. pattern
+    await writeFile(join(tempDir, 'data.tmp.csv'), 'col1,col2\nval1,val2\n');
+
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir,
+    });
+
+    const result = await provider.listFiles(undefined);
+
+    // Should only include the normal CSV, not the temp file
+    assert.strictEqual(result.resources.length, 1);
+    assert.strictEqual(result.resources[0].name, 'normal.csv');
+  } finally {
+    try {
+      const { readdir } = await import('fs/promises');
+      const files = await readdir(tempDir);
+      for (const file of files) {
+        await unlink(join(tempDir, file));
+      }
+      await rmdir(tempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+// Note: listWorkingDirFiles was removed as file resources are no longer exposed via MCP.
+// The qsv_list_files tool uses listFiles() which is still available.

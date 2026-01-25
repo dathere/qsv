@@ -76,6 +76,7 @@ Use dynamic formatting to create a custom format.
   $ qsv geocode suggest city -f "{name}, {admin1}, {country} in {timezone}" file.csv
 
 Using French place names. You'll need to rebuild the index with the --languages option first
+
   $ qsv geocode suggest city -f "{name}, {admin1}, {country} in {timezone}" -l fr file.csv
 
 SUGGESTNOW
@@ -169,7 +170,7 @@ Update the Geonames cities index with the latest changes.
 
 Rebuild the index using the latest Geonames data w/ English, French, German & Spanish place names
 
-$ qsv geocode index-update --languages en,fr,de,es
+  $ qsv geocode index-update --languages en,fr,de,es
 
 Load an alternative Geonames cities index from a file, making it the default index going forward.
 
@@ -179,14 +180,14 @@ Examples:
 
 # For US places, you can retrieve the us_state_fips_code and us_county_fips_code fields of a US City
 # to help with Census data enrichment.
-  qsv geocode suggest city_col --country US -f \
-    "%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}"\
+qsv geocode suggest city_col --country US -f \
+"%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}"\
     input_data.csv -o output_data_with_fips.csv
 
 # For US places, you can reverse geocode the us_state_fips_code and us_county_fips_code fields of a WGS 84 coordinate
 # to help with Census data enrichment. The coordinate can be in "lat, long" or "(lat, long)" format.
-  qsv geocode reverse wgs84_coordinate_col --country US -f \
-    "%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}"\
+qsv geocode reverse wgs84_coordinate_col --country US -f \
+"%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}"\
     input_data.csv -o output_data_with_fips.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_geocode.rs.

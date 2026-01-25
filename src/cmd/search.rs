@@ -15,6 +15,32 @@ the first match.
 
 When the CSV is indexed, a faster parallel search is used.
 
+Examples:
+
+  # Search for rows where any field contains the regex 'foo.*bar' (case sensitive)
+  qsv search 'foo.*bar' data.csv
+
+  # Case insensitive search for 'error' in the 'message' column
+  qsv search -i 'error' -s message data.csv
+
+  # Search for exact matches of 'completed' in the 'status' column
+  qsv search --exact 'completed' -s status data.csv
+
+  # Search for literal string 'a.b*c' in all columns
+  qsv search --literal 'a.b*c' data.csv
+
+  # Invert match: select rows that do NOT match the regex 'test'
+  qsv search --invert-match 'test' data.csv
+
+  # Flag matched rows in a new column named 'match_flag'
+  qsv search --flag match_flag 'pattern' data.csv
+
+  # Quick search: return on first match of 'urgent' in the 'subject' column
+  qsv search --quick 'urgent' -s subject data.csv
+
+  # Preview the first 5 matches of 'warning' in all columns
+  qsv search --preview-match 5 'warning' data.csv
+
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_search.rs.
 
 Usage:

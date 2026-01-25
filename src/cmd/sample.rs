@@ -86,7 +86,37 @@ This command is intended to provide a means to sample from a CSV data set that
 is too big to fit into memory (for example, for use with commands like
 'qsv stats' with the '--everything' option). 
 
-For examples, see https://github.com/dathere/qsv/blob/master/tests/test_sample.rs.
+Examples:
+
+  # Take a sample of 1000 records from data.csv using RESERVOIR or INDEXED sampling
+  # depending on whether an INDEX is present. 
+  qsv sample 1000 data.csv
+
+  # Take a sample of approximately 10% of the records from data.csv using RESERVOIR
+  # or INDEXED sampling depending on whether an INDEX is present.
+  qsv sample 0.1 data.csv
+
+  # Take a sample using BERNOULLI sampling where each record has a 5% chance of being selected
+  qsv sample --bernoulli 0.05 data.csv
+
+  # Take a sample using SYSTEMATIC sampling where every 10th record is selected
+  # and approximately 50% of the population is sampled, starting from a random point.
+  qsv sample --systematic random 10.5 data.csv
+
+  # Take a sample using STRATIFIED sampling where 20 records are sampled from each
+  # stratum defined by the 'State' column.
+  qsv sample --stratified State 20 data.csv
+
+  # Take a sample using WEIGHTED sampling where records are sampled with probabilities
+  # proportional to the 'Revenue' column, for a total sample size of 1000 records.
+  qsv sample --weighted Revenue 1000 data.csv
+
+  # Take a sample using CLUSTER sampling where 10 clusters defined by the
+  # 'Neighborhood' column are randomly selected and all records from those clusters
+  # are included in the sample.
+  qsv sample --cluster Neighborhood 10 data.csv
+
+For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_sample.rs.
 
 Usage:
     qsv sample [options] <sample-size> [<input>]

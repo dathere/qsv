@@ -109,7 +109,10 @@ export function createPipelineToolDefinition(): McpToolDefinition {
 export async function executePipeline(
   params: Record<string, unknown>,
   loader: SkillLoader,
-  filesystemProvider?: { resolvePath: (path: string) => Promise<string> },
+  filesystemProvider?: {
+    resolvePath: (path: string) => Promise<string>;
+    getWorkingDirectory: () => string;
+  },
 ) {
   try {
     let inputFile = params.input_file as string | undefined;
@@ -192,9 +195,11 @@ export async function executePipeline(
     }
 
     // Create pipeline with executor that uses the configured qsv binary path
+    // and working directory for consistent file resolution
     // This prevents 'spawn qsv ENOENT' errors when qsv is not in PATH
     const { SkillExecutor } = await import('./executor.js');
-    const executor = new SkillExecutor(config.qsvBinPath);
+    const workingDir = filesystemProvider?.getWorkingDirectory() || config.workingDir;
+    const executor = new SkillExecutor(config.qsvBinPath, workingDir);
     const pipeline = new QsvPipeline(loader, executor);
 
     // Add steps to pipeline

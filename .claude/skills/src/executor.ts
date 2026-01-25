@@ -60,9 +60,27 @@ function getSubcommand(skill: QsvSkill, params: SkillParams): string | null {
 
 export class SkillExecutor {
   private qsvBinary: string;
+  private workingDirectory: string;
 
-  constructor(qsvBinary: string = 'qsv') {
+  constructor(qsvBinary: string = 'qsv', workingDirectory?: string) {
     this.qsvBinary = qsvBinary;
+    this.workingDirectory = workingDirectory || process.cwd();
+  }
+
+  /**
+   * Set the working directory for qsv process spawning.
+   * This ensures qsv uses the correct directory for resolving relative paths
+   * and writing secondary output files.
+   */
+  setWorkingDirectory(dir: string): void {
+    this.workingDirectory = dir;
+  }
+
+  /**
+   * Get the current working directory
+   */
+  getWorkingDirectory(): string {
+    return this.workingDirectory;
   }
 
   /**
@@ -216,10 +234,12 @@ export class SkillExecutor {
       const fullCommand = `${this.qsvBinary} ${args.join(' ')}`;
       console.error(`[Executor] Running command: ${fullCommand}`);
       console.error(`[Executor] Binary path: ${this.qsvBinary}`);
+      console.error(`[Executor] Working directory: ${this.workingDirectory}`);
       console.error(`[Executor] Args:`, JSON.stringify(args));
 
       const proc = spawn(this.qsvBinary, args, {
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: this.workingDirectory
       });
 
       let stdout = '';

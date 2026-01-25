@@ -79,7 +79,7 @@ class QsvMcpServer {
     );
 
     this.loader = new SkillLoader();
-    this.executor = new SkillExecutor(config.qsvBinPath);
+    this.executor = new SkillExecutor(config.qsvBinPath, config.workingDir);
 
     // Initialize filesystem provider with configurable directories
     this.filesystemProvider = new FilesystemResourceProvider({
@@ -523,10 +523,15 @@ class QsvMcpServer {
           const directory = args?.directory as string;
           this.filesystemProvider.setWorkingDirectory(directory);
 
+          // Also update executor's working directory so qsv processes
+          // write secondary output files (like *.stats.bivariate.csv) to the correct location
+          const newWorkingDir = this.filesystemProvider.getWorkingDirectory();
+          this.executor.setWorkingDirectory(newWorkingDir);
+
           return {
             content: [{
               type: 'text' as const,
-              text: `Working directory set to: ${this.filesystemProvider.getWorkingDirectory()}\n\nAll relative file paths will now be resolved from this directory.`,
+              text: `Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory.`,
             }],
           };
         }

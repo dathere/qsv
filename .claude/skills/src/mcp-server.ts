@@ -765,8 +765,11 @@ For geographic columns, Census data provides:
         const result = await handleWelcomeTool(this.filesystemProvider);
         return {
           messages: [{
-            role: 'assistant',
-            content: result.content[0],
+            role: 'assistant' as const,
+            content: {
+              type: 'text' as const,
+              text: result.content[0].text,
+            },
           }],
         };
       }
@@ -776,8 +779,11 @@ For geographic columns, Census data provides:
         const result = await handleExamplesTool();
         return {
           messages: [{
-            role: 'assistant',
-            content: result.content[0],
+            role: 'assistant' as const,
+            content: {
+              type: 'text' as const,
+              text: result.content[0].text,
+            },
           }],
         };
       }
@@ -786,9 +792,9 @@ For geographic columns, Census data provides:
       if (name === 'qsv_census_integration') {
         return {
           messages: [{
-            role: 'assistant',
+            role: 'assistant' as const,
             content: {
-              type: 'text',
+              type: 'text' as const,
               text: `# Census MCP Server Integration Guide
 
 ## Overview
@@ -822,7 +828,8 @@ Gets demographic data for a geography.
 2. **qsv_stats** - Analyze the geocoded data
 3. **Census resolve-geography-fips** - Get FIPS codes for cities
 4. **Census fetch-aggregate-data** - Get demographics by FIPS
-5. **qsv_joinp** - Join demographics back to original data
+5. The Census API returns JSON, use qsv_json to convert it to CSV.
+6. **qsv_joinp** - Join demographics back to original data
 
 ### Example 2: Validate Geographic Codes
 1. **qsv_frequency** - Check unique values in state/county columns

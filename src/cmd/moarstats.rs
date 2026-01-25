@@ -197,17 +197,17 @@ Examples:
   # Generate baseline stats first with custom options, then add moar stats
   qsv moarstats data.csv --stats-options "--everything --infer-dates"
 
-  # Output to different file
-  qsv moarstats data.csv --output enhanced_stats.csv
-
   # Compute bivariate statistics between fields
   qsv moarstats data.csv --bivariate
 
+  # Compute even more bivariate statistics
+  qsv moarstats data.csv --bivariate --bivariate-stats pearson,spearman,kendall,mi,nmi,covariance
+
   # Join multiple datasets and compute bivariate statistics
-  qsv moarstats data.csv -B --join-inputs customers.csv,products.csv --join-keys cust_id,prod_id
+  qsv moarstats data.csv --bivariate --join-inputs customers.csv,products.csv --join-keys cust_id,prod_id
 
   # Join multiple datasets and compute bivariate statistics with different join type
-  qsv moarstats data.csv -B -J customers.csv,products.csv -K cust_id,prod_id -T left
+  qsv moarstats data.csv --bivariate --join-inputs customers.csv,products.csv --join-keys cust_id,prod_id --join-type left
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_moarstats.rs.
 
@@ -436,7 +436,7 @@ impl BivariateStatsConfig {
     }
 }
 
-/// Get the stats CSV file path for a given input CSV path
+/// Get the absolute stats CSV file path for a given input CSV path
 fn get_stats_csv_path(input_path: &Path) -> CliResult<PathBuf> {
     let parent = input_path.parent().unwrap_or_else(|| Path::new("."));
     let fstem = input_path
@@ -444,10 +444,15 @@ fn get_stats_csv_path(input_path: &Path) -> CliResult<PathBuf> {
         .ok_or_else(|| CliError::Other("Invalid input path: no file name".to_string()))?;
 
     let stats_filename = format!("{}.stats.csv", fstem.to_string_lossy());
-    Ok(parent.join(stats_filename))
+    let result = parent.join(stats_filename);
+    if result.is_absolute() {
+        Ok(result)
+    } else {
+        Ok(std::env::current_dir()?.join(result))
+    }
 }
 
-/// Get the bivariate CSV file path for a given input CSV path
+/// Get the absolute bivariate CSV file path for a given input CSV path
 /// If `is_joined` is true, appends `.joined` to the filename before `.csv`
 fn get_bivariate_csv_path(input_path: &Path, is_joined: bool) -> CliResult<PathBuf> {
     let parent = input_path.parent().unwrap_or_else(|| Path::new("."));
@@ -460,7 +465,12 @@ fn get_bivariate_csv_path(input_path: &Path, is_joined: bool) -> CliResult<PathB
     } else {
         format!("{}.stats.bivariate.csv", fstem.to_string_lossy())
     };
-    Ok(parent.join(bivariate_filename))
+    let result = parent.join(bivariate_filename);
+    if result.is_absolute() {
+        Ok(result)
+    } else {
+        Ok(std::env::current_dir()?.join(result))
+    }
 }
 
 /// Join multiple datasets internally using join

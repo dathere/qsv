@@ -139,12 +139,12 @@
   },
   "examples": [
     {
-      "description": "using French place names. You'll need to rebuild the index with the --languages option first",
-      "command": "qsv geocode suggest city -f \"{name}, {admin1}, {country} in {timezone}\" file.csv"
+      "description": "For US places, you can retrieve the us_state_fips_code and us_county_fips_code fields of a US City to help with Census data enrichment.",
+      "command": "qsv geocode suggest city_col --country US -f  \"%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}\" input_data.csv -o output_data_with_fips.csv"
     },
     {
-      "description": "or rebuild the index using the latest Geonames data with English, French, German & Spanish place names",
-      "command": "qsv geocode index-update"
+      "description": "For US places, you can reverse geocode the us_state_fips_code and us_county_fips_code fields of a WGS 84 coordinate to help with Census data enrichment. The coordinate can be in \"lat, long\" or \"(lat, long)\" format.",
+      "command": "qsv geocode reverse wgs84_coordinate_col --country US -f  \"%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}\" input_data.csv -o output_data_with_fips.csv"
     }
   ]
 }

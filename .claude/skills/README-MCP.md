@@ -12,19 +12,15 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 - **Pipeline Support**: Chain multiple operations together seamlessly
 - **Intelligent Guidance**: Enhanced tool descriptions help Claude make optimal decisions
 
-## What's New in 14.2.1
+## What's New in 15.0.0
 
-- **Auto-Detect Claude Clients** - Automatically enables expose-all-tools mode for Claude Desktop, Claude Code, and Claude Cowork
-- **Smart Tool Selection** - No manual configuration needed - all 62+ tools automatically available for Claude clients
-- **Environment Override** - Explicit `QSV_MCP_EXPOSE_ALL_TOOLS=false` disables auto-detection for all clients, forcing common-tools mode
-
-## What's New in 14.0.0
-
-- **MCP Desktop Extension (MCPB)** - One-click installation for Claude Desktop
-- **Enhanced Tool Descriptions** - USE WHEN guidance, COMMON PATTERNS, and ERROR PREVENTION hints
-- **Token Optimization** - Concise descriptions reduce token usage while maintaining accuracy
-- **Stats Cache Auto-Generation** - Automatically creates stats cache for "smart" commands
-- **Production-Ready CI/CD** - Comprehensive testing across Node.js 20, 22, 24 on all platforms
+- **Tool Search Support** - New `qsv_search_tools` for discovering qsv commands by keyword, category, or regex
+- **Expose-All-Tools Mode** - Auto-detects Claude clients (Desktop, Code, Cowork) for automatic tool exposure
+- **US Census MCP Integration** - Census MCP server awareness with integration guides
+- **Streaming Executor** - Uses `spawn` instead of `execFileSync` for better output handling
+- **Output Size Limits** - 50MB stdout limit prevents memory issues on large outputs
+- **Token Optimization** - 66-76% reduction in tool description token usage
+- **Windows EPERM Retry Logic** - Exponential backoff for file locking errors
 - **Also works with Claude Code!** - wrangle data while wrangling code - [Install in Claude Code](CLAUDE_CODE.md)
 
 ## Supported File Formats
@@ -48,7 +44,7 @@ Excel and JSONL files are automatically converted to CSV before processing - no 
 
 The **MCP Desktop Extension** (MCPB) provides the easiest installation experience:
 
-1. Download `qsv-mcp-server.mcpb` from [releases](https://github.com/dathere/qsv/releases/download/14.0.0/qsv-mcp-server-14.1.0.mcpb)
+1. Download `qsv-mcp-server.mcpb` from [releases](https://github.com/dathere/qsv/releases/download/15.0.0/qsv-mcp-server-15.0.0.mcpb)
 2. Open Claude Desktop Settings → Extensions
 3. Click "Install from file" and select the `.mcpb` file
 4. Configure your allowed directories when prompted
@@ -588,8 +584,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-01-19
-**Version**: 14.2.1
+**Updated**: 2026-01-26
+**Version**: 15.0.0
 **Tools**: 26 standard mode (13 common + 1 generic + 1 pipeline + 1 search + 4 utility + 3 filesystem) or 62+ in expose-all mode
 **Skills**: 62 qsv commands
 **Status**: ✅ Production Ready

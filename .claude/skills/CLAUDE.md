@@ -993,7 +993,7 @@ return {
 
 **Document Version**: 1.6
 **Last Updated**: 2026-01-25
-**Target qsv Version**: 14.x
+**Target qsv Version**: 15.x
 **Node.js Version**: >=18.0.0
 **MCP SDK Version**: ^1.25.2
 **Maintainer**: Joel Natividad

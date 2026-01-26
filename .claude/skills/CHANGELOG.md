@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [15.0.0] - 2026-01-26
+
+### Added
+- **Tool Search Support** - New `qsv_search_tools` for discovering qsv commands by keyword, category, or regex
+- **Expose-All-Tools Mode** - Auto-detects Claude clients (Desktop, Code, Cowork) for automatic tool exposure
+- **US Census MCP Integration** - Census MCP server awareness with integration guides
+- **Agent-Understandable Examples** - Improved usage examples optimized for AI agent comprehension
+
+### Changed
+- **Token Optimization** - 66-76% reduction in tool description token usage
+- **Streaming Executor** - Uses `spawn` instead of `execFileSync` for better output handling
+- **Output Size Limits** - 50MB stdout limit prevents memory issues on large outputs
+- **Added `cat` and `geocode` to common tools** - More robust subcommand handling
+
+### Fixed
+- Critical MCP server stability errors resolved
+- Windows EPERM retry logic with exponential backoff for file locking
+- Pass working directory to spawned qsv processes
+- Cross-platform test runner improvements
+
+### Removed
+- qsv UI commands that are not useful for MCP server (e.g., `lens`, `prompt`)
+
 ## [14.1.0] - 2026-01-13
 
 ### Added

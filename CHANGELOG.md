@@ -6,6 +6,270 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+# [15.0.0] - 2026-01-25 🖖🏻 **_"The Mind Meld Release"_** 🖖🏽
+
+This is the biggest release of qsv yet, thanks to many expert contributions from the community!
+
+* **@kulnor**'s deep expertise in statistics and data standards has been instrumental in enhancing qsv's data analysis capabilities across the entire qsv suite! His well-crafted [issue reports](https://github.com/dathere/qsv/issues?q=is%3Aissue%20state%3Aclosed%20author%3Akulnor), detailed design proposals, thorough testing and detailed documentation on top of our weekly mind-melds have elevated commands like `frequency`, `stats`, `moarstats` and `describegpt` to new heights. His contributions and advocacy have been invaluable and I've learned a lot from him.
+* **@ws-garcia**'s amazing research on the Table Uniformity Method - the algorithm behind  the revamped `sniff` command will be the linchpin behind our upcoming next-gen harvester. Though it took a while, our implementation is now complete and achieves 99.55% accuracy on the W3C-CSVW test suite.
+* **@gurgeous**' beautiful new `color` command contribution makes viewing CSVs in the terminal a joy! His attention to detail and design aesthetics have resulted in a command that is both functional and visually appealing, with more features on the way!
+* I also got Claude-pilled over the holiday break 🤖. Collaborating heavily with **@claude** (running Opus 4.5) appropriately enough, to build up qsv's Generative AI capabilities in `describegpt` and its US Census-aware MCP server.
+
+---
+
+## 🌟 Major Features
+
+An entire section courtesy of @kulnor's mind-meld.
+
+### Enhanced `frequency` Command
+
+Powerful new filtering and display options:
+
+- **`--no-float`**: Exclude Float columns from frequency analysis
+- **`--pct-nulls`**: Include NULL values in percentage calculations
+- **`--null-sorted`**: Sort NULL values with other entries (not at end)
+- **`--no-other`**: Exclude the "Other" aggregation category
+- **`--null-text`**: Customize the NULL display text
+- **`--stats-filter`**: Luau-based column filtering using statistics
+  - Filter columns based on any stats field (nullcount, cardinality, type, etc.)
+  - Full Luau expression support for complex conditions
+- Omit stats in JSON output when using `--weight`
+
+### Enhanced `describegpt` Command
+
+AI-powered data description gets smarter. Now optimized to work with LM Studio and openai/gpt-oss-20b out-of-the-box:
+
+- **`--frequency-options` / `--freq-opts`**: Pass options to underlying frequency command
+- **`--enum-threshold` Integration**: Control enum constraint compilation thresholds
+- **`file:` Prefix Support**: Load prompts from files with `file:my_prompt.txt`
+- **CLI Supersedes Environment Variables**: Command-line options take precedence
+- **Updated LLM Base URLs**: Current endpoints for major providers
+- **Robust Frequency Parsing**: Better handling of frequency output formats
+- **`QSV_TEST_DESCRIBEGPT`**: Environment variable for testing describegpt features
+
+### Enhanced `stats` Command
+
+- **File Metadata in JSON**: JSON output now includes source file information
+- **Removed `--dataset-stats`**: Statistics are now always populated (was optional flag)
+
+### Enhanced `transpose` Command
+
+- **`--select` Option**: Select specific columns during transposition
+  - Uses standard qsv select syntax
+  - Filter columns before wide-to-long transformation
+
+---
+
+### Revamped `sniff` Command
+
+Complete overhaul of CSV sniffing capabilities:
+
+- **csv-nose Integration**: Replaced qsv-sniffer with csv-nose for better detection
+- **Magika-Powered Inference**: Feature-gated integration with Google's Magika for advanced file type detection
+  - Inference labels for detected types
+  - Confidence scores for type predictions
+- **1-Based Field Numbering**: More intuitive field indexing
+- **Robust Remote URLs**: Improved handling of remote CSV sources
+- **'Unknown' Fallback**: Graceful handling of undetectable data types
+
+### NEW: `color` Command by @gurgeous
+
+A vibrant new command for displaying CSVs as colorized, pretty-printed tables:
+
+- **Pretty Tables**: Transform your CSVs into beautiful, readable terminal output
+- **Row Numbers** (`--row-numbers`): Add line numbers for easy reference
+- **Custom Titles** (`--title`): Add descriptive headers to your output
+- **Color Themes** (`--color`): Choose from multiple color schemes
+- **Placeholder Support**: Configurable placeholders for empty values
+- **Environment Variables**: `QSV_TERMWIDTH` (max 1000) and `QSV_FORCE_COLOR` support
+- **Microoptimized**: Fast rendering even for large datasets
+
+### Enhanced MCP Server
+
+Major improvements to the Model Context Protocol server, making qsv even more AI-native:
+
+#### Token Optimization 🚀
+- **66-76% token reduction** in tool definitions
+- Removed redundant `defaults` and `test_file` fields from schemas
+- Streamlined tool and prompts for efficient LLM consumption
+
+#### Tool Lazy Loading
+- **Tool Search**: Dynamically discover available tools and load them as required
+- **Expose-All-Tools Mode**: Option to expose the complete tool catalog
+- **Universal `--help`**: Even deeper help across all MCP-exposed commands if the Agent needs more information
+
+#### Documentation & Integration
+- **Census Integration Guide**: If you have the US Census' Official MCP Server installed, prime @claude to use it together with qsv efficiently to do deep research and analysis on data without overunning the context window.
+- **Updated Claude/MCP Documentation**: Comprehensive Documentation
+- **qsv Prompts**: Pre-built prompts for common data wrangling tasks
+- **SkillExecutor Unit Tests**: Robust testing for skill execution
+
+#### Bug Fixes
+- Fixed `--update-mcp-skill` → `--update-mcp-skills` (plural)
+- Proper working directory passing
+- Windows EPERM retry logic for file operations
+- Correct enum and py command handling
+
+## 🏗️ Infrastructure & Quality
+
+### Testing
+- Test suite expanded to **2,448 tests**
+- Comprehensive coverage for new MCP features
+- SkillExecutor unit tests added
+
+### Documentation
+- **DeepWiki Badge**: Added project documentation badge
+- **Emoji Legend**: Added 🖥️ for UI commands, Luau logos for scripting
+- **COMMAND_DEPENDENCIES.md**: New comprehensive command dependency documentation *(by @kulnor)*
+- **Detailed Examples**: Enhanced examples for `sample`, `search`, and `slice` commands
+- **Magika in Version Metadata**: File type detection engine now shown in version info
+
+### Build & CI
+- Deleted powerpc64 qsvpy workflow
+- Completed v14.0.0 benchmark suite
+
+---
+
+## 📦 Dependencies
+
+### Major Updates
+- `reqwest`: 0.12 → 0.13
+- `jsonschema`: 0.39 → 0.40
+- `crossterm`: 0.28.1 → 0.29.0
+- `csv-nose`: 0.2.0 → 0.5.0
+- `sysinfo`: 0.37.2 → 0.38.0
+- `rust_decimal`: 1.39.0 → 1.40.0
+
+### Minor Updates
+- `zmij`: 1.0.13 → 1.0.17
+- `flexi_logger`: 0.31.7 → 0.31.8
+- `cmov`: 0.4.3 → 0.4.5
+- `filetime`: 0.2.26 → 0.2.27
+- `get-size2`: 0.7.3 → 0.7.4
+- `hono`: 4.11.3 → 4.11.4
+- `lodash`: 4.17.21 → 4.17.23
+- Polars: Latest upstream
+
+### CI/Actions
+- `actions/checkout`: 4 → 6
+- `actions/setup-python`: 6.1.0 → 6.2.0
+
+### Other
+- Patched calamine fork with unreleased fixes
+- **MSRV**: Rust 1.93
+
+---
+
+## 🌍 Environment Variables
+
+### New
+- `QSV_MCP_MAX_EXAMPLES`: Maximum examples per MCP tool
+- `QSV_TERMWIDTH`: Terminal width for color command (max 1000)
+- `QSV_FORCE_COLOR`: Force color output
+- `QSV_TEST_DESCRIBEGPT`: Enable describegpt testing mode
+
+### Updated
+- `QSV_PREAMBLE_ROWS`: Enhanced preamble detection
+- Various `QSV_STATS_*` and `QSV_FORCE_*` variables
+
+---
+
+## Migration Notes
+
+### Breaking Changes
+
+1. **`stats` command**: `--dataset-stats` option removed
+   - Statistics are now always computed
+   - No migration needed if not using this flag
+
+2. **`sniff` command**: Field numbering changed to 1-based
+   - Scripts parsing field numbers may need adjustment
+   - More consistent with other qsv commands
+
+---
+
+## Added
+
+- feat: NEW `color` command for pretty-printed colorized tables by @gurgeous
+- feat: `frequency` add `--no-float` option to exclude Float columns
+- feat: `frequency` add `--pct-nulls` option for NULL percentage calculations
+- feat: `frequency` add `--null-sorted` option for sorting NULL values
+- feat: `frequency` add `--no-other` option to exclude Other category
+- feat: `frequency` add `--null-text` option for custom NULL display
+- feat: `frequency` add `--stats-filter` for Luau-based column filtering
+- feat: `describegpt` add `--frequency-options` / `--freq-opts` option
+- feat: `describegpt` add `--enum-threshold` integration
+- feat: `describegpt` add `file:` prefix support for prompt files
+- feat: `stats` add file metadata to JSON output
+- feat: `transpose` add `--select` option for column selection
+- feat: `sniff` integrate csv-nose for improved CSV detection
+- feat: `sniff` add Magika-powered file type inference (feature-gated)
+- feat: `mcp` add Tool Search capability
+- feat: `mcp` add expose-all-tools mode
+- feat: `mcp` add universal `--help` support
+- feat: `mcp` add subcommand enum support
+- feat: `mcp` add `QSV_MCP_MAX_EXAMPLES` configuration
+- docs: add COMMAND_DEPENDENCIES.md by @kulnor
+- docs: add DeepWiki badge
+- docs: add emoji legend for UI commands and Luau
+- docs: add Census integration guides for MCP
+- docs: add detailed examples for sample, search, slice commands
+- tests: add SkillExecutor unit tests
+
+## Changed
+
+- perf: `mcp` reduce token consumption by 66-76%
+- perf: `mcp` remove redundant defaults and test_file fields
+- perf: `color` microoptimizations
+- refactor: `sniff` replace qsv-sniffer with csv-nose
+- refactor: `sniff` use 1-based field numbering
+- refactor: `sniff` improve remote URL handling
+- refactor: `describegpt` CLI options supersede environment variables
+- refactor: `describegpt` update LLM base URLs
+- refactor: `stats` remove `--dataset-stats` option (always populate)
+- deps: bump reqwest from 0.12 to 0.13
+- deps: bump jsonschema from 0.39 to 0.40
+- deps: bump crossterm from 0.28.1 to 0.29.0
+- deps: bump csv-nose from 0.2.0 to 0.5.0
+- deps: bump sysinfo from 0.37.2 to 0.38.0
+- deps: bump rust_decimal from 1.39.0 to 1.40.0
+- deps: bump zmij from 1.0.13 to 1.0.17
+- deps: bump flexi_logger from 0.31.7 to 0.31.8
+- deps: use patched calamine fork with unreleased fixes
+- deps: polars use latest upstream
+- build: bump actions/checkout from 4 to 6
+- build: bump actions/setup-python from 6.1.0 to 6.2.0
+- build: bump MSRV to Rust 1.93
+- ci: delete powerpc64 qsvpy workflow
+- docs: update README with emoji legend
+- docs: update Claude/MCP documentation
+
+## Fixed
+
+- fix: `geocode` `--admin1` not supported with reversenow
+- fix: `validate` jsonschema 0.39 API updates
+- fix: `to` usage text comma separators
+- fix: `mcp` rename `--update-mcp-skill` to `--update-mcp-skills`
+- fix: `mcp` working directory passing
+- fix: `mcp` Windows EPERM retry logic
+- fix: `mcp` enum and py command handling
+- fix: `moarstats` absolute output paths
+- fix: `describegpt` robust frequency parsing
+
+## Removed
+
+- removed: `stats` `--dataset-stats` option (statistics always computed)
+- removed: clone count badge
+- ci: removed powerpc64 qsvpy workflow
+
+---
+
+**Full Changelog**: [14.0.0...15.0.0](https://github.com/dathere/qsv/compare/14.0.0...15.0.0)
+
+## Contributors
+
+@gurgeous, @kulnor, @dependabot, and the qsv community
+
 ## What's Changed
 * build(deps): bump actions/checkout from 4 to 6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3313
 * build(deps): bump zmij from 1.0.13 to 1.0.14 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3314

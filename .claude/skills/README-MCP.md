@@ -53,7 +53,7 @@ The **MCP Desktop Extension** (MCPB) provides the easiest installation experienc
 The Desktop Extension:
 - **Auto-detects qsv** - Finds your qsv installation or offers to download it
 - **Cross-platform** - Works on macOS, Windows, and Linux
-- **Secure** - Uses `execFileSync` to prevent command injection
+- **Secure** - Uses `spawn` with array arguments to prevent command injection
 - **Template Variables** - Supports `$HOME`, `${HOME}` in config paths
 
 See the [MCP Bundle documentation](./README-MCPB.md) for detailed instructions.
@@ -551,7 +551,7 @@ npm test
 - **Directory Restrictions**: Only allowed directories can be accessed
 - **No Network Access**: MCP server does not make network requests
 - **User Control**: Claude Desktop prompts before executing tools
-- **Secure Execution**: Uses `execFileSync` to prevent command injection
+- **Secure Execution**: Uses `spawn` with array arguments to prevent command injection
 - **Sandboxing**: Consider running in restricted environment for untrusted data
 - **Binary Trust**: The `QSV_MCP_BIN_PATH` environment variable should only point to a trusted qsv binary from the official installation. Ensure the binary path is not writable by untrusted users.
 

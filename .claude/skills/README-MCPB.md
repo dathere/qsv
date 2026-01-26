@@ -254,7 +254,7 @@ qsv-mcp-server.mcpb
                │ stdio (JSON-RPC 2.0)
 ┌──────────────▼──────────────────────┐
 │  QSV MCP Server (Node.js/TypeScript)│
-│  • Tool definitions (25 tools)     │
+│  • Tool definitions (26 tools)     │
 │  • Parameter validation            │
 │  • File conversion manager         │
 │  • Pipeline orchestration          │
@@ -313,11 +313,11 @@ The extension is configured via environment variables in Claude Desktop's MCP se
 
 ### Command Injection Prevention
 
-The MCP server uses `execFileSync()` instead of `exec()` to prevent shell injection attacks:
+The MCP server uses `spawn()` with array arguments instead of `exec()` to prevent shell injection attacks:
 
 ```typescript
-// Secure - arguments passed separately
-execFileSync(qsvBinaryPath, ['select', '1-5', userFile], { timeout: 120000 });
+// Secure - arguments passed as array to spawn
+spawn(qsvBinaryPath, ['select', '1-5', userFile], { stdio: ['pipe', 'pipe', 'pipe'] });
 
 // NOT used - vulnerable to injection
 exec(`qsv select 1-5 ${userFile}`);  // NEVER DONE
@@ -599,6 +599,22 @@ To contribute improvements to the Desktop Extension:
 - Bug fixes
 
 ## Version History
+
+**15.0.0** (2026-01-26)
+- Tool Search Support - New `qsv_search_tools` for discovering commands by keyword, category, or regex
+- Expose-All-Tools Mode - Auto-detects Claude clients (Desktop, Code, Cowork) for automatic tool exposure
+- US Census MCP Integration - Census MCP server awareness with integration guides
+
+**14.2.0** (2026-01-25)
+- Configurable examples - `QSV_MCP_MAX_EXAMPLES` controls examples in descriptions (0-20, default: 5)
+- Client auto-detection for expose-all-tools mode
+
+**14.1.0** (2026-01-20)
+- Versioned MCPB Packaging - `.mcpb` files now include version
+- Token Optimization - 66-76% reduction in tool description token usage
+- Windows EPERM Retry Logic - Exponential backoff for file locking errors
+- Streaming Executor - Uses `spawn` instead of `execFileSync` for better output handling
+- Output Size Limits - 50MB stdout limit prevents memory issues
 
 **14.0.0** (2026-01-12)
 - Initial MCPB release

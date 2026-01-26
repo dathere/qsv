@@ -6,20 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-# [15.0.0] - 2026-01-25 🖖🏻 **_"The Mind Meld Release"_** 🖖🏽
+# [15.0.0] - 2026-01-26 🖖🏻 **_"The Mind Meld Release"_** 🖖🏽
 
-This is the biggest release of qsv yet, thanks to many expert contributions from the community!
+This is the biggest release of qsv yet thanks to many expert contributions from the community!
 
-* **@kulnor**'s deep expertise in statistics and data standards has been instrumental in enhancing qsv's data analysis capabilities across the entire qsv suite! His well-crafted [issue reports](https://github.com/dathere/qsv/issues?q=is%3Aissue%20state%3Aclosed%20author%3Akulnor), detailed design proposals, thorough testing and detailed documentation on top of our weekly mind-melds have elevated commands like `frequency`, `stats`, `moarstats` and `describegpt` to new heights. His contributions and advocacy have been invaluable and I've learned a lot from him.
-* **@ws-garcia**'s amazing research on the Table Uniformity Method - the algorithm behind  the revamped `sniff` command will be the linchpin behind our upcoming next-gen harvester. Though it took a while, our implementation is now complete and achieves 99.55% accuracy on the W3C-CSVW test suite.
-* **@gurgeous**' beautiful new `color` command contribution makes viewing CSVs in the terminal a joy! His attention to detail and design aesthetics have resulted in a command that is both functional and visually appealing, with more features on the way!
+* **@kulnor**'s deep expertise in statistics and data standards has been instrumental in enhancing qsv's data analysis capabilities across the entire qsv suite! His well-crafted [issue reports](https://github.com/dathere/qsv/issues?q=is%3Aissue%20state%3Aclosed%20author%3Akulnor), detailed design proposals, thorough testing and detailed documentation on top of our weekly mind-melds have vastly improved commands like `frequency`, `stats`, `moarstats` and `describegpt`. His contributions and advocacy have been invaluable and I've learned a lot from him.
+* **@ws-garcia**'s amazing research on the [Table Uniformity Method](https://journals.sagepub.com/doi/10.3233/DS-240062) - the algorithm behind  the revamped `sniff` command will be the linchpin behind our upcoming next-gen harvester. Though it took a while, our implementation is now complete and achieves [99.55% accuracy](https://github.com/jqnatividad/csv-nose?tab=readme-ov-file#benchmarks) on the [W3C-CSVW test suite](https://github.com/w3c/csvw).
+* **@gurgeous**' new `color` command contribution makes viewing CSVs in the terminal a joy! His attention to detail and design aesthetics have resulted in a command that is both functional and visually appealing, with more features on the way!
 * I also got Claude-pilled over the holiday break 🤖. Collaborating heavily with **@claude** (running Opus 4.5) appropriately enough, to build up qsv's Generative AI capabilities in `describegpt` and its US Census-aware MCP server.
 
 ---
 
 ## 🌟 Major Features
 
-An entire section courtesy of @kulnor's mind-meld.
+An entire section courtesy of @kulnor's mind-melds.
 
 ### Enhanced `frequency` Command
 
@@ -62,10 +62,10 @@ AI-powered data description gets smarter. Now optimized to work with LM Studio a
 
 ### Revamped `sniff` Command
 
-Complete overhaul of CSV sniffing capabilities:
+Complete overhaul of CSV sniffing capabilities with state-of-the-art detection algorithms:
 
-- **csv-nose Integration**: Replaced qsv-sniffer with csv-nose for better detection
-- **Magika-Powered Inference**: Feature-gated integration with Google's Magika for advanced file type detection
+- **csv-nose Integration**: Replaced [qsv-sniffer](https://github.com/jqnatividad/qsv-sniffer) with [csv-nose](https://github.com/jqnatividad/csv-nose) for more robust and accurate detection
+- **Magika-Powered Inference**: Feature-gated integration with Google's [Magika](https://securityresearch.google/magika/introduction/overview) for advanced, AI-powered file type detection
   - Inference labels for detected types
   - Confidence scores for type predictions
 - **1-Based Field Numbering**: More intuitive field indexing
@@ -99,16 +99,10 @@ Major improvements to the Model Context Protocol server, making qsv even more AI
 - **Universal `--help`**: Even deeper help across all MCP-exposed commands if the Agent needs more information
 
 #### Documentation & Integration
-- **Census Integration Guide**: If you have the US Census' Official MCP Server installed, prime @claude to use it together with qsv efficiently to do deep research and analysis on data without overunning the context window.
+- **Census Integration Guide**: If you have the [US Census' Official MCP Server](https://github.com/uscensusbureau/us-census-bureau-data-api-mcp) installed, prime @claude to use it together with qsv efficiently to do deep research and analysis on data without overunning the context window.
 - **Updated Claude/MCP Documentation**: Comprehensive Documentation
 - **qsv Prompts**: Pre-built prompts for common data wrangling tasks
 - **SkillExecutor Unit Tests**: Robust testing for skill execution
-
-#### Bug Fixes
-- Fixed `--update-mcp-skill` → `--update-mcp-skills` (plural)
-- Proper working directory passing
-- Windows EPERM retry logic for file operations
-- Correct enum and py command handling
 
 ## 🏗️ Infrastructure & Quality
 
@@ -121,12 +115,8 @@ Major improvements to the Model Context Protocol server, making qsv even more AI
 - **DeepWiki Badge**: Added project documentation badge
 - **Emoji Legend**: Added 🖥️ for UI commands, Luau logos for scripting
 - **COMMAND_DEPENDENCIES.md**: New comprehensive command dependency documentation *(by @kulnor)*
-- **Detailed Examples**: Enhanced examples for `sample`, `search`, and `slice` commands
+- **Detailed Examples**: Enhanced examples for numerous commands, formatted to be both human and AI-readable
 - **Magika in Version Metadata**: File type detection engine now shown in version info
-
-### Build & CI
-- Deleted powerpc64 qsvpy workflow
-- Completed v14.0.0 benchmark suite
 
 ---
 
@@ -136,7 +126,7 @@ Major improvements to the Model Context Protocol server, making qsv even more AI
 - `reqwest`: 0.12 → 0.13
 - `jsonschema`: 0.39 → 0.40
 - `crossterm`: 0.28.1 → 0.29.0
-- `csv-nose`: 0.2.0 → 0.5.0
+- `csv-nose`: 0.2.0 → 0.6.0
 - `sysinfo`: 0.37.2 → 0.38.0
 - `rust_decimal`: 1.39.0 → 1.40.0
 
@@ -243,6 +233,10 @@ Major improvements to the Model Context Protocol server, making qsv even more AI
 - ci: delete powerpc64 qsvpy workflow
 - docs: update README with emoji legend
 - docs: update Claude/MCP documentation
+- bumped several indirect dependencies
+- applied select clippy & Codacy suggestions
+- applied several GH Copilot and Claude review suggestions
+- bumped MSRV to Rust 1.93
 
 ## Fixed
 
@@ -264,72 +258,12 @@ Major improvements to the Model Context Protocol server, making qsv even more AI
 
 ---
 
-**Full Changelog**: [14.0.0...15.0.0](https://github.com/dathere/qsv/compare/14.0.0...15.0.0)
-
-## Contributors
-
-@gurgeous, @kulnor, @dependabot, and the qsv community
-
-## What's Changed
-* build(deps): bump actions/checkout from 4 to 6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3313
-* build(deps): bump zmij from 1.0.13 to 1.0.14 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3314
-* fix(mcp): resolve critical MCP server errors by @jqnatividad in https://github.com/dathere/qsv/pull/3316
-* build(deps): bump hono from 4.11.3 to 4.11.4 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3317
-* perf(mcp): "token miser" minimize token usage by 60-75% without compromising qsv knowledge  by @jqnatividad in https://github.com/dathere/qsv/pull/3318
-* mcp v14.1.0 by @jqnatividad in https://github.com/dathere/qsv/pull/3319
-* fix: `describegpt` LLM cli options should supersede env var by @jqnatividad in https://github.com/dathere/qsv/pull/3321
-* build(deps): bump rust_decimal from 1.39.0 to 1.40.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3322
-* build(deps): bump cmov from 0.4.3 to 0.4.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3326
-* build(deps): bump flexi_logger from 0.31.7 to 0.31.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3327
-* feat(mcp): add `cat` and `geocode` to common tools; more robust subcommand handling by @jqnatividad in https://github.com/dathere/qsv/pull/3330
-* fix(validate): update for jsonschema 0.39 API changes by @jqnatividad in https://github.com/dathere/qsv/pull/3332
-* new cmd 'color' - print a pretty, colorized table. fixes #3281 by @gurgeous in https://github.com/dathere/qsv/pull/3333
-* perf(mcp): various optimizations by @jqnatividad in https://github.com/dathere/qsv/pull/3335
-* feat(describegpt): add `--frequency-options` like `--stats-options` by @jqnatividad in https://github.com/dathere/qsv/pull/3344
-* feat(frequency): add --no-float flag to exclude Float columns by @jqnatividad in https://github.com/dathere/qsv/pull/3348
-* feat(describegpt): add file: prefix support for --stats-options and -… by @jqnatividad in https://github.com/dathere/qsv/pull/3349
-* refactor(mcp): remove qsv UI commands that are not useful for MCP server by @jqnatividad in https://github.com/dathere/qsv/pull/3353
-* build(deps): bump zmij from 1.0.14 to 1.0.15 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3350
-* build(deps): bump jsonschema from 0.39.0 to 0.40.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3351
-* build(deps): bump crossterm from 0.28.1 to 0.29.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3352
-* fix(frequency): omit stats in JSON output when using --weight flag by @jqnatividad in https://github.com/dathere/qsv/pull/3354
-* feat(frequency): add --stats-filter option for Luau-based column filt… by @jqnatividad in https://github.com/dathere/qsv/pull/3355
-* feat(frequency): add --null-sorted flag for NULL value sorting control by @jqnatividad in https://github.com/dathere/qsv/pull/3356
-* feat(frequency): other null exclusion consistency; Added --no-other flag and support for --null-text <NONE> behaving same as --no-nulls by @jqnatividad in https://github.com/dathere/qsv/pull/3357
-* feat(stats): add file-level metadata to stats JSON; fix arg_input/fla… by @jqnatividad in https://github.com/dathere/qsv/pull/3358
-* feat(transpose): add --select option for column filtering by @jqnatividad in https://github.com/dathere/qsv/pull/3359
-* refactor(describegpt): set default baseurl to local llm by @jqnatividad in https://github.com/dathere/qsv/pull/3360
-* build(deps): bump filetime from 0.2.26 to 0.2.27 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3362
-* added `color --row-numbers` by @gurgeous in https://github.com/dathere/qsv/pull/3361
-* feat(sniff): replace qsv-sniffer with csv-nose by @jqnatividad in https://github.com/dathere/qsv/pull/3363
-* deps: bump csv-nose to 0.2 which now supports preamble detection by @jqnatividad in https://github.com/dathere/qsv/pull/3364
-* cmd color, added --title, --color and placeholders for empty cells by @gurgeous in https://github.com/dathere/qsv/pull/3365
-* feat(mcp): auto-detect Claude clients for expose-all-tools mode by @jqnatividad in https://github.com/dathere/qsv/pull/3366
-* build(deps): bump zmij from 1.0.15 to 1.0.16 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3367
-* Updated environment variables documentation and template by @kulnor in https://github.com/dathere/qsv/pull/3368
-* refactor(stats): remove --dataset-stats option and move file level stats to JSON stats cache by @jqnatividad in https://github.com/dathere/qsv/pull/3369
-* feat(frequency): add --pct-nulls flag to control NULL inclusion in pe… by @jqnatividad in https://github.com/dathere/qsv/pull/3371
-* build(deps): bump csv-nose from 0.3.1 to 0.4.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3372
-* build(deps-dev): bump lodash from 4.17.21 to 4.17.23 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3374
-* build(deps): bump actions/setup-python from 6.1.0 to 6.2.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3375
-* docs: add COMMAND_DEPENDENCIES.md by @kulnor in https://github.com/dathere/qsv/pull/3377
-* feat(mcp): "agent-understandable" examples by @jqnatividad in https://github.com/dathere/qsv/pull/3378
-* feat(sniff): replace file-format with more powerful magika crate now that it reached 1.0 by @jqnatividad in https://github.com/dathere/qsv/pull/3379
-* refactor(sniff): make fields list 1-based by @jqnatividad in https://github.com/dathere/qsv/pull/3380
-* docs: re-upload qsv pro badges by @rzmk in https://github.com/dathere/qsv/pull/3381
-* refactor(sniff): return inference score with magika; replaced "Detected Kind" with "Detected Label" by @jqnatividad in https://github.com/dathere/qsv/pull/3382
-* fix(sniff): make remote URL handling more robust by @jqnatividad in https://github.com/dathere/qsv/pull/3383
-* feat(mcp): make MCP server US census aware by @jqnatividad in https://github.com/dathere/qsv/pull/3384
-* fix(mcp): Pass working directory to spawned qsv processes by @jqnatividad in https://github.com/dathere/qsv/pull/3385
-* refactor(mcp): simplification; more robust US Census MCP awareness; more integration tests by @jqnatividad in https://github.com/dathere/qsv/pull/3387
-* build(deps): bump sysinfo from 0.37.2 to 0.38.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3388
-* build(deps): bump zmij from 1.0.16 to 1.0.17 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3389
-
 ## New Contributors
 * @gurgeous made their first contribution in https://github.com/dathere/qsv/pull/3333
 
-**Full Changelog**: https://github.com/dathere/qsv/compare/14.0.0...15.0.0
+**Full Changelog**: [14.0.0...15.0.0](https://github.com/dathere/qsv/compare/14.0.0...15.0.0)
 
+---
 
 ## [14.0.0] - 2026-01-12 📦 **_"The qsv MCP for Everyone Release"_** 🎁
 

@@ -3264,8 +3264,8 @@ pub fn convert_special_format(
     use polars::{
         io::avro::AvroReader,
         prelude::{
-            CsvParseOptions, CsvReadOptions, CsvWriter, IpcReader, JsonLineReader, JsonReader,
-            ParquetReader, SerReader, SerWriter,
+            CsvParseOptions, CsvReadOptions, CsvWriter, IpcReader, JsonReader, LazyFileListReader,
+            LazyJsonLineReader, ParquetReader, PlRefPath, SerReader, SerWriter,
         },
     };
 
@@ -3285,12 +3285,14 @@ pub fn convert_special_format(
         SpecialFormat::Parquet => ParquetReader::new(BufReader::new(File::open(path)?)).finish()?,
         SpecialFormat::Ipc => IpcReader::new(BufReader::new(File::open(path)?)).finish()?,
         SpecialFormat::Jsonl => {
-            let df = JsonLineReader::new(BufReader::new(File::open(path)?));
+            let path_str = path.to_string_lossy();
+            let lf = LazyJsonLineReader::new(PlRefPath::new(path_str.as_ref()));
             if let Some(schema) = schema {
-                df.with_schema(schema).finish()?
+                lf.with_schema(Some(schema)).finish()?
             } else {
-                df.finish()?
+                lf.finish()?
             }
+            .collect()?
         },
         SpecialFormat::Json => {
             let df = JsonReader::new(BufReader::new(File::open(path)?));

@@ -25,6 +25,11 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 
 ## What's New
 
+### Version 15.0.0
+- **Tool Search Support** - New `qsv_search_tools` tool for discovering qsv commands by keyword, category, or regex
+- **US Census MCP Integration** - Census MCP server awareness with integration guides
+- **Expose All Tools Mode** - Auto-detects Claude clients for automatic tool exposure
+
 ### Version 14.2.0
 - **Tool Search Support** - New `qsv_search_tools` tool for discovering qsv commands by keyword, category, or regex
 - **Expose All Tools Mode** - `QSV_MCP_EXPOSE_ALL_TOOLS=true` exposes all 62+ qsv tools for clients with tool search/deferred loading
@@ -663,7 +668,7 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => ({
 
 This project depends on:
 1. **qsv binary**: Must be in PATH or specified via `QSV_MCP_BIN_PATH`
-2. **qsv version**: Should match package.json major version (currently 14)
+2. **qsv version**: Should match package.json major version (currently 15)
 3. **Feature flags**: Some tools require specific qsv features (Polars, etc.)
 4. **Node.js**: Requires Node.js 18.0.0 or later
 5. **MCP SDK**: Uses @modelcontextprotocol/sdk ^1.25.2
@@ -991,8 +996,8 @@ return {
 
 ---
 
-**Document Version**: 1.6
-**Last Updated**: 2026-01-25
+**Document Version**: 1.7
+**Last Updated**: 2026-01-26
 **Target qsv Version**: 15.x
 **Node.js Version**: >=18.0.0
 **MCP SDK Version**: ^1.25.2

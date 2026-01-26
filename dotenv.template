@@ -128,6 +128,10 @@ QSV_NO_HEADERS = False
 # To use DuckDB, set to the fully qualified path for the duckdb binary.
 # QSV_DESCRIBEGPT_DB_ENGINE = /usr/local/bin/duckdb
 
+# If set, enables `describegpt` command tests.
+# Requires LM Studio with openai/gpt-oss-20b model loaded.
+# QSV_TEST_DESCRIBEGPT = 1
+
 # set to an ascii character. If set, any lines(including the header) that start
 # with this character are ignored. Note that when you want to use the pound sign
 # as a comment char, you need to enclose it in single quotes as its a reserved
@@ -319,6 +323,11 @@ QSV_TIMEOUT = 30
 # Maximum number of concurrent qsv operations.
 # (default: 10, min: 1, max: 100)
 # QSV_MCP_MAX_CONCURRENT_OPERATIONS = 10
+
+# Maximum number of examples to include in MCP tool descriptions.
+# Set to 0 to disable examples.
+# (default: 5, min: 0, max: 20)
+# QSV_MCP_MAX_EXAMPLES = 5
 
 # --- Update Checking ---
 

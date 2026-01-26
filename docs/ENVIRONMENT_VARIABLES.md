@@ -24,6 +24,7 @@
 | `QSV_LLM_APIKEY` | The API key of the supported LLM service to use with the `describegpt` command. |
 | `QSV_LLM_MODEL` | The LLM Model to use with the `describegpt` command. |
 | `QSV_DESCRIBEGPT_DB_ENGINE` | The database engine to use for SQL query execution in the `describegpt` command. When set to a path containing "duckdb" (case-insensitive), DuckDB will be used instead of the default Polars SQL engine. The environment variable value should be the fully qualified path to the DuckDB binary. Note that all loaded DuckDB extensions will be sent as additional context to the LLM to let it know what functions (even UDFs!) it can use in the SQL queries it generates. |
+| `QSV_TEST_DESCRIBEGPT` | If set, enables `describegpt` command tests. Requires LM Studio with openai/gpt-oss-20b model loaded. |
 | `QSV_OUTPUT_BOM` | if set, the output will have a Byte Order Mark (BOM) at the beginning. This is used to generate Excel-friendly CSVs on Windows. |
 | `QSV_FORCE_COLOR` | if set, forces colorized output even when redirecting or running in CI. Used by the `color` command to override automatic color detection. |
 | `QSV_THEME` | sets the color theme for the `color` command. Valid values are DARK or LIGHT (case-insensitive). If not set, the theme is automatically detected based on the terminal background color. |
@@ -53,6 +54,7 @@
 | `QSV_TIMEOUT`| for commands with a --timeout option (`fetch`, `fetchpost`, `luau`, `sniff` and `validate`), the number of seconds before a web request times out (default: 30). |
 | `QSV_USER_AGENT`| the user-agent to use for web requests. When specifying a custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME and $QSV_KIND. Try to conform to the [IETF RFC 72321 standard](https://tools.ietf.org/html/rfc7231#section-5.5.3). See [here](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent) for examples.<br>(default: $QSV_BIN_NAME/$QSV_VERSION ($QSV_TARGET; $QSV_KIND; https://github.com/dathere/qsv) - e.g.<br>`qsv/0.105.0 (x86_64-unknown-linux; prebuilt; https://github.com/dathere/qsv)`).|
 | `QSV_GEOIP2_FILENAME` | the filename of the GeoIP2 database to use for the `geocode` command. (default: `GeoLite2-City.mmdb`) |
+| `QSV_GEOCODE_INDEX_FILENAME` | The filename of the Geonames index file to use for the `geocode` command. If not set, the default index file for that qsv version is downloaded and saved to `QSV_CACHE_DIR`. Set this only if you have a custom Geonames index file. |
 
 Several dependencies also have environment variables that influence qsv's performance & behavior:
 
@@ -99,6 +101,7 @@ These environment variables configure the MCP server behavior:
 | `QSV_MCP_MAX_FILES_PER_LISTING` | Maximum number of files returned in a single directory listing. | 1,000 | 1 - 100,000 |
 | `QSV_MCP_MAX_PIPELINE_STEPS` | Maximum number of steps allowed in a single pipeline execution. | 50 | 1 - 1,000 |
 | `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | Maximum number of concurrent qsv operations. | 10 | 1 - 100 |
+| `QSV_MCP_MAX_EXAMPLES` | Maximum number of examples to include in MCP tool descriptions. Set to 0 to disable examples. | 5 | 0 - 20 |
 
 ### Update Checking
 

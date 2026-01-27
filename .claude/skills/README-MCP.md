@@ -6,7 +6,7 @@ Model Context Protocol (MCP) server that exposes qsv's 67 tabular data-wrangling
 
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
-- **26 MCP Tools**: 13 common commands as individual tools + 1 generic tool + 1 pipeline tool + 1 search tool + 4 utility + 3 filesystem tools (or 62+ in expose-all mode)
+- **20 MCP Tools**: 13 common commands as individual tools + 1 generic tool + 1 pipeline tool + 2 utility tools + 3 filesystem tools (or 67 in expose-all mode)
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
 - **Pipeline Support**: Chain multiple operations together seamlessly

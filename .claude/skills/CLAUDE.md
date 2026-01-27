@@ -16,7 +16,7 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 - **Guidance Enhancement**: Intelligent tool descriptions with USE WHEN, COMMON PATTERNS, and CAUTION hints
 
 **Goals**:
-1. Make all 61 qsv commands discoverable and invokable by AI agents
+1. Make all 60 qsv commands discoverable and invokable by AI agents
 2. Auto-generate tool definitions from qsv usage text (zero documentation debt)
 3. Enable intelligent composition of complex data workflows with multi-format support
 4. Provide seamless integration with Claude Desktop and other MCP clients
@@ -32,7 +32,7 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 
 ### Version 14.2.0
 - **Tool Search Support** - New `qsv_search_tools` tool for discovering qsv commands by keyword, category, or regex
-- **Expose All Tools Mode** - `QSV_MCP_EXPOSE_ALL_TOOLS=true` exposes all 62+ qsv tools for clients with tool search/deferred loading
+- **Expose All Tools Mode** - `QSV_MCP_EXPOSE_ALL_TOOLS=true` exposes all 67 qsv tools for clients with tool search/deferred loading
 - **Anthropic Tool Search Integration** - Compatible with Anthropic API Tool Search Tool (`tool_search_tool_bm25_20251119`)
 - **Improved Tool Discovery** - Search by category (selection, filtering, transformation, etc.) or use regex patterns
 - **Client Auto-Detection** - Auto-detects Claude clients (Desktop, Code, Cowork) for expose-all-tools mode
@@ -147,7 +147,7 @@ npm run mcpb:package
 │   ├── install-mcp.js     # Installation helper
 │   ├── package-mcpb.js    # MCPB packaging script
 │   └── run-tests.js       # Cross-platform test runner
-├── qsv/                    # Auto-generated skill JSON files (61)
+├── qsv/                    # Auto-generated skill JSON files (60)
 ├── node_modules/          # Dependencies
 ├── package.json           # NPM package configuration
 ├── tsconfig.json          # TypeScript compiler config

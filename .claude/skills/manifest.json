@@ -131,16 +131,20 @@
   },
   "tools": [
     {
-      "name": "qsv_config",
-      "description": "Display current qsv configuration (binary path, version, directories)"
-    },
-    {
       "name": "qsv_select",
       "description": "Select, reorder, or exclude columns from CSV data"
     },
     {
       "name": "qsv_stats",
-      "description": "Calculate statistics (sum, min, max, mean, etc.) for CSV columns"
+      "description": "Calculate statistics for CSV columns (creates cache)"
+    },
+    {
+      "name": "qsv_moarstats",
+      "description": "Comprehensive stats + bivariate stats + data type inference"
+    },
+    {
+      "name": "qsv_index",
+      "description": "Create index for fast random access"
     },
     {
       "name": "qsv_search",
@@ -148,11 +152,63 @@
     },
     {
       "name": "qsv_frequency",
-      "description": "Show frequency distribution of values in columns"
+      "description": "Show frequency distribution of values"
+    },
+    {
+      "name": "qsv_headers",
+      "description": "Display or manipulate CSV headers"
+    },
+    {
+      "name": "qsv_count",
+      "description": "Count rows in CSV file"
+    },
+    {
+      "name": "qsv_slice",
+      "description": "Select rows by position range"
+    },
+    {
+      "name": "qsv_sqlp",
+      "description": "SQL queries using Polars engine"
+    },
+    {
+      "name": "qsv_joinp",
+      "description": "High-performance joins using Polars"
+    },
+    {
+      "name": "qsv_cat",
+      "description": "Concatenate CSV files (rows or columns)"
+    },
+    {
+      "name": "qsv_geocode",
+      "description": "Geocoding and reverse geocoding"
+    },
+    {
+      "name": "qsv_command",
+      "description": "Execute any qsv command generically"
     },
     {
       "name": "qsv_pipeline",
-      "description": "Execute complex multi-command qsv pipelines"
+      "description": "Execute multi-step qsv workflows"
+    },
+    {
+      "name": "qsv_config",
+      "description": "Display qsv configuration"
+    },
+    {
+      "name": "qsv_search_tools",
+      "description": "Search for qsv tools by keyword or category"
+    },
+    {
+      "name": "qsv_list_files",
+      "description": "List tabular data files in directory"
+    },
+    {
+      "name": "qsv_set_working_dir",
+      "description": "Change working directory"
+    },
+    {
+      "name": "qsv_get_working_dir",
+      "description": "Get current working directory"
     }
   ],
   "prompts": [

@@ -76,7 +76,7 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
   'slice': 'Select rows by position: first N, last N, skip N, range.',
   'search': 'Filter rows matching pattern/regex. For complex conditions, use qsv_sqlp.',
   'stats': 'Quick numeric stats (mean, min/max, stddev). Creates cache for other commands. Run 2nd after index.',
-  'moarstats': 'Comprehensive stats + data type inference. Slower but richer than stats.',
+  'moarstats': 'Comprehensive stats + bivariate stats + data type inference. Slower but richer than stats.',
   'frequency': 'Count unique values. Best for low-cardinality categorical columns. Avoid high-cardinality (IDs).',
   'join': 'Join CSV files (<50MB). For large/complex joins, use qsv_joinp.',
   'joinp': 'Fast Polars-powered joins for large files (>50MB) or SQL-like joins (inner/left/right/outer/cross).',
@@ -85,7 +85,7 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
   'count': 'Count rows. Very fast with index. Run qsv_index first for files >10MB.',
   'headers': 'View/rename column names. Quick CSV structure discovery.',
   'sample': 'Random sampling. Fast, memory-efficient. Good for previews or test datasets.',
-  'schema': 'Infer data types, generate JSON Schema. Use --polars for qsv_sqlp/joinp optimization.',
+  'schema': 'Infer data types, generate JSON Schema. Always call this with --polars BEFORE running qsv_sqlp/joinp to optimize performance.',
   'validate': 'Validate against JSON Schema. Check data quality, type correctness.',
   'sqlp': 'Run SQL queries (Polars). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns.',
   'apply': 'Transform columns (trim, upper, lower, squeeze, strip). For custom logic, use qsv_luau.',
@@ -396,7 +396,7 @@ function enhanceParameterDescription(paramName: string, description: string): st
  * Commands that need specific guidance hints
  */
 const COMMANDS_NEEDING_MEMORY_WARNING = new Set(['dedup', 'sort', 'frequency', 'moarstats']);
-const COMMANDS_NEEDING_INDEX_HINT = new Set(['count', 'slice', 'stats', 'sample']);
+const COMMANDS_NEEDING_INDEX_HINT = new Set(['apply', 'count', 'datefmt', 'frequency', 'geocode', 'luau', 'replace', 'search', 'searchset', 'slice', 'split', 'stats', 'sample', 'template', 'tojsonl', 'transpose', 'validate']);
 const COMMANDS_WITH_COMMON_MISTAKES = new Set(['join', 'joinp', 'sqlp', 'schema', 'moarstats', 'frequency']);
 
 /**

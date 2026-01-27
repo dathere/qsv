@@ -102,18 +102,18 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
   sample:
     "Random sampling. Fast, memory-efficient. Good for previews or test datasets.",
   schema:
-    "Infer data types, generate JSON Schema. Always call this with --polars BEFORE running qsv_sqlp/joinp to optimize performance.",
+    "Infer data types, generate Polars & JSON Schema. Always call this with --polars BEFORE running qsv_sqlp/joinp to optimize performance.",
   validate:
-    "Validate against JSON Schema. Check data quality, type correctness.",
-  sqlp: "Run SQL queries (Polars). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns.",
+    "Validate against JSON Schema. Check data quality, type correctness. Also use this without a JSON Schema to check if a CSV is well-formed.",
+  sqlp: "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns.",
   apply:
     "Transform columns (trim, upper, lower, squeeze, strip). For custom logic, use qsv_luau.",
   rename:
     "Rename columns. Supports bulk/regex. For simple changes, qsv_headers faster.",
   template:
-    "Generate formatted output from CSV (Handlebars). For reports, markdown, HTML.",
+    "Generate formatted output from CSV using Mini Jinja templates. For reports, markdown, HTML.",
   index:
-    "Create .idx index. Run FIRST for files >10MB queried multiple times. Enables instant counts, fast slicing.",
+    "Create .idx index. Run FIRST for files >5MB queried multiple times. Enables instant counts, fast slicing.",
   diff: "Compare CSV files (added/deleted/modified rows). Requires same schema.",
   cat: "Concatenate CSV files. Subcommands: rows (stack vertically), rowskey (different schemas), columns (side-by-side). Specify via subcommand parameter.",
   geocode:
@@ -126,12 +126,12 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
 const COMMON_PATTERNS: Record<string, string> = {
   stats:
     "Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, diff, sample.",
-  index: "Run 1st for files >10MB. Makes count instant, slice 100x faster.",
+  index: "Run 1st for files >5MB. Makes count instant, slice 100x faster.",
   select:
     "First step: select columns → filter → sort → output. Speeds up downstream ops.",
   search: "Combine with select: search (filter rows) → select (pick columns).",
   frequency:
-    "Pair with stats: stats for numeric, frequency for categorical. Run stats first.",
+    "Pair with stats: stats for numeric, frequency for categorical. Run stats first with --cardinality option.",
   schema: "Use --polars for qsv_sqlp/joinp optimization.",
   sqlp: 'Replaces pipelines: "SELECT * FROM data WHERE x > 10 ORDER BY y LIMIT 100" vs select→search→sort→slice.',
   join: "Run qsv_index first on both files for speed.",
@@ -142,7 +142,7 @@ const COMMON_PATTERNS: Record<string, string> = {
   sort: "Before joins or top-N: sort DESC → slice --end 10.",
   cat: "Combine files: cat rows → headers from first file only. cat rowskey → handles different schemas. cat columns → side-by-side merge.",
   geocode:
-    "Common: suggest for city lookup, reverse for lat/lon → city, iplookup for IP → location. Run index-update first for latest data.",
+    "Common: suggest for city lookup, reverse for lat/lon → city, iplookup for IP → location.",
 };
 
 /**
@@ -154,10 +154,9 @@ const ERROR_PREVENTION_HINTS: Record<string, string> = {
   dedup: "May OOM on files >1GB. Use qsv_extdedup for large files.",
   sort: "May OOM on files >1GB. Use qsv_extsort for large files.",
   frequency:
-    "Avoid high-cardinality columns (IDs, timestamps). Check cardinality with qsv_stats first.",
+    "Avoid high-cardinality columns (IDs, timestamps). Calculate cardinality with qsv_stats first.",
   sqlp: "Polars SQL (PostgreSQL-like). Some features differ. Needs Polars feature.",
-  schema: "--polars needs Polars feature.",
-  moarstats: "Needs all_features. Slower than stats.",
+  moarstats: "Run stats first to create cache. Slower than stats but richer output.",
   luau: "Needs Luau feature. qsv_apply faster for simple ops.",
   foreach: "Slow for large files. Prefer qsv_apply or qsv_luau.",
   searchset: "Needs regex file. qsv_search easier for simple patterns.",

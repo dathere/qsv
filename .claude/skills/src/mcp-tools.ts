@@ -156,7 +156,8 @@ const ERROR_PREVENTION_HINTS: Record<string, string> = {
   frequency:
     "Avoid high-cardinality columns (IDs, timestamps). Calculate cardinality with qsv_stats first.",
   sqlp: "Polars SQL (PostgreSQL-like). Some features differ. Needs Polars feature.",
-  moarstats: "Run stats first to create cache. Slower than stats but richer output.",
+  moarstats:
+    "Run stats first to create cache. Slower than stats but richer output.",
   luau: "Needs Luau feature. qsv_apply faster for simple ops.",
   foreach: "Slow for large files. Prefer qsv_apply or qsv_luau.",
   searchset: "Needs regex file. qsv_search easier for simple patterns.",
@@ -582,7 +583,8 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
   const properties: Record<string, McpToolProperty> = {
     input_file: {
       type: "string",
-      description: "Path to input CSV file. Use absolute paths for reliability.",
+      description:
+        "Path to input CSV file. Use absolute paths for reliability.",
     },
   };
 

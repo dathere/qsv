@@ -8,10 +8,10 @@
  * 4. Auto-regenerating skills when needed
  */
 
-import { spawn } from 'child_process';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { spawn } from "child_process";
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -46,8 +46,8 @@ const DEFAULT_CONFIG: UpdateConfig = {
   autoRegenerateSkills: false, // Conservative default
   checkForUpdatesOnStartup: true,
   notifyOnUpdatesAvailable: true,
-  githubRepo: 'dathere/qsv',
-  isExtensionMode: false
+  githubRepo: "dathere/qsv",
+  isExtensionMode: false,
 };
 
 export class UpdateChecker {
@@ -56,10 +56,17 @@ export class UpdateChecker {
   private versionFilePath: string;
   private config: UpdateConfig;
 
-  constructor(qsvBinaryPath: string = 'qsv', skillsDir?: string, config?: Partial<UpdateConfig>) {
+  constructor(
+    qsvBinaryPath: string = "qsv",
+    skillsDir?: string,
+    config?: Partial<UpdateConfig>,
+  ) {
     this.qsvBinaryPath = qsvBinaryPath;
-    this.skillsDir = skillsDir || join(__dirname, '../qsv');
-    this.versionFilePath = join(dirname(this.skillsDir), '.qsv-mcp-versions.json');
+    this.skillsDir = skillsDir || join(__dirname, "../qsv");
+    this.versionFilePath = join(
+      dirname(this.skillsDir),
+      ".qsv-mcp-versions.json",
+    );
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
@@ -68,14 +75,14 @@ export class UpdateChecker {
    */
   async getQsvBinaryVersion(): Promise<string> {
     return new Promise((resolve, reject) => {
-      const child = spawn(this.qsvBinaryPath, ['--version']);
-      let output = '';
+      const child = spawn(this.qsvBinaryPath, ["--version"]);
+      let output = "";
 
-      child.stdout.on('data', (data) => {
+      child.stdout.on("data", (data) => {
         output += data.toString();
       });
 
-      child.on('close', (code) => {
+      child.on("close", (code) => {
         if (code !== 0) {
           reject(new Error(`qsv --version exited with code ${code}`));
           return;
@@ -92,7 +99,7 @@ export class UpdateChecker {
         }
       });
 
-      child.on('error', (error) => {
+      child.on("error", (error) => {
         reject(new Error(`Failed to execute qsv: ${error.message}`));
       });
     });
@@ -104,10 +111,10 @@ export class UpdateChecker {
   getSkillsVersion(): string {
     // Try multiple skill files as fallbacks for resilience
     const skillFilesToTry = [
-      'qsv-stats.json',
-      'qsv-select.json',
-      'qsv-count.json',
-      'qsv-search.json'
+      "qsv-stats.json",
+      "qsv-select.json",
+      "qsv-count.json",
+      "qsv-search.json",
     ];
 
     for (const skillFile of skillFilesToTry) {
@@ -117,7 +124,7 @@ export class UpdateChecker {
           continue;
         }
 
-        const skill = JSON.parse(readFileSync(skillPath, 'utf-8'));
+        const skill = JSON.parse(readFileSync(skillPath, "utf-8"));
         if (skill.version) {
           return skill.version;
         }
@@ -127,8 +134,10 @@ export class UpdateChecker {
       }
     }
 
-    console.warn('[UpdateChecker] Could not determine skills version from any skill file');
-    return 'unknown';
+    console.warn(
+      "[UpdateChecker] Could not determine skills version from any skill file",
+    );
+    return "unknown";
   }
 
   /**
@@ -136,15 +145,18 @@ export class UpdateChecker {
    */
   getMcpServerVersion(): string {
     try {
-      const packageJsonPath = join(__dirname, '../package.json');
-      const fallbackPath = join(__dirname, '../../package.json');
+      const packageJsonPath = join(__dirname, "../package.json");
+      const fallbackPath = join(__dirname, "../../package.json");
 
       const path = existsSync(packageJsonPath) ? packageJsonPath : fallbackPath;
-      const packageJson = JSON.parse(readFileSync(path, 'utf-8'));
-      return packageJson.version || 'unknown';
+      const packageJson = JSON.parse(readFileSync(path, "utf-8"));
+      return packageJson.version || "unknown";
     } catch (error) {
-      console.error('[UpdateChecker] Failed to read MCP server version:', error);
-      return 'unknown';
+      console.error(
+        "[UpdateChecker] Failed to read MCP server version:",
+        error,
+      );
+      return "unknown";
     }
   }
 
@@ -156,9 +168,9 @@ export class UpdateChecker {
       if (!existsSync(this.versionFilePath)) {
         return null;
       }
-      return JSON.parse(readFileSync(this.versionFilePath, 'utf-8'));
+      return JSON.parse(readFileSync(this.versionFilePath, "utf-8"));
     } catch (error) {
-      console.error('[UpdateChecker] Failed to load version info:', error);
+      console.error("[UpdateChecker] Failed to load version info:", error);
       return null;
     }
   }
@@ -168,13 +180,17 @@ export class UpdateChecker {
    */
   saveVersionInfo(info: VersionInfo): void {
     try {
-      writeFileSync(this.versionFilePath, JSON.stringify(info, null, 2), 'utf-8');
-    } catch (error) {
-      console.error('[UpdateChecker] Failed to save version info:', error);
-      console.warn(
-        '[UpdateChecker] WARNING: Version info could not be persisted at',
+      writeFileSync(
         this.versionFilePath,
-        '- update checks may be repeated or version tracking may be inaccurate.'
+        JSON.stringify(info, null, 2),
+        "utf-8",
+      );
+    } catch (error) {
+      console.error("[UpdateChecker] Failed to save version info:", error);
+      console.warn(
+        "[UpdateChecker] WARNING: Version info could not be persisted at",
+        this.versionFilePath,
+        "- update checks may be repeated or version tracking may be inaccurate.",
       );
     }
   }
@@ -189,33 +205,35 @@ export class UpdateChecker {
         `https://api.github.com/repos/${this.config.githubRepo}/releases/latest`,
         {
           headers: {
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'qsv-mcp-server'
-          }
-        }
+            Accept: "application/vnd.github.v3+json",
+            "User-Agent": "qsv-mcp-server",
+          },
+        },
       );
 
       if (!response.ok) {
-        console.error('[UpdateChecker] GitHub API returned:', response.status);
+        console.error("[UpdateChecker] GitHub API returned:", response.status);
         return null;
       }
 
       const data: unknown = await response.json();
       if (
         !data ||
-        typeof data !== 'object' ||
+        typeof data !== "object" ||
         data === null ||
-        typeof (data as { tag_name?: unknown }).tag_name !== 'string'
+        typeof (data as { tag_name?: unknown }).tag_name !== "string"
       ) {
-        console.error('[UpdateChecker] GitHub API response missing valid tag_name field');
+        console.error(
+          "[UpdateChecker] GitHub API response missing valid tag_name field",
+        );
         return null;
       }
       const tagName = (data as { tag_name: string }).tag_name;
       // Tag format is typically "v0.132.0" or "0.132.0"
-      const version = tagName.replace(/^v/, '');
+      const version = tagName.replace(/^v/, "");
       return version;
     } catch (error) {
-      console.error('[UpdateChecker] Failed to check GitHub releases:', error);
+      console.error("[UpdateChecker] Failed to check GitHub releases:", error);
       return null;
     }
   }
@@ -225,13 +243,13 @@ export class UpdateChecker {
    * Handles only numeric versions like "1.2.3" (pre-release tags are ignored)
    */
   private compareVersions(v1: string, v2: string): number {
-    const parts1 = v1.split('.').map(Number);
-    const parts2 = v2.split('.').map(Number);
+    const parts1 = v1.split(".").map(Number);
+    const parts2 = v2.split(".").map(Number);
 
     // Validate that all parts are valid numbers
     if (parts1.some(isNaN) || parts2.some(isNaN)) {
       console.warn(
-        `[UpdateChecker] Invalid version format: "${v1}" or "${v2}" - comparison may be incorrect`
+        `[UpdateChecker] Invalid version format: "${v1}" or "${v2}" - comparison may be incorrect`,
       );
       return 0; // Treat as equal if we can't compare
     }
@@ -257,32 +275,29 @@ export class UpdateChecker {
     const currentQsvVersion = await this.getQsvBinaryVersion();
     const skillsVersion = this.getSkillsVersion();
     // Skip MCP server version check in extension mode (managed by Claude Desktop)
-    const mcpServerVersion = this.config.isExtensionMode ? 'extension' : this.getMcpServerVersion();
+    const mcpServerVersion = this.config.isExtensionMode
+      ? "extension"
+      : this.getMcpServerVersion();
 
     // Check if skills are outdated
-    const skillsOutdated = currentQsvVersion !== skillsVersion &&
-                           skillsVersion !== 'unknown' &&
-                           currentQsvVersion !== 'unknown';
+    const skillsOutdated =
+      currentQsvVersion !== skillsVersion &&
+      skillsVersion !== "unknown" &&
+      currentQsvVersion !== "unknown";
 
     if (skillsOutdated) {
       const comparison = this.compareVersions(currentQsvVersion, skillsVersion);
       if (comparison > 0) {
         recommendations.push(
-          `⚠️  qsv binary (${currentQsvVersion}) is newer than skills (${skillsVersion})`
+          `⚠️  qsv binary (${currentQsvVersion}) is newer than skills (${skillsVersion})`,
         );
-        recommendations.push(
-          `   Run: qsv --update-mcp-skills`
-        );
-        recommendations.push(
-          `   Then restart the MCP server`
-        );
+        recommendations.push(`   Run: qsv --update-mcp-skills`);
+        recommendations.push(`   Then restart the MCP server`);
       } else if (comparison < 0) {
         recommendations.push(
-          `ℹ️  qsv binary (${currentQsvVersion}) is older than skills (${skillsVersion})`
+          `ℹ️  qsv binary (${currentQsvVersion}) is older than skills (${skillsVersion})`,
         );
-        recommendations.push(
-          `   Consider updating qsv: qsv --update`
-        );
+        recommendations.push(`   Consider updating qsv: qsv --update`);
       }
     }
 
@@ -290,13 +305,14 @@ export class UpdateChecker {
     let latestQsvVersion: string | null = null;
     try {
       latestQsvVersion = await this.checkGitHubReleases();
-      if (latestQsvVersion && this.compareVersions(latestQsvVersion, currentQsvVersion) > 0) {
+      if (
+        latestQsvVersion &&
+        this.compareVersions(latestQsvVersion, currentQsvVersion) > 0
+      ) {
         recommendations.push(
-          `🆕 New qsv release available: ${latestQsvVersion} (you have ${currentQsvVersion})`
+          `🆕 New qsv release available: ${latestQsvVersion} (you have ${currentQsvVersion})`,
         );
-        recommendations.push(
-          `   Update with: qsv --update`
-        );
+        recommendations.push(`   Update with: qsv --update`);
       }
     } catch (error) {
       // Non-critical error, continue
@@ -307,18 +323,20 @@ export class UpdateChecker {
       qsvBinaryVersion: currentQsvVersion,
       skillsGeneratedWithVersion: skillsVersion,
       mcpServerVersion: mcpServerVersion,
-      lastChecked: new Date().toISOString()
+      lastChecked: new Date().toISOString(),
     });
 
     return {
-      qsvBinaryOutdated: latestQsvVersion ? this.compareVersions(latestQsvVersion, currentQsvVersion) > 0 : false,
+      qsvBinaryOutdated: latestQsvVersion
+        ? this.compareVersions(latestQsvVersion, currentQsvVersion) > 0
+        : false,
       skillsOutdated,
       mcpServerOutdated: false, // MCP server updates handled via npm
       currentQsvVersion,
       skillsVersion,
       mcpServerVersion,
       latestMcpServerVersion: undefined,
-      recommendations
+      recommendations,
     };
   }
 
@@ -331,31 +349,31 @@ export class UpdateChecker {
       return false;
     }
 
-    console.error('[UpdateChecker] Auto-regenerating skills...');
+    console.error("[UpdateChecker] Auto-regenerating skills...");
 
     return new Promise((resolve) => {
       // Use qsv binary directly with --update-mcp-skills flag
       // This is much simpler and doesn't require Rust toolchain
-      const child = spawn(
-        this.qsvBinaryPath,
-        ['--update-mcp-skills'],
-        {
-          stdio: 'inherit'
-        }
-      );
+      const child = spawn(this.qsvBinaryPath, ["--update-mcp-skills"], {
+        stdio: "inherit",
+      });
 
-      child.on('close', (code) => {
+      child.on("close", (code) => {
         if (code === 0) {
-          console.error('[UpdateChecker] ✅ Skills regenerated successfully');
+          console.error("[UpdateChecker] ✅ Skills regenerated successfully");
           resolve(true);
         } else {
-          console.error('[UpdateChecker] ❌ Failed to regenerate skills (exit code:', code, ')');
+          console.error(
+            "[UpdateChecker] ❌ Failed to regenerate skills (exit code:",
+            code,
+            ")",
+          );
           resolve(false);
         }
       });
 
-      child.on('error', (error) => {
-        console.error('[UpdateChecker] ❌ Failed to spawn qsv:', error);
+      child.on("error", (error) => {
+        console.error("[UpdateChecker] ❌ Failed to spawn qsv:", error);
         resolve(false);
       });
     });
@@ -364,15 +382,21 @@ export class UpdateChecker {
   /**
    * Quick check - only compares local versions (no network calls)
    */
-  async quickCheck(): Promise<{ skillsOutdated: boolean; versions: VersionInfo }> {
+  async quickCheck(): Promise<{
+    skillsOutdated: boolean;
+    versions: VersionInfo;
+  }> {
     const currentQsvVersion = await this.getQsvBinaryVersion();
     const skillsVersion = this.getSkillsVersion();
     // Skip MCP server version check in extension mode (managed by Claude Desktop)
-    const mcpServerVersion = this.config.isExtensionMode ? 'extension' : this.getMcpServerVersion();
+    const mcpServerVersion = this.config.isExtensionMode
+      ? "extension"
+      : this.getMcpServerVersion();
 
-    const skillsOutdated = currentQsvVersion !== skillsVersion &&
-                           skillsVersion !== 'unknown' &&
-                           currentQsvVersion !== 'unknown';
+    const skillsOutdated =
+      currentQsvVersion !== skillsVersion &&
+      skillsVersion !== "unknown" &&
+      currentQsvVersion !== "unknown";
 
     return {
       skillsOutdated,
@@ -380,8 +404,8 @@ export class UpdateChecker {
         qsvBinaryVersion: currentQsvVersion,
         skillsGeneratedWithVersion: skillsVersion,
         mcpServerVersion,
-        lastChecked: new Date().toISOString()
-      }
+        lastChecked: new Date().toISOString(),
+      },
     };
   }
 }
@@ -391,10 +415,11 @@ export class UpdateChecker {
  */
 export function getUpdateConfigFromEnv(): Partial<UpdateConfig> {
   return {
-    autoRegenerateSkills: process.env.QSV_MCP_AUTO_REGENERATE_SKILLS === 'true',
-    checkForUpdatesOnStartup: process.env.QSV_MCP_CHECK_UPDATES_ON_STARTUP !== 'false',
-    notifyOnUpdatesAvailable: process.env.QSV_MCP_NOTIFY_UPDATES !== 'false',
-    githubRepo: process.env.QSV_MCP_GITHUB_REPO || 'dathere/qsv',
-    isExtensionMode: process.env.MCPB_EXTENSION_MODE === 'true'
+    autoRegenerateSkills: process.env.QSV_MCP_AUTO_REGENERATE_SKILLS === "true",
+    checkForUpdatesOnStartup:
+      process.env.QSV_MCP_CHECK_UPDATES_ON_STARTUP !== "false",
+    notifyOnUpdatesAvailable: process.env.QSV_MCP_NOTIFY_UPDATES !== "false",
+    githubRepo: process.env.QSV_MCP_GITHUB_REPO || "dathere/qsv",
+    isExtensionMode: process.env.MCPB_EXTENSION_MODE === "true",
   };
 }

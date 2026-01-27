@@ -5,12 +5,17 @@
  * Claude Desktop to work with local files without uploading them.
  */
 
-import { readdir, stat, readFile, realpath, access } from 'fs/promises';
-import { join, resolve, relative, basename, extname } from 'path';
-import { spawn } from 'child_process';
-import type { McpResource, McpResourceContent, FileInfo, FileMetadata } from './types.js';
-import { formatBytes } from './utils.js';
-import { config } from './config.js';
+import { readdir, stat, readFile, realpath, access } from "fs/promises";
+import { join, resolve, relative, basename, extname } from "path";
+import { spawn } from "child_process";
+import type {
+  McpResource,
+  McpResourceContent,
+  FileInfo,
+  FileMetadata,
+} from "./types.js";
+import { formatBytes } from "./utils.js";
+import { config } from "./config.js";
 
 /**
  * Cache expiration time in milliseconds (1 minute)
@@ -53,11 +58,14 @@ export interface FilesystemConfig {
 export class FilesystemResourceProvider {
   // Static format detection sets (performance optimization)
   private static readonly EXCEL_FORMATS = new Set([
-    '.xls', '.xlsx', '.xlsm', '.xlsb',
+    ".xls",
+    ".xlsx",
+    ".xlsm",
+    ".xlsb",
     // Includes .ods as it is also handled via `qsv excel`
-    '.ods',
+    ".ods",
   ]);
-  private static readonly JSONL_FORMATS = new Set(['.jsonl', '.ndjson']);
+  private static readonly JSONL_FORMATS = new Set([".jsonl", ".ndjson"]);
 
   private workingDir: string;
   private allowedDirs: string[];
@@ -72,31 +80,41 @@ export class FilesystemResourceProvider {
     this.workingDir = resolve(config.workingDirectory || process.cwd());
     this.allowedDirs = [
       this.workingDir,
-      ...(config.allowedDirectories || []).map(d => resolve(d)),
+      ...(config.allowedDirectories || []).map((d) => resolve(d)),
     ];
     this.allowedExtensions = new Set(
       config.allowedExtensions || [
         // Native CSV formats
-        '.csv', '.tsv', '.tab', '.ssv',
+        ".csv",
+        ".tsv",
+        ".tab",
+        ".ssv",
         // Snappy-compressed formats
-        '.csv.sz', '.tsv.sz', '.tab.sz', '.ssv.sz',
+        ".csv.sz",
+        ".tsv.sz",
+        ".tab.sz",
+        ".ssv.sz",
         // Excel formats (require conversion via qsv excel)
-        '.xls', '.xlsx', '.xlsm', '.xlsb',
+        ".xls",
+        ".xlsx",
+        ".xlsm",
+        ".xlsb",
         // OpenDocument Spreadsheet (require conversion via qsv excel)
-        '.ods',
+        ".ods",
         // JSONL/NDJSON (require conversion via qsv jsonl)
-        '.jsonl', '.ndjson',
+        ".jsonl",
+        ".ndjson",
       ],
     );
     this.maxPreviewSize = config.maxPreviewSize || 1024 * 1024; // 1MB
     this.previewLines = config.previewLines || 20;
-    this.qsvBinPath = config.qsvBinPath || 'qsv';
+    this.qsvBinPath = config.qsvBinPath || "qsv";
     this.metadataCache = new Map();
     this.metadataCachePromises = new Map();
 
     console.error(`Filesystem provider initialized:`);
     console.error(`  Working directory: ${this.workingDir}`);
-    console.error(`  Allowed directories: ${this.allowedDirs.join(', ')}`);
+    console.error(`  Allowed directories: ${this.allowedDirs.join(", ")}`);
     console.error(`  QSV binary: ${this.qsvBinPath}`);
   }
 
@@ -115,14 +133,16 @@ export class FilesystemResourceProvider {
     const newDir = resolve(dir);
 
     // Validate that new working directory is within allowed directories
-    const isAllowed = this.allowedDirs.some(allowedDir => {
+    const isAllowed = this.allowedDirs.some((allowedDir) => {
       const rel = relative(allowedDir, newDir);
       // Path is allowed if:
       // 1. It's empty (same as allowed dir), OR
       // 2. It doesn't start with '..' (not a parent escape) AND
       // 3. It doesn't start with path separator (not absolute/cross-drive escape)
-      if (rel === '') return true; // Same as allowed directory
-      return !rel.startsWith('..') && !rel.startsWith('/') && !rel.startsWith('\\');
+      if (rel === "") return true; // Same as allowed directory
+      return (
+        !rel.startsWith("..") && !rel.startsWith("/") && !rel.startsWith("\\")
+      );
     });
 
     if (!isAllowed) {
@@ -153,30 +173,32 @@ export class FilesystemResourceProvider {
     } catch (error) {
       // If file doesn't exist yet (e.g., output file), use resolved path
       // but still validate the parent directory exists and is allowed
-      const parentDir = join(resolved, '..');
+      const parentDir = join(resolved, "..");
       try {
         canonical = await realpath(parentDir);
         canonical = join(canonical, basename(resolved));
       } catch {
-        throw new Error(`Path does not exist and parent directory is inaccessible: ${path}`);
+        throw new Error(
+          `Path does not exist and parent directory is inaccessible: ${path}`,
+        );
       }
     }
 
     // Security check: ensure canonical path is within allowed directories
-    const isAllowed = this.allowedDirs.some(allowedDir => {
+    const isAllowed = this.allowedDirs.some((allowedDir) => {
       const rel = relative(allowedDir, canonical);
       // Path is allowed if:
       // 1. It's empty (file is directly in allowed dir), OR
       // 2. It doesn't start with '..' (not a parent escape) AND
       // 3. It doesn't start with path separator (not absolute escape)
-      if (rel === '') return true; // File directly in allowed directory
-      return !rel.startsWith('..') && !rel.startsWith('/') && !rel.startsWith('\\');
+      if (rel === "") return true; // File directly in allowed directory
+      return (
+        !rel.startsWith("..") && !rel.startsWith("/") && !rel.startsWith("\\")
+      );
     });
 
     if (!isAllowed) {
-      throw new Error(
-        `Access denied: ${path} is outside allowed directories`,
-      );
+      throw new Error(`Access denied: ${path} is outside allowed directories`);
     }
 
     return canonical;
@@ -201,7 +223,7 @@ export class FilesystemResourceProvider {
         const limited = resources.slice(0, config.maxFilesPerListing);
         console.error(
           `Found ${resources.length} tabular data files in ${dir}, ` +
-          `but limit is ${config.maxFilesPerListing}. Returning first ${config.maxFilesPerListing} files.`
+            `but limit is ${config.maxFilesPerListing}. Returning first ${config.maxFilesPerListing} files.`,
         );
         return { resources: limited };
       }
@@ -210,7 +232,9 @@ export class FilesystemResourceProvider {
 
       return { resources };
     } catch (error) {
-      console.error(`Error listing files in ${directory || '.'}: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `Error listing files in ${directory || "."}: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw error;
     }
   }
@@ -222,10 +246,10 @@ export class FilesystemResourceProvider {
     const lower = filename.toLowerCase();
 
     // Check for double extensions first (e.g., .csv.sz)
-    if (lower.endsWith('.csv.sz')) return '.csv.sz';
-    if (lower.endsWith('.tsv.sz')) return '.tsv.sz';
-    if (lower.endsWith('.tab.sz')) return '.tab.sz';
-    if (lower.endsWith('.ssv.sz')) return '.ssv.sz';
+    if (lower.endsWith(".csv.sz")) return ".csv.sz";
+    if (lower.endsWith(".tsv.sz")) return ".tsv.sz";
+    if (lower.endsWith(".tab.sz")) return ".tab.sz";
+    if (lower.endsWith(".ssv.sz")) return ".ssv.sz";
 
     // Check for single extensions
     const ext = extname(filename).toLowerCase();
@@ -246,7 +270,7 @@ export class FilesystemResourceProvider {
       return true;
     }
     // Temp files with .tmp. pattern
-    if (filename.includes('.tmp.')) {
+    if (filename.includes(".tmp.")) {
       return true;
     }
     return false;
@@ -259,8 +283,10 @@ export class FilesystemResourceProvider {
     const ext = this.getFileExtension(basename(filePath));
     if (!ext) return false;
 
-    return FilesystemResourceProvider.EXCEL_FORMATS.has(ext) ||
-           FilesystemResourceProvider.JSONL_FORMATS.has(ext);
+    return (
+      FilesystemResourceProvider.EXCEL_FORMATS.has(ext) ||
+      FilesystemResourceProvider.JSONL_FORMATS.has(ext)
+    );
   }
 
   /**
@@ -270,8 +296,8 @@ export class FilesystemResourceProvider {
     const ext = this.getFileExtension(basename(filePath));
     if (!ext) return null;
 
-    if (FilesystemResourceProvider.EXCEL_FORMATS.has(ext)) return 'excel';
-    if (FilesystemResourceProvider.JSONL_FORMATS.has(ext)) return 'jsonl';
+    if (FilesystemResourceProvider.EXCEL_FORMATS.has(ext)) return "excel";
+    if (FilesystemResourceProvider.JSONL_FORMATS.has(ext)) return "jsonl";
 
     return null;
   }
@@ -290,7 +316,9 @@ export class FilesystemResourceProvider {
       const age = Date.now() - cached.cachedAt;
       // Cache for 60 seconds
       if (age < METADATA_CACHE_TTL_MS) {
-        console.error(`[Filesystem] Using cached metadata for ${basename(filePath)} (age: ${Math.round(age / 1000)}s)`);
+        console.error(
+          `[Filesystem] Using cached metadata for ${basename(filePath)} (age: ${Math.round(age / 1000)}s)`,
+        );
         return cached;
       }
       // Cache expired, remove it
@@ -300,7 +328,9 @@ export class FilesystemResourceProvider {
     // Check if request already in progress (race condition prevention)
     const inProgress = this.metadataCachePromises.get(cacheKey);
     if (inProgress) {
-      console.error(`[Filesystem] Deduplicating concurrent metadata request for ${basename(filePath)}`);
+      console.error(
+        `[Filesystem] Deduplicating concurrent metadata request for ${basename(filePath)}`,
+      );
       return inProgress;
     }
 
@@ -336,34 +366,53 @@ export class FilesystemResourceProvider {
       try {
         await access(statsFile);
         metadata.hasStatsCache = true;
-        console.error(`[Filesystem] Stats cache found for ${basename(filePath)}`);
+        console.error(
+          `[Filesystem] Stats cache found for ${basename(filePath)}`,
+        );
       } catch {
         // Stats cache doesn't exist - not an error
       }
 
       // Get row count using qsv count (fast - uses index if available)
       try {
-        const countResult = await this.runQsvCommand(['count', filePath]);
+        const countResult = await this.runQsvCommand(["count", filePath]);
         const rowCount = parseInt(countResult.trim(), 10);
         if (!isNaN(rowCount)) {
           metadata.rowCount = rowCount;
-          console.error(`[Filesystem] Row count for ${basename(filePath)}: ${rowCount}`);
+          console.error(
+            `[Filesystem] Row count for ${basename(filePath)}: ${rowCount}`,
+          );
         }
       } catch (error) {
-        console.error(`[Filesystem] Failed to get row count for ${basename(filePath)}:`, error);
+        console.error(
+          `[Filesystem] Failed to get row count for ${basename(filePath)}:`,
+          error,
+        );
       }
 
       // Get column names using qsv headers --just-names (fast)
       try {
-        const headersResult = await this.runQsvCommand(['headers', '--just-names', filePath]);
-        const columnNames = headersResult.trim().split('\n').filter(name => name.length > 0);
+        const headersResult = await this.runQsvCommand([
+          "headers",
+          "--just-names",
+          filePath,
+        ]);
+        const columnNames = headersResult
+          .trim()
+          .split("\n")
+          .filter((name) => name.length > 0);
         if (columnNames.length > 0) {
           metadata.columnNames = columnNames;
           metadata.columnCount = columnNames.length;
-          console.error(`[Filesystem] Column count for ${basename(filePath)}: ${columnNames.length}`);
+          console.error(
+            `[Filesystem] Column count for ${basename(filePath)}: ${columnNames.length}`,
+          );
         }
       } catch (error) {
-        console.error(`[Filesystem] Failed to get column names for ${basename(filePath)}:`, error);
+        console.error(
+          `[Filesystem] Failed to get column names for ${basename(filePath)}:`,
+          error,
+        );
       }
 
       // Cache the result
@@ -371,7 +420,10 @@ export class FilesystemResourceProvider {
 
       return metadata;
     } catch (error) {
-      console.error(`[Filesystem] Error getting metadata for ${basename(filePath)}:`, error);
+      console.error(
+        `[Filesystem] Error getting metadata for ${basename(filePath)}:`,
+        error,
+      );
       return null;
     }
   }
@@ -399,12 +451,12 @@ export class FilesystemResourceProvider {
       const { signal } = abortController;
 
       const proc = spawn(this.qsvBinPath, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ["ignore", "pipe", "pipe"],
         signal,
       });
 
-      let stdout = '';
-      let stderr = '';
+      let stdout = "";
+      let stderr = "";
       let timeoutId: NodeJS.Timeout | null = null;
       let completed = false;
 
@@ -413,19 +465,23 @@ export class FilesystemResourceProvider {
         if (!completed) {
           completed = true;
           abortController.abort();
-          reject(new Error(`qsv ${args[0]} timed out after ${METADATA_COMMAND_TIMEOUT_MS}ms`));
+          reject(
+            new Error(
+              `qsv ${args[0]} timed out after ${METADATA_COMMAND_TIMEOUT_MS}ms`,
+            ),
+          );
         }
       }, METADATA_COMMAND_TIMEOUT_MS);
 
-      proc.stdout.on('data', chunk => {
+      proc.stdout.on("data", (chunk) => {
         stdout += chunk.toString();
       });
 
-      proc.stderr.on('data', chunk => {
+      proc.stderr.on("data", (chunk) => {
         stderr += chunk.toString();
       });
 
-      proc.on('close', exitCode => {
+      proc.on("close", (exitCode) => {
         if (completed) return;
         completed = true;
         if (timeoutId) clearTimeout(timeoutId);
@@ -433,18 +489,26 @@ export class FilesystemResourceProvider {
         if (exitCode === 0) {
           resolve(stdout);
         } else {
-          reject(new Error(`qsv ${args[0]} failed with exit code ${exitCode}: ${stderr}`));
+          reject(
+            new Error(
+              `qsv ${args[0]} failed with exit code ${exitCode}: ${stderr}`,
+            ),
+          );
         }
       });
 
-      proc.on('error', err => {
+      proc.on("error", (err) => {
         if (completed) return;
         completed = true;
         if (timeoutId) clearTimeout(timeoutId);
 
         // Check if error is due to abort (timeout)
-        if ((err as NodeJS.ErrnoException).code === 'ABORT_ERR') {
-          reject(new Error(`qsv ${args[0]} timed out after ${METADATA_COMMAND_TIMEOUT_MS}ms`));
+        if ((err as NodeJS.ErrnoException).code === "ABORT_ERR") {
+          reject(
+            new Error(
+              `qsv ${args[0]} timed out after ${METADATA_COMMAND_TIMEOUT_MS}ms`,
+            ),
+          );
         } else {
           reject(err);
         }
@@ -467,7 +531,7 @@ export class FilesystemResourceProvider {
         const fullPath = join(dir, entry.name);
 
         if (entry.isDirectory()) {
-          if (recursive && !entry.name.startsWith('.')) {
+          if (recursive && !entry.name.startsWith(".")) {
             // Validate subdirectory is within allowed directories before recursing
             // This prevents following symlinks to unauthorized locations
             try {
@@ -493,7 +557,7 @@ export class FilesystemResourceProvider {
             try {
               const fileStats = await stat(fullPath);
               const size = formatBytes(fileStats.size);
-              const date = fileStats.mtime.toISOString().split('T')[0]; // YYYY-MM-DD
+              const date = fileStats.mtime.toISOString().split("T")[0]; // YYYY-MM-DD
               description = `${entry.name} (${size} ${date})`;
             } catch {
               // If stat fails, use basic description
@@ -522,9 +586,9 @@ export class FilesystemResourceProvider {
     try {
       // Parse file:/// URI and decode URL encoding
       // Handle both file:///path (Unix) and file:///C:/path (Windows)
-      let filePath = uri.replace(/^file:\/\//, '');
+      let filePath = uri.replace(/^file:\/\//, "");
       // Remove leading slash only on Windows when followed by drive letter
-      if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(filePath)) {
+      if (process.platform === "win32" && /^\/[a-zA-Z]:/.test(filePath)) {
         filePath = filePath.substring(1);
       }
       filePath = decodeURIComponent(filePath);
@@ -537,17 +601,19 @@ export class FilesystemResourceProvider {
         throw new Error(`Not a file: ${filePath}`);
       }
 
-      const ext = this.getFileExtension(basename(resolved)) || extname(resolved).toLowerCase();
+      const ext =
+        this.getFileExtension(basename(resolved)) ||
+        extname(resolved).toLowerCase();
       const mimeType = this.getMimeType(ext);
       const conversionCmd = this.getConversionCommand(resolved);
 
       // Generate preview if file is small enough
-      let preview = '';
+      let preview = "";
       if (stats.size <= this.maxPreviewSize) {
-        const content = await readFile(resolved, 'utf-8');
-        const allLines = content.split('\n');
+        const content = await readFile(resolved, "utf-8");
+        const allLines = content.split("\n");
         const lines = allLines.slice(0, this.previewLines);
-        preview = lines.join('\n');
+        preview = lines.join("\n");
 
         if (allLines.length > this.previewLines) {
           preview += `\n... (${allLines.length - this.previewLines} more lines)`;
@@ -571,7 +637,7 @@ export class FilesystemResourceProvider {
         },
         preview,
         usage: {
-          description: 'Use this file path in qsv commands',
+          description: "Use this file path in qsv commands",
           examples: [
             `qsv_stats with input_file: "${relativePath}"`,
             `qsv_headers with input_file: "${absolutePath}"`,
@@ -593,18 +659,27 @@ export class FilesystemResourceProvider {
       if (!conversionCmd) {
         try {
           const metadata = await this.getFileMetadata(resolved);
-          if (metadata && metadata.rowCount !== null && metadata.columnCount !== null) {
+          if (
+            metadata &&
+            metadata.rowCount !== null &&
+            metadata.columnCount !== null
+          ) {
             info.metadata = {
               rowCount: metadata.rowCount,
               columnCount: metadata.columnCount,
               columnNames: metadata.columnNames,
               hasStatsCache: metadata.hasStatsCache,
             };
-            console.error(`[Filesystem] Added metadata to resource: ${metadata.rowCount} rows, ${metadata.columnCount} columns`);
+            console.error(
+              `[Filesystem] Added metadata to resource: ${metadata.rowCount} rows, ${metadata.columnCount} columns`,
+            );
           }
         } catch (error) {
           // Metadata is optional - don't fail if we can't get it
-          console.error(`[Filesystem] Failed to get metadata (non-fatal):`, error);
+          console.error(
+            `[Filesystem] Failed to get metadata (non-fatal):`,
+            error,
+          );
         }
       }
 
@@ -626,20 +701,20 @@ export class FilesystemResourceProvider {
    */
   private pathToFileUri(filePath: string): string {
     // Normalize path separators to forward slashes
-    let normalized = filePath.replace(/\\/g, '/');
+    let normalized = filePath.replace(/\\/g, "/");
 
     // On Windows, convert C:/path to /C:/path
-    if (process.platform === 'win32' && /^[a-zA-Z]:/.test(normalized)) {
-      normalized = '/' + normalized;
+    if (process.platform === "win32" && /^[a-zA-Z]:/.test(normalized)) {
+      normalized = "/" + normalized;
     }
 
     // URL encode each path segment to properly handle special characters
     // Split by /, encode each segment, then rejoin to preserve path structure
-    const segments = normalized.split('/');
-    const encodedSegments = segments.map(segment =>
-      segment ? encodeURIComponent(segment) : segment
+    const segments = normalized.split("/");
+    const encodedSegments = segments.map((segment) =>
+      segment ? encodeURIComponent(segment) : segment,
     );
-    const encoded = encodedSegments.join('/');
+    const encoded = encodedSegments.join("/");
 
     // RFC 8089: file URIs use three slashes total (file:// + leading /)
     // Since encoded already starts with /, we use file:// prefix
@@ -652,43 +727,42 @@ export class FilesystemResourceProvider {
   private getMimeType(ext: string): string {
     switch (ext.toLowerCase()) {
       // Native CSV formats
-      case '.csv':
-        return 'text/csv';
-      case '.tsv':
-      case '.tab':
-        return 'text/tab-separated-values';
-      case '.ssv':
-        return 'text/csv'; // Semicolon-separated
+      case ".csv":
+        return "text/csv";
+      case ".tsv":
+      case ".tab":
+        return "text/tab-separated-values";
+      case ".ssv":
+        return "text/csv"; // Semicolon-separated
 
       // Snappy-compressed formats
-      case '.csv.sz':
-      case '.tsv.sz':
-      case '.tab.sz':
-      case '.ssv.sz':
-        return 'application/x-snappy-framed';
+      case ".csv.sz":
+      case ".tsv.sz":
+      case ".tab.sz":
+      case ".ssv.sz":
+        return "application/x-snappy-framed";
 
       // Excel formats
-      case '.xls':
-        return 'application/vnd.ms-excel';
-      case '.xlsx':
-        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      case '.xlsm':
-        return 'application/vnd.ms-excel.sheet.macroEnabled.12';
-      case '.xlsb':
-        return 'application/vnd.ms-excel.sheet.binary.macroEnabled.12';
+      case ".xls":
+        return "application/vnd.ms-excel";
+      case ".xlsx":
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      case ".xlsm":
+        return "application/vnd.ms-excel.sheet.macroEnabled.12";
+      case ".xlsb":
+        return "application/vnd.ms-excel.sheet.binary.macroEnabled.12";
 
       // OpenDocument Spreadsheet
-      case '.ods':
-        return 'application/vnd.oasis.opendocument.spreadsheet';
+      case ".ods":
+        return "application/vnd.oasis.opendocument.spreadsheet";
 
       // JSONL/NDJSON
-      case '.jsonl':
-      case '.ndjson':
-        return 'application/x-ndjson';
+      case ".jsonl":
+      case ".ndjson":
+        return "application/x-ndjson";
 
       default:
-        return 'application/octet-stream';
+        return "application/octet-stream";
     }
   }
-
 }

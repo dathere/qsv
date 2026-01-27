@@ -6,10 +6,10 @@
  * Format bytes to human-readable string
  */
 export function formatBytes(bytes: number): string {
-  if (bytes <= 0) return '0 Bytes';
+  if (bytes <= 0) return "0 Bytes";
 
   const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB", "PB"];
   const i = Math.min(
     Math.floor(Math.log(bytes) / Math.log(k)),
     sizes.length - 1,
@@ -47,8 +47,8 @@ export function levenshteinDistance(str1: string, str2: string): number {
       } else {
         matrix[i][j] = Math.min(
           matrix[i - 1][j - 1] + 1, // substitution
-          matrix[i][j - 1] + 1,     // insertion
-          matrix[i - 1][j] + 1      // deletion
+          matrix[i][j - 1] + 1, // insertion
+          matrix[i - 1][j] + 1, // deletion
         );
       }
     }
@@ -64,9 +64,9 @@ export function levenshteinDistance(str1: string, str2: string): number {
 export function findSimilarFiles(
   target: string,
   availableFiles: Array<{ name: string; description?: string }>,
-  maxResults: number = 5
+  maxResults: number = 5,
 ): Array<{ name: string; distance: number }> {
-  const results = availableFiles.map(file => ({
+  const results = availableFiles.map((file) => ({
     name: file.name,
     distance: levenshteinDistance(target, file.name),
   }));

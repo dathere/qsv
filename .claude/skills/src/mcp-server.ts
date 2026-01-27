@@ -6,8 +6,8 @@
  * to Claude Desktop and other MCP clients.
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
   ListResourcesRequestSchema,
@@ -15,18 +15,18 @@ import {
   ReadResourceRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+} from "@modelcontextprotocol/sdk/types.js";
 
-import { SkillLoader } from './loader.js';
-import { SkillExecutor } from './executor.js';
-import { FilesystemResourceProvider } from './mcp-filesystem.js';
-import type { McpToolResult } from './types.js';
-import { config } from './config.js';
+import { SkillLoader } from "./loader.js";
+import { SkillExecutor } from "./executor.js";
+import { FilesystemResourceProvider } from "./mcp-filesystem.js";
+import type { McpToolResult } from "./types.js";
+import { config } from "./config.js";
 import {
   isToolSearchCapableClient,
   getClientType,
   formatClientInfo,
-} from './client-detector.js';
+} from "./client-detector.js";
 import {
   COMMON_COMMANDS,
   createToolDefinition,
@@ -40,13 +40,13 @@ import {
   initiateShutdown,
   killAllProcesses,
   getActiveProcessCount,
-} from './mcp-tools.js';
+} from "./mcp-tools.js";
 import {
   createPipelineToolDefinition,
   executePipeline,
-} from './mcp-pipeline.js';
-import { VERSION } from './version.js';
-import { UpdateChecker, getUpdateConfigFromEnv } from './update-checker.js';
+} from "./mcp-pipeline.js";
+import { VERSION } from "./version.js";
+import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
 
 /**
  * QSV MCP Server implementation
@@ -62,7 +62,7 @@ class QsvMcpServer {
   constructor() {
     this.server = new Server(
       {
-        name: 'qsv-server',
+        name: "qsv-server",
         version: VERSION,
       },
       {
@@ -88,7 +88,7 @@ class QsvMcpServer {
     this.updateChecker = new UpdateChecker(
       config.qsvBinPath,
       undefined, // Use default skills directory
-      getUpdateConfigFromEnv()
+      getUpdateConfigFromEnv(),
     );
   }
 
@@ -96,17 +96,17 @@ class QsvMcpServer {
    * Initialize the server and register handlers
    */
   async initialize(): Promise<void> {
-    console.error('');
-    console.error('='.repeat(60));
-    console.error('QSV MCP SERVER INITIALIZATION');
-    console.error('='.repeat(60));
-    console.error('');
+    console.error("");
+    console.error("=".repeat(60));
+    console.error("QSV MCP SERVER INITIALIZATION");
+    console.error("=".repeat(60));
+    console.error("");
 
     // Load all skills
-    console.error('[Init] Loading QSV skills...');
+    console.error("[Init] Loading QSV skills...");
     const skills = await this.loader.loadAll();
     console.error(`[Init] ✓ Loaded ${skills.size} skills`);
-    console.error('');
+    console.error("");
 
     // Validate qsv binary
     this.logQsvValidation();
@@ -115,27 +115,27 @@ class QsvMcpServer {
     await this.checkForUpdates();
 
     // Register tool handlers
-    console.error('[Init] Registering tool handlers...');
+    console.error("[Init] Registering tool handlers...");
     this.registerToolHandlers();
-    console.error('[Init] ✓ Tool handlers registered');
-    console.error('');
+    console.error("[Init] ✓ Tool handlers registered");
+    console.error("");
 
     // Register resource handlers
-    console.error('[Init] Registering resource handlers...');
+    console.error("[Init] Registering resource handlers...");
     this.registerResourceHandlers();
-    console.error('[Init] ✓ Resource handlers registered');
-    console.error('');
+    console.error("[Init] ✓ Resource handlers registered");
+    console.error("");
 
     // Register prompt handlers
-    console.error('[Init] Registering prompt handlers...');
+    console.error("[Init] Registering prompt handlers...");
     this.registerPromptHandlers();
-    console.error('[Init] ✓ Prompt handlers registered');
-    console.error('');
+    console.error("[Init] ✓ Prompt handlers registered");
+    console.error("");
 
-    console.error('='.repeat(60));
-    console.error('✅ QSV MCP SERVER READY');
-    console.error('='.repeat(60));
-    console.error('');
+    console.error("=".repeat(60));
+    console.error("✅ QSV MCP SERVER READY");
+    console.error("=".repeat(60));
+    console.error("");
   }
 
   /**
@@ -145,34 +145,46 @@ class QsvMcpServer {
     const validation = config.qsvValidation;
 
     if (validation.valid) {
-      console.error('');
-      console.error('✅ qsv binary validated successfully');
+      console.error("");
+      console.error("✅ qsv binary validated successfully");
       console.error(`   Path: ${validation.path}`);
       console.error(`   Version: ${validation.version}`);
-      console.error('');
+      console.error("");
     } else {
-      console.error('');
-      console.error('❌ qsv binary validation FAILED');
+      console.error("");
+      console.error("❌ qsv binary validation FAILED");
       console.error(`   ${validation.error}`);
-      console.error('');
-      console.error('⚠️  The extension will not function without a valid qsv binary');
-      console.error('');
+      console.error("");
+      console.error(
+        "⚠️  The extension will not function without a valid qsv binary",
+      );
+      console.error("");
 
       if (config.isExtensionMode) {
-        console.error('To fix this in Claude Desktop:');
-        console.error('   1. Install qsv from: https://github.com/dathere/qsv#installation');
-        console.error('   2. Ensure qsv is in your system PATH');
-        console.error('   3. Open Claude Desktop Settings > Extensions > qsv');
-        console.error(`   4. Update "qsv Binary Path" to the correct path (or leave as "qsv" if in PATH)`);
-        console.error('   5. Save settings (extension will auto-restart and re-validate)');
+        console.error("To fix this in Claude Desktop:");
+        console.error(
+          "   1. Install qsv from: https://github.com/dathere/qsv#installation",
+        );
+        console.error("   2. Ensure qsv is in your system PATH");
+        console.error("   3. Open Claude Desktop Settings > Extensions > qsv");
+        console.error(
+          `   4. Update "qsv Binary Path" to the correct path (or leave as "qsv" if in PATH)`,
+        );
+        console.error(
+          "   5. Save settings (extension will auto-restart and re-validate)",
+        );
       } else {
-        console.error('To fix this:');
-        console.error('   1. Install qsv from: https://github.com/dathere/qsv#installation');
-        console.error('   2. Ensure qsv is in your PATH, or');
-        console.error('   3. Set QSV_MCP_BIN_PATH to the absolute path of your qsv binary');
-        console.error('   4. Restart the MCP server');
+        console.error("To fix this:");
+        console.error(
+          "   1. Install qsv from: https://github.com/dathere/qsv#installation",
+        );
+        console.error("   2. Ensure qsv is in your PATH, or");
+        console.error(
+          "   3. Set QSV_MCP_BIN_PATH to the absolute path of your qsv binary",
+        );
+        console.error("   4. Restart the MCP server");
       }
-      console.error('');
+      console.error("");
     }
   }
 
@@ -185,24 +197,28 @@ class QsvMcpServer {
       const quickCheck = await this.updateChecker.quickCheck();
 
       if (quickCheck.skillsOutdated) {
-        console.error('');
-        console.error('⚠️  VERSION MISMATCH DETECTED ⚠️');
+        console.error("");
+        console.error("⚠️  VERSION MISMATCH DETECTED ⚠️");
         console.error(`   qsv binary: ${quickCheck.versions.qsvBinaryVersion}`);
-        console.error(`   Skills generated with: ${quickCheck.versions.skillsGeneratedWithVersion}`);
-        console.error('');
+        console.error(
+          `   Skills generated with: ${quickCheck.versions.skillsGeneratedWithVersion}`,
+        );
+        console.error("");
 
         // Attempt auto-regeneration if configured
         const autoRegenerated = await this.updateChecker.autoRegenerateSkills();
 
         if (autoRegenerated) {
-          console.error('✅ Skills auto-regenerated successfully');
-          console.error('   Please restart the MCP server to load updated skills');
-          console.error('');
+          console.error("✅ Skills auto-regenerated successfully");
+          console.error(
+            "   Please restart the MCP server to load updated skills",
+          );
+          console.error("");
         } else {
-          console.error('ℹ️  To update skills manually, run:');
-          console.error('   qsv --update-mcp-skills');
-          console.error('   Then restart the MCP server');
-          console.error('');
+          console.error("ℹ️  To update skills manually, run:");
+          console.error("   qsv --update-mcp-skills");
+          console.error("   Then restart the MCP server");
+          console.error("");
         }
       }
 
@@ -213,21 +229,24 @@ class QsvMcpServer {
           const fullCheck = await this.updateChecker.checkForUpdates();
 
           if (fullCheck.recommendations.length > 0) {
-            console.error('');
-            console.error('📦 UPDATE CHECK RESULTS:');
-            fullCheck.recommendations.forEach(rec => {
+            console.error("");
+            console.error("📦 UPDATE CHECK RESULTS:");
+            fullCheck.recommendations.forEach((rec) => {
               console.error(rec);
             });
-            console.error('');
+            console.error("");
           }
         } catch (error) {
           // Non-critical error - don't block server
-          console.error('[UpdateChecker] Background update check failed:', error);
+          console.error(
+            "[UpdateChecker] Background update check failed:",
+            error,
+          );
         }
       });
     } catch (error) {
       // Non-critical error - don't block server startup
-      console.error('[UpdateChecker] Failed to check for updates:', error);
+      console.error("[UpdateChecker] Failed to check for updates:", error);
     }
   }
 
@@ -235,155 +254,177 @@ class QsvMcpServer {
    * Register MCP tool handlers
    */
   private registerToolHandlers(): void {
-    console.error('[Server] Registering tool handlers...');
+    console.error("[Server] Registering tool handlers...");
     try {
       // List tools handler
       this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-        console.error('[Server] Handling tools/list request...');
+        console.error("[Server] Handling tools/list request...");
         const tools = [];
 
-      // Get available commands from qsv binary
-      const availableCommands = config.qsvValidation.availableCommands;
+        // Get available commands from qsv binary
+        const availableCommands = config.qsvValidation.availableCommands;
 
-      // Determine if we should expose all tools
-      // Priority:
-      // 1. config.exposeAllTools === true → always expose all
-      // 2. config.exposeAllTools === false → always expose only common (override auto-detect)
-      // 3. config.exposeAllTools === undefined → auto-detect based on client
-      const clientInfo = this.server.getClientVersion();
-      let shouldExposeAll: boolean;
-      let reason: string;
+        // Determine if we should expose all tools
+        // Priority:
+        // 1. config.exposeAllTools === true → always expose all
+        // 2. config.exposeAllTools === false → always expose only common (override auto-detect)
+        // 3. config.exposeAllTools === undefined → auto-detect based on client
+        const clientInfo = this.server.getClientVersion();
+        let shouldExposeAll: boolean;
+        let reason: string;
 
-      if (config.exposeAllTools === true) {
-        shouldExposeAll = true;
-        reason = 'QSV_MCP_EXPOSE_ALL_TOOLS=true';
-      } else if (config.exposeAllTools === false) {
-        shouldExposeAll = false;
-        reason = 'QSV_MCP_EXPOSE_ALL_TOOLS=false (explicit disable)';
-      } else {
-        // Auto-detect based on client
-        shouldExposeAll = isToolSearchCapableClient(clientInfo);
-        reason = shouldExposeAll
-          ? `auto-detected ${getClientType(clientInfo)} client`
-          : 'unknown client (using common tools only)';
-      }
-
-      // Log client detection once per session
-      if (!this.loggedClientDetection) {
-        const clientDesc = formatClientInfo(clientInfo);
-        if (shouldExposeAll) {
-          console.error(`[Server] ✅ Enabling all tools mode (${reason})`);
-          console.error(`[Server]    Client: ${clientDesc}`);
+        if (config.exposeAllTools === true) {
+          shouldExposeAll = true;
+          reason = "QSV_MCP_EXPOSE_ALL_TOOLS=true";
+        } else if (config.exposeAllTools === false) {
+          shouldExposeAll = false;
+          reason = "QSV_MCP_EXPOSE_ALL_TOOLS=false (explicit disable)";
         } else {
-          console.error(`[Server] Using common tools mode (${reason})`);
-          console.error(`[Server]    Client: ${clientDesc}`);
-        }
-        this.loggedClientDetection = true;
-      }
-
-      // Check if we should expose all tools (for clients with tool search support)
-      if (shouldExposeAll) {
-        // Expose all available skills as individual tools
-        console.error('[Server] Expose all tools mode - loading all skills...');
-
-        const allSkills = await this.loader.loadAll();
-        let loadedCount = 0;
-        let skippedCount = 0;
-
-        for (const [skillName, skill] of allSkills) {
-          // Extract command name from skill name (qsv-select -> select)
-          const commandName = skillName.replace('qsv-', '');
-
-          // Skip if command not available in qsv binary
-          if (availableCommands && !availableCommands.includes(commandName)) {
-            skippedCount++;
-            continue;
-          }
-
-          try {
-            const toolDef = createToolDefinition(skill);
-            tools.push(toolDef);
-            loadedCount++;
-          } catch (error) {
-            console.error(`[Server] ✗ Error creating tool definition for ${skillName}:`, error);
-          }
+          // Auto-detect based on client
+          shouldExposeAll = isToolSearchCapableClient(clientInfo);
+          reason = shouldExposeAll
+            ? `auto-detected ${getClientType(clientInfo)} client`
+            : "unknown client (using common tools only)";
         }
 
-        console.error(`[Server] ✓ Loaded ${loadedCount} tools (skipped ${skippedCount} unavailable commands)`);
-      } else {
-        // Standard mode: Only expose common command tools
-        const filteredCommands = availableCommands
-          ? COMMON_COMMANDS.filter(cmd => availableCommands.includes(cmd))
-          : COMMON_COMMANDS; // Fallback to all if availableCommands not detected
+        // Log client detection once per session
+        if (!this.loggedClientDetection) {
+          const clientDesc = formatClientInfo(clientInfo);
+          if (shouldExposeAll) {
+            console.error(`[Server] ✅ Enabling all tools mode (${reason})`);
+            console.error(`[Server]    Client: ${clientDesc}`);
+          } else {
+            console.error(`[Server] Using common tools mode (${reason})`);
+            console.error(`[Server]    Client: ${clientDesc}`);
+          }
+          this.loggedClientDetection = true;
+        }
 
-        console.error(`[Server] Loading common command tools (${filteredCommands.length}/${COMMON_COMMANDS.length} available)...`);
-        for (const command of filteredCommands) {
-          const skillName = `qsv-${command}`;
-          try {
-            const skill = await this.loader.load(skillName);
+        // Check if we should expose all tools (for clients with tool search support)
+        if (shouldExposeAll) {
+          // Expose all available skills as individual tools
+          console.error(
+            "[Server] Expose all tools mode - loading all skills...",
+          );
 
-            if (skill) {
+          const allSkills = await this.loader.loadAll();
+          let loadedCount = 0;
+          let skippedCount = 0;
+
+          for (const [skillName, skill] of allSkills) {
+            // Extract command name from skill name (qsv-select -> select)
+            const commandName = skillName.replace("qsv-", "");
+
+            // Skip if command not available in qsv binary
+            if (availableCommands && !availableCommands.includes(commandName)) {
+              skippedCount++;
+              continue;
+            }
+
+            try {
               const toolDef = createToolDefinition(skill);
               tools.push(toolDef);
-              console.error(`[Server] ✓ Loaded tool: ${toolDef.name}`);
-            } else {
-              console.error(`[Server] ✗ Failed to load skill: ${skillName}`);
+              loadedCount++;
+            } catch (error) {
+              console.error(
+                `[Server] ✗ Error creating tool definition for ${skillName}:`,
+                error,
+              );
             }
-          } catch (error) {
-            console.error(`[Server] ✗ Error creating tool definition for ${skillName}:`, error);
           }
+
+          console.error(
+            `[Server] ✓ Loaded ${loadedCount} tools (skipped ${skippedCount} unavailable commands)`,
+          );
+        } else {
+          // Standard mode: Only expose common command tools
+          const filteredCommands = availableCommands
+            ? COMMON_COMMANDS.filter((cmd) => availableCommands.includes(cmd))
+            : COMMON_COMMANDS; // Fallback to all if availableCommands not detected
+
+          console.error(
+            `[Server] Loading common command tools (${filteredCommands.length}/${COMMON_COMMANDS.length} available)...`,
+          );
+          for (const command of filteredCommands) {
+            const skillName = `qsv-${command}`;
+            try {
+              const skill = await this.loader.load(skillName);
+
+              if (skill) {
+                const toolDef = createToolDefinition(skill);
+                tools.push(toolDef);
+                console.error(`[Server] ✓ Loaded tool: ${toolDef.name}`);
+              } else {
+                console.error(`[Server] ✗ Failed to load skill: ${skillName}`);
+              }
+            } catch (error) {
+              console.error(
+                `[Server] ✗ Error creating tool definition for ${skillName}:`,
+                error,
+              );
+            }
+          }
+
+          // Log any skipped commands
+          if (availableCommands) {
+            const skippedCommands = COMMON_COMMANDS.filter(
+              (cmd) => !availableCommands.includes(cmd),
+            );
+            if (skippedCommands.length > 0) {
+              console.error(
+                `[Server] ⚠ Skipped unavailable commands: ${skippedCommands.join(", ")}`,
+              );
+            }
+          }
+          console.error(`[Server] Loaded ${tools.length} common command tools`);
         }
 
-        // Log any skipped commands
-        if (availableCommands) {
-          const skippedCommands = COMMON_COMMANDS.filter(cmd => !availableCommands.includes(cmd));
-          if (skippedCommands.length > 0) {
-            console.error(`[Server] ⚠ Skipped unavailable commands: ${skippedCommands.join(', ')}`);
-          }
+        // Add generic qsv_command tool
+        console.error("[Server] Adding generic command tool...");
+        try {
+          const genericTool = createGenericToolDefinition(this.loader);
+          console.error(
+            "[Server] Generic tool created:",
+            JSON.stringify(genericTool).substring(0, 200),
+          );
+          tools.push(genericTool);
+          console.error("[Server] Generic tool added successfully");
+        } catch (error) {
+          console.error("[Server] Error creating generic tool:", error);
+          throw error;
         }
-        console.error(`[Server] Loaded ${tools.length} common command tools`);
-      }
 
-      // Add generic qsv_command tool
-      console.error('[Server] Adding generic command tool...');
-      try {
-        const genericTool = createGenericToolDefinition(this.loader);
-        console.error('[Server] Generic tool created:', JSON.stringify(genericTool).substring(0, 200));
-        tools.push(genericTool);
-        console.error('[Server] Generic tool added successfully');
-      } catch (error) {
-        console.error('[Server] Error creating generic tool:', error);
-        throw error;
-      }
+        // Add pipeline tool
+        console.error("[Server] Adding pipeline tool...");
+        try {
+          const pipelineTool = createPipelineToolDefinition();
+          console.error(
+            "[Server] Pipeline tool created:",
+            JSON.stringify(pipelineTool).substring(0, 200),
+          );
+          tools.push(pipelineTool);
+          console.error("[Server] Pipeline tool added successfully");
+        } catch (error) {
+          console.error("[Server] Error creating pipeline tool:", error);
+          throw error;
+        }
 
-      // Add pipeline tool
-      console.error('[Server] Adding pipeline tool...');
-      try {
-        const pipelineTool = createPipelineToolDefinition();
-        console.error('[Server] Pipeline tool created:', JSON.stringify(pipelineTool).substring(0, 200));
-        tools.push(pipelineTool);
-        console.error('[Server] Pipeline tool added successfully');
-      } catch (error) {
-        console.error('[Server] Error creating pipeline tool:', error);
-        throw error;
-      }
+        // Add config and search tools
+        console.error("[Server] Adding config and search tools...");
+        try {
+          tools.push(createConfigTool());
+          tools.push(createSearchToolsTool());
+          console.error("[Server] config and search tools added successfully");
+        } catch (error) {
+          console.error("[Server] Error creating config/search tools:", error);
+          throw error;
+        }
 
-      // Add config and search tools
-      console.error('[Server] Adding config and search tools...');
-      try {
-        tools.push(createConfigTool());
-        tools.push(createSearchToolsTool());
-        console.error('[Server] config and search tools added successfully');
-      } catch (error) {
-        console.error('[Server] Error creating config/search tools:', error);
-        throw error;
-      }
-
-      // Add filesystem tools
-      console.error('[Server] Adding filesystem tools...');
-      tools.push({
-        name: 'qsv_list_files',
-        description: `List tabular data files in a directory for browsing and discovery.
+        // Add filesystem tools
+        console.error("[Server] Adding filesystem tools...");
+        tools.push({
+          name: "qsv_list_files",
+          description: `List tabular data files in a directory for browsing and discovery.
 
 💡 USE WHEN:
 - User asks "what files do I have?" or "what's in my Downloads folder?"
@@ -405,24 +446,26 @@ class QsvMcpServer {
 4. Identify file formats (know if conversion needed)
 
 💡 TIP: Use non-recursive (default) for faster listing, recursive when searching subdirectories.`,
-        inputSchema: {
-          type: 'object',
-          properties: {
-            directory: {
-              type: 'string',
-              description: 'Directory path (absolute or relative to working directory). Omit to use current working directory.',
-            },
-            recursive: {
-              type: 'boolean',
-              description: 'Scan subdirectories recursively (default: false). Enable for deep directory searches. May be slow for large directory trees.',
+          inputSchema: {
+            type: "object",
+            properties: {
+              directory: {
+                type: "string",
+                description:
+                  "Directory path (absolute or relative to working directory). Omit to use current working directory.",
+              },
+              recursive: {
+                type: "boolean",
+                description:
+                  "Scan subdirectories recursively (default: false). Enable for deep directory searches. May be slow for large directory trees.",
+              },
             },
           },
-        },
-      });
+        });
 
-      tools.push({
-        name: 'qsv_set_working_dir',
-        description: `Change the working directory for all subsequent file operations.
+        tools.push({
+          name: "qsv_set_working_dir",
+          description: `Change the working directory for all subsequent file operations.
 
 💡 USE WHEN:
 - User says "work with files in my Downloads folder"
@@ -439,21 +482,22 @@ class QsvMcpServer {
 🔒 SECURITY: Only allowed directories can be set (configured in server settings).
 
 💡 TIP: Set working directory once at session start, then use simple filenames like "data.csv" instead of full paths.`,
-        inputSchema: {
-          type: 'object',
-          properties: {
-            directory: {
-              type: 'string',
-              description: 'New working directory path (absolute or relative). Must be within allowed directories for security.',
+          inputSchema: {
+            type: "object",
+            properties: {
+              directory: {
+                type: "string",
+                description:
+                  "New working directory path (absolute or relative). Must be within allowed directories for security.",
+              },
             },
+            required: ["directory"],
           },
-          required: ['directory'],
-        },
-      });
+        });
 
-      tools.push({
-        name: 'qsv_get_working_dir',
-        description: `Get the current working directory path.
+        tools.push({
+          name: "qsv_get_working_dir",
+          description: `Get the current working directory path.
 
 💡 USE WHEN:
 - Confirming where files will be read from/written to
@@ -464,23 +508,27 @@ class QsvMcpServer {
 📍 RETURNS: Absolute path to current working directory.
 
 💡 TIP: Call this after qsv_set_working_dir to confirm the change succeeded.`,
-        inputSchema: {
-          type: 'object',
-          properties: {},
-        },
-      });
+          inputSchema: {
+            type: "object",
+            properties: {},
+          },
+        });
 
-      console.error(`[Server] Registered ${tools.length} tools`);
-      console.error(`[Server] Tool names: ${tools.map(t => t.name).join(', ')}`);
+        console.error(`[Server] Registered ${tools.length} tools`);
+        console.error(
+          `[Server] Tool names: ${tools.map((t) => t.name).join(", ")}`,
+        );
 
-      const response = { tools };
-      console.error(`[Server] Returning ${response.tools.length} tools to client`);
+        const response = { tools };
+        console.error(
+          `[Server] Returning ${response.tools.length} tools to client`,
+        );
 
         return response;
       });
-      console.error('[Server] Tool handlers registered successfully');
+      console.error("[Server] Tool handlers registered successfully");
     } catch (error) {
-      console.error('[Server] Error registering tool handlers:', error);
+      console.error("[Server] Error registering tool handlers:", error);
       throw error;
     }
 
@@ -492,7 +540,7 @@ class QsvMcpServer {
 
       try {
         // Handle filesystem tools
-        if (name === 'qsv_list_files') {
+        if (name === "qsv_list_files") {
           const directory = args?.directory as string | undefined;
           const recursive = args?.recursive as boolean | undefined;
 
@@ -502,18 +550,20 @@ class QsvMcpServer {
           );
 
           const fileList = result.resources
-            .map(r => `- ${r.name} (${r.description})`)
-            .join('\n');
+            .map((r) => `- ${r.name} (${r.description})`)
+            .join("\n");
 
           return {
-            content: [{
-              type: 'text' as const,
-              text: `Found ${result.resources.length} tabular data files:\n\n${fileList}\n\nUse these file paths (relative or absolute) in qsv commands via the input_file parameter.`,
-            }],
+            content: [
+              {
+                type: "text" as const,
+                text: `Found ${result.resources.length} tabular data files:\n\n${fileList}\n\nUse these file paths (relative or absolute) in qsv commands via the input_file parameter.`,
+              },
+            ],
           };
         }
 
-        if (name === 'qsv_set_working_dir') {
+        if (name === "qsv_set_working_dir") {
           const directory = args?.directory as string;
           this.filesystemProvider.setWorkingDirectory(directory);
 
@@ -523,29 +573,37 @@ class QsvMcpServer {
           this.executor.setWorkingDirectory(newWorkingDir);
 
           return {
-            content: [{
-              type: 'text' as const,
-              text: `Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory.`,
-            }],
+            content: [
+              {
+                type: "text" as const,
+                text: `Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory.`,
+              },
+            ],
           };
         }
 
-        if (name === 'qsv_get_working_dir') {
+        if (name === "qsv_get_working_dir") {
           return {
-            content: [{
-              type: 'text' as const,
-              text: `Current working directory: ${this.filesystemProvider.getWorkingDirectory()}`,
-            }],
+            content: [
+              {
+                type: "text" as const,
+                text: `Current working directory: ${this.filesystemProvider.getWorkingDirectory()}`,
+              },
+            ],
           };
         }
 
         // Handle pipeline tool
-        if (name === 'qsv_pipeline') {
-          return await executePipeline(args || {}, this.loader, this.filesystemProvider);
+        if (name === "qsv_pipeline") {
+          return await executePipeline(
+            args || {},
+            this.loader,
+            this.filesystemProvider,
+          );
         }
 
         // Handle generic command tool
-        if (name === 'qsv_command') {
+        if (name === "qsv_command") {
           return await handleGenericCommand(
             args || {},
             this.executor,
@@ -555,17 +613,17 @@ class QsvMcpServer {
         }
 
         // Handle config tool
-        if (name === 'qsv_config') {
+        if (name === "qsv_config") {
           return await handleConfigTool(this.filesystemProvider);
         }
 
         // Handle search tools
-        if (name === 'qsv_search_tools') {
+        if (name === "qsv_search_tools") {
           return await handleSearchToolsCall(args || {}, this.loader);
         }
 
         // Handle common command tools
-        if (name.startsWith('qsv_')) {
+        if (name.startsWith("qsv_")) {
           return await handleToolCall(
             name,
             args || {},
@@ -577,20 +635,24 @@ class QsvMcpServer {
 
         // Unknown tool
         return {
-          content: [{
-            type: 'text' as const,
-            text: `Unknown tool: ${name}`,
-          }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Unknown tool: ${name}`,
+            },
+          ],
           isError: true,
         };
       } catch (error) {
         console.error(`Error executing tool ${name}:`, error);
 
         return {
-          content: [{
-            type: 'text' as const,
-            text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-          }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
           isError: true,
         };
       }
@@ -603,8 +665,8 @@ class QsvMcpServer {
   private registerResourceHandlers(): void {
     // List resources handler - no file resources exposed
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
-      console.error('Listing resources...');
-      console.error('Returning 0 resources (file resources disabled)');
+      console.error("Listing resources...");
+      console.error("Returning 0 resources (file resources disabled)");
 
       return {
         resources: [],
@@ -612,13 +674,16 @@ class QsvMcpServer {
     });
 
     // Read resource handler - minimal implementation since no resources are exposed
-    this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-      const { uri } = request.params;
+    this.server.setRequestHandler(
+      ReadResourceRequestSchema,
+      async (request) => {
+        const { uri } = request.params;
 
-      console.error(`Reading resource: ${uri}`);
+        console.error(`Reading resource: ${uri}`);
 
-      throw new Error(`Resource not found: ${uri}`);
-    });
+        throw new Error(`Resource not found: ${uri}`);
+      },
+    );
   }
 
   /**
@@ -627,12 +692,13 @@ class QsvMcpServer {
   private registerPromptHandlers(): void {
     // List prompts handler
     this.server.setRequestHandler(ListPromptsRequestSchema, async () => {
-      console.error('Listing prompts...');
+      console.error("Listing prompts...");
 
       const prompts = [
         {
-          name: 'qsv_census_integration',
-          description: 'Guide for using Census MCP Server with qsv for US demographic enrichment',
+          name: "qsv_census_integration",
+          description:
+            "Guide for using Census MCP Server with qsv for US demographic enrichment",
         },
       ];
 
@@ -650,13 +716,14 @@ class QsvMcpServer {
       console.error(`Getting prompt: ${name}`);
 
       // Handle Census integration prompt
-      if (name === 'qsv_census_integration') {
+      if (name === "qsv_census_integration") {
         return {
-          messages: [{
-            role: 'assistant' as const,
-            content: {
-              type: 'text' as const,
-              text: `# Census MCP Server Integration Guide
+          messages: [
+            {
+              role: "assistant" as const,
+              content: {
+                type: "text" as const,
+                text: `# Census MCP Server Integration Guide
 
 ## Overview
 When working with US geographic data in qsv, you can enrich your analysis using the Census MCP Server.
@@ -711,9 +778,10 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
 - When retrieving data from the Census MCP Server, remember to save them locally as CSV in the qsv working directory so you don't fill up your context window with large JSON responses.
 - Refrain from using stdout for qsv commands. Save outputs to files in the qsv working directory and reference those files in subsequent commands.
 - Always save output files with descriptive names in the working directory for easy reference in subsequent commands.
-`
-            }
-          }],
+`,
+              },
+            },
+          ],
         };
       }
 
@@ -727,11 +795,11 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
   async start(): Promise<void> {
     const transport = new StdioServerTransport();
 
-    console.error('Starting QSV MCP Server...');
+    console.error("Starting QSV MCP Server...");
 
     await this.server.connect(transport);
 
-    console.error('QSV MCP Server running on stdio');
+    console.error("QSV MCP Server running on stdio");
   }
 }
 
@@ -753,7 +821,7 @@ function setupShutdownHandlers(): void {
 
     // Set hard timeout to force exit
     const forceExitTimer = setTimeout(() => {
-      console.error('[Server] Shutdown timeout exceeded, forcing exit');
+      console.error("[Server] Shutdown timeout exceeded, forcing exit");
       process.exit(1);
     }, SHUTDOWN_TIMEOUT_MS);
 
@@ -770,17 +838,19 @@ function setupShutdownHandlers(): void {
     setTimeout(() => {
       const remaining = getActiveProcessCount();
       if (remaining > 0) {
-        console.error(`[Server] ${remaining} processes still active, forcing exit`);
+        console.error(
+          `[Server] ${remaining} processes still active, forcing exit`,
+        );
       } else {
-        console.error('[Server] Graceful shutdown complete');
+        console.error("[Server] Graceful shutdown complete");
       }
       process.exit(0);
     }, 100);
   };
 
   // Handle both SIGTERM (from Claude Desktop) and SIGINT (Ctrl+C)
-  process.on('SIGTERM', () => handleShutdown('SIGTERM'));
-  process.on('SIGINT', () => handleShutdown('SIGINT'));
+  process.on("SIGTERM", () => handleShutdown("SIGTERM"));
+  process.on("SIGINT", () => handleShutdown("SIGINT"));
 }
 
 /**
@@ -796,9 +866,11 @@ async function main(): Promise<void> {
     // Setup graceful shutdown handlers
     setupShutdownHandlers();
 
-    console.error('[Server] Ready to accept requests (Press Ctrl+C to shutdown)');
+    console.error(
+      "[Server] Ready to accept requests (Press Ctrl+C to shutdown)",
+    );
   } catch (error) {
-    console.error('Fatal error starting QSV MCP Server:', error);
+    console.error("Fatal error starting QSV MCP Server:", error);
     process.exit(1);
   }
 }

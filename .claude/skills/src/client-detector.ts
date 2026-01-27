@@ -5,29 +5,29 @@
  * Claude clients (Claude Desktop, Claude Code, Claude Cowork).
  */
 
-import type { Implementation } from '@modelcontextprotocol/sdk/types.js';
+import type { Implementation } from "@modelcontextprotocol/sdk/types.js";
 
 /**
  * Known Claude client name patterns that support tool search
  * These clients can efficiently discover and use all 62+ qsv tools
  */
 const TOOL_SEARCH_CLIENTS = [
-  'claude-desktop',
-  'claude-code',
-  'claude-cowork',
-  'claude',  // Generic Claude client
+  "claude-desktop",
+  "claude-code",
+  "claude-cowork",
+  "claude", // Generic Claude client
 ];
 
 /**
  * Client type enum for logging and analytics
  */
 export type ClientType =
-  | 'claude-desktop'
-  | 'claude-code'
-  | 'claude-cowork'
-  | 'claude-generic'
-  | 'other'
-  | 'unknown';
+  | "claude-desktop"
+  | "claude-code"
+  | "claude-cowork"
+  | "claude-generic"
+  | "other"
+  | "unknown";
 
 /**
  * Check if the connected client supports tool search
@@ -45,17 +45,19 @@ export type ClientType =
  * @param clientInfo - Client implementation info from MCP SDK
  * @returns true if client supports tool search, false otherwise
  */
-export function isToolSearchCapableClient(clientInfo?: Implementation): boolean {
+export function isToolSearchCapableClient(
+  clientInfo?: Implementation,
+): boolean {
   if (!clientInfo?.name) return false;
 
   // Normalize client name: lowercase and replace spaces with hyphens
-  const clientName = clientInfo.name.toLowerCase().replace(/\s+/g, '-');
+  const clientName = clientInfo.name.toLowerCase().replace(/\s+/g, "-");
 
   // Only treat as tool-search-capable if the name matches a known pattern
   // exactly, or starts with the pattern (allowing suffixes like "-beta")
   // This prevents false positives like "myclaude-wrapper" matching "claude"
   return TOOL_SEARCH_CLIENTS.some(
-    pattern => clientName === pattern || clientName.startsWith(`${pattern}-`),
+    (pattern) => clientName === pattern || clientName.startsWith(`${pattern}-`),
   );
 }
 
@@ -69,29 +71,29 @@ export function isToolSearchCapableClient(clientInfo?: Implementation): boolean 
  * @returns Client type for logging and analytics
  */
 export function getClientType(clientInfo?: Implementation): ClientType {
-  if (!clientInfo?.name) return 'unknown';
+  if (!clientInfo?.name) return "unknown";
 
   // Normalize: lowercase and replace spaces with hyphens
-  const name = clientInfo.name.toLowerCase().replace(/\s+/g, '-');
+  const name = clientInfo.name.toLowerCase().replace(/\s+/g, "-");
 
   // Must start with 'claude' to be recognized as a Claude client
   // This prevents false positives like "my-desktop-app-claude"
-  if (!name.startsWith('claude')) return 'other';
+  if (!name.startsWith("claude")) return "other";
 
   // Check for specific Claude client types using prefix matching
   // "claude-desktop" or "claude-desktop-beta" → claude-desktop
-  if (name === 'claude-desktop' || name.startsWith('claude-desktop-')) {
-    return 'claude-desktop';
+  if (name === "claude-desktop" || name.startsWith("claude-desktop-")) {
+    return "claude-desktop";
   }
-  if (name === 'claude-code' || name.startsWith('claude-code-')) {
-    return 'claude-code';
+  if (name === "claude-code" || name.startsWith("claude-code-")) {
+    return "claude-code";
   }
-  if (name === 'claude-cowork' || name.startsWith('claude-cowork-')) {
-    return 'claude-cowork';
+  if (name === "claude-cowork" || name.startsWith("claude-cowork-")) {
+    return "claude-cowork";
   }
 
   // Generic Claude client (e.g., "claude", "claude-client", "claude-app")
-  return 'claude-generic';
+  return "claude-generic";
 }
 
 /**
@@ -101,19 +103,19 @@ export function getClientType(clientInfo?: Implementation): ClientType {
  * @returns Human-readable client description
  */
 export function formatClientInfo(clientInfo?: Implementation): string {
-  if (!clientInfo) return 'unknown client';
+  if (!clientInfo) return "unknown client";
 
   // Handle missing or empty name
-  if (!clientInfo.name || clientInfo.name.trim() === '') {
-    return 'unknown client';
+  if (!clientInfo.name || clientInfo.name.trim() === "") {
+    return "unknown client";
   }
 
   const parts: string[] = [clientInfo.name];
 
   // Only add version if it's a non-empty string
-  if (clientInfo.version && clientInfo.version.trim() !== '') {
+  if (clientInfo.version && clientInfo.version.trim() !== "") {
     parts.push(`v${clientInfo.version}`);
   }
 
-  return parts.join(' ');
+  return parts.join(" ");
 }

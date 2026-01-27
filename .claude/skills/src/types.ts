@@ -21,7 +21,7 @@ export interface CommandSpec {
 
 export interface Argument {
   name: string;
-  type: 'string' | 'number' | 'file' | 'regex';
+  type: "string" | "number" | "file" | "regex";
   required: boolean;
   description: string;
   examples?: string[];
@@ -31,7 +31,7 @@ export interface Argument {
 export interface Option {
   flag: string;
   short?: string;
-  type: 'flag' | 'string' | 'number';
+  type: "flag" | "string" | "number";
   description: string;
   default?: string;
 }
@@ -44,7 +44,7 @@ export interface Example {
 export interface BehavioralHints {
   streamable: boolean;
   indexed?: boolean;
-  memory: 'constant' | 'proportional' | 'full';
+  memory: "constant" | "proportional" | "full";
 }
 
 export interface SkillParams {
@@ -78,22 +78,22 @@ export interface PipelineResult {
 }
 
 export type SkillCategory =
-  | 'selection'
-  | 'filtering'
-  | 'transformation'
-  | 'aggregation'
-  | 'joining'
-  | 'validation'
-  | 'formatting'
-  | 'conversion'
-  | 'analysis'
-  | 'utility';
+  | "selection"
+  | "filtering"
+  | "transformation"
+  | "aggregation"
+  | "joining"
+  | "validation"
+  | "formatting"
+  | "conversion"
+  | "analysis"
+  | "utility";
 
 /**
  * MCP (Model Context Protocol) Types
  */
 export interface McpToolProperty {
-  type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+  type: "string" | "number" | "boolean" | "object" | "array";
   description?: string;
   default?: string | number | boolean;
   items?: Record<string, unknown>;
@@ -104,7 +104,7 @@ export interface McpToolDefinition {
   name: string;
   description: string;
   inputSchema: {
-    type: 'object';
+    type: "object";
     properties: Record<string, McpToolProperty>;
     required?: string[];
   };
@@ -112,7 +112,7 @@ export interface McpToolDefinition {
 
 export interface McpToolResult {
   content: Array<{
-    type: 'text' | 'resource';
+    type: "text" | "resource";
     text?: string;
     resource?: string;
   }>;
@@ -187,5 +187,8 @@ export interface FilesystemProviderExtended {
   needsConversion: (path: string) => boolean;
   getConversionCommand: (path: string) => string | null;
   getWorkingDirectory: () => string;
-  listFiles: (directory?: string, recursive?: boolean) => Promise<{ resources: McpResource[] }>;
+  listFiles: (
+    directory?: string,
+    recursive?: boolean,
+  ) => Promise<{ resources: McpResource[] }>;
 }

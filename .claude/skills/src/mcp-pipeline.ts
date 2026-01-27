@@ -4,18 +4,22 @@
  * Enables chaining multiple qsv operations in a single MCP tool call
  */
 
-import type { McpPipelineStep, McpToolDefinition, McpToolResult } from './types.js';
-import type { SkillExecutor } from './executor.js';
-import type { SkillLoader } from './loader.js';
-import { QsvPipeline } from './pipeline.js';
-import { config } from './config.js';
+import type {
+  McpPipelineStep,
+  McpToolDefinition,
+  McpToolResult,
+} from "./types.js";
+import type { SkillExecutor } from "./executor.js";
+import type { SkillLoader } from "./loader.js";
+import { QsvPipeline } from "./pipeline.js";
+import { config } from "./config.js";
 
 /**
  * Create the qsv_pipeline tool definition
  */
 export function createPipelineToolDefinition(): McpToolDefinition {
   return {
-    name: 'qsv_pipeline',
+    name: "qsv_pipeline",
     description: `Execute multi-step qsv workflows by chaining commands together. Each step's output becomes the next step's input.
 
 💡 USE WHEN: You need 2+ operations in sequence (e.g., "remove duplicates, then sort by revenue DESC, then take top 100 rows").
@@ -69,36 +73,40 @@ export function createPipelineToolDefinition(): McpToolDefinition {
   "output_file": "top_products.csv"
 }`,
     inputSchema: {
-      type: 'object',
+      type: "object",
       properties: {
         input_file: {
-          type: 'string',
-          description: 'Path to input CSV file (absolute or relative). Will be auto-indexed if >10MB for better performance.',
+          type: "string",
+          description:
+            "Path to input CSV file (absolute or relative). Will be auto-indexed if >10MB for better performance.",
         },
         steps: {
-          type: 'array',
+          type: "array",
           description: `Array of pipeline steps to execute in order. Each step transforms the data and passes to next step. Max ${config.maxPipelineSteps} steps.`,
           items: {
-            type: 'object',
+            type: "object",
             properties: {
               command: {
-                type: 'string',
-                description: 'The qsv command name (without "qsv_" prefix). Examples: "select", "dedup", "stats", "search", "sort", "slice".',
+                type: "string",
+                description:
+                  'The qsv command name (without "qsv_" prefix). Examples: "select", "dedup", "stats", "search", "sort", "slice".',
               },
               params: {
-                type: 'object',
-                description: 'Parameters for this command. Keys are parameter names (use underscore for multi-word like "ignore_case"). Omit input_file (auto-piped from previous step).',
+                type: "object",
+                description:
+                  'Parameters for this command. Keys are parameter names (use underscore for multi-word like "ignore_case"). Omit input_file (auto-piped from previous step).',
               },
             },
-            required: ['command'],
+            required: ["command"],
           },
         },
         output_file: {
-          type: 'string',
-          description: 'Path to final output CSV file (optional). If omitted, small results (<850KB) return directly; large results auto-saved to working directory.',
+          type: "string",
+          description:
+            "Path to final output CSV file (optional). If omitted, small results (<850KB) return directly; large results auto-saved to working directory.",
         },
       },
-      required: ['input_file', 'steps'],
+      required: ["input_file", "steps"],
     },
   };
 }
@@ -122,10 +130,12 @@ export async function executePipeline(
     // Validate required parameters
     if (!inputFile) {
       return {
-        content: [{
-          type: 'text' as const,
-          text: 'Error: input_file parameter is required',
-        }],
+        content: [
+          {
+            type: "text" as const,
+            text: "Error: input_file parameter is required",
+          },
+        ],
         isError: true,
       };
     }
@@ -139,10 +149,12 @@ export async function executePipeline(
         }
       } catch (error) {
         return {
-          content: [{
-            type: 'text' as const,
-            text: `Error resolving file path: ${error instanceof Error ? error.message : String(error)}`,
-          }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Error resolving file path: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
           isError: true,
         };
       }
@@ -150,10 +162,12 @@ export async function executePipeline(
 
     if (!steps || !Array.isArray(steps) || steps.length === 0) {
       return {
-        content: [{
-          type: 'text' as const,
-          text: 'Error: steps parameter is required and must be a non-empty array',
-        }],
+        content: [
+          {
+            type: "text" as const,
+            text: "Error: steps parameter is required and must be a non-empty array",
+          },
+        ],
         isError: true,
       };
     }
@@ -161,34 +175,45 @@ export async function executePipeline(
     // Enforce pipeline step limit
     if (steps.length > config.maxPipelineSteps) {
       return {
-        content: [{
-          type: 'text' as const,
+        content: [
+          {
+            type: "text" as const,
             text: `Error: Pipeline exceeds maximum step limit (${config.maxPipelineSteps}). Requested ${steps.length} steps.`,
-          }],
-          isError: true,
-        };
-      }
+          },
+        ],
+        isError: true,
+      };
+    }
 
     // Validate pipeline steps
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
 
-      if (!step.command || typeof step.command !== 'string') {
+      if (!step.command || typeof step.command !== "string") {
         return {
-          content: [{
-            type: 'text' as const,
-            text: `Error: Step ${i + 1} missing required 'command' property or command is not a string`,
-          }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: Step ${i + 1} missing required 'command' property or command is not a string`,
+            },
+          ],
           isError: true,
         };
       }
 
-      if (step.params && (typeof step.params !== 'object' || step.params === null || Array.isArray(step.params))) {
+      if (
+        step.params &&
+        (typeof step.params !== "object" ||
+          step.params === null ||
+          Array.isArray(step.params))
+      ) {
         return {
-          content: [{
-            type: 'text' as const,
-            text: `Error: Step ${i + 1} 'params' must be an object (not null or array)`,
-          }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: Step ${i + 1} 'params' must be an object (not null or array)`,
+            },
+          ],
           isError: true,
         };
       }
@@ -197,8 +222,9 @@ export async function executePipeline(
     // Create pipeline with executor that uses the configured qsv binary path
     // and working directory for consistent file resolution
     // This prevents 'spawn qsv ENOENT' errors when qsv is not in PATH
-    const { SkillExecutor } = await import('./executor.js');
-    const workingDir = filesystemProvider?.getWorkingDirectory() || config.workingDir;
+    const { SkillExecutor } = await import("./executor.js");
+    const workingDir =
+      filesystemProvider?.getWorkingDirectory() || config.workingDir;
     const executor = new SkillExecutor(config.qsvBinPath, workingDir);
     const pipeline = new QsvPipeline(loader, executor);
 
@@ -211,7 +237,7 @@ export async function executePipeline(
     }
 
     // Read input file
-    const fs = await import('fs/promises');
+    const fs = await import("fs/promises");
     const inputData = await fs.readFile(inputFile);
 
     // Execute pipeline
@@ -225,30 +251,39 @@ export async function executePipeline(
       await fs.writeFile(outputFile, result.output);
 
       const stepSummary = result.steps
-        .map((s, i) => `  ${i + 1}. ${s.metadata.command} (${s.metadata.duration}ms)`)
-        .join('\n');
+        .map(
+          (s, i) =>
+            `  ${i + 1}. ${s.metadata.command} (${s.metadata.duration}ms)`,
+        )
+        .join("\n");
 
       return {
-        content: [{
-          type: 'text' as const,
-          text: `Pipeline executed successfully!\n\nOutput written to: ${outputFile}\n\nSteps executed:\n${stepSummary}\n\nTotal duration: ${result.totalDuration}ms`,
-        }],
+        content: [
+          {
+            type: "text" as const,
+            text: `Pipeline executed successfully!\n\nOutput written to: ${outputFile}\n\nSteps executed:\n${stepSummary}\n\nTotal duration: ${result.totalDuration}ms`,
+          },
+        ],
       };
     } else {
       // Return CSV output
       return {
-        content: [{
-          type: 'text' as const,
-          text: result.output.toString('utf-8'),
-        }],
+        content: [
+          {
+            type: "text" as const,
+            text: result.output.toString("utf-8"),
+          },
+        ],
       };
     }
   } catch (error) {
     return {
-      content: [{
-        type: 'text' as const,
-        text: `Pipeline execution failed: ${error instanceof Error ? error.message : String(error)}`,
-      }],
+      content: [
+        {
+          type: "text" as const,
+          text: `Pipeline execution failed: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ],
       isError: true,
     };
   }
@@ -264,14 +299,14 @@ async function addStepToPipeline(
 ): Promise<void> {
   // Map common commands to pipeline methods
   switch (command) {
-    case 'select':
+    case "select":
       if (!params.selection) {
         throw new Error(`'select' command requires 'selection' parameter`);
       }
       pipeline.select(params.selection as string, params);
       break;
 
-    case 'search':
+    case "search":
       if (!params.pattern) {
         throw new Error(`'search' command requires 'pattern' parameter`);
       }
@@ -282,18 +317,18 @@ async function addStepToPipeline(
       );
       break;
 
-    case 'dedup':
+    case "dedup":
       pipeline.dedup(params);
       break;
 
-    case 'sort':
+    case "sort":
       if (!params.column) {
         throw new Error(`'sort' command requires 'column' parameter`);
       }
       pipeline.sortBy(params.column as string, params);
       break;
 
-    case 'slice':
+    case "slice":
       pipeline.slice(
         params.start as number | undefined,
         params.end as number | undefined,
@@ -301,17 +336,19 @@ async function addStepToPipeline(
       );
       break;
 
-    case 'stats':
+    case "stats":
       pipeline.stats(params);
       break;
 
-    case 'frequency':
+    case "frequency":
       pipeline.frequency(params);
       break;
 
-    case 'apply':
+    case "apply":
       if (!params.operations || !params.column) {
-        throw new Error(`'apply' command requires 'operations' and 'column' parameters`);
+        throw new Error(
+          `'apply' command requires 'operations' and 'column' parameters`,
+        );
       }
       pipeline.apply(
         params.operations as string,
@@ -320,9 +357,11 @@ async function addStepToPipeline(
       );
       break;
 
-    case 'rename':
+    case "rename":
       if (!params.columns || !params.newNames) {
-        throw new Error(`'rename' command requires 'columns' and 'newNames' parameters`);
+        throw new Error(
+          `'rename' command requires 'columns' and 'newNames' parameters`,
+        );
       }
       pipeline.rename(
         params.columns as string,
@@ -331,21 +370,24 @@ async function addStepToPipeline(
       );
       break;
 
-    case 'join':
+    case "join":
       if (!params.columns || !params.file) {
-        throw new Error(`'join' command requires 'columns' and 'file' parameters`);
+        throw new Error(
+          `'join' command requires 'columns' and 'file' parameters`,
+        );
       }
-      pipeline.join(
-        params.columns as string,
-        params.file as string,
-        params,
-      );
+      pipeline.join(params.columns as string, params.file as string, params);
       break;
 
     default:
       // For commands without dedicated methods, use the generic add() method
       // Ensure params is a valid object (not null or array)
-      if (params && typeof params === 'object' && params !== null && !Array.isArray(params)) {
+      if (
+        params &&
+        typeof params === "object" &&
+        params !== null &&
+        !Array.isArray(params)
+      ) {
         pipeline.add(`qsv-${command}`, {
           args: {},
           options: params,
@@ -367,8 +409,8 @@ export async function pipelineToShellScript(
   params: Record<string, unknown>,
   loader: SkillLoader,
 ): Promise<string> {
-  const inputFile = params.input_file as string || 'input.csv';
-  const steps = params.steps as McpPipelineStep[] || [];
+  const inputFile = (params.input_file as string) || "input.csv";
+  const steps = (params.steps as McpPipelineStep[]) || [];
   const outputFile = params.output_file as string | undefined;
 
   // Create pipeline

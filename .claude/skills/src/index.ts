@@ -3,9 +3,9 @@
  * Auto-generated skills for qsv data-wrangling toolkit
  */
 
-export { SkillLoader } from './loader.js';
-export { SkillExecutor } from './executor.js';
-export { QsvPipeline } from './pipeline.js';
+export { SkillLoader } from "./loader.js";
+export { SkillExecutor } from "./executor.js";
+export { QsvPipeline } from "./pipeline.js";
 
 export type {
   QsvSkill,
@@ -25,7 +25,7 @@ export type {
   McpResource,
   McpResourceContent,
   McpPipelineStep,
-} from './types.js';
+} from "./types.js";
 
 // MCP Server Components
 export {
@@ -34,12 +34,12 @@ export {
   createGenericToolDefinition,
   handleToolCall,
   handleGenericCommand,
-} from './mcp-tools.js';
+} from "./mcp-tools.js";
 export {
   createPipelineToolDefinition,
   executePipeline,
   pipelineToShellScript,
-} from './mcp-pipeline.js';
+} from "./mcp-pipeline.js";
 
 // Client Detection
 export {
@@ -47,7 +47,7 @@ export {
   getClientType,
   formatClientInfo,
   type ClientType,
-} from './client-detector.js';
+} from "./client-detector.js";
 
 // Re-export for convenience
-export { SkillLoader as default } from './loader.js';
+export { SkillLoader as default } from "./loader.js";

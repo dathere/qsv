@@ -441,7 +441,7 @@ function enhanceParameterDescription(
     case "output":
     case "output_file":
       enhanced +=
-        " Tip: Omit for small results (returned directly), or specify for large datasets (auto-saved if >850KB).";
+        " Tip: Use absolute paths. Omit for small results (returned directly), or specify for large datasets (auto-saved if >850KB).";
       break;
     case "no_headers":
       enhanced +=
@@ -582,7 +582,7 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
   const properties: Record<string, McpToolProperty> = {
     input_file: {
       type: "string",
-      description: "Path to input CSV file (absolute or relative)",
+      description: "Path to input CSV file. Use absolute paths for reliability.",
     },
   };
 
@@ -638,7 +638,7 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
   properties.output_file = {
     type: "string",
     description:
-      "Path to output CSV file (optional). For large results or data transformation commands, a temp file is automatically used if omitted.",
+      "Path to output CSV file (optional). Use absolute paths for reliability. For large results, a temp file is automatically used if omitted.",
   };
 
   // Add help flag (universally available for all qsv commands)

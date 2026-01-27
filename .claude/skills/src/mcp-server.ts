@@ -102,10 +102,8 @@ class QsvMcpServer {
     console.error("=".repeat(60));
     console.error("");
 
-    // Load all skills
-    console.error("[Init] Loading QSV skills...");
-    const skills = await this.loader.loadAll();
-    console.error(`[Init] ✓ Loaded ${skills.size} skills`);
+    // Skills will be loaded on first ListTools request (lazy loading)
+    console.error("[Init] Skills loading deferred to first request");
     console.error("");
 
     // Validate qsv binary
@@ -303,9 +301,14 @@ class QsvMcpServer {
         // Check if we should expose all tools (for clients with tool search support)
         if (shouldExposeAll) {
           // Expose all available skills as individual tools
-          console.error(
-            "[Server] Expose all tools mode - loading all skills...",
-          );
+          // Load all skills (cached after first call)
+          if (!this.loader.isAllLoaded()) {
+            console.error("[Server] First request - loading all skills...");
+          } else {
+            console.error(
+              "[Server] Expose all tools mode - using cached skills",
+            );
+          }
 
           const allSkills = await this.loader.loadAll();
           let loadedCount = 0;
@@ -342,21 +345,32 @@ class QsvMcpServer {
             ? COMMON_COMMANDS.filter((cmd) => availableCommands.includes(cmd))
             : COMMON_COMMANDS; // Fallback to all if availableCommands not detected
 
+          // Load only the skills we need (batch loading)
+          const skillNames = filteredCommands.map((cmd) => `qsv-${cmd}`);
           console.error(
-            `[Server] Loading common command tools (${filteredCommands.length}/${COMMON_COMMANDS.length} available)...`,
+            `[Server] Loading ${skillNames.length} common command skills...`,
           );
-          for (const command of filteredCommands) {
-            const skillName = `qsv-${command}`;
-            try {
-              const skill = await this.loader.load(skillName);
 
-              if (skill) {
-                const toolDef = createToolDefinition(skill);
-                tools.push(toolDef);
-                console.error(`[Server] ✓ Loaded tool: ${toolDef.name}`);
-              } else {
-                console.error(`[Server] ✗ Failed to load skill: ${skillName}`);
-              }
+          const loadedSkills = await this.loader.loadByNames(skillNames);
+          console.error(
+            `[Server] Loaded ${loadedSkills.size}/${filteredCommands.length} common skills`,
+          );
+
+          // Log any skills that failed to load (requested but not returned)
+          const loadedSkillNames = new Set(loadedSkills.keys());
+          const failedSkillNames = skillNames.filter(
+            (name) => !loadedSkillNames.has(name),
+          );
+          if (failedSkillNames.length > 0) {
+            console.error(
+              `[Server] ⚠ Failed to load skills: ${failedSkillNames.join(", ")}`,
+            );
+          }
+
+          for (const [skillName, skill] of loadedSkills) {
+            try {
+              const toolDef = createToolDefinition(skill);
+              tools.push(toolDef);
             } catch (error) {
               console.error(
                 `[Server] ✗ Error creating tool definition for ${skillName}:`,

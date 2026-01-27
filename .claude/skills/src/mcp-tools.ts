@@ -156,7 +156,8 @@ const ERROR_PREVENTION_HINTS: Record<string, string> = {
   frequency:
     "Avoid high-cardinality columns (IDs, timestamps). Calculate cardinality with qsv_stats first.",
   sqlp: "Polars SQL (PostgreSQL-like). Some features differ. Needs Polars feature.",
-  moarstats: "Run stats first to create cache. Slower than stats but richer output.",
+  moarstats:
+    "Run stats first to create cache. Slower than stats but richer output.",
   luau: "Needs Luau feature. qsv_apply faster for simple ops.",
   foreach: "Slow for large files. Prefer qsv_apply or qsv_luau.",
   searchset: "Needs regex file. qsv_search easier for simple patterns.",
@@ -441,7 +442,7 @@ function enhanceParameterDescription(
     case "output":
     case "output_file":
       enhanced +=
-        " Tip: Omit for small results (returned directly), or specify for large datasets (auto-saved if >850KB).";
+        " Tip: Use absolute paths. Omit for small results (returned directly), or specify for large datasets (auto-saved if >850KB).";
       break;
     case "no_headers":
       enhanced +=
@@ -582,7 +583,8 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
   const properties: Record<string, McpToolProperty> = {
     input_file: {
       type: "string",
-      description: "Path to input CSV file (absolute or relative)",
+      description:
+        "Path to input CSV file. Use absolute paths for reliability.",
     },
   };
 
@@ -638,7 +640,7 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
   properties.output_file = {
     type: "string",
     description:
-      "Path to output CSV file (optional). For large results or data transformation commands, a temp file is automatically used if omitted.",
+      "Path to output CSV file (optional). Use absolute paths for reliability. For large results, a temp file is automatically used if omitted.",
   };
 
   // Add help flag (universally available for all qsv commands)
@@ -980,7 +982,7 @@ export async function handleToolCall(
                   suggestions[0].distance <= inputFile.length / 2
                 ) {
                   errorMessage += "Did you mean one of these?\n";
-                  suggestions.forEach(({ name, distance }) => {
+                  suggestions.forEach(({ name }) => {
                     errorMessage += `  - ${name}\n`;
                   });
                 } else {

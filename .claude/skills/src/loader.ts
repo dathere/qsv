@@ -14,6 +14,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export class SkillLoader {
   private skills: Map<string, QsvSkill> = new Map();
   private skillsDir: string;
+  private allSkillsLoaded: boolean = false;
 
   constructor(skillsDir?: string) {
     if (skillsDir) {
@@ -38,8 +39,13 @@ export class SkillLoader {
 
   /**
    * Load all skills from the directory
+   * Returns cached skills if already loaded
    */
   async loadAll(): Promise<Map<string, QsvSkill>> {
+    if (this.allSkillsLoaded) {
+      return this.skills;
+    }
+
     const files = await readdir(this.skillsDir);
 
     for (const file of files) {
@@ -52,7 +58,15 @@ export class SkillLoader {
       this.skills.set(skill.name, skill);
     }
 
+    this.allSkillsLoaded = true;
     return this.skills;
+  }
+
+  /**
+   * Check if all skills have been loaded
+   */
+  isAllLoaded(): boolean {
+    return this.allSkillsLoaded;
   }
 
   /**
@@ -73,6 +87,30 @@ export class SkillLoader {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Load multiple skills by name (batch loading with parallel I/O)
+   * Returns Map of successfully loaded skills
+   */
+  async loadByNames(skillNames: string[]): Promise<Map<string, QsvSkill>> {
+    const results = new Map<string, QsvSkill>();
+
+    // Load all skills in parallel for better performance
+    const loadPromises = skillNames.map(async (name) => {
+      const skill = await this.load(name);
+      return { name, skill };
+    });
+
+    const loadedResults = await Promise.all(loadPromises);
+
+    for (const { name, skill } of loadedResults) {
+      if (skill) {
+        results.set(name, skill);
+      }
+    }
+
+    return results;
   }
 
   /**

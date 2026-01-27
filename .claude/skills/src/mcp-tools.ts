@@ -102,7 +102,7 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
   sample:
     "Random sampling. Fast, memory-efficient. Good for previews or test datasets.",
   schema:
-    "Infer data types, generate Polars & JSON Schema. Always call this with --polars BEFORE running qsv_sqlp/joinp to optimize performance.",
+    "Infer data types, generate Polars Schema & JSON Schema.",
   validate:
     "Validate against JSON Schema. Check data quality, type correctness. Also use this without a JSON Schema to check if a CSV is well-formed.",
   sqlp: "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns.",
@@ -117,7 +117,7 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
   diff: "Compare CSV files (added/deleted/modified rows). Requires same schema.",
   cat: "Concatenate CSV files. Subcommands: rows (stack vertically), rowskey (different schemas), columns (side-by-side). Specify via subcommand parameter.",
   geocode:
-    "Geocode locations using Geonames/MaxMind. Subcommands: suggest, reverse, countryinfo, iplookup, index-* operations. Specify via subcommand parameter.",
+    "Geocode locations using Geonames/MaxMind. Subcommands: suggest, reverse, countryinfo, iplookup. Specify via subcommand parameter.",
 };
 
 /**
@@ -132,7 +132,6 @@ const COMMON_PATTERNS: Record<string, string> = {
   search: "Combine with select: search (filter rows) → select (pick columns).",
   frequency:
     "Pair with stats: stats for numeric, frequency for categorical. Run stats first with --cardinality option.",
-  schema: "Use --polars for qsv_sqlp/joinp optimization.",
   sqlp: 'Replaces pipelines: "SELECT * FROM data WHERE x > 10 ORDER BY y LIMIT 100" vs select→search→sort→slice.',
   join: "Run qsv_index first on both files for speed.",
   sample:
@@ -150,16 +149,14 @@ const COMMON_PATTERNS: Record<string, string> = {
  */
 const ERROR_PREVENTION_HINTS: Record<string, string> = {
   join: "Both files need join column(s). Column names case-sensitive. Check with qsv_headers.",
-  joinp: "Use --try-parsedates for date joins. Needs Polars feature.",
+  joinp: "Use --try-parsedates for date joins.",
   dedup: "May OOM on files >1GB. Use qsv_extdedup for large files.",
   sort: "May OOM on files >1GB. Use qsv_extsort for large files.",
   frequency:
     "Avoid high-cardinality columns (IDs, timestamps). Calculate cardinality with qsv_stats first.",
-  sqlp: "Polars SQL (PostgreSQL-like). Some features differ. Needs Polars feature.",
+  sqlp: "When encountering errors with sqlp, use DuckDB when available instead for complex queries.",
   moarstats:
     "Run stats first to create cache. Slower than stats but richer output.",
-  luau: "Needs Luau feature. qsv_apply faster for simple ops.",
-  foreach: "Slow for large files. Prefer qsv_apply or qsv_luau.",
   searchset: "Needs regex file. qsv_search easier for simple patterns.",
   cat: "rows mode requires same column order. Use rowskey for different schemas.",
   geocode:
@@ -485,10 +482,14 @@ const COMMANDS_NEEDING_INDEX_HINT = new Set([
   "validate",
 ]);
 const COMMANDS_WITH_COMMON_MISTAKES = new Set([
+  "cat",
   "join",
   "joinp",
+  "dedup",
+  "sort",
   "sqlp",
   "schema",
+  "searchset",
   "moarstats",
   "frequency",
 ]);

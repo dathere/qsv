@@ -25,6 +25,12 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 
 ## What's New
 
+### Version 15.1.0
+- **Simplified Tool Guidance** - Removed redundant feature requirement hints (Polars, Luau) from tool descriptions
+- **DuckDB Fallback** - Added guidance to use DuckDB as an alternative when sqlp encounters errors with complex queries
+- **Expanded Error Prevention** - Added cat, dedup, sort, and searchset to commands with common mistake warnings
+- **Streamlined Descriptions** - Removed verbose optimization hints that are now handled automatically
+
 ### Version 15.0.0
 - **Tool Search Support** - New `qsv_search_tools` tool for discovering qsv commands by keyword, category, or regex
 - **US Census MCP Integration** - Census MCP server awareness with integration guides

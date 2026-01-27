@@ -303,9 +303,7 @@ class QsvMcpServer {
           // Expose all available skills as individual tools
           // Load all skills (cached after first call)
           if (!this.loader.isAllLoaded()) {
-            console.error(
-              "[Server] First request - loading all skills...",
-            );
+            console.error("[Server] First request - loading all skills...");
           } else {
             console.error(
               "[Server] Expose all tools mode - using cached skills",
@@ -357,6 +355,17 @@ class QsvMcpServer {
           console.error(
             `[Server] Loaded ${loadedSkills.size}/${filteredCommands.length} common skills`,
           );
+
+          // Log any skills that failed to load (requested but not returned)
+          const loadedSkillNames = new Set(loadedSkills.keys());
+          const failedSkillNames = skillNames.filter(
+            (name) => !loadedSkillNames.has(name),
+          );
+          if (failedSkillNames.length > 0) {
+            console.error(
+              `[Server] ⚠ Failed to load skills: ${failedSkillNames.join(", ")}`,
+            );
+          }
 
           for (const [skillName, skill] of loadedSkills) {
             try {

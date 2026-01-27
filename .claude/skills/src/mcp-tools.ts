@@ -982,7 +982,7 @@ export async function handleToolCall(
                   suggestions[0].distance <= inputFile.length / 2
                 ) {
                   errorMessage += "Did you mean one of these?\n";
-                  suggestions.forEach(({ name, distance }) => {
+                  suggestions.forEach(({ name }) => {
                     errorMessage += `  - ${name}\n`;
                   });
                 } else {

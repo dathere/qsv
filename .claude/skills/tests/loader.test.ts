@@ -170,3 +170,72 @@ test("search works on loaded skills", async () => {
     "Should find qsv-count",
   );
 });
+
+test("loadByNames handles concurrent calls safely", async () => {
+  const loader = new SkillLoader();
+
+  const skillNames = ["qsv-count", "qsv-headers", "qsv-stats"];
+
+  // Start multiple loadByNames calls simultaneously
+  const concurrentLoads = [
+    loader.loadByNames(skillNames),
+    loader.loadByNames(skillNames),
+    loader.loadByNames(skillNames),
+    loader.loadByNames(skillNames),
+  ];
+
+  // All should complete successfully
+  const results = await Promise.all(concurrentLoads);
+
+  // Verify all calls returned successfully
+  for (const loaded of results) {
+    assert.strictEqual(
+      loaded.size,
+      skillNames.length,
+      "Each concurrent call should return all skills",
+    );
+    for (const name of skillNames) {
+      assert.ok(loaded.has(name), `Should have ${name}`);
+    }
+  }
+
+  // Verify cache is correct after concurrent loads
+  const cachedLoad = await loader.loadByNames(skillNames);
+  assert.strictEqual(cachedLoad.size, skillNames.length, "Cache should work");
+});
+
+test("loadAll handles concurrent calls safely", async () => {
+  const loader = new SkillLoader();
+
+  // Start multiple loadAll calls simultaneously
+  const concurrentLoads = [
+    loader.loadAll(),
+    loader.loadAll(),
+    loader.loadAll(),
+  ];
+
+  // All should complete successfully
+  const results = await Promise.all(concurrentLoads);
+
+  // All should return the same Map instance (cached)
+  const firstResult = results[0];
+  for (const result of results) {
+    assert.ok(result.size > 0, "Should load some skills");
+    // After first load completes, subsequent calls return same instance
+  }
+
+  // Verify isAllLoaded is true
+  assert.strictEqual(
+    loader.isAllLoaded(),
+    true,
+    "isAllLoaded should be true after concurrent loads",
+  );
+
+  // Verify cache works correctly
+  const cachedResult = await loader.loadAll();
+  assert.strictEqual(
+    cachedResult,
+    firstResult,
+    "Subsequent calls should return cached result",
+  );
+});

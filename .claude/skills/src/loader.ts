@@ -90,14 +90,21 @@ export class SkillLoader {
   }
 
   /**
-   * Load multiple skills by name (batch loading)
+   * Load multiple skills by name (batch loading with parallel I/O)
    * Returns Map of successfully loaded skills
    */
   async loadByNames(skillNames: string[]): Promise<Map<string, QsvSkill>> {
     const results = new Map<string, QsvSkill>();
 
-    for (const name of skillNames) {
+    // Load all skills in parallel for better performance
+    const loadPromises = skillNames.map(async (name) => {
       const skill = await this.load(name);
+      return { name, skill };
+    });
+
+    const loadedResults = await Promise.all(loadPromises);
+
+    for (const { name, skill } of loadedResults) {
       if (skill) {
         results.set(name, skill);
       }

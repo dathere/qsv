@@ -73,6 +73,7 @@ const METADATA_COMMANDS = new Set([
   "index",
   "slice",
   "sample",
+  "sniff",
 ]);
 
 /**

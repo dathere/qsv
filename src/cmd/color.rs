@@ -490,13 +490,17 @@ fn get_theme(qsv_theme: Theme) -> Theme {
 
 #[test]
 fn test_get_theme() {
-    // Reset to auto so test outputs match expectations
+    // Ensure color output is enabled
     ColorChoice::Auto.write_global();
     assert_eq!(Theme::Dark, get_theme(Theme::Dark));
     assert_eq!(Theme::Light, get_theme(Theme::Light));
+
     // Now explicitly test None theme with color output disabled
     ColorChoice::Never.write_global();
     assert_eq!(Theme::None, get_theme(Theme::Dark));
+
+    // Reset color choice to avoid interference with other tests
+    ColorChoice::Auto.write_global();
 }
 
 //

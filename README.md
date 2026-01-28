@@ -123,6 +123,8 @@
 
 ## Installation Options
 
+> **_NOTE:_** To install the qsv MCP Server, go [here](.claude/skills/README-MCP.md).
+
 ### Option 0: qsv pro
 
 If you prefer to explore your data using a graphical interface instead of the command-line, feel free to try out **[qsv pro](https://qsvpro.dathere.com)**. Leveraging qsv, qsv pro can help you quickly analyze spreadsheet data by just dropping a file, along with many other interactive features. Learn more at [qsvpro.dathere.com](https://qsvpro.dathere.com) or download qsv pro directly by clicking one of the badges below.

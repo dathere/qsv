@@ -1775,22 +1775,6 @@ dependencies = [
 
 [[package]]
 name = "csv-nose"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e78ce64fff6df7d668c0efff95f52e1050930d427be42aec11423d824a4dea46"
-dependencies = [
- "bytecount",
- "chardetng",
- "csv",
- "encoding_rs",
- "foldhash 0.2.0",
- "regex",
- "simdutf8",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "csv-nose"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "496e9baf7c93452aa5dd45a7e3b799abec7697c14b33f40d4c9e585770084faf"
@@ -1808,7 +1792,7 @@ dependencies = [
 [[package]]
 name = "csvlens"
 version = "0.15.1"
-source = "git+https://github.com/jqnatividad/csvlens?branch=deps-replace_qsv-sniffer-with-csv_nose#f8d17387f327661b39ffc4f307b070bf5e43f7e9"
+source = "git+https://github.com/jqnatividad/csvlens?branch=deps-replace_qsv-sniffer-with-csv_nose#dceff5646d6a10451f5ec9ee759f785d2b9df25a"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
@@ -1817,7 +1801,7 @@ dependencies = [
  "crossterm 0.28.1",
  "csv",
  "csv-core",
- "csv-nose 0.6.0",
+ "csv-nose",
  "ratatui",
  "regex",
  "sorted-vec",
@@ -5817,7 +5801,7 @@ dependencies = [
  "csv",
  "csv-diff",
  "csv-index",
- "csv-nose 0.7.0",
+ "csv-nose",
  "csvlens",
  "csvs_convert",
  "directories",
@@ -8681,9 +8665,9 @@ dependencies = [
 
 [[package]]
 name = "whoami"
-version = "2.0.2"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ace4d5c7b5ab3d99629156d4e0997edbe98a4beb6d5ba99e2cae830207a81983"
+checksum = "8fae98cf96deed1b7572272dfc777713c249ae40aa1cf8862e091e8b745f5361"
 dependencies = [
  "libredox",
  "wasite",
@@ -9293,18 +9277,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.34"
+version = "0.8.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71ddd76bcebeed25db614f82bf31a9f4222d3fbba300e6fb6c00afa26cbd4d9d"
+checksum = "fdea86ddd5568519879b8187e1cf04e24fce28f7fe046ceecbce472ff19a2572"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.34"
+version = "0.8.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8187381b52e32220d50b255276aa16a084ec0a9017a0ca2152a1f55c539758d"
+checksum = "0c15e1b46eff7c6c91195752e0eeed8ef040e391cdece7c25376957d5f15df22"
 dependencies = [
  "proc-macro2",
  "quote",

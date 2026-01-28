@@ -314,7 +314,7 @@ There are four binary variants of qsv:
 
 * `qsv` - [feature](#feature-flags)-capable(✨), with the [prebuilt binaries](https://github.com/dathere/qsv/releases/latest) enabling all applicable features except Python [^3]
 * `qsvpy` - same as `qsv` but with the Python feature enabled. Three subvariants are available - qsvpy311, qsvpy312 & qsvpy313 - which are compiled with the latest patch version of Python 3.11, 3.12 & 3.13 respectively. We need to have a binary for each Python version as Python is dynamically linked ([more info](docs/INTERPRETERS.md#building-qsv-with-python-feature)).
-* `qsvlite` - all features disabled (~13% of the size of `qsv`)
+* `qsvlite` - all features disabled (~13% of the size of `qsv`). If you are migrating from [xsv](https://github.com/BurntSushi/xsv) and want the same experience and feature set, this is the variant for you.
 * `qsvdp` - optimized for use with [DataPusher+](https://github.com/dathere/datapusher-plus) with only DataPusher+ relevant commands; an embedded [`luau`](#luau_deeplink) interpreter; [`applydp`](#applydp_deeplink), a slimmed-down version of the `apply` feature; the `--progressbar` option disabled; and the self-update only checking for new releases, requiring an explicit `--update` (~12% of the the size of `qsv`).
 
 > ℹ️ **_NOTE:_** There are "portable" subvariants of qsv available with the "p" suffix - `qsvp`, `qsvplite` and `qsvpdp`. These subvariants are compiled without any CPU features enabled. Use these subvariants if you have an old CPU architecture or getting "Illegal instruction (SIGILL)" errors when running the regular qsv binaries.

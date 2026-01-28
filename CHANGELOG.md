@@ -6,6 +6,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [15.0.1] - 2026-01-28
+
+Ooops, we celebrated `color` and the `magika`-powered revamped `sniff` but forgot to actually enable them in the last release prebuilts! This patch adds the new `color` command, turns on `magika`, along with several fixes and dependency bumps.
+
+### Changed
+
+- deps: bump polars to latest upstream
+- deps: bump csv-nose from 0.6.0 to 0.7.0
+- deps: bump mlua from 0.11.5 to 0.11.6
+- deps: bump minijinja from 2.14.0 to 2.15.1
+- deps: bump minijinja-contrib from 2.14.0 to 2.15.1
+- deps: bump siphasher from 1.0.1 to 1.0.2
+- deps: bump iana-time-zone from 0.1.64 to 0.1.65
+- deps: bump hono from 4.11.4 to 4.11.7 (MCP)
+- build: add `color` feature to build and test workflows
+- build: add `magika` feature to publishing workflows
+- docs: updated luau documentation to reflect bundled Luau 0.706
+- docs: `sniff` is now also 🤖-powered with its use of Magika mime-type detection
+
+### Fixed
+
+- tests: fix flaky `color` test_get_theme test (now ignored due to environment dependencies)
+- tests: fix flaky `search` JSON test by using semantic rather than byte-by-byte compare
+
+**Full Changelog**: [15.0.0...15.0.1](https://github.com/dathere/qsv/compare/15.0.0...15.0.1)
+
+---
+
 # [15.0.0] - 2026-01-26 🖖🏻 **_"The Mind Meld Release"_** 🖖🏽
 
 This is the biggest release of qsv yet thanks to many expert contributions from the community!

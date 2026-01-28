@@ -489,6 +489,7 @@ fn get_theme(qsv_theme: Theme) -> Theme {
 }
 
 #[test]
+#[ignore = "depends on terminal color detection, environment and platform"]
 fn test_get_theme() {
     // Ensure color output is enabled
     ColorChoice::Auto.write_global();

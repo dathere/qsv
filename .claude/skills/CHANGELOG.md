@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Skill Version Sync** - Updated all 60 skill JSON files to version 15.1.1 to align with MCP server release
+- **Documentation Update** - Revised README-MCP.md installation instructions to reference latest MCPB version 15.1.1
+- `sniff` is now properly recognized as a METADATA_COMMAND (i.e. uses stdout as they're short outputs)
 
 ## [15.1.0] - 2026-01-27
 

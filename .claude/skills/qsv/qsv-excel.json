@@ -1,6 +1,6 @@
 {
   "name": "qsv-excel",
-  "version": "14.0.0",
+  "version": "15.1.1",
   "description": "Exports a specified Excel/ODS sheet to a CSV file.",
   "category": "conversion",
   "command": {

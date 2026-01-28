@@ -25,6 +25,9 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 
 ## What's New
 
+### Version 15.1.1
+- **Skill Version Sync** - Updated all 60 skill JSON files to version 15.1.1
+
 ### Version 15.1.0
 - **Simplified Tool Guidance** - Removed redundant feature requirement hints (Polars, Luau) from tool descriptions
 - **DuckDB Fallback** - Added guidance to use DuckDB as an alternative when sqlp encounters errors with complex queries

@@ -1,6 +1,6 @@
 {
   "name": "qsv-split",
-  "version": "14.0.0",
+  "version": "15.1.1",
   "description": "Split one CSV file into many CSV files. It can split by number of rows, number of chunks or file size. Uses multithreading to go faster if an index is present when splitting by rows or chunks.",
   "category": "utility",
   "command": {

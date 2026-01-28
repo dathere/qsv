@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [15.1.1] - 2026-01-28
+
+### Changed
+- **Skill Version Sync** - Updated all 60 skill JSON files to version 15.1.1 to align with MCP server release
+
+## [15.1.0] - 2026-01-27
+
+### Changed
+- **Simplified Tool Guidance** - Removed redundant feature requirement hints (Polars, Luau) from tool descriptions
+- **DuckDB Fallback** - Added guidance to use DuckDB as an alternative when sqlp encounters errors with complex queries
+- **Expanded Error Prevention** - Added cat, dedup, sort, and searchset to commands with common mistake warnings
+- **Streamlined Descriptions** - Removed verbose optimization hints that are now handled automatically
+
 ## [15.0.0] - 2026-01-26
 
 ### Added

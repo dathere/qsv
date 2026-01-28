@@ -1,6 +1,6 @@
 {
   "name": "qsv-pro",
-  "version": "14.0.0",
+  "version": "15.1.1",
   "description": "Interact with the qsv pro API.",
   "category": "utility",
   "command": {

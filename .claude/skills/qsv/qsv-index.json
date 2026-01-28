@@ -1,6 +1,6 @@
 {
   "name": "qsv-index",
-  "version": "14.0.0",
+  "version": "15.1.1",
   "description": "Create an index for a CSV. This is very quick (even the 15gb, 28m row NYC 311 dataset takes all of 14 seconds to index) & provides constant time indexing/random access into the CSV. With an index, `count`, `sample` & `slice` work instantaneously; random access mode is enabled in `luau`; and multithreading is enabled for the `frequency`, `split`, `stats`, `schema` & `tojsonl` commands.",
   "category": "utility",
   "command": {

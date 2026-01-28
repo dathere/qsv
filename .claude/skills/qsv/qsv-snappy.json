@@ -1,6 +1,6 @@
 {
   "name": "qsv-snappy",
-  "version": "14.0.0",
+  "version": "15.1.1",
   "description": "Does streaming compression/decompression of the input using Google's Snappy framing format (more info).",
   "category": "utility",
   "command": {

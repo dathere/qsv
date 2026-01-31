@@ -8,7 +8,7 @@
  * - File-based JSON cache with versioning
  * - Cache key based on: file path + mtime + size + options (limit, columns, no_stats)
  * - TTL-based expiration for automatic cache invalidation
- * - LIFO eviction when cache size limit is reached
+ * - Oldest-first eviction when cache size limit is reached
  * - Atomic writes with temp file + rename pattern
  * - Windows EPERM retry with exponential backoff
  * - Secure file permissions (0o600)
@@ -185,7 +185,33 @@ export class ProfileCacheManager {
   }
 
   /**
+   * Validate a cache entry has all required fields with correct types
+   */
+  private isValidEntry(entry: unknown): entry is ProfileCacheEntry {
+    if (entry == null || typeof entry !== "object") {
+      return false;
+    }
+
+    const e = entry as Record<string, unknown>;
+
+    return (
+      typeof e.sourcePath === "string" &&
+      e.sourcePath.length > 0 &&
+      typeof e.sourceTimestamp === "number" &&
+      Number.isFinite(e.sourceTimestamp) &&
+      typeof e.sourceSize === "number" &&
+      Number.isFinite(e.sourceSize) &&
+      typeof e.profile === "string" &&
+      typeof e.size === "number" &&
+      Number.isFinite(e.size) &&
+      typeof e.createdAt === "number" &&
+      Number.isFinite(e.createdAt)
+    );
+  }
+
+  /**
    * Load cache from disk
+   * Validates and sanitizes entries to guard against partial corruption
    */
   private async loadCache(): Promise<ProfileCacheV1> {
     try {
@@ -200,7 +226,35 @@ export class ProfileCacheManager {
         return { version: 1, entries: [], totalSize: 0 };
       }
 
-      return cache as ProfileCacheV1;
+      // Sanitize entries - filter out any corrupted/invalid entries
+      const validEntries: ProfileCacheEntry[] = [];
+      let droppedCount = 0;
+
+      for (const entry of cache.entries) {
+        if (this.isValidEntry(entry)) {
+          validEntries.push(entry);
+        } else {
+          droppedCount++;
+        }
+      }
+
+      if (droppedCount > 0) {
+        console.error(
+          `[ProfileCacheManager] Dropped ${droppedCount} invalid entries from cache`,
+        );
+      }
+
+      // Recompute totalSize from validated entries
+      const totalSize = validEntries.reduce(
+        (sum, e) => sum + e.size + ENTRY_OVERHEAD_BYTES,
+        0,
+      );
+
+      return {
+        version: 1,
+        entries: validEntries,
+        totalSize,
+      };
     } catch (error: unknown) {
       if (isNodeError(error) && error.code === "ENOENT") {
         // Cache doesn't exist yet
@@ -488,7 +542,7 @@ export class ProfileCacheManager {
   }
 
   /**
-   * Enforce size limit via TTL expiration and LIFO eviction
+   * Enforce size limit via TTL expiration and oldest-first eviction
    */
   private async enforceSizeLimit(cache: ProfileCacheV1): Promise<void> {
     const now = Date.now();
@@ -512,9 +566,9 @@ export class ProfileCacheManager {
     // Recalculate size after expiration
     cache.totalSize = this.recalculateTotalSize(cache);
 
-    // If still over limit, use LIFO eviction
+    // If still over limit, evict oldest entries first
     if (cache.totalSize > this.maxSizeBytes) {
-      // Sort by createdAt (oldest first) for LIFO deletion
+      // Sort by createdAt (oldest first) for eviction
       const sortedEntries = [...cache.entries].sort(
         (a, b) => a.createdAt - b.createdAt,
       );
@@ -533,7 +587,7 @@ export class ProfileCacheManager {
 
       if (toDelete.length > 0) {
         console.error(
-          `[ProfileCacheManager] Evicting ${toDelete.length} oldest entries (LIFO)`,
+          `[ProfileCacheManager] Evicting ${toDelete.length} oldest entries`,
         );
 
         // Remove evicted entries
@@ -552,11 +606,10 @@ export class ProfileCacheManager {
   }
 
   /**
-   * Get cache statistics
+   * Get cache metrics and configuration (sync, no cache data)
+   * Use getFullStats() for cache entry count and size
    */
-  getStats(): {
-    entries: number;
-    sizeBytes: number;
+  getMetrics(): {
     maxSizeBytes: number;
     ttlMs: number;
     hitRate: number;
@@ -566,8 +619,6 @@ export class ProfileCacheManager {
     const hitRate = totalRequests > 0 ? this.metrics.hits / totalRequests : 0;
 
     return {
-      entries: 0, // Will be populated from cache
-      sizeBytes: 0, // Will be populated from cache
       maxSizeBytes: this.maxSizeBytes,
       ttlMs: this.ttlMs,
       hitRate,
@@ -586,10 +637,11 @@ export class ProfileCacheManager {
     hitRate: number;
     metrics: Readonly<ProfileCacheMetrics>;
   }> {
+    const totalRequests = this.metrics.hits + this.metrics.misses;
+    const hitRate = totalRequests > 0 ? this.metrics.hits / totalRequests : 0;
+
     try {
       const cache = await this.loadCache();
-      const totalRequests = this.metrics.hits + this.metrics.misses;
-      const hitRate = totalRequests > 0 ? this.metrics.hits / totalRequests : 0;
 
       return {
         entries: cache.entries.length,
@@ -600,7 +652,15 @@ export class ProfileCacheManager {
         metrics: { ...this.metrics },
       };
     } catch {
-      return this.getStats();
+      // Return empty cache data on error
+      return {
+        entries: 0,
+        sizeBytes: 0,
+        maxSizeBytes: this.maxSizeBytes,
+        ttlMs: this.ttlMs,
+        hitRate,
+        metrics: { ...this.metrics },
+      };
     }
   }
 

@@ -33,22 +33,26 @@ Create a `ProfileCacheManager` similar to `ConvertedFileManager` that:
 ### 1. Create `src/profile-cache-manager.ts`
 
 ```typescript
+// Actual implementation (see src/profile-cache-manager.ts)
 interface ProfileCacheEntry {
-  sourcePath: string;
-  sourceHash: string;  // mtime + size combination
+  sourcePath: string;           // Absolute file path
+  sourceTimestamp: number;      // mtime (ms) for change detection
+  sourceSize: number;           // File size for change detection
   options: {
     limit?: number;
     columns?: string;
     no_stats?: boolean;
   };
-  profile: string;     // TOON output
-  createdAt: number;
-  lastAccessedAt: number;
+  profile: string;              // TOON output
+  size: number;                 // Profile string byte size
+  createdAt: number;            // Cache entry timestamp (used for eviction)
 }
 
-interface ProfileCache {
-  version: string;
-  entries: Map<string, ProfileCacheEntry>;
+interface ProfileCacheV1 {
+  version: 1;
+  entries: ProfileCacheEntry[];
+  totalSize: number;
+  lastCleanup?: number;
 }
 
 export class ProfileCacheManager {

@@ -364,13 +364,13 @@ describe("ProfileCacheManager", () => {
     await manager.cacheProfile(csvPath, {}, "Profile");
     await manager.getCachedProfile(csvPath, {});
 
-    let stats = manager.getStats();
+    let stats = manager.getMetrics();
     assert.ok(stats.metrics.misses > 0 || stats.metrics.hits > 0);
 
     // Reset metrics
     manager.resetMetrics();
 
-    stats = manager.getStats();
+    stats = manager.getMetrics();
     assert.strictEqual(stats.metrics.misses, 0);
     assert.strictEqual(stats.metrics.hits, 0);
     assert.strictEqual(stats.metrics.evictions, 0);

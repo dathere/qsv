@@ -161,9 +161,9 @@ const ERROR_PREVENTION_HINTS: Record<string, string> = {
   dedup: "May OOM on files >1GB. Use qsv_extdedup for large files.",
   sort: "May OOM on files >1GB. Use qsv_extsort for large files.",
   frequency:
-    "High-cardinality columns (IDs, timestamps) produce huge output. Use qsv_data_profile first to check for <ALL_UNIQUE> markers.",
+    "High-cardinality columns (IDs, timestamps) can produce huge output. Use qsv_data_profile to inspect cardinality and uniqueness_ratio; <ALL_UNIQUE> is one strong signal of high cardinality.",
   pivotp:
-    "High-cardinality pivot columns create wide output. Use qsv_data_profile to check cardinality first.",
+    "High-cardinality pivot columns create wide output. Use qsv_data_profile to check cardinality and uniqueness_ratio of potential pivot columns; treat <ALL_UNIQUE> as just one strong signal.",
   sqlp: "When encountering errors with sqlp, use DuckDB when available instead for complex queries.",
   moarstats:
     "Run stats first to create cache. Slower than stats but richer output.",

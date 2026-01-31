@@ -12,6 +12,12 @@
  * - Atomic writes with temp file + rename pattern
  * - Windows EPERM retry with exponential backoff
  * - Secure file permissions (0o600)
+ *
+ * Concurrency Note:
+ * This implementation does not include file locking. It assumes typical usage
+ * is single-process within the MCP server. For multi-process scenarios, the
+ * atomic write pattern (temp file + rename) provides basic protection, but
+ * concurrent writes may result in last-writer-wins behavior.
  */
 
 import {
@@ -26,6 +32,12 @@ import type { Stats } from "fs";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { config } from "./config.js";
+
+/**
+ * Estimated overhead per cache entry in bytes (JSON metadata, keys, formatting)
+ * Used for more accurate size accounting
+ */
+const ENTRY_OVERHEAD_BYTES = 200;
 
 /**
  * Type guard to check if an error is a NodeJS.ErrnoException
@@ -129,23 +141,6 @@ export class ProfileCacheManager {
         saveErrors: 0,
       },
     };
-  }
-
-  /**
-   * Generate cache key for a profile request
-   * Key is based on: file path + mtime + size + options
-   */
-  private generateCacheKey(
-    sourcePath: string,
-    sourceStats: Stats,
-    options: ProfileOptions,
-  ): string {
-    const optionsKey = JSON.stringify({
-      limit: options.limit,
-      columns: options.columns,
-      no_stats: options.no_stats,
-    });
-    return `${sourcePath}::${sourceStats.mtime.getTime()}_${sourceStats.size}::${optionsKey}`;
   }
 
   /**
@@ -291,14 +286,19 @@ export class ProfileCacheManager {
 
   /**
    * Recalculate total size from entries
+   * Includes per-entry overhead to account for JSON metadata
    */
   private recalculateTotalSize(cache: ProfileCacheV1): number {
-    return cache.entries.reduce((sum, e) => sum + e.size, 0);
+    return cache.entries.reduce(
+      (sum, e) => sum + e.size + ENTRY_OVERHEAD_BYTES,
+      0,
+    );
   }
 
   /**
    * Get cached profile if valid (file unchanged, same options, not expired)
    * Returns null if cache miss
+   * Removes stale/expired entries immediately when detected
    */
   async getCachedProfile(
     filePath: string,
@@ -310,9 +310,12 @@ export class ProfileCacheManager {
 
       // Load cache
       const cache = await this.loadCache();
+      let cacheModified = false;
 
       // Find matching entry
-      for (const entry of cache.entries) {
+      for (let i = 0; i < cache.entries.length; i++) {
+        const entry = cache.entries[i];
+
         // Check path match
         if (entry.sourcePath !== filePath) {
           continue;
@@ -323,22 +326,44 @@ export class ProfileCacheManager {
           continue;
         }
 
-        // Check if source has changed
+        // Check if source has changed - remove stale entry immediately
         if (this.hasSourceChanged(entry, sourceStats)) {
           console.error(
-            `[ProfileCacheManager] Cache miss: source file changed for ${filePath}`,
+            `[ProfileCacheManager] Cache miss: source file changed for ${filePath}, removing stale entry`,
           );
+          cache.entries.splice(i, 1);
+          cache.totalSize = this.recalculateTotalSize(cache);
+          cacheModified = true;
           this.metrics.misses++;
+
+          // Save updated cache (best-effort)
+          await this.saveCache(cache).catch((err) => {
+            console.error(
+              "[ProfileCacheManager] Warning: Failed to remove stale entry:",
+              err,
+            );
+          });
           return null;
         }
 
-        // Check if expired
+        // Check if expired - remove expired entry immediately
         if (this.isExpired(entry)) {
           console.error(
-            `[ProfileCacheManager] Cache miss: entry expired for ${filePath}`,
+            `[ProfileCacheManager] Cache miss: entry expired for ${filePath}, removing`,
           );
+          cache.entries.splice(i, 1);
+          cache.totalSize = this.recalculateTotalSize(cache);
+          cacheModified = true;
           this.metrics.expirations++;
           this.metrics.misses++;
+
+          // Save updated cache (best-effort)
+          await this.saveCache(cache).catch((err) => {
+            console.error(
+              "[ProfileCacheManager] Warning: Failed to remove expired entry:",
+              err,
+            );
+          });
           return null;
         }
 
@@ -346,15 +371,8 @@ export class ProfileCacheManager {
         console.error(`[ProfileCacheManager] Cache hit for ${filePath}`);
         this.metrics.hits++;
 
-        // Update last accessed time
-        entry.lastAccessedAt = Date.now();
-        await this.saveCache(cache).catch((err) => {
-          // Don't fail on save error for access time update
-          console.error(
-            "[ProfileCacheManager] Warning: Failed to update access time:",
-            err,
-          );
-        });
+        // Note: We don't update lastAccessedAt on disk since we use LIFO (createdAt)
+        // for eviction, not LRU. This avoids unnecessary disk I/O on the hot path.
 
         return entry.profile;
       }
@@ -505,7 +523,7 @@ export class ProfileCacheManager {
           break;
         }
         toDelete.push(entry);
-        currentSize -= entry.size;
+        currentSize -= entry.size + ENTRY_OVERHEAD_BYTES;
         this.metrics.evictions++;
       }
 

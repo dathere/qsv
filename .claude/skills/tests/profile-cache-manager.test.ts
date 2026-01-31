@@ -7,22 +7,16 @@
 
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { mkdir, rm, writeFile, utimes, stat } from "fs/promises";
+import { mkdtemp, rm, writeFile, utimes, stat } from "fs/promises";
 import { join } from "path";
-import { randomUUID } from "crypto";
+import { tmpdir } from "os";
 import { ProfileCacheManager, type ProfileOptions } from "../src/profile-cache-manager.js";
 
 // Test directory for temporary files
 let testDir: string;
-let testCounter = 0;
 
 async function createTestDir(): Promise<string> {
-  const dir = join(
-    process.env.TMPDIR || "/tmp",
-    `profile-cache-test-${Date.now()}-${testCounter++}`,
-  );
-  await mkdir(dir, { recursive: true });
-  return dir;
+  return await mkdtemp(join(tmpdir(), "profile-cache-test-"));
 }
 
 async function cleanupTestDir(dir: string): Promise<void> {

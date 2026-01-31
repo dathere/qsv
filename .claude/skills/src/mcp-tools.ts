@@ -2022,8 +2022,8 @@ export async function handleDataProfileCall(
   let profileCache: ProfileCacheManager | null = null;
   if (config.profileCacheEnabled) {
     const workingDir = filesystemProvider
-      ? (filesystemProvider as FilesystemProviderExtended).getWorkingDirectory?.() ?? process.cwd()
-      : process.cwd();
+      ? (filesystemProvider as FilesystemProviderExtended).getWorkingDirectory?.() ?? config.workingDir
+      : config.workingDir;
 
     profileCache = new ProfileCacheManager(workingDir, {
       maxSizeMB: config.profileCacheMaxSizeMB,
@@ -2041,7 +2041,7 @@ export async function handleDataProfileCall(
       profileOptions,
     );
 
-    if (cachedProfile) {
+    if (cachedProfile !== null) {
       console.error(
         `[MCP Tools] data_profile: Cache hit for ${inputFile}`,
       );

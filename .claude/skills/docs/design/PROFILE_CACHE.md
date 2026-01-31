@@ -185,10 +185,15 @@ Two options:
 4. LIFO eviction when size limit reached
 
 ### Thread Safety
-Use file locking (like `ConvertedFileManager`) to handle concurrent access:
-- Read lock for cache reads
-- Write lock for cache writes
-- Exponential backoff for Windows EPERM errors
+The current implementation does not include explicit file locking:
+- Assumes typical usage is single-process within the MCP server
+- Relies on atomic write pattern (temp file + rename) for basic protection
+- Concurrent writes may result in last-writer-wins behavior
+- Windows EPERM retry with exponential backoff for file system contention
+
+Future hardening (if higher concurrency becomes a concern):
+- Add file locking similar to `ConvertedFileManager`
+- Use read locks for cache reads and write locks for cache writes
 
 ## Implementation Order
 

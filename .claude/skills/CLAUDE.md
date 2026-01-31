@@ -26,16 +26,18 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 ## What's New
 
 ### Version 15.2.0
-- **SQL Query Optimization** - New `qsv_data_profile` tool profiles CSV files for optimal SQL query composition
+- **Dataset Profiling** - New `qsv_data_profile` tool profiles CSV files to help Claude make informed decisions
   - Uses `qsv frequency --toon` to generate column statistics in TOON format (token-efficient for LLMs)
-  - Shows data types, cardinality, null counts, value distributions
-  - Helps Claude choose optimal JOIN order, GROUP BY columns, and WHERE selectivity
-- **Profile-Aware Tool Guidance** - Tools now recommend running `qsv_data_profile` first for better decision-making
-  - `joinp`: Determine optimal table order (smaller cardinality on right)
-  - `frequency`: Identify high-cardinality columns to exclude
-  - `dedup`: Check if uniqueness_ratio=1 (no duplicates exist)
-  - `sort`: Check if data is already sorted (sort_order field)
-  - `pivotp`: Verify pivot column cardinality is reasonable
+  - Shows data types, cardinality, uniqueness_ratio, null counts, sparsity, sort_order, and value distributions
+  - Helps Claude optimize operations across multiple commands:
+    - `sqlp`: Choose optimal JOIN order, GROUP BY columns, WHERE selectivity
+    - `joinp`: Determine optimal table order (smaller cardinality on right)
+    - `frequency`: Identify high-cardinality columns (`<ALL_UNIQUE>`) to exclude
+    - `dedup`: Check if uniqueness_ratio=1 (dedup would be a no-op for that key)
+    - `sort`: Check if data is already sorted (sort_order field)
+    - `pivotp`: Verify pivot column cardinality to avoid overly wide output
+- **Profile Caching** - Configurable cache for TOON profiles to avoid redundant profiling
+- **Profile-Aware Tool Guidance** - Tool descriptions now include 📊 hints recommending `qsv_data_profile` first
 
 ### Version 15.1.1
 - **Skill Version Sync** - Updated all 60 skill JSON files to version 15.1.1

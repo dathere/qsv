@@ -15,10 +15,10 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 ## What's New
 
 ### Version 15.2.0
-- **SQL Query Optimization** - New `qsv_data_profile` tool profiles CSV files for optimal SQL query composition
+- **Dataset Profiling** - New `qsv_data_profile` tool profiles CSV files to help Claude make informed decisions
   - Returns column statistics in TOON format (token-efficient for LLMs)
-  - Shows data types, cardinality, null counts, value distributions
-  - Helps Claude choose optimal JOIN order, GROUP BY columns, and WHERE selectivity
+  - Shows data types, cardinality, uniqueness_ratio, null counts, sparsity, sort_order, and value distributions
+  - Helps Claude optimize `sqlp`, `joinp`, `frequency`, `dedup`, `sort`, and `pivotp` operations
 
 ### Version 15.1.1
 - **Skill Version Sync** - Updated all 60 skill JSON files to version 15.1.1
@@ -213,7 +213,7 @@ Individual MCP tools for the most frequently used commands:
 - `qsv_config` - Display current configuration
 - `qsv_examples` - Show common usage examples
 - `qsv_search_tools` - Search for qsv tools by keyword or category
-- `qsv_data_profile` - Profile CSV files for SQL query optimization
+- `qsv_data_profile` - Profile CSV data to help Claude make informed decisions
 
 ### Pipeline Tool
 
@@ -238,7 +238,7 @@ Claude executes pipeline:
 
 ### Data Profile Tool
 
-`qsv_data_profile` - Profile CSV files for SQL query optimization. Uses `qsv frequency --toon` to generate column statistics in TOON format (token-efficient for LLMs).
+`qsv_data_profile` - Profile CSV data to help Claude make informed decisions. Uses `qsv frequency --toon` to generate column statistics in TOON format (token-efficient for LLMs).
 
 **Returns:**
 - Data types (Integer, Float, String, Date, DateTime, Boolean)
@@ -247,7 +247,7 @@ Claude executes pipeline:
 - Min/max values, ranges, and sort_order (for range queries)
 - Top frequent values with percentages and counts
 
-**Use before `qsv_sqlp`** to help Claude choose:
+**Use before data operations** to help Claude choose:
 - JOIN order (smaller cardinality table first)
 - GROUP BY columns (low cardinality = efficient)
 - WHERE selectivity (high-cardinality columns filter more)

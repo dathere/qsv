@@ -200,7 +200,7 @@
     },
     {
       "name": "qsv_data_profile",
-      "description": "Profile CSV files for SQL query optimization"
+      "description": "Profile CSV data to help Claude make informed decisions"
     },
     {
       "name": "qsv_list_files",

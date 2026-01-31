@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [15.2.0] - 2026-01-31
+
+### Added
+- **Dataset Profiling** - New `qsv_data_profile` tool profiles CSV files to help Claude make informed decisions
+  - Uses `qsv frequency --toon` to generate column statistics in TOON format (token-efficient for LLMs)
+  - Shows data types, cardinality, uniqueness_ratio, null counts, sparsity, sort_order, and value distributions
+  - Helps Claude optimize operations across multiple commands:
+    - `sqlp`: Choose optimal JOIN order, GROUP BY columns, WHERE selectivity
+    - `joinp`: Determine optimal table order (smaller cardinality on right)
+    - `frequency`: Identify high-cardinality columns (`<ALL_UNIQUE>`) to exclude
+    - `dedup`: Check if uniqueness_ratio=1 (dedup would be a no-op for that key)
+    - `sort`: Check if data is already sorted (sort_order field)
+    - `pivotp`: Verify pivot column cardinality to avoid overly wide output
+- **Profile Caching** - Configurable cache for TOON profiles to avoid redundant profiling
+  - `QSV_MCP_PROFILE_CACHE_ENABLED` - Enable/disable caching (default: true)
+  - `QSV_MCP_PROFILE_CACHE_SIZE_MB` - Maximum cache size (default: 10 MB)
+  - `QSV_MCP_PROFILE_CACHE_TTL_MS` - Cache TTL (default: 1 hour)
+- **Profile-Aware Tool Guidance** - Tool descriptions now include 📊 hints recommending `qsv_data_profile` first
+
+### Changed
+- **Documentation Reorganization** - Consolidated markdown files into organized `docs/` subdirectories
+  - `docs/guides/` - User guides (QUICK_START, CLAUDE_CODE, DESKTOP_EXTENSION, FILESYSTEM_USAGE)
+  - `docs/reference/` - Technical reference (AUTO_UPDATE, CI, SKILLS_API, UPDATE_SYSTEM)
+  - `docs/desktop/` - Desktop extension docs (README-MCPB)
+  - Root now contains only README.md, README-MCP.md, CLAUDE.md, and CHANGELOG.md
+
 ## [15.1.1] - 2026-01-28
 
 ### Changed

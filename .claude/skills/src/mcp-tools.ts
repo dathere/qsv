@@ -2120,28 +2120,11 @@ export async function handleDataProfileCall(
       stderr += chunk.toString();
     });
 
-    proc.on("close", async (code) => {
+    proc.on("close", (code) => {
       cleanup();
       if (!timedOut) {
         if (code === 0) {
-          // Cache the profile (if caching enabled and we have a cache instance)
-          if (profileCache && config.profileCacheEnabled) {
-            const profileOptions = {
-              limit: params.limit as number | undefined,
-              columns: params.columns as string | undefined,
-              no_stats: params.no_stats as boolean | undefined,
-            };
-
-            await profileCache.cacheProfile(inputFile, profileOptions, stdout).catch((err) => {
-              console.error(
-                `[MCP Tools] data_profile: Failed to cache profile: ${err}`,
-              );
-            });
-            console.error(
-              `[MCP Tools] data_profile: Cached profile for ${inputFile}`,
-            );
-          }
-
+          // Resolve immediately with the result
           resolve({
             content: [
               {
@@ -2150,6 +2133,22 @@ export async function handleDataProfileCall(
               },
             ],
           });
+
+          // Cache the profile fire-and-forget (if caching enabled)
+          // This avoids adding latency to the response
+          if (profileCache && config.profileCacheEnabled) {
+            const profileOptions = {
+              limit: params.limit as number | undefined,
+              columns: params.columns as string | undefined,
+              no_stats: params.no_stats as boolean | undefined,
+            };
+
+            profileCache.cacheProfile(inputFile, profileOptions, stdout).catch((err) => {
+              console.error(
+                `[MCP Tools] data_profile: Failed to cache profile: ${err}`,
+              );
+            });
+          }
         } else {
           resolve({
             content: [

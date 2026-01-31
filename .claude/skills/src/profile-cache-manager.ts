@@ -65,8 +65,7 @@ interface ProfileCacheEntry {
   options: ProfileOptions; // Profile generation options
   profile: string; // TOON profile output
   size: number; // Profile string byte size
-  createdAt: number; // Cache entry timestamp
-  lastAccessedAt: number; // For access tracking
+  createdAt: number; // Cache entry timestamp (used for LIFO eviction)
 }
 
 /**
@@ -222,16 +221,18 @@ export class ProfileCacheManager {
    * Save cache to disk using atomic write pattern
    * Uses temp file + rename for atomicity
    * Retries on Windows EPERM errors
+   * Cleans up temp files on failure
    */
   private async saveCache(cache: ProfileCacheV1): Promise<void> {
     const maxRetries = 3;
     const baseDelay = 50; // ms
     let lastError: Error | null = null;
+    let tempPath: string | null = null;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         // Write to temporary file first
-        const tempPath = `${this.cacheFilePath}.tmp.${process.pid}.${randomUUID()}`;
+        tempPath = `${this.cacheFilePath}.tmp.${process.pid}.${randomUUID()}`;
         await writeFile(tempPath, JSON.stringify(cache, null, 2));
 
         // Set secure permissions
@@ -239,6 +240,7 @@ export class ProfileCacheManager {
 
         // Atomic rename
         await rename(tempPath, this.cacheFilePath);
+        tempPath = null; // Successfully renamed, no cleanup needed
 
         // Ensure secure permissions on final file
         await this.setSecurePermissions(this.cacheFilePath);
@@ -246,6 +248,12 @@ export class ProfileCacheManager {
         return; // Success
       } catch (error) {
         lastError = error as Error;
+
+        // Clean up temp file on failure (best effort)
+        if (tempPath) {
+          await unlink(tempPath).catch(() => {});
+          tempPath = null;
+        }
 
         // Check if retryable Windows EPERM error
         const isEperm = (error as NodeJS.ErrnoException).code === "EPERM";
@@ -310,7 +318,6 @@ export class ProfileCacheManager {
 
       // Load cache
       const cache = await this.loadCache();
-      let cacheModified = false;
 
       // Find matching entry
       for (let i = 0; i < cache.entries.length; i++) {
@@ -333,7 +340,6 @@ export class ProfileCacheManager {
           );
           cache.entries.splice(i, 1);
           cache.totalSize = this.recalculateTotalSize(cache);
-          cacheModified = true;
           this.metrics.misses++;
 
           // Save updated cache (best-effort)
@@ -353,7 +359,6 @@ export class ProfileCacheManager {
           );
           cache.entries.splice(i, 1);
           cache.totalSize = this.recalculateTotalSize(cache);
-          cacheModified = true;
           this.metrics.expirations++;
           this.metrics.misses++;
 
@@ -425,7 +430,6 @@ export class ProfileCacheManager {
         profile,
         size: profileSize,
         createdAt: Date.now(),
-        lastAccessedAt: Date.now(),
       };
 
       cache.entries.push(newEntry);

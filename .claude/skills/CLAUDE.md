@@ -30,6 +30,12 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
   - Uses `qsv frequency --toon` to generate column statistics in TOON format (token-efficient for LLMs)
   - Shows data types, cardinality, null counts, value distributions
   - Helps Claude choose optimal JOIN order, GROUP BY columns, and WHERE selectivity
+- **Profile-Aware Tool Guidance** - Tools now recommend running `qsv_data_profile` first for better decision-making
+  - `joinp`: Determine optimal table order (smaller cardinality on right)
+  - `frequency`: Identify high-cardinality columns to exclude
+  - `dedup`: Check if uniqueness_ratio=1 (no duplicates exist)
+  - `sort`: Check if data is already sorted (sort_order field)
+  - `pivotp`: Verify pivot column cardinality is reasonable
 
 ### Version 15.1.1
 - **Skill Version Sync** - Updated all 60 skill JSON files to version 15.1.1
@@ -480,6 +486,20 @@ Tool descriptions include intelligent guidance to help Claude make optimal decis
 3. Include file size thresholds for memory-intensive commands
 4. Mention when index acceleration is available (📇)
 5. Note if command loads entire file into memory (🤯)
+
+**Profile-Aware Guidance (📊)**:
+
+Several tools now include guidance to run `qsv_data_profile` first. This helps Claude understand data characteristics before executing operations:
+
+| Tool | What Profile Reveals | Why It Helps |
+|------|---------------------|--------------|
+| `joinp` | Join column cardinality | Optimal table order (smaller cardinality on right) |
+| `frequency` | High-cardinality columns (`<ALL_UNIQUE>`) | Avoid huge output from ID/timestamp columns |
+| `dedup` | `uniqueness_ratio` per column | Skip dedup if key column is all-unique |
+| `sort` | `sort_order` field | Skip sorting if already sorted |
+| `pivotp` | Pivot column cardinality | Avoid overly wide output (>1000 columns) |
+
+The 📊 emoji marks profile-related guidance in tool descriptions.
 
 ### Modifying Existing Tools
 
@@ -1011,8 +1031,8 @@ return {
 
 ---
 
-**Document Version**: 1.7
-**Last Updated**: 2026-01-26
+**Document Version**: 1.8
+**Last Updated**: 2026-01-31
 **Target qsv Version**: 15.x
 **Node.js Version**: >=18.0.0
 **MCP SDK Version**: ^1.25.2

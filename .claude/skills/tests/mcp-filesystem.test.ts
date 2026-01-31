@@ -6,9 +6,9 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { FilesystemResourceProvider } from '../src/mcp-filesystem.js';
 import { config } from '../src/config.js';
-import { mkdtemp, writeFile, rmdir, unlink } from 'fs/promises';
+import { mkdtemp, writeFile, rmdir, unlink, mkdir, realpath } from 'fs/promises';
 import { join } from 'path';
-import { tmpdir } from 'os';
+import { tmpdir, homedir } from 'os';
 
 test('listFiles enforces file limit', async () => {
   // Create temporary directory
@@ -203,3 +203,169 @@ test('listFiles excludes files with .tmp. pattern', async () => {
 
 // Note: listWorkingDirFiles was removed as file resources are no longer exposed via MCP.
 // The qsv_list_files tool uses listFiles() which is still available.
+
+test('setWorkingDirectory expands tilde to home directory', async () => {
+  const home = homedir();
+
+  // Create a provider with home directory in allowed directories
+  const provider = new FilesystemResourceProvider({
+    workingDirectory: home,
+    allowedDirectories: [home],
+  });
+
+  // Set working directory using tilde
+  provider.setWorkingDirectory('~');
+
+  // Should resolve to home directory
+  assert.strictEqual(provider.getWorkingDirectory(), home);
+});
+
+test('setWorkingDirectory expands ~/path to home directory subpath', async () => {
+  const home = homedir();
+  const tempSubdir = `qsv-tilde-test-${Date.now()}`;
+  const tempPath = join(home, tempSubdir);
+
+  try {
+    // Create a test subdirectory in home
+    await mkdir(tempPath);
+
+    // Create a provider with home directory in allowed directories
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: home,
+      allowedDirectories: [home],
+    });
+
+    // Set working directory using ~/subdir syntax
+    provider.setWorkingDirectory(`~/${tempSubdir}`);
+
+    // Should resolve to the subdirectory under home
+    assert.strictEqual(provider.getWorkingDirectory(), tempPath);
+  } finally {
+    try {
+      await rmdir(tempPath);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+test('resolvePath expands tilde in file paths', async () => {
+  const home = homedir();
+  const tempSubdir = `qsv-tilde-test-${Date.now()}`;
+  const tempPath = join(home, tempSubdir);
+  const testFile = 'test.csv';
+
+  try {
+    // Create a test subdirectory and file in home
+    await mkdir(tempPath);
+    await writeFile(join(tempPath, testFile), 'col1,col2\nval1,val2\n');
+
+    // Create a provider with home directory in allowed directories
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: home,
+      allowedDirectories: [home],
+    });
+
+    // Resolve path using ~/subdir/file syntax
+    const resolved = await provider.resolvePath(`~/${tempSubdir}/${testFile}`);
+
+    // Should resolve to the full path under home
+    assert.strictEqual(resolved, join(tempPath, testFile));
+  } finally {
+    try {
+      await unlink(join(tempPath, testFile));
+      await rmdir(tempPath);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+test('resolvePath leaves absolute paths unchanged', async () => {
+  // Use realpath to resolve symlinks (e.g., /var -> /private/var on macOS)
+  // because resolvePath uses realpath internally
+  const rawTempDir = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+  const tempDir = await realpath(rawTempDir);
+
+  try {
+    // Create a test file
+    await writeFile(join(tempDir, 'test.csv'), 'col1,col2\nval1,val2\n');
+
+    // workingDirectory is automatically added to allowedDirs by constructor
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir,
+    });
+
+    // Resolve an absolute path (no tilde)
+    const resolved = await provider.resolvePath(join(tempDir, 'test.csv'));
+
+    // Should be the same absolute path
+    assert.strictEqual(resolved, join(tempDir, 'test.csv'));
+  } finally {
+    try {
+      await unlink(join(tempDir, 'test.csv'));
+      await rmdir(tempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+test('setWorkingDirectory expands ~\\ (backslash) for Windows compatibility', async () => {
+  const home = homedir();
+  const tempSubdir = `qsv-tilde-test-${Date.now()}`;
+  const tempPath = join(home, tempSubdir);
+
+  try {
+    // Create a test subdirectory in home
+    await mkdir(tempPath);
+
+    // Create a provider with home directory in allowed directories
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: home,
+      allowedDirectories: [home],
+    });
+
+    // Set working directory using ~\subdir syntax (Windows-style)
+    provider.setWorkingDirectory(`~\\${tempSubdir}`);
+
+    // Should resolve to the subdirectory under home
+    assert.strictEqual(provider.getWorkingDirectory(), tempPath);
+  } finally {
+    try {
+      await rmdir(tempPath);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+test('resolvePath leaves relative paths unchanged (no tilde)', async () => {
+  // Use realpath to resolve symlinks (e.g., /var -> /private/var on macOS)
+  // because resolvePath uses realpath internally
+  const rawTempDir = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+  const tempDir = await realpath(rawTempDir);
+
+  try {
+    // Create a test file
+    await writeFile(join(tempDir, 'test.csv'), 'col1,col2\nval1,val2\n');
+
+    // workingDirectory is automatically added to allowedDirs by constructor
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir,
+    });
+
+    // Resolve a relative path (no tilde)
+    const resolved = await provider.resolvePath('test.csv');
+
+    // Should resolve relative to working directory
+    assert.strictEqual(resolved, join(tempDir, 'test.csv'));
+  } finally {
+    try {
+      await unlink(join(tempDir, 'test.csv'));
+      await rmdir(tempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});

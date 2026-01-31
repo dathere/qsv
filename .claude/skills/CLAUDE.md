@@ -25,6 +25,12 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 
 ## What's New
 
+### Version 15.2.0
+- **SQL Query Optimization** - New `qsv_data_profile` tool profiles CSV files for optimal SQL query composition
+  - Uses `qsv frequency --toon` to generate column statistics in TOON format (token-efficient for LLMs)
+  - Shows data types, cardinality, null counts, value distributions
+  - Helps Claude choose optimal JOIN order, GROUP BY columns, and WHERE selectivity
+
 ### Version 15.1.1
 - **Skill Version Sync** - Updated all 60 skill JSON files to version 15.1.1
 

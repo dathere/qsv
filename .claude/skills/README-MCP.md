@@ -6,13 +6,19 @@ Model Context Protocol (MCP) server that exposes 60 of qsv's tabular data-wrangl
 
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
-- **22 MCP Tools**: 13 common commands as individual tools + 1 generic tool + 1 pipeline tool + 1 search tool + 3 utility tools + 3 filesystem tools (or 60+ in expose-all mode)
+- **23 MCP Tools**: 13 common commands as individual tools + 1 generic tool + 1 pipeline tool + 1 search tool + 1 data profile tool + 3 utility tools + 3 filesystem tools (or 60+ in expose-all mode)
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
 - **Pipeline Support**: Chain multiple operations together seamlessly
 - **Intelligent Guidance**: Enhanced tool descriptions help Claude make optimal decisions
 
 ## What's New
+
+### Version 15.2.0
+- **SQL Query Optimization** - New `qsv_data_profile` tool profiles CSV files for optimal SQL query composition
+  - Returns column statistics in TOON format (token-efficient for LLMs)
+  - Shows data types, cardinality, null counts, value distributions
+  - Helps Claude choose optimal JOIN order, GROUP BY columns, and WHERE selectivity
 
 ### Version 15.1.1
 - **Skill Version Sync** - Updated all 60 skill JSON files to version 15.1.1
@@ -204,6 +210,7 @@ Individual MCP tools for the most frequently used commands:
 - `qsv_config` - Display current configuration
 - `qsv_examples` - Show common usage examples
 - `qsv_search_tools` - Search for qsv tools by keyword or category
+- `qsv_data_profile` - Profile CSV files for SQL query optimization
 
 ### Pipeline Tool
 
@@ -226,6 +233,45 @@ Claude executes pipeline:
 
 - `qsv_search_tools` - Search for qsv tools by keyword, category, or regex pattern
 
+### Data Profile Tool
+
+`qsv_data_profile` - Profile CSV files for SQL query optimization. Uses `qsv frequency --toon` to generate column statistics in TOON format (token-efficient for LLMs).
+
+**Returns:**
+- Data types (Integer, Float, String, Date, DateTime, Boolean)
+- Cardinality and uniqueness_ratio (identifies keys vs categorical columns)
+- Null counts and sparsity (affects JOIN/WHERE behavior)
+- Min/max values, ranges, and sort_order (for range queries)
+- Top frequent values with percentages and counts
+
+**Use before `qsv_sqlp`** to help Claude choose:
+- JOIN order (smaller cardinality table first)
+- GROUP BY columns (low cardinality = efficient)
+- WHERE selectivity (high-cardinality columns filter more)
+- Index columns (uniqueness_ratio=1 = good key candidate)
+
+**Example:**
+```
+User: "Find the top agencies by complaint count in NYC_311.csv"
+
+Claude first profiles the data:
+→ qsv_data_profile(input_file: "NYC_311.csv")
+
+TOON output reveals:
+- Agency: cardinality=28, top values: NYPD(26%), HPD(25%), DOT(13%)
+- Complaint Type: cardinality=287
+- Status: cardinality=10, 95% are "Closed"
+
+Claude composes optimized query:
+→ qsv_sqlp with:
+  "SELECT Agency, COUNT(*) as count
+   FROM data
+   WHERE Status = 'Closed'  -- 95% selectivity, good filter
+   GROUP BY Agency          -- only 28 groups, efficient
+   ORDER BY count DESC
+   LIMIT 10"
+```
+
 ## Tool Search Support
 
 The MCP server supports intelligent tool exposure based on the connected client:
@@ -245,7 +291,7 @@ The server automatically detects Claude clients and enables all 60+ tools:
 **No configuration required** for Claude Desktop, Claude Code, or Claude Cowork - tools are auto-enabled.
 
 ### Standard Mode (Unknown Clients)
-For unknown clients, exposes 22 tools: 13 common commands + 1 generic + 1 pipeline + 1 search + 3 utility + 3 filesystem tools.
+For unknown clients, exposes 23 tools: 13 common commands + 1 generic + 1 pipeline + 1 search + 1 data profile + 3 utility + 3 filesystem tools.
 Optimized for token efficiency in typical workflows.
 
 ### Manual Override
@@ -594,8 +640,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-01-28
-**Version**: 15.1.1
-**Tools**: 22 standard mode (13 common + 1 generic + 1 pipeline + 1 search + 3 utility + 3 filesystem) or 60+ in expose-all mode
+**Updated**: 2026-01-31
+**Version**: 15.2.0
+**Tools**: 23 standard mode (13 common + 1 generic + 1 pipeline + 1 search + 1 data profile + 3 utility + 3 filesystem) or 60+ in expose-all mode
 **Skills**: 60 qsv commands
 **Status**: Production Ready

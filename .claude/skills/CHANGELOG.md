@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Reduced MCP Skills** - Excluded `edit`, `flatten`, `pro`, and `snappy` commands from MCP skills generation, reducing from 60 to 56 skills
+  - `edit` - interactive command not suitable for AI agent use
+  - `flatten` - not suitable for AI agent use
+  - `pro` - contains interactive/terminal-dependent subcommands (lens, workflow)
+  - `snappy` - compression utility not needed for AI agents
+
 ## [15.2.0] - 2026-01-31
 
 ### Added
@@ -36,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [15.1.1] - 2026-01-28
 
 ### Changed
-- **Skill Version Sync** - Updated all 60 skill JSON files to version 15.1.1 to align with MCP server release
+- **Skill Version Sync** - Updated all 56 skill JSON files to version 15.1.1 to align with MCP server release
 - **Documentation Update** - Revised README-MCP.md installation instructions to reference latest MCPB version 15.1.1
 - `sniff` is now properly recognized as a METADATA_COMMAND (i.e. uses stdout as they're short outputs)
 

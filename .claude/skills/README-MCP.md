@@ -1,12 +1,12 @@
 # QSV MCP Server
 
-Model Context Protocol (MCP) server that exposes 60 of qsv's tabular data-wrangling commands to Claude Desktop.
+Model Context Protocol (MCP) server that exposes 56 of qsv's tabular data-wrangling commands to Claude Desktop.
 
 ## Overview
 
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
-- **23 MCP Tools**: 13 common commands as individual tools + 1 generic tool + 1 pipeline tool + 1 search tool + 1 data profile tool + 3 utility tools + 3 filesystem tools (or 60+ in expose-all mode)
+- **23 MCP Tools**: 13 common commands as individual tools + 1 generic tool + 1 pipeline tool + 1 search tool + 1 data profile tool + 3 utility tools + 3 filesystem tools (or 56+ in expose-all mode)
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
 - **Pipeline Support**: Chain multiple operations together seamlessly
@@ -21,7 +21,7 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
   - Helps Claude optimize `sqlp`, `joinp`, `frequency`, `dedup`, `sort`, and `pivotp` operations
 
 ### Version 15.1.1
-- **Skill Version Sync** - Updated all 60 skill JSON files to version 15.1.1
+- **Skill Version Sync** - Updated all 56 skill JSON files to version 15.1.1
 
 ### Version 15.1.0
 - **Simplified Tool Guidance** - Removed redundant feature requirement hints (Polars, Luau) from tool descriptions
@@ -170,7 +170,7 @@ This script will:
 | `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates when MCP server starts |
 | `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications in logs |
 | `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repository to check for releases |
-| `QSV_MCP_EXPOSE_ALL_TOOLS` | auto-detect | Controls tool exposure mode. `true`: always expose all 60+ tools. `false`: always use 13 common tools (overrides auto-detect). Unset: auto-detect based on client (Claude clients get all tools automatically) |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | auto-detect | Controls tool exposure mode. `true`: always expose all 56+ tools. `false`: always use 13 common tools (overrides auto-detect). Unset: auto-detect based on client (Claude clients get all tools automatically) |
 | `QSV_MCP_PROFILE_CACHE_ENABLED` | `true` | Enable caching of TOON profiles from qsv_data_profile |
 | `QSV_MCP_PROFILE_CACHE_SIZE_MB` | `10` | Maximum size for profile cache (1-500 MB) |
 | `QSV_MCP_PROFILE_CACHE_TTL_MS` | `3600000` | Profile cache TTL in milliseconds (1 min - 24 hours, default 1 hour) |
@@ -281,14 +281,14 @@ The MCP server supports intelligent tool exposure based on the connected client:
 
 ### Auto-Detection (Default)
 
-The server automatically detects Claude clients and enables all 60+ tools:
+The server automatically detects Claude clients and enables all 56+ tools:
 
 | Client | Detection | Tools Exposed |
 |--------|-----------|---------------|
-| Claude Desktop | Automatic | All 60+ tools |
-| Claude Code | Automatic | All 60+ tools |
-| Claude Cowork | Automatic | All 60+ tools |
-| Other Claude clients | Automatic | All 60+ tools |
+| Claude Desktop | Automatic | All 56+ tools |
+| Claude Code | Automatic | All 56+ tools |
+| Claude Cowork | Automatic | All 56+ tools |
+| Other Claude clients | Automatic | All 56+ tools |
 | Unknown clients | Automatic (safe default) | 13 common tools |
 
 **No configuration required** for Claude Desktop, Claude Code, or Claude Cowork - tools are auto-enabled.
@@ -299,7 +299,7 @@ Optimized for token efficiency in typical workflows.
 
 ### Manual Override
 Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override auto-detection:
-- `true`: Always expose all 60+ tools (even for unknown clients)
+- `true`: Always expose all 56+ tools (even for unknown clients)
 - `false`: Always use 13 common tools (overrides auto-detection)
 - Unset: Auto-detect based on client (recommended)
 
@@ -448,7 +448,7 @@ Result: Parquet file created
 │          QSV MCP Server                     │
 │  • 13 Common Tools + 1 Generic + 1 Pipeline │
 │  • 1 Search Tool + 3 Utility + 3 Filesystem │
-│  • 60+ tools in expose-all mode            │
+│  • 56+ tools in expose-all mode            │
 │  • Enhanced descriptions & guidance        │
 │  • Local file access & validation          │
 │  • Format auto-detection & conversion      │
@@ -544,7 +544,7 @@ npm run mcp:start
 The server should start and log:
 ```
 Loading QSV skills...
-Loaded 60 skills
+Loaded 56 skills
 QSV MCP Server initialized successfully
 QSV MCP Server running on stdio
 ```
@@ -602,7 +602,7 @@ npm test
 
 ## Performance
 
-- **Server Startup**: < 100ms (60 skills loaded)
+- **Server Startup**: < 100ms (56 skills loaded)
 - **Tool Execution**: < 10ms overhead + qsv processing time
 - **File Processing**: Depends on qsv performance (generally very fast)
 - **Streaming**: Large files processed efficiently by qsv
@@ -648,6 +648,6 @@ For issues or questions:
 
 **Updated**: 2026-01-31
 **Version**: 15.2.0
-**Tools**: 23 standard mode (13 common + 1 generic + 1 pipeline + 1 search + 1 data profile + 3 utility + 3 filesystem) or 60+ in expose-all mode
-**Skills**: 60 qsv commands
+**Tools**: 23 standard mode (13 common + 1 generic + 1 pipeline + 1 search + 1 data profile + 3 utility + 3 filesystem) or 56+ in expose-all mode
+**Skills**: 56 qsv commands
 **Status**: Production Ready

@@ -6,8 +6,8 @@ Complete TypeScript implementation for loading, executing, and composing qsv com
 
 The QSV MCP Server now supports **direct access to local tabular data files** (CSV, Excel, JSONL, etc.). No more uploading files to Claude Desktop!
 
-**Quick Start**: See [QUICK_START_LOCAL_FILES.md](./QUICK_START_LOCAL_FILES.md)
-**Full Guide**: See [FILESYSTEM_USAGE.md](./FILESYSTEM_USAGE.md)
+**Quick Start**: See [docs/guides/QUICK_START.md](./docs/guides/QUICK_START.md)
+**Full Guide**: See [docs/guides/FILESYSTEM_USAGE.md](./docs/guides/FILESYSTEM_USAGE.md)
 
 ### Key Features:
 - ✅ Browse tabular data files in your directories (CSV, Excel, JSONL, etc.)
@@ -57,7 +57,7 @@ Each skill file provides:
 
 **New in 13.0.0**: Auto-detection finds qsv in standard locations (PATH, /usr/local/bin, ~/.cargo/bin, etc.)
 
-**Documentation**: [DESKTOP_EXTENSION.md](./DESKTOP_EXTENSION.md)
+**Documentation**: [docs/guides/DESKTOP_EXTENSION.md](./docs/guides/DESKTOP_EXTENSION.md)
 
 </details>
 
@@ -83,7 +83,7 @@ npm run mcp:install  # Detects and configures Claude Code automatically
 - ✅ Git integration - see operations in repository context
 - ✅ Lightweight - no GUI overhead
 
-**Documentation**: [CLAUDE_CODE.md](./CLAUDE_CODE.md)
+**Documentation**: [docs/guides/CLAUDE_CODE.md](./docs/guides/CLAUDE_CODE.md)
 
 </details>
 
@@ -175,8 +175,11 @@ npm run mcpb:package
 ├── mcp-config.json         # Claude Desktop config template
 ├── README.md               # This file
 ├── README-MCP.md           # MCP server documentation
-├── FILESYSTEM_USAGE.md     # Local file access guide
-└── SKILLS_README.md        # Complete API documentation
+├── CHANGELOG.md            # Release notes
+└── docs/                   # Documentation
+    ├── guides/             # User guides
+    ├── reference/          # Technical reference
+    └── design/             # Design documents
 ```
 
 ## Usage
@@ -329,7 +332,7 @@ Hints are extracted from usage text markers:
 
 ## API Documentation
 
-See [SKILLS_README.md](./SKILLS_README.md) for complete API documentation including:
+See [docs/reference/SKILLS_API.md](./docs/reference/SKILLS_API.md) for complete API documentation including:
 
 - SkillLoader API (loading, searching, statistics)
 - SkillExecutor API (execution, validation)
@@ -442,13 +445,14 @@ qsv --update-mcp-skills
 ## Documentation
 
 ### Installation & Setup
-- [Desktop Extension Guide](./DESKTOP_EXTENSION.md) - Install as Claude Desktop extension (recommended)
+- [Desktop Extension Guide](./docs/guides/DESKTOP_EXTENSION.md) - Install as Claude Desktop extension (recommended)
 - [MCP Server Guide](./README-MCP.md) - Claude Desktop integration (legacy method)
-- [Auto-Update Guide](./AUTO_UPDATE.md) - Keep skills in sync with qsv releases
+- [Auto-Update Guide](./docs/reference/AUTO_UPDATE.md) - Keep skills in sync with qsv releases
 
 ### Usage & Features
-- [Filesystem Usage Guide](./FILESYSTEM_USAGE.md) - Local file access
-- [Complete API Documentation](./SKILLS_README.md)
+- [Quick Start Guide](./docs/guides/QUICK_START.md) - Get started quickly
+- [Filesystem Usage Guide](./docs/guides/FILESYSTEM_USAGE.md) - Local file access
+- [Complete API Documentation](./docs/reference/SKILLS_API.md)
 - [qsv Commands](https://github.com/dathere/qsv#commands)
 
 ### Technical Documentation

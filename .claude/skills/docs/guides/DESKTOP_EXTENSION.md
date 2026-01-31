@@ -577,10 +577,10 @@ Yes! The extension is open source:
 
 ### Documentation
 
-- **Quick Start**: [QUICK_START_LOCAL_FILES.md](./QUICK_START_LOCAL_FILES.md)
-- **Full Guide**: [README.md](./README.md)
+- **Quick Start**: [QUICK_START.md](./QUICK_START.md)
+- **Full Guide**: [README.md](../../README.md)
 - **Filesystem Usage**: [FILESYSTEM_USAGE.md](./FILESYSTEM_USAGE.md)
-- **Auto-Update System**: [AUTO_UPDATE.md](./AUTO_UPDATE.md)
+- **Auto-Update System**: [AUTO_UPDATE.md](../reference/AUTO_UPDATE.md)
 - **qsv Documentation**: https://github.com/dathere/qsv#commands
 
 ### Support

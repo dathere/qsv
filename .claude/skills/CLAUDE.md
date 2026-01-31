@@ -840,8 +840,11 @@ cd .claude/skills && npm run build
 - **`scripts/run-tests.js`**: Cross-platform test runner
 - **`../../src/mcp_skills_gen.rs`**: Rust skill generator (in main qsv repo)
 - **`docs/design/AGENT_SKILLS_DESIGN.md`**: Architecture vision
+- **`docs/guides/`**: User guides (QUICK_START, DESKTOP_EXTENSION, CLAUDE_CODE, FILESYSTEM_USAGE)
+- **`docs/reference/`**: Technical reference (AUTO_UPDATE, CI, SKILLS_API, UPDATE_SYSTEM)
+- **`docs/desktop/README-MCPB.md`**: Desktop Extension documentation
+- **`CHANGELOG.md`**: Release notes
 - **`README-MCP.md`**: MCP Server documentation
-- **`README-MCPB.md`**: Desktop Extension documentation
 - **`CLAUDE.md`**: This file
 
 ## Common Patterns
@@ -1020,13 +1023,32 @@ return {
 - [qsv Main Documentation](../../README.md)
 - [qsv Project CLAUDE.md](../../CLAUDE.md) - Main qsv development guide (build commands, architecture, code conventions)
 - [qsv Command Reference](../../docs/)
+
+**Guides:**
+- [Quick Start Guide](docs/guides/QUICK_START.md)
+- [Claude Code Integration](docs/guides/CLAUDE_CODE.md)
+- [Desktop Extension Guide](docs/guides/DESKTOP_EXTENSION.md)
+- [Filesystem Usage](docs/guides/FILESYSTEM_USAGE.md)
+
+**Reference:**
+- [Skills API](docs/reference/SKILLS_API.md)
+- [Auto-Update Configuration](docs/reference/AUTO_UPDATE.md)
+- [Update System](docs/reference/UPDATE_SYSTEM.md)
+- [CI/CD Pipeline](docs/reference/CI.md)
+- [Changelog](./CHANGELOG.md)
+
+**Desktop Extension:**
+- [MCP Server README](./README-MCP.md)
+- [Desktop Extension README (MCPB)](docs/desktop/README-MCPB.md)
+
+**Design Documents:**
 - [Agent Skills Design](docs/design/AGENT_SKILLS_DESIGN.md)
 - [Agent Skills Integration](docs/design/AGENT_SKILLS_INTEGRATION.md)
 - [Agent Skills POC Summary](docs/design/AGENT_SKILLS_POC_SUMMARY.md)
 - [Agent Skills Complete Summary](docs/design/AGENT_SKILLS_COMPLETE_SUMMARY.md)
 - [Filesystem Changelog](docs/design/CHANGELOG_FILESYSTEM.md)
-- [MCP Server README](./README-MCP.md)
-- [Desktop Extension README](./README-MCPB.md)
+
+**External:**
 - [Claude Desktop Integration](https://claude.ai/docs)
 
 ---

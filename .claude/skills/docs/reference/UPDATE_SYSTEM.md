@@ -208,7 +208,7 @@ Potential improvements for future versions:
 - `src/update-checker.ts` - Update checker implementation
 - `AUTO_UPDATE.md` - Comprehensive documentation
 - `examples/update-checker-demo.js` - Interactive demo
-- `UPDATE_SYSTEM_SUMMARY.md` - This file
+- `UPDATE_SYSTEM.md` - This file (formerly UPDATE_SYSTEM_SUMMARY.md)
 
 ### Modified Files
 - `src/mcp-server.ts` - Integrated update checker
@@ -234,7 +234,7 @@ No new npm dependencies required! Uses only Node.js built-ins:
 ## Related Documentation
 
 - [AUTO_UPDATE.md](./AUTO_UPDATE.md) - User guide
-- [README-MCP.md](./README-MCP.md) - MCP server guide
+- [README-MCP.md](../../README-MCP.md) - MCP server guide
 - [qsv self-update](https://github.com/dathere/qsv#self-update) - qsv's update mechanism
 
 ---

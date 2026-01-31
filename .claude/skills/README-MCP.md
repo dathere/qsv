@@ -37,7 +37,7 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 - **Output Size Limits** - 50MB stdout limit prevents memory issues on large outputs
 - **Token Optimization** - 66-76% reduction in tool description token usage
 - **Windows EPERM Retry Logic** - Exponential backoff for file locking errors
-- **Also works with Claude Code!** - wrangle data while wrangling code - [Install in Claude Code](CLAUDE_CODE.md)
+- **Also works with Claude Code!** - wrangle data while wrangling code - [Install in Claude Code](docs/guides/CLAUDE_CODE.md)
 
 ## Supported File Formats
 
@@ -72,7 +72,7 @@ The Desktop Extension:
 - **Secure** - Uses `spawn` with array arguments to prevent command injection
 - **Template Variables** - Supports `$HOME`, `${HOME}` in config paths
 
-See the [MCP Bundle documentation](./README-MCPB.md) for detailed instructions.
+See the [MCP Bundle documentation](./docs/desktop/README-MCPB.md) for detailed instructions.
 
 ### Option 2: Automated Installation (Developer)
 
@@ -177,7 +177,7 @@ This script will:
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 
-**Auto-Update**: The server includes built-in update detection and can automatically regenerate skills when qsv is updated. See [AUTO_UPDATE.md](./AUTO_UPDATE.md) for details.
+**Auto-Update**: The server includes built-in update detection and can automatically regenerate skills when qsv is updated. See [docs/reference/AUTO_UPDATE.md](./docs/reference/AUTO_UPDATE.md) for details.
 
 ## Available Tools
 
@@ -571,7 +571,10 @@ Press Ctrl+C to stop.
 │   └── package-mcpb.js       # MCPB packaging script
 ├── mcp-config.json           # Config template
 ├── README-MCP.md             # This file
-└── README-MCPB.md            # Desktop Extension documentation
+└── docs/
+    ├── guides/               # User guides
+    ├── reference/            # Technical reference
+    └── desktop/README-MCPB.md  # Desktop Extension documentation
 ```
 
 ### Building
@@ -629,9 +632,9 @@ Potential additions for future versions:
 - [MCP Specification](https://modelcontextprotocol.io/)
 - [Claude Desktop](https://claude.ai/desktop)
 - [QSV Skills README](./README.md)
-- [MCP Desktop Extension](./README-MCPB.md)
-- [Filesystem Usage Guide](./FILESYSTEM_USAGE.md)
-- [Auto-Update Guide](./AUTO_UPDATE.md)
+- [MCP Desktop Extension](./docs/desktop/README-MCPB.md)
+- [Filesystem Usage Guide](./docs/guides/FILESYSTEM_USAGE.md)
+- [Auto-Update Guide](./docs/reference/AUTO_UPDATE.md)
 
 ## Support
 

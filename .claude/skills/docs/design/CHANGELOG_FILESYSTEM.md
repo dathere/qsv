@@ -148,7 +148,7 @@ User: "Analyze allegheny_county_property_sale_transactions.csv"
 
 ### For New Users
 
-1. Follow [QUICK_START_LOCAL_FILES.md](./QUICK_START_LOCAL_FILES.md)
+1. Follow [QUICK_START.md](../guides/QUICK_START.md)
 2. Configure `QSV_WORKING_DIR` and `QSV_ALLOWED_DIRS`
 3. Restart Claude Desktop
 4. Start using local file paths in prompts
@@ -272,8 +272,8 @@ Potential future improvements:
 ## Support
 
 For issues or questions:
-1. Check [FILESYSTEM_USAGE.md](./FILESYSTEM_USAGE.md) for troubleshooting
-2. Review [QUICK_START_LOCAL_FILES.md](./QUICK_START_LOCAL_FILES.md) for setup
+1. Check [FILESYSTEM_USAGE.md](../guides/FILESYSTEM_USAGE.md) for troubleshooting
+2. Review [QUICK_START.md](../guides/QUICK_START.md) for setup
 3. Verify your Claude Desktop configuration is valid JSON
 4. Check MCP server logs in Claude Desktop developer console
 

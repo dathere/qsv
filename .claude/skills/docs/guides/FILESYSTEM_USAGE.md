@@ -44,7 +44,7 @@ When you select an Excel or JSONL file, the MCP server automatically:
 
 **No configuration needed!** The Desktop Extension auto-detects qsv and uses smart defaults:
 
-1. Install the `.mcpb` file (see [DESKTOP_EXTENSION.md](./DESKTOP_EXTENSION.md))
+1. Install the `.mcpb` file (see [DESKTOP_EXTENSION.md](./DESKTOP_EXTENSION.md) in this directory)
 2. qsv path is auto-detected from PATH and common locations
 3. Working directory defaults to ~/Downloads
 4. Add more allowed directories in Settings if needed

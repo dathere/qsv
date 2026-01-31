@@ -306,8 +306,8 @@ The update check runs asynchronously and doesn't block MCP server startup.
 
 ## Related Documentation
 
-- [README-MCP.md](./README-MCP.md) - MCP server documentation
-- [FILESYSTEM_USAGE.md](./FILESYSTEM_USAGE.md) - Filesystem features
+- [README-MCP.md](../../README-MCP.md) - MCP server documentation
+- [FILESYSTEM_USAGE.md](../guides/FILESYSTEM_USAGE.md) - Filesystem features
 - [qsv --update documentation](https://github.com/dathere/qsv#self-update)
 
 ## Support

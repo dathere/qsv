@@ -91,13 +91,13 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
   moarstats:
     "Comprehensive stats + bivariate stats + data type inference. Slower but richer than stats.",
   frequency:
-    "Count unique values. Best for low-cardinality categorical columns. Avoid high-cardinality (IDs).",
+    "Count unique values. Best for low-cardinality categorical columns. 📊 Run qsv_data_profile first to identify high-cardinality columns (shows <ALL_UNIQUE>) to exclude.",
   join: "Join CSV files (<50MB). For large/complex joins, use qsv_joinp.",
   joinp:
-    "Fast Polars-powered joins for large files (>50MB) or SQL-like joins (inner/left/right/outer/cross).",
+    "Fast Polars-powered joins for large files (>50MB) or SQL-like joins (inner/left/right/outer/cross). 📊 Run qsv_data_profile first to determine optimal table order (smaller cardinality on right).",
   dedup:
-    "Remove duplicates. Loads entire CSV. For large files (>1GB), use qsv_extdedup.",
-  sort: "Sort by columns. Loads entire file. For large files (>1GB), use qsv_extsort.",
+    "Remove duplicates. Loads entire CSV. For large files (>1GB), use qsv_extdedup. 📊 Run qsv_data_profile first - uniqueness_ratio=1 means no duplicates exist.",
+  sort: "Sort by columns. Loads entire file. For large files (>1GB), use qsv_extsort. 📊 Run qsv_data_profile first - if sort_order shows Ascending/Descending, data is pre-sorted.",
   count:
     "Count rows. Very fast with index. Run qsv_index first for files >10MB.",
   headers: "View/rename column names. Quick CSV structure discovery.",
@@ -120,6 +120,8 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
   cat: "Concatenate CSV files. Subcommands: rows (stack vertically), rowskey (different schemas), columns (side-by-side). Specify via subcommand parameter.",
   geocode:
     "Geocode locations using Geonames/MaxMind. Subcommands: suggest, reverse, countryinfo, iplookup. Specify via subcommand parameter.",
+  pivotp:
+    "Polars-powered pivot tables. Use --agg for aggregation (sum/mean/count/first/last/min/max/smart). 📊 Run qsv_data_profile first to check pivot column cardinality and value column types.",
 };
 
 /**
@@ -133,9 +135,13 @@ const COMMON_PATTERNS: Record<string, string> = {
     "First step: select columns → filter → sort → output. Speeds up downstream ops.",
   search: "Combine with select: search (filter rows) → select (pick columns).",
   frequency:
-    "Pair with stats: stats for numeric, frequency for categorical. Run stats first with --cardinality option.",
+    "Profile → Frequency: Use qsv_data_profile first to identify columns with <ALL_UNIQUE> (IDs) to exclude from frequency analysis.",
   sqlp: 'Replaces pipelines: "SELECT * FROM data WHERE x > 10 ORDER BY y LIMIT 100" vs select→search→sort→slice.',
   join: "Run qsv_index first on both files for speed.",
+  joinp:
+    "Profile → Join: qsv_data_profile both files, put lower-cardinality join column on right for efficiency.",
+  pivotp:
+    "Profile → Pivot: Use qsv_data_profile to verify pivot column cardinality is reasonable (<1000) before pivoting.",
   sample:
     "Quick preview (100 rows) or test data (1000 rows). Faster than qsv_slice for random.",
   validate: "Iterate: qsv_schema → validate → fix → validate until clean.",
@@ -155,7 +161,9 @@ const ERROR_PREVENTION_HINTS: Record<string, string> = {
   dedup: "May OOM on files >1GB. Use qsv_extdedup for large files.",
   sort: "May OOM on files >1GB. Use qsv_extsort for large files.",
   frequency:
-    "Avoid high-cardinality columns (IDs, timestamps). Calculate cardinality with qsv_stats first.",
+    "High-cardinality columns (IDs, timestamps) produce huge output. Use qsv_data_profile first to check for <ALL_UNIQUE> markers.",
+  pivotp:
+    "High-cardinality pivot columns create wide output. Use qsv_data_profile to check cardinality first.",
   sqlp: "When encountering errors with sqlp, use DuckDB when available instead for complex queries.",
   moarstats:
     "Run stats first to create cache. Slower than stats but richer output.",
@@ -494,6 +502,7 @@ const COMMANDS_WITH_COMMON_MISTAKES = new Set([
   "searchset",
   "moarstats",
   "frequency",
+  "pivotp",
 ]);
 
 /**

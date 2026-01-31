@@ -141,7 +141,7 @@ const COMMON_PATTERNS: Record<string, string> = {
   joinp:
     "Profile → Join: qsv_data_profile both files, put lower-cardinality join column on right for efficiency.",
   pivotp:
-    "Profile → Pivot: Use qsv_data_profile to verify pivot column cardinality is reasonable (<1000) before pivoting.",
+    "Profile → Pivot: Use qsv_data_profile to estimate pivot output width (pivot column cardinalities × value columns) and keep estimated columns below ~1000 to avoid overly wide pivots.",
   sample:
     "Quick preview (100 rows) or test data (1000 rows). Faster than qsv_slice for random.",
   validate: "Iterate: qsv_schema → validate → fix → validate until clean.",

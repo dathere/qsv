@@ -106,7 +106,7 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
     "Infer data types, generate Polars Schema & JSON Schema.",
   validate:
     "Validate against JSON Schema. Check data quality, type correctness. Also use this without a JSON Schema to check if a CSV is well-formed.",
-  sqlp: "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns.",
+  sqlp: "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns. 📊 For optimal queries: Run qsv_data_profile first to understand column cardinalities, value distributions, null patterns, and data types.",
   apply:
     "Transform columns (trim, upper, lower, squeeze, strip). For custom logic, use qsv_luau.",
   rename:
@@ -1753,4 +1753,347 @@ export async function handleSearchToolsCall(
       },
     ],
   };
+}
+
+/**
+ * Create qsv_data_profile tool definition
+ * Profiles CSV data for SQL query optimization using qsv frequency --toon
+ */
+export function createDataProfileTool(): McpToolDefinition {
+  return {
+    name: "qsv_data_profile",
+    description: `Profile a CSV file for SQL query optimization using qsv frequency --toon.
+
+Returns column statistics in TOON format (token-efficient for LLMs) including:
+- Data types (Integer, Float, String, Date, DateTime, Boolean)
+- Cardinality and uniqueness_ratio (identifies keys vs categorical columns)
+- Null counts and sparsity (affects JOIN/WHERE behavior)
+- Min/max values, ranges, and sort_order (for range queries)
+- Top frequent values with percentages and counts
+
+💡 USE WHEN: Before writing complex sqlp queries. Helps choose optimal:
+- JOIN order (smaller cardinality table first)
+- GROUP BY columns (low cardinality = efficient)
+- WHERE selectivity (high-cardinality columns filter more)
+- Index columns (uniqueness_ratio=1 = good key candidate)
+
+📋 COMMON PATTERN: qsv_data_profile → analyze output → compose optimized sqlp query
+
+🔍 INTERPRETATION GUIDE:
+- <ALL_UNIQUE> = ID/key column (uniqueness_ratio=1), good for JOINs
+- Low cardinality (<100) = categorical, efficient for GROUP BY
+- High sparsity (>0.5) = many NULLs, consider in WHERE clauses
+- sort_order=Ascending/Descending = pre-sorted, efficient for ORDER BY`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        input_file: {
+          type: "string",
+          description: "Path to input CSV file to profile",
+        },
+        limit: {
+          type: "number",
+          description:
+            "Top N frequent values per column (default: 10). Set to 0 for no limit.",
+        },
+        columns: {
+          type: "string",
+          description:
+            'Optional: specific columns to profile (comma-separated or qsv select syntax). Example: "name,age,city" or "1,3,5"',
+        },
+        no_stats: {
+          type: "boolean",
+          description:
+            "Exclude additional stats (min, max, mean, etc.) from output. Reduces output size.",
+        },
+      },
+      required: ["input_file"],
+    },
+  };
+}
+
+/**
+ * Handle qsv_data_profile tool call
+ * Runs qsv frequency --toon to profile data for SQL optimization
+ */
+export async function handleDataProfileCall(
+  params: Record<string, unknown>,
+  filesystemProvider?: FilesystemProviderExtended,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  // Validate input_file parameter
+  let inputFile = params.input_file as string | undefined;
+
+  if (!inputFile) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: "Error: input_file parameter is required",
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  // Resolve file path using filesystem provider if available
+  if (filesystemProvider) {
+    try {
+      const originalInputFile = inputFile;
+      inputFile = await filesystemProvider.resolvePath(inputFile);
+      console.error(
+        `[MCP Tools] data_profile: Resolved input file: ${originalInputFile} -> ${inputFile}`,
+      );
+
+      // Check if file needs conversion (Excel or JSONL to CSV)
+      if (isFilesystemProviderExtended(filesystemProvider)) {
+        const provider = filesystemProvider;
+
+        if (provider.needsConversion(inputFile)) {
+          const conversionCmd = provider.getConversionCommand(inputFile);
+          if (!conversionCmd) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Error: Unable to determine conversion command for: ${inputFile}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          // For data profiling, we need a CSV file. Convert if necessary.
+          console.error(
+            `[MCP Tools] data_profile: File requires conversion using qsv ${conversionCmd}`,
+          );
+
+          try {
+            const qsvBin = getQsvBinaryPath();
+            const { randomUUID } = await import("crypto");
+            const uuid = randomUUID().replace(/-/g, "").substring(0, 16);
+            let convertedPath = `${inputFile}.converted.${uuid}.csv`;
+
+            // Validate the converted path
+            try {
+              convertedPath = await provider.resolvePath(convertedPath);
+            } catch (error) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `Error: Invalid converted file path: ${convertedPath} - ${error}`,
+                  },
+                ],
+                isError: true,
+              };
+            }
+
+            // Initialize converted file manager
+            const workingDir = provider.getWorkingDirectory();
+            const convertedManager = new ConvertedFileManager(workingDir);
+            await convertedManager.cleanupOrphanedEntries();
+
+            // Check for existing converted file
+            const {
+              basename: getBasename,
+              dirname: getDirname,
+              join: joinPath,
+            } = await import("path");
+            const { readdir } = await import("fs/promises");
+
+            const baseName = getBasename(inputFile);
+            const pattern = `${baseName}.converted.`;
+            let validConverted: string | null = null;
+
+            try {
+              const dir = getDirname(inputFile);
+              const files = await readdir(dir);
+
+              for (const file of files) {
+                if (file.startsWith(pattern) && file.endsWith(".csv")) {
+                  const filePath = joinPath(dir, file);
+                  validConverted =
+                    await convertedManager.getValidConvertedFile(
+                      inputFile,
+                      filePath,
+                    );
+                  if (validConverted) break;
+                }
+              }
+            } catch {
+              // If readdir fails, proceed with conversion
+            }
+
+            if (validConverted) {
+              await convertedManager.touchConvertedFile(inputFile);
+              inputFile = validConverted;
+              console.error(
+                `[MCP Tools] data_profile: Reusing existing conversion: ${validConverted}`,
+              );
+            } else {
+              // Run conversion
+              await convertedManager.registerConversionStart(
+                inputFile,
+                convertedPath,
+              );
+
+              const conversionArgs = [
+                conversionCmd,
+                inputFile,
+                "--output",
+                convertedPath,
+              ];
+
+              await runQsvWithTimeout(qsvBin, conversionArgs);
+              await convertedManager.registerConvertedFile(
+                inputFile,
+                convertedPath,
+              );
+              await convertedManager.registerConversionComplete(inputFile);
+              inputFile = convertedPath;
+              console.error(
+                `[MCP Tools] data_profile: Conversion successful: ${convertedPath}`,
+              );
+
+              // Auto-index the converted file
+              await autoIndexIfNeeded(convertedPath);
+            }
+          } catch (conversionError) {
+            console.error(
+              `[MCP Tools] data_profile: Conversion error:`,
+              conversionError,
+            );
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Error converting file: ${conversionError instanceof Error ? conversionError.message : String(conversionError)}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+        }
+      }
+
+      // Auto-index if needed
+      await autoIndexIfNeeded(inputFile);
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error resolving file path: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
+  // Build qsv frequency command with --toon flag
+  const qsvBin = getQsvBinaryPath();
+  const qsvArgs = ["frequency", "--toon"];
+
+  // Add --limit option
+  if (params.limit !== undefined) {
+    qsvArgs.push("--limit", String(params.limit));
+  }
+
+  // Add --select option for specific columns
+  if (params.columns) {
+    qsvArgs.push("--select", String(params.columns));
+  }
+
+  // Add --no-stats option
+  if (params.no_stats === true) {
+    qsvArgs.push("--no-stats");
+  }
+
+  // Add input file
+  qsvArgs.push(inputFile);
+
+  console.error(`[MCP Tools] data_profile: Running ${qsvBin} ${qsvArgs.join(" ")}`);
+
+  // Execute qsv frequency --toon
+  return new Promise((resolve) => {
+    const proc = spawn(qsvBin, qsvArgs, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    activeProcesses.add(proc);
+
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      activeProcesses.delete(proc);
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill("SIGTERM");
+      cleanup();
+      resolve({
+        content: [
+          {
+            type: "text",
+            text: `Error: data_profile operation timed out after ${config.operationTimeoutMs}ms`,
+          },
+        ],
+        isError: true,
+      });
+    }, config.operationTimeoutMs);
+
+    proc.stdout?.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    proc.stderr?.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    proc.on("close", (code) => {
+      cleanup();
+      if (!timedOut) {
+        if (code === 0) {
+          resolve({
+            content: [
+              {
+                type: "text",
+                text: stdout,
+              },
+            ],
+          });
+        } else {
+          resolve({
+            content: [
+              {
+                type: "text",
+                text: `Error running qsv frequency --toon:\n${stderr}`,
+              },
+            ],
+            isError: true,
+          });
+        }
+      }
+    });
+
+    proc.on("error", (err) => {
+      cleanup();
+      if (!timedOut) {
+        resolve({
+          content: [
+            {
+              type: "text",
+              text: `Error spawning qsv: ${err.message}`,
+            },
+          ],
+          isError: true,
+        });
+      }
+    });
+  });
 }

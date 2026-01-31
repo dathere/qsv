@@ -37,7 +37,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
-    "wink-bm25-text-search": "^2.0.0",
+    "wink-bm25-text-search": "^3.0.0",
     "wink-nlp-utils": "^2.1.0"
   },
   "engines": {

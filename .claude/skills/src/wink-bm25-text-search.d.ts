@@ -3,10 +3,10 @@
  */
 
 declare module "wink-bm25-text-search" {
-  interface PrepTask {
-    name: string;
-    args?: unknown[];
-  }
+  /**
+   * Text preprocessing function that takes a string and returns tokens
+   */
+  type PrepFunction = (text: string) => string[];
 
   interface FieldWeights {
     [field: string]: number;
@@ -28,8 +28,9 @@ declare module "wink-bm25-text-search" {
 
     /**
      * Define preprocessing tasks for text
+     * Each function takes a string and returns an array of tokens
      */
-    definePrepTasks(tasks: PrepTask[]): void;
+    definePrepTasks(tasks: PrepFunction[]): void;
 
     /**
      * Add a document to the index

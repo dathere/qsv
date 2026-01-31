@@ -72,6 +72,11 @@ export class ToolSearchIndex {
     this.indexed = false;
     this.indexedCount = 0;
 
+    // Handle empty skills array - skip consolidation to avoid BM25 error
+    if (skills.length === 0) {
+      return;
+    }
+
     // Index each skill as a document with weighted fields
     for (let i = 0; i < skills.length; i++) {
       const skill = skills[i];

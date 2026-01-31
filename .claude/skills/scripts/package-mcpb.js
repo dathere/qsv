@@ -6,7 +6,7 @@
  * - manifest.json
  * - server/ (compiled JavaScript from dist/)
  * - node_modules/ (bundled dependencies)
- * - qsv/ (60 skill JSON definitions)
+ * - qsv/ (56 skill JSON definitions)
  * - icon.png (if exists)
  */
 
@@ -192,7 +192,7 @@ function displaySummary() {
   console.log('   1. Test locally: Drag .mcpb file into Claude Desktop settings');
   console.log('   2. Configure qsv binary path in extension settings');
   console.log('   3. Restart Claude Desktop');
-  console.log('   4. Verify all 60 qsv skills are available');
+  console.log('   4. Verify all 56 qsv skills are available');
   console.log('\n📚 Documentation:');
   console.log('   - Desktop Extension Guide: DESKTOP_EXTENSION.md');
   console.log('   - Installation Guide: README.md');

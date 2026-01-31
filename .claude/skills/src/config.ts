@@ -757,6 +757,36 @@ export const config = {
   ),
 
   /**
+   * Profile cache enabled
+   * Caches TOON profile output from qsv_data_profile for faster repeated calls
+   * Default: true
+   */
+  profileCacheEnabled: getBooleanEnv("QSV_MCP_PROFILE_CACHE_ENABLED", true),
+
+  /**
+   * Maximum size for profile cache in MB
+   * Default: 10 MB
+   */
+  profileCacheMaxSizeMB: parseIntEnv(
+    "QSV_MCP_PROFILE_CACHE_SIZE_MB",
+    10, // Default: 10 MB
+    1, // Minimum: 1 MB
+    500, // Maximum: 500 MB
+  ),
+
+  /**
+   * Profile cache TTL in milliseconds
+   * Cached profiles expire after this time
+   * Default: 1 hour (3600000 ms)
+   */
+  profileCacheTtlMs: parseIntEnv(
+    "QSV_MCP_PROFILE_CACHE_TTL_MS",
+    60 * 60 * 1000, // Default: 1 hour
+    60 * 1000, // Minimum: 1 minute
+    24 * 60 * 60 * 1000, // Maximum: 24 hours
+  ),
+
+  /**
    * Detect if running in Desktop Extension mode
    * Desktop extensions set MCPB_EXTENSION_MODE=true
    */

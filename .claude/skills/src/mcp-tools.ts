@@ -7,6 +7,7 @@ import { stat, access } from "fs/promises";
 import { constants } from "fs";
 import { basename } from "path";
 import { ConvertedFileManager } from "./converted-file-manager.js";
+import { ProfileCacheManager } from "./profile-cache-manager.js";
 import type {
   QsvSkill,
   Argument,
@@ -2017,6 +2018,44 @@ export async function handleDataProfileCall(
     }
   }
 
+  // Check profile cache (if enabled)
+  let profileCache: ProfileCacheManager | null = null;
+  if (config.profileCacheEnabled) {
+    const workingDir = filesystemProvider
+      ? (filesystemProvider as FilesystemProviderExtended).getWorkingDirectory?.() ?? config.workingDir
+      : config.workingDir;
+
+    profileCache = new ProfileCacheManager(workingDir, {
+      maxSizeMB: config.profileCacheMaxSizeMB,
+      ttlMs: config.profileCacheTtlMs,
+    });
+
+    const profileOptions = {
+      limit: params.limit as number | undefined,
+      columns: params.columns as string | undefined,
+      no_stats: params.no_stats as boolean | undefined,
+    };
+
+    const cachedProfile = await profileCache.getCachedProfile(
+      inputFile,
+      profileOptions,
+    );
+
+    if (cachedProfile !== null) {
+      console.error(
+        `[MCP Tools] data_profile: Cache hit for ${inputFile}`,
+      );
+      return {
+        content: [
+          {
+            type: "text",
+            text: cachedProfile,
+          },
+        ],
+      };
+    }
+  }
+
   // Build qsv frequency command with --toon flag
   const qsvBin = getQsvBinaryPath();
   const qsvArgs = ["frequency", "--toon"];
@@ -2085,6 +2124,7 @@ export async function handleDataProfileCall(
       cleanup();
       if (!timedOut) {
         if (code === 0) {
+          // Resolve immediately with the result
           resolve({
             content: [
               {
@@ -2093,6 +2133,22 @@ export async function handleDataProfileCall(
               },
             ],
           });
+
+          // Cache the profile fire-and-forget (if caching enabled)
+          // This avoids adding latency to the response
+          if (profileCache && config.profileCacheEnabled) {
+            const profileOptions = {
+              limit: params.limit as number | undefined,
+              columns: params.columns as string | undefined,
+              no_stats: params.no_stats as boolean | undefined,
+            };
+
+            profileCache.cacheProfile(inputFile, profileOptions, stdout).catch((err) => {
+              console.error(
+                `[MCP Tools] data_profile: Failed to cache profile: ${err}`,
+              );
+            });
+          }
         } else {
           resolve({
             content: [

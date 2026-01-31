@@ -303,6 +303,9 @@ The extension is configured via environment variables in Claude Desktop's MCP se
 | `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates on startup |
 | `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications |
 | `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repo for release checks |
+| `QSV_MCP_PROFILE_CACHE_ENABLED` | `true` | Enable profile caching for data_profile |
+| `QSV_MCP_PROFILE_CACHE_SIZE_MB` | `10` | Max profile cache size (1-500 MB) |
+| `QSV_MCP_PROFILE_CACHE_TTL_MS` | `3600000` | Profile cache TTL (1min-24hr, default 1hr) |
 
 **Template variable expansion:**
 - `$HOME` and `${HOME}` expand to user's home directory

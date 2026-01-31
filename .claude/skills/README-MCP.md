@@ -171,6 +171,9 @@ This script will:
 | `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications in logs |
 | `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repository to check for releases |
 | `QSV_MCP_EXPOSE_ALL_TOOLS` | auto-detect | Controls tool exposure mode. `true`: always expose all 60+ tools. `false`: always use 13 common tools (overrides auto-detect). Unset: auto-detect based on client (Claude clients get all tools automatically) |
+| `QSV_MCP_PROFILE_CACHE_ENABLED` | `true` | Enable caching of TOON profiles from qsv_data_profile |
+| `QSV_MCP_PROFILE_CACHE_SIZE_MB` | `10` | Maximum size for profile cache (1-500 MB) |
+| `QSV_MCP_PROFILE_CACHE_TTL_MS` | `3600000` | Profile cache TTL in milliseconds (1 min - 24 hours, default 1 hour) |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 

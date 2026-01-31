@@ -91,7 +91,7 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
   moarstats:
     "Comprehensive stats + bivariate stats + data type inference. Slower but richer than stats.",
   frequency:
-    "Count unique values. Best for low-cardinality categorical columns. 📊 Run qsv_data_profile first to identify high-cardinality columns (shows <ALL_UNIQUE>) to exclude.",
+    "Count unique values. Best for low-cardinality categorical columns. 📊 Run qsv_data_profile first to identify high- or near-high-cardinality columns (high cardinality or uniqueness_ratio close to 1, often marked <ALL_UNIQUE>) to exclude.",
   join: "Join CSV files (<50MB). For large/complex joins, use qsv_joinp.",
   joinp:
     "Fast Polars-powered joins for large files (>50MB) or SQL-like joins (inner/left/right/outer/cross). 📊 Run qsv_data_profile first to determine optimal table order (smaller cardinality on right).",

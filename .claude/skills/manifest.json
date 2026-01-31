@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.3",
   "name": "qsv",
-  "version": "15.2.0",
+  "version": "15.3.0",
   "description": "Blazingly fast Data Wrangling Toolkit for Tabular Data",
   "long_description": "Comprehensive data-wrangling toolkit for transforming, analyzing, querying & validating tabular data. Process local CSV, TSV, SSV, Excel/ODS, and JSONL files w/o uploading. Despite the warning, only accesses APPROVED DIRECTORIES on your computer.",
   "author": {
@@ -128,6 +128,19 @@
       "min": 0,
       "max": 20
     }
+  },
+  "default_config": {
+    "defer_loading": true
+  },
+  "tool_configs": {
+    "qsv_search_tools": { "defer_loading": false },
+    "qsv_config": { "defer_loading": false },
+    "qsv_set_working_dir": { "defer_loading": false },
+    "qsv_get_working_dir": { "defer_loading": false },
+    "qsv_list_files": { "defer_loading": false },
+    "qsv_data_profile": { "defer_loading": false },
+    "qsv_pipeline": { "defer_loading": false },
+    "qsv_command": { "defer_loading": false }
   },
   "tools": [
     {

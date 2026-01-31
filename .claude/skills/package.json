@@ -1,6 +1,6 @@
 {
   "name": "@qsv/agent-skills",
-  "version": "15.2.0",
+  "version": "15.3.0",
   "description": "Agent Skills for qsv tabular data-wrangling toolkit",
   "type": "module",
   "main": "dist/index.js",
@@ -36,7 +36,9 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.25.2"
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "wink-bm25-text-search": "^2.0.0",
+    "wink-nlp-utils": "^2.1.0"
   },
   "engines": {
     "node": ">=18.0.0"

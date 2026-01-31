@@ -51,6 +51,21 @@ import { VERSION } from "./version.js";
 import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
 
 /**
+ * Core tools that are always available (defer_loading: false)
+ * These are essential utility tools that enable tool discovery and session management
+ */
+const CORE_TOOLS = [
+  "qsv_search_tools",
+  "qsv_config",
+  "qsv_set_working_dir",
+  "qsv_get_working_dir",
+  "qsv_list_files",
+  "qsv_data_profile",
+  "qsv_pipeline",
+  "qsv_command",
+] as const;
+
+/**
  * QSV MCP Server implementation
  */
 class QsvMcpServer {
@@ -60,6 +75,13 @@ class QsvMcpServer {
   private filesystemProvider: FilesystemResourceProvider;
   private updateChecker: UpdateChecker;
   private loggedClientDetection: boolean = false;
+
+  /**
+   * Track which tools have been loaded via search (for deferred loading)
+   * Tools are added here when discovered via qsv_search_tools
+   * and will be included in subsequent ListTools responses
+   */
+  private loadedTools: Set<string> = new Set();
 
   constructor() {
     this.server = new Server(
@@ -342,26 +364,38 @@ class QsvMcpServer {
             `[Server] ✓ Loaded ${loadedCount} tools (skipped ${skippedCount} unavailable commands)`,
           );
         } else {
-          // Standard mode: Only expose common command tools
+          // Standard mode with deferred loading:
+          // 1. Expose common command tools
+          // 2. Include tools that have been loaded via qsv_search_tools
           const filteredCommands = availableCommands
             ? COMMON_COMMANDS.filter((cmd) => availableCommands.includes(cmd))
             : COMMON_COMMANDS; // Fallback to all if availableCommands not detected
 
           // Load only the skills we need (batch loading)
           const skillNames = filteredCommands.map((cmd) => `qsv-${cmd}`);
+
+          // Also include any tools that have been loaded via search
+          // These are tools discovered via qsv_search_tools
+          const searchedToolNames = Array.from(this.loadedTools)
+            .filter((name) => !CORE_TOOLS.includes(name as typeof CORE_TOOLS[number]))
+            .map((name) => name.replace("qsv_", "qsv-"));
+
+          // Combine and deduplicate skill names
+          const allSkillNames = [...new Set([...skillNames, ...searchedToolNames])];
+
           console.error(
-            `[Server] Loading ${skillNames.length} common command skills...`,
+            `[Server] Loading ${skillNames.length} common + ${searchedToolNames.length} searched skills...`,
           );
 
-          const loadedSkills = await this.loader.loadByNames(skillNames);
+          const loadedSkills = await this.loader.loadByNames(allSkillNames);
           console.error(
-            `[Server] Loaded ${loadedSkills.size}/${filteredCommands.length} common skills`,
+            `[Server] Loaded ${loadedSkills.size}/${allSkillNames.length} skills`,
           );
 
           // Log any skills that failed to load (requested but not returned)
-          const loadedSkillNames = new Set(loadedSkills.keys());
-          const failedSkillNames = skillNames.filter(
-            (name) => !loadedSkillNames.has(name),
+          const loadedSkillNamesSet = new Set(loadedSkills.keys());
+          const failedSkillNames = allSkillNames.filter(
+            (name) => !loadedSkillNamesSet.has(name),
           );
           if (failedSkillNames.length > 0) {
             console.error(
@@ -392,7 +426,7 @@ class QsvMcpServer {
               );
             }
           }
-          console.error(`[Server] Loaded ${tools.length} common command tools`);
+          console.error(`[Server] Loaded ${tools.length} command tools (${skillNames.length} common + ${searchedToolNames.length} from search)`);
         }
 
         // Add generic qsv_command tool
@@ -636,7 +670,11 @@ class QsvMcpServer {
 
         // Handle search tools
         if (name === "qsv_search_tools") {
-          return await handleSearchToolsCall(args || {}, this.loader);
+          return await handleSearchToolsCall(
+            args || {},
+            this.loader,
+            this.loadedTools,
+          );
         }
 
         // Handle data profile tool

@@ -25,6 +25,16 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 
 ## What's New
 
+### Version 15.3.0
+- **BM25 Search Integration** - Upgraded `qsv_search_tools` from substring matching to BM25 relevance ranking
+  - Uses `wink-bm25-text-search` for probabilistic information retrieval
+  - Field-weighted search prioritizes name (3x), category (2x), description (1x), examples (0.5x)
+  - Text preprocessing with stemming, lowercasing, and negation propagation
+- **Deferred Tool Loading** - Implements Anthropic's Tool Search Tool pattern
+  - Only 8 core tools loaded initially (reduces token usage ~85%)
+  - Tools found via search are dynamically added to subsequent ListTools responses
+  - Core tools always available: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_data_profile`, `qsv_pipeline`, `qsv_command`
+
 ### Version 15.2.0
 - **Dataset Profiling** - New `qsv_data_profile` tool profiles CSV files to help Claude make informed decisions
   - Uses `qsv frequency --toon` to generate column statistics in TOON format (token-efficient for LLMs)

@@ -1597,10 +1597,16 @@ export function createSearchToolsTool(): McpToolDefinition {
 /**
  * Handle qsv_search_tools call
  * Searches loaded skills and returns matching tools
+ * Marks found tools as loaded for deferred loading
+ *
+ * @param params - Search parameters (query, category, limit)
+ * @param loader - SkillLoader instance for searching skills
+ * @param loadedTools - Optional Set to track loaded tools for deferred loading
  */
 export async function handleSearchToolsCall(
   params: Record<string, unknown>,
   loader: SkillLoader,
+  loadedTools?: Set<string>,
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
   const query = params.query as string;
   const category = params.category as string | undefined;
@@ -1699,6 +1705,18 @@ export async function handleSearchToolsCall(
 
   // Limit results
   const limitedResults = results.slice(0, limit);
+
+  // Mark found tools as loaded for deferred loading
+  // This allows them to appear in subsequent ListTools responses
+  if (loadedTools) {
+    for (const skill of limitedResults) {
+      const toolName = skill.name.replace("qsv-", "qsv_");
+      loadedTools.add(toolName);
+    }
+    console.error(
+      `[MCP Tools] Marked ${limitedResults.length} tools as loaded for deferred loading`,
+    );
+  }
 
   if (limitedResults.length === 0) {
     // Provide helpful suggestions

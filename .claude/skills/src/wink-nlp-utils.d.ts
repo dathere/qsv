@@ -33,7 +33,6 @@ declare module "wink-nlp-utils" {
     ngrams: (tokens: string[], n: number) => string[];
     phonetize: (tokens: string[]) => string[];
     soundex: (tokens: string[]) => string[];
-    stem: (tokens: string[]) => string[];
     sow: (tokens: string[], size?: number) => number[];
   }
 

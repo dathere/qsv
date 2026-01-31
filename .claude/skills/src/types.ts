@@ -193,19 +193,3 @@ export interface FilesystemProviderExtended {
   ) => Promise<{ resources: McpResource[] }>;
 }
 
-/**
- * Deferred loading configuration for tools
- * When defer_loading is true, tools are not returned in initial ListTools
- * but can be discovered via search and loaded on demand
- */
-export interface DeferredLoadingConfig {
-  defer_loading: boolean;
-}
-
-/**
- * Manifest configuration for tool loading behavior
- */
-export interface ManifestConfig {
-  default_config?: DeferredLoadingConfig;
-  tool_configs?: Record<string, DeferredLoadingConfig>;
-}

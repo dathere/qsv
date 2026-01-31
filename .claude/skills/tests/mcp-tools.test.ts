@@ -289,3 +289,63 @@ test('handleDataProfileCall handles non-existent file', async () => {
   assert.strictEqual(result.isError, true);
   assert.ok(result.content[0].text?.includes('Error'));
 });
+
+// ============================================================================
+// Deferred Loading Tests (loadedTools parameter)
+// ============================================================================
+
+test('handleSearchToolsCall marks found tools as loaded', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  // Create a Set to track loaded tools
+  const loadedTools = new Set<string>();
+
+  // Verify the set is initially empty
+  assert.strictEqual(loadedTools.size, 0);
+
+  // Search for tools - this should populate loadedTools
+  const result = await handleSearchToolsCall({ query: 'stats' }, loader, loadedTools);
+
+  assert.ok(result.content.length > 0);
+  // The search found tools, so they should be marked as loaded
+  if (!result.content[0].text?.includes('No tools found')) {
+    assert.ok(loadedTools.size > 0, 'Found tools should be marked as loaded');
+    // Verify tool names follow expected format (qsv_*)
+    for (const toolName of loadedTools) {
+      assert.ok(toolName.startsWith('qsv_'), `Tool name ${toolName} should start with qsv_`);
+    }
+  }
+});
+
+test('handleSearchToolsCall works without loadedTools parameter', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  // Call without loadedTools (undefined)
+  const result = await handleSearchToolsCall({ query: 'select' }, loader);
+
+  // Should work without errors
+  assert.ok(result.content.length > 0);
+  // Should return results or no-match message
+  const text = result.content[0].text || '';
+  assert.ok(text.includes('qsv_') || text.includes('No tools found'));
+});
+
+test('handleSearchToolsCall accumulates loaded tools across searches', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  const loadedTools = new Set<string>();
+
+  // First search
+  await handleSearchToolsCall({ query: 'stats' }, loader, loadedTools);
+  const sizeAfterFirst = loadedTools.size;
+
+  // Second search for different tools
+  await handleSearchToolsCall({ query: 'join' }, loader, loadedTools);
+  const sizeAfterSecond = loadedTools.size;
+
+  // Should accumulate (not reset)
+  assert.ok(sizeAfterSecond >= sizeAfterFirst, 'loadedTools should accumulate across searches');
+});

@@ -97,7 +97,7 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
     "Fast Polars-powered joins for large files (>50MB) or SQL-like joins (inner/left/right/outer/cross). 📊 Run qsv_data_profile first to determine optimal table order (smaller cardinality on right).",
   dedup:
     "Remove duplicates. Loads entire CSV. For large files (>1GB), use qsv_extdedup. 📊 Run qsv_data_profile first - uniqueness_ratio=1/<ALL_UNIQUE> is per-column; if any column in the dedup key is all-unique, dedup will be a no-op for that key, otherwise duplicates may still exist.",
-  sort: "Sort by columns. Loads entire file. For large files (>1GB), use qsv_extsort. 📊 Run qsv_data_profile first - if sort_order shows Ascending/Descending, data is pre-sorted.",
+  sort: "Sort by columns. Loads entire file. For large files (>1GB), use qsv_extsort. 📊 Run qsv_data_profile first - if sort_order for your target column shows Ascending/Descending, the data is already sorted for that column in that direction.",
   count:
     "Count rows. Very fast with index. Run qsv_index first for files >10MB.",
   headers: "View/rename column names. Quick CSV structure discovery.",

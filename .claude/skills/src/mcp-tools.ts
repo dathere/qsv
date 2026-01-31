@@ -7,6 +7,7 @@ import { stat, access } from "fs/promises";
 import { constants } from "fs";
 import { basename } from "path";
 import { ConvertedFileManager } from "./converted-file-manager.js";
+import { ProfileCacheManager } from "./profile-cache-manager.js";
 import type {
   QsvSkill,
   Argument,
@@ -2017,6 +2018,44 @@ export async function handleDataProfileCall(
     }
   }
 
+  // Check profile cache (if enabled)
+  let profileCache: ProfileCacheManager | null = null;
+  if (config.profileCacheEnabled) {
+    const workingDir = filesystemProvider
+      ? (filesystemProvider as FilesystemProviderExtended).getWorkingDirectory?.() ?? process.cwd()
+      : process.cwd();
+
+    profileCache = new ProfileCacheManager(workingDir, {
+      maxSizeMB: config.profileCacheMaxSizeMB,
+      ttlMs: config.profileCacheTtlMs,
+    });
+
+    const profileOptions = {
+      limit: params.limit as number | undefined,
+      columns: params.columns as string | undefined,
+      no_stats: params.no_stats as boolean | undefined,
+    };
+
+    const cachedProfile = await profileCache.getCachedProfile(
+      inputFile,
+      profileOptions,
+    );
+
+    if (cachedProfile) {
+      console.error(
+        `[MCP Tools] data_profile: Cache hit for ${inputFile}`,
+      );
+      return {
+        content: [
+          {
+            type: "text",
+            text: cachedProfile,
+          },
+        ],
+      };
+    }
+  }
+
   // Build qsv frequency command with --toon flag
   const qsvBin = getQsvBinaryPath();
   const qsvArgs = ["frequency", "--toon"];
@@ -2081,10 +2120,28 @@ export async function handleDataProfileCall(
       stderr += chunk.toString();
     });
 
-    proc.on("close", (code) => {
+    proc.on("close", async (code) => {
       cleanup();
       if (!timedOut) {
         if (code === 0) {
+          // Cache the profile (if caching enabled and we have a cache instance)
+          if (profileCache && config.profileCacheEnabled) {
+            const profileOptions = {
+              limit: params.limit as number | undefined,
+              columns: params.columns as string | undefined,
+              no_stats: params.no_stats as boolean | undefined,
+            };
+
+            await profileCache.cacheProfile(inputFile, profileOptions, stdout).catch((err) => {
+              console.error(
+                `[MCP Tools] data_profile: Failed to cache profile: ${err}`,
+              );
+            });
+            console.error(
+              `[MCP Tools] data_profile: Cached profile for ${inputFile}`,
+            );
+          }
+
           resolve({
             content: [
               {

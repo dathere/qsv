@@ -7,6 +7,7 @@
 
 import { readdir, stat, readFile, realpath, access } from "fs/promises";
 import { join, resolve, relative, basename, extname } from "path";
+import { homedir } from "os";
 import { spawn } from "child_process";
 import type {
   McpResource,
@@ -16,6 +17,26 @@ import type {
 } from "./types.js";
 import { formatBytes } from "./utils.js";
 import { config } from "./config.js";
+
+/**
+ * Expand tilde (~) in paths to the user's home directory
+ * Handles: ~ (home dir), ~/path or ~\path (relative to home)
+ */
+function expandTilde(path: string): string {
+  if (!path) return path;
+
+  // Handle ~/ or ~\ (Windows users might use backslash)
+  if (path.startsWith("~/") || path.startsWith("~\\")) {
+    return join(homedir(), path.slice(2));
+  }
+
+  // Handle ~ alone (just home directory)
+  if (path === "~") {
+    return homedir();
+  }
+
+  return path;
+}
 
 /**
  * Cache expiration time in milliseconds (1 minute)
@@ -130,7 +151,8 @@ export class FilesystemResourceProvider {
    * Only allows directories within existing allowed directories for security
    */
   setWorkingDirectory(dir: string): void {
-    const newDir = resolve(dir);
+    const expanded = expandTilde(dir);
+    const newDir = resolve(expanded);
 
     // Validate that new working directory is within allowed directories
     const isAllowed = this.allowedDirs.some((allowedDir) => {
@@ -164,7 +186,8 @@ export class FilesystemResourceProvider {
       return this.workingDir;
     }
 
-    const resolved = resolve(this.workingDir, path);
+    const expanded = expandTilde(path);
+    const resolved = resolve(this.workingDir, expanded);
 
     // Canonicalize the path to resolve symlinks
     let canonical: string;

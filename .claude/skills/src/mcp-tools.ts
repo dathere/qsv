@@ -1820,6 +1820,32 @@ export async function handleDataProfileCall(
   params: Record<string, unknown>,
   filesystemProvider?: FilesystemProviderExtended,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  // Reject new operations during shutdown
+  if (isShuttingDown) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: "Error: Server is shutting down, operation rejected",
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  // Check concurrent operation limit
+  if (activeProcesses.size >= config.maxConcurrentOperations) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Error: Maximum concurrent operations limit reached (${config.maxConcurrentOperations}). Please wait for current operations to complete.`,
+        },
+      ],
+      isError: true,
+    };
+  }
+
   // Validate input_file parameter
   let inputFile = params.input_file as string | undefined;
 

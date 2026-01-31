@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { writeFileSync, unlinkSync, mkdtempSync } from 'fs';
+import { writeFileSync, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -217,13 +217,9 @@ test('handleDataProfileCall returns TOON format output', async () => {
     assert.ok(text.includes('cardinality:'), 'TOON output should include cardinality');
     assert.ok(text.includes('frequencies['), 'TOON output should include frequencies');
   } finally {
-    // Cleanup
+    // Cleanup - remove temp directory and all contents
     try {
-      unlinkSync(testCsvPath);
-      // Also try to clean up index if created
-      try { unlinkSync(testCsvPath + '.idx'); } catch { /* ignore */ }
-      try { unlinkSync(testCsvPath + '.stats.csv'); } catch { /* ignore */ }
-      try { unlinkSync(testCsvPath + '.stats.csv.stats.jsonl'); } catch { /* ignore */ }
+      rmSync(tempDir, { recursive: true, force: true });
     } catch { /* ignore cleanup errors */ }
   }
 });
@@ -250,11 +246,9 @@ test('handleDataProfileCall respects limit parameter', async () => {
     const text = result.content[0].text || '';
     assert.ok(text.includes('frequencies['), 'Should include frequency data');
   } finally {
+    // Cleanup - remove temp directory and all contents
     try {
-      unlinkSync(testCsvPath);
-      try { unlinkSync(testCsvPath + '.idx'); } catch { /* ignore */ }
-      try { unlinkSync(testCsvPath + '.stats.csv'); } catch { /* ignore */ }
-      try { unlinkSync(testCsvPath + '.stats.csv.stats.jsonl'); } catch { /* ignore */ }
+      rmSync(tempDir, { recursive: true, force: true });
     } catch { /* ignore cleanup errors */ }
   }
 });
@@ -280,11 +274,9 @@ test('handleDataProfileCall respects columns parameter', async () => {
     assert.ok(text.includes('field: city'), 'Should include city column');
     // Note: age and score may or may not appear depending on qsv behavior
   } finally {
+    // Cleanup - remove temp directory and all contents
     try {
-      unlinkSync(testCsvPath);
-      try { unlinkSync(testCsvPath + '.idx'); } catch { /* ignore */ }
-      try { unlinkSync(testCsvPath + '.stats.csv'); } catch { /* ignore */ }
-      try { unlinkSync(testCsvPath + '.stats.csv.stats.jsonl'); } catch { /* ignore */ }
+      rmSync(tempDir, { recursive: true, force: true });
     } catch { /* ignore cleanup errors */ }
   }
 });

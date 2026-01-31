@@ -1,6 +1,6 @@
 {
   "name": "qsv-to",
-  "version": "15.1.1",
+  "version": "15.0.1",
   "description": "Convert CSV files to Parquet, PostgreSQL, SQLite, Excel (XLSX), LibreOffice Calc (ODS) and Data Package.",
   "category": "conversion",
   "command": {

@@ -1,6 +1,6 @@
 {
   "name": "qsv-replace",
-  "version": "15.1.1",
+  "version": "15.0.1",
   "description": "Replace CSV data using a regex. Applies the regex to each field individually.",
   "category": "transformation",
   "command": {

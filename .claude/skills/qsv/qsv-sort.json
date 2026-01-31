@@ -1,6 +1,6 @@
 {
   "name": "qsv-sort",
-  "version": "15.1.1",
+  "version": "15.0.1",
   "description": "Sorts CSV data in lexicographical, natural, numerical, reverse, unique or random (with optional seed) order (Also see `extsort` & `sortcheck` commands).",
   "category": "utility",
   "command": {

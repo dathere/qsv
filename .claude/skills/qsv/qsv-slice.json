@@ -1,6 +1,6 @@
 {
   "name": "qsv-slice",
-  "version": "15.1.1",
+  "version": "15.0.1",
   "description": "Slice rows from any part of a CSV. When an index is present, this only has to parse the rows in the slice (instead of all rows leading up to the start of the slice).",
   "category": "selection",
   "command": {

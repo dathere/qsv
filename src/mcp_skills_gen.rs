@@ -1008,9 +1008,13 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // Commands excluded from MCP skills generation:
     // - clipboard: not useful for AI agents (requires system clipboard)
     // - color: not useful for AI agents (terminal color testing)
+    // - edit: not suitable for AI agent use
+    // - flatten: not suitable for AI agent use
     // - geoconvert: experimental command (not yet stable)
     // - lens: interactive TUI viewer (requires terminal)
+    // - pro: contains interactive/terminal-dependent subcommands (lens, workflow)
     // - prompt: interactive prompt builder (requires terminal)
+    // - snappy: compression utility not needed for AI agents
     let commands = vec![
         "apply",
         "behead",
@@ -1020,7 +1024,6 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "dedup",
         "describegpt",
         "diff",
-        "edit",
         "enumerate",
         "excel",
         "exclude",
@@ -1031,7 +1034,6 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "fetchpost",
         "fill",
         "fixlengths",
-        "flatten",
         "fmt",
         "foreach",
         "frequency",
@@ -1047,7 +1049,6 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "moarstats",
         "partition",
         "pivotp",
-        "pro",
         "pseudo",
         "rename",
         "replace",
@@ -1059,7 +1060,6 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "searchset",
         "select",
         "slice",
-        "snappy",
         "sniff",
         "sort",
         "sortcheck",

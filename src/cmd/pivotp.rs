@@ -66,7 +66,7 @@ Common options:
 "#;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fs::File,
     io,
     io::{BufReader, Read, Write},
@@ -87,8 +87,7 @@ use crate::{
     util::{StatsMode, get_stats_records},
 };
 
-static STATS_RECORDS: OnceLock<(ByteRecord, Vec<StatsData>, HashMap<String, String>)> =
-    OnceLock::new();
+static STATS_RECORDS: OnceLock<(ByteRecord, Vec<StatsData>)> = OnceLock::new();
 
 /// Helper function to convert a Vec<String> to a vector of Expr for column selection
 fn cols_to_exprs(cols: &[String]) -> Vec<Expr> {
@@ -152,9 +151,9 @@ fn calculate_pivot_metadata(
     };
 
     #[allow(unused_variables)]
-    let (csv_fields, csv_stats, dataset_stats) = STATS_RECORDS.get_or_init(|| {
+    let (csv_fields, csv_stats) = STATS_RECORDS.get_or_init(|| {
         get_stats_records(&schema_args, StatsMode::FrequencyForceStats)
-            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new(), HashMap::new()))
+            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new()))
     });
 
     if csv_stats.is_empty() {
@@ -258,17 +257,13 @@ fn suggest_agg_function(
         flag_output:          None,
     };
 
-    let (csv_fields, csv_stats, dataset_stats) = STATS_RECORDS.get_or_init(|| {
+    let (csv_fields, csv_stats) = STATS_RECORDS.get_or_init(|| {
         get_stats_records(&schema_args, StatsMode::FrequencyForceStats)
-            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new(), HashMap::new()))
+            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new()))
     });
 
     let rconfig = Config::new(Some(&args.arg_input));
-    let row_count = if let Some(row_count) = dataset_stats.get("qsv__rowcount") {
-        row_count.parse::<u64>().unwrap()
-    } else {
-        util::count_rows(&rconfig)?
-    };
+    let row_count = util::count_rows(&rconfig)?;
 
     // Analyze pivot column characteristics
     let mut high_cardinality_pivot = false;

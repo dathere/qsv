@@ -597,9 +597,9 @@ fn is_business_day(dt: &DateTime<Utc>) -> bool {
 fn check_stats_cache(
     args: &Args,
     method: &SamplingMethod,
-) -> CliResult<(Option<u64>, Option<f64>, Option<u64>)> {
+) -> CliResult<(Option<f64>, Option<u64>)> {
     if args.flag_force {
-        return Ok((None, None, None));
+        return Ok((None, None));
     }
 
     // Set stats config
@@ -624,13 +624,8 @@ fn check_stats_cache(
 
     // Get stats records
     match get_stats_records(&schema_args, StatsMode::Frequency) {
-        Ok((csv_fields, stats, dataset_stats)) => {
-            // Get row count from stats cache
-            let rowcount = dataset_stats
-                .get("qsv__rowcount")
-                .and_then(|rc| rc.parse::<f64>().ok())
-                .map(|rc| rc as u64);
-
+        Ok((csv_fields, stats)) => {
+            // Extract relevant stats based on sampling method
             let mut max_weight = None;
             let mut cardinality = None;
             match method {
@@ -683,9 +678,9 @@ fn check_stats_cache(
                 _ => {},
             }
 
-            Ok((rowcount, max_weight, cardinality))
+            Ok((max_weight, cardinality))
         },
-        _ => Ok((None, None, None)),
+        _ => Ok((None, None)),
     }
 }
 
@@ -898,6 +893,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     rconfig.write_headers(&mut rdr, &mut wtr)?;
 
     let mut sample_size = args.arg_sample_size;
+    let row_count: u64 = if let Ok(rc) = util::count_rows(&rconfig) {
+        rc
+    } else {
+        return fail!("Rowcount required.");
+    };
 
     match sampling_method {
         SamplingMethod::Bernoulli => {
@@ -926,20 +926,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 None => String::from("random"),
             };
 
-            let (rowcount_stats, _, _) = check_stats_cache(&args, &SamplingMethod::Systematic)?;
-            let row_count = if let Some(rc) = rowcount_stats {
-                rc
-            } else {
-                match util::count_rows(&rconfig) {
-                    Ok(rc) => rc,
-                    _ => {
-                        return fail!(
-                            "Cannot get rowcount. Systematic sampling requires a rowcount."
-                        );
-                    },
-                }
-            };
-
             sample_systematic(
                 &mut rdr,
                 &mut wtr,
@@ -965,19 +951,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let weight_column = args.get_weight_column(&rdr.byte_headers()?.clone())?;
 
             // Get max_weight from cache if available
-            let (rowcount, max_weight, _) = check_stats_cache(&args, &SamplingMethod::Weighted)?;
+            let (max_weight, _) = check_stats_cache(&args, &SamplingMethod::Weighted)?;
 
             // determine sample size
             #[allow(clippy::cast_precision_loss)]
-            let sample_size = if let Some(rc) = rowcount {
-                if args.arg_sample_size < 1.0 {
-                    (rc as f64 * args.arg_sample_size).round() as usize
-                } else {
-                    args.arg_sample_size as usize
-                }
-            } else if args.arg_sample_size < 1.0 {
-                let rowcount = util::count_rows(&rconfig)?;
-                (rowcount as f64 * args.arg_sample_size).round() as usize
+            let sample_size = if args.arg_sample_size < 1.0 {
+                (row_count as f64 * args.arg_sample_size).round() as usize
             } else {
                 args.arg_sample_size as usize
             };
@@ -997,7 +976,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let cluster_column = args.get_cluster_column(&rdr.byte_headers()?.clone())?;
 
             // Get cardinality from cache if available
-            let (_, _, cardinality) = check_stats_cache(&args, &SamplingMethod::Cluster)?;
+            let (_, cardinality) = check_stats_cache(&args, &SamplingMethod::Cluster)?;
 
             sample_cluster(
                 &rconfig,
@@ -1144,26 +1123,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                 #[allow(clippy::cast_precision_loss)]
                 let sample_size = if args.arg_sample_size < 1.0 {
-                    // Get rowcount from stats cache if available
-                    let (rowcount_stats, _, _) =
-                        check_stats_cache(&args, &SamplingMethod::Default)?;
-
-                    if let Some(rc) = rowcount_stats {
-                        (rc as f64 * args.arg_sample_size).round() as u64
-                    } else {
-                        match util::count_rows(&rconfig) {
-                            Ok(rc) => {
-                                // we don't have a stats cache, get the rowcount the "regular"
-                                // way
-                                (rc as f64 * args.arg_sample_size).round() as u64
-                            },
-                            _ => {
-                                return fail!(
-                                    "Cannot get rowcount. Percentage sampling requires a rowcount."
-                                );
-                            },
-                        }
-                    }
+                    (row_count as f64 * args.arg_sample_size).round() as u64
                 } else {
                     args.arg_sample_size as u64
                 };

@@ -102,8 +102,10 @@ export class SkillExecutor {
     // Build command arguments
     const args = this.buildArgs(skill, params);
 
-    // Get timeout from params, then config, then fallback to 10 minutes
-    const timeoutMs = params.timeoutMs ?? config.operationTimeoutMs ?? 10 * 60 * 1000;
+    // Get timeout from params, then config (default 2 minutes), then fallback
+    const rawTimeout = params.timeoutMs ?? config.operationTimeoutMs ?? 2 * 60 * 1000;
+    // Validate timeout: must be positive number, clamp to sane range (1s - 30min)
+    const timeoutMs = Math.max(1000, Math.min(30 * 60 * 1000, Number(rawTimeout) || 2 * 60 * 1000));
 
     // Execute qsv command
     const startTime = Date.now();
@@ -286,8 +288,9 @@ export class SkillExecutor {
         // Give process a moment to terminate gracefully, then send SIGKILL
         killTimer = setTimeout(() => {
           // Only send SIGKILL if process hasn't exited yet
-          // (proc.killed only indicates kill() was called, not that process exited)
-          if (!processExited) {
+          // Check both our flag (set on 'close') and proc.exitCode (set on 'exit')
+          // since 'exit' fires before 'close' when process terminates
+          if (!processExited && proc.exitCode === null) {
             console.error(`[Executor] Process did not terminate, sending SIGKILL`);
             proc.kill("SIGKILL");
           }

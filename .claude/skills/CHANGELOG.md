@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Executor Timeout Handling** - `runQsv()` now enforces timeout on spawned qsv processes
-  - Default timeout: 10 minutes (configurable via `params.timeoutMs`)
+  - Default timeout: 2 minutes via `config.operationTimeoutMs` (per-call override via `params.timeoutMs`)
   - Graceful termination: sends SIGTERM, then SIGKILL after 1 second
   - Returns exit code 124 (standard timeout code) with descriptive error message
   - Prevents hanging processes from blocking the MCP server

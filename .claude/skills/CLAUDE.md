@@ -48,7 +48,7 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 ### Version 15.0.0
 - **Tool Search Support** - New `qsv_search_tools` tool for discovering qsv commands by keyword, category, or regex
 - **US Census MCP Integration** - Census MCP server awareness with integration guides
-- **Expose All Tools Mode** - Auto-detects Claude clients for automatic tool exposure
+- **Expose All Tools Mode** - Environment-controlled tool exposure via `QSV_MCP_EXPOSE_ALL_TOOLS`
 
 ### Version 14.1.0
 - **Versioned MCPB Packaging** - `.mcpb` files now include version (e.g., `qsv-mcp-server-14.1.0.mcpb`)
@@ -226,7 +226,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - Spawns qsv child processes using `spawn` for streaming output
 - Handles stdin/stdout/stderr with proper buffering
 - **Output size limit**: 50MB to prevent memory issues
-- **Timeout handling**: Configurable timeout (default 10 minutes) with graceful termination (SIGTERM → SIGKILL)
+- **Timeout handling**: Configurable timeout (default 2 minutes via `config.operationTimeoutMs`) with graceful termination (SIGTERM → SIGKILL)
 - **Help request detection**: Skips input validation for `--help`
 - **Subcommand support**: First-class handling of commands with subcommands
 - **Stats cache auto-generation**: Forces `--stats-jsonl` for stats command

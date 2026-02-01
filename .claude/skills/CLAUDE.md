@@ -25,19 +25,16 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 
 ## What's New
 
-### Version 15.2.0
-- **Dataset Profiling** - New `qsv_data_profile` tool profiles CSV files to help Claude make informed decisions
-  - Uses `qsv frequency --toon` to generate column statistics in TOON format (token-efficient for LLMs)
-  - Shows data types, cardinality, uniqueness_ratio, null counts, sparsity, sort_order, and value distributions
-  - Helps Claude optimize operations across multiple commands:
-    - `sqlp`: Choose optimal JOIN order, GROUP BY columns, WHERE selectivity
-    - `joinp`: Determine optimal table order (smaller cardinality on right)
-    - `frequency`: Identify high-cardinality columns (`<ALL_UNIQUE>`) to exclude
-    - `dedup`: Check if uniqueness_ratio=1 (dedup would be a no-op for that key)
-    - `sort`: Check if data is already sorted (sort_order field)
-    - `pivotp`: Verify pivot column cardinality to avoid overly wide output
-- **Profile Caching** - Configurable cache for TOON profiles to avoid redundant profiling
-- **Profile-Aware Tool Guidance** - Tool descriptions now include 📊 hints recommending `qsv_data_profile` first
+### Version 15.3.0
+- **BM25 Search Integration** - Upgraded `qsv_search_tools` from substring matching to BM25 relevance ranking
+  - Uses `wink-bm25-text-search` for probabilistic information retrieval
+  - Field-weighted search prioritizes name (3x), category (2x), description (1x), examples (0.5x)
+  - Text preprocessing with stemming, lowercasing, and negation propagation
+- **Deferred Tool Loading** - Implements Anthropic's Tool Search Tool pattern
+  - Only 7 core tools loaded initially (reduces token usage ~85%)
+  - Tools found via search are dynamically added to subsequent ListTools responses
+  - Core tools always available: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, `qsv_command`
+- **Removed `qsv_data_profile`** - Tool produced ~60KB output filling context window; use `qsv stats --cardinality --stats-jsonl` instead
 
 ### Version 15.1.1
 - **Skill Version Sync** - Updated all 56 skill JSON files to version 15.1.1

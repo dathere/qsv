@@ -192,3 +192,4 @@ export interface FilesystemProviderExtended {
     recursive?: boolean,
   ) => Promise<{ resources: McpResource[] }>;
 }
+

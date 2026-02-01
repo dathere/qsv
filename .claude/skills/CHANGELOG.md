@@ -14,6 +14,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `pro` - contains interactive/terminal-dependent subcommands (lens, workflow)
   - `snappy` - compression utility not needed for AI agents
 
+### Removed
+- **Removed `qsv_data_profile` tool** - The tool produced ~60KB output for a 40-column file, filling Claude's context window and making it impractical
+  - Tool guidance now recommends using `qsv stats --cardinality --stats-jsonl` instead
+  - Removed profile cache manager and related configuration options
+  - Core tools reduced from 8 to 7
+
+## [15.3.0] - 2026-01-31
+
+### Added
+- **BM25 Search Integration** - Upgraded tool search from substring matching to BM25 relevance ranking
+  - Uses `wink-bm25-text-search` library for proper probabilistic information retrieval
+  - Field-weighted search: name (3x), category (2x), description (1x), examples (0.5x)
+  - Text preprocessing with stemming, lowercasing, and negation propagation
+  - Falls back to substring search if BM25 index not yet built
+- **Deferred Tool Loading** - Implements Anthropic's Tool Search Tool pattern
+  - Only 7 core tools loaded initially (reduces token usage ~85%)
+  - Tools discovered via `qsv_search_tools` are dynamically added to tool list
+  - Core tools (always loaded): `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, `qsv_command`
+  - Searched tools are marked as loaded and appear in subsequent ListTools responses
+
+### Changed
+- **SkillLoader BM25 Integration** - `search()` method now uses BM25 with limit parameter
+  - `isBM25Indexed()` method to check if index is ready
+  - BM25 index built automatically after `loadAll()`
+- **handleSearchToolsCall** - Now marks found tools as loaded for deferred loading pattern
+
+### Dependencies
+- Added `wink-bm25-text-search` ^3.0.0 (MIT licensed) for BM25 search algorithm
+- Added `wink-nlp-utils` ^2.1.0 for text preprocessing (stemming, tokenization)
+
 ## [15.2.0] - 2026-01-31
 
 ### Added

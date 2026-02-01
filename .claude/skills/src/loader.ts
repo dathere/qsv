@@ -1,6 +1,7 @@
 /**
  * QSV Skill Loader
  * Loads and manages skill definitions from JSON files
+ * Includes BM25 search integration for intelligent tool discovery
  */
 
 import { readdir, readFile } from "fs/promises";
@@ -8,6 +9,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
 import type { QsvSkill, SkillCategory } from "./types.js";
+import { ToolSearchIndex } from "./bm25-search.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -15,6 +17,7 @@ export class SkillLoader {
   private skills: Map<string, QsvSkill> = new Map();
   private skillsDir: string;
   private allSkillsLoaded: boolean = false;
+  private bm25Index: ToolSearchIndex | null = null;
 
   constructor(skillsDir?: string) {
     if (skillsDir) {
@@ -40,6 +43,7 @@ export class SkillLoader {
   /**
    * Load all skills from the directory
    * Returns cached skills if already loaded
+   * Also builds BM25 search index after loading
    */
   async loadAll(): Promise<Map<string, QsvSkill>> {
     if (this.allSkillsLoaded) {
@@ -58,8 +62,30 @@ export class SkillLoader {
       this.skills.set(skill.name, skill);
     }
 
+    // Build BM25 index after loading all skills
+    this.buildBM25Index();
+
     this.allSkillsLoaded = true;
     return this.skills;
+  }
+
+  /**
+   * Build or rebuild the BM25 search index
+   * Called automatically after loadAll()
+   */
+  private buildBM25Index(): void {
+    if (!this.bm25Index) {
+      this.bm25Index = new ToolSearchIndex();
+    } else {
+      this.bm25Index.reset();
+    }
+
+    const skillArray = Array.from(this.skills.values());
+    this.bm25Index.indexTools(skillArray);
+
+    console.error(
+      `[Loader] Built BM25 index with ${this.bm25Index.getIndexedCount()} skills`,
+    );
   }
 
   /**
@@ -121,21 +147,49 @@ export class SkillLoader {
   }
 
   /**
-   * Search skills by query (matches name, description, category)
+   * Search skills by query using BM25 relevance ranking
+   * Falls back to substring search if BM25 index not available
+   *
+   * @param query - Search query string
+   * @param limit - Maximum results (default: 10)
+   * @returns Array of matching skills sorted by relevance
    */
-  search(query: string): QsvSkill[] {
+  search(query: string, limit = 10): QsvSkill[] {
+    // Use BM25 if index is available and built
+    if (this.bm25Index?.isIndexed()) {
+      return this.bm25Index.search(query, limit);
+    }
+
+    // Fallback to substring search
+    return this.substringSearch(query, limit);
+  }
+
+  /**
+   * Fallback substring-based search
+   * Used when BM25 index is not yet built
+   */
+  private substringSearch(query: string, limit: number): QsvSkill[] {
     const lowerQuery = query.toLowerCase();
 
-    return this.getAll().filter(
-      (skill) =>
-        skill.name.toLowerCase().includes(lowerQuery) ||
-        skill.description.toLowerCase().includes(lowerQuery) ||
-        skill.category.toLowerCase().includes(lowerQuery) ||
-        (skill.examples &&
-          skill.examples.some((ex) =>
-            ex.description.toLowerCase().includes(lowerQuery),
-          )),
-    );
+    return this.getAll()
+      .filter(
+        (skill) =>
+          skill.name.toLowerCase().includes(lowerQuery) ||
+          skill.description.toLowerCase().includes(lowerQuery) ||
+          skill.category.toLowerCase().includes(lowerQuery) ||
+          (skill.examples &&
+            skill.examples.some((ex) =>
+              ex.description.toLowerCase().includes(lowerQuery),
+            )),
+      )
+      .slice(0, limit);
+  }
+
+  /**
+   * Check if BM25 index is available and built
+   */
+  isBM25Indexed(): boolean {
+    return this.bm25Index?.isIndexed() ?? false;
   }
 
   /**

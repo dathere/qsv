@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Returns exit code 124 (standard timeout code) with descriptive error message
   - Prevents hanging processes from blocking the MCP server
 
+### Removed
+- **Removed client-detector.ts** - Eliminated client auto-detection that bypassed deferred loading
+  - Previously, Claude clients were auto-detected and got all tools exposed immediately
+  - Now deferred loading is consistent for ALL clients (~85% token reduction by default)
+  - Users who want all tools immediately can set `QSV_MCP_EXPOSE_ALL_TOOLS=true`
+  - Simplifies codebase and matches 15.3.0 documentation
+
 ### Changed
 - **Reduced MCP Skills** - Excluded `edit`, `flatten`, `pro`, and `snappy` commands from MCP skills generation, reducing from 60 to 56 skills
   - `edit` - interactive command not suitable for AI agent use

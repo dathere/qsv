@@ -129,7 +129,6 @@ npm run mcpb:package
 │   ├── mcp-pipeline.ts    # Multi-step pipeline execution
 │   ├── converted-file-manager.ts  # LIFO cache for converted files
 │   ├── config.ts          # Configuration and validation
-│   ├── client-detector.ts # Client detection for auto-enabling features
 │   ├── executor.ts        # qsv command execution (streaming)
 │   ├── update-checker.ts  # Version detection and skill regeneration
 │   ├── types.ts           # TypeScript type definitions
@@ -140,7 +139,6 @@ npm run mcpb:package
 │   └── index.ts           # Module exports
 ├── dist/                   # Compiled JavaScript output
 ├── tests/                  # Test files (TypeScript)
-│   ├── client-detector.test.ts
 │   ├── config.test.ts
 │   ├── converted-file-manager.test.ts
 │   ├── executor.test.ts
@@ -179,8 +177,8 @@ npm run mcpb:package
 - Manages server lifecycle with graceful shutdown
 - Auto-enables `--stats-jsonl` for stats command
 - Integrates update checker for background version monitoring
-- **Client auto-detection**: Uses `client-detector.ts` to identify Claude clients
-- **Expose-all-tools mode**: Auto-enables for tool-search-capable clients
+- **Deferred tool loading**: Only 7 core tools loaded initially (~85% token reduction)
+- **Environment-controlled exposure**: Use `QSV_MCP_EXPOSE_ALL_TOOLS=true` for all tools
 
 **Key Functions**:
 ```typescript
@@ -314,21 +312,8 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - `QSV_MCP_CHECK_UPDATES_ON_STARTUP`: Check for updates at startup
 - `QSV_MCP_NOTIFY_UPDATES`: Show update notifications
 - `QSV_MCP_GITHUB_REPO`: GitHub repo for update checks (default: dathere/qsv)
-- `QSV_MCP_EXPOSE_ALL_TOOLS`: Optional boolean for expose-all-tools (auto-detects by default)
+- `QSV_MCP_EXPOSE_ALL_TOOLS`: Controls tool exposure (`true`: all tools, `false`: core only, unset: deferred loading)
 - `MCPB_EXTENSION_MODE`: Desktop extension mode flag
-
-#### `client-detector.ts` - Client Detection
-- Detects MCP client type (Claude Desktop, Code, Cowork)
-- Auto-enables expose-all-tools mode for known Claude clients
-- Uses strict pattern matching to avoid misclassification
-
-**Key Functions**:
-- `isToolSearchCapableClient(clientInfo)`: Check if client supports tool search
-- `getClientType(clientInfo)`: Get client type enum for logging/analytics
-- `formatClientInfo(clientInfo)`: Format client info for human-readable logging
-
-**Exports**:
-- `ClientType`: Type union of `'claude-desktop' | 'claude-code' | 'claude-cowork' | 'claude-generic' | 'other' | 'unknown'`
 
 #### `loader.ts` - Dynamic Skill Loading
 - Loads skill definitions from JSON files in `qsv/` directory
@@ -824,7 +809,6 @@ cd .claude/skills && npm run build
 - **`manifest.json`**: MCP Bundle manifest (spec v0.3)
 - **`src/mcp-server.ts`**: Main entry point
 - **`src/mcp-tools.ts`**: Tool definitions with guidance enhancement
-- **`src/client-detector.ts`**: Client detection for auto-enabling features
 - **`src/loader.ts`**: Dynamic skill loading and searching
 - **`src/executor.ts`**: Streaming command execution
 - **`src/update-checker.ts`**: Version management and skill regeneration

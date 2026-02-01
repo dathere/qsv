@@ -37,7 +37,6 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 
 ### Version 15.0.0
 - **Tool Search Support** - New `qsv_search_tools` for discovering qsv commands by keyword, category, or regex
-- **Expose-All-Tools Mode** - Auto-detects Claude clients (Desktop, Code, Cowork) for automatic tool exposure
 - **US Census MCP Integration** - Census MCP server awareness with integration guides
 - **Streaming Executor** - Uses `spawn` instead of `execFileSync` for better output handling
 - **Output Size Limits** - 50MB stdout limit prevents memory issues on large outputs
@@ -176,7 +175,7 @@ This script will:
 | `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates when MCP server starts |
 | `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications in logs |
 | `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repository to check for releases |
-| `QSV_MCP_EXPOSE_ALL_TOOLS` | auto-detect | Controls tool exposure mode. `true`: always expose all 56+ tools. `false`: always use 7 core tools (overrides auto-detect). Unset: auto-detect based on client (Claude clients get all tools automatically) |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 56+ tools immediately (no deferred loading). `false`: use only 7 core tools (no deferred additions). Unset (default): use deferred loading (7 core tools + tools discovered via search) |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 

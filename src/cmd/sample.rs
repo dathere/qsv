@@ -646,7 +646,7 @@ fn check_stats_cache(
                             let min_weight = col_stats
                                 .min
                                 .clone()
-                                .unwrap()
+                                .unwrap_or_default()
                                 .parse::<f64>()
                                 .unwrap_or_default();
                             if min_weight < 0.0 {

@@ -2272,8 +2272,7 @@ impl Args {
             HashMap::new()
         };
 
-        let (csv_fields, csv_stats, _dataset_stats) =
-            get_stats_records(&schema_args, StatsMode::Frequency)?;
+        let (csv_fields, csv_stats) = get_stats_records(&schema_args, StatsMode::Frequency)?;
 
         if csv_fields.is_empty() || csv_stats.len() != csv_fields.len() {
             // the stats cache does not exist or the number of fields & stats records

@@ -303,7 +303,7 @@ pub fn infer_schema_from_stats(
     quiet: bool,
 ) -> CliResult<Map<String, Value>> {
     // invoke cmd::stats
-    let (csv_fields, csv_stats, _) = util::get_stats_records(args, StatsMode::Schema)?;
+    let (csv_fields, csv_stats) = util::get_stats_records(args, StatsMode::Schema)?;
 
     // amortize memory allocation
     let mut low_cardinality_column_indices: Vec<u64> =

@@ -66,7 +66,7 @@ Common options:
 "#;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fs::File,
     io,
     io::{BufReader, Read, Write},
@@ -82,13 +82,12 @@ use serde::Deserialize;
 use crate::{
     CliResult,
     cmd::stats::StatsData,
-    config::{Config, Delimiter},
+    config::Delimiter,
     util,
     util::{StatsMode, get_stats_records},
 };
 
-static STATS_RECORDS: OnceLock<(ByteRecord, Vec<StatsData>, HashMap<String, String>)> =
-    OnceLock::new();
+static STATS_RECORDS: OnceLock<(ByteRecord, Vec<StatsData>)> = OnceLock::new();
 
 /// Helper function to convert a Vec<String> to a vector of Expr for column selection
 fn cols_to_exprs(cols: &[String]) -> Vec<Expr> {
@@ -151,10 +150,9 @@ fn calculate_pivot_metadata(
         flag_output:          None,
     };
 
-    #[allow(unused_variables)]
-    let (csv_fields, csv_stats, dataset_stats) = STATS_RECORDS.get_or_init(|| {
+    let (csv_fields, csv_stats) = STATS_RECORDS.get_or_init(|| {
         get_stats_records(&schema_args, StatsMode::FrequencyForceStats)
-            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new(), HashMap::new()))
+            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new()))
     });
 
     if csv_stats.is_empty() {
@@ -258,17 +256,10 @@ fn suggest_agg_function(
         flag_output:          None,
     };
 
-    let (csv_fields, csv_stats, dataset_stats) = STATS_RECORDS.get_or_init(|| {
+    let (csv_fields, csv_stats) = STATS_RECORDS.get_or_init(|| {
         get_stats_records(&schema_args, StatsMode::FrequencyForceStats)
-            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new(), HashMap::new()))
+            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new()))
     });
-
-    let rconfig = Config::new(Some(&args.arg_input));
-    let row_count = if let Some(row_count) = dataset_stats.get("qsv__rowcount") {
-        row_count.parse::<u64>().unwrap()
-    } else {
-        util::count_rows(&rconfig)?
-    };
 
     // Analyze pivot column characteristics
     let mut high_cardinality_pivot = false;
@@ -279,9 +270,11 @@ fn suggest_agg_function(
             .position(|f| std::str::from_utf8(f).unwrap_or("") == on_col)
         {
             let stats = &csv_stats[pos];
+            let uniqueness_ratio = stats.uniqueness_ratio.unwrap_or(0.0);
 
             // Check cardinality ratio
-            if stats.cardinality as f64 / row_count as f64 > 0.5 {
+
+            if uniqueness_ratio > 0.5 {
                 high_cardinality_pivot = true;
                 if !quiet {
                     eprintln!("Info: Pivot column \"{on_col}\" has high cardinality");
@@ -305,12 +298,13 @@ fn suggest_agg_function(
                 .position(|f| std::str::from_utf8(f).unwrap_or("") == idx_col)
             {
                 let stats = &csv_stats[pos];
+                let uniqueness_ratio = stats.uniqueness_ratio.unwrap_or(0.0);
 
-                // Check cardinality ratio
-                if stats.cardinality as f64 / row_count as f64 > 0.5 {
+                // Check uniqueness ratio
+                if uniqueness_ratio > 0.5 {
                     high_cardinality_index = true;
                     if !quiet {
-                        eprintln!("Info: Index column \"{idx_col}\" has high cardinality");
+                        eprintln!("Info: Index column \"{idx_col}\" has high uniqueness ratio");
                     }
                 }
 
@@ -345,7 +339,7 @@ fn suggest_agg_function(
                         eprintln!("Info: \"{value_col}\" contains only one value, using Item");
                     }
                     Expr::Element.item(true)
-                } else if stats.nullcount as f64 / row_count as f64 > 0.5 {
+                } else if stats.sparsity.unwrap_or(0.0) > 0.5 {
                     if !quiet {
                         eprintln!("Info: \"{value_col}\" contains >50% NULL values, using Len");
                     }
@@ -423,12 +417,13 @@ fn suggest_agg_function(
                 }
             },
             _ => {
+                let uniqueness_ratio = stats.uniqueness_ratio.unwrap_or(0.0);
                 if stats.cardinality == 1 {
                     if !quiet {
                         eprintln!("Info: \"{value_col}\" contains only one value, using Item");
                     }
                     Expr::Element.item(true)
-                } else if stats.cardinality == row_count {
+                } else if (uniqueness_ratio - 1.0).abs() < 0.0001 {
                     if !quiet {
                         eprintln!("Info: \"{value_col}\" contains all unique values, using First");
                     }

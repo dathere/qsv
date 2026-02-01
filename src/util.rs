@@ -8,7 +8,6 @@ use std::os::unix::process::ExitStatusExt;
 use std::sync::Arc;
 use std::{
     cmp::min,
-    collections::HashMap,
     env, fs,
     fs::File,
     io::{BufRead, BufReader, BufWriter, Read, Write},
@@ -2644,13 +2643,11 @@ pub fn write_json_record<W: std::io::Write>(
 }
 
 /// get stats records from stats.csv.data.jsonl file, or if its invalid, by running the stats
-/// command returns tuple (`csv_fields`, `csv_stats`, `stats_col_index_map`)
+/// command returns tuple (`csv_fields`, `csv_stats`)
 pub fn get_stats_records(
     args: &SchemaArgs,
     requested_mode: StatsMode,
-) -> CliResult<(ByteRecord, Vec<StatsData>, HashMap<String, String>)> {
-    const DATASET_STATS_PREFIX: &str = r#"{"field":"qsv__"#;
-
+) -> CliResult<(ByteRecord, Vec<StatsData>)> {
     let env_mode = env::var("QSV_STATSCACHE_MODE")
         .unwrap_or_else(|_| DEFAULT_STATSCACHE_MODE.to_string())
         .to_ascii_lowercase();
@@ -2671,7 +2668,7 @@ pub fn get_stats_records(
     {
         // if stdin or StatsMode::None,
         // we're just doing frequency old school w/o cardinality
-        return Ok((ByteRecord::new(), Vec::new(), HashMap::new()));
+        return Ok((ByteRecord::new(), Vec::new()));
     }
 
     let input_path = args.arg_input.as_ref().ok_or("No input provided")?;
@@ -2704,7 +2701,7 @@ pub fn get_stats_records(
         // if the stats.data file is not current,
         // we're also doing frequency old school w/o cardinality
         // unless env_mode auto overrides
-        return Ok((ByteRecord::new(), Vec::new(), HashMap::new()));
+        return Ok((ByteRecord::new(), Vec::new()));
     }
 
     // Use qsv's Config system to properly detect delimiter based on file extension
@@ -2727,7 +2724,6 @@ pub fn get_stats_records(
 
     let mut stats_data_loaded = false;
     let mut csv_stats: Vec<StatsData> = Vec::with_capacity(csv_fields.len());
-    let mut dataset_stats: HashMap<String, String> = HashMap::with_capacity(4);
 
     // if stats_data file exists and is current, use it
     if stats_data_current && !args.flag_force {
@@ -2740,39 +2736,20 @@ pub fn get_stats_records(
         for line in statsdatajson_rdr.lines() {
             curr_line = line?;
             s_slice = curr_line.as_bytes().to_vec();
-            if curr_line.starts_with(DATASET_STATS_PREFIX) {
-                // Parse dataset stats record
-                #[cfg(target_endian = "big")]
-                let v: serde_json::Value = serde_json::from_slice(&s_slice).map_err(|e| {
-                    CliError::Other(format!("Failed to parse dataset stats JSON: {e}"))
-                })?;
-                #[cfg(target_endian = "little")]
-                let v: serde_json::Value =
-                    simd_json::serde::from_slice(&mut s_slice).map_err(|e| {
-                        CliError::Other(format!("Failed to parse dataset stats JSON: {e}"))
-                    })?;
-                let field = &v["field"];
-                let value = v["qsv__value"].clone();
 
-                dataset_stats.insert(
-                    field
-                        .as_str()
-                        .unwrap_or_default()
-                        .trim_matches('"')
-                        .to_string(),
-                    value.to_string(),
-                );
+            // Parse regular stats record
+            #[cfg(target_endian = "big")]
+            let parse_result = serde_json::from_slice::<StatsData>(&s_slice);
+            #[cfg(target_endian = "little")]
+            let parse_result = simd_json::from_slice::<StatsData>(&mut s_slice);
+
+            if let Ok(stats) = parse_result {
+                csv_stats.push(stats)
             } else {
-                // Parse regular stats record
-                #[cfg(target_endian = "big")]
-                let parse_result = serde_json::from_slice::<StatsData>(&s_slice);
-                #[cfg(target_endian = "little")]
-                let parse_result = simd_json::from_slice::<StatsData>(&mut s_slice);
-
-                match parse_result {
-                    Ok(stats) => csv_stats.push(stats),
-                    Err(e) => eprintln!("error parsing stats: {e}"),
-                }
+                // if we encounter a parsing error, clear csv_stats and break
+                // so that we regenerate the stats data
+                csv_stats.clear();
+                break;
             }
         }
         stats_data_loaded = !csv_stats.is_empty();
@@ -2939,50 +2916,25 @@ pub fn get_stats_records(
         for line in statsdatajson_rdr.lines() {
             curr_line = line?;
             s_slice = curr_line.as_bytes().to_vec();
-            if curr_line.starts_with(DATASET_STATS_PREFIX) {
-                // Parse dataset stats record
-                #[cfg(target_endian = "big")]
-                let v: serde_json::Value = serde_json::from_slice(&s_slice).map_err(|e| {
-                    CliError::Other(format!("Failed to parse dataset stats JSONL: {e}"))
-                })?;
-                #[cfg(target_endian = "little")]
-                let v: serde_json::Value =
-                    simd_json::serde::from_slice(&mut s_slice).map_err(|e| {
-                        CliError::Other(format!("Failed to parse dataset stats JSONL: {e}"))
-                    })?;
-                let field = &v["field"];
-                let value = v["qsv__value"].clone();
 
-                dataset_stats.insert(
-                    field
-                        .as_str()
-                        .unwrap_or_default()
-                        .trim_matches('"')
-                        .to_string(),
-                    value.to_string(),
-                );
-            } else {
-                // Parse regular stats record
-                #[cfg(target_endian = "big")]
-                let parse_result = serde_json::from_slice::<StatsData>(&s_slice);
-                #[cfg(target_endian = "little")]
-                let parse_result = simd_json::from_slice::<StatsData>(&mut s_slice);
+            // Parse regular stats record
+            #[cfg(target_endian = "big")]
+            let parse_result = serde_json::from_slice::<StatsData>(&s_slice);
+            #[cfg(target_endian = "little")]
+            let parse_result = simd_json::from_slice::<StatsData>(&mut s_slice);
 
-                match parse_result {
-                    Ok(stats) => csv_stats.push(stats),
-                    Err(e) => eprintln!("error parsing stats: {e}"),
-                }
+            match parse_result {
+                Ok(stats) => csv_stats.push(stats),
+                Err(e) => return Err(CliError::Other(format!("error parsing stats: {e}"))),
             }
         }
     }
 
-    // ensure csv_fields and csv_stats have the same length
-    // as csv_fields may have the extra "qsv__value" field for dataset stats
-    Ok((
-        csv_fields.iter().take(csv_stats.len()).collect(),
-        csv_stats,
-        dataset_stats,
-    ))
+    if csv_stats.len() != csv_fields.len() {
+        // stats cache is likely corrupted or truncated; fall back to empty stats
+        return Ok((ByteRecord::new(), Vec::new()));
+    }
+    Ok((csv_fields.iter().take(csv_stats.len()).collect(), csv_stats))
 }
 
 pub fn csv_to_jsonl(
@@ -3434,7 +3386,7 @@ pub fn infer_polars_schema(
         flag_memcheck:        false,
         flag_output:          None,
     };
-    let (csv_fields, csv_stats, _) = get_stats_records(&schema_args, StatsMode::PolarsSchema)?;
+    let (csv_fields, csv_stats) = get_stats_records(&schema_args, StatsMode::PolarsSchema)?;
     let mut schema = polars::prelude::Schema::with_capacity(csv_stats.len());
 
     // fetch the decimal scale from the QSV_POLARS_DECIMAL_SCALE env var

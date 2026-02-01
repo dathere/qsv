@@ -613,7 +613,6 @@ pub static STATSDATA_TYPES_MAP: phf::Map<&'static str, JsonTypes> = phf_map! {
     "antimode" => JsonTypes::String,
     "antimode_count" => JsonTypes::Int,
     "antimode_occurrences" => JsonTypes::Int,
-    "qsv__value" => JsonTypes::Int,
 };
 
 static INFER_DATE_FLAGS: OnceLock<SmallVec<[bool; 50]>> = OnceLock::new();

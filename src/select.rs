@@ -415,22 +415,6 @@ impl Selection {
         self.iter().scan(row, get_field)
     }
 
-    // pub fn normal(&self) -> NormalSelection {
-    //     let Selection(inds) = self;
-    //     if inds.is_empty() {
-    //         return NormalSelection(vec![]);
-    //     }
-
-    //     let mut normal = inds.clone();
-    //     normal.sort_unstable();
-    //     normal.dedup();
-    //     let mut set: Vec<_> = repeat_n(false, normal[normal.len() - 1] + 1).collect();
-    //     for i in normal {
-    //         set[i] = true;
-    //     }
-    //     NormalSelection(set)
-    // }
-
     pub const fn len(&self) -> usize {
         self.0.len()
     }
@@ -443,65 +427,3 @@ impl ops::Deref for Selection {
         &self.0
     }
 }
-
-// #[derive(Clone, Debug)]
-// pub struct NormalSelection(Vec<bool>);
-
-// type _NormalScan<'a, T, I> = iter::Scan<iter::Enumerate<I>, &'a [bool], _NormalGetField<T>>;
-
-// type _NormalFilterMap<'a, T, I> =
-//     iter::FilterMap<_NormalScan<'a, T, I>, fn(Option<T>) -> Option<T>>;
-
-// type _NormalGetField<T> = fn(&mut &[bool], (usize, T)) -> Option<Option<T>>;
-
-// impl NormalSelection {
-//     /// Selects elements from an iterator based on the normal selection pattern.
-//     ///
-//     /// This method takes an iterator and returns a filtered version that only includes
-//     /// elements at positions marked as true in the selection pattern.
-//     ///
-//     /// # Arguments
-//     ///
-//     /// * `row` - An iterator containing elements to filter
-//     ///
-//     /// # Returns
-//     ///
-//     /// Returns a filtered iterator that only yields elements at selected positions
-//     ///
-//     /// # Type Parameters
-//     ///
-//     /// * `T` - The type of elements in the iterator
-//     /// * `I` - The type of the input iterator
-//     pub fn select<T, I>(&self, row: I) -> _NormalFilterMap<'_, T, I>
-//     where
-//         I: Iterator<Item = T>,
-//     {
-//         const fn filmap<T>(v: Option<T>) -> Option<T> {
-//             v
-//         }
-//         #[allow(clippy::option_option)]
-//         fn get_field<T>(set: &mut &[bool], t: (usize, T)) -> Option<Option<T>> {
-//             let (i, v) = t;
-//             if i < set.len() && set[i] {
-//                 Some(Some(v))
-//             } else {
-//                 Some(None)
-//             }
-//         }
-//         let get_field: _NormalGetField<T> = get_field;
-//         let filmap: fn(Option<T>) -> Option<T> = filmap;
-//         row.enumerate().scan(&**self, get_field).filter_map(filmap)
-//     }
-
-//     pub fn len(&self) -> usize {
-//         self.iter().filter(|b| **b).count()
-//     }
-// }
-
-// impl ops::Deref for NormalSelection {
-//     type Target = [bool];
-
-//     fn deref(&self) -> &[bool] {
-//         &self.0
-//     }
-// }

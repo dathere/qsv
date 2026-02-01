@@ -500,7 +500,6 @@ fn frequency_select_order() {
 
     // Verify borough field has borough values (not status values)
     // and status field has status values (not borough values)
-    // Note: sorted output puts header row alphabetically among data rows
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
         svec!["borough", "BRONX", "2", "25", "1"],

@@ -2272,7 +2272,7 @@ impl Args {
             HashMap::new()
         };
 
-        let (csv_fields, csv_stats, dataset_stats) =
+        let (csv_fields, csv_stats, _dataset_stats) =
             get_stats_records(&schema_args, StatsMode::Frequency)?;
 
         if csv_fields.is_empty() || csv_stats.len() != csv_fields.len() {
@@ -2308,10 +2308,7 @@ impl Args {
             .collect();
 
         // now, get the unique headers, where cardinality == rowcount
-        let row_count = dataset_stats
-            .get("qsv__rowcount")
-            .and_then(|count| atoi_simd::parse::<u64>(count.as_bytes()).ok())
-            .unwrap_or_else(|| util::count_rows(&self.rconfig()).unwrap_or_default());
+        let row_count = util::count_rows(&self.rconfig()).unwrap_or_default();
         FREQ_ROW_COUNT.set(row_count).unwrap();
 
         // Most datasets have relatively few columns with all unique values (e.g. ID columns)

@@ -468,6 +468,51 @@ fn frequency_select() {
     assert_eq!(got, expected);
 }
 
+// Test that selecting columns in a different order than the original CSV
+// correctly maps field names to their values. This is a regression test for
+// a bug where the frequency command would swap column values when user-specified
+// column order differed from the original CSV column order.
+#[test]
+fn frequency_select_order() {
+    let wrk = Workdir::new("frequency_select_order");
+
+    // Create CSV with columns in order: id, status, borough, agency
+    let rows = vec![
+        svec!["id", "status", "borough", "agency"],
+        svec!["1", "Open", "BROOKLYN", "DCA"],
+        svec!["2", "Closed", "QUEENS", "DOT"],
+        svec!["3", "Pending", "MANHATTAN", "DEP"],
+        svec!["4", "Open", "BRONX", "DCA"],
+        svec!["5", "Closed", "BROOKLYN", "DOT"],
+        svec!["6", "Open", "QUEENS", "DEP"],
+        svec!["7", "Pending", "MANHATTAN", "DCA"],
+        svec!["8", "Closed", "BRONX", "DOT"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Select columns in reverse order: borough, status (different from original order)
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--select", "borough,status"])
+        .args(["--limit", "0"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Verify borough field has borough values (not status values)
+    // and status field has status values (not borough values)
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["borough", "BRONX", "2", "25", "1"],
+        svec!["borough", "BROOKLYN", "2", "25", "1"],
+        svec!["borough", "MANHATTAN", "2", "25", "1"],
+        svec!["borough", "QUEENS", "2", "25", "1"],
+        svec!["status", "Closed", "3", "37.5", "1"],
+        svec!["status", "Open", "3", "37.5", "1"],
+        svec!["status", "Pending", "2", "25", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
 #[test]
 fn frequency_all_unique() {
     let wrk = Workdir::new("frequency_all_unique");

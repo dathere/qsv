@@ -16,7 +16,7 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 ## What's New
 
 ### Version 15.3.1
-- **Also works with Gemini CLI!** - Google's terminal agent with MCP support - [Install in Gemini CLI](../GEMINI_CLI.md)
+- **Also works with Gemini CLI!** - Google's terminal agent with MCP support - [Install in Gemini CLI](docs/guides/GEMINI_CLI.md)
 
 
 ### Version 15.3.0

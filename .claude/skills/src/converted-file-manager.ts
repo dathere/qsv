@@ -31,7 +31,7 @@ import {
 import type { FileHandle } from "fs/promises";
 import { constants } from "fs";
 import type { Stats } from "fs";
-import { dirname, basename, join, resolve, relative, sep } from "path";
+import { dirname, basename, join, resolve, relative, sep, isAbsolute } from "path";
 import { randomUUID, createHash } from "crypto";
 import { formatBytes } from "./utils.js";
 import { config } from "./config.js";
@@ -409,7 +409,10 @@ export class ConvertedFileManager {
         const relativePath = relative(workingDirResolved, normalized);
 
         // If relative path starts with "..", it's trying to escape the working directory
-        if (relativePath.startsWith(".." + sep) || relativePath === "..") {
+        // On Windows, path.relative() returns an absolute path for cross-drive paths
+        // e.g., relative("C:\\working", "D:\\malicious") returns "D:\\malicious"
+        // We must reject if relativePath is absolute (cross-drive escape on Windows)
+        if (isAbsolute(relativePath) || relativePath.startsWith(".." + sep) || relativePath === "..") {
           throw new Error(
             `Path escapes working directory: ${filePath} -> ${normalized} (relative: ${relativePath})`,
           );

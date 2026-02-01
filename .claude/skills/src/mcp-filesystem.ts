@@ -7,7 +7,7 @@
 
 import { readdir, stat, readFile, realpath, access } from "fs/promises";
 import { realpathSync } from "fs";
-import { join, resolve, relative, basename, extname } from "path";
+import { join, resolve, relative, basename, extname, isAbsolute } from "path";
 import { homedir } from "os";
 import { spawn } from "child_process";
 import type {
@@ -179,7 +179,11 @@ export class FilesystemResourceProvider {
       // 2. It doesn't start with '..' (not a parent escape) AND
       // 3. It doesn't start with path separator (not absolute/cross-drive escape)
       if (rel === "") return true; // Same as allowed directory
+      // On Windows, path.relative() returns an absolute path for cross-drive paths
+      // e.g., relative("C:\\allowed", "D:\\malicious") returns "D:\\malicious"
+      // We must reject if rel is absolute (cross-drive escape on Windows)
       return (
+        !isAbsolute(rel) &&
         !rel.startsWith("..") && !rel.startsWith("/") && !rel.startsWith("\\")
       );
     });
@@ -230,9 +234,13 @@ export class FilesystemResourceProvider {
       // Path is allowed if:
       // 1. It's empty (file is directly in allowed dir), OR
       // 2. It doesn't start with '..' (not a parent escape) AND
-      // 3. It doesn't start with path separator (not absolute escape)
+      // 3. It's not an absolute path (cross-drive escape on Windows) AND
+      // 4. It doesn't start with path separator (not absolute escape)
+      // Note: On Windows, path.relative() returns an absolute path for cross-drive paths
+      // e.g., relative("C:\\allowed", "D:\\malicious") returns "D:\\malicious"
       if (rel === "") return true; // File directly in allowed directory
       return (
+        !isAbsolute(rel) &&
         !rel.startsWith("..") && !rel.startsWith("/") && !rel.startsWith("\\")
       );
     });

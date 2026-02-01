@@ -369,3 +369,36 @@ test('resolvePath leaves relative paths unchanged (no tilde)', async () => {
     }
   }
 });
+
+test('resolvePath prevents cross-drive access on Windows', async () => {
+  // This test verifies the fix for the Windows cross-drive vulnerability
+  // where path.relative() returns an absolute path when paths are on different drives.
+  // On Windows: relative("C:\\allowed", "D:\\malicious") returns "D:\\malicious" (absolute)
+  // The fix rejects any path where the relative result is absolute.
+  const tempDir = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+
+  try {
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir,
+    });
+
+    // Use platform-appropriate absolute path that's definitely outside temp
+    // On Windows this would be a different drive, on Unix it's /etc
+    const outsidePath = process.platform === 'win32'
+      ? 'C:\\Windows\\System32'
+      : '/etc';
+
+    await assert.rejects(
+      async () => {
+        await provider.resolvePath(outsidePath);
+      },
+      /Access denied|outside allowed directories|Path does not exist/
+    );
+  } finally {
+    try {
+      await rmdir(tempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});

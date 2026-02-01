@@ -382,10 +382,19 @@ test('resolvePath prevents cross-drive access on Windows', async () => {
       workingDirectory: tempDir,
     });
 
-    // Use platform-appropriate absolute path that's definitely outside temp
-    // On Windows this would be a different drive, on Unix it's /etc
+    // Use platform-appropriate absolute path that's definitely outside temp.
+    // On Windows, construct a path on a different drive than tempDir to reliably
+    // trigger the cross-drive relative() behavior. The target path does not need
+    // to exist; only the differing drive letter matters.
     const outsidePath = process.platform === 'win32'
-      ? 'C:\\Windows\\System32'
+      ? (() => {
+          const match = /^[A-Za-z]:/.exec(tempDir);
+          const tempDrive = (match ? match[0] : 'C:').toUpperCase();
+          const otherDrive = tempDrive === 'C:' ? 'D:' : 'C:';
+          return `${otherDrive}\\qsv-cross-drive-test-nonexistent`;
+        })()
+      // On Unix-like systems, we just verify that an absolute path outside
+      // the allowed directories (e.g., /etc) is rejected.
       : '/etc';
 
     await assert.rejects(

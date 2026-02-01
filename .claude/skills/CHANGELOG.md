@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `pro` - contains interactive/terminal-dependent subcommands (lens, workflow)
   - `snappy` - compression utility not needed for AI agents
 
+### Removed
+- **Removed `qsv_data_profile` tool** - The tool produced ~60KB output for a 40-column file, filling Claude's context window and making it impractical
+  - Tool guidance now recommends using `qsv stats --cardinality --stats-jsonl` instead
+  - Removed profile cache manager and related configuration options
+  - Core tools reduced from 8 to 7
+
 ## [15.3.0] - 2026-01-31
 
 ### Added

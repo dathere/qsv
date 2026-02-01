@@ -35,10 +35,8 @@ import {
   handleGenericCommand,
   createConfigTool,
   createSearchToolsTool,
-  createDataProfileTool,
   handleConfigTool,
   handleSearchToolsCall,
-  handleDataProfileCall,
   initiateShutdown,
   killAllProcesses,
   getActiveProcessCount,
@@ -60,7 +58,6 @@ const CORE_TOOLS = [
   "qsv_set_working_dir",
   "qsv_get_working_dir",
   "qsv_list_files",
-  "qsv_data_profile",
   "qsv_pipeline",
   "qsv_command",
 ] as const;
@@ -459,15 +456,14 @@ class QsvMcpServer {
           throw error;
         }
 
-        // Add config, search, and data profile tools
-        console.error("[Server] Adding config, search, and data profile tools...");
+        // Add config and search tools
+        console.error("[Server] Adding config and search tools...");
         try {
           tools.push(createConfigTool());
           tools.push(createSearchToolsTool());
-          tools.push(createDataProfileTool());
-          console.error("[Server] config, search, and data profile tools added successfully");
+          console.error("[Server] config and search tools added successfully");
         } catch (error) {
-          console.error("[Server] Error creating config/search/data profile tools:", error);
+          console.error("[Server] Error creating config/search tools:", error);
           throw error;
         }
 
@@ -675,11 +671,6 @@ class QsvMcpServer {
             this.loader,
             this.loadedTools,
           );
-        }
-
-        // Handle data profile tool
-        if (name === "qsv_data_profile") {
-          return await handleDataProfileCall(args || {}, this.filesystemProvider);
         }
 
         // Handle common command tools

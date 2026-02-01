@@ -129,19 +129,6 @@
       "max": 20
     }
   },
-  "default_config": {
-    "defer_loading": true
-  },
-  "tool_configs": {
-    "qsv_search_tools": { "defer_loading": false },
-    "qsv_config": { "defer_loading": false },
-    "qsv_set_working_dir": { "defer_loading": false },
-    "qsv_get_working_dir": { "defer_loading": false },
-    "qsv_list_files": { "defer_loading": false },
-    "qsv_data_profile": { "defer_loading": false },
-    "qsv_pipeline": { "defer_loading": false },
-    "qsv_command": { "defer_loading": false }
-  },
   "tools": [
     {
       "name": "qsv_select",
@@ -210,10 +197,6 @@
     {
       "name": "qsv_search_tools",
       "description": "Search for qsv tools by keyword or category"
-    },
-    {
-      "name": "qsv_data_profile",
-      "description": "Profile CSV data to help Claude make informed decisions"
     },
     {
       "name": "qsv_list_files",

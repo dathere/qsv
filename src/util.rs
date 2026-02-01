@@ -2744,7 +2744,7 @@ pub fn get_stats_records(
             let parse_result = simd_json::from_slice::<StatsData>(&mut s_slice);
 
             if let Ok(stats) = parse_result {
-                csv_stats.push(stats)
+                csv_stats.push(stats);
             } else {
                 // if we encounter a parsing error, clear csv_stats and break
                 // so that we regenerate the stats data

@@ -915,7 +915,7 @@ impl Args {
                 flag_output:          None,
             };
 
-            let (csv_fields, csv_stats, _) =
+            let (csv_fields, csv_stats) =
                 get_stats_records(&schema_args, util::StatsMode::PolarsSchema)?;
 
             let mut schema = Schema::with_capacity(csv_stats.len());

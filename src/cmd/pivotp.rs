@@ -150,7 +150,6 @@ fn calculate_pivot_metadata(
         flag_output:          None,
     };
 
-    #[allow(unused_variables)]
     let (csv_fields, csv_stats) = STATS_RECORDS.get_or_init(|| {
         get_stats_records(&schema_args, StatsMode::FrequencyForceStats)
             .unwrap_or_else(|_| (ByteRecord::new(), Vec::new()))
@@ -325,8 +324,6 @@ fn suggest_agg_function(
 
     if let Some(pos) = field_pos {
         let stats = &csv_stats[pos];
-        let uniqueness_ratio = stats.uniqueness_ratio.unwrap_or(0.0);
-        let estimated_row_count = uniqueness_ratio / stats.cardinality as f64;
 
         // Suggest aggregation based on field type and statistics
         let suggested_agg = match stats.r#type.as_str() {
@@ -342,7 +339,7 @@ fn suggest_agg_function(
                         eprintln!("Info: \"{value_col}\" contains only one value, using Item");
                     }
                     Expr::Element.item(true)
-                } else if stats.nullcount as f64 / estimated_row_count > 0.5 {
+                } else if stats.sparsity.unwrap_or(0.0) > 0.5 {
                     if !quiet {
                         eprintln!("Info: \"{value_col}\" contains >50% NULL values, using Len");
                     }

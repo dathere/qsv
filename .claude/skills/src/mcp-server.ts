@@ -302,7 +302,7 @@ class QsvMcpServer {
           this.loggedToolMode = true;
         }
 
-        // Check if we should expose all tools (for clients with tool search support)
+        // Check if we should expose all tools
         if (shouldExposeAll) {
           // Expose all available skills as individual tools
           // Load all skills (cached after first call)
@@ -343,8 +343,15 @@ class QsvMcpServer {
           console.error(
             `[Server] ✓ Loaded ${loadedCount} tools (skipped ${skippedCount} unavailable commands)`,
           );
+        } else if (config.exposeAllTools === false) {
+          // Core tools only mode: only expose the 7 core tools
+          // No COMMON_COMMANDS, no search-discovered tools
+          console.error(
+            `[Server] Core tools only mode - skipping command tools`,
+          );
+          // Tools will be added below (generic, pipeline, config, search, filesystem)
         } else {
-          // Standard mode with deferred loading:
+          // Deferred loading mode (default when exposeAllTools is undefined):
           // 1. Expose common command tools
           // 2. Include tools that have been loaded via qsv_search_tools
           const filteredCommands = availableCommands

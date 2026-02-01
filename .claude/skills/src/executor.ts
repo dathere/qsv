@@ -5,11 +5,7 @@
 
 import { spawn } from "child_process";
 import type { QsvSkill, SkillParams, SkillResult } from "./types.js";
-
-/**
- * Default timeout for qsv command execution in milliseconds (10 minutes)
- */
-const DEFAULT_EXECUTION_TIMEOUT_MS = 10 * 60 * 1000;
+import { config } from "./config.js";
 
 /**
  * Check if a skill has subcommands by examining its first argument
@@ -106,8 +102,8 @@ export class SkillExecutor {
     // Build command arguments
     const args = this.buildArgs(skill, params);
 
-    // Get timeout from params or use default
-    const timeoutMs = params.timeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS;
+    // Get timeout from params, then config, then fallback to 10 minutes
+    const timeoutMs = params.timeoutMs ?? config.operationTimeoutMs ?? 10 * 60 * 1000;
 
     // Execute qsv command
     const startTime = Date.now();
@@ -250,7 +246,7 @@ export class SkillExecutor {
   private runQsv(
     args: string[],
     params: SkillParams,
-    timeoutMs: number = DEFAULT_EXECUTION_TIMEOUT_MS,
+    timeoutMs: number,
   ): Promise<{
     exitCode: number;
     stdout: string;
@@ -274,7 +270,9 @@ export class SkillExecutor {
       let stderr = "";
       let stdoutTruncated = false;
       let timedOut = false;
+      let processExited = false;
       let timer: ReturnType<typeof setTimeout> | null = null;
+      let killTimer: ReturnType<typeof setTimeout> | null = null;
       const MAX_STDOUT_SIZE = 50 * 1024 * 1024; // 50MB limit to prevent memory issues
 
       // Set up timeout handler
@@ -285,19 +283,14 @@ export class SkillExecutor {
         );
         proc.kill("SIGTERM");
 
-        // Give process a moment to terminate gracefully, then resolve with timeout error
-        setTimeout(() => {
-          if (!proc.killed) {
+        // Give process a moment to terminate gracefully, then send SIGKILL
+        killTimer = setTimeout(() => {
+          // Only send SIGKILL if process hasn't exited yet
+          // (proc.killed only indicates kill() was called, not that process exited)
+          if (!processExited) {
             console.error(`[Executor] Process did not terminate, sending SIGKILL`);
             proc.kill("SIGKILL");
           }
-          resolve({
-            exitCode: 124, // Standard timeout exit code (like GNU timeout)
-            stdout,
-            stderr:
-              stderr +
-              `\n[TIMEOUT] Process exceeded ${timeoutMs}ms timeout and was terminated.`,
-          });
         }, 1000);
       }, timeoutMs);
 
@@ -337,20 +330,35 @@ export class SkillExecutor {
       });
 
       proc.on("close", (exitCode) => {
-        // Clear timeout if process completed normally
+        // Mark process as exited (used by SIGKILL escalation logic)
+        processExited = true;
+
+        // Clear timers
         if (timer) {
           clearTimeout(timer);
           timer = null;
         }
-
-        // Skip resolve if we already handled timeout
-        if (timedOut) {
-          return;
+        if (killTimer) {
+          clearTimeout(killTimer);
+          killTimer = null;
         }
 
         console.error(`[Executor] Process exited with code: ${exitCode}`);
         console.error(`[Executor] stdout length: ${stdout.length}`);
         console.error(`[Executor] stderr length: ${stderr.length}`);
+
+        // If process was terminated due to timeout, return exit code 124
+        if (timedOut) {
+          resolve({
+            exitCode: 124, // Standard timeout exit code (like GNU timeout)
+            stdout,
+            stderr:
+              stderr +
+              `\n[TIMEOUT] Process exceeded ${timeoutMs}ms timeout and was terminated.`,
+          });
+          return;
+        }
+
         resolve({
           exitCode: exitCode || 0,
           stdout,
@@ -359,10 +367,17 @@ export class SkillExecutor {
       });
 
       proc.on("error", (err) => {
-        // Clear timeout on error
+        // Mark process as exited
+        processExited = true;
+
+        // Clear timers
         if (timer) {
           clearTimeout(timer);
           timer = null;
+        }
+        if (killTimer) {
+          clearTimeout(killTimer);
+          killTimer = null;
         }
 
         // Skip reject if we already handled timeout

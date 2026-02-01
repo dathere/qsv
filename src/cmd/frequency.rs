@@ -1877,12 +1877,11 @@ impl Args {
     {
         // Extract the weighted HashMap implementation from ftables_weighted
         // This is a duplicate of the weighted logic but returns WeightedFTables
-        let nsel = sel.normal();
-        let nsel_len = nsel.len();
+        let sel_len = sel.len();
 
         #[allow(unused_assignments)]
         let mut field_buffer: Vec<u8> = Vec::with_capacity(1024);
-        let mut row_buffer: csv::ByteRecord = csv::ByteRecord::with_capacity(200, nsel_len);
+        let mut row_buffer: csv::ByteRecord = csv::ByteRecord::with_capacity(200, sel_len);
         let mut string_buf = String::with_capacity(512);
 
         // For weighted frequencies, we process all columns including all-unique ones
@@ -1896,11 +1895,9 @@ impl Args {
         let col_cardinality_vec = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
         let mut weighted_freq_tables: Vec<HashMap<Vec<u8>, f64>> = if col_cardinality_vec.is_empty()
         {
-            (0..nsel_len)
-                .map(|_| HashMap::with_capacity(1000))
-                .collect()
+            (0..sel_len).map(|_| HashMap::with_capacity(1000)).collect()
         } else {
-            (0..nsel_len)
+            (0..sel_len)
                 .map(|i| {
                     // For weighted frequencies, we process all columns including all-unique ones
                     // so we use the actual cardinality (or a reasonable default) rather than 1
@@ -1968,14 +1965,14 @@ impl Args {
                 continue;
             }
 
-            for (i, field) in nsel.select(row_buffer.into_iter()).enumerate() {
+            for (i, field) in sel.select(&row_buffer).enumerate() {
                 // For weighted frequencies, we process all columns including all-unique ones
                 // because the weights provide meaningful information even when values are unique
                 // (unlike unweighted frequencies where all-unique columns are skipped for memory
                 // efficiency)
 
-                // safety: weighted_freq_tables is pre-allocated with nsel_len elements.
-                // i will always be < nsel_len as it comes from enumerate() over the selected cols
+                // safety: weighted_freq_tables is pre-allocated with sel_len elements.
+                // i will always be < sel_len as it comes from enumerate() over the selected cols
                 if !field.is_empty() {
                     field_buffer = process_field(field, &mut string_buf);
                     unsafe {
@@ -2003,13 +2000,12 @@ impl Args {
     where
         I: Iterator<Item = csv::Result<csv::ByteRecord>>,
     {
-        let nsel = sel.normal();
-        let nsel_len = nsel.len();
+        let sel_len = sel.len();
 
         #[allow(unused_assignments)]
         // Optimize buffer allocations
         let mut field_buffer: Vec<u8> = Vec::with_capacity(1024);
-        let mut row_buffer: csv::ByteRecord = csv::ByteRecord::with_capacity(200, nsel_len);
+        let mut row_buffer: csv::ByteRecord = csv::ByteRecord::with_capacity(200, sel_len);
         let mut string_buf = String::with_capacity(512);
 
         let unique_headers_vec = UNIQUE_COLUMNS_VEC.get().unwrap();
@@ -2021,7 +2017,7 @@ impl Args {
 
         // compile a vector of bool flags for all_unique_headers
         // so we can skip the contains check in the hot loop below
-        let all_unique_flag_vec: Vec<bool> = (0..nsel_len)
+        let all_unique_flag_vec: Vec<bool> = (0..sel_len)
             .map(|i| unique_headers_vec.contains(&i))
             .collect();
 
@@ -2030,11 +2026,11 @@ impl Args {
         // if parallel, use a default capacity of 1000 for non-unique columns
         let col_cardinality_vec = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
         let mut freq_tables: Vec<_> = if col_cardinality_vec.is_empty() {
-            (0..nsel_len)
+            (0..sel_len)
                 .map(|_| Frequencies::with_capacity(1000))
                 .collect()
         } else {
-            (0..nsel_len)
+            (0..sel_len)
                 .map(|i| {
                     let capacity = if all_unique_flag_vec[i] {
                         1
@@ -2087,16 +2083,16 @@ impl Args {
         for row in it {
             // safety: we know the row is valid
             row_buffer.clone_from(&unsafe { row.unwrap_unchecked() });
-            for (i, field) in nsel.select(row_buffer.into_iter()).enumerate() {
-                // safety: all_unique_flag_vec is pre-computed to have exactly nsel_len elements,
+            for (i, field) in sel.select(&row_buffer).enumerate() {
+                // safety: all_unique_flag_vec is pre-computed to have exactly sel_len elements,
                 // which matches the number of selected columns that we iterate over.
-                // i will always be < nsel_len as it comes from enumerate() over the selected cols
+                // i will always be < sel_len as it comes from enumerate() over the selected cols
                 if unsafe { *all_unique_flag_vec.get_unchecked(i) } {
                     continue;
                 }
 
-                // safety: freq_tables is pre-allocated with nsel_len elements.
-                // i will always be < nsel_len as it comes from enumerate() over the selected cols
+                // safety: freq_tables is pre-allocated with sel_len elements.
+                // i will always be < sel_len as it comes from enumerate() over the selected cols
                 if !field.is_empty() {
                     field_buffer = process_field(field, &mut string_buf);
                     unsafe {
@@ -2321,10 +2317,15 @@ impl Args {
         // Most datasets have relatively few columns with all unique values (e.g. ID columns)
         // so pre-allocate space for 5 as a reasonable default capacity
         let mut all_unique_headers_vec: Vec<usize> = Vec::with_capacity(5);
-        for (i, _header) in headers.iter().enumerate() {
-            // safety: we know that col_cardinality_vec has the same length as headers
-            // as it was constructed from csv_fields which has the same length as headers
-            let cardinality = unsafe { col_cardinality_vec.get_unchecked(i).1 };
+        for (i, header) in headers.iter().enumerate() {
+            // Look up cardinality by column name, not index, since headers may be a
+            // user-selected subset in a different order than the original CSV columns
+            let cardinality = col_cardinality_vec
+                .iter()
+                .find(|(name, _)| {
+                    name == simdutf8::basic::from_utf8(header).unwrap_or(NON_UTF8_ERR)
+                })
+                .map_or(0, |(_, card)| *card);
 
             if cardinality == row_count {
                 all_unique_headers_vec.push(i);

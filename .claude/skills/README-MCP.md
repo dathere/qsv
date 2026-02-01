@@ -6,7 +6,8 @@ Model Context Protocol (MCP) server that exposes 56 of qsv's tabular data-wrangl
 
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
-- **23 MCP Tools**: 13 common commands as individual tools + 1 generic tool + 1 pipeline tool + 1 search tool + 1 data profile tool + 3 utility tools + 3 filesystem tools (or 56+ in expose-all mode)
+- **Deferred Tool Loading**: Only 7 core tools loaded initially (~85% token reduction), with tools discovered via search added dynamically
+- **BM25 Search**: Intelligent tool discovery using probabilistic relevance ranking
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
 - **Pipeline Support**: Chain multiple operations together seamlessly
@@ -14,11 +15,16 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 
 ## What's New
 
-### Version 15.2.0
-- **Dataset Profiling** - New `qsv_data_profile` tool profiles CSV files to help Claude make informed decisions
-  - Returns column statistics in TOON format (token-efficient for LLMs)
-  - Shows data types, cardinality, uniqueness_ratio, null counts, sparsity, sort_order, and value distributions
-  - Helps Claude optimize `sqlp`, `joinp`, `frequency`, `dedup`, `sort`, and `pivotp` operations
+### Version 15.3.0
+- **BM25 Search Integration** - Upgraded `qsv_search_tools` from substring matching to BM25 relevance ranking
+  - Uses `wink-bm25-text-search` for probabilistic information retrieval
+  - Field-weighted search: name (3x), category (2x), description (1x), examples (0.5x)
+  - Text preprocessing with stemming, lowercasing, and negation propagation
+- **Deferred Tool Loading** - Implements Anthropic's Tool Search Tool pattern
+  - Only 7 core tools loaded initially (reduces token usage ~85%)
+  - Tools found via search are dynamically added to subsequent ListTools responses
+  - Core tools: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, `qsv_command`
+- **Removed `qsv_data_profile`** - Tool produced ~60KB output filling context window; use `qsv stats --cardinality --stats-jsonl` instead
 
 ### Version 15.1.1
 - **Skill Version Sync** - Updated all 56 skill JSON files to version 15.1.1
@@ -60,7 +66,7 @@ Excel and JSONL files are automatically converted to CSV before processing - no 
 
 The **MCP Desktop Extension** (MCPB) provides the easiest installation experience:
 
-1. Download `qsv-mcp-server.mcpb` from [releases](https://github.com/dathere/qsv/releases/download/15.2.0/qsv-mcp-server-15.2.0.mcpb)
+1. Download `qsv-mcp-server.mcpb` from [releases](https://github.com/dathere/qsv/releases/latest)
 2. Open Claude Desktop Settings → Extensions
 3. Click "Install from file" and select the `.mcpb` file
 4. Configure your allowed directories when prompted
@@ -170,10 +176,7 @@ This script will:
 | `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates when MCP server starts |
 | `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications in logs |
 | `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repository to check for releases |
-| `QSV_MCP_EXPOSE_ALL_TOOLS` | auto-detect | Controls tool exposure mode. `true`: always expose all 56+ tools. `false`: always use 13 common tools (overrides auto-detect). Unset: auto-detect based on client (Claude clients get all tools automatically) |
-| `QSV_MCP_PROFILE_CACHE_ENABLED` | `true` | Enable caching of TOON profiles from qsv_data_profile |
-| `QSV_MCP_PROFILE_CACHE_SIZE_MB` | `10` | Maximum size for profile cache (1-500 MB) |
-| `QSV_MCP_PROFILE_CACHE_TTL_MS` | `3600000` | Profile cache TTL in milliseconds (1 min - 24 hours, default 1 hour) |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | auto-detect | Controls tool exposure mode. `true`: always expose all 56+ tools. `false`: always use 7 core tools (overrides auto-detect). Unset: auto-detect based on client (Claude clients get all tools automatically) |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 
@@ -181,9 +184,23 @@ This script will:
 
 ## Available Tools
 
-### 13 Common Command Tools
+### 7 Core Tools (Always Loaded)
 
-Individual MCP tools for the most frequently used commands:
+These tools are always available immediately:
+
+| Tool | Description |
+|------|-------------|
+| `qsv_search_tools` | Search for qsv tools by keyword, category, or regex (BM25-powered) |
+| `qsv_config` | Display current configuration |
+| `qsv_set_working_dir` | Change working directory for file operations |
+| `qsv_get_working_dir` | Get current working directory |
+| `qsv_list_files` | List tabular data files in a directory |
+| `qsv_pipeline` | Chain multiple qsv operations together |
+| `qsv_command` | Execute any of the 56 qsv commands |
+
+### 13 Common Command Tools (Loaded on Demand)
+
+Tools for frequently used commands, loaded when discovered via search:
 
 | Tool | Description |
 |------|-------------|
@@ -203,17 +220,14 @@ Individual MCP tools for the most frequently used commands:
 
 ### Generic Command Tool
 
-`qsv_command` - Execute any of the remaining 47+ qsv commands not exposed as individual tools:
-- `to`, `tojsonl`, `flatten`, `partition`, `pseudo`, `reverse`, `sniff`, `sort`, `dedup`, `join`, `apply`, `rename`, `validate`, `sample`, `template`, `diff`, `schema`, etc.
+`qsv_command` - Execute any of the 56 qsv commands:
+- `to`, `tojsonl`, `partition`, `pseudo`, `reverse`, `sniff`, `sort`, `dedup`, `join`, `apply`, `rename`, `validate`, `sample`, `template`, `diff`, `schema`, etc.
 - Full list: https://github.com/dathere/qsv#commands
 
-### Utility Tools
+### Additional Utility Tools
 
 - `qsv_welcome` - Welcome message and quick start guide
-- `qsv_config` - Display current configuration
 - `qsv_examples` - Show common usage examples
-- `qsv_search_tools` - Search for qsv tools by keyword or category
-- `qsv_data_profile` - Profile CSV data to help Claude make informed decisions
 
 ### Pipeline Tool
 
@@ -226,86 +240,42 @@ Claude executes pipeline:
 2. qsv stats -s revenue
 ```
 
-### Filesystem Tools
+## Tool Search and Deferred Loading
 
-- `qsv_list_files` - List tabular data files in a directory
-- `qsv_set_working_dir` - Change working directory for file operations
-- `qsv_get_working_dir` - Get current working directory
+The MCP server implements Anthropic's Tool Search Tool pattern for optimal token efficiency:
 
-### Tool Search Tool
+### Deferred Loading (Default)
 
-- `qsv_search_tools` - Search for qsv tools by keyword, category, or regex pattern
+Only 7 core tools are loaded initially, reducing token usage by ~85%:
 
-### Data Profile Tool
+| Core Tool | Purpose |
+|-----------|---------|
+| `qsv_search_tools` | Find tools by keyword, category, or regex (BM25-powered) |
+| `qsv_config` | View current configuration |
+| `qsv_set_working_dir` | Change working directory |
+| `qsv_get_working_dir` | Get current working directory |
+| `qsv_list_files` | List tabular data files |
+| `qsv_pipeline` | Chain multiple operations |
+| `qsv_command` | Execute any qsv command |
 
-`qsv_data_profile` - Profile CSV data to help Claude make informed decisions. Uses `qsv frequency --toon` to generate column statistics in TOON format (token-efficient for LLMs).
+When Claude searches for tools, discovered tools are dynamically added to subsequent ListTools responses.
 
-**Returns:**
-- Data types (Integer, Float, String, Date, DateTime, Boolean)
-- Cardinality and uniqueness_ratio (identifies keys vs categorical columns)
-- Null counts and sparsity (affects JOIN/WHERE behavior)
-- Min/max values, ranges, and sort_order (for range queries)
-- Top frequent values with percentages and counts
+### BM25 Search
 
-**Use before data operations** to help Claude choose:
-- JOIN order (smaller cardinality table first)
-- GROUP BY columns (low cardinality = efficient)
-- WHERE selectivity (high-cardinality columns filter more)
-- Index columns (uniqueness_ratio=1 = good key candidate)
-
-**Example:**
-```
-User: "Find the top agencies by complaint count in NYC_311.csv"
-
-Claude first profiles the data:
-→ qsv_data_profile(input_file: "NYC_311.csv")
-
-TOON output reveals:
-- Agency: cardinality=28, top values: NYPD(26%), HPD(25%), DOT(13%)
-- Complaint Type: cardinality=287
-- Status: cardinality=10, 95% are "Closed"
-
-Claude composes optimized query:
-→ qsv_sqlp with:
-  "SELECT Agency, COUNT(*) as count
-   FROM data
-   WHERE Status = 'Closed'  -- 95% selectivity, good filter
-   GROUP BY Agency          -- only 28 groups, efficient
-   ORDER BY count DESC
-   LIMIT 10"
-```
-
-## Tool Search Support
-
-The MCP server supports intelligent tool exposure based on the connected client:
-
-### Auto-Detection (Default)
-
-The server automatically detects Claude clients and enables all 56+ tools:
-
-| Client | Detection | Tools Exposed |
-|--------|-----------|---------------|
-| Claude Desktop | Automatic | All 56+ tools |
-| Claude Code | Automatic | All 56+ tools |
-| Claude Cowork | Automatic | All 56+ tools |
-| Other Claude clients | Automatic | All 56+ tools |
-| Unknown clients | Automatic (safe default) | 13 common tools |
-
-**No configuration required** for Claude Desktop, Claude Code, or Claude Cowork - tools are auto-enabled.
-
-### Standard Mode (Unknown Clients)
-For unknown clients, exposes 23 tools: 13 common commands + 1 generic + 1 pipeline + 1 search + 1 data profile + 3 utility + 3 filesystem tools.
-Optimized for token efficiency in typical workflows.
+The `qsv_search_tools` tool uses probabilistic BM25 relevance ranking:
+- **Field weighting**: name (3x), category (2x), description (1x), examples (0.5x)
+- **Text preprocessing**: stemming, lowercasing, negation propagation
+- **Smart fallback**: substring search if BM25 index not yet built
 
 ### Manual Override
-Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override auto-detection:
-- `true`: Always expose all 56+ tools (even for unknown clients)
-- `false`: Always use 13 common tools (overrides auto-detection)
-- Unset: Auto-detect based on client (recommended)
+Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override deferred loading:
+- `true`: Always expose all 56+ tools immediately (no deferred loading)
+- `false`: Always use 7 core tools only (disables deferred loading)
+- Unset: Default behavior - 7 core tools with deferred loading (recommended)
 
 ### Built-in Tool Search (`qsv_search_tools`)
 
-Search for qsv tools without exposing all tools:
+Search for qsv tools using BM25 relevance ranking:
 
 ```
 User: "What tools can help me join two CSV files?"
@@ -314,7 +284,7 @@ Claude calls: qsv_search_tools
 Parameters:
   query: "join"
 
-Result:
+Result (ranked by relevance):
   **qsv_join** [joining]
     Inner, outer, left, right, cross, anti & semi joins
     💡 Join CSV files (<50MB). For large/complex joins, use qsv_joinp.
@@ -325,11 +295,13 @@ Result:
 ```
 
 **Search Modes**:
-- **Keyword**: `query: "duplicate"` - matches names, descriptions, examples
-- **Category**: `query: "filter", category: "filtering"` - filter by category
+- **BM25 Keyword**: `query: "duplicate"` - relevance-ranked matches across names, descriptions, examples
+- **Category Filter**: `category: "filtering"` - filter by category
 - **Regex**: `query: "/sort|order/"` - use regex patterns for advanced matching
 
 **Available Categories**: selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, analysis, utility
+
+**Note**: Tools found via search are automatically added to Claude's available tools for the session.
 
 ### Anthropic API Integration
 
@@ -446,9 +418,9 @@ Result: Parquet file created
                    │ MCP Protocol (JSON-RPC 2.0)
 ┌──────────────────▼──────────────────────────┐
 │          QSV MCP Server                     │
-│  • 13 Common Tools + 1 Generic + 1 Pipeline │
-│  • 1 Search Tool + 3 Utility + 3 Filesystem │
-│  • 56+ tools in expose-all mode            │
+│  • 7 Core Tools (always loaded)            │
+│  • 56+ tools via deferred loading          │
+│  • BM25-powered tool search                │
 │  • Enhanced descriptions & guidance        │
 │  • Local file access & validation          │
 │  • Format auto-detection & conversion      │
@@ -648,6 +620,6 @@ For issues or questions:
 
 **Updated**: 2026-01-31
 **Version**: 15.3.0
-**Tools**: 23 standard mode (13 common + 1 generic + 1 pipeline + 1 search + 1 data profile + 3 utility + 3 filesystem) or 56+ in expose-all mode
+**Tools**: 7 core tools initially (deferred loading), 56+ when discovered via search
 **Skills**: 56 qsv commands
 **Status**: Production Ready

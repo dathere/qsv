@@ -50,14 +50,6 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 - **US Census MCP Integration** - Census MCP server awareness with integration guides
 - **Expose All Tools Mode** - Auto-detects Claude clients for automatic tool exposure
 
-### Version 14.2.0
-- **Tool Search Support** - New `qsv_search_tools` tool for discovering qsv commands by keyword, category, or regex
-- **Expose All Tools Mode** - `QSV_MCP_EXPOSE_ALL_TOOLS=true` exposes all 67 qsv tools for clients with tool search/deferred loading
-- **Anthropic Tool Search Integration** - Compatible with Anthropic API Tool Search Tool (`tool_search_tool_bm25_20251119`)
-- **Improved Tool Discovery** - Search by category (selection, filtering, transformation, etc.) or use regex patterns
-- **Client Auto-Detection** - Auto-detects Claude clients (Desktop, Code, Cowork) for expose-all-tools mode
-- **Configurable Examples** - `QSV_MCP_MAX_EXAMPLES` controls examples in tool descriptions (0-20, default: 5)
-
 ### Version 14.1.0
 - **Versioned MCPB Packaging** - `.mcpb` files now include version (e.g., `qsv-mcp-server-14.1.0.mcpb`)
 - **Token Optimization** - 66-76% reduction in tool description token usage
@@ -488,19 +480,19 @@ Tool descriptions include intelligent guidance to help Claude make optimal decis
 4. Mention when index acceleration is available (📇)
 5. Note if command loads entire file into memory (🤯)
 
-**Profile-Aware Guidance (📊)**:
+**Stats-Aware Guidance (📊)**:
 
-Several tools now include guidance to run `qsv_data_profile` first. This helps Claude understand data characteristics before executing operations:
+Several tools benefit from running `qsv stats --cardinality --stats-jsonl` first to understand data characteristics:
 
-| Tool | What Profile Reveals | Why It Helps |
+| Tool | What Stats Reveals | Why It Helps |
 |------|---------------------|--------------|
 | `joinp` | Join column cardinality | Optimal table order (smaller cardinality on right) |
-| `frequency` | High-cardinality columns (`<ALL_UNIQUE>`) | Avoid huge output from ID/timestamp columns |
-| `dedup` | `uniqueness_ratio` per column | Skip dedup if key column is all-unique |
-| `sort` | `sort_order` field | Skip sorting if already sorted |
+| `frequency` | High-cardinality columns | Avoid huge output from ID/timestamp columns |
+| `dedup` | Uniqueness per column | Skip dedup if key column is all-unique |
+| `sort` | Sort order | Skip sorting if already sorted |
 | `pivotp` | Pivot column cardinality | Avoid overly wide output (>1000 columns) |
 
-The 📊 emoji marks profile-related guidance in tool descriptions.
+The 📊 emoji marks stats-related guidance in tool descriptions.
 
 ### Modifying Existing Tools
 

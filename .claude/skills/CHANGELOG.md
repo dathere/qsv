@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Executor Timeout Handling** - `runQsv()` now enforces timeout on spawned qsv processes
+  - Default timeout: 10 minutes (configurable via `params.timeoutMs`)
+  - Graceful termination: sends SIGTERM, then SIGKILL after 1 second
+  - Returns exit code 124 (standard timeout code) with descriptive error message
+  - Prevents hanging processes from blocking the MCP server
+
 ### Changed
 - **Reduced MCP Skills** - Excluded `edit`, `flatten`, `pro`, and `snappy` commands from MCP skills generation, reducing from 60 to 56 skills
   - `edit` - interactive command not suitable for AI agent use

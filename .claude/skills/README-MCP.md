@@ -647,7 +647,7 @@ For issues or questions:
 ---
 
 **Updated**: 2026-01-31
-**Version**: 15.2.0
+**Version**: 15.3.0
 **Tools**: 23 standard mode (13 common + 1 generic + 1 pipeline + 1 search + 1 data profile + 3 utility + 3 filesystem) or 56+ in expose-all mode
 **Skills**: 56 qsv commands
 **Status**: Production Ready

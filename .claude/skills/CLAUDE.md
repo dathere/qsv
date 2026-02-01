@@ -236,6 +236,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - Spawns qsv child processes using `spawn` for streaming output
 - Handles stdin/stdout/stderr with proper buffering
 - **Output size limit**: 50MB to prevent memory issues
+- **Timeout handling**: Configurable timeout (default 10 minutes) with graceful termination (SIGTERM → SIGKILL)
 - **Help request detection**: Skips input validation for `--help`
 - **Subcommand support**: First-class handling of commands with subcommands
 - **Stats cache auto-generation**: Forces `--stats-jsonl` for stats command
@@ -246,6 +247,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - Builds shell-safe command arguments
 - Extracts row counts from stderr for metadata
 - Returns structured results with exit codes and timing
+- Graceful process termination on timeout (exit code 124)
 
 #### `update-checker.ts` - Version Management
 - Detects qsv binary version at runtime

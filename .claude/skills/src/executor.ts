@@ -7,6 +7,11 @@ import { spawn } from "child_process";
 import type { QsvSkill, SkillParams, SkillResult } from "./types.js";
 
 /**
+ * Default timeout for qsv command execution in milliseconds (10 minutes)
+ */
+const DEFAULT_EXECUTION_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
  * Check if a skill has subcommands by examining its first argument
  *
  * Commands with subcommands have "subcommand" as the first argument name
@@ -101,9 +106,12 @@ export class SkillExecutor {
     // Build command arguments
     const args = this.buildArgs(skill, params);
 
+    // Get timeout from params or use default
+    const timeoutMs = params.timeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS;
+
     // Execute qsv command
     const startTime = Date.now();
-    const result = await this.runQsv(args, params);
+    const result = await this.runQsv(args, params, timeoutMs);
 
     return {
       success: result.exitCode === 0,
@@ -237,11 +245,12 @@ export class SkillExecutor {
   }
 
   /**
-   * Run qsv command
+   * Run qsv command with timeout handling
    */
   private runQsv(
     args: string[],
     params: SkillParams,
+    timeoutMs: number = DEFAULT_EXECUTION_TIMEOUT_MS,
   ): Promise<{
     exitCode: number;
     stdout: string;
@@ -254,6 +263,7 @@ export class SkillExecutor {
       console.error(`[Executor] Binary path: ${this.qsvBinary}`);
       console.error(`[Executor] Working directory: ${this.workingDirectory}`);
       console.error(`[Executor] Args:`, JSON.stringify(args));
+      console.error(`[Executor] Timeout: ${timeoutMs}ms`);
 
       const proc = spawn(this.qsvBinary, args, {
         stdio: ["pipe", "pipe", "pipe"],
@@ -263,7 +273,33 @@ export class SkillExecutor {
       let stdout = "";
       let stderr = "";
       let stdoutTruncated = false;
+      let timedOut = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
       const MAX_STDOUT_SIZE = 50 * 1024 * 1024; // 50MB limit to prevent memory issues
+
+      // Set up timeout handler
+      timer = setTimeout(() => {
+        timedOut = true;
+        console.error(
+          `[Executor] Process timed out after ${timeoutMs}ms, sending SIGTERM`,
+        );
+        proc.kill("SIGTERM");
+
+        // Give process a moment to terminate gracefully, then resolve with timeout error
+        setTimeout(() => {
+          if (!proc.killed) {
+            console.error(`[Executor] Process did not terminate, sending SIGKILL`);
+            proc.kill("SIGKILL");
+          }
+          resolve({
+            exitCode: 124, // Standard timeout exit code (like GNU timeout)
+            stdout,
+            stderr:
+              stderr +
+              `\n[TIMEOUT] Process exceeded ${timeoutMs}ms timeout and was terminated.`,
+          });
+        }, 1000);
+      }, timeoutMs);
 
       // Handle input
       if (params.stdin) {
@@ -301,6 +337,17 @@ export class SkillExecutor {
       });
 
       proc.on("close", (exitCode) => {
+        // Clear timeout if process completed normally
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+
+        // Skip resolve if we already handled timeout
+        if (timedOut) {
+          return;
+        }
+
         console.error(`[Executor] Process exited with code: ${exitCode}`);
         console.error(`[Executor] stdout length: ${stdout.length}`);
         console.error(`[Executor] stderr length: ${stderr.length}`);
@@ -312,6 +359,17 @@ export class SkillExecutor {
       });
 
       proc.on("error", (err) => {
+        // Clear timeout on error
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+
+        // Skip reject if we already handled timeout
+        if (timedOut) {
+          return;
+        }
+
         console.error(`[Executor] Process error:`, err);
         reject(err);
       });

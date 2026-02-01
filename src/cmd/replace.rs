@@ -88,9 +88,10 @@ Common options:
 
 "#;
 
-use std::{borrow::Cow, collections::HashSet, fs, sync::Arc};
+use std::{borrow::Cow, fs, sync::Arc};
 
 use crossbeam_channel;
+use foldhash::HashSet;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget};
 use regex::bytes::RegexBuilder;

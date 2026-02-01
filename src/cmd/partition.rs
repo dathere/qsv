@@ -69,9 +69,9 @@ Common options:
                              Must be a single character. (default: ,)
 "#;
 
-use std::{collections::HashSet, fs, io, path::Path};
+use std::{fs, io, path::Path};
 
-use foldhash::{HashMap, HashMapExt};
+use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use regex::Regex;
 use serde::Deserialize;
 use sysinfo::System;

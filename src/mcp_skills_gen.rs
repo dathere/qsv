@@ -8,6 +8,7 @@
 
 use std::{fs, path::Path};
 
+use foldhash::{HashMap, HashMapExt};
 use qsv_docopt::parse::{Argument as DocoptArgument, Atom, Parser};
 use serde::{Deserialize, Serialize};
 
@@ -155,7 +156,7 @@ impl UsageParser {
         let parser =
             Parser::new(&self.usage_text).map_err(|e| format!("Docopt parsing failed: {e}"))?;
 
-        let mut args_map = std::collections::HashMap::new();
+        let mut args_map = HashMap::new();
         let mut options = Vec::new();
         let mut subcommands = Vec::new();
 
@@ -492,8 +493,8 @@ impl UsageParser {
 
     /// Extract descriptions from the usage text manually
     /// Returns a map of flag/arg name to description
-    fn extract_descriptions_from_text(&self) -> std::collections::HashMap<String, String> {
-        let mut descriptions = std::collections::HashMap::new();
+    fn extract_descriptions_from_text(&self) -> HashMap<String, String> {
+        let mut descriptions = HashMap::new();
         let lines: Vec<&str> = self.usage_text.lines().collect();
 
         let mut i = 0;

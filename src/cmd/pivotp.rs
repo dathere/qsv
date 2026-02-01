@@ -66,7 +66,6 @@ Common options:
 "#;
 
 use std::{
-    collections::HashSet,
     fs::File,
     io,
     io::{BufReader, Read, Write},
@@ -75,6 +74,7 @@ use std::{
 };
 
 use csv::ByteRecord;
+use foldhash::HashSet;
 use indicatif::HumanCount;
 use polars::prelude::*;
 use serde::Deserialize;

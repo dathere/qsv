@@ -1,6 +1,7 @@
 // inspired by https://github.com/race604/dedup/blob/master/src/cache.rs
-use std::{collections::HashSet, path::PathBuf};
+use std::path::PathBuf;
 
+use foldhash::{HashSet, HashSetExt};
 use log::debug;
 use memmap2::MmapMut;
 use odht::{Config, FxHashFn, HashTable, bytes_needed};

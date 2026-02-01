@@ -69,6 +69,7 @@ Common options:
 use std::{fs::File, str};
 
 use csv::ByteRecord;
+use foldhash::HashSet;
 use memmap2::MmapOptions;
 use serde::Deserialize;
 
@@ -151,25 +152,24 @@ impl Args {
         };
 
         // Create a set of field column indices for efficient lookup
-        let field_column_set: std::collections::HashSet<usize> =
-            field_column_indices.iter().copied().collect();
+        let field_column_set: HashSet<usize> = field_column_indices.iter().copied().collect();
 
         // Determine selected attribute columns if --select is specified
         // --select filters which columns become attribute rows (field columns are unaffected)
-        let selected_attribute_set: Option<std::collections::HashSet<usize>> =
-            if let Some(ref sel) = self.flag_select {
-                let selection = sel
-                    .selection(&headers, true)
-                    .map_err(|e| CliError::Other(format!("Column selection error: {e}")))?;
-                if selection.is_empty() {
-                    return fail_incorrectusage_clierror!(
-                        "--select resulted in no columns to transpose."
-                    );
-                }
-                Some(selection.iter().copied().collect())
-            } else {
-                None
-            };
+        let selected_attribute_set: Option<HashSet<usize>> = if let Some(ref sel) = self.flag_select
+        {
+            let selection = sel
+                .selection(&headers, true)
+                .map_err(|e| CliError::Other(format!("Column selection error: {e}")))?;
+            if selection.is_empty() {
+                return fail_incorrectusage_clierror!(
+                    "--select resulted in no columns to transpose."
+                );
+            }
+            Some(selection.iter().copied().collect())
+        } else {
+            None
+        };
 
         // Write output headers
         let mut header_record = ByteRecord::with_capacity(64, 3);

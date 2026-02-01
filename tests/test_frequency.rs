@@ -1,6 +1,6 @@
 use std::{borrow::ToOwned, collections::hash_map::Entry, process};
 
-use foldhash::{HashMap, HashMapExt};
+use foldhash::{HashMap, HashMapExt, HashSet};
 use serde::Deserialize;
 use serde_json::Value;
 use stats::Frequencies;
@@ -3612,8 +3612,7 @@ fn frequency_stats_filter_type() {
     // Only 'name' and 'quantity' columns should remain (String and Integer)
     // 'price' should be excluded (it's Float)
     assert!(!got.is_empty());
-    let fields: std::collections::HashSet<&str> =
-        got.iter().skip(1).map(|row| row[0].as_str()).collect();
+    let fields: HashSet<&str> = got.iter().skip(1).map(|row| row[0].as_str()).collect();
     assert!(fields.contains("name"), "Expected 'name' column");
     assert!(fields.contains("quantity"), "Expected 'quantity' column");
     assert!(
@@ -3659,8 +3658,7 @@ fn frequency_stats_filter_compound_expression() {
     // 'category' has cardinality 2, should remain
     // 'count' has cardinality 3, should remain
     assert!(!got.is_empty());
-    let fields: std::collections::HashSet<&str> =
-        got.iter().skip(1).map(|row| row[0].as_str()).collect();
+    let fields: HashSet<&str> = got.iter().skip(1).map(|row| row[0].as_str()).collect();
     assert!(fields.contains("category"), "Expected 'category' column");
     assert!(fields.contains("count"), "Expected 'count' column");
     assert!(
@@ -3735,8 +3733,7 @@ fn frequency_stats_filter_cardinality() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert!(!got.is_empty());
-    let fields: std::collections::HashSet<&str> =
-        got.iter().skip(1).map(|row| row[0].as_str()).collect();
+    let fields: HashSet<&str> = got.iter().skip(1).map(|row| row[0].as_str()).collect();
     assert!(fields.contains("category"), "Expected 'category' column");
     assert!(
         fields.contains("subcategory"),

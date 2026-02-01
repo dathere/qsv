@@ -2932,7 +2932,7 @@ pub fn get_stats_records(
 
     if csv_stats.len() != csv_fields.len() {
         // stats cache is likely corrupted or truncated; fall back to empty stats
-        return Ok((csv_fields.clone(), Vec::new()));
+        return Ok((ByteRecord::new(), Vec::new()));
     }
     Ok((csv_fields.iter().take(csv_stats.len()).collect(), csv_stats))
 }

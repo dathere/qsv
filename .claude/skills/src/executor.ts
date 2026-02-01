@@ -332,7 +332,7 @@ export class SkillExecutor {
         console.error(`[Executor] stderr: ${data}`);
       });
 
-      proc.on("close", (exitCode) => {
+      proc.on("close", (exitCode, signal) => {
         // Mark process as exited (used by SIGKILL escalation logic)
         processExited = true;
 
@@ -346,7 +346,7 @@ export class SkillExecutor {
           killTimer = null;
         }
 
-        console.error(`[Executor] Process exited with code: ${exitCode}`);
+        console.error(`[Executor] Process exited with code: ${exitCode}, signal: ${signal}`);
         console.error(`[Executor] stdout length: ${stdout.length}`);
         console.error(`[Executor] stderr length: ${stderr.length}`);
 
@@ -362,8 +362,30 @@ export class SkillExecutor {
           return;
         }
 
+        // Handle signal termination: if exitCode is null but signal is present,
+        // the process was killed by a signal (external SIGTERM/SIGKILL, etc.)
+        // Treat this as a failure rather than coercing to success (exit code 0)
+        if (exitCode === null && signal) {
+          // Map common signals to conventional exit codes (128 + signal number)
+          // SIGTERM=15 -> 143, SIGKILL=9 -> 137, SIGINT=2 -> 130
+          const signalExitCodes: Record<string, number> = {
+            SIGTERM: 143,
+            SIGKILL: 137,
+            SIGINT: 130,
+            SIGHUP: 129,
+            SIGQUIT: 131,
+          };
+          const signalExitCode = signalExitCodes[signal] ?? 128;
+          resolve({
+            exitCode: signalExitCode,
+            stdout,
+            stderr: stderr + `\n[SIGNAL] Process was terminated by signal: ${signal}`,
+          });
+          return;
+        }
+
         resolve({
-          exitCode: exitCode || 0,
+          exitCode: exitCode ?? 0,
           stdout,
           stderr,
         });

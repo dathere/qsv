@@ -98,15 +98,17 @@ For legacy MCP server installations, add the QSV MCP server to your Claude Deskt
 #### `QSV_MCP_WORKING_DIR`
 - **Description**: The default working directory for relative file paths
 - **Default**: Current process directory
-- **Example (Unix)**: `"/Users/your-username/Downloads"`
-- **Example (Windows)**: `"C:\\Users\\YourName\\Downloads"`
+- **Template Variables**: Supports `${PWD}` (current directory), `${DOWNLOADS}`, `${DOCUMENTS}`, `${HOME}`, etc.
+- **Example (Unix)**: `"/Users/your-username/Downloads"` or `"${PWD}"`
+- **Example (Windows)**: `"C:\\Users\\YourName\\Downloads"` or `"${PWD}"`
 
 #### `QSV_MCP_ALLOWED_DIRS`
 - **Description**: Delimited list of directories that can be accessed (security feature)
 - **Delimiter**: Colon (`:`) on Unix/macOS, semicolon (`;`) on Windows
 - **Default**: Only the working directory
-- **Example (Unix)**: `"/Users/your-username/Downloads:/Users/your-username/Documents"`
-- **Example (Windows)**: `"C:\\Users\\YourName\\Downloads;C:\\Users\\YourName\\Documents"`
+- **Template Variables**: Supports `${PWD}`, `${HOME}`, etc.
+- **Example (Unix)**: `"${PWD}:/Users/your-username/Downloads"`
+- **Example (Windows)**: `"${PWD};C:\\Users\\YourName\\Downloads"`
 
 #### `QSV_MCP_CONVERTED_LIFO_SIZE_GB`
 - **Description**: Maximum total size (in GB) of all `.converted.csv` files before LIFO cleanup
@@ -117,6 +119,21 @@ For legacy MCP server installations, add the QSV MCP server to your Claude Deskt
   - When total size exceeds this limit, the oldest converted files are deleted
   - A cache file (`.qsv-mcp-converted-cache.json`) tracks all converted files
 - **Example**: `"2.5"` (allows up to 2.5 GB of converted files)
+
+#### `QSV_MCP_OPERATION_TIMEOUT_MS`
+- **Description**: Timeout for qsv operations in milliseconds
+- **Default**: `600000` (10 minutes)
+- **Minimum**: `1000` (1 second)
+- **Maximum**: `1800000` (30 minutes)
+- **Example**: `"300000"` (5 minutes)
+
+#### `QSV_MCP_EXPOSE_ALL_TOOLS`
+- **Description**: Controls how tools are exposed to the agent
+- **Options**:
+  - `true`: Expose all 56+ tools immediately (no deferred loading)
+  - `false`: Expose only 7 core tools (disables search-additions)
+  - `unset` (Default): **Deferred Loading** - 7 core tools initially, others added as they are found via `qsv_search_tools`
+- **Example**: `"true"`
 
 ## Usage Examples
 

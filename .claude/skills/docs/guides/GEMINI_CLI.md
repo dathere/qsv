@@ -4,7 +4,12 @@ This guide explains how to configure and use the **qsv MCP Server** and its asso
 
 ## Overview
 
-The QSV MCP Server exposes 60+ tabular data-wrangling commands as tools to the Gemini CLI. This allows you to perform complex data operations like statistics, joins, and filtering using natural language directly in your terminal.
+The QSV MCP Server exposes **56** tabular data-wrangling commands as tools to the Gemini CLI. To optimize performance and token usage, the server follows a **Deferred Loading** pattern:
+
+1.  **7 Core Tools** are loaded initially (Search, Config, Working Dir, Filesystem, Pipeline).
+2.  **Additional Tools** are discovered via the `qsv_search_tools` tool and added dynamically to the session.
+
+This allows the Gemini CLI to stay focused on your specific data task without being overwhelmed by 56+ tool definitions.
 
 ## Prerequisites
 
@@ -55,7 +60,7 @@ By using the `${PWD}` template variable, you can configure `qsv` once in your gl
 }
 ```
 
-> **Why this works**: The QSV MCP server expands `${PWD}` to the directory from which the Gemini CLI was launched. This makes `qsv` tools available and scoped to your current folder wherever you are.
+> **Note**: Replace `/absolute/path/to/qsv` with the actual absolute path to your qsv repository. The Gemini CLI does not expand `~` in the `args` or `env` values.
 
 ---
 
@@ -69,21 +74,31 @@ If you want to isolate a specific project or restrict access to a particular dat
 
 ## Environment Variables Reference
 
-| Variable | Description |
-| :--- | :--- |
-| `QSV_MCP_BIN_PATH` | Path to the `qsv` executable (usually `/usr/local/bin/qsv`). |
-| `QSV_MCP_WORKING_DIR` | The directory where files are read from. Use `${PWD}` for auto-mapping. |
-| `QSV_MCP_ALLOWED_DIRS` | A security list (colon-separated) of permitted directories. Use `${PWD}` for automatic local access. |
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `QSV_MCP_BIN_PATH` | Path to the `qsv` executable. | Auto-detected |
+| `QSV_MCP_WORKING_DIR` | The directory where files are read from. Use `${PWD}` for auto-mapping. | `${PWD}` |
+| `QSV_MCP_ALLOWED_DIRS` | A security list (colon-separated) of permitted directories. | Working Dir |
+| `QSV_MCP_OPERATION_TIMEOUT_MS` | Command timeout in milliseconds. | `600000` (10m) |
 
 ## Verifying the Setup
 
 Launch a new Gemini CLI session in any directory containing data:
 
 ```bash
-gemini "What qsv tools are available?"
+gemini "What qsv core tools are available?"
 ```
 
+You should see the 7 core tools: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, and `qsv_command`.
+
 ## Common Workflows
+
+### Discovering Tools
+If you need a specific command (e.g., for duplicates), ask Gemini to search for it:
+```bash
+gemini "What tools can help me find duplicates in a CSV?"
+```
+This will trigger `qsv_search_tools`, which uses **BM25 relevance ranking** to find `qsv_dedup` and other relevant tools.
 
 ### Data Discovery
 ```bash
@@ -101,7 +116,7 @@ gemini "Filter customers.csv to 'active' status and join with orders.csv on 'id'
 ```
 
 ## Advanced: Gemini inside qsv
-The `qsv` binary itself features a `describegpt` command that can use Gemini's LLM for data analysis. You can use it as a standalone CLI tool:
+The `qsv` binary itself features a `describegpt` command that can use Gemini's LLM for data analysis (data dictionaries, descriptions, etc.):
 
 ```bash
 qsv describegpt data.csv \
@@ -112,6 +127,7 @@ qsv describegpt data.csv \
 
 ## Documentation
 
-- [QSV MCP Server README](skills/README-MCP.md)
-- [QSV Agent Skills README](skills/README.md)
-- [Claude Code Integration](skills/CLAUDE_CODE.md)
+- [QSV MCP Server README](../../README-MCP.md)
+- [QSV Agent Skills README](../../README.md)
+- [Claude Code Integration](./CLAUDE_CODE.md)
+- [Local Files Usage](./FILESYSTEM_USAGE.md)

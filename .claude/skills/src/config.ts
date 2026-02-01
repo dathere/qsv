@@ -699,18 +699,6 @@ export const config = {
   ),
 
   /**
-   * Command timeout in milliseconds (alternative name for operationTimeoutMs)
-   * Desktop extensions use QSV_MCP_TIMEOUT_MS, legacy MCP uses operationTimeoutMs
-   * Default: 5 minutes
-   */
-  timeoutMs: parseIntEnv(
-    "QSV_MCP_TIMEOUT_MS",
-    5 * 60 * 1000, // 5 minutes
-    10 * 1000, // Minimum: 10 seconds
-    60 * 60 * 1000, // Maximum: 1 hour
-  ),
-
-  /**
    * Maximum output size in bytes
    * Large outputs are automatically saved to disk
    * Default: 50 MB

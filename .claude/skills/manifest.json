@@ -40,7 +40,7 @@
       "env": {
         "QSV_MCP_BIN_PATH": "${user_config.qsv_path}",
         "QSV_MCP_ALLOWED_DIRS": "${user_config.allowed_dirs}",
-        "QSV_MCP_TIMEOUT_MS": "${user_config.timeout_ms}",
+        "QSV_MCP_OPERATION_TIMEOUT_MS": "${user_config.timeout_ms}",
         "QSV_MCP_MAX_OUTPUT_SIZE": "${user_config.max_output_size}",
         "QSV_MCP_AUTO_REGENERATE_SKILLS": "${user_config.auto_regenerate_skills}",
         "QSV_MCP_CHECK_UPDATES_ON_STARTUP": "${user_config.check_updates}",
@@ -85,7 +85,7 @@
       "title": "Command Timeout (milliseconds)",
       "description": "Maximum time to wait for qsv commands to complete",
       "required": false,
-      "default": 300000,
+      "default": 600000,
       "min": 10000,
       "max": 3600000
     },

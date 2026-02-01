@@ -2643,7 +2643,7 @@ pub fn write_json_record<W: std::io::Write>(
 }
 
 /// get stats records from stats.csv.data.jsonl file, or if its invalid, by running the stats
-/// command returns tuple (`csv_fields`, `csv_stats`, `stats_col_index_map`)
+/// command returns tuple (`csv_fields`, `csv_stats`)
 pub fn get_stats_records(
     args: &SchemaArgs,
     requested_mode: StatsMode,

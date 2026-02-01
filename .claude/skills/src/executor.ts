@@ -5,6 +5,7 @@
 
 import { spawn } from "child_process";
 import type { QsvSkill, SkillParams, SkillResult } from "./types.js";
+import { config } from "./config.js";
 
 /**
  * Check if a skill has subcommands by examining its first argument
@@ -101,9 +102,14 @@ export class SkillExecutor {
     // Build command arguments
     const args = this.buildArgs(skill, params);
 
+    // Get timeout from params, then config (default 10 minutes), then fallback
+    const rawTimeout = params.timeoutMs ?? config.operationTimeoutMs ?? 10 * 60 * 1000;
+    // Validate timeout: must be positive number, clamp to sane range (1s - 30min)
+    const timeoutMs = Math.max(1000, Math.min(30 * 60 * 1000, Number(rawTimeout) || 10 * 60 * 1000));
+
     // Execute qsv command
     const startTime = Date.now();
-    const result = await this.runQsv(args, params);
+    const result = await this.runQsv(args, params, timeoutMs);
 
     return {
       success: result.exitCode === 0,
@@ -237,11 +243,12 @@ export class SkillExecutor {
   }
 
   /**
-   * Run qsv command
+   * Run qsv command with timeout handling
    */
   private runQsv(
     args: string[],
     params: SkillParams,
+    timeoutMs: number,
   ): Promise<{
     exitCode: number;
     stdout: string;
@@ -254,6 +261,7 @@ export class SkillExecutor {
       console.error(`[Executor] Binary path: ${this.qsvBinary}`);
       console.error(`[Executor] Working directory: ${this.workingDirectory}`);
       console.error(`[Executor] Args:`, JSON.stringify(args));
+      console.error(`[Executor] Timeout: ${timeoutMs}ms`);
 
       const proc = spawn(this.qsvBinary, args, {
         stdio: ["pipe", "pipe", "pipe"],
@@ -263,7 +271,31 @@ export class SkillExecutor {
       let stdout = "";
       let stderr = "";
       let stdoutTruncated = false;
+      let timedOut = false;
+      let processExited = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let killTimer: ReturnType<typeof setTimeout> | null = null;
       const MAX_STDOUT_SIZE = 50 * 1024 * 1024; // 50MB limit to prevent memory issues
+
+      // Set up timeout handler
+      timer = setTimeout(() => {
+        timedOut = true;
+        console.error(
+          `[Executor] Process timed out after ${timeoutMs}ms, sending SIGTERM`,
+        );
+        proc.kill("SIGTERM");
+
+        // Give process a moment to terminate gracefully, then send SIGKILL
+        killTimer = setTimeout(() => {
+          // Only send SIGKILL if process hasn't exited yet
+          // Check both our flag (set on 'close') and proc.exitCode (set on 'exit')
+          // since 'exit' fires before 'close' when process terminates
+          if (!processExited && proc.exitCode === null) {
+            console.error(`[Executor] Process did not terminate, sending SIGKILL`);
+            proc.kill("SIGKILL");
+          }
+        }, 1000);
+      }, timeoutMs);
 
       // Handle input
       if (params.stdin) {
@@ -300,18 +332,84 @@ export class SkillExecutor {
         console.error(`[Executor] stderr: ${data}`);
       });
 
-      proc.on("close", (exitCode) => {
-        console.error(`[Executor] Process exited with code: ${exitCode}`);
+      proc.on("close", (exitCode, signal) => {
+        // Mark process as exited (used by SIGKILL escalation logic)
+        processExited = true;
+
+        // Clear timers
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        if (killTimer) {
+          clearTimeout(killTimer);
+          killTimer = null;
+        }
+
+        console.error(`[Executor] Process exited with code: ${exitCode}, signal: ${signal}`);
         console.error(`[Executor] stdout length: ${stdout.length}`);
         console.error(`[Executor] stderr length: ${stderr.length}`);
+
+        // If process was terminated due to timeout, return exit code 124
+        if (timedOut) {
+          resolve({
+            exitCode: 124, // Standard timeout exit code (like GNU timeout)
+            stdout,
+            stderr:
+              stderr +
+              `\n[TIMEOUT] Process exceeded ${timeoutMs}ms timeout and was terminated.`,
+          });
+          return;
+        }
+
+        // Handle signal termination: if exitCode is null but signal is present,
+        // the process was killed by a signal (external SIGTERM/SIGKILL, etc.)
+        // Treat this as a failure rather than coercing to success (exit code 0)
+        if (exitCode === null && signal) {
+          // Map common signals to conventional exit codes (128 + signal number)
+          // SIGTERM=15 -> 143, SIGKILL=9 -> 137, SIGINT=2 -> 130
+          const signalExitCodes: Record<string, number> = {
+            SIGTERM: 143,
+            SIGKILL: 137,
+            SIGINT: 130,
+            SIGHUP: 129,
+            SIGQUIT: 131,
+          };
+          const signalExitCode = signalExitCodes[signal] ?? 128;
+          resolve({
+            exitCode: signalExitCode,
+            stdout,
+            stderr: stderr + `\n[SIGNAL] Process was terminated by signal: ${signal}`,
+          });
+          return;
+        }
+
         resolve({
-          exitCode: exitCode || 0,
+          exitCode: exitCode ?? 0,
           stdout,
           stderr,
         });
       });
 
       proc.on("error", (err) => {
+        // Mark process as exited
+        processExited = true;
+
+        // Clear timers
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        if (killTimer) {
+          clearTimeout(killTimer);
+          killTimer = null;
+        }
+
+        // Skip reject if we already handled timeout
+        if (timedOut) {
+          return;
+        }
+
         console.error(`[Executor] Process error:`, err);
         reject(err);
       });

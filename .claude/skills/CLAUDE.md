@@ -48,15 +48,7 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 ### Version 15.0.0
 - **Tool Search Support** - New `qsv_search_tools` tool for discovering qsv commands by keyword, category, or regex
 - **US Census MCP Integration** - Census MCP server awareness with integration guides
-- **Expose All Tools Mode** - Auto-detects Claude clients for automatic tool exposure
-
-### Version 14.2.0
-- **Tool Search Support** - New `qsv_search_tools` tool for discovering qsv commands by keyword, category, or regex
-- **Expose All Tools Mode** - `QSV_MCP_EXPOSE_ALL_TOOLS=true` exposes all 67 qsv tools for clients with tool search/deferred loading
-- **Anthropic Tool Search Integration** - Compatible with Anthropic API Tool Search Tool (`tool_search_tool_bm25_20251119`)
-- **Improved Tool Discovery** - Search by category (selection, filtering, transformation, etc.) or use regex patterns
-- **Client Auto-Detection** - Auto-detects Claude clients (Desktop, Code, Cowork) for expose-all-tools mode
-- **Configurable Examples** - `QSV_MCP_MAX_EXAMPLES` controls examples in tool descriptions (0-20, default: 5)
+- **Expose All Tools Mode** - Environment-controlled tool exposure via `QSV_MCP_EXPOSE_ALL_TOOLS`
 
 ### Version 14.1.0
 - **Versioned MCPB Packaging** - `.mcpb` files now include version (e.g., `qsv-mcp-server-14.1.0.mcpb`)
@@ -137,7 +129,6 @@ npm run mcpb:package
 │   ├── mcp-pipeline.ts    # Multi-step pipeline execution
 │   ├── converted-file-manager.ts  # LIFO cache for converted files
 │   ├── config.ts          # Configuration and validation
-│   ├── client-detector.ts # Client detection for auto-enabling features
 │   ├── executor.ts        # qsv command execution (streaming)
 │   ├── update-checker.ts  # Version detection and skill regeneration
 │   ├── types.ts           # TypeScript type definitions
@@ -148,7 +139,6 @@ npm run mcpb:package
 │   └── index.ts           # Module exports
 ├── dist/                   # Compiled JavaScript output
 ├── tests/                  # Test files (TypeScript)
-│   ├── client-detector.test.ts
 │   ├── config.test.ts
 │   ├── converted-file-manager.test.ts
 │   ├── executor.test.ts
@@ -187,8 +177,8 @@ npm run mcpb:package
 - Manages server lifecycle with graceful shutdown
 - Auto-enables `--stats-jsonl` for stats command
 - Integrates update checker for background version monitoring
-- **Client auto-detection**: Uses `client-detector.ts` to identify Claude clients
-- **Expose-all-tools mode**: Auto-enables for tool-search-capable clients
+- **Deferred tool loading**: Only 7 core tools loaded initially (~85% token reduction)
+- **Environment-controlled exposure**: Use `QSV_MCP_EXPOSE_ALL_TOOLS=true` for all tools
 
 **Key Functions**:
 ```typescript
@@ -236,6 +226,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - Spawns qsv child processes using `spawn` for streaming output
 - Handles stdin/stdout/stderr with proper buffering
 - **Output size limit**: 50MB to prevent memory issues
+- **Timeout handling**: Configurable timeout (default 10 minutes via `config.operationTimeoutMs`) with graceful termination (SIGTERM → SIGKILL)
 - **Help request detection**: Skips input validation for `--help`
 - **Subcommand support**: First-class handling of commands with subcommands
 - **Stats cache auto-generation**: Forces `--stats-jsonl` for stats command
@@ -246,6 +237,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - Builds shell-safe command arguments
 - Extracts row counts from stderr for metadata
 - Returns structured results with exit codes and timing
+- Graceful process termination on timeout (exit code 124)
 
 #### `update-checker.ts` - Version Management
 - Detects qsv binary version at runtime
@@ -320,21 +312,8 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - `QSV_MCP_CHECK_UPDATES_ON_STARTUP`: Check for updates at startup
 - `QSV_MCP_NOTIFY_UPDATES`: Show update notifications
 - `QSV_MCP_GITHUB_REPO`: GitHub repo for update checks (default: dathere/qsv)
-- `QSV_MCP_EXPOSE_ALL_TOOLS`: Optional boolean for expose-all-tools (auto-detects by default)
+- `QSV_MCP_EXPOSE_ALL_TOOLS`: Controls tool exposure (`true`: all tools, `false`: core only, unset: deferred loading)
 - `MCPB_EXTENSION_MODE`: Desktop extension mode flag
-
-#### `client-detector.ts` - Client Detection
-- Detects MCP client type (Claude Desktop, Code, Cowork)
-- Auto-enables expose-all-tools mode for known Claude clients
-- Uses strict pattern matching to avoid misclassification
-
-**Key Functions**:
-- `isToolSearchCapableClient(clientInfo)`: Check if client supports tool search
-- `getClientType(clientInfo)`: Get client type enum for logging/analytics
-- `formatClientInfo(clientInfo)`: Format client info for human-readable logging
-
-**Exports**:
-- `ClientType`: Type union of `'claude-desktop' | 'claude-code' | 'claude-cowork' | 'claude-generic' | 'other' | 'unknown'`
 
 #### `loader.ts` - Dynamic Skill Loading
 - Loads skill definitions from JSON files in `qsv/` directory
@@ -486,19 +465,19 @@ Tool descriptions include intelligent guidance to help Claude make optimal decis
 4. Mention when index acceleration is available (📇)
 5. Note if command loads entire file into memory (🤯)
 
-**Profile-Aware Guidance (📊)**:
+**Stats-Aware Guidance (📊)**:
 
-Several tools now include guidance to run `qsv_data_profile` first. This helps Claude understand data characteristics before executing operations:
+Several tools benefit from running `qsv stats --cardinality --stats-jsonl` first to understand data characteristics:
 
-| Tool | What Profile Reveals | Why It Helps |
+| Tool | What Stats Reveals | Why It Helps |
 |------|---------------------|--------------|
 | `joinp` | Join column cardinality | Optimal table order (smaller cardinality on right) |
-| `frequency` | High-cardinality columns (`<ALL_UNIQUE>`) | Avoid huge output from ID/timestamp columns |
-| `dedup` | `uniqueness_ratio` per column | Skip dedup if key column is all-unique |
-| `sort` | `sort_order` field | Skip sorting if already sorted |
+| `frequency` | High-cardinality columns | Avoid huge output from ID/timestamp columns |
+| `dedup` | Uniqueness per column | Skip dedup if key column is all-unique |
+| `sort` | Sort order | Skip sorting if already sorted |
 | `pivotp` | Pivot column cardinality | Avoid overly wide output (>1000 columns) |
 
-The 📊 emoji marks profile-related guidance in tool descriptions.
+The 📊 emoji marks stats-related guidance in tool descriptions.
 
 ### Modifying Existing Tools
 
@@ -830,7 +809,6 @@ cd .claude/skills && npm run build
 - **`manifest.json`**: MCP Bundle manifest (spec v0.3)
 - **`src/mcp-server.ts`**: Main entry point
 - **`src/mcp-tools.ts`**: Tool definitions with guidance enhancement
-- **`src/client-detector.ts`**: Client detection for auto-enabling features
 - **`src/loader.ts`**: Dynamic skill loading and searching
 - **`src/executor.ts`**: Streaming command execution
 - **`src/update-checker.ts`**: Version management and skill regeneration

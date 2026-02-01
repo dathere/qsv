@@ -52,6 +52,7 @@ export interface SkillParams {
   options?: Record<string, any>;
   stdin?: string | Buffer;
   inputFile?: string;
+  timeoutMs?: number;
 }
 
 export interface SkillResult {

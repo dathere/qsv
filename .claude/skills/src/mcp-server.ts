@@ -23,11 +23,6 @@ import { FilesystemResourceProvider } from "./mcp-filesystem.js";
 import type { McpToolResult } from "./types.js";
 import { config } from "./config.js";
 import {
-  isToolSearchCapableClient,
-  getClientType,
-  formatClientInfo,
-} from "./client-detector.js";
-import {
   COMMON_COMMANDS,
   createToolDefinition,
   createGenericToolDefinition,
@@ -71,7 +66,7 @@ class QsvMcpServer {
   private executor: SkillExecutor;
   private filesystemProvider: FilesystemResourceProvider;
   private updateChecker: UpdateChecker;
-  private loggedClientDetection: boolean = false;
+  private loggedToolMode: boolean = false;
 
   /**
    * Track which tools have been loaded via search (for deferred loading)
@@ -284,42 +279,30 @@ class QsvMcpServer {
         const availableCommands = config.qsvValidation.availableCommands;
 
         // Determine if we should expose all tools
-        // Priority:
-        // 1. config.exposeAllTools === true → always expose all
-        // 2. config.exposeAllTools === false → always expose only common (override auto-detect)
-        // 3. config.exposeAllTools === undefined → auto-detect based on client
-        const clientInfo = this.server.getClientVersion();
-        let shouldExposeAll: boolean;
-        let reason: string;
+        // - true: expose all tools immediately (no deferred loading)
+        // - false: expose only 7 core tools (no deferred loading additions)
+        // - undefined (default): use deferred loading (7 core tools + search-discovered tools)
+        const shouldExposeAll = config.exposeAllTools === true;
 
-        if (config.exposeAllTools === true) {
-          shouldExposeAll = true;
-          reason = "QSV_MCP_EXPOSE_ALL_TOOLS=true";
-        } else if (config.exposeAllTools === false) {
-          shouldExposeAll = false;
-          reason = "QSV_MCP_EXPOSE_ALL_TOOLS=false (explicit disable)";
-        } else {
-          // Auto-detect based on client
-          shouldExposeAll = isToolSearchCapableClient(clientInfo);
-          reason = shouldExposeAll
-            ? `auto-detected ${getClientType(clientInfo)} client`
-            : "unknown client (using common tools only)";
-        }
-
-        // Log client detection once per session
-        if (!this.loggedClientDetection) {
-          const clientDesc = formatClientInfo(clientInfo);
+        // Log tool mode once per session
+        if (!this.loggedToolMode) {
           if (shouldExposeAll) {
-            console.error(`[Server] ✅ Enabling all tools mode (${reason})`);
-            console.error(`[Server]    Client: ${clientDesc}`);
+            console.error(
+              "[Server] ✅ Exposing all tools (QSV_MCP_EXPOSE_ALL_TOOLS=true)",
+            );
+          } else if (config.exposeAllTools === false) {
+            console.error(
+              "[Server] Using core tools only (QSV_MCP_EXPOSE_ALL_TOOLS=false)",
+            );
           } else {
-            console.error(`[Server] Using common tools mode (${reason})`);
-            console.error(`[Server]    Client: ${clientDesc}`);
+            console.error(
+              "[Server] Using deferred loading (7 core tools + search-discovered)",
+            );
           }
-          this.loggedClientDetection = true;
+          this.loggedToolMode = true;
         }
 
-        // Check if we should expose all tools (for clients with tool search support)
+        // Check if we should expose all tools
         if (shouldExposeAll) {
           // Expose all available skills as individual tools
           // Load all skills (cached after first call)
@@ -360,8 +343,15 @@ class QsvMcpServer {
           console.error(
             `[Server] ✓ Loaded ${loadedCount} tools (skipped ${skippedCount} unavailable commands)`,
           );
+        } else if (config.exposeAllTools === false) {
+          // Core tools only mode: only expose the 7 core tools
+          // No COMMON_COMMANDS, no search-discovered tools
+          console.error(
+            `[Server] Core tools only mode - skipping command tools`,
+          );
+          // Tools will be added below (generic, pipeline, config, search, filesystem)
         } else {
-          // Standard mode with deferred loading:
+          // Deferred loading mode (default when exposeAllTools is undefined):
           // 1. Expose common command tools
           // 2. Include tools that have been loaded via qsv_search_tools
           const filteredCommands = availableCommands

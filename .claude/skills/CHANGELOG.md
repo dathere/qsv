@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Executor Timeout Handling** - `runQsv()` now enforces timeout on spawned qsv processes
+  - Default timeout: 10 minutes via `config.operationTimeoutMs` (per-call override via `params.timeoutMs`)
+  - Graceful termination: sends SIGTERM, then SIGKILL after 1 second
+  - Returns exit code 124 (standard timeout code) with descriptive error message
+  - Prevents hanging processes from blocking the MCP server
+
 ### Changed
 - **Reduced MCP Skills** - Excluded `edit`, `flatten`, `pro`, and `snappy` commands from MCP skills generation, reducing from 60 to 56 skills
   - `edit` - interactive command not suitable for AI agent use
@@ -15,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `snappy` - compression utility not needed for AI agents
 
 ### Removed
+- **Removed client-detector.ts** - Eliminated client auto-detection that bypassed deferred loading
+  - Previously, Claude clients were auto-detected and got all tools exposed immediately
+  - Now deferred loading is consistent for ALL clients (~85% token reduction by default)
+  - Users who want all tools immediately can set `QSV_MCP_EXPOSE_ALL_TOOLS=true`
+  - Simplifies codebase and matches 15.3.0 documentation
 - **Removed `qsv_data_profile` tool** - The tool produced ~60KB output for a 40-column file, filling Claude's context window and making it impractical
   - Tool guidance now recommends using `qsv stats --cardinality --stats-jsonl` instead
   - Removed profile cache manager and related configuration options

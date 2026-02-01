@@ -656,11 +656,11 @@ export const config = {
 
   /**
    * Operation timeout in milliseconds
-   * Default: 2 minutes (better for interactive use)
+   * Default: 10 minutes (allows for large file processing)
    */
   operationTimeoutMs: parseIntEnv(
     "QSV_MCP_OPERATION_TIMEOUT_MS",
-    2 * 60 * 1000, // 2 minutes
+    10 * 60 * 1000, // 10 minutes
     1000, // Minimum: 1 second
     30 * 60 * 1000, // Maximum: 30 minutes
   ),

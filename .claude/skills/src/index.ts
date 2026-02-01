@@ -41,13 +41,5 @@ export {
   pipelineToShellScript,
 } from "./mcp-pipeline.js";
 
-// Client Detection
-export {
-  isToolSearchCapableClient,
-  getClientType,
-  formatClientInfo,
-  type ClientType,
-} from "./client-detector.js";
-
 // Re-export for convenience
 export { SkillLoader as default } from "./loader.js";

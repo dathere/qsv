@@ -1466,7 +1466,7 @@ export async function handleConfigTool(
 
   // Performance Settings
   configText += `\n## Performance Settings\n\n`;
-  configText += `⏱️ **Timeout:** ${config.timeoutMs}ms (${Math.round(config.timeoutMs / 1000)}s)\n`;
+  configText += `⏱️ **Timeout:** ${config.operationTimeoutMs}ms (${Math.round(config.operationTimeoutMs / 1000)}s)\n`;
   configText += `💾 **Max Output Size:** ${formatBytes(config.maxOutputSize)}\n`;
   configText += `🔧 **Auto-Regenerate Skills:** ${config.autoRegenerateSkills ? "Enabled" : "Disabled"}\n`;
 

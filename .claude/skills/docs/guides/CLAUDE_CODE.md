@@ -286,9 +286,9 @@ All environment variables from the legacy MCP server are supported:
 - **Example (Windows)**: `"C:\\Users\\You\\Data;C:\\Users\\You\\Downloads"`
 - **Tip**: Set to parent directories to allow subdirectory access
 
-#### `QSV_MCP_TIMEOUT_MS`
+#### `QSV_MCP_OPERATION_TIMEOUT_MS`
 - **Description**: Command timeout in milliseconds
-- **Default**: `300000` (5 minutes)
+- **Default**: `600000` (10 minutes)
 - **Increase for**: Large file operations
 
 #### `QSV_MCP_MAX_OUTPUT_SIZE`
@@ -459,7 +459,7 @@ All environment variables from the legacy MCP server are supported:
 1. **Increase timeout** in config:
    ```json
    "env": {
-     "QSV_MCP_TIMEOUT_MS": "900000"  // 15 minutes
+     "QSV_MCP_OPERATION_TIMEOUT_MS": "900000"  // 15 minutes
    }
    ```
 
@@ -624,7 +624,7 @@ List data files here and analyze the largest one
       "env": {
         "QSV_MCP_WORKING_DIR": "/Users/dev/projects",
         "QSV_MCP_ALLOWED_DIRS": "/Users/dev/projects:/tmp",
-        "QSV_MCP_TIMEOUT_MS": "600000",
+        "QSV_MCP_OPERATION_TIMEOUT_MS": "600000",
         "QSV_MCP_MAX_OUTPUT_SIZE": "104857600"
       }
     }
@@ -643,7 +643,7 @@ List data files here and analyze the largest one
       "env": {
         "QSV_MCP_BIN_PATH": "/home/scientist/.cargo/bin/qsv",
         "QSV_MCP_ALLOWED_DIRS": "/data:/home/scientist/notebooks:/mnt/storage",
-        "QSV_MCP_TIMEOUT_MS": "1800000",
+        "QSV_MCP_OPERATION_TIMEOUT_MS": "1800000",
         "QSV_MCP_CONVERTED_LIFO_SIZE_GB": "5"
       }
     }

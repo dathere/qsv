@@ -295,7 +295,7 @@ The extension is configured via environment variables in Claude Desktop's MCP se
 | `QSV_MCP_WORKING_DIR` | Current dir | Default directory for relative paths |
 | `QSV_MCP_ALLOWED_DIRS` | None | Colon-separated (`:`) allowed directories (semicolon `;` on Windows) |
 | `QSV_MCP_CONVERTED_LIFO_SIZE_GB` | `1` | Max cache size for converted files (0.1-100 GB) |
-| `QSV_MCP_OPERATION_TIMEOUT_MS` | `120000` | Operation timeout in milliseconds (1s-30min) |
+| `QSV_MCP_OPERATION_TIMEOUT_MS` | `600000` | Operation timeout in milliseconds (1s-30min, default 10 minutes) |
 | `QSV_MCP_MAX_FILES_PER_LISTING` | `1000` | Max files in directory listings (1-100k) |
 | `QSV_MCP_MAX_PIPELINE_STEPS` | `50` | Max steps in a pipeline (1-1000) |
 | `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | `10` | Max concurrent operations (1-100) |
@@ -545,7 +545,7 @@ npm run mcp:install  # Install to Claude Desktop
 ```json
 {
   "env": {
-    "QSV_MCP_OPERATION_TIMEOUT_MS": "300000",
+    "QSV_MCP_OPERATION_TIMEOUT_MS": "900000",
     "QSV_MCP_CONVERTED_LIFO_SIZE_GB": "5"
   }
 }

@@ -85,7 +85,7 @@
       "title": "Command Timeout (milliseconds)",
       "description": "Maximum time to wait for qsv commands to complete",
       "required": false,
-      "default": 300000,
+      "default": 600000,
       "min": 10000,
       "max": 3600000
     },

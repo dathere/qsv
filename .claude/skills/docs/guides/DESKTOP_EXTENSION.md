@@ -97,7 +97,7 @@ After installation, Claude Desktop will prompt you to configure the extension. *
    - Leave empty to restrict access to working directory only
 
 4. **Advanced Settings** (optional)
-   - Command Timeout: 300000ms (5 minutes)
+   - Command Timeout: 600000ms (10 minutes)
    - Max Output Size: 50MB
    - Auto-Regenerate Skills: false
    - Check for Updates: true

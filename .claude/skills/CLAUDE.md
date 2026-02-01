@@ -300,8 +300,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - `QSV_MCP_BIN_PATH`: Path to qsv binary
 - `QSV_MCP_WORKING_DIR`: Working directory for file operations
 - `QSV_MCP_ALLOWED_DIRS`: Colon-separated list of allowed directories
-- `QSV_MCP_OPERATION_TIMEOUT_MS`: Operation timeout (default: 120000ms)
-- `QSV_MCP_TIMEOUT_MS`: Alternative timeout for desktop extensions (default: 5 minutes)
+- `QSV_MCP_OPERATION_TIMEOUT_MS`: Operation timeout (default: 600000ms / 10 minutes)
 - `QSV_MCP_MAX_PIPELINE_STEPS`: Max pipeline steps (default: 50)
 - `QSV_MCP_MAX_FILES_PER_LISTING`: Max files in directory listing (default: 1000)
 - `QSV_MCP_MAX_CONCURRENT_OPERATIONS`: Max concurrent ops (default: 10)

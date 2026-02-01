@@ -32,6 +32,10 @@ const ALWAYS_FILE_COMMANDS = new Set([
   "stats",
   "moarstats",
   "frequency",
+  "slice",
+  "sample",
+  "template",
+  "geocode",
   "sort",
   "dedup",
   "join",
@@ -40,14 +44,11 @@ const ALWAYS_FILE_COMMANDS = new Set([
   "search",
   "searchset",
   "apply",
-  "applydp",
   "schema",
   "validate",
   "diff",
   "cat",
   "transpose",
-  "flatten",
-  "unflatten",
   "partition",
   "split",
   "explode",
@@ -55,7 +56,6 @@ const ALWAYS_FILE_COMMANDS = new Set([
   "rename",
   "replace",
   "datefmt",
-  "formatters",
   "reverse",
   "safenames",
   "sqlp",
@@ -71,8 +71,6 @@ const METADATA_COMMANDS = new Set([
   "count",
   "headers",
   "index",
-  "slice",
-  "sample",
   "sniff",
 ]);
 
@@ -84,11 +82,11 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
     'Choose columns. Syntax: "1,3,5" (specific), "1-10" (range), "!SSN" (exclude), "/<regex>/" (pattern), "_" (last).',
   slice: "Select rows by position: first N, last N, skip N, range.",
   search:
-    "Filter rows matching pattern/regex. For complex conditions, use qsv_sqlp.",
+    "Filter rows matching pattern/regex. Search applied to to selected fields. For complex conditions, use qsv_sqlp.",
   stats:
     "Quick numeric stats (mean, min/max, stddev). Creates cache for other commands. Run 2nd after index.",
   moarstats:
-    "Comprehensive stats + bivariate stats + data type inference. Slower but richer than stats.",
+    "Comprehensive stats + bivariate stats + outlier details + data type inference. Slower but richer than stats.",
   frequency:
     "Count unique values. Best for low-cardinality categorical columns. Run qsv_stats --cardinality first to identify high-cardinality columns to exclude.",
   join: "Join CSV files (<50MB). For large/complex joins, use qsv_joinp.",
@@ -108,9 +106,9 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
     "Validate against JSON Schema. Check data quality, type correctness. Also use this without a JSON Schema to check if a CSV is well-formed.",
   sqlp: "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns. Use stats cache (qsv_stats --stats-jsonl) for optimization hints on column cardinalities and data types.",
   apply:
-    "Transform columns (trim, upper, lower, squeeze, strip). For custom logic, use qsv_luau.",
+    "Transform columns (trim, upper, lower, squeeze, strip). Subcommands: operations, dynfmt, emptyreplace, calcconv. For custom logic, use qsv_luau.",
   rename:
-    "Rename columns. Supports bulk/regex. For simple changes, qsv_headers faster.",
+    "Rename columns. Supports bulk/regex.",
   template:
     "Generate formatted output from CSV using Mini Jinja templates. For reports, markdown, HTML.",
   index:
@@ -121,6 +119,8 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
     "Geocode locations using Geonames/MaxMind. Subcommands: suggest, reverse, countryinfo, iplookup. Specify via subcommand parameter.",
   pivotp:
     "Polars-powered pivot tables. Use --agg for aggregation (sum/mean/count/first/last/min/max/smart). Use qsv_stats --cardinality to check pivot column cardinality.",
+  excel:
+    "Convert spreadsheets (Excel and OpenDocument) to CSV. Also can be used to get workbook metadata. Supports multi-sheet workbooks.",
 };
 
 /**
@@ -1330,7 +1330,7 @@ Common commands via this tool: join, sort, dedup, apply, rename, validate, sampl
         command: {
           type: "string",
           description:
-            'The qsv command to execute (e.g., "to", "flatten", "partition")',
+            'The qsv command to execute (e.g., "to", "sample", "partition")',
         },
         input_file: {
           type: "string",

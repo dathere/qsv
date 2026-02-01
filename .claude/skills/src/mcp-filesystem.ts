@@ -176,8 +176,9 @@ export class FilesystemResourceProvider {
       const rel = relative(allowedDir, newDir);
       // Path is allowed if:
       // 1. It's empty (same as allowed dir), OR
-      // 2. It doesn't start with '..' (not a parent escape) AND
-      // 3. It doesn't start with path separator (not absolute/cross-drive escape)
+      // 2. It's not an absolute path (no cross-drive escape on Windows) AND
+      // 3. It doesn't start with '..' (not a parent escape) AND
+      // 4. It doesn't start with a path separator (not an absolute escape)
       if (rel === "") return true; // Same as allowed directory
       // On Windows, path.relative() returns an absolute path for cross-drive paths
       // e.g., relative("C:\\allowed", "D:\\malicious") returns "D:\\malicious"

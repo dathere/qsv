@@ -29,13 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Text preprocessing with stemming, lowercasing, and negation propagation
   - Falls back to substring search if BM25 index not yet built
 - **Deferred Tool Loading** - Implements Anthropic's Tool Search Tool pattern
-  - Only 8 core tools loaded initially (reduces token usage ~85%)
+  - Only 7 core tools loaded initially (reduces token usage ~85%)
   - Tools discovered via `qsv_search_tools` are dynamically added to tool list
-  - Core tools (always loaded): `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_data_profile`, `qsv_pipeline`, `qsv_command`
+  - Core tools (always loaded): `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, `qsv_command`
   - Searched tools are marked as loaded and appear in subsequent ListTools responses
-- **Manifest defer_loading Configuration** - Added `default_config` and `tool_configs` to manifest.json
-  - `defer_loading: true` by default for all tools
-  - Core utility tools have `defer_loading: false`
 
 ### Changed
 - **SkillLoader BM25 Integration** - `search()` method now uses BM25 with limit parameter
@@ -44,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **handleSearchToolsCall** - Now marks found tools as loaded for deferred loading pattern
 
 ### Dependencies
-- Added `wink-bm25-text-search` ^2.0.0 for BM25 search algorithm
+- Added `wink-bm25-text-search` ^3.0.0 (MIT licensed) for BM25 search algorithm
 - Added `wink-nlp-utils` ^2.1.0 for text preprocessing (stemming, tokenization)
 
 ## [15.2.0] - 2026-01-31

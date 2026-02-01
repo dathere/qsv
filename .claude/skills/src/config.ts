@@ -17,9 +17,9 @@ const QSV_VALIDATION_TIMEOUT_MS = 5000;
 
 /**
  * Expand template variables in strings
- * Supports: ${HOME}, ${USERPROFILE}, ${DESKTOP}, ${DOCUMENTS}, ${DOWNLOADS}, ${TEMP}, ${TMPDIR}
+ * Supports: ${HOME}, ${USERPROFILE}, ${DESKTOP}, ${DOCUMENTS}, ${DOWNLOADS}, ${TEMP}, ${TMPDIR}, ${PWD}
  */
-function expandTemplateVars(value: string): string {
+export function expandTemplateVars(value: string): string {
   if (!value) return value;
 
   const home = homedir();

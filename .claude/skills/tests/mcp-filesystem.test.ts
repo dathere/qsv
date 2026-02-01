@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { FilesystemResourceProvider } from '../src/mcp-filesystem.js';
 import { config } from '../src/config.js';
-import { mkdtemp, writeFile, rmdir, unlink, mkdir, realpath } from 'fs/promises';
+import { mkdtemp, writeFile, rmdir, unlink, mkdir, realpath, symlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir, homedir } from 'os';
 
@@ -396,6 +396,78 @@ test('resolvePath prevents cross-drive access on Windows', async () => {
     );
   } finally {
     try {
+      await rmdir(tempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+// ============================================================================
+// Symlink Canonicalization Tests
+// ============================================================================
+
+test('constructor resolves symlinks in workingDirectory', async () => {
+  // Skip on Windows where symlinks require elevated privileges
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  const tempDir = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+  const symlinkPath = join(tmpdir(), `qsv-symlink-test-${Date.now()}`);
+
+  try {
+    // Create symlink to temp directory
+    await symlink(tempDir, symlinkPath);
+
+    // Create provider with symlink path
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: symlinkPath,
+    });
+
+    // getWorkingDirectory should return the resolved real path, not the symlink
+    const resolvedTempDir = await realpath(tempDir);
+    assert.strictEqual(provider.getWorkingDirectory(), resolvedTempDir);
+  } finally {
+    try {
+      await unlink(symlinkPath);
+      await rmdir(tempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+test('constructor resolves symlinks in allowedDirectories', async () => {
+  // Skip on Windows where symlinks require elevated privileges
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  const tempDir = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+  const symlinkPath = join(tmpdir(), `qsv-symlink-test-${Date.now()}`);
+
+  try {
+    // Create symlink to temp directory
+    await symlink(tempDir, symlinkPath);
+
+    // Create a test file in the temp directory
+    await writeFile(join(tempDir, 'test.csv'), 'col1,col2\nval1,val2\n');
+
+    // Create provider with symlink in allowedDirectories
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir,
+      allowedDirectories: [symlinkPath],
+    });
+
+    // Should be able to access files via the resolved path
+    const resolved = await provider.resolvePath('test.csv');
+    const resolvedTempDir = await realpath(tempDir);
+    assert.strictEqual(resolved, join(resolvedTempDir, 'test.csv'));
+  } finally {
+    try {
+      await unlink(join(tempDir, 'test.csv'));
+      await unlink(symlinkPath);
       await rmdir(tempDir);
     } catch {
       // Ignore cleanup errors

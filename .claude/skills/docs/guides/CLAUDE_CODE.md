@@ -120,6 +120,7 @@ This will:
 - The `args` path must point to your built `mcp-server.js` file
 - `QSV_MCP_BIN_PATH` can be omitted if qsv is in PATH (auto-detected)
 - `QSV_MCP_WORKING_DIR` defaults to current directory if omitted
+- **`${PWD}` variable**: You can use `${PWD}` in `env` values to automatically map the working directory to your current terminal folder.
 - Use `:` (colon) to separate paths on macOS/Linux, `;` (semicolon) on Windows
 
 ### Step 3: Restart Claude Code

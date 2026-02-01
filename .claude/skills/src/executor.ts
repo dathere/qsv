@@ -102,10 +102,10 @@ export class SkillExecutor {
     // Build command arguments
     const args = this.buildArgs(skill, params);
 
-    // Get timeout from params, then config (default 2 minutes), then fallback
-    const rawTimeout = params.timeoutMs ?? config.operationTimeoutMs ?? 2 * 60 * 1000;
+    // Get timeout from params, then config (default 10 minutes), then fallback
+    const rawTimeout = params.timeoutMs ?? config.operationTimeoutMs ?? 10 * 60 * 1000;
     // Validate timeout: must be positive number, clamp to sane range (1s - 30min)
-    const timeoutMs = Math.max(1000, Math.min(30 * 60 * 1000, Number(rawTimeout) || 2 * 60 * 1000));
+    const timeoutMs = Math.max(1000, Math.min(30 * 60 * 1000, Number(rawTimeout) || 10 * 60 * 1000));
 
     // Execute qsv command
     const startTime = Date.now();

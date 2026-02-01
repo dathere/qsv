@@ -6,6 +6,7 @@
  */
 
 import { readdir, stat, readFile, realpath, access } from "fs/promises";
+import { realpathSync } from "fs";
 import { join, resolve, relative, basename, extname } from "path";
 import { homedir } from "os";
 import { spawn } from "child_process";
@@ -98,10 +99,21 @@ export class FilesystemResourceProvider {
   private metadataCachePromises: Map<string, Promise<FileMetadata | null>>;
 
   constructor(config: FilesystemConfig = {}) {
-    this.workingDir = resolve(config.workingDirectory || process.cwd());
+    try {
+      this.workingDir = realpathSync(resolve(config.workingDirectory || process.cwd()));
+    } catch {
+      this.workingDir = resolve(config.workingDirectory || process.cwd());
+    }
+
     this.allowedDirs = [
       this.workingDir,
-      ...(config.allowedDirectories || []).map((d) => resolve(d)),
+      ...(config.allowedDirectories || []).map((d) => {
+        try {
+          return realpathSync(resolve(d));
+        } catch {
+          return resolve(d);
+        }
+      }),
     ];
     this.allowedExtensions = new Set(
       config.allowedExtensions || [
@@ -152,7 +164,12 @@ export class FilesystemResourceProvider {
    */
   setWorkingDirectory(dir: string): void {
     const expanded = expandTilde(dir);
-    const newDir = resolve(expanded);
+    let newDir = resolve(expanded);
+    try {
+      newDir = realpathSync(newDir);
+    } catch {
+      // Keep as-is if directory doesn't exist or inaccessible
+    }
 
     // Validate that new working directory is within allowed directories
     const isAllowed = this.allowedDirs.some((allowedDir) => {
@@ -246,7 +263,7 @@ export class FilesystemResourceProvider {
         const limited = resources.slice(0, config.maxFilesPerListing);
         console.error(
           `Found ${resources.length} tabular data files in ${dir}, ` +
-            `but limit is ${config.maxFilesPerListing}. Returning first ${config.maxFilesPerListing} files.`,
+          `but limit is ${config.maxFilesPerListing}. Returning first ${config.maxFilesPerListing} files.`,
         );
         return { resources: limited };
       }

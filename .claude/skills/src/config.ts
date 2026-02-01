@@ -38,7 +38,8 @@ function expandTemplateVars(value: string): string {
     .replace(/\$\{DOCUMENTS\}/g, documents)
     .replace(/\$\{DOWNLOADS\}/g, downloads)
     .replace(/\$\{TEMP\}/g, temp)
-    .replace(/\$\{TMPDIR\}/g, temp);
+    .replace(/\$\{TMPDIR\}/g, temp)
+    .replace(/\$\{PWD\}/g, process.cwd());
 }
 
 /**
@@ -275,18 +276,18 @@ function detectQsvBinaryPath(): string | null {
   const commonLocations =
     process.platform === "win32"
       ? [
-          "C:\\Program Files\\qsv\\qsv.exe",
-          "C:\\qsv\\qsv.exe",
-          join(homedir(), "scoop", "shims", "qsv.exe"),
-          join(homedir(), "AppData", "Local", "Programs", "qsv", "qsv.exe"),
-        ]
+        "C:\\Program Files\\qsv\\qsv.exe",
+        "C:\\qsv\\qsv.exe",
+        join(homedir(), "scoop", "shims", "qsv.exe"),
+        join(homedir(), "AppData", "Local", "Programs", "qsv", "qsv.exe"),
+      ]
       : [
-          "/usr/local/bin/qsv",
-          "/opt/homebrew/bin/qsv", // Apple Silicon homebrew
-          "/usr/bin/qsv",
-          join(homedir(), ".cargo", "bin", "qsv"),
-          join(homedir(), ".local", "bin", "qsv"),
-        ];
+        "/usr/local/bin/qsv",
+        "/opt/homebrew/bin/qsv", // Apple Silicon homebrew
+        "/usr/bin/qsv",
+        join(homedir(), ".cargo", "bin", "qsv"),
+        join(homedir(), ".local", "bin", "qsv"),
+      ];
 
   // Try each common location
   for (const location of commonLocations) {

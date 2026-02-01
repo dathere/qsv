@@ -3,10 +3,6 @@ Find the difference between two CSVs with ludicrous speed.
 
 NOTE: diff does not support stdin. A file path is required for both arguments.
       Further, PRIMARY KEY VALUES MUST BE UNIQUE WITHIN EACH CSV.
-      When diffing CSVs with just a single --key column and a stats cache is
-      available, diff will automatically validate for primary key uniqueness.
-      If more than one --key column is specified, however, this auto-validation
-      is not done.
 
       To check if a CSV has unique primary key values, use `qsv extdedup`
       with the same key columns using the `--select` option:

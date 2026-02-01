@@ -9,6 +9,7 @@ import {
   parseMemoryToBytes,
   parseQsvMemoryInfo,
   parseQsvCommandList,
+  expandTemplateVars,
 } from '../src/config.js';
 
 test('config has all required properties', () => {
@@ -290,4 +291,28 @@ test('config.exposeAllTools defaults to undefined when env var not set', () => {
   if (config.exposeAllTools === expectedDefault) {
     assert.strictEqual(config.exposeAllTools, expectedDefault);
   }
+});
+
+// ============================================================================
+// Template Variable Expansion Tests
+// ============================================================================
+
+test('expandTemplateVars expands ${PWD} to process.cwd()', () => {
+  const result = expandTemplateVars('${PWD}/data');
+  assert.strictEqual(result, `${process.cwd()}/data`);
+});
+
+test('expandTemplateVars expands multiple ${PWD} occurrences', () => {
+  const result = expandTemplateVars('${PWD}/in:${PWD}/out');
+  assert.strictEqual(result, `${process.cwd()}/in:${process.cwd()}/out`);
+});
+
+test('expandTemplateVars returns empty string for empty input', () => {
+  const result = expandTemplateVars('');
+  assert.strictEqual(result, '');
+});
+
+test('expandTemplateVars returns value unchanged when no templates present', () => {
+  const result = expandTemplateVars('/usr/local/bin');
+  assert.strictEqual(result, '/usr/local/bin');
 });

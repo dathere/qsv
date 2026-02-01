@@ -2747,7 +2747,6 @@ pub fn get_stats_records(
                 Ok(stats) => csv_stats.push(stats),
                 Err(e) => eprintln!("error parsing stats: {e}"),
             }
-            // }
         }
         stats_data_loaded = !csv_stats.is_empty();
     }
@@ -2927,7 +2926,7 @@ pub fn get_stats_records(
         }
     }
 
-    Ok((csv_fields, csv_stats))
+    Ok((csv_fields.iter().take(csv_stats.len()).collect(), csv_stats))
 }
 
 pub fn csv_to_jsonl(

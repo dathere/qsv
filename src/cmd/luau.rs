@@ -261,7 +261,6 @@ Common options:
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
     fs, io,
     io::Write,
     path::{Path, PathBuf},
@@ -269,6 +268,7 @@ use std::{
 };
 
 use csv_index::RandomAccessSimple;
+use foldhash::{HashMap, HashMapExt};
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use log::{debug, info, log_enabled};

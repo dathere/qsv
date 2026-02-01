@@ -50,8 +50,7 @@ Common options:
                            Must be a single character. (default: ,)
 "#;
 
-use std::collections::HashMap;
-
+use foldhash::{HashMap, HashMapExt};
 use serde::Deserialize;
 
 use crate::{

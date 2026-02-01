@@ -330,7 +330,6 @@ Common options:
 "#;
 
 use std::{
-    collections::HashMap,
     env, fs,
     io::Write,
     path::{Path, PathBuf},
@@ -342,6 +341,7 @@ use std::{
 use cached::{
     DiskCache, IOCached, RedisCache, Return, proc_macro::io_cached, stores::DiskCacheBuilder,
 };
+use foldhash::{HashMap, HashMapExt};
 use indexmap::{IndexMap, IndexSet};
 use indicatif::HumanCount;
 use minijinja::{Environment, context};

@@ -276,7 +276,6 @@ Common options:
 
 use std::{
     borrow::Cow,
-    collections::HashMap,
     env,
     fs::File,
     io,
@@ -286,6 +285,7 @@ use std::{
     time::Instant,
 };
 
+use foldhash::{HashMap, HashMapExt};
 use polars::{
     io::avro::{AvroWriter, Compression as AvroCompression},
     polars_utils::compression::{GzipLevel, ZstdLevel},

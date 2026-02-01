@@ -311,7 +311,6 @@ if the CSV is not well-formed. See "safety:" comments in the code for more detai
 */
 
 use std::{
-    collections::HashMap,
     fmt, fs,
     io::{self, BufRead, Seek, Write},
     iter::repeat_n,
@@ -322,6 +321,7 @@ use std::{
 
 use blake3;
 use crossbeam_channel;
+use foldhash::{HashMap, HashMapExt};
 use itertools::Itertools;
 use phf::phf_map;
 use qsv_dateparser::parse_with_preference;

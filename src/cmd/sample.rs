@@ -227,14 +227,11 @@ Common options:
                            Must be a single character. (default: ,)
 "#;
 
-use std::{
-    collections::{HashMap, HashSet},
-    io,
-    str::FromStr,
-};
+use std::{io, str::FromStr};
 
 use chrono::{DateTime, Datelike, Duration, TimeZone, Timelike, Utc, Weekday};
 use chrono_tz::Tz;
+use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use futures_util::StreamExt;
 use qsv_dateparser::parse_with_preference_and_timezone;
 use rand::{
@@ -1562,8 +1559,6 @@ fn do_weighted_sampling<T: Rng + ?Sized>(
     max_weight: f64,
     rng: &mut T,
 ) -> CliResult<()> {
-    use std::collections::HashSet;
-
     let mut selected = HashSet::with_capacity(sample_size);
     let mut attempts = 0;
     let max_attempts = sample_size * 100; // Prevent infinite loops

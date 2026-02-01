@@ -99,9 +99,7 @@ Common options:
                            Must be a single character. (default: ,)
 "#;
 
-use std::collections::HashMap;
-
-use foldhash::fast::RandomState;
+use foldhash::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -204,7 +202,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Verify or VerifyVerbose Mode
         let mut safenames_vec: Vec<String> = Vec::new();
         let mut unsafenames_vec: Vec<String> = Vec::new();
-        let mut checkednames_map: HashMap<String, u16, RandomState> = HashMap::default();
+        let mut checkednames_map: HashMap<String, u16> = HashMap::default();
         let mut temp_string;
 
         for header_name in &headers {

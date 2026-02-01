@@ -893,11 +893,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     rconfig.write_headers(&mut rdr, &mut wtr)?;
 
     let mut sample_size = args.arg_sample_size;
-    let row_count: u64 = if let Ok(rc) = util::count_rows(&rconfig) {
-        rc
-    } else {
-        return fail!("Rowcount required.");
-    };
 
     match sampling_method {
         SamplingMethod::Bernoulli => {
@@ -924,6 +919,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     );
                 },
                 None => String::from("random"),
+            };
+
+            let row_count: u64 = if let Ok(rc) = util::count_rows(&rconfig) {
+                rc
+            } else {
+                return fail!("Systematic sampling requires rowcount.");
             };
 
             sample_systematic(
@@ -956,6 +957,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // determine sample size
             #[allow(clippy::cast_precision_loss)]
             let sample_size = if args.arg_sample_size < 1.0 {
+                let row_count: u64 = if let Ok(rc) = util::count_rows(&rconfig) {
+                    rc
+                } else {
+                    return fail!("Weighted fractional sampling requires rowcount.");
+                };
                 (row_count as f64 * args.arg_sample_size).round() as usize
             } else {
                 args.arg_sample_size as usize
@@ -1123,6 +1129,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                 #[allow(clippy::cast_precision_loss)]
                 let sample_size = if args.arg_sample_size < 1.0 {
+                    let row_count: u64 = if let Ok(rc) = util::count_rows(&rconfig) {
+                        rc
+                    } else {
+                        return fail!("Fractional sampling requires rowcount.");
+                    };
                     (row_count as f64 * args.arg_sample_size).round() as u64
                 } else {
                     args.arg_sample_size as u64

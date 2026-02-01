@@ -2743,9 +2743,13 @@ pub fn get_stats_records(
             #[cfg(target_endian = "little")]
             let parse_result = simd_json::from_slice::<StatsData>(&mut s_slice);
 
-            match parse_result {
-                Ok(stats) => csv_stats.push(stats),
-                Err(e) => eprintln!("error parsing stats: {e}"),
+            if let Ok(stats) = parse_result {
+                csv_stats.push(stats)
+            } else {
+                // if we encounter a parsing error, clear csv_stats and break
+                // so that we regenerate the stats data
+                csv_stats.clear();
+                break;
             }
         }
         stats_data_loaded = !csv_stats.is_empty();

@@ -175,12 +175,7 @@ sqlp arguments:
 
 sqlp options:
     --format <arg>            The output format to use. Valid values are:
-                                csv      Comma-separated values
-                                json     JSON
-                                jsonl    JSONL (JSON Lines)
-                                parquet  Apache Parquet
-                                arrow    Apache Arrow IPC
-                                avro     Apache Avro
+                                csv, json, jsonl, parquet, arrow, avro
                               [default: csv]
 
                               POLARS CSV INPUT PARSING OPTIONS:

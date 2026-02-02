@@ -228,7 +228,7 @@ qsv_currency = "0.7"
 qsv-tabwriter = "2"
 qsv_vader_sentiment_analysis = { version = "0.2", optional = true }
 rand = "0.9"
-rand_hc = "0.4"
+rand_hc = "0.5"
 rand_xoshiro = "0.7"
 rayon = "1.11"
 redis = { version = "1", features = ["ahash"], default-features = false }

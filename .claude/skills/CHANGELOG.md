@@ -5,7 +5,7 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [16.0.0] - 2026-02-02
 
 ### Added
 - **Executor Timeout Handling** - `runQsv()` now enforces timeout on spawned qsv processes
@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Graceful termination: sends SIGTERM, then SIGKILL after 1 second
   - Returns exit code 124 (standard timeout code) with descriptive error message
   - Prevents hanging processes from blocking the MCP server
+- **Gemini CLI Integration** - New documentation and support for Google's Gemini CLI
+  - Integration guide at `docs/guides/GEMINI_CLI.md`
+  - Template variable expansion support for `${PWD}`
 
 ### Changed
 - **Reduced MCP Skills** - Excluded `edit`, `flatten`, `pro`, and `snappy` commands from MCP skills generation, reducing from 60 to 56 skills
@@ -20,6 +23,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `flatten` - not suitable for AI agent use
   - `pro` - contains interactive/terminal-dependent subcommands (lens, workflow)
   - `snappy` - compression utility not needed for AI agents
+- **Signal Termination Handling** - Proper signal handling in executor close handler
+  - Maps signal termination to conventional exit codes (128 + signal number)
+  - SIGTERM→143, SIGKILL→137, SIGINT→130, SIGHUP→129, SIGQUIT→131
+  - Signal information added to stderr for debugging
+- **Tool Guidance Updates** - Updated command categorization for better accuracy
+  - `ALWAYS_FILE_COMMANDS`: Added slice, sample, template, geocode
+  - `METADATA_COMMANDS`: Removed slice, sample (now in always-file)
+  - Enhanced guidance for search, moarstats, apply, rename, excel commands
+
+### Security
+- **Windows Cross-Drive Path Traversal Fix** - Security fix for path validation on Windows
+  - `path.relative()` returns absolute path when comparing paths on different drives
+  - Added `isAbsolute()` validation in `setWorkingDirectory()`, `resolvePath()`, and `validatePath()`
+  - Prevents potential path traversal attacks across drive boundaries
 
 ### Removed
 - **Removed client-detector.ts** - Eliminated client auto-detection that bypassed deferred loading
@@ -31,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tool guidance now recommends using `qsv stats --cardinality --stats-jsonl` instead
   - Removed profile cache manager and related configuration options
   - Core tools reduced from 8 to 7
+- **Removed `QSV_MCP_TIMEOUT_MS`** - Dead code with 5-minute default removed
+  - Consolidated to single timeout source: `QSV_MCP_OPERATION_TIMEOUT_MS` (10-minute default)
+  - Removed profile cache environment variables: `QSV_MCP_PROFILE_CACHE_ENABLED`, `QSV_MCP_PROFILE_CACHE_SIZE_MB`, `QSV_MCP_PROFILE_CACHE_TTL_MS`
 
 ## [15.3.0] - 2026-01-31
 

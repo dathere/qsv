@@ -6,6 +6,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [16.0.0] - 2026-02-XX
+
+### Breaking Changes
+
+1. **`diff` command**: `--force` option removed
+   - Was used for short-circuiting diffs based on dataset_stats
+   - No longer needed after stats cache API simplification
+
+### Changed
+
+- perf: Use foldhash HashMap/HashSet across codebase for faster hashing
+  - Replaces std::collections with foldhash in 14 modules
+  - foldhash is much faster than std::collections for non-crypto hashing
+- refactor: Remove dataset_stats from stats cache system
+  - Simplified get_stats_records() API
+  - Centralized rowcount handling in sample command
+  - Adapted diff, pivotp, sample, and other commands to new API
+- refactor: `pivotp` use sparsity for suggestions and uniqueness_ratio for pivot heuristics
+- refactor: `sample` lazily compute row_count only for sampling methods that need it
+- refactor: Stats cache now regenerates on parse error (improved robustness)
+- refactor: Safe fallback on corrupted stats cache
+- deps: bump csv-nose from 0.7.0 to 0.8.0
+- deps: bump pyo3 from 0.27.2 to 0.28.0
+- deps: bump jsonschema from 0.40.0 to 0.40.2
+- deps: bump redis from 1.0.2 to 1.0.3
+- deps: bump zmij from 1.0.17 to 1.0.19
+- deps: bump zerocopy from 0.8.35 to 0.8.37
+- deps: bump polars to latest upstream
+- applied clippy::semicolon_if_nothing_returned suggestions
+- applied several GH Copilot review suggestions
+
+### Fixed
+
+- fix: `frequency` column selection when using `--select` option in different order
+  - Now lookup cardinality by column name instead of index
+  - Handles user-selected/reordered column subsets correctly
+- fix: `sample` handle missing min weight in stats cache
+- fix: `validate` adapt tests to jsonschema 0.40.2 error message format changes
+
+**Full Changelog**: [15.0.1...16.0.0](https://github.com/dathere/qsv/compare/15.0.1...16.0.0)
+
+---
+
 ## [15.0.1] - 2026-01-28
 
 Ooops, we celebrated `color` and the `magika`-powered revamped `sniff` but forgot to actually enable them in the last release prebuilts! This patch adds the new `color` command, turns on `magika`, along with several fixes and dependency bumps.

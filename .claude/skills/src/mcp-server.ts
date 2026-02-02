@@ -30,8 +30,10 @@ import {
   handleGenericCommand,
   createConfigTool,
   createSearchToolsTool,
+  createToParquetTool,
   handleConfigTool,
   handleSearchToolsCall,
+  handleToParquetCall,
   initiateShutdown,
   killAllProcesses,
   getActiveProcessCount,
@@ -55,6 +57,7 @@ const CORE_TOOLS = [
   "qsv_list_files",
   "qsv_pipeline",
   "qsv_command",
+  "qsv_to_parquet",
 ] as const;
 
 /**
@@ -446,14 +449,15 @@ class QsvMcpServer {
           throw error;
         }
 
-        // Add config and search tools
-        console.error("[Server] Adding config and search tools...");
+        // Add config, search, and conversion tools
+        console.error("[Server] Adding config, search, and conversion tools...");
         try {
           tools.push(createConfigTool());
           tools.push(createSearchToolsTool());
-          console.error("[Server] config and search tools added successfully");
+          tools.push(createToParquetTool());
+          console.error("[Server] config, search, and conversion tools added successfully");
         } catch (error) {
-          console.error("[Server] Error creating config/search tools:", error);
+          console.error("[Server] Error creating config/search/conversion tools:", error);
           throw error;
         }
 
@@ -661,6 +665,11 @@ class QsvMcpServer {
             this.loader,
             this.loadedTools,
           );
+        }
+
+        // Handle CSV to Parquet conversion tool
+        if (name === "qsv_to_parquet") {
+          return await handleToParquetCall(args || {}, this.filesystemProvider);
         }
 
         // Handle common command tools

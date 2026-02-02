@@ -163,7 +163,7 @@ const ERROR_PREVENTION_HINTS: Record<string, string> = {
     "High-cardinality columns (IDs, timestamps) can produce huge output. Use qsv_stats --cardinality to inspect column cardinality before running frequency.",
   pivotp:
     "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns.",
-  sqlp: "When encountering errors with sqlp, use DuckDB when available instead for complex queries.",
+  sqlp: "When encountering errors with sqlp, use DuckDB when available instead for complex queries. Convert the CSV to Parquet first for best performance. Do so by using sqlp's `--format parquet`.",
   moarstats:
     "Run stats first to create cache. Slower than stats but richer output.",
   searchset: "Needs regex file. qsv_search easier for simple patterns.",
@@ -299,6 +299,38 @@ function isFilesystemProviderExtended(
     typeof (obj as any).getConversionCommand === "function" &&
     typeof (obj as any).getWorkingDirectory === "function"
   );
+}
+
+/**
+ * Build arguments for file conversion commands.
+ * Handles different patterns:
+ * - Excel/JSONL: qsv <cmd> <input> --output <output>
+ * - Parquet→CSV: qsv sqlp SKIP_INPUT "select * from read_parquet('<input>')" --output <output>
+ * - CSV→Parquet: qsv sqlp SKIP_INPUT "select * from read_csv('<input>')" --format parquet --output <output>
+ */
+export function buildConversionArgs(
+  conversionCmd: string,
+  inputFile: string,
+  outputFile: string,
+): string[] {
+  if (conversionCmd === "parquet") {
+    // Parquet→CSV conversion
+    // Normalize path separators for SQL (Windows backslashes → forward slashes)
+    const normalizedPath = inputFile.replace(/\\/g, "/");
+    // Escape single quotes in path for SQL string safety
+    const escapedPath = normalizedPath.replace(/'/g, "''");
+    const sql = `select * from read_parquet('${escapedPath}')`;
+    return ["sqlp", "SKIP_INPUT", sql, "--output", outputFile];
+  }
+  if (conversionCmd === "csv-to-parquet") {
+    // CSV→Parquet conversion for SQL performance
+    const normalizedPath = inputFile.replace(/\\/g, "/");
+    const escapedPath = normalizedPath.replace(/'/g, "''");
+    const sql = `select * from read_csv('${escapedPath}')`;
+    return ["sqlp", "SKIP_INPUT", sql, "--format", "parquet", "--compression", "snappy", "--statistics","--output", outputFile];
+  }
+  // Standard: qsv <cmd> <input> --output <output>
+  return [conversionCmd, inputFile, "--output", outputFile];
 }
 
 /**
@@ -881,13 +913,12 @@ export async function handleToolCall(
                 );
 
                 try {
-                  // Run conversion command: qsv excel/jsonl <input> --output <converted.csv>
-                  const conversionArgs = [
+                  // Build conversion args based on command type
+                  const conversionArgs = buildConversionArgs(
                     conversionCmd,
                     inputFile,
-                    "--output",
                     convertedPath,
-                  ];
+                  );
                   console.error(
                     `[MCP Tools] Running conversion: ${qsvBin} ${conversionArgs.join(" ")}`,
                   );
@@ -1780,5 +1811,162 @@ export async function handleSearchToolsCall(
       },
     ],
   };
+}
+
+/**
+ * Create qsv_to_parquet tool definition
+ * Converts CSV files to Parquet format for optimized SQL operations
+ */
+export function createToParquetTool(): McpToolDefinition {
+  return {
+    name: "qsv_to_parquet",
+    description: `Convert CSV to Parquet format for optimized SQL operations.
+
+💡 USE WHEN: Planning multiple SQL queries (sqlp) on the same large CSV file. Parquet is columnar and compressed - significantly faster for SQL operations.
+
+📋 COMMON PATTERN: Convert once at start of analysis session, then use Parquet file for all subsequent sqlp queries.
+
+⚠️ REQUIRES: qsv built with Polars feature.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        input_file: {
+          type: "string",
+          description: "Path to input CSV file to convert",
+        },
+        output_file: {
+          type: "string",
+          description:
+            "Path for output Parquet file (optional - defaults to input_file.parquet in same directory)",
+        },
+      },
+      required: ["input_file"],
+    },
+  };
+}
+
+/**
+ * Handle qsv_to_parquet tool call
+ * Converts CSV to Parquet using sqlp's read_csv and --format parquet
+ */
+export async function handleToParquetCall(
+  params: Record<string, unknown>,
+  filesystemProvider?: FilesystemProviderExtended,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  let inputFile = params.input_file as string | undefined;
+  let outputFile = params.output_file as string | undefined;
+
+  if (!inputFile) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: "Error: input_file parameter is required",
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  // Resolve input file path using filesystem provider if available
+  if (filesystemProvider) {
+    try {
+      const originalInputFile = inputFile;
+      inputFile = await filesystemProvider.resolvePath(inputFile);
+      console.error(
+        `[MCP Tools] Resolved input file: ${originalInputFile} -> ${inputFile}`,
+      );
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error resolving input file path: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
+  // Generate output path if not provided
+  if (!outputFile) {
+    // Replace .csv extension with .parquet, or append .parquet if no .csv extension
+    if (inputFile.toLowerCase().endsWith(".csv")) {
+      outputFile = inputFile.slice(0, -4) + ".parquet";
+    } else if (inputFile.toLowerCase().endsWith(".csv.sz")) {
+      // Handle snappy-compressed CSV
+      outputFile = inputFile.slice(0, -7) + ".parquet";
+    } else {
+      outputFile = inputFile + ".parquet";
+    }
+  }
+
+  // Resolve output file path using filesystem provider if available
+  if (filesystemProvider && outputFile) {
+    try {
+      const originalOutputFile = outputFile;
+      outputFile = await filesystemProvider.resolvePath(outputFile);
+      console.error(
+        `[MCP Tools] Resolved output file: ${originalOutputFile} -> ${outputFile}`,
+      );
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error resolving output file path: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
+  // Build conversion args
+  const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, outputFile);
+  const qsvBin = getQsvBinaryPath();
+
+  console.error(
+    `[MCP Tools] Running CSV→Parquet conversion: ${qsvBin} ${conversionArgs.join(" ")}`,
+  );
+
+  try {
+    const startTime = Date.now();
+    await runQsvWithTimeout(qsvBin, conversionArgs);
+    const duration = Date.now() - startTime;
+
+    // Get output file size for reporting
+    let fileSizeInfo = "";
+    try {
+      const outputStats = await stat(outputFile);
+      fileSizeInfo = ` (${formatBytes(outputStats.size)})`;
+    } catch {
+      // Ignore stat errors
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `✅ Successfully converted CSV to Parquet\n\n` +
+            `Input: ${inputFile}\n` +
+            `Output: ${outputFile}${fileSizeInfo}\n` +
+            `Duration: ${duration}ms\n\n` +
+            `The Parquet file is now ready for fast SQL queries via qsv_sqlp or DuckDB.`,
+        },
+      ],
+    };
+  } catch (error) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Error converting CSV to Parquet: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ],
+      isError: true,
+    };
+  }
 }
 

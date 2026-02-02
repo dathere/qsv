@@ -77,13 +77,19 @@ test('resolvePath prevents directory traversal', async () => {
   }
 });
 
-test('needsConversion detects Excel and JSONL formats', () => {
+test('needsConversion detects Excel, JSONL, and Parquet formats', () => {
   const provider = new FilesystemResourceProvider();
-  
+
+  // Excel formats
   assert.strictEqual(provider.needsConversion('file.xlsx'), true);
   assert.strictEqual(provider.needsConversion('file.xls'), true);
+  // JSONL formats
   assert.strictEqual(provider.needsConversion('file.jsonl'), true);
   assert.strictEqual(provider.needsConversion('file.ndjson'), true);
+  // Parquet formats
+  assert.strictEqual(provider.needsConversion('file.parquet'), true);
+  assert.strictEqual(provider.needsConversion('file.pq'), true);
+  // Native CSV formats (no conversion needed)
   assert.strictEqual(provider.needsConversion('file.csv'), false);
   assert.strictEqual(provider.needsConversion('file.tsv'), false);
 });
@@ -91,9 +97,18 @@ test('needsConversion detects Excel and JSONL formats', () => {
 test('getConversionCommand returns correct command', () => {
   const provider = new FilesystemResourceProvider();
 
+  // Excel
   assert.strictEqual(provider.getConversionCommand('file.xlsx'), 'excel');
+  assert.strictEqual(provider.getConversionCommand('file.xls'), 'excel');
+  // JSONL
   assert.strictEqual(provider.getConversionCommand('file.jsonl'), 'jsonl');
+  assert.strictEqual(provider.getConversionCommand('file.ndjson'), 'jsonl');
+  // Parquet
+  assert.strictEqual(provider.getConversionCommand('file.parquet'), 'parquet');
+  assert.strictEqual(provider.getConversionCommand('file.pq'), 'parquet');
+  // Native CSV (no conversion)
   assert.strictEqual(provider.getConversionCommand('file.csv'), null);
+  assert.strictEqual(provider.getConversionCommand('file.tsv'), null);
 });
 
 test('listFiles excludes converted files with UUID pattern', async () => {

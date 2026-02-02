@@ -88,6 +88,7 @@ export class FilesystemResourceProvider {
     ".ods",
   ]);
   private static readonly JSONL_FORMATS = new Set([".jsonl", ".ndjson"]);
+  private static readonly PARQUET_FORMATS = new Set([".parquet", ".pq"]);
 
   private workingDir: string;
   private allowedDirs: string[];
@@ -137,6 +138,9 @@ export class FilesystemResourceProvider {
         // JSONL/NDJSON (require conversion via qsv jsonl)
         ".jsonl",
         ".ndjson",
+        // Parquet formats (require conversion via qsv sqlp)
+        ".parquet",
+        ".pq",
       ],
     );
     this.maxPreviewSize = config.maxPreviewSize || 1024 * 1024; // 1MB
@@ -334,7 +338,8 @@ export class FilesystemResourceProvider {
 
     return (
       FilesystemResourceProvider.EXCEL_FORMATS.has(ext) ||
-      FilesystemResourceProvider.JSONL_FORMATS.has(ext)
+      FilesystemResourceProvider.JSONL_FORMATS.has(ext) ||
+      FilesystemResourceProvider.PARQUET_FORMATS.has(ext)
     );
   }
 
@@ -347,6 +352,7 @@ export class FilesystemResourceProvider {
 
     if (FilesystemResourceProvider.EXCEL_FORMATS.has(ext)) return "excel";
     if (FilesystemResourceProvider.JSONL_FORMATS.has(ext)) return "jsonl";
+    if (FilesystemResourceProvider.PARQUET_FORMATS.has(ext)) return "parquet";
 
     return null;
   }
@@ -809,6 +815,11 @@ export class FilesystemResourceProvider {
       case ".jsonl":
       case ".ndjson":
         return "application/x-ndjson";
+
+      // Parquet formats
+      case ".parquet":
+      case ".pq":
+        return "application/vnd.apache.parquet";
 
       default:
         return "application/octet-stream";

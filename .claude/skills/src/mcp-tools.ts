@@ -163,7 +163,8 @@ const ERROR_PREVENTION_HINTS: Record<string, string> = {
     "High-cardinality columns (IDs, timestamps) can produce huge output. Use qsv_stats --cardinality to inspect column cardinality before running frequency.",
   pivotp:
     "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns.",
-  sqlp: "When encountering errors with sqlp, use DuckDB when available instead for complex queries. Convert the CSV to Parquet first for best performance. Do so by using sqlp's `--format parquet`.",
+  sqlp:
+    "When encountering errors with sqlp, use DuckDB when available instead for complex queries. For better performance, convert CSV to Parquet first using qsv_to_parquet, then query the Parquet file.",
   moarstats:
     "Run stats first to create cache. Slower than stats but richer output.",
   searchset: "Needs regex file. qsv_search easier for simple patterns.",

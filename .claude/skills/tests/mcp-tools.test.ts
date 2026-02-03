@@ -9,6 +9,9 @@ import {
   getActiveProcessCount,
   createSearchToolsTool,
   handleSearchToolsCall,
+  buildConversionArgs,
+  createToParquetTool,
+  handleToParquetCall,
 } from '../src/mcp-tools.js';
 import { SkillLoader } from '../src/loader.js';
 import { SkillExecutor } from '../src/executor.js';
@@ -218,4 +221,138 @@ test('handleSearchToolsCall accumulates loaded tools across searches', async () 
 
   // Should accumulate (not reset)
   assert.ok(sizeAfterSecond >= sizeAfterFirst, 'loadedTools should accumulate across searches');
+});
+
+// ============================================================================
+// buildConversionArgs Tests (Parquet support)
+// ============================================================================
+
+test('buildConversionArgs returns correct args for Excel', () => {
+  const args = buildConversionArgs('excel', 'input.xlsx', 'output.csv');
+
+  assert.deepStrictEqual(args, ['excel', 'input.xlsx', '--output', 'output.csv']);
+});
+
+test('buildConversionArgs returns correct args for JSONL', () => {
+  const args = buildConversionArgs('jsonl', 'input.jsonl', 'output.csv');
+
+  assert.deepStrictEqual(args, ['jsonl', 'input.jsonl', '--output', 'output.csv']);
+});
+
+test('buildConversionArgs returns correct args for Parquet', () => {
+  const args = buildConversionArgs('parquet', 'input.parquet', 'output.csv');
+
+  assert.deepStrictEqual(args, [
+    'sqlp',
+    'SKIP_INPUT',
+    "select * from read_parquet('input.parquet')",
+    '--output',
+    'output.csv',
+  ]);
+});
+
+test('buildConversionArgs handles Windows paths for Parquet', () => {
+  // Windows paths should have backslashes converted to forward slashes in SQL
+  const args = buildConversionArgs('parquet', 'C:\\data\\file.parquet', 'output.csv');
+
+  assert.deepStrictEqual(args, [
+    'sqlp',
+    'SKIP_INPUT',
+    "select * from read_parquet('C:/data/file.parquet')",
+    '--output',
+    'output.csv',
+  ]);
+});
+
+test('buildConversionArgs escapes single quotes in Parquet paths', () => {
+  // Single quotes in paths need to be escaped for SQL safety
+  const args = buildConversionArgs('parquet', "file's.parquet", 'output.csv');
+
+  assert.deepStrictEqual(args, [
+    'sqlp',
+    'SKIP_INPUT',
+    "select * from read_parquet('file''s.parquet')",
+    '--output',
+    'output.csv',
+  ]);
+});
+
+// ============================================================================
+// CSV→Parquet Conversion Tests (csv-to-parquet)
+// ============================================================================
+
+test('buildConversionArgs returns correct args for CSV→Parquet', () => {
+  const args = buildConversionArgs('csv-to-parquet', 'input.csv', 'output.parquet');
+
+  assert.deepStrictEqual(args, [
+    'sqlp',
+    'SKIP_INPUT',
+    "select * from read_csv('input.csv')",
+    '--format',
+    'parquet',
+    '--compression',
+    'snappy',
+    '--statistics',
+    '--output',
+    'output.parquet',
+  ]);
+});
+
+test('buildConversionArgs handles Windows paths for CSV→Parquet', () => {
+  const args = buildConversionArgs('csv-to-parquet', 'C:\\data\\file.csv', 'output.parquet');
+
+  assert.deepStrictEqual(args, [
+    'sqlp',
+    'SKIP_INPUT',
+    "select * from read_csv('C:/data/file.csv')",
+    '--format',
+    'parquet',
+    '--compression',
+    'snappy',
+    '--statistics',
+    '--output',
+    'output.parquet',
+  ]);
+});
+
+test('buildConversionArgs escapes single quotes in CSV→Parquet paths', () => {
+  const args = buildConversionArgs('csv-to-parquet', "file's.csv", 'output.parquet');
+
+  assert.deepStrictEqual(args, [
+    'sqlp',
+    'SKIP_INPUT',
+    "select * from read_csv('file''s.csv')",
+    '--format',
+    'parquet',
+    '--compression',
+    'snappy',
+    '--statistics',
+    '--output',
+    'output.parquet',
+  ]);
+});
+
+// ============================================================================
+// qsv_to_parquet Tool Definition Tests
+// ============================================================================
+
+test('createToParquetTool returns valid tool definition', () => {
+  const toolDef = createToParquetTool();
+
+  assert.strictEqual(toolDef.name, 'qsv_to_parquet');
+  assert.ok(toolDef.description.includes('Convert CSV to Parquet'));
+  assert.ok(toolDef.description.includes('USE WHEN'));
+  assert.ok(toolDef.description.includes('Polars'));
+  assert.strictEqual(toolDef.inputSchema.type, 'object');
+  assert.ok('input_file' in toolDef.inputSchema.properties);
+  assert.ok('output_file' in toolDef.inputSchema.properties);
+  assert.deepStrictEqual(toolDef.inputSchema.required, ['input_file']);
+});
+
+test('handleToParquetCall requires input_file parameter', async () => {
+  const result = await handleToParquetCall({});
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('input_file'));
+  assert.ok(result.content[0].text?.includes('required'));
 });

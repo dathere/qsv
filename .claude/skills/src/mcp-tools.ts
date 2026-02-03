@@ -1920,13 +1920,16 @@ export async function handleToParquetCall(
     }
   }
 
+  // At this point outputFile is guaranteed to be defined (either provided or generated)
+  let resolvedOutputFile: string = outputFile as string;
+
   // Resolve output file path using filesystem provider if available
-  if (filesystemProvider && outputFile) {
+  if (filesystemProvider) {
     try {
-      const originalOutputFile = outputFile;
-      outputFile = await filesystemProvider.resolvePath(outputFile);
+      const originalOutputFile = resolvedOutputFile;
+      resolvedOutputFile = await filesystemProvider.resolvePath(resolvedOutputFile);
       console.error(
-        `[MCP Tools] Resolved output file: ${originalOutputFile} -> ${outputFile}`,
+        `[MCP Tools] Resolved output file: ${originalOutputFile} -> ${resolvedOutputFile}`,
       );
     } catch (error) {
       return {
@@ -1942,7 +1945,7 @@ export async function handleToParquetCall(
   }
 
   // Build conversion args
-  const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, outputFile);
+  const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, resolvedOutputFile);
   const qsvBin = getQsvBinaryPath();
 
   console.error(
@@ -1957,7 +1960,7 @@ export async function handleToParquetCall(
     // Get output file size for reporting
     let fileSizeInfo = "";
     try {
-      const outputStats = await stat(outputFile);
+      const outputStats = await stat(resolvedOutputFile);
       fileSizeInfo = ` (${formatBytes(outputStats.size)})`;
     } catch {
       // Ignore stat errors
@@ -1969,7 +1972,7 @@ export async function handleToParquetCall(
           type: "text",
           text: `✅ Successfully converted CSV to Parquet\n\n` +
             `Input: ${inputFile}\n` +
-            `Output: ${outputFile}${fileSizeInfo}\n` +
+            `Output: ${resolvedOutputFile}${fileSizeInfo}\n` +
             `Duration: ${duration}ms\n\n` +
             `The Parquet file is now ready for fast SQL queries via qsv_sqlp or DuckDB.`,
         },

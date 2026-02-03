@@ -1821,9 +1821,11 @@ export async function handleSearchToolsCall(
 export function createToParquetTool(): McpToolDefinition {
   return {
     name: "qsv_to_parquet",
-    description: `Convert CSV to Parquet format for optimized SQL operations.
+    description: `Convert CSV to Parquet format with guaranteed data type inference.
 
 💡 USE WHEN: Planning multiple SQL queries (sqlp) on the same large CSV file. Parquet is columnar and compressed - significantly faster for SQL operations.
+
+📋 AUTO-OPTIMIZATION: Automatically runs stats and generates Polars schema before conversion to ensure correct data types (integers, floats, dates, booleans).
 
 📋 COMMON PATTERN: Convert once at start of analysis session, then use Parquet file for all subsequent sqlp queries.
 
@@ -1944,16 +1946,31 @@ export async function handleToParquetCall(
     }
   }
 
-  // Build conversion args
-  const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, resolvedOutputFile);
   const qsvBin = getQsvBinaryPath();
-
-  console.error(
-    `[MCP Tools] Running CSV→Parquet conversion: ${qsvBin} ${conversionArgs.join(" ")}`,
-  );
+  const startTime = Date.now();
 
   try {
-    const startTime = Date.now();
+    // Step 1: Generate stats cache for accurate type inference
+    // This creates .stats.csv and .stats.csv.data.jsonl files
+    console.error(`[MCP Tools] Step 1: Generating stats cache for ${inputFile}`);
+    const statsArgs = ["stats", inputFile, "--cardinality", "--stats-jsonl"];
+    await runQsvWithTimeout(qsvBin, statsArgs);
+    console.error(`[MCP Tools] Stats cache generated successfully`);
+
+    // Step 2: Generate Polars schema using the stats cache
+    // This creates a .pschema.json file that sqlp will auto-detect
+    console.error(`[MCP Tools] Step 2: Generating Polars schema for ${inputFile}`);
+    const schemaArgs = ["schema", "--polars", inputFile];
+    await runQsvWithTimeout(qsvBin, schemaArgs);
+    const schemaFile = inputFile + ".pschema.json";
+    console.error(`[MCP Tools] Polars schema generated: ${schemaFile}`);
+
+    // Step 3: Convert to Parquet (sqlp will auto-detect .pschema.json)
+    console.error(`[MCP Tools] Step 3: Converting to Parquet with schema`);
+    const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, resolvedOutputFile);
+    console.error(
+      `[MCP Tools] Running CSV→Parquet conversion: ${qsvBin} ${conversionArgs.join(" ")}`,
+    );
     await runQsvWithTimeout(qsvBin, conversionArgs);
     const duration = Date.now() - startTime;
 
@@ -1970,10 +1987,12 @@ export async function handleToParquetCall(
       content: [
         {
           type: "text",
-          text: `✅ Successfully converted CSV to Parquet\n\n` +
+          text: `✅ Successfully converted CSV to Parquet with optimized schema\n\n` +
             `Input: ${inputFile}\n` +
             `Output: ${resolvedOutputFile}${fileSizeInfo}\n` +
+            `Schema: ${schemaFile}\n` +
             `Duration: ${duration}ms\n\n` +
+            `Generated stats cache and Polars schema for accurate data type inference.\n` +
             `The Parquet file is now ready for fast SQL queries via qsv_sqlp or DuckDB.`,
         },
       ],

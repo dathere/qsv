@@ -67,12 +67,7 @@ const ALWAYS_FILE_COMMANDS = new Set([
 /**
  * Commands that return small metadata (not full CSV) and should use stdout
  */
-const METADATA_COMMANDS = new Set([
-  "count",
-  "headers",
-  "index",
-  "sniff",
-]);
+const METADATA_COMMANDS = new Set(["count", "headers", "index", "sniff"]);
 
 /**
  * Guidance for when to use each command - helps Claude make smart decisions
@@ -100,15 +95,13 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
   headers: "View/rename column names. Quick CSV structure discovery.",
   sample:
     "Random sampling. Fast, memory-efficient. Good for previews or test datasets.",
-  schema:
-    "Infer data types, generate Polars Schema & JSON Schema.",
+  schema: "Infer data types, generate Polars Schema & JSON Schema.",
   validate:
     "Validate against JSON Schema. Check data quality, type correctness. Also use this without a JSON Schema to check if a CSV is well-formed.",
-  sqlp: "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns. Use stats cache (qsv_stats --stats-jsonl) for optimization hints on column cardinalities and data types.",
+  sqlp: "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns. Supports CSV/TSV/SSV, Parquet, JSONL, and Arrow input. For multiple queries on same large file, convert to Parquet first with qsv_to_parquet. Use stats cache (qsv_stats --stats-jsonl) for optimization hints.",
   apply:
     "Transform columns (trim, upper, lower, squeeze, strip). Subcommands: operations, dynfmt, emptyreplace, calcconv. For custom logic, use qsv_luau.",
-  rename:
-    "Rename columns. Supports bulk/regex.",
+  rename: "Rename columns. Supports bulk/regex.",
   template:
     "Generate formatted output from CSV using Mini Jinja templates. For reports, markdown, HTML.",
   index:
@@ -135,7 +128,7 @@ const COMMON_PATTERNS: Record<string, string> = {
   search: "Combine with select: search (filter rows) → select (pick columns).",
   frequency:
     "Stats → Frequency: Use qsv_stats --cardinality first to identify high-cardinality columns (IDs) to exclude from frequency analysis.",
-  sqlp: 'Replaces pipelines: "SELECT * FROM data WHERE x > 10 ORDER BY y LIMIT 100" vs select→search→sort→slice.',
+  sqlp: "For repeated queries: CSV→Parquet (once) → sqlp (many). Parquet is for sqlp/DuckDB only - use CSV/TSV/SSV for stats, frequency, joinp, pivotp, etc.",
   join: "Run qsv_index first on both files for speed.",
   joinp:
     "Stats → Join: Use qsv_stats --cardinality on both files, put lower-cardinality join column on right for efficiency.",
@@ -163,8 +156,14 @@ const ERROR_PREVENTION_HINTS: Record<string, string> = {
     "High-cardinality columns (IDs, timestamps) can produce huge output. Use qsv_stats --cardinality to inspect column cardinality before running frequency.",
   pivotp:
     "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns.",
-  sqlp:
-    "When encountering errors with sqlp, use DuckDB when available instead for complex queries. For better performance, convert CSV to Parquet first using qsv_to_parquet, then query the Parquet file.",
+  sqlp: "When encountering errors with sqlp, use DuckDB when available instead for complex queries. For repeated SQL queries, convert CSV to Parquet first using qsv_to_parquet. Note: Parquet works ONLY with sqlp and DuckDB - use CSV/TSV/SSV for all other qsv commands (including joinp and pivotp).",
+  stats:
+    "Works with CSV/TSV/SSV files only. For SQL queries, use sqlp. Run qsv_index first for files >10MB.",
+  count: "Works with CSV/TSV/SSV files only. Very fast with index file (.idx).",
+  headers:
+    "Works with CSV/TSV/SSV files only. For Parquet schema, use sqlp with DESCRIBE.",
+  index:
+    "Creates .idx index for CSV/TSV/SSV files only. Parquet files don't need indexing.",
   moarstats:
     "Run stats first to create cache. Slower than stats but richer output.",
   searchset: "Needs regex file. qsv_search easier for simple patterns.",
@@ -307,7 +306,8 @@ function isFilesystemProviderExtended(
  * Handles different patterns:
  * - Excel/JSONL: qsv <cmd> <input> --output <output>
  * - Parquet→CSV: qsv sqlp SKIP_INPUT "select * from read_parquet('<input>')" --output <output>
- * - CSV→Parquet: qsv sqlp SKIP_INPUT "select * from read_csv('<input>')" --format parquet --output <output>
+ * - CSV→Parquet: qsv sqlp <input> "SELECT * FROM _t_1" --format parquet --output <output>
+ *   (passes input directly so sqlp can detect .pschema.json for type inference)
  */
 export function buildConversionArgs(
   conversionCmd: string,
@@ -324,11 +324,19 @@ export function buildConversionArgs(
     return ["sqlp", "SKIP_INPUT", sql, "--output", outputFile];
   }
   if (conversionCmd === "csv-to-parquet") {
-    // CSV→Parquet conversion for SQL performance
-    const normalizedPath = inputFile.replace(/\\/g, "/");
-    const escapedPath = normalizedPath.replace(/'/g, "''");
-    const sql = `select * from read_csv('${escapedPath}')`;
-    return ["sqlp", "SKIP_INPUT", sql, "--format", "parquet", "--compression", "snappy", "--statistics", "--output", outputFile];
+    // CSV→Parquet conversion: pass input directly so sqlp can detect .pschema.json for type inference
+    return [
+      "sqlp",
+      inputFile,
+      "SELECT * FROM _t_1",
+      "--format",
+      "parquet",
+      "--compression",
+      "snappy",
+      "--statistics",
+      "--output",
+      outputFile,
+    ];
   }
   // Standard: qsv <cmd> <input> --output <output>
   return [conversionCmd, inputFile, "--output", outputFile];
@@ -1821,13 +1829,15 @@ export async function handleSearchToolsCall(
 export function createToParquetTool(): McpToolDefinition {
   return {
     name: "qsv_to_parquet",
-    description: `Convert CSV to Parquet format for optimized SQL operations.
+    description: `Convert CSV to Parquet format with guaranteed data type inference.
 
-💡 USE WHEN: Planning multiple SQL queries (sqlp) on the same large CSV file. Parquet is columnar and compressed - significantly faster for SQL operations.
+💡 USE WHEN: Planning multiple SQL queries (sqlp or DuckDB) on the same large CSV file. Parquet is columnar and compressed - significantly faster for SQL operations.
 
-📋 COMMON PATTERN: Convert once at start of analysis session, then use Parquet file for all subsequent sqlp queries.
+📋 AUTO-OPTIMIZATION: Automatically runs stats and generates Polars schema before conversion to ensure correct data types (integers, floats, dates, booleans).
 
-⚠️ REQUIRES: qsv built with Polars feature.`,
+📋 COMMON PATTERN: Convert once, query many times. Use Parquet ONLY for sqlp and DuckDB. Keep CSV/TSV/SSV file for all other qsv operations (joinp, pivotp, stats, count, headers, index, frequency, moarstats, etc.).
+
+⚠️ IMPORTANT: Parquet files work ONLY with sqlp and DuckDB. All other qsv commands (including joinp and pivotp) require CSV/TSV/SSV input.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -1853,7 +1863,10 @@ export function createToParquetTool(): McpToolDefinition {
 export async function handleToParquetCall(
   params: Record<string, unknown>,
   filesystemProvider?: FilesystemProviderExtended,
-): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+): Promise<{
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+}> {
   let inputFile = params.input_file as string | undefined;
   let outputFile = params.output_file as string | undefined;
 
@@ -1927,7 +1940,8 @@ export async function handleToParquetCall(
   if (filesystemProvider) {
     try {
       const originalOutputFile = resolvedOutputFile;
-      resolvedOutputFile = await filesystemProvider.resolvePath(resolvedOutputFile);
+      resolvedOutputFile =
+        await filesystemProvider.resolvePath(resolvedOutputFile);
       console.error(
         `[MCP Tools] Resolved output file: ${originalOutputFile} -> ${resolvedOutputFile}`,
       );
@@ -1944,16 +1958,80 @@ export async function handleToParquetCall(
     }
   }
 
-  // Build conversion args
-  const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, resolvedOutputFile);
   const qsvBin = getQsvBinaryPath();
+  const startTime = Date.now();
+  const statsFile = inputFile + ".stats.csv";
+  const schemaFile = inputFile + ".pschema.json";
 
-  console.error(
-    `[MCP Tools] Running CSV→Parquet conversion: ${qsvBin} ${conversionArgs.join(" ")}`,
-  );
+  // Check if regeneration is needed based on file mtimes
+  let needStats = true;
+  let needSchema = true;
 
   try {
-    const startTime = Date.now();
+    const inputFileStats = await stat(inputFile);
+
+    try {
+      const existingStats = await stat(statsFile);
+      if (existingStats.mtimeMs >= inputFileStats.mtimeMs) {
+        needStats = false;
+      }
+    } catch {
+      // Stats cache doesn't exist - need to generate
+    }
+
+    try {
+      const existingSchema = await stat(schemaFile);
+      if (existingSchema.mtimeMs >= inputFileStats.mtimeMs) {
+        needSchema = false;
+      }
+    } catch {
+      // Schema doesn't exist - need to generate
+    }
+  } catch {
+    // Can't stat input file - fall back to regenerating
+  }
+
+  try {
+    // Step 1: Generate stats cache for accurate type inference (if needed)
+    // This creates .stats.csv and .stats.csv.data.jsonl files
+    if (needStats) {
+      console.error(
+        `[MCP Tools] Step 1: Generating stats cache for ${inputFile}`,
+      );
+      const statsArgs = ["stats", inputFile, "--cardinality", "--stats-jsonl"];
+      await runQsvWithTimeout(qsvBin, statsArgs);
+      console.error(`[MCP Tools] Stats cache generated successfully`);
+    } else {
+      console.error(
+        `[MCP Tools] Step 1: Using existing stats cache (up-to-date)`,
+      );
+    }
+
+    // Step 2: Generate Polars schema using the stats cache (if needed)
+    // This creates a .pschema.json file that sqlp will auto-detect
+    if (needSchema) {
+      console.error(
+        `[MCP Tools] Step 2: Generating Polars schema for ${inputFile}`,
+      );
+      const schemaArgs = ["schema", "--polars", inputFile];
+      await runQsvWithTimeout(qsvBin, schemaArgs);
+      console.error(`[MCP Tools] Polars schema generated: ${schemaFile}`);
+    } else {
+      console.error(
+        `[MCP Tools] Step 2: Using existing Polars schema (up-to-date)`,
+      );
+    }
+
+    // Step 3: Convert to Parquet (sqlp will auto-detect .pschema.json)
+    console.error(`[MCP Tools] Step 3: Converting to Parquet with schema`);
+    const conversionArgs = buildConversionArgs(
+      "csv-to-parquet",
+      inputFile,
+      resolvedOutputFile,
+    );
+    console.error(
+      `[MCP Tools] Running CSV→Parquet conversion: ${qsvBin} ${conversionArgs.join(" ")}`,
+    );
     await runQsvWithTimeout(qsvBin, conversionArgs);
     const duration = Date.now() - startTime;
 
@@ -1966,14 +2044,21 @@ export async function handleToParquetCall(
       // Ignore stat errors
     }
 
+    const statsStatus = needStats ? "generated" : "reused (up-to-date)";
+    const schemaStatus = needSchema ? "generated" : "reused (up-to-date)";
+
     return {
       content: [
         {
           type: "text",
-          text: `✅ Successfully converted CSV to Parquet\n\n` +
+          text:
+            `✅ Successfully converted CSV to Parquet with optimized schema\n\n` +
             `Input: ${inputFile}\n` +
             `Output: ${resolvedOutputFile}${fileSizeInfo}\n` +
+            `Schema: ${schemaFile}\n` +
             `Duration: ${duration}ms\n\n` +
+            `Stats cache: ${statsStatus}\n` +
+            `Polars schema: ${schemaStatus}\n` +
             `The Parquet file is now ready for fast SQL queries via qsv_sqlp or DuckDB.`,
         },
       ],
@@ -1990,4 +2075,3 @@ export async function handleToParquetCall(
     };
   }
 }
-

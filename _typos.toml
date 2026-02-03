@@ -20,6 +20,7 @@ DNE           = "DNE"
 Generice      = "Generice"
 Portugese     = "Portugese"
 ACI           = "ACI"
+consts        = "consts"
 
 [files]
 extend-exclude = [

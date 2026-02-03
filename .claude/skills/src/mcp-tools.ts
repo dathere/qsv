@@ -104,7 +104,7 @@ const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
     "Infer data types, generate Polars Schema & JSON Schema.",
   validate:
     "Validate against JSON Schema. Check data quality, type correctness. Also use this without a JSON Schema to check if a CSV is well-formed.",
-  sqlp: "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns. Use stats cache (qsv_stats --stats-jsonl) for optimization hints on column cardinalities and data types.",
+  sqlp: "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns. Supports CSV/TSV/SSV, Parquet, JSONL, and Arrow input. For multiple queries on same large file, convert to Parquet first with qsv_to_parquet. Use stats cache (qsv_stats --stats-jsonl) for optimization hints.",
   apply:
     "Transform columns (trim, upper, lower, squeeze, strip). Subcommands: operations, dynfmt, emptyreplace, calcconv. For custom logic, use qsv_luau.",
   rename:
@@ -135,7 +135,7 @@ const COMMON_PATTERNS: Record<string, string> = {
   search: "Combine with select: search (filter rows) → select (pick columns).",
   frequency:
     "Stats → Frequency: Use qsv_stats --cardinality first to identify high-cardinality columns (IDs) to exclude from frequency analysis.",
-  sqlp: 'Replaces pipelines: "SELECT * FROM data WHERE x > 10 ORDER BY y LIMIT 100" vs select→search→sort→slice.',
+  sqlp: 'For repeated queries: CSV→Parquet (once) → sqlp (many). Parquet is for sqlp/DuckDB only - use CSV/TSV/SSV for stats, frequency, joinp, pivotp, etc.',
   join: "Run qsv_index first on both files for speed.",
   joinp:
     "Stats → Join: Use qsv_stats --cardinality on both files, put lower-cardinality join column on right for efficiency.",
@@ -164,7 +164,11 @@ const ERROR_PREVENTION_HINTS: Record<string, string> = {
   pivotp:
     "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns.",
   sqlp:
-    "When encountering errors with sqlp, use DuckDB when available instead for complex queries. For better performance, convert CSV to Parquet first using qsv_to_parquet, then query the Parquet file.",
+    "When encountering errors with sqlp, use DuckDB when available instead for complex queries. For repeated SQL queries, convert CSV to Parquet first using qsv_to_parquet. Note: Parquet works ONLY with sqlp and DuckDB - use CSV/TSV/SSV for all other qsv commands (including joinp and pivotp).",
+  stats: "Works with CSV/TSV/SSV files only. For SQL queries, use sqlp. Run qsv_index first for files >10MB.",
+  count: "Works with CSV/TSV/SSV files only. Very fast with index file (.idx).",
+  headers: "Works with CSV/TSV/SSV files only. For Parquet schema, use sqlp with DESCRIBE.",
+  index: "Creates .idx index for CSV/TSV/SSV files only. Parquet files don't need indexing.",
   moarstats:
     "Run stats first to create cache. Slower than stats but richer output.",
   searchset: "Needs regex file. qsv_search easier for simple patterns.",
@@ -1823,13 +1827,13 @@ export function createToParquetTool(): McpToolDefinition {
     name: "qsv_to_parquet",
     description: `Convert CSV to Parquet format with guaranteed data type inference.
 
-💡 USE WHEN: Planning multiple SQL queries (sqlp) on the same large CSV file. Parquet is columnar and compressed - significantly faster for SQL operations.
+💡 USE WHEN: Planning multiple SQL queries (sqlp or DuckDB) on the same large CSV file. Parquet is columnar and compressed - significantly faster for SQL operations.
 
 📋 AUTO-OPTIMIZATION: Automatically runs stats and generates Polars schema before conversion to ensure correct data types (integers, floats, dates, booleans).
 
-📋 COMMON PATTERN: Convert once at start of analysis session, then use Parquet file for all subsequent sqlp queries.
+📋 COMMON PATTERN: Convert once, query many times. Use Parquet ONLY for sqlp and DuckDB. Keep CSV/TSV/SSV file for all other qsv operations (joinp, pivotp, stats, count, headers, index, frequency, moarstats, etc.).
 
-⚠️ REQUIRES: qsv built with Polars feature.`,
+⚠️ IMPORTANT: Parquet files work ONLY with sqlp and DuckDB. All other qsv commands (including joinp and pivotp) require CSV/TSV/SSV input.`,
     inputSchema: {
       type: "object",
       properties: {

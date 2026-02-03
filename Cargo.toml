@@ -322,8 +322,8 @@ cached = { git = "https://github.com/nihohit/cached", branch = "client-side-cach
 # use our patched fork of calamine with atoi_simd 0.17 dependency
 calamine = { git = "https://github.com/jqnatividad/calamine", branch = "bump-atoi_simd-to-17.0" }
 
-# use our patched fork of csvlens to replace qsv_sniffer with csv_nose until our PR is merged
-csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "deps-replace_qsv-sniffer-with-csv_nose" }
+# use latest upstream now that our PR has been merged while awaiting a new release
+csvlens = { git = "https://github.com/YS-L/csvlens", rev = "18fa5ff" }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88", optional = true }

@@ -311,7 +311,8 @@ function isFilesystemProviderExtended(
  * Handles different patterns:
  * - Excel/JSONL: qsv <cmd> <input> --output <output>
  * - Parquet→CSV: qsv sqlp SKIP_INPUT "select * from read_parquet('<input>')" --output <output>
- * - CSV→Parquet: qsv sqlp SKIP_INPUT "select * from read_csv('<input>')" --format parquet --output <output>
+ * - CSV→Parquet: qsv sqlp <input> "SELECT * FROM _t_1" --format parquet --output <output>
+ *   (passes input directly so sqlp can detect .pschema.json for type inference)
  */
 export function buildConversionArgs(
   conversionCmd: string,
@@ -328,11 +329,8 @@ export function buildConversionArgs(
     return ["sqlp", "SKIP_INPUT", sql, "--output", outputFile];
   }
   if (conversionCmd === "csv-to-parquet") {
-    // CSV→Parquet conversion for SQL performance
-    const normalizedPath = inputFile.replace(/\\/g, "/");
-    const escapedPath = normalizedPath.replace(/'/g, "''");
-    const sql = `select * from read_csv('${escapedPath}')`;
-    return ["sqlp", "SKIP_INPUT", sql, "--format", "parquet", "--compression", "snappy", "--statistics", "--output", outputFile];
+    // CSV→Parquet conversion: pass input directly so sqlp can detect .pschema.json for type inference
+    return ["sqlp", inputFile, "SELECT * FROM _t_1", "--format", "parquet", "--compression", "snappy", "--statistics", "--output", outputFile];
   }
   // Standard: qsv <cmd> <input> --output <output>
   return [conversionCmd, inputFile, "--output", outputFile];

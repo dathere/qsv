@@ -1104,7 +1104,7 @@ select ward,count(*) as cnt from temp_table2 group by ward order by cnt desc, wa
     "latitude": "Float32",
     "longitude": "Float32",
     "source": "String"
-  }
+  },"metadata": null
 }"#
     );
 }
@@ -1152,7 +1152,7 @@ fn sqlp_boston311_sql_cache_schema_decimal_override() {
           "latitude": {"Decimal" : [10, 3]},
           "longitude": {"Decimal" : [10, 6]},
           "source": "String"
-        }
+        },"metadata": null
       }"#,
     );
 

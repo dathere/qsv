@@ -676,7 +676,7 @@ fn slice_float_precision() {
             "id": "String",
             "value1": { "Decimal" : [25,20] },
             "value2": "Float64"
-        }
+        },"metadata": null
     }"#;
     wrk.create_from_string("float_data.csv.pschema.json", schema_data);
 
@@ -787,7 +787,7 @@ fn slice_from_json_with_pschema() {
             "name": "String",
             "age": "String",
             "active": "Boolean"
-        }
+        },"metadata": null
     }"#;
     wrk.create_from_string("test.json.pschema.json", schema_data);
 
@@ -822,7 +822,7 @@ fn slice_from_jsonl_with_pschema() {
             "name": "String",
             "age": "String",
             "active": "Boolean"
-        }
+        },"metadata": null
     }"#;
     wrk.create_from_string("test.jsonl.pschema.json", schema_data);
 
@@ -855,7 +855,7 @@ fn slice_from_csvgz_with_pschema() {
             "name": "String",
             "age": "String",
             "active": "Boolean"
-        }
+        },"metadata": null
     }"#;
     wrk.create_from_string("test.csv.pschema.json", schema_data);
 
@@ -1091,7 +1091,7 @@ fn slice_from_jsonl_with_decimal_precision_vs_float() {
             "id": "String",
             "name": "String",
             "value": "Float64"
-        }
+        },"metadata": null
     }"#;
     wrk.create_from_string("test.jsonl.pschema.json", float_schema);
 

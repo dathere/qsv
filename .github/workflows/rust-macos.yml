@@ -16,6 +16,10 @@ env:
 
 jobs:
   build:
+    # Skip CI for MCP-only commits (commit message contains "(mcp):")
+    if: |
+      github.event_name != 'push' ||
+      !contains(github.event.head_commit.message, '(mcp):')
 
     # runs-on: self-hosted
     runs-on: macos-26

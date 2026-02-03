@@ -1892,13 +1892,30 @@ export async function handleToParquetCall(
 
   // Generate output path if not provided
   if (!outputFile) {
-    // Replace .csv extension with .parquet, or append .parquet if no .csv extension
-    if (inputFile.toLowerCase().endsWith(".csv")) {
-      outputFile = inputFile.slice(0, -4) + ".parquet";
-    } else if (inputFile.toLowerCase().endsWith(".csv.sz")) {
-      // Handle snappy-compressed CSV
-      outputFile = inputFile.slice(0, -7) + ".parquet";
-    } else {
+    // Replace common CSV-like extensions with .parquet, or append .parquet if none match
+    const lowerInput = inputFile.toLowerCase();
+    // Supported CSV-like extensions, including snappy-compressed variants
+    const csvLikeExtensions = [
+      ".csv.sz",
+      ".tsv.sz",
+      ".tab.sz",
+      ".ssv.sz",
+      ".csv",
+      ".tsv",
+      ".tab",
+      ".ssv",
+    ];
+
+    let matched = false;
+    for (const ext of csvLikeExtensions) {
+      if (lowerInput.endsWith(ext)) {
+        outputFile = inputFile.slice(0, -ext.length) + ".parquet";
+        matched = true;
+        break;
+      }
+    }
+
+    if (!matched) {
       outputFile = inputFile + ".parquet";
     }
   }

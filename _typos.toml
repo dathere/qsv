@@ -19,6 +19,7 @@ seeked        = "seeked"
 DNE           = "DNE"
 Generice      = "Generice"
 Portugese     = "Portugese"
+ACI           = "ACI"
 
 [files]
 extend-exclude = [

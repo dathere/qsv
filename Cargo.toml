@@ -336,6 +336,9 @@ geosuggest-utils = { git = "https://github.com/jqnatividad/geosuggest", branch =
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }
 
+# use latest upstream with unreleased fixes and perf improvements
+jsonschema = { git = "https://github.com/Stranger6667/jsonschema", rev = "258cc95" }
+
 # use latest upstream now that our PR has been merged while awaiting a new release
 kiddo = { git = "https://github.com/sdd/kiddo.git", rev = "2056051"}
 

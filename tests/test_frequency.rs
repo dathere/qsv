@@ -1833,6 +1833,8 @@ fn frequency_rank_ties_json() {
     let (wrk, mut cmd) = setup_rank_test_sorted("frequency_rank_ties_json");
     cmd.args(["--rank-strategy", "average"]).arg("--json");
 
+    wrk.assert_success(&mut cmd);
+
     let got: String = wrk.stdout(&mut cmd);
     let v: Value = serde_json::from_str(&got).unwrap();
     assert!(v["input"].as_str().unwrap().ends_with("in.csv"));

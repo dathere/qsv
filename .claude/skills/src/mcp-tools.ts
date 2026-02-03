@@ -327,7 +327,7 @@ export function buildConversionArgs(
     const normalizedPath = inputFile.replace(/\\/g, "/");
     const escapedPath = normalizedPath.replace(/'/g, "''");
     const sql = `select * from read_csv('${escapedPath}')`;
-    return ["sqlp", "SKIP_INPUT", sql, "--format", "parquet", "--compression", "snappy", "--statistics","--output", outputFile];
+    return ["sqlp", "SKIP_INPUT", sql, "--format", "parquet", "--compression", "snappy", "--statistics", "--output", outputFile];
   }
   // Standard: qsv <cmd> <input> --output <output>
   return [conversionCmd, inputFile, "--output", outputFile];

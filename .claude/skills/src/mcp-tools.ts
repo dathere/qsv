@@ -282,6 +282,74 @@ async function runQsvWithTimeout(
 }
 
 /**
+ * Run qsv command and capture stdout output.
+ * Similar to runQsvWithTimeout but returns the stdout string.
+ */
+async function runQsvWithOutput(
+  qsvBin: string,
+  args: string[],
+  timeoutMs: number = config.operationTimeoutMs,
+): Promise<string> {
+  if (isShuttingDown) {
+    throw new Error("Server is shutting down, operation rejected");
+  }
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn(qsvBin, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    activeProcesses.add(proc);
+
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      activeProcesses.delete(proc);
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill("SIGTERM");
+      cleanup();
+      reject(
+        new Error(
+          `Operation timed out after ${timeoutMs}ms: ${qsvBin} ${args.join(" ")}`,
+        ),
+      );
+    }, timeoutMs);
+
+    proc.stdout?.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    proc.stderr?.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    proc.on("close", (code) => {
+      cleanup();
+      if (!timedOut) {
+        if (code === 0) {
+          resolve(stdout);
+        } else {
+          reject(new Error(`Command failed with exit code ${code}: ${stderr}`));
+        }
+      }
+    });
+
+    proc.on("error", (err) => {
+      cleanup();
+      if (!timedOut) {
+        reject(err);
+      }
+    });
+  });
+}
+
+/**
  * Check if an object has filesystem provider capabilities
  */
 function isFilesystemProviderExtended(
@@ -1833,7 +1901,7 @@ export function createToParquetTool(): McpToolDefinition {
 
 💡 USE WHEN: Planning multiple SQL queries (sqlp or DuckDB) on the same large CSV file. Parquet is columnar and compressed - significantly faster for SQL operations.
 
-📋 AUTO-OPTIMIZATION: Automatically runs stats and generates Polars schema before conversion to ensure correct data types (integers, floats, dates, booleans).
+📋 AUTO-OPTIMIZATION: Sniffs the CSV to detect Date/DateTime columns, then runs stats with --infer-dates and a targeted --dates-whitelist for accurate date type inference. Generates Polars schema before conversion to ensure correct data types (integers, floats, dates, booleans).
 
 📋 COMMON PATTERN: Convert once, query many times. Use Parquet ONLY for sqlp and DuckDB. Keep CSV/TSV/SSV file for all other qsv operations (joinp, pivotp, stats, count, headers, index, frequency, moarstats, etc.).
 
@@ -1992,6 +2060,45 @@ export async function handleToParquetCall(
   }
 
   try {
+    // Step 0: Sniff the input file to detect Date/DateTime fields
+    // This informs the stats command to use --infer-dates with a targeted whitelist
+    let dateFields: string[] = [];
+    if (needStats) {
+      console.error(
+        `[MCP Tools] Step 0: Sniffing ${inputFile} for date/datetime fields`,
+      );
+      try {
+        const sniffOutput = await runQsvWithOutput(qsvBin, [
+          "sniff",
+          inputFile,
+          "--json",
+        ]);
+        const sniffResult = JSON.parse(sniffOutput);
+        if (
+          Array.isArray(sniffResult.fields) &&
+          Array.isArray(sniffResult.types)
+        ) {
+          for (let i = 0; i < sniffResult.fields.length; i++) {
+            const fieldType = sniffResult.types[i];
+            if (fieldType === "Date" || fieldType === "DateTime") {
+              dateFields.push(sniffResult.fields[i]);
+            }
+          }
+        }
+        if (dateFields.length > 0) {
+          console.error(
+            `[MCP Tools] Detected date/datetime fields: ${dateFields.join(", ")}`,
+          );
+        } else {
+          console.error(`[MCP Tools] No date/datetime fields detected`);
+        }
+      } catch (sniffError) {
+        console.error(
+          `[MCP Tools] Sniff failed, proceeding without date inference: ${sniffError instanceof Error ? sniffError.message : String(sniffError)}`,
+        );
+      }
+    }
+
     // Step 1: Generate stats cache for accurate type inference (if needed)
     // This creates .stats.csv and .stats.csv.data.jsonl files
     if (needStats) {
@@ -1999,6 +2106,12 @@ export async function handleToParquetCall(
         `[MCP Tools] Step 1: Generating stats cache for ${inputFile}`,
       );
       const statsArgs = ["stats", inputFile, "--cardinality", "--stats-jsonl"];
+      if (dateFields.length > 0) {
+        statsArgs.push("--infer-dates", "--dates-whitelist", dateFields.join(","));
+        console.error(
+          `[MCP Tools] Using --infer-dates with whitelist: ${dateFields.join(",")}`,
+        );
+      }
       await runQsvWithTimeout(qsvBin, statsArgs);
       console.error(`[MCP Tools] Stats cache generated successfully`);
     } else {

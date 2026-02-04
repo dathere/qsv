@@ -1087,7 +1087,8 @@ impl Args {
 
                     // create and cache allstring schema
                     if cache_schema == -2 {
-                        let allstring_schema_json = serde_json::to_string_pretty(&allstring_schema)?;
+                        let allstring_schema_json =
+                            serde_json::to_string_pretty(&allstring_schema)?;
 
                         let mut file = BufWriter::new(File::create(&schema_file)?);
                         file.write_all(allstring_schema_json.as_bytes())?;

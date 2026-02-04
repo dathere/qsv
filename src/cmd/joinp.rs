@@ -949,6 +949,10 @@ impl Args {
                             },
                             "Boolean" => polars::datatypes::DataType::Boolean,
                             "Date" => polars::datatypes::DataType::Date,
+                            "DateTime" => polars::datatypes::DataType::Datetime(
+                                polars::datatypes::TimeUnit::Milliseconds,
+                                None,
+                            ),
                             _ => polars::datatypes::DataType::String,
                         }
                     },
@@ -1039,7 +1043,7 @@ impl Args {
                     if !valid_schema_exists {
                         let schema = create_schema_from_stats(input_path, args)?;
                         let stats_schema = Arc::new(schema);
-                        let stats_schema_json = simd_json::to_string_pretty(&stats_schema)?;
+                        let stats_schema_json = serde_json::to_string_pretty(&stats_schema)?;
 
                         let mut file = BufWriter::new(File::create(&schema_file)?);
                         file.write_all(stats_schema_json.as_bytes())?;
@@ -1083,7 +1087,8 @@ impl Args {
 
                     // create and cache allstring schema
                     if cache_schema == -2 {
-                        let allstring_schema_json = simd_json::to_string_pretty(&allstring_schema)?;
+                        let allstring_schema_json =
+                            serde_json::to_string_pretty(&allstring_schema)?;
 
                         let mut file = BufWriter::new(File::create(&schema_file)?);
                         file.write_all(allstring_schema_json.as_bytes())?;
@@ -1150,7 +1155,7 @@ impl Args {
 
         if create_left_schema {
             let schema = left_lf.collect_schema()?;
-            let schema_json = simd_json::to_string_pretty(&schema)?;
+            let schema_json = serde_json::to_string_pretty(&schema)?;
             let schema_file = PathBuf::from(format!(
                 "{}.pschema.json",
                 input1_path.canonicalize()?.display()
@@ -1187,7 +1192,7 @@ impl Args {
 
         if create_right_schema {
             let schema = right_lf.collect_schema()?;
-            let schema_json = simd_json::to_string_pretty(&schema)?;
+            let schema_json = serde_json::to_string_pretty(&schema)?;
             let schema_file = PathBuf::from(format!(
                 "{}.pschema.json",
                 input2_path.canonicalize()?.display()

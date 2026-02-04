@@ -215,7 +215,8 @@ joinp_test_cache_schema!(
   "fields": {
     "city": "String",
     "state": "String"
-  },"metadata": null
+  },
+  "metadata": null
 }"#
         );
         assert!(wrk.path("places.csv.pschema.json").exists());
@@ -226,7 +227,8 @@ joinp_test_cache_schema!(
   "fields": {
     "city": "String",
     "place": "String"
-  },"metadata": null
+  },
+  "metadata": null
 }"#
         );
     }
@@ -3086,4 +3088,86 @@ fn joinp_decimal_comma_validation_with_sql_filter() {
     let got: String = wrk.stdout(&mut cmd);
     let expected = "id;value\n2;200,75";
     assert_eq!(got, expected);
+}
+
+#[test]
+fn test_joinp_cache_schema_datetime() {
+    let wrk = Workdir::new("joinp_cache_schema_datetime");
+
+    // Create left CSV with datetime columns
+    wrk.create(
+        "left.csv",
+        vec![
+            svec!["id", "event_time", "value"],
+            svec!["1", "2024-01-15 10:30:00", "100"],
+            svec!["2", "2024-03-20 09:15:00", "200"],
+            svec!["3", "2024-05-05 08:00:00", "300"],
+        ],
+    );
+
+    // Create right CSV with datetime columns
+    wrk.create(
+        "right.csv",
+        vec![
+            svec!["id", "updated_at"],
+            svec!["1", "2024-02-01 14:00:00"],
+            svec!["2", "2024-04-10 16:45:00"],
+        ],
+    );
+
+    // Generate stats cache with --infer-dates for both files
+    let mut cmd = wrk.command("stats");
+    cmd.arg("left.csv")
+        .arg("--infer-dates")
+        .args(["--dates-whitelist", "all"])
+        .arg("--cardinality")
+        .arg("--stats-jsonl")
+        .args(["--cache-threshold", "1"]);
+    wrk.assert_success(&mut cmd);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("right.csv")
+        .arg("--infer-dates")
+        .args(["--dates-whitelist", "all"])
+        .arg("--cardinality")
+        .arg("--stats-jsonl")
+        .args(["--cache-threshold", "1"]);
+    wrk.assert_success(&mut cmd);
+
+    // Generate Polars schemas from stats cache
+    let mut cmd = wrk.command("schema");
+    cmd.arg("--polars").arg("left.csv");
+    wrk.assert_success(&mut cmd);
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("--polars").arg("right.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify pschema files contain Datetime type
+    assert!(wrk.path("left.csv.pschema.json").exists());
+    assert!(wrk.path("right.csv.pschema.json").exists());
+
+    let left_schema = std::fs::read_to_string(wrk.path("left.csv.pschema.json")).unwrap();
+    assert!(
+        left_schema.contains(r#""Datetime""#),
+        "Left schema should contain Datetime type, got: {left_schema}"
+    );
+
+    let right_schema = std::fs::read_to_string(wrk.path("right.csv.pschema.json")).unwrap();
+    assert!(
+        right_schema.contains(r#""Datetime""#),
+        "Right schema should contain Datetime type, got: {right_schema}"
+    );
+
+    // Join with cached schemas containing Datetime type
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["id", "left.csv", "id", "right.csv"])
+        .arg("--cache-schema")
+        .arg("1");
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 3); // header + 2 matching rows
+    assert_eq!(got[0][0], "id");
+    assert_eq!(got[0][1], "event_time");
 }

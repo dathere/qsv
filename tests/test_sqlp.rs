@@ -1104,7 +1104,8 @@ select ward,count(*) as cnt from temp_table2 group by ward order by cnt desc, wa
     "latitude": "Float32",
     "longitude": "Float32",
     "source": "String"
-  },"metadata": null
+  },
+  "metadata": null
 }"#
     );
 }
@@ -4479,6 +4480,138 @@ fn sqlp_distinct_on_complex_ordering() {
         svec!["B", "300", "active"],
         svec!["C", "500", "active"],
         svec!["NULL", "700", "inactive"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_datetime_schema_inference() {
+    let wrk = Workdir::new("sqlp_datetime_schema_inference");
+
+    // Create a CSV with datetime columns
+    wrk.create(
+        "datetimes.csv",
+        vec![
+            svec!["id", "name", "created_at", "updated_at", "amount"],
+            svec![
+                "1",
+                "Alice",
+                "2024-01-15 10:30:00",
+                "2024-02-01 14:00:00",
+                "100.50"
+            ],
+            svec![
+                "2",
+                "Bob",
+                "2024-03-20 09:15:00",
+                "2024-04-10 16:45:00",
+                "200.75"
+            ],
+            svec![
+                "3",
+                "Charlie",
+                "2024-05-05 08:00:00",
+                "2024-06-15 12:30:00",
+                "300.25"
+            ],
+        ],
+    );
+
+    // Step 1: Generate stats cache with --infer-dates so DateTime type is detected
+    let mut cmd = wrk.command("stats");
+    cmd.arg("datetimes.csv")
+        .arg("--infer-dates")
+        .args(["--dates-whitelist", "all"])
+        .arg("--cardinality")
+        .arg("--stats-jsonl")
+        .args(["--cache-threshold", "1"]);
+    wrk.assert_success(&mut cmd);
+
+    // Verify stats detected DateTime columns
+    let stats_output: String = wrk.stdout(&mut cmd);
+    assert!(stats_output.contains("created_at,DateTime"));
+    assert!(stats_output.contains("updated_at,DateTime"));
+
+    // Step 2: Generate Polars schema from stats cache
+    let mut cmd = wrk.command("schema");
+    cmd.arg("--polars").arg("datetimes.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify the pschema.json file was created and contains Datetime type
+    assert!(wrk.path("datetimes.csv.pschema.json").exists());
+    let schema_json = std::fs::read_to_string(wrk.path("datetimes.csv.pschema.json")).unwrap();
+    assert!(
+        schema_json.contains(r#""Datetime""#),
+        "Schema should contain Datetime type, got: {schema_json}"
+    );
+    assert!(
+        schema_json.contains(r#""Milliseconds""#),
+        "Schema should contain Milliseconds time unit, got: {schema_json}"
+    );
+
+    // Step 3: Use sqlp with the cached schema to verify it parses datetimes correctly
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("datetimes.csv")
+        .arg("SELECT id, name, created_at, updated_at FROM datetimes LIMIT 1")
+        .arg("--cache-schema");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "name", "created_at", "updated_at"],
+        svec![
+            "1",
+            "Alice",
+            "2024-01-15T10:30:00.000",
+            "2024-02-01T14:00:00.000"
+        ],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_datetime_pschema_override() {
+    let wrk = Workdir::new("sqlp_datetime_pschema_override");
+
+    // Create a CSV with datetime columns
+    wrk.create(
+        "events.csv",
+        vec![
+            svec!["id", "event_name", "event_time", "score"],
+            svec!["1", "login", "2024-06-15 08:30:00", "95.5"],
+            svec!["2", "logout", "2024-06-15 17:00:00", "88.0"],
+        ],
+    );
+
+    // Manually create a pschema.json with Datetime type
+    wrk.create_from_string(
+        "events.csv.pschema.json",
+        r#"{
+  "fields": {
+    "id": "UInt8",
+    "event_name": "String",
+    "event_time": {
+      "Datetime": [
+        "Milliseconds",
+        null
+      ]
+    },
+    "score": "Float32"
+  },
+  "metadata": null
+}"#,
+    );
+
+    // sqlp should use the manually provided schema and parse datetimes
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("events.csv")
+        .arg("SELECT id, event_name, event_time, score FROM events")
+        .arg("--cache-schema");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "event_name", "event_time", "score"],
+        svec!["1", "login", "2024-06-15T08:30:00.000", "95.5"],
+        svec!["2", "logout", "2024-06-15T17:00:00.000", "88.0"],
     ];
     assert_eq!(got, expected);
 }

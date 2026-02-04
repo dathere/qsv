@@ -215,7 +215,8 @@ joinp_test_cache_schema!(
   "fields": {
     "city": "String",
     "state": "String"
-  },"metadata": null
+  },
+  "metadata": null
 }"#
         );
         assert!(wrk.path("places.csv.pschema.json").exists());
@@ -226,7 +227,8 @@ joinp_test_cache_schema!(
   "fields": {
     "city": "String",
     "place": "String"
-  },"metadata": null
+  },
+  "metadata": null
 }"#
         );
     }

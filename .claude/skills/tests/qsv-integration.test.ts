@@ -5,10 +5,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { writeFile, unlink, mkdir, rm } from 'fs/promises';
+import { writeFile, readFile, unlink, mkdir, rm, stat, access } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { handleToolCall } from '../src/mcp-tools.js';
+import { handleToolCall, handleToParquetCall } from '../src/mcp-tools.js';
 import { SkillLoader } from '../src/loader.js';
 import { SkillExecutor } from '../src/executor.js';
 import { FilesystemResourceProvider } from '../src/mcp-filesystem.js';
@@ -396,6 +396,170 @@ test('filesystem provider deduplicates concurrent metadata requests', { skip: !Q
     assert.strictEqual(firstResult?.rowCount, 3, 'Should count 3 rows');
     assert.strictEqual(firstResult?.columnCount, 3, 'Should count 3 columns');
     assert.deepStrictEqual(firstResult?.columnNames, ['id', 'name', 'age'], 'Should list column names');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+// ============================================================================
+// qsv_to_parquet Sniff-Based Date Detection Integration Tests
+// ============================================================================
+
+test('qsv_to_parquet converts CSV with date columns and uses --infer-dates', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+
+  try {
+    // Create a CSV with DateTime columns
+    const csvPath = await createTestCSV(
+      testDir,
+      'dates.csv',
+      'id,name,created_date,updated_date,amount\n' +
+      '1,Alice,2024-01-15 10:30:00,2024-02-01 14:00:00,100.50\n' +
+      '2,Bob,2024-03-20 09:15:00,2024-04-10 16:45:00,200.75\n' +
+      '3,Charlie,2024-05-05 08:00:00,2024-06-15 12:30:00,300.25\n'
+    );
+
+    const parquetPath = join(testDir, 'dates.parquet');
+    const result = await handleToParquetCall({
+      input_file: csvPath,
+      output_file: parquetPath,
+    });
+
+    assert.ok(!result.isError, `Conversion should succeed: ${result.content[0].text}`);
+    const output = result.content[0].text || '';
+    assert.ok(output.includes('Successfully converted'), 'Should report success');
+    assert.ok(output.includes(parquetPath), 'Should mention output file');
+
+    // Verify the parquet file was created
+    const parquetStat = await stat(parquetPath);
+    assert.ok(parquetStat.size > 0, 'Parquet file should be non-empty');
+
+    // Verify stats cache was generated
+    // qsv stats replaces .csv with .stats.csv (e.g., dates.csv -> dates.stats.csv)
+    const statsPath = csvPath.replace(/\.csv$/, '.stats.csv');
+    const statsStat = await stat(statsPath);
+    assert.ok(statsStat.size > 0, 'Stats cache should be generated');
+
+    // Verify Polars schema was generated (appends .pschema.json to full filename)
+    const schemaPath = csvPath + '.pschema.json';
+    const schemaStat = await stat(schemaPath);
+    assert.ok(schemaStat.size > 0, 'Polars schema should be generated');
+
+    // Read the stats cache and verify date columns were detected as DateTime
+    // (--infer-dates with --dates-whitelist should cause stats to type them as DateTime)
+    const statsContent = await readFile(statsPath, 'utf8');
+    assert.ok(
+      statsContent.includes('created_date,DateTime'),
+      'Stats should detect created_date as DateTime type'
+    );
+    assert.ok(
+      statsContent.includes('updated_date,DateTime'),
+      'Stats should detect updated_date as DateTime type'
+    );
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('qsv_to_parquet converts CSV without date columns (no --infer-dates)', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+
+  try {
+    // Create a CSV with no date columns
+    const csvPath = await createTestCSV(
+      testDir,
+      'nodates.csv',
+      'id,name,age,score\n' +
+      '1,Alice,30,95.5\n' +
+      '2,Bob,25,87.3\n' +
+      '3,Charlie,35,92.1\n'
+    );
+
+    const parquetPath = join(testDir, 'nodates.parquet');
+    const result = await handleToParquetCall({
+      input_file: csvPath,
+      output_file: parquetPath,
+    });
+
+    assert.ok(!result.isError, `Conversion should succeed: ${result.content[0].text}`);
+    const output = result.content[0].text || '';
+    assert.ok(output.includes('Successfully converted'), 'Should report success');
+
+    // Verify the parquet file was created
+    const parquetStat = await stat(parquetPath);
+    assert.ok(parquetStat.size > 0, 'Parquet file should be non-empty');
+
+    // Verify stats cache and schema were generated
+    const statsPath = csvPath.replace(/\.csv$/, '.stats.csv');
+    const statsStat = await stat(statsPath);
+    assert.ok(statsStat.size > 0, 'Stats cache should be generated');
+
+    const schemaPath = csvPath + '.pschema.json';
+    const schemaStat = await stat(schemaPath);
+    assert.ok(schemaStat.size > 0, 'Polars schema should be generated');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('qsv_to_parquet defaults output path from input extension', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+
+  try {
+    const csvPath = await createTestCSV(
+      testDir,
+      'autoname.csv',
+      'id,value\n1,100\n2,200\n'
+    );
+
+    const result = await handleToParquetCall({
+      input_file: csvPath,
+    });
+
+    assert.ok(!result.isError, `Conversion should succeed: ${result.content[0].text}`);
+    const output = result.content[0].text || '';
+
+    // Should auto-generate output path as autoname.parquet
+    const expectedParquet = join(testDir, 'autoname.parquet');
+    assert.ok(output.includes('autoname.parquet'), 'Should use auto-generated parquet filename');
+
+    const parquetStat = await stat(expectedParquet);
+    assert.ok(parquetStat.size > 0, 'Auto-named parquet file should be created');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('qsv_to_parquet skips regeneration when stats and schema are up-to-date', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+
+  try {
+    const csvPath = await createTestCSV(
+      testDir,
+      'cached.csv',
+      'id,name,date\n1,Alice,2024-01-15\n2,Bob,2024-03-20\n'
+    );
+
+    const parquetPath = join(testDir, 'cached.parquet');
+
+    // First conversion - should generate stats and schema
+    const result1 = await handleToParquetCall({
+      input_file: csvPath,
+      output_file: parquetPath,
+    });
+    assert.ok(!result1.isError, 'First conversion should succeed');
+    const output1 = result1.content[0].text || '';
+    assert.ok(output1.includes('Stats cache: generated'), 'First run should generate stats');
+    assert.ok(output1.includes('Polars schema: generated'), 'First run should generate schema');
+
+    // Second conversion - should reuse existing stats and schema
+    const result2 = await handleToParquetCall({
+      input_file: csvPath,
+      output_file: parquetPath,
+    });
+    assert.ok(!result2.isError, 'Second conversion should succeed');
+    const output2 = result2.content[0].text || '';
+    assert.ok(output2.includes('reused (up-to-date)'), 'Second run should reuse cached files');
   } finally {
     await cleanupTestDir(testDir);
   }

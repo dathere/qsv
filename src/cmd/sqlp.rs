@@ -875,7 +875,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // update the pschema.json file, if necessary
             if create_schema {
                 let schema = lf.collect_schema()?;
-                let schema_json = simd_json::to_string_pretty(&schema)?;
+                // Use serde_json as the schema may contain compound types (e.g. Datetime)
+                // that simd_json::to_string_pretty doesn't serialize correctly
+                let schema_json = serde_json::to_string_pretty(&schema)?;
 
                 let schema_file =
                     PathBuf::from(format!("{}.pschema.json", table.canonicalize()?.display()));

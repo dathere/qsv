@@ -3472,11 +3472,9 @@ pub fn infer_polars_schema(
         );
     }
     let stats_schema = std::sync::Arc::new(schema);
-    // Use platform-appropriate JSON serialization
-    #[cfg(target_endian = "big")]
+    // Use serde_json for schema serialization as the schema may contain compound types
+    // (e.g. Datetime) that simd_json::to_string_pretty doesn't serialize correctly
     let stats_schema_json = serde_json::to_string_pretty(&stats_schema)?;
-    #[cfg(target_endian = "little")]
-    let stats_schema_json = simd_json::to_string_pretty(&stats_schema)?;
     let mut file = std::io::BufWriter::new(File::create(schema_file)?);
     file.write_all(stats_schema_json.as_bytes())?;
     file.flush()?;

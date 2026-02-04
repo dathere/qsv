@@ -949,6 +949,10 @@ impl Args {
                             },
                             "Boolean" => polars::datatypes::DataType::Boolean,
                             "Date" => polars::datatypes::DataType::Date,
+                            "DateTime" => polars::datatypes::DataType::Datetime(
+                                polars::datatypes::TimeUnit::Milliseconds,
+                                None,
+                            ),
                             _ => polars::datatypes::DataType::String,
                         }
                     },

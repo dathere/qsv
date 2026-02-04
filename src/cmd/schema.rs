@@ -158,6 +158,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 log::log_enabled!(log::Level::Debug),
                 input_path,
                 &schema_file,
+                args.flag_prefer_dmy,
             )? {
                 return Ok(());
             }

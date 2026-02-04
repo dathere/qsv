@@ -1076,9 +1076,24 @@ select ward,count(*) as cnt from temp_table2 group by ward order by cnt desc, wa
         r#"{
   "fields": {
     "case_enquiry_id": "UInt64",
-    "open_dt": "String",
-    "target_dt": "String",
-    "closed_dt": "String",
+    "open_dt": {
+      "Datetime": [
+        "Milliseconds",
+        null
+      ]
+    },
+    "target_dt": {
+      "Datetime": [
+        "Milliseconds",
+        null
+      ]
+    },
+    "closed_dt": {
+      "Datetime": [
+        "Milliseconds",
+        null
+      ]
+    },
     "ontime": "String",
     "case_status": "String",
     "closure_reason": "String",

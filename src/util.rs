@@ -2827,7 +2827,17 @@ pub fn get_stats_records(
             StatsMode::PolarsSchema => {
                 // StatsMode::PolarsSchema
                 // we need data types, ranges & cardinality
-                format!("stats\t{input}\t--cardinality\t--stats-jsonl\t--output\t{tempfile_path}")
+                // if sniff detected date columns, also infer dates with the sniffed whitelist
+                if stats_args.flag_dates_whitelist.is_empty() {
+                    format!("stats\t{input}\t--cardinality\t--stats-jsonl\t--output\t{tempfile_path}")
+                } else {
+                    format!(
+                        "stats\t{input}\t--cardinality\
+                        \t--infer-dates\t--dates-whitelist\t{dates_whitelist}\
+                        \t--stats-jsonl\t--output\t{tempfile_path}",
+                        dates_whitelist = stats_args.flag_dates_whitelist
+                    )
+                }
             },
             StatsMode::Outliers => {
                 // StatsMode::Outliers
@@ -3366,7 +3376,82 @@ pub fn infer_polars_schema(
     debuglog_flag: bool,
     table: &Path,
     schema_file: &std::path::PathBuf,
+    prefer_dmy: bool,
 ) -> Result<bool, crate::clitypes::CliError> {
+    // Run sniff to auto-detect date/datetime columns
+    let qsv_bin = current_exe()?;
+    let mut sniff_cmd = std::process::Command::new(&qsv_bin);
+    let table_str = table.to_string_lossy().to_string();
+    sniff_cmd.args(["sniff", "--json"]);
+    if let Some(d) = delimiter {
+        let delim_byte = d.as_byte();
+        if delim_byte == b'\t' {
+            sniff_cmd.args(["--delimiter", r"\t"]);
+        } else {
+            // safety: delimiter is guaranteed to be a valid ASCII byte
+            sniff_cmd.args(["--delimiter", &(delim_byte as char).to_string()]);
+        }
+    }
+    sniff_cmd.arg(&table_str);
+    if prefer_dmy {
+        sniff_cmd.arg("--prefer-dmy");
+    }
+    let sniff_output = sniff_cmd.output()?;
+
+    let mut sniff_dates_whitelist = String::new();
+    if sniff_output.status.success() {
+        match serde_json::from_slice::<serde_json::Value>(&sniff_output.stdout) {
+            Ok(sniff_json) => {
+                if let (Some(fields), Some(types)) = (
+                    sniff_json["fields"].as_array(),
+                    sniff_json["types"].as_array(),
+                ) {
+                    let date_fields: Vec<&str> = fields
+                        .iter()
+                        .zip(types.iter())
+                        .filter_map(|(field, typ)| {
+                            let type_str = typ.as_str().unwrap_or_default();
+                            if type_str == "Date" || type_str == "DateTime" {
+                                field.as_str()
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    sniff_dates_whitelist = date_fields.join(",");
+                    if debuglog_flag {
+                        if sniff_dates_whitelist.is_empty() {
+                            log::debug!(
+                                "sniff did not detect any date/datetime columns for {table_str}"
+                            );
+                        } else {
+                            log::debug!(
+                                "sniff detected date/datetime columns for {table_str}: \
+                                 {sniff_dates_whitelist}"
+                            );
+                        }
+                    }
+                } else if debuglog_flag {
+                    log::debug!(
+                        "sniff JSON for {table_str} did not contain expected 'fields'/'types' \
+                         arrays"
+                    );
+                }
+            },
+            Err(err) => {
+                if debuglog_flag {
+                    log::debug!("failed to parse sniff JSON output for {table_str}: {err}");
+                }
+            },
+        }
+    } else if debuglog_flag {
+        log::debug!(
+            "sniff command failed for {table_str} with status {:?}. stderr: {}",
+            sniff_output.status,
+            String::from_utf8_lossy(&sniff_output.stderr)
+        );
+    }
+
     let schema_args = SchemaArgs {
         flag_enum_threshold:  0,
         flag_ignore_case:     false,
@@ -3374,8 +3459,8 @@ pub fn infer_polars_schema(
         flag_strict_formats:  false,
         // we still get all the stats columns so we can use the stats cache
         flag_pattern_columns: crate::select::SelectColumns::parse("").unwrap(),
-        flag_dates_whitelist: String::new(),
-        flag_prefer_dmy:      false,
+        flag_dates_whitelist: sniff_dates_whitelist,
+        flag_prefer_dmy:      prefer_dmy,
         flag_force:           false,
         flag_stdout:          false,
         flag_jobs:            Some(njobs(None)),

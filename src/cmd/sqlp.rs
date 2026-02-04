@@ -774,6 +774,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         debuglog_flag,
                         table,
                         &schema_file,
+                        false,
                     )?;
                 }
 
@@ -822,6 +823,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         debuglog_flag,
                         table,
                         &schema_file,
+                        false,
                     )?;
 
                     if valid_schema_exists {

@@ -16,7 +16,7 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 - **Guidance Enhancement**: Intelligent tool descriptions with USE WHEN, COMMON PATTERNS, and CAUTION hints
 
 **Goals**:
-1. Make all 56 qsv commands discoverable and invokable by AI agents
+1. Make all 55 qsv commands discoverable and invokable by AI agents
 2. Auto-generate tool definitions from qsv usage text (zero documentation debt)
 3. Enable intelligent composition of complex data workflows with multi-format support
 4. Provide seamless integration with Claude Desktop and other MCP clients
@@ -24,6 +24,17 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 6. Support diverse tabular data formats (CSV, TSV, Excel, JSONL, SSV, etc.)
 
 ## What's New
+
+### Version 16.0.0
+- **Executor Timeout Handling** - `runQsv()` now enforces timeout on spawned qsv processes
+  - Graceful termination: SIGTERM, then SIGKILL after 1 second
+  - Returns exit code 124 (standard timeout code) with descriptive error
+- **Gemini CLI Integration** - New documentation at `docs/guides/GEMINI_CLI.md` with `${PWD}` template variable support
+- **Signal Termination Handling** - Maps signals to conventional exit codes (128 + signal number)
+- **Windows Cross-Drive Path Traversal Fix** - Security fix with `isAbsolute()` validation
+- **Reduced MCP Skills** - Excluded `edit`, `flatten`, `pro`, `snappy` (60 → 55 skills)
+- **Removed client-detector.ts** - Deferred loading now consistent for ALL clients
+- **Removed `QSV_MCP_TIMEOUT_MS`** - Consolidated to `QSV_MCP_OPERATION_TIMEOUT_MS`
 
 ### Version 15.3.0
 - **BM25 Search Integration** - Upgraded `qsv_search_tools` from substring matching to BM25 relevance ranking
@@ -37,7 +48,7 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 - **Removed `qsv_data_profile`** - Tool produced ~60KB output filling context window; use `qsv stats --cardinality --stats-jsonl` instead
 
 ### Version 15.1.1
-- **Skill Version Sync** - Updated all 56 skill JSON files to version 15.1.1
+- **Skill Version Sync** - Updated all 55 skill JSON files to version 15.1.1
 
 ### Version 15.1.0
 - **Simplified Tool Guidance** - Removed redundant feature requirement hints (Polars, Luau) from tool descriptions
@@ -157,7 +168,7 @@ npm run mcpb:package
 │   ├── install-mcp.js     # Installation helper
 │   ├── package-mcpb.js    # MCPB packaging script
 │   └── run-tests.js       # Cross-platform test runner
-├── qsv/                    # Auto-generated skill JSON files (56)
+├── qsv/                    # Auto-generated skill JSON files (55)
 ├── node_modules/          # Dependencies
 ├── package.json           # NPM package configuration
 ├── tsconfig.json          # TypeScript compiler config
@@ -197,7 +208,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 **Key Constants**:
 - `COMMON_COMMANDS`: 13 frequently-used commands (select, stats, moarstats, index, search, frequency, headers, count, slice, sqlp, joinp, cat, geocode)
 - `ALWAYS_FILE_COMMANDS`: 23 commands that always output to files
-- `METADATA_COMMANDS`: 5 commands returning metadata (count, headers, index, slice, sample)
+- `METADATA_COMMANDS`: 3 commands returning metadata (count, headers, sniff)
 - `AUTO_INDEX_THRESHOLD`: 10MB - files larger than this are auto-indexed
 
 **Tool Structure with Guidance**:
@@ -680,7 +691,7 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => ({
 
 This project depends on:
 1. **qsv binary**: Must be in PATH or specified via `QSV_MCP_BIN_PATH`
-2. **qsv version**: Should match package.json major version (currently 15)
+2. **qsv version**: Should match package.json major version (currently 16)
 3. **Feature flags**: Some tools require specific qsv features (Polars, etc.)
 4. **Node.js**: Requires Node.js 18.0.0 or later
 5. **MCP SDK**: Uses @modelcontextprotocol/sdk ^1.25.2
@@ -1029,9 +1040,9 @@ return {
 
 ---
 
-**Document Version**: 1.8
-**Last Updated**: 2026-01-31
-**Target qsv Version**: 15.x
+**Document Version**: 1.9
+**Last Updated**: 2026-02-02
+**Target qsv Version**: 16.x
 **Node.js Version**: >=18.0.0
 **MCP SDK Version**: ^1.25.2
 **Maintainer**: Joel Natividad

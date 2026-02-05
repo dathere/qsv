@@ -3248,7 +3248,7 @@ pub fn convert_special_format(
         SpecialFormat::Ipc => IpcReader::new(BufReader::new(File::open(path)?)).finish()?,
         SpecialFormat::Jsonl => {
             let path_str = path.to_string_lossy();
-            let lf = LazyJsonLineReader::new(PlRefPath::new(path_str.as_ref()));
+            let lf = LazyJsonLineReader::new(PlRefPath::new(&*path_str));
             if let Some(schema) = schema {
                 lf.with_schema(Some(schema)).finish()?
             } else {

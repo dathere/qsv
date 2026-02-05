@@ -356,8 +356,8 @@ test('createToParquetTool description mentions sniff-based date detection', () =
   const toolDef = createToParquetTool();
 
   assert.ok(
-    toolDef.description.includes('Sniffs the CSV'),
-    'Description should mention sniffing the CSV'
+    toolDef.description.includes('Sniffs CSV'),
+    'Description should mention sniffing CSV'
   );
   assert.ok(
     toolDef.description.includes('Date/DateTime'),

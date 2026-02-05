@@ -908,6 +908,26 @@ fn stats_typesonly_with_dates() {
 }
 
 #[test]
+fn stats_typesonly_dates_whitelist_sniff() {
+    let wrk = Workdir::new("stats_typesonly_dates_whitelist_sniff");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--typesonly"])
+        .arg("--infer-dates")
+        .args(["--dates-whitelist", "sniff"])
+        .arg(test_file);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // sniff should detect open_dt, target_dt, closed_dt as DateTime columns
+    // which matches the "all" whitelist output
+    let expected = wrk.load_test_resource("boston311-100-typesonly-withdates-stats.csv");
+
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
+}
+
+#[test]
 fn stats_typesonly_cache_threshold_zero() {
     use std::path::Path;
 

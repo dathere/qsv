@@ -1148,8 +1148,9 @@ source = "git+https://github.com/nihohit/cached?branch=client-side-caching#1a3f1
 
 [[package]]
 name = "calamine"
-version = "0.32.0"
-source = "git+https://github.com/jqnatividad/calamine?branch=bump-atoi_simd-to-17.0#282c6bb1e44f7bfcf40cf33e689a3ce1f7095d45"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96ae094b353c7810cd5efd2e69413ebb9354816138a387c09f7b90d4e826a49f"
 dependencies = [
  "atoi_simd",
  "byteorder",
@@ -1160,7 +1161,7 @@ dependencies = [
  "log",
  "quick-xml",
  "serde",
- "zip 4.6.1",
+ "zip 7.1.0",
 ]
 
 [[package]]
@@ -3635,8 +3636,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.40.2"
-source = "git+https://github.com/Stranger6667/jsonschema?rev=258cc95#258cc95a47f0762f2e8977c4c8d6d8adb7637c63"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9320368abda84a3aad44953d61e70515681fe43ae94529dff5567e0215b88438"
 dependencies = [
  "ahash 0.8.12",
  "bytecount",
@@ -6354,8 +6356,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.40.2"
-source = "git+https://github.com/Stranger6667/jsonschema?rev=258cc95#258cc95a47f0762f2e8977c4c8d6d8adb7637c63"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5773259506800a8c6ef38df3674b061c62c5941162507891ff8b580e93d954e"
 dependencies = [
  "ahash 0.8.12",
  "fluent-uri",
@@ -9355,6 +9358,19 @@ dependencies = [
  "zeroize",
  "zopfli",
  "zstd",
+]
+
+[[package]]
+name = "zip"
+version = "7.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9013f1222db8a6d680f13a7ccdc60a781199cd09c2fa4eff58e728bb181757fc"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "indexmap",
+ "memchr",
+ "zopfli",
 ]
 
 [[package]]

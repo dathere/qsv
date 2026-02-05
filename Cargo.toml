@@ -88,7 +88,7 @@ cached = { version = "0.56", features = [
     "disk_store",
     "redis_ahash",
 ] }
-calamine = { version = "0.32", features = ["chrono"] }
+calamine = { version = "0.33", features = ["chrono"] }
 censor = { version = "0.3", optional = true }
 chrono = { version = "0.4", default-features = false }
 chrono-tz = "0.10"
@@ -151,7 +151,7 @@ jaq-core = "2"
 jaq-json = { version = "1", features = ["serde_json"] }
 jaq-std = "2"
 json-objects-to-csv = "0.1.3"
-jsonschema = { version = "0.40", features = [
+jsonschema = { version = "0.41", features = [
     "resolve-file",
     "resolve-http",
 ], default-features = false }
@@ -319,9 +319,6 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # use fork with updated redis 1.0 dependency & client-side caching features
 cached = { git = "https://github.com/nihohit/cached", branch = "client-side-caching" }
 
-# use our patched fork of calamine with atoi_simd 0.17 dependency
-calamine = { git = "https://github.com/jqnatividad/calamine", branch = "bump-atoi_simd-to-17.0" }
-
 # use latest upstream now that our PR has been merged while awaiting a new release
 csvlens = { git = "https://github.com/YS-L/csvlens", rev = "18fa5ff" }
 
@@ -335,9 +332,6 @@ geosuggest-utils = { git = "https://github.com/jqnatividad/geosuggest", branch =
 
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }
-
-# use latest upstream with unreleased fixes and perf improvements
-jsonschema = { git = "https://github.com/Stranger6667/jsonschema", rev = "258cc95" }
 
 # use latest upstream now that our PR has been merged while awaiting a new release
 kiddo = { git = "https://github.com/sdd/kiddo.git", rev = "2056051"}

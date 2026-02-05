@@ -111,6 +111,9 @@ Examples:
   # Prefer DMY format when inferring dates for the "nyc311.csv"
   qsv stats -E --infer-dates --prefer-dmy nyc311.csv
 
+  # Infer dates using sniff to auto-detect date columns
+  qsv stats -E --infer-dates --dates-whitelist sniff nyc311.csv
+
   # Infer data types only for the "nyc311.csv" file:
   qsv stats --typesonly nyc311.csv
 
@@ -230,8 +233,15 @@ stats options:
                               shortlisting fields for date inferencing.
                               i.e. if the field's name has any of these patterns,
                               it is shortlisted for date inferencing.
-                              Set to "all" to inspect ALL fields for
-                              date/datetime types. Ignored if --infer-dates is false.
+
+                              Special values:
+                              - "all" - inspect ALL fields for date/datetime types
+                              - "sniff" - use `qsv sniff` to auto-detect date/datetime columns
+
+                              When set to "sniff", qsv will run sniff on the input file
+                              and use its type inference to identify columns that appear
+                              to contain date/datetime values. This is faster than "all"
+                              as it only infers dates for columns that sniff identifies.
 
                               Note that false positive date matches WILL most likely occur
                               when using "all" as unix epoch timestamps are just numbers.
@@ -1016,6 +1026,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
+    // Resolve "sniff" special value in dates_whitelist
+    // This must happen after stdin processing so we have a valid path
+    let resolved_whitelist =
+        if args.flag_infer_dates && args.flag_dates_whitelist.eq_ignore_ascii_case("sniff") {
+            if let Some(ref path) = rconfig.path {
+                log::info!("Resolving dates-whitelist 'sniff' for {:?}", path);
+                resolve_sniff_whitelist(path)?
+            } else {
+                // No path available - shouldn't happen after stdin handling
+                args.flag_dates_whitelist.clone()
+            }
+        } else {
+            args.flag_dates_whitelist.clone()
+        };
+
+    // Update the cache args with the resolved whitelist so cache comparison
+    // works correctly (comparing actual column names, not "sniff" keyword)
+    current_stats_args.flag_dates_whitelist = resolved_whitelist.clone();
+
     let mut compute_stats = true;
     let mut create_cache = args.flag_cache_threshold == 1
         || args.flag_stats_jsonl
@@ -1239,7 +1268,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     // without an index, we need to count the number of records in the file
                     // safety: we know util::count_rows() will not return an Err
                     record_count = util::count_rows(&rconfig).unwrap();
-                    args.sequential_stats(&args.flag_dates_whitelist)
+                    args.sequential_stats(&resolved_whitelist)
                 },
                 Some(idx) => {
                     // with an index, we get the rowcount instantaneously from the index
@@ -1247,12 +1276,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     match args.flag_jobs {
                         Some(num_jobs) => {
                             if num_jobs == 1 {
-                                args.sequential_stats(&args.flag_dates_whitelist)
+                                args.sequential_stats(&resolved_whitelist)
                             } else {
-                                args.parallel_stats(&args.flag_dates_whitelist, record_count)
+                                args.parallel_stats(&resolved_whitelist, record_count)
                             }
                         },
-                        _ => args.parallel_stats(&args.flag_dates_whitelist, record_count),
+                        _ => args.parallel_stats(&resolved_whitelist, record_count),
                     }
                 },
             }?;
@@ -2403,6 +2432,66 @@ fn init_date_inference(
         .set(infer_date_flags)
         .map_err(|e| format!("Cannot init date inference flags: {e:?}"))?;
     Ok(())
+}
+
+/// Minimal struct for parsing sniff JSON output when resolving "sniff" dates-whitelist
+#[derive(Deserialize)]
+struct SniffResult {
+    fields: Vec<String>,
+    types:  Vec<String>,
+}
+
+/// Resolves the "sniff" special value in dates-whitelist by running `qsv sniff --json`
+/// and extracting column names that have Date or DateTime types.
+fn resolve_sniff_whitelist(input_path: &std::path::Path) -> CliResult<String> {
+    let qsv_bin = util::current_exe()?;
+
+    let output = std::process::Command::new(qsv_bin)
+        .args(["sniff", "--json", "--stats-types"])
+        .arg(input_path)
+        .output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return fail_clierror!("Failed to sniff file for date columns: {}", stderr.trim());
+    }
+
+    // Parse JSON output (platform-specific)
+    #[cfg(target_endian = "little")]
+    let sniff_result: SniffResult = {
+        let mut json_bytes = output.stdout;
+        simd_json::from_slice(&mut json_bytes)
+            .map_err(|e| CliError::Other(format!("Failed to parse sniff JSON: {e}")))?
+    };
+
+    #[cfg(target_endian = "big")]
+    let sniff_result: SniffResult = serde_json::from_slice(&output.stdout)
+        .map_err(|e| CliError::Other(format!("Failed to parse sniff JSON: {e}")))?;
+
+    // Extract column names where type is Date or DateTime
+    let date_columns: Vec<&str> = sniff_result
+        .fields
+        .iter()
+        .zip(sniff_result.types.iter())
+        .filter_map(|(field, typ)| {
+            if typ == "Date" || typ == "DateTime" {
+                Some(field.as_str())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if date_columns.is_empty() {
+        log::info!("sniff: no Date/DateTime columns found");
+    } else {
+        log::info!(
+            "sniff: found Date/DateTime columns: {}",
+            date_columns.join(", ")
+        );
+    }
+
+    Ok(date_columns.join(","))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]

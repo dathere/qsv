@@ -2484,14 +2484,17 @@ fn resolve_sniff_whitelist(input_path: &std::path::Path) -> CliResult<String> {
 
     if date_columns.is_empty() {
         log::info!("sniff: no Date/DateTime columns found");
+        // Return a sentinel that will not match any header, avoiding enabling
+        // date inference for all columns when no Date/DateTime columns exist.
+        // This is necessary because "".contains("") is always true.
+        Ok("_qsv_no_date_columns_found".to_string())
     } else {
         log::info!(
             "sniff: found Date/DateTime columns: {}",
             date_columns.join(", ")
         );
+        Ok(date_columns.join(","))
     }
-
-    Ok(date_columns.join(","))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]

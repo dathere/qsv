@@ -1,5 +1,5 @@
 static USAGE: &str = r#"
-Convert CSV files to PostgreSQL, SQLite, Excel XLSX, ODS, Parquet and Data Package.
+Convert CSV files to PostgreSQL, SQLite, Excel XLSX, ODS and Data Package.
 
 POSTGRESQL
 ==========
@@ -129,33 +129,6 @@ Load files listed in the 'ourdata.infile-list' into ODS file.
 
   $ qsv to ods output.ods ourdata.infile-list
 
-PARQUET
-=======
-Convert to directory of parquet files.  Need to select a directory, it will be created if it does not exists.
-If the `to_parquet` feature is not enabled, a simpler parquet conversion is available using the `sqlp`
-subcommand with the `--format parquet` option.
-
-To stream the data use the `pipe` option.  To pipe from stdin use `-` for the filename or use named pipe.
-Type guessing is more limited with this option.
-
-Examples:
-
-Convert `file1.csv` and `file2.csv' into `mydir/file1.parquet` and `mydir/file2.parquet` files.
-
-  $ qsv to parquet mydir file1.csv file2.csv
-
-Convert from stdin.
-
-  $ qsv to parquet --pipe mydir -
-
-Convert all files in dir1 into parquet files in myparquetdir.
-
-  $ qsv to parquet myparquetdir dir1
-
-Convert files listed in the 'data.infile-list' into parquet files in myparquetdir.
-
-  $ qsv to parquet myparquetdir data.infile-list
-
 DATA PACKAGE
 ============
 Generate a datapackage, which contains stats and information about what is in the CSV files.
@@ -189,7 +162,6 @@ Usage:
     qsv to sqlite [options] <sqlite> [<input>...]
     qsv to xlsx [options] <xlsx> [<input>...]
     qsv to ods [options] <ods> [<input>...]
-    qsv to parquet [options] <parquet> [<input>...]
     qsv to datapackage [options] <datapackage> [<input>...]
     qsv to --help
 
@@ -202,7 +174,7 @@ To options:
   -s, --schema <arg>      The schema to load the data into. (postgres only).
   -d, --drop              Drop tables before loading new data into them (postgres/sqlite only).
   -e, --evolve            If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only).
-  -i, --pipe              For parquet, allow piping from stdin (using `-`) or from a named pipe.
+  -i, --pipe              Allow piping from stdin (using `-`) or from a named pipe.
   -p, --separator <arg>   For xlsx, use this character to help truncate xlsx sheet names.
                           Defaults to space.
   -A, --all-strings       Convert all fields to strings.
@@ -218,9 +190,8 @@ Common options:
 use std::{io::Write, path::PathBuf};
 
 use csvs_convert::{
-    DescribeOptions, Options, csvs_to_ods_with_options, csvs_to_parquet_with_options,
-    csvs_to_postgres_with_options, csvs_to_sqlite_with_options, csvs_to_xlsx_with_options,
-    make_datapackage,
+    DescribeOptions, Options, csvs_to_ods_with_options, csvs_to_postgres_with_options,
+    csvs_to_sqlite_with_options, csvs_to_xlsx_with_options, make_datapackage,
 };
 use log::debug;
 use serde::Deserialize;
@@ -239,8 +210,6 @@ struct Args {
     arg_postgres:       Option<String>,
     cmd_sqlite:         bool,
     arg_sqlite:         Option<String>,
-    cmd_parquet:        bool,
-    arg_parquet:        Option<String>,
     cmd_xlsx:           bool,
     arg_xlsx:           Option<String>,
     cmd_ods:            bool,
@@ -326,15 +295,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             )?;
         }
         debug!("conversion to SQLite complete");
-    } else if args.cmd_parquet {
-        debug!("converting to Parquet");
-        arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
-        output = csvs_to_parquet_with_options(
-            args.arg_parquet.expect("checked above"),
-            arg_input,
-            options,
-        )?;
-        debug!("conversion to Parquet complete");
     } else if args.cmd_xlsx {
         debug!("converting to Excel XLSX");
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
@@ -364,7 +324,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         debug!("Data Package complete");
     } else {
         return fail_clierror!(
-            "Need to supply either xlsx, ods, parquet, postgres, sqlite, datapackage as subcommand"
+            "Need to supply either xlsx, ods, postgres, sqlite, datapackage as subcommand"
         );
     }
 

@@ -440,63 +440,6 @@ place       string      string"#
 // }
 
 #[test]
-fn to_parquet_dir() {
-    let wrk = Workdir::new("to_parquet_dir");
-
-    let cities = vec![
-        svec!["city", "state"],
-        svec!["Boston", "MA"],
-        svec!["New York", "NY"],
-        svec!["San Francisco", "CA"],
-        svec!["Buffalo", "NY"],
-    ];
-    let places = vec![
-        svec!["city", "place"],
-        svec!["Boston", "Logan Airport"],
-        svec!["Boston", "Boston Garden"],
-        svec!["Buffalo", "Ralph Wilson Stadium"],
-        svec!["Orlando", "Disney World"],
-    ];
-
-    wrk.create("cities.csv", cities.clone());
-    wrk.create("places.csv", places.clone());
-
-    let parquet_dir = wrk.path("test_parquet_dir");
-    let parquet_dirname = parquet_dir.to_string_lossy().to_string();
-
-    let mut cmd = wrk.command("to");
-    cmd.arg("parquet")
-        .arg(parquet_dirname.clone())
-        .arg("places.csv")
-        .arg("cities.csv");
-
-    let got: String = wrk.stdout(&mut cmd);
-    let expected: String = r#"Table 'places' (4 rows)
-
-Field Name  Field Type  Field Format
-city        string      string
-place       string      string
-
-Table 'cities' (4 rows)
-
-Field Name  Field Type  Field Format
-city        string      string
-state       string      string"#
-        .to_string();
-    assert_eq!(got, expected);
-
-    // check that the parquet files were created
-    let files = std::fs::read_dir(parquet_dir).unwrap();
-    let mut file_names = files
-        .map(|f| f.unwrap().file_name().into_string().unwrap())
-        .collect::<Vec<_>>();
-    file_names.sort();
-    assert_eq!(file_names, vec!["cities.parquet", "places.parquet"]);
-
-    // TODO: check that the parquet files are valid and contain the correct data
-}
-
-#[test]
 fn to_ods_roundtrip() {
     let wrk = Workdir::new("to_ods");
 

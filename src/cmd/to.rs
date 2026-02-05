@@ -174,7 +174,7 @@ To options:
   -s, --schema <arg>      The schema to load the data into. (postgres only).
   -d, --drop              Drop tables before loading new data into them (postgres/sqlite only).
   -e, --evolve            If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only).
-  -i, --pipe              Allow piping from stdin (using `-`) or from a named pipe.
+  -i, --pipe              Adjust output format for piped data (omits row counts and field format columns).
   -p, --separator <arg>   For xlsx, use this character to help truncate xlsx sheet names.
                           Defaults to space.
   -A, --all-strings       Convert all fields to strings.

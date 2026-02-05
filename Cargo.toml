@@ -281,7 +281,7 @@ uuid = { version = "1", features = ["v4", "v7"] }
 url = "2.5"
 whatlang = { version = "0.18", optional = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
-zip = "6"
+zip = "7"
 zmij = "1.0"
 
 [dev-dependencies]
@@ -324,10 +324,10 @@ csvlens = { git = "https://github.com/YS-L/csvlens", rev = "18fa5ff" }
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-deps-202602", optional = true }
 
-# use our patched fork of geosuggest to use the latest kiddo patch (see below).
-# Though our kiddo PR has been merged, it has not been released yet.
-geosuggest-core = { git = "https://github.com/jqnatividad/geosuggest", branch = "kiddo-patch-for-cmov-dependency-security-response" }
-geosuggest-utils = { git = "https://github.com/jqnatividad/geosuggest", branch = "kiddo-patch-for-cmov-dependency-security-response" }
+# use latest geosuggest upstream
+geosuggest-core = { git = "https://github.com/estin/geosuggest", rev = "0430e92" }
+geosuggest-utils = { git = "https://github.com/estin/geosuggest", rev = "0430e92" }
+
 
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }

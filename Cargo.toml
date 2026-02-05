@@ -109,7 +109,6 @@ csvlens = { version = "0.15", optional = true, default-features = false, feature
 ] }
 csvs_convert = { version = "0.12", default-features = false, features = [
     "converters",
-    "parquet",
 ], optional = true }
 dns-lookup = { version = "3", optional = true }
 directories = "6.0"
@@ -323,7 +322,7 @@ cached = { git = "https://github.com/nihohit/cached", branch = "client-side-cach
 csvlens = { git = "https://github.com/YS-L/csvlens", rev = "18fa5ff" }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
-csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-rust_xlsxwriter-to-0.88", optional = true }
+csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-deps-202602", optional = true }
 
 # use our patched fork of geosuggest to use the latest kiddo patch (see below).
 # Though our kiddo PR has been merged, it has not been released yet.

@@ -1007,8 +1007,9 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // Get all commands from src/cmd/*.rs (excluding mod.rs and duplicates)
     // Note: "enumerate" command is invoked as "enum" in qsv
     // Commands excluded from MCP skills generation:
+    // - behead: not needed for AI agents (use slice instead)
     // - clipboard: not useful for AI agents (requires system clipboard)
-    // - color: not useful for AI agents (terminal color testing)
+    // - color: not useful for AI agents (color display in terminal)
     // - edit: not suitable for AI agent use
     // - flatten: not suitable for AI agent use
     // - geoconvert: experimental command (not yet stable)
@@ -1018,7 +1019,6 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // - snappy: compression utility not needed for AI agents
     let commands = vec![
         "apply",
-        "behead",
         "cat",
         "count",
         "datefmt",

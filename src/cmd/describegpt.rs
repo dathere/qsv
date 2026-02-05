@@ -341,7 +341,7 @@ use std::{
 use cached::{
     DiskCache, IOCached, RedisCache, Return, proc_macro::io_cached, stores::DiskCacheBuilder,
 };
-use foldhash::{HashMap, HashMapExt};
+use foldhash::{HashMap, HashMapExt, HashSet};
 use indexmap::{IndexMap, IndexSet};
 use indicatif::HumanCount;
 use minijinja::{Environment, context};
@@ -664,9 +664,8 @@ impl DiskCacheConfig {
 
 static FILE_HASH: OnceLock<String> = OnceLock::new();
 static PROMPT_FILE: OnceLock<PromptFile> = OnceLock::new();
-static PROMPT_VALIDITY_FLAGS: std::sync::LazyLock<
-    std::sync::Mutex<std::collections::HashMap<String, String>>,
-> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+static PROMPT_VALIDITY_FLAGS: std::sync::LazyLock<std::sync::Mutex<HashMap<String, String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
 /// Detect language from prompt text using whatlang
 /// Returns the detected language name if confidence >= threshold, otherwise None
@@ -1031,11 +1030,10 @@ fn parse_stats_csv(stats_csv: &str) -> CliResult<(Vec<StatsRecord>, Vec<String>)
     let headers = rdr.headers()?.clone();
 
     // Standard column names that we handle explicitly
-    let std_cols: std::collections::HashSet<&str> =
-        ["field", "type", "cardinality", "nullcount", "min", "max"]
-            .iter()
-            .copied()
-            .collect();
+    let std_cols: HashSet<&str> = ["field", "type", "cardinality", "nullcount", "min", "max"]
+        .iter()
+        .copied()
+        .collect();
 
     // Find column indices for standard columns
     let field_idx = headers
@@ -4522,11 +4520,10 @@ fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String
     }
 
     // Standard columns that should never be included as additional columns
-    let std_cols: std::collections::HashSet<&str> =
-        ["field", "type", "cardinality", "nullcount", "min", "max"]
-            .iter()
-            .copied()
-            .collect();
+    let std_cols: HashSet<&str> = ["field", "type", "cardinality", "nullcount", "min", "max"]
+        .iter()
+        .copied()
+        .collect();
 
     let cols_to_include = if let Some(list_str) = &args.flag_addl_cols_list {
         // Parse comma-separated list

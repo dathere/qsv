@@ -4,7 +4,7 @@
 
 Always follow this sequence when processing CSV data:
 
-0. **Setup (Cowork)** - Sync qsv working directory to session CWD if needed
+0. **Setup (Cowork)** - `qsv_get_working_dir` (check current dir) -> `qsv_set_working_dir` (sync to workspace root if needed)
 1. **Discover** - `sniff` (detect format, encoding, delimiter) -> `headers` -> `count`
 2. **Index** - `index` (enables fast random access for subsequent commands)
 3. **Profile** - `stats --cardinality --stats-jsonl` (creates cache used by smart commands)

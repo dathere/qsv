@@ -19,7 +19,7 @@ Convert tabular data files between formats.
 
 ## Cowork Setup
 
-If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check qsv's directory. If it differs from your session CWD, call `qsv_set_working_dir` to sync it.
+If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check qsv's current working directory. If it differs from your workspace root (the directory where relative paths should resolve), call `qsv_set_working_dir` to sync it.
 
 ## Supported Conversions
 

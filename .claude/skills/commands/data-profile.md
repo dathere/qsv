@@ -9,6 +9,8 @@ allowed-tools:
   - mcp__qsv__qsv_frequency
   - mcp__qsv__qsv_slice
   - mcp__qsv__qsv_command
+  - mcp__qsv__qsv_get_working_dir
+  - mcp__qsv__qsv_set_working_dir
 argument-hint: "<file>"
 description: Profile a CSV/TSV/Excel file - detect format, compute statistics, show value distributions
 ---
@@ -16,6 +18,10 @@ description: Profile a CSV/TSV/Excel file - detect format, compute statistics, s
 # Data Profile
 
 Profile the given tabular data file to understand its structure, types, and distributions.
+
+## Cowork Setup
+
+If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check qsv's directory. If it differs from your session CWD, call `qsv_set_working_dir` to sync it.
 
 ## Steps
 

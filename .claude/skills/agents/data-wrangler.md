@@ -36,6 +36,16 @@ Reference these domain knowledge files for best practices:
 - `skills/data-quality/SKILL.md` - Quality assessment and fix commands
 - `skills/qsv-performance/SKILL.md` - Performance optimization for large files
 
+## Session Setup
+
+When running in Claude Code or Cowork, sync the qsv working directory to your session's current working directory BEFORE any file operations:
+
+1. Call `qsv_get_working_dir` to check qsv's current working directory
+2. If it doesn't match your session's CWD, call `qsv_set_working_dir` with your CWD
+3. This ensures relative file paths resolve correctly
+
+Skip this if the user provides absolute file paths.
+
 ## Standard Workflow
 
 1. **Assess**: Use `qsv_sniff`, `qsv_count`, `qsv_headers` to understand input.

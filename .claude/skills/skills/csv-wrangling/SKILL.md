@@ -1,0 +1,83 @@
+# CSV Wrangling with qsv
+
+## Standard Workflow Order
+
+Always follow this sequence when processing CSV data:
+
+1. **Discover** - `sniff` (detect format, encoding, delimiter) -> `headers` -> `count`
+2. **Index** - `index` (enables fast random access for subsequent commands)
+3. **Profile** - `stats --cardinality --stats-jsonl` (creates cache used by smart commands)
+4. **Inspect** - `slice --len 5` (preview rows), `frequency` (value distributions)
+5. **Transform** - select, sort, dedup, apply, rename, search, etc.
+6. **Validate** - `validate` (against JSON Schema), `stats` (verify results)
+7. **Export** - `to` (Parquet, XLSX, etc.), `tojsonl`, `table`
+
+## Tool Selection Matrix
+
+| Task | Best Tool | Alternative | When to Use Alternative |
+|------|-----------|-------------|------------------------|
+| Select columns | `select` | `sqlp` | Need computed columns |
+| Filter rows | `search` | `sqlp` | Complex WHERE conditions |
+| Sort data | `sort` | `sqlp` | Need ORDER BY with LIMIT |
+| Remove duplicates | `dedup` | `sqlp` | Need GROUP BY dedup |
+| Join two files | `joinp` | `join` | `join` for memory-constrained |
+| Aggregate/GROUP BY | `sqlp` | `frequency` | `frequency` for simple counts |
+| Column stats | `stats` | `moarstats` | `moarstats` for extended stats |
+| Find/replace | `apply operations` | `sqlp` | `sqlp` for conditional replace |
+| Reshape wide->long | `melt` | `sqlp` | Complex reshaping |
+| Reshape long->wide | `pivotp` | `sqlp` | Complex pivots |
+| Concatenate files | `cat rows` | `cat rowskey` | Different column orders |
+| Sample rows | `sample` | `slice` | `slice` for positional ranges |
+
+## qsv Selection Syntax
+
+Used by `select`, `search`, `sort`, `dedup`, `frequency`, and other commands:
+
+| Syntax | Meaning | Example |
+|--------|---------|---------|
+| `name` | Column by name | `select "City"` |
+| `1` | Column by 1-based index | `select 1` |
+| `1,3,5` | Multiple columns | `select 1,3,5` |
+| `1-5` | Range (inclusive) | `select 1-5` |
+| `!col` | Exclude column | `select '!SSN'` |
+| `!1-3` | Exclude range | `select '!1-3'` |
+| `/regex/` | Match column names | `select '/^price/'` |
+
+## Common Pipeline Patterns
+
+### Clean and Deduplicate
+```
+sniff -> index -> safenames -> fixlengths -> trim (apply operations) -> dedup -> validate
+```
+
+### Profile and Analyze
+```
+sniff -> index -> stats --cardinality --stats-jsonl -> frequency -> sqlp (GROUP BY queries)
+```
+
+### Join and Enrich
+```
+index (both files) -> stats (both) -> joinp -> select (keep needed columns) -> sort
+```
+
+### Convert and Export
+```
+excel (to CSV) -> index -> stats -> select -> to parquet/xlsx
+```
+
+## Delimiter Handling
+
+- CSV (`,`): default, no flag needed
+- TSV (`\t`): use `--delimiter '\t'` or file extension `.tsv`
+- SSV (`;`): use `--delimiter ';'` or file extension `.ssv`
+- Auto-detect: set `QSV_SNIFF_DELIMITER=1` environment variable
+
+## Important Notes
+
+- Column indices are **1-based**, not 0-based
+- `--no-headers` flag changes behavior significantly - most commands assume headers exist
+- Output goes to stdout by default; use `--output file.csv` to write to file
+- Many commands auto-detect `.sz` (Snappy compressed) files transparently
+- `cat rows` requires same column order; use `cat rowskey` for different schemas
+- `dedup` requires sorted input unless using `--sorted` flag to confirm pre-sorting
+- `sort` loads entire file into memory; for huge files use `sqlp` with ORDER BY

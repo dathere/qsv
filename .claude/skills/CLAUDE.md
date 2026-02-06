@@ -26,6 +26,11 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 ## What's New
 
 ### Version 16.0.0
+- **Claude Plugin Layer** - Claude Code and Cowork integration via plugin manifest
+  - Plugin manifest (`.claude-plugin/plugin.json`) and MCP config (`.mcp.json`)
+  - 5 slash commands: `/data-profile`, `/data-clean`, `/csv-query`, `/data-convert`, `/data-join`
+  - 2 subagents: `data-analyst` (read-only analysis), `data-wrangler` (transforms)
+  - 3 domain knowledge skills: `csv-wrangling`, `data-quality`, `qsv-performance`
 - **Executor Timeout Handling** - `runQsv()` now enforces timeout on spawned qsv processes
   - Graceful termination: SIGTERM, then SIGKILL after 1 second
   - Returns exit code 124 (standard timeout code) with descriptive error
@@ -830,6 +835,11 @@ cd .claude/skills && npm run build
 - **`docs/guides/`**: User guides (QUICK_START, DESKTOP_EXTENSION, CLAUDE_CODE, FILESYSTEM_USAGE)
 - **`docs/reference/`**: Technical reference (AUTO_UPDATE, CI, SKILLS_API, UPDATE_SYSTEM)
 - **`docs/desktop/README-MCPB.md`**: Desktop Extension documentation
+- **`.claude-plugin/plugin.json`**: Claude Plugin manifest
+- **`.mcp.json`**: MCP server configuration for plugin
+- **`commands/`**: Slash commands (data-profile, data-clean, csv-query, data-convert, data-join)
+- **`agents/`**: Subagent definitions (data-analyst, data-wrangler)
+- **`skills/`**: Domain knowledge (csv-wrangling, data-quality, qsv-performance)
 - **`CHANGELOG.md`**: Release notes
 - **`README-MCP.md`**: MCP Server documentation
 - **`CLAUDE.md`**: This file
@@ -1004,6 +1014,51 @@ return {
 10. **Use spawn for execution** - streaming output prevents memory issues
 11. **Use proper error typing** - use `error: unknown` with type guards instead of `error: any`
 
+## Claude Plugin Structure
+
+The qsv MCP server is also packaged as a **Claude Plugin** for seamless integration with Claude Code and Claude Cowork. The plugin layer is purely additive - no MCP server code changes are needed.
+
+### Plugin Layout
+
+```
+.claude/skills/
+├── .claude-plugin/
+│   └── plugin.json          # Plugin manifest (name, version, mcpServers ref)
+├── .mcp.json                # MCP server configuration (server key: "qsv")
+├── commands/                # Slash commands (5)
+│   ├── data-profile.md      # /data-profile <file> - Profile CSV data
+│   ├── data-clean.md        # /data-clean <file> - Clean CSV data
+│   ├── csv-query.md         # /csv-query <file> [query] - SQL queries
+│   ├── data-convert.md      # /data-convert <file> [format] - Format conversion
+│   └── data-join.md         # /data-join <file1> <file2> - Join datasets
+├── agents/                  # Subagents (2)
+│   ├── data-analyst.md      # Read-only analysis and statistics
+│   └── data-wrangler.md     # Data cleaning and transformation
+├── skills/                  # Domain knowledge (3)
+│   ├── csv-wrangling/
+│   │   └── SKILL.md         # Workflow order, tool selection, pipeline patterns
+│   ├── data-quality/
+│   │   └── SKILL.md         # Quality dimensions, assessment workflow
+│   └── qsv-performance/
+│       └── SKILL.md         # Accelerators, memory management, large file guide
+└── (existing MCP server files...)
+```
+
+### How It Layers
+
+1. **`.claude-plugin/plugin.json`** - Declares the plugin; points to `.mcp.json` for server config
+2. **`.mcp.json`** - Configures the MCP server with key `"qsv"` (tools become `mcp__qsv__qsv_*`)
+3. **Commands** - Slash commands that orchestrate multiple MCP tools into workflows
+4. **Agents** - Specialized subagents with restricted tool lists and clear roles
+5. **Skills** - Domain knowledge referenced by commands and agents (concise reference tables)
+
+### Key Design Decisions
+
+- **MCP server key `"qsv"`** makes tools accessible as `mcp__qsv__qsv_select`, etc.
+- **`QSV_MCP_EXPOSE_ALL_TOOLS=true`** in plugin config since Claude Code/Cowork handle large tool lists well
+- **Two separate agents** (analyst/wrangler) rather than one monolithic agent for clearer boundaries
+- **Skills are concise reference tables**, not verbose tutorials, optimized for Claude scanning
+
 ## Related Documentation
 
 - [MCP Specification](https://modelcontextprotocol.io/)
@@ -1040,8 +1095,8 @@ return {
 
 ---
 
-**Document Version**: 1.9
-**Last Updated**: 2026-02-02
+**Document Version**: 2.0
+**Last Updated**: 2026-02-06
 **Target qsv Version**: 16.x
 **Node.js Version**: >=18.0.0
 **MCP SDK Version**: ^1.25.2

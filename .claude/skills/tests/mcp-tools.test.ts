@@ -352,13 +352,9 @@ test('createToParquetTool returns valid tool definition', () => {
   assert.deepStrictEqual(toolDef.inputSchema.required, ['input_file']);
 });
 
-test('createToParquetTool description mentions sniff-based date detection', () => {
+test('createToParquetTool description mentions date detection via stats', () => {
   const toolDef = createToParquetTool();
 
-  assert.ok(
-    toolDef.description.includes('Sniffs CSV'),
-    'Description should mention sniffing CSV'
-  );
   assert.ok(
     toolDef.description.includes('Date/DateTime'),
     'Description should mention Date/DateTime detection'
@@ -368,8 +364,8 @@ test('createToParquetTool description mentions sniff-based date detection', () =
     'Description should mention --infer-dates flag'
   );
   assert.ok(
-    toolDef.description.includes('--dates-whitelist'),
-    'Description should mention --dates-whitelist flag'
+    toolDef.description.includes('--dates-whitelist sniff'),
+    'Description should mention --dates-whitelist sniff'
   );
 });
 

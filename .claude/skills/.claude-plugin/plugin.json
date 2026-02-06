@@ -1,0 +1,25 @@
+{
+  "name": "qsv-data-wrangling",
+  "version": "16.0.0",
+  "description": "Blazingly fast tabular data wrangling with 55 qsv commands for CSV, TSV, Excel, JSONL, and Parquet files",
+  "author": {
+    "name": "datHere, Inc.",
+    "url": "https://dathere.com"
+  },
+  "homepage": "https://github.com/dathere/qsv/tree/master/.claude/skills",
+  "repository": "https://github.com/dathere/qsv",
+  "license": "MIT",
+  "keywords": [
+    "csv",
+    "data-wrangling",
+    "data-analysis",
+    "tabular-data",
+    "excel",
+    "jsonl",
+    "parquet",
+    "etl",
+    "sql",
+    "data-quality"
+  ],
+  "mcpServers": "./.mcp.json"
+}

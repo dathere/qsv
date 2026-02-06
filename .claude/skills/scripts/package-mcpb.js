@@ -6,7 +6,12 @@
  * - manifest.json
  * - server/ (compiled JavaScript from dist/)
  * - node_modules/ (bundled dependencies)
- * - qsv/ (56 skill JSON definitions)
+ * - qsv/ (55 skill JSON definitions)
+ * - .claude-plugin/ (plugin manifest)
+ * - .mcp.json (MCP server configuration)
+ * - commands/ (slash commands)
+ * - agents/ (subagent definitions)
+ * - skills/ (domain knowledge)
  * - icon.png (if exists)
  */
 
@@ -164,6 +169,37 @@ async function createArchive() {
     console.log('   Adding skill definitions (qsv/)...');
     archive.directory(join(rootDir, 'qsv'), 'qsv');
 
+    // Add Claude Plugin files
+    const pluginDir = join(rootDir, '.claude-plugin');
+    if (existsSync(pluginDir)) {
+      console.log('   Adding plugin manifest (.claude-plugin/)...');
+      archive.directory(pluginDir, '.claude-plugin');
+    }
+
+    const mcpJsonPath = join(rootDir, '.mcp.json');
+    if (existsSync(mcpJsonPath)) {
+      console.log('   Adding .mcp.json...');
+      archive.file(mcpJsonPath, { name: '.mcp.json' });
+    }
+
+    const commandsDir = join(rootDir, 'commands');
+    if (existsSync(commandsDir)) {
+      console.log('   Adding slash commands (commands/)...');
+      archive.directory(commandsDir, 'commands');
+    }
+
+    const agentsDir = join(rootDir, 'agents');
+    if (existsSync(agentsDir)) {
+      console.log('   Adding subagents (agents/)...');
+      archive.directory(agentsDir, 'agents');
+    }
+
+    const skillsDir = join(rootDir, 'skills');
+    if (existsSync(skillsDir)) {
+      console.log('   Adding domain knowledge (skills/)...');
+      archive.directory(skillsDir, 'skills');
+    }
+
     // Add icon if it exists
     const iconPath = join(rootDir, 'qsv-75x91.png');
     if (existsSync(iconPath)) {
@@ -192,7 +228,7 @@ function displaySummary() {
   console.log('   1. Test locally: Drag .mcpb file into Claude Desktop settings');
   console.log('   2. Configure qsv binary path in extension settings');
   console.log('   3. Restart Claude Desktop');
-  console.log('   4. Verify all 56 qsv skills are available');
+  console.log('   4. Verify all 55 qsv skills are available');
   console.log('\n📚 Documentation:');
   console.log('   - Desktop Extension Guide: DESKTOP_EXTENSION.md');
   console.log('   - Installation Guide: README.md');

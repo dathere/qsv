@@ -5,9 +5,18 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [16.0.0] - 2026-02-02
+## [16.0.0] - 2026-02-06
 
 ### Added
+- **Claude Plugin Layer** - Full Claude Code and Cowork integration via plugin manifest
+  - Plugin manifest (`.claude-plugin/plugin.json`) for plugin discovery
+  - MCP server config (`.mcp.json`) with server key `"qsv"` and `QSV_MCP_EXPOSE_ALL_TOOLS=true`
+  - 5 slash commands: `/data-profile`, `/data-clean`, `/csv-query`, `/data-convert`, `/data-join`
+  - 2 subagents: `data-analyst` (read-only analysis), `data-wrangler` (data transformation)
+  - 3 domain knowledge skills: `csv-wrangling`, `data-quality`, `qsv-performance`
+  - Commands include `allowed-tools` restrictions and `argument-hint` for natural invocation
+  - Agents have explicit tool lists and reference domain knowledge skills
+  - Skills are concise reference tables optimized for Claude scanning
 - **Executor Timeout Handling** - `runQsv()` now enforces timeout on spawned qsv processes
   - Default timeout: 10 minutes via `config.operationTimeoutMs` (per-call override via `params.timeoutMs`)
   - Graceful termination: sends SIGTERM, then SIGKILL after 1 second

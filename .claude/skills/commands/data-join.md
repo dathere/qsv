@@ -9,6 +9,8 @@ allowed-tools:
   - mcp__qsv__qsv_command
   - mcp__qsv__qsv_sqlp
   - mcp__qsv__qsv_select
+  - mcp__qsv__qsv_get_working_dir
+  - mcp__qsv__qsv_set_working_dir
 argument-hint: "<file1> <file2>"
 description: Join two datasets with automatic strategy selection (joinp vs join vs sqlp)
 ---
@@ -16,6 +18,10 @@ description: Join two datasets with automatic strategy selection (joinp vs join 
 # Data Join
 
 Join two tabular data files on common columns.
+
+## Cowork Setup
+
+If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check qsv's current working directory. If it differs from your workspace root (the directory where relative paths should resolve), call `qsv_set_working_dir` to sync it.
 
 ## Strategy Selection
 

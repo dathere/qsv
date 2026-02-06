@@ -690,11 +690,11 @@ export const config = {
 
   /**
    * Maximum number of concurrent operations
-   * Default: 10 operations
+   * Default: 1 operation
    */
   maxConcurrentOperations: parseIntEnv(
     "QSV_MCP_MAX_CONCURRENT_OPERATIONS",
-    10,
+    1,
     1, // Minimum: 1 operation
     100, // Maximum: 100 operations
   ),

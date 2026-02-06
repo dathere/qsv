@@ -79,5 +79,5 @@ excel (to CSV) -> index -> stats -> select -> to parquet/xlsx
 - Output goes to stdout by default; use `--output file.csv` to write to file
 - Many commands auto-detect `.sz` (Snappy compressed) files transparently
 - `cat rows` requires same column order; use `cat rowskey` for different schemas
-- `dedup` requires sorted input unless using `--sorted` flag to confirm pre-sorting
+- `dedup` loads all data into memory and sorts internally; use `--sorted` flag if input is already sorted to enable streaming mode with constant memory
 - `sort` loads entire file into memory; for huge files use `sqlp` with ORDER BY

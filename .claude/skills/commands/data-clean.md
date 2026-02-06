@@ -30,7 +30,7 @@ Clean the given tabular data file by fixing common data quality issues.
 
    c. **`apply operations trim`** - Remove leading/trailing whitespace from all columns. Use selection syntax to target specific columns or all columns.
 
-   d. **`dedup`** - Remove exact duplicate rows. Note: requires sorted input or use `--sorted` if already sorted.
+   d. **`dedup`** - Remove exact duplicate rows. Loads all data into memory and sorts internally. Use `--sorted` if input is already sorted to enable streaming mode with constant memory.
 
    e. **`validate`** - If a JSON Schema is available, validate against it and report violations.
 
@@ -50,8 +50,7 @@ Clean the given tabular data file by fixing common data quality issues.
     { "tool": "qsv_command", "args": { "cmd": "safenames", "input_file": "<file>", "output": "step1.csv" } },
     { "tool": "qsv_command", "args": { "cmd": "fixlengths", "input_file": "step1.csv", "output": "step2.csv" } },
     { "tool": "qsv_command", "args": { "cmd": "apply", "sub_cmd": "operations", "operations": "trim", "input_file": "step2.csv", "output": "step3.csv" } },
-    { "tool": "qsv_command", "args": { "cmd": "sort", "input_file": "step3.csv", "output": "step4.csv" } },
-    { "tool": "qsv_command", "args": { "cmd": "dedup", "input_file": "step4.csv", "output": "<output>" } }
+    { "tool": "qsv_command", "args": { "cmd": "dedup", "input_file": "step3.csv", "output": "<output>" } }
   ]
 }
 ```
@@ -59,8 +58,8 @@ Clean the given tabular data file by fixing common data quality issues.
 ## Notes
 
 - Always preserve the original file - write output to a new file
-- For large files (> 100MB), `sort` and `dedup` load entire file into memory; consider using `sqlp` with `SELECT DISTINCT` instead
+- For large files (> 100MB), `dedup` loads entire file into memory to sort and deduplicate; consider using `sqlp` with `SELECT DISTINCT` instead
 - `safenames` uses `--mode conditional` by default (only renames if needed)
 - If the user specifies particular columns to clean, use column selection syntax instead of cleaning all columns
-- `dedup` requires sorted input; the pipeline sorts before deduplication
+- `dedup` loads all data into memory and sorts internally; if input is already sorted, use `--sorted` for streaming mode
 - Use `qsv_search_tools` to find additional cleaning tools if needed (e.g., `replace` for regex substitution)

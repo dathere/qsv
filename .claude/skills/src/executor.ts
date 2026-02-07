@@ -292,7 +292,14 @@ export class SkillExecutor {
           // since 'exit' fires before 'close' when process terminates
           if (!processExited && proc.exitCode === null) {
             console.error(`[Executor] Process did not terminate, sending SIGKILL`);
-            proc.kill("SIGKILL");
+            try {
+              proc.kill("SIGKILL");
+            } catch {
+              // Process may have already exited between the check and kill
+              console.error(`[Executor] SIGKILL failed (process may have already exited)`);
+            }
+            // Ensure parent process won't wait for this child
+            proc.unref();
           }
         }, 1000);
       }, timeoutMs);
@@ -405,8 +412,10 @@ export class SkillExecutor {
           killTimer = null;
         }
 
-        // Skip reject if we already handled timeout
+        // If we already handled timeout, log the error but don't reject
+        // (the timeout handler already resolved the promise)
         if (timedOut) {
+          console.error(`[Executor] Process error after timeout (suppressed):`, err.message);
           return;
         }
 
@@ -480,7 +489,7 @@ export class SkillExecutor {
   /**
    * Validate value type
    */
-  private validateType(value: any, expectedType: string): boolean {
+  private validateType(value: unknown, expectedType: string): boolean {
     switch (expectedType) {
       case "number":
         return typeof value === "number" && !isNaN(value);

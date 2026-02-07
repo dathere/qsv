@@ -47,9 +47,9 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
   - Field-weighted search prioritizes name (3x), category (2x), description (1x), examples (0.5x)
   - Text preprocessing with stemming, lowercasing, and negation propagation
 - **Deferred Tool Loading** - Implements Anthropic's Tool Search Tool pattern
-  - Only 7 core tools loaded initially (reduces token usage ~85%)
+  - Only 8 core tools loaded initially (reduces token usage ~85%)
   - Tools found via search are dynamically added to subsequent ListTools responses
-  - Core tools always available: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, `qsv_command`
+  - Core tools always available: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, `qsv_command`, `qsv_to_parquet`
 - **Removed `qsv_data_profile`** - Tool produced ~60KB output filling context window; use `qsv stats --cardinality --stats-jsonl` instead
 
 ### Version 15.1.1
@@ -193,7 +193,7 @@ npm run mcpb:package
 - Manages server lifecycle with graceful shutdown
 - Auto-enables `--stats-jsonl` for stats command
 - Integrates update checker for background version monitoring
-- **Deferred tool loading**: Only 7 core tools loaded initially (~85% token reduction)
+- **Deferred tool loading**: Only 8 core tools loaded initially (~85% token reduction)
 - **Environment-controlled exposure**: Use `QSV_MCP_EXPOSE_ALL_TOOLS=true` for all tools
 
 **Key Functions**:

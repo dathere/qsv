@@ -1,12 +1,12 @@
 # QSV MCP Server
 
-Model Context Protocol (MCP) server that exposes 56 of qsv's tabular data-wrangling commands to Claude Desktop.
+Model Context Protocol (MCP) server that exposes 55 of qsv's tabular data-wrangling commands to Claude Desktop.
 
 ## Overview
 
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
-- **Deferred Tool Loading**: Only 7 core tools loaded initially (~85% token reduction), with tools discovered via search added dynamically
+- **Deferred Tool Loading**: Only 8 core tools loaded initially (~85% token reduction), with tools discovered via search added dynamically
 - **BM25 Search**: Intelligent tool discovery using probabilistic relevance ranking
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
@@ -25,13 +25,13 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
   - Field-weighted search: name (3x), category (2x), description (1x), examples (0.5x)
   - Text preprocessing with stemming, lowercasing, and negation propagation
 - **Deferred Tool Loading** - Implements Anthropic's Tool Search Tool pattern
-  - Only 7 core tools loaded initially (reduces token usage ~85%)
+  - Only 8 core tools loaded initially (reduces token usage ~85%)
   - Tools found via search are dynamically added to subsequent ListTools responses
-  - Core tools: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, `qsv_command`
+  - Core tools: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, `qsv_command`, `qsv_to_parquet`
 - **Removed `qsv_data_profile`** - Tool produced ~60KB output filling context window; use `qsv stats --cardinality --stats-jsonl` instead
 
 ### Version 15.1.1
-- **Skill Version Sync** - Updated all 56 skill JSON files to version 15.1.1
+- **Skill Version Sync** - Updated all 55 skill JSON files to version 15.1.1
 
 ### Version 15.1.0
 - **Simplified Tool Guidance** - Removed redundant feature requirement hints (Polars, Luau) from tool descriptions
@@ -179,7 +179,7 @@ This script will:
 | `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates when MCP server starts |
 | `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications in logs |
 | `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repository to check for releases |
-| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 56+ tools immediately (no deferred loading). `false`: use only 7 core tools (no deferred additions). Unset (default): use deferred loading (7 core tools + tools discovered via search) |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 55+ tools immediately (no deferred loading). `false`: use only 8 core tools (no deferred additions). Unset (default): use deferred loading (8 core tools + tools discovered via search) |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 
@@ -187,7 +187,7 @@ This script will:
 
 ## Available Tools
 
-### 7 Core Tools (Always Loaded)
+### 8 Core Tools (Always Loaded)
 
 These tools are always available immediately:
 
@@ -199,7 +199,8 @@ These tools are always available immediately:
 | `qsv_get_working_dir` | Get current working directory |
 | `qsv_list_files` | List tabular data files in a directory |
 | `qsv_pipeline` | Chain multiple qsv operations together |
-| `qsv_command` | Execute any of the 56 qsv commands |
+| `qsv_command` | Execute any of the 55 qsv commands |
+| `qsv_to_parquet` | Convert CSV to Parquet format |
 
 ### 13 Common Command Tools (Loaded on Demand)
 
@@ -223,7 +224,7 @@ Tools for frequently used commands, loaded when discovered via search:
 
 ### Generic Command Tool
 
-`qsv_command` - Execute any of the 56 qsv commands:
+`qsv_command` - Execute any of the 55 qsv commands:
 - `to`, `tojsonl`, `partition`, `pseudo`, `reverse`, `sniff`, `sort`, `dedup`, `join`, `apply`, `rename`, `validate`, `sample`, `template`, `diff`, `schema`, etc.
 - Full list: https://github.com/dathere/qsv#commands
 
@@ -249,7 +250,7 @@ The MCP server implements Anthropic's Tool Search Tool pattern for optimal token
 
 ### Deferred Loading (Default)
 
-Only 7 core tools are loaded initially, reducing token usage by ~85%:
+Only 8 core tools are loaded initially, reducing token usage by ~85%:
 
 | Core Tool | Purpose |
 |-----------|---------|
@@ -260,6 +261,7 @@ Only 7 core tools are loaded initially, reducing token usage by ~85%:
 | `qsv_list_files` | List tabular data files |
 | `qsv_pipeline` | Chain multiple operations |
 | `qsv_command` | Execute any qsv command |
+| `qsv_to_parquet` | Convert CSV to Parquet format |
 
 When Claude searches for tools, discovered tools are dynamically added to subsequent ListTools responses.
 
@@ -272,9 +274,9 @@ The `qsv_search_tools` tool uses probabilistic BM25 relevance ranking:
 
 ### Manual Override
 Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override deferred loading:
-- `true`: Always expose all 56+ tools immediately (no deferred loading)
-- `false`: Always use 7 core tools only (disables deferred loading)
-- Unset: Default behavior - 7 core tools with deferred loading (recommended)
+- `true`: Always expose all 55+ tools immediately (no deferred loading)
+- `false`: Always use 8 core tools only (disables deferred loading)
+- Unset: Default behavior - 8 core tools with deferred loading (recommended)
 
 ### Built-in Tool Search (`qsv_search_tools`)
 
@@ -421,8 +423,8 @@ Result: Parquet file created
                    │ MCP Protocol (JSON-RPC 2.0)
 ┌──────────────────▼──────────────────────────┐
 │          QSV MCP Server                     │
-│  • 7 Core Tools (always loaded)            │
-│  • 56+ tools via deferred loading          │
+│  • 8 Core Tools (always loaded)            │
+│  • 55+ tools via deferred loading          │
 │  • BM25-powered tool search                │
 │  • Enhanced descriptions & guidance        │
 │  • Local file access & validation          │
@@ -519,7 +521,7 @@ npm run mcp:start
 The server should start and log:
 ```
 Loading QSV skills...
-Loaded 56 skills
+Loaded 55 skills
 QSV MCP Server initialized successfully
 QSV MCP Server running on stdio
 ```
@@ -577,7 +579,7 @@ npm test
 
 ## Performance
 
-- **Server Startup**: < 100ms (56 skills loaded)
+- **Server Startup**: < 100ms (55 skills loaded)
 - **Tool Execution**: < 10ms overhead + qsv processing time
 - **File Processing**: Depends on qsv performance (generally very fast)
 - **Streaming**: Large files processed efficiently by qsv
@@ -621,8 +623,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-01-31
-**Version**: 15.3.0
-**Tools**: 7 core tools initially (deferred loading), 56+ when discovered via search
-**Skills**: 56 qsv commands
+**Updated**: 2026-02-06
+**Version**: 16.0.0
+**Tools**: 8 core tools initially (deferred loading), 55+ when discovered via search
+**Skills**: 55 qsv commands
 **Status**: Production Ready

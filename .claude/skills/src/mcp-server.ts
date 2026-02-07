@@ -240,10 +240,14 @@ class QsvMcpServer {
       }
 
       // Perform full check (with network calls) in the background
-      // This won't block server startup
+      // This won't block server startup; abort after 30 seconds to cancel underlying fetch
       setImmediate(async () => {
+        const UPDATE_CHECK_TIMEOUT_MS = 30_000;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
+        timer.unref();
         try {
-          const fullCheck = await this.updateChecker.checkForUpdates();
+          const fullCheck = await this.updateChecker.checkForUpdates(controller.signal);
 
           if (fullCheck.recommendations.length > 0) {
             console.error("");
@@ -259,6 +263,8 @@ class QsvMcpServer {
             "[UpdateChecker] Background update check failed:",
             error,
           );
+        } finally {
+          clearTimeout(timer);
         }
       });
     } catch (error) {
@@ -283,8 +289,8 @@ class QsvMcpServer {
 
         // Determine if we should expose all tools
         // - true: expose all tools immediately (no deferred loading)
-        // - false: expose only 7 core tools (no deferred loading additions)
-        // - undefined (default): use deferred loading (7 core tools + search-discovered tools)
+        // - false: expose only 8 core tools (no deferred loading additions)
+        // - undefined (default): use deferred loading (8 core tools + search-discovered tools)
         const shouldExposeAll = config.exposeAllTools === true;
 
         // Log tool mode once per session
@@ -299,7 +305,7 @@ class QsvMcpServer {
             );
           } else {
             console.error(
-              "[Server] Using deferred loading (7 core tools + search-discovered)",
+              "[Server] Using deferred loading (8 core tools + search-discovered)",
             );
           }
           this.loggedToolMode = true;
@@ -347,7 +353,7 @@ class QsvMcpServer {
             `[Server] ✓ Loaded ${loadedCount} tools (skipped ${skippedCount} unavailable commands)`,
           );
         } else if (config.exposeAllTools === false) {
-          // Core tools only mode: only expose the 7 core tools
+          // Core tools only mode: only expose the 8 core tools
           // No COMMON_COMMANDS, no search-discovered tools
           console.error(
             `[Server] Core tools only mode - skipping command tools`,
@@ -582,12 +588,12 @@ class QsvMcpServer {
       try {
         // Handle filesystem tools
         if (name === "qsv_list_files") {
-          const directory = args?.directory as string | undefined;
-          const recursive = args?.recursive as boolean | undefined;
+          const directory = typeof args?.directory === "string" ? args.directory : undefined;
+          const recursive = typeof args?.recursive === "boolean" ? args.recursive : false;
 
           const result = await this.filesystemProvider.listFiles(
             directory,
-            recursive || false,
+            recursive,
           );
 
           const fileList = result.resources
@@ -605,7 +611,22 @@ class QsvMcpServer {
         }
 
         if (name === "qsv_set_working_dir") {
-          const directory = args?.directory as string;
+          if (
+            typeof args?.directory !== "string" ||
+            args.directory.trim().length === 0
+          ) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "Invalid or missing 'directory' argument for qsv_set_working_dir. Please provide a non-empty string path.",
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          const directory = args.directory.trim();
           this.filesystemProvider.setWorkingDirectory(directory);
 
           // Also update executor's working directory so qsv processes

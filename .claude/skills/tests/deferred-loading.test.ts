@@ -82,14 +82,16 @@ test('COMMON_COMMANDS and CORE_TOOLS are disjoint sets', () => {
 // Token Reduction Verification
 // ============================================================================
 
-test('deferred loading reduces initial tool count significantly', () => {
+test('deferred loading reduces initial tool count significantly', async () => {
   // In deferred mode: 8 core tools + 13 common commands = 21 tools initially
-  // In expose-all mode: 55+ tools
-  // Token reduction = 1 - (21 / 55) ≈ 62%
-  // With just core tools (no common): 1 - (8 / 55) ≈ 85%
+  // In expose-all mode: all skills from JSON files are available
+  // Token reduction = 1 - (initial_tool_count / totalSkillCount)
+  // With just core tools (no common), we expect ≥80% reduction
 
+  const loader = new SkillLoader();
+  const skills = await loader.loadAll();
   const coreToolCount = CORE_TOOLS.length; // 8
-  const totalSkillCount = 55; // approximate
+  const totalSkillCount = skills.size;
 
   const coreOnlyReduction = 1 - (coreToolCount / totalSkillCount);
   assert.ok(

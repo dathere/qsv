@@ -37,8 +37,8 @@ const countSkill: QsvSkill = {
 // ============================================================================
 
 /**
- * Helper: directly test the runQsv timeout logic using `sleep` as the binary.
- * This avoids qsv-specific behavior and reliably triggers the timeout path.
+ * Helper: directly test the runQsv timeout logic using a long-running process.
+ * Uses Node.js instead of `sleep` for cross-platform compatibility (Windows has no `sleep`).
  */
 function runSleepWithTimeout(timeoutMs: number): Promise<{
   exitCode: number;
@@ -46,7 +46,7 @@ function runSleepWithTimeout(timeoutMs: number): Promise<{
   stderr: string;
 }> {
   return new Promise((resolve, reject) => {
-    const proc = spawn('sleep', ['60'], {
+    const proc = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000);'], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -113,7 +113,7 @@ function runSleepWithTimeout(timeoutMs: number): Promise<{
 }
 
 test('timeout handler returns exit code 124', async () => {
-  // Use a 200ms timeout on a `sleep 60` command - will definitely time out
+  // Use a 200ms timeout on a 60s process - will definitely time out
   const result = await runSleepWithTimeout(200);
 
   assert.strictEqual(result.exitCode, 124, 'Should return exit code 124 (standard timeout code)');

@@ -198,7 +198,7 @@ export class UpdateChecker {
   /**
    * Check for available updates from GitHub releases
    */
-  async checkGitHubReleases(): Promise<string | null> {
+  async checkGitHubReleases(signal?: AbortSignal): Promise<string | null> {
     try {
       // Use Node.js built-in fetch (available in Node 18+)
       const response = await fetch(
@@ -208,6 +208,7 @@ export class UpdateChecker {
             Accept: "application/vnd.github.v3+json",
             "User-Agent": "qsv-mcp-server",
           },
+          signal,
         },
       );
 
@@ -268,7 +269,7 @@ export class UpdateChecker {
   /**
    * Perform comprehensive update check
    */
-  async checkForUpdates(): Promise<UpdateCheckResult> {
+  async checkForUpdates(signal?: AbortSignal): Promise<UpdateCheckResult> {
     const recommendations: string[] = [];
 
     // Get current versions
@@ -304,7 +305,7 @@ export class UpdateChecker {
     // Check for latest qsv release on GitHub
     let latestQsvVersion: string | null = null;
     try {
-      latestQsvVersion = await this.checkGitHubReleases();
+      latestQsvVersion = await this.checkGitHubReleases(signal);
       if (
         latestQsvVersion &&
         this.compareVersions(latestQsvVersion, currentQsvVersion) > 0

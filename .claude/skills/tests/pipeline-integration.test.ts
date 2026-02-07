@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { writeFile, mkdir, rm, readFile, realpath } from 'fs/promises';
+import { writeFile, mkdtemp, rm, readFile, realpath } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { executePipeline } from '../src/mcp-pipeline.js';
@@ -22,11 +22,10 @@ const QSV_AVAILABLE = config.qsvValidation.valid;
  * Create a temporary test directory
  */
 async function createTestDir(): Promise<string> {
-  const testDir = join(tmpdir(), `qsv-pipeline-test-${Date.now()}`);
-  await mkdir(testDir, { recursive: true });
-  // Canonicalize to resolve Windows short paths (e.g., RUNNER~1 → runneradmin)
-  // so it matches what FilesystemResourceProvider.realpathSync() produces
-  return realpath(testDir);
+  // mkdtemp guarantees unique names; realpath canonicalizes Windows short paths
+  // (e.g., RUNNER~1 → runneradmin) to match FilesystemResourceProvider.realpathSync()
+  const dir = await mkdtemp(join(tmpdir(), 'qsv-pipeline-test-'));
+  return realpath(dir);
 }
 
 /**

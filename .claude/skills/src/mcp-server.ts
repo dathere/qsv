@@ -240,21 +240,14 @@ class QsvMcpServer {
       }
 
       // Perform full check (with network calls) in the background
-      // This won't block server startup; abort after 30 seconds to prevent dangling promises
+      // This won't block server startup; abort after 30 seconds to cancel underlying fetch
       setImmediate(async () => {
         const UPDATE_CHECK_TIMEOUT_MS = 30_000;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
+        timer.unref();
         try {
-          const fullCheck = await Promise.race([
-            this.updateChecker.checkForUpdates(),
-            new Promise<never>((_, reject) => {
-              const timer = setTimeout(
-                () => reject(new Error("Update check timed out")),
-                UPDATE_CHECK_TIMEOUT_MS,
-              );
-              // Don't keep the process alive just for this timer
-              timer.unref();
-            }),
-          ]);
+          const fullCheck = await this.updateChecker.checkForUpdates(controller.signal);
 
           if (fullCheck.recommendations.length > 0) {
             console.error("");
@@ -270,6 +263,8 @@ class QsvMcpServer {
             "[UpdateChecker] Background update check failed:",
             error,
           );
+        } finally {
+          clearTimeout(timer);
         }
       });
     } catch (error) {
@@ -616,7 +611,22 @@ class QsvMcpServer {
         }
 
         if (name === "qsv_set_working_dir") {
-          const directory = String(args?.directory ?? "");
+          if (
+            typeof args?.directory !== "string" ||
+            args.directory.trim().length === 0
+          ) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "Invalid or missing 'directory' argument for qsv_set_working_dir. Please provide a non-empty string path.",
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          const directory = args.directory.trim();
           this.filesystemProvider.setWorkingDirectory(directory);
 
           // Also update executor's working directory so qsv processes

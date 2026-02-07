@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Current Version**: 14.0.0 | **MSRV**: Rust 1.93
+**Current Version**: 16.0.0 | **MSRV**: Rust 1.93
 
 qsv is a blazingly-fast command-line CSV data-wrangling toolkit written in Rust. It's a fork of xsv with extensive additional functionality, focusing on performance, reliability, and comprehensive data manipulation capabilities.
 It's the data-wrangling, analysis and FAIRification engine of several datHere products - qsv pro and Datapusher+, in particular.
@@ -148,12 +148,11 @@ Eight commands have subcommands that provide specialized functionality:
    - `index-load` - load/rebuild local Geonames index
    - `index-reset` - reset local Geonames index
 
-6. **to** (6 subcommands):
+6. **to** (5 subcommands):
    - `postgres` - convert CSV to PostgreSQL
    - `sqlite` - convert CSV to SQLite
    - `xlsx` - convert CSV to Excel XLSX
    - `ods` - convert CSV to ODS (OpenDocument Spreadsheet)
-   - `parquet` - convert CSV to Apache Parquet
    - `datapackage` - convert CSV to Frictionless Data Package
 
 7. **pro** (2 subcommands):

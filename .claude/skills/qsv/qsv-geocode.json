@@ -1,6 +1,6 @@
 {
   "name": "qsv-geocode",
-  "version": "15.0.1",
+  "version": "16.0.0",
   "description": "Geocodes a location against an updatable local copy of the Geonames cities & the Maxmind GeoLite2 databases. With caching and multi-threading, it geocodes up to 360,000 records/sec!",
   "category": "utility",
   "command": {
@@ -139,11 +139,11 @@
   },
   "examples": [
     {
-      "description": "For US places, you can retrieve the us_state_fips_code and us_county_fips_code fields of a US City to help with Census data enrichment.",
+      "description": "For US locations, you can retrieve the us_state_fips_code and us_county_fips_code fields of a US City to help with Census data enrichment.",
       "command": "qsv geocode suggest city_col --country US -f  \"%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}\" input_data.csv -o output_data_with_fips.csv"
     },
     {
-      "description": "For US places, you can reverse geocode the us_state_fips_code and us_county_fips_code fields of a WGS 84 coordinate to help with Census data enrichment. The coordinate can be in \"lat, long\" or \"(lat, long)\" format.",
+      "description": "For US locations, you can reverse geocode the us_state_fips_code and us_county_fips_code fields of a WGS 84 coordinate to help with Census data enrichment. The coordinate can be in \"lat, long\" or \"(lat, long)\" format.",
       "command": "qsv geocode reverse wgs84_coordinate_col --country US -f  \"%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}\" input_data.csv -o output_data_with_fips.csv"
     }
   ]

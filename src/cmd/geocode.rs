@@ -178,13 +178,13 @@ Load an alternative Geonames cities index from a file, making it the default ind
 
 Examples:
 
-# For US places, you can retrieve the us_state_fips_code and us_county_fips_code fields of a US City
+# For US locations, you can retrieve the us_state_fips_code and us_county_fips_code fields of a US City
 # to help with Census data enrichment.
 qsv geocode suggest city_col --country US -f \
 "%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}"\
     input_data.csv -o output_data_with_fips.csv
 
-# For US places, you can reverse geocode the us_state_fips_code and us_county_fips_code fields of a WGS 84 coordinate
+# For US locations, you can reverse geocode the us_state_fips_code and us_county_fips_code fields of a WGS 84 coordinate
 # to help with Census data enrichment. The coordinate can be in "lat, long" or "(lat, long)" format.
 qsv geocode reverse wgs84_coordinate_col --country US -f \
 "%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}"\

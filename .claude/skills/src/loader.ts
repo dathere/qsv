@@ -18,6 +18,7 @@ export class SkillLoader {
   private skillsDir: string;
   private allSkillsLoaded: boolean = false;
   private bm25Index: ToolSearchIndex | null = null;
+  private loadingPromise: Promise<Map<string, QsvSkill>> | null = null;
 
   constructor(skillsDir?: string) {
     if (skillsDir) {
@@ -50,6 +51,23 @@ export class SkillLoader {
       return this.skills;
     }
 
+    // Prevent concurrent loads from causing duplicate BM25 indexing
+    if (this.loadingPromise) {
+      return this.loadingPromise;
+    }
+
+    this.loadingPromise = this.doLoadAll();
+    try {
+      return await this.loadingPromise;
+    } finally {
+      this.loadingPromise = null;
+    }
+  }
+
+  /**
+   * Internal implementation of loadAll (called once, guarded by loadingPromise)
+   */
+  private async doLoadAll(): Promise<Map<string, QsvSkill>> {
     const files = await readdir(this.skillsDir);
 
     for (const file of files) {

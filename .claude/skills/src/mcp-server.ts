@@ -240,10 +240,21 @@ class QsvMcpServer {
       }
 
       // Perform full check (with network calls) in the background
-      // This won't block server startup
+      // This won't block server startup; abort after 30 seconds to prevent dangling promises
       setImmediate(async () => {
+        const UPDATE_CHECK_TIMEOUT_MS = 30_000;
         try {
-          const fullCheck = await this.updateChecker.checkForUpdates();
+          const fullCheck = await Promise.race([
+            this.updateChecker.checkForUpdates(),
+            new Promise<never>((_, reject) => {
+              const timer = setTimeout(
+                () => reject(new Error("Update check timed out")),
+                UPDATE_CHECK_TIMEOUT_MS,
+              );
+              // Don't keep the process alive just for this timer
+              timer.unref();
+            }),
+          ]);
 
           if (fullCheck.recommendations.length > 0) {
             console.error("");
@@ -283,8 +294,8 @@ class QsvMcpServer {
 
         // Determine if we should expose all tools
         // - true: expose all tools immediately (no deferred loading)
-        // - false: expose only 7 core tools (no deferred loading additions)
-        // - undefined (default): use deferred loading (7 core tools + search-discovered tools)
+        // - false: expose only 8 core tools (no deferred loading additions)
+        // - undefined (default): use deferred loading (8 core tools + search-discovered tools)
         const shouldExposeAll = config.exposeAllTools === true;
 
         // Log tool mode once per session
@@ -299,7 +310,7 @@ class QsvMcpServer {
             );
           } else {
             console.error(
-              "[Server] Using deferred loading (7 core tools + search-discovered)",
+              "[Server] Using deferred loading (8 core tools + search-discovered)",
             );
           }
           this.loggedToolMode = true;
@@ -347,7 +358,7 @@ class QsvMcpServer {
             `[Server] ✓ Loaded ${loadedCount} tools (skipped ${skippedCount} unavailable commands)`,
           );
         } else if (config.exposeAllTools === false) {
-          // Core tools only mode: only expose the 7 core tools
+          // Core tools only mode: only expose the 8 core tools
           // No COMMON_COMMANDS, no search-discovered tools
           console.error(
             `[Server] Core tools only mode - skipping command tools`,
@@ -582,12 +593,12 @@ class QsvMcpServer {
       try {
         // Handle filesystem tools
         if (name === "qsv_list_files") {
-          const directory = args?.directory as string | undefined;
-          const recursive = args?.recursive as boolean | undefined;
+          const directory = typeof args?.directory === "string" ? args.directory : undefined;
+          const recursive = typeof args?.recursive === "boolean" ? args.recursive : false;
 
           const result = await this.filesystemProvider.listFiles(
             directory,
-            recursive || false,
+            recursive,
           );
 
           const fileList = result.resources
@@ -605,7 +616,7 @@ class QsvMcpServer {
         }
 
         if (name === "qsv_set_working_dir") {
-          const directory = args?.directory as string;
+          const directory = String(args?.directory ?? "");
           this.filesystemProvider.setWorkingDirectory(directory);
 
           // Also update executor's working directory so qsv processes

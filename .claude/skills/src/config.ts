@@ -291,7 +291,14 @@ function detectQsvBinaryPath(): string | null {
 
   // Try each common location
   for (const location of commonLocations) {
-    const diagnostic: any = { path: location, exists: false };
+    const diagnostic: {
+      path: string;
+      exists: boolean;
+      isFile?: boolean;
+      executable?: boolean;
+      error?: string;
+      version?: string;
+    } = { path: location, exists: false };
 
     try {
       // Check if file exists and is executable
@@ -409,7 +416,10 @@ export function parseQsvCommandList(
 ): { commands: string[]; count: number } | null {
   // Extract command count from header line (optional - qsvlite doesn't include count)
   const headerMatch = listOutput.match(/Installed commands(?: \((\d+)\))?:/);
-  if (!headerMatch) return null;
+  if (!headerMatch) {
+    console.error("[Config] Could not parse qsv --list output: header line not found");
+    return null;
+  }
 
   const reportedCount = headerMatch[1] ? parseInt(headerMatch[1], 10) : 0;
 
@@ -426,7 +436,10 @@ export function parseQsvCommandList(
     }
   }
 
-  if (commands.length === 0) return null;
+  if (commands.length === 0) {
+    console.error("[Config] Could not parse qsv --list output: no command lines found");
+    return null;
+  }
 
   // Use reported count if available, otherwise use parsed count
   return { commands, count: reportedCount || commands.length };
@@ -755,8 +768,8 @@ export const config = {
    * Expose all tools mode
    *
    * Three-state configuration:
-   * - true: Always expose all 62+ qsv command tools
-   * - false: Always expose only 13 common tools (overrides auto-detect)
+   * - true: Always expose all 55+ qsv command tools
+   * - false: Always expose only 8 core tools (overrides auto-detect)
    * - undefined: Auto-detect based on client (Claude clients get all tools)
    *
    * Auto-detection is enabled for:

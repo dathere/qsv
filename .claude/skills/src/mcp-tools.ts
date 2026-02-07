@@ -140,6 +140,8 @@ const COMMON_PATTERNS: Record<string, string> = {
   dedup: "Often followed by stats: dedup → stats for distribution.",
   sort: "Before joins or top-N: sort DESC → slice --end 10.",
   cat: "Combine files: cat rows → headers from first file only. cat rowskey → handles different schemas. cat columns → side-by-side merge.",
+  moarstats:
+    "Index → Stats → Moarstats for richest analysis. With --bivariate: main stats to --output, bivariate stats to <FILESTEM>.stats.bivariate.csv (separate file next to input).",
   geocode:
     "Common: suggest for city lookup, reverse for lat/lon → city, iplookup for IP → location.",
 };
@@ -165,7 +167,7 @@ const ERROR_PREVENTION_HINTS: Record<string, string> = {
   index:
     "Creates .idx index for CSV/TSV/SSV files only. Parquet files don't need indexing.",
   moarstats:
-    "Run stats first to create cache. Slower than stats but richer output.",
+    "Run stats first to create cache. Slower than stats but richer output. IMPORTANT: --bivariate writes results to a SEPARATE file: <FILESTEM>.stats.bivariate.csv (located next to the input file, NOT in stdout/output). Always read this file to get bivariate results. With --join-inputs, the file is <FILESTEM>.stats.bivariate.joined.csv.",
   searchset: "Needs regex file. qsv_search easier for simple patterns.",
   cat: "rows mode requires same column order. Use rowskey for different schemas.",
   geocode:
@@ -1235,6 +1237,22 @@ export async function handleToolCall(
       } else {
         // Return the CSV output from stdout
         responseText = result.output;
+      }
+
+      // If moarstats with --bivariate, inform about the separate bivariate output file
+      if (commandName === "moarstats" && params.bivariate) {
+        const { basename: getBase, dirname: getDir, join: joinPath } = await import("path");
+        const inputDir = getDir(inputFile as string);
+        const inputStem = getBase(inputFile as string).replace(/\.[^.]+$/, "");
+        const bivariateFileName = params.join_inputs
+          ? `${inputStem}.stats.bivariate.joined.csv`
+          : `${inputStem}.stats.bivariate.csv`;
+        const bivariatePath = joinPath(inputDir, bivariateFileName);
+
+        responseText += `\n\n📊 Bivariate statistics were written to a SEPARATE file:\n`;
+        responseText += `File: ${bivariateFileName}\n`;
+        responseText += `Location: ${bivariatePath}\n`;
+        responseText += `Use qsv_command or read this file to view the bivariate correlation results.`;
       }
 
       return {

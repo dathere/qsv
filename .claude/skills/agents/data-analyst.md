@@ -11,6 +11,7 @@ allowed-tools:
   - mcp__qsv__qsv_select
   - mcp__qsv__qsv_slice
   - mcp__qsv__qsv_sqlp
+  - mcp__qsv__qsv_to_parquet
   - mcp__qsv__qsv_joinp
   - mcp__qsv__qsv_sample
   - mcp__qsv__qsv_command
@@ -52,7 +53,7 @@ Skip this if the user provides absolute file paths or if you're unsure of the wo
 2. **Index**: Always run `qsv_index` early for fast access.
 3. **Profile**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` for comprehensive column statistics.
 4. **Explore**: Use `qsv_frequency` for distributions, `qsv_slice` for row samples, `qsv_search` for filtering.
-5. **Query**: Use `qsv_sqlp` for SQL-based analysis (GROUP BY, aggregations, window functions, joins).
+5. **Query**: Use `qsv_sqlp` for SQL-based analysis (GROUP BY, aggregations, window functions, joins). For CSV > 10MB, convert to Parquet first with `qsv_to_parquet` for dramatically faster SQL queries, then use `read_parquet('file.parquet')` as the table source in `sqlp`.
 6. **Report**: Summarize findings clearly with tables, key metrics, and observations.
 
 ## Analysis Capabilities
@@ -73,5 +74,6 @@ Skip this if the user provides absolute file paths or if you're unsure of the wo
 - Use `sqlp` for ad-hoc analytical queries (it's the most flexible tool)
 - Present numbers with context (percentages, comparisons, trends)
 - Flag data quality issues when discovered (nulls, outliers, type mismatches)
+- For CSV > 10MB needing SQL queries, always convert to Parquet first with `qsv_to_parquet` -- Parquet is columnar and dramatically faster for SQL. Note: Parquet works ONLY with `sqlp` and DuckDB; all other qsv commands need CSV/TSV/SSV
 - For large files (> 100MB), prefer `sqlp` with `LIMIT` for exploratory queries
 - Use `qsv_search_tools` to discover additional analysis tools if needed

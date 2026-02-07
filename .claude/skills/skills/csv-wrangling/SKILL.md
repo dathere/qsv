@@ -55,6 +55,7 @@ sniff -> index -> safenames -> fixlengths -> trim (apply operations) -> dedup ->
 ```
 sniff -> index -> stats --cardinality --stats-jsonl -> frequency -> sqlp (GROUP BY queries)
 ```
+For CSV > 10MB, convert to Parquet before SQL queries: `sniff -> index -> stats -> to_parquet -> sqlp (using read_parquet())`
 
 ### Join and Enrich
 ```
@@ -82,3 +83,4 @@ excel (to CSV) -> index -> stats -> select -> to parquet/xlsx
 - `cat rows` requires same column order; use `cat rowskey` for different schemas
 - `dedup` loads all data into memory and sorts internally; use `--sorted` flag if input is already sorted to enable streaming mode with constant memory
 - `sort` loads entire file into memory; for huge files use `sqlp` with ORDER BY
+- For CSV > 10MB needing SQL queries, convert to Parquet first with `qsv_to_parquet` for dramatically faster SQL. Parquet works ONLY with `sqlp` and DuckDB -- all other qsv commands need CSV/TSV/SSV input

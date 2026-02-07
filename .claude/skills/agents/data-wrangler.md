@@ -10,6 +10,7 @@ allowed-tools:
   - mcp__qsv__qsv_search
   - mcp__qsv__qsv_slice
   - mcp__qsv__qsv_sqlp
+  - mcp__qsv__qsv_to_parquet
   - mcp__qsv__qsv_joinp
   - mcp__qsv__qsv_cat
   - mcp__qsv__qsv_command
@@ -80,6 +81,7 @@ Skip this if the user provides absolute file paths or if you're unsure of the wo
 - Always preserve original files - write to new output files
 - Order operations efficiently: select columns first (reduces data), then filter, then transform
 - For large files: prefer Polars commands (sqlp, joinp, pivotp) over memory-intensive ones (sort, dedup)
+- For CSV > 10MB needing SQL transforms, convert to Parquet first with `qsv_to_parquet` -- Parquet is dramatically faster for SQL queries. Use `read_parquet('file.parquet')` as the table source in `sqlp`. Note: Parquet works ONLY with `sqlp` and DuckDB; all other qsv commands need CSV/TSV/SSV
 - Index the output file if it will be used by subsequent operations
 
 ## Guidelines
@@ -89,4 +91,5 @@ Skip this if the user provides absolute file paths or if you're unsure of the wo
 - Verify output after transformation - compare row counts, check statistics
 - For multi-step operations, prefer `qsv_pipeline` over sequential tool calls
 - When cleaning, follow the order: safenames -> fixlengths -> trim -> dedup -> validate
+- For CSV > 10MB needing SQL-based transforms via `sqlp`, use `qsv_to_parquet` to convert first for dramatically faster queries
 - Document what was changed: report rows added/removed, columns modified, formats converted

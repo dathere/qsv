@@ -5,6 +5,7 @@ allowed-tools:
   - mcp__qsv__qsv_stats
   - mcp__qsv__qsv_headers
   - mcp__qsv__qsv_sqlp
+  - mcp__qsv__qsv_to_parquet
   - mcp__qsv__qsv_select
   - mcp__qsv__qsv_search
   - mcp__qsv__qsv_frequency
@@ -30,6 +31,10 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 - Yes -> Consider `select` + `search` for simpler operations
 - No -> Use `sqlp` for full SQL support
 
+**Is the CSV file > 10MB?**
+- Yes -> Convert to Parquet first with `qsv_to_parquet`, then query the Parquet file
+- No -> Query the CSV directly
+
 **Does the query involve joins, GROUP BY, window functions, or complex expressions?**
 - Yes -> Use `sqlp` (Polars SQL engine)
 
@@ -37,11 +42,13 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 1. **Prepare the file**: Run `qsv_index` and `qsv_stats` with `cardinality: true, stats_jsonl: true` to create index and stats cache. This helps `sqlp` optimize query execution.
 
-2. **Inspect schema**: Run `qsv_headers` to see column names. Use these exact names in SQL queries.
+2. **Convert large files to Parquet**: If the CSV is > 10MB, run `qsv_to_parquet` to convert it. Parquet is a columnar format that dramatically speeds up SQL queries. Note: Parquet works ONLY with `sqlp` and DuckDB -- all other qsv commands require CSV/TSV/SSV input.
 
-3. **Write and run SQL**: Use `qsv_sqlp` with the SQL query. The table name in SQL is the filename stem (e.g., `data.csv` -> `SELECT * FROM data`).
+3. **Inspect schema**: Run `qsv_headers` to see column names. Use these exact names in SQL queries.
 
-4. **Refine if needed**: Check results and adjust the query.
+4. **Write and run SQL**: Use `qsv_sqlp` with the SQL query. The table name in SQL is the filename stem (e.g., `data.csv` -> `SELECT * FROM data`). For Parquet files, use `read_parquet('data.parquet')` as the table source instead.
+
+5. **Refine if needed**: Check results and adjust the query.
 
 ## SQL Syntax Guide
 

@@ -1031,7 +1031,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let resolved_whitelist =
         if args.flag_infer_dates && args.flag_dates_whitelist.eq_ignore_ascii_case("sniff") {
             if let Some(ref path) = rconfig.path {
-                log::info!("Resolving dates-whitelist 'sniff' for {:?}", path);
+                log::info!("Resolving dates-whitelist 'sniff' for {}", path.display());
                 resolve_sniff_whitelist(path)?
             } else {
                 // No path available - shouldn't happen after stdin handling
@@ -1043,7 +1043,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Update the cache args with the resolved whitelist so cache comparison
     // works correctly (comparing actual column names, not "sniff" keyword)
-    current_stats_args.flag_dates_whitelist = resolved_whitelist.clone();
+    current_stats_args
+        .flag_dates_whitelist
+        .clone_from(&resolved_whitelist);
 
     let mut compute_stats = true;
     let mut create_cache = args.flag_cache_threshold == 1

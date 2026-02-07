@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 1. **`diff` command**: `--force` option removed
    - Was used for short-circuiting diffs based on dataset_stats
    - No longer needed after stats cache API simplification
+2. **`to` command**: `parquet` subcommand removed
+   - Use dedicated `qsv_to_parquet` MCP tool or `sqlp` for Parquet output
+
+### Added
+
+- feat: `stats` — add 'sniff' support for `--dates-whitelist`
+- feat: `schema` — auto-detect Date/DateTime columns for Polars schema via sniff
+- feat: Support DateTime type in Polars schema parsing
 
 ### Changed
 
@@ -33,7 +41,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - deps: bump redis from 1.0.2 to 1.0.3
 - deps: bump zmij from 1.0.17 to 1.0.19
 - deps: bump zerocopy from 0.8.35 to 0.8.37
-- deps: bump polars to latest upstream
+- deps: bump polars to 0.52.0 at py-1.38.1 tag
+- deps: bump reqwest from 0.13.1 to 0.13.2
+- deps: bump async-compression to 0.4.39
+- deps: bump calamine to 0.33
+- deps: bump zip from 6 to 7
+- deps: use latest csvlens upstream (PR merged)
+- deps: use latest geosuggest upstream
+- deps: bump bytes from 1.11.0 to 1.11.1
+- deps: bump regex from 1.12.2 to 1.12.3
+- deps: bump flate2 from 1.1.8 to 1.1.9
+- deps: bump @modelcontextprotocol/sdk (MCP)
 - applied clippy::semicolon_if_nothing_returned suggestions
 - applied several GH Copilot review suggestions
 
@@ -44,6 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Handles user-selected/reordered column subsets correctly
 - fix: `sample` handle missing min weight in stats cache
 - fix: `validate` adapt tests to jsonschema 0.40.2 error message format changes
+- fix: `joinp` switch pschema serialization to serde_json for compound type support
+- fix: adjust jsonl path usage caused by calamine 0.33 release
+- fix: `stats` return sentinel when sniff finds no date columns
 
 **Full Changelog**: [15.0.1...16.0.0](https://github.com/dathere/qsv/compare/15.0.1...16.0.0)
 

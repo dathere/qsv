@@ -95,7 +95,7 @@ Examples:
   # Compute all statistics for "nyc311.tsv" (Tab-separated)
   qsv stats -E nyc311.tsv
 
-  # Compute all stats for "nyc311.tsv", inferring dates using default date column name patterns
+  # Compute all stats for "nyc311.tsv", inferring dates using sniff to auto-detect date columns
   qsv stats -E --infer-dates nyc311.tsv
 
   # Compute all stats for "nyc311.tab", inferring dates only for columns
@@ -103,16 +103,13 @@ Examples:
   qsv stats -E --infer-dates --dates-whitelist _date,_dte nyc311.tab
 
   # Compute all stats, infer dates and boolean data types for "nyc311.ssv" file
-  qsv stats -E --infer-dates --dates-whitelist _date --infer-boolean nyc311.ssv
+  qsv stats -E --infer-dates --infer-boolean nyc311.ssv
 
   # In addition to basic "streaming" stats, also compute cardinality for "nyc311.csv"
   qsv stats --cardinality nyc311.csv
 
   # Prefer DMY format when inferring dates for the "nyc311.csv"
   qsv stats -E --infer-dates --prefer-dmy nyc311.csv
-
-  # Infer dates using sniff to auto-detect date columns
-  qsv stats -E --infer-dates --dates-whitelist sniff nyc311.csv
 
   # Infer data types only for the "nyc311.csv" file:
   qsv stats --typesonly nyc311.csv
@@ -238,11 +235,6 @@ stats options:
                               - "all" - inspect ALL fields for date/datetime types
                               - "sniff" - use `qsv sniff` to auto-detect date/datetime columns
 
-                              When set to "sniff", qsv will run sniff on the input file
-                              and use its type inference to identify columns that appear
-                              to contain date/datetime values. This is faster than "all"
-                              as it only infers dates for columns that sniff identifies.
-
                               Note that false positive date matches WILL most likely occur
                               when using "all" as unix epoch timestamps are just numbers.
                               Be sure to only use "all" if you know ALL the columns you're
@@ -251,7 +243,14 @@ stats options:
                               To avoid false positives, preprocess the file first
                               with the `datefmt` command to convert unix epoch timestamp
                               columns to RFC3339 format.
-                              [default: date,time,due,open,close,created]
+
+                              When set to "sniff", we do two-stage date inferencing.
+                              First runnning sniff on the input file and then second,
+                              only inferring dates for the columns that sniff identifies
+                              as date/datetime candidates.
+                              This is much faster than "all", and more convenient than
+                              manually specifying patterns in the whitelist.
+                              [default: sniff]
     --prefer-dmy              Parse dates in dmy format. Otherwise, use mdy format.
                               Ignored if --infer-dates is false.
 

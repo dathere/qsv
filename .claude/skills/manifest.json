@@ -209,6 +209,10 @@
     {
       "name": "qsv_get_working_dir",
       "description": "Get current working directory"
+    },
+    {
+      "name": "qsv_to_parquet",
+      "description": "Convert CSV to Parquet format"
     }
   ],
   "prompts": [

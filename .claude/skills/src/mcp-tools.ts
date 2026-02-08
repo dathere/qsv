@@ -1239,6 +1239,30 @@ export async function handleToolCall(
         responseText = result.output;
       }
 
+      // If sqlp is querying a CSV > 10MB, prepend a Parquet conversion hint
+      if (commandName === "sqlp" && inputFile) {
+        try {
+          const filename = basename(inputFile).toLowerCase();
+          const isCsvLike =
+            filename.endsWith(".csv") ||
+            filename.endsWith(".tsv") ||
+            filename.endsWith(".tab") ||
+            filename.endsWith(".ssv");
+          if (isCsvLike) {
+            const fileStats = await stat(inputFile);
+            if (fileStats.size > LARGE_FILE_THRESHOLD_BYTES) {
+              const sizeMB = (fileStats.size / (1024 * 1024)).toFixed(1);
+              responseText =
+                `⚡ PERFORMANCE TIP: This CSV is ${sizeMB}MB. Convert to Parquet first with qsv_to_parquet for dramatically faster SQL queries. ` +
+                `Prefer DuckDB if available; otherwise use sqlp with input_file="SKIP_INPUT" and sql="SELECT ... FROM read_parquet('file.parquet')".\n\n` +
+                responseText;
+            }
+          }
+        } catch {
+          // Ignore stat errors (e.g. SKIP_INPUT)
+        }
+      }
+
       // If moarstats with --bivariate, inform about the separate bivariate output file
       if (commandName === "moarstats" && params.bivariate) {
         const { basename: getBase, dirname: getDir, join: joinPath } = await import("path");

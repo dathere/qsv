@@ -132,7 +132,7 @@
     "server_instructions": {
       "type": "string",
       "title": "Server Instructions",
-      "description": "Custom instructions sent to AI during initialization. Guides cross-tool workflow, file handling, and operational constraints. Leave empty to use built-in defaults. See README-MCP.md for the default instructions.",
+      "description": "Custom instructions sent to the AI during initialization. Guides cross-tool workflow, file handling, and operational constraints. Leave empty to use the built-in default server instructions.",
       "required": false,
       "default": ""
     }

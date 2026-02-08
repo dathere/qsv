@@ -332,7 +332,7 @@ impl Config {
     /// Explicitly set `no_headers`, unconditionally overriding env var.
     /// Use this when a command knows the input has (or lacks) headers
     /// regardless of user configuration (e.g. internally-generated CSVs).
-    pub fn no_headers(mut self, yes: bool) -> Config {
+    pub const fn no_headers(mut self, yes: bool) -> Config {
         self.no_headers = yes;
         self
     }

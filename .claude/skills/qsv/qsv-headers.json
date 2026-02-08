@@ -1,6 +1,6 @@
 {
   "name": "qsv-headers",
-  "version": "15.0.1",
+  "version": "16.0.0",
   "description": "Show the headers of a CSV. Or show the intersection of all headers between many CSV files.",
   "category": "utility",
   "command": {

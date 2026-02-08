@@ -1,6 +1,6 @@
 {
   "name": "qsv-diff",
-  "version": "15.0.1",
+  "version": "16.0.0",
   "description": "Find the difference between two CSVs with ludicrous speed! e.g. _compare two CSVs with 1M rows x 9 columns in under 600ms!_",
   "category": "utility",
   "command": {
@@ -45,11 +45,6 @@
         "flag": "--drop-equal-fields",
         "type": "flag",
         "description": "Drop values of equal fields in modified rows of the CSV diff result (and replace them with the empty string). Key field values will not be dropped."
-      },
-      {
-        "flag": "--force",
-        "type": "flag",
-        "description": "Force diff and ignore stats caches for the left & right CSVs. Otherwise, if available, the stats cache will be used to: * short-circuit the diff if their fingerprint hashes are identical. * check for primary key uniqueness when only one --key column is specified."
       },
       {
         "flag": "--key",

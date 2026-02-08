@@ -1,7 +1,7 @@
 {
   "name": "qsv-to",
-  "version": "15.0.1",
-  "description": "Convert CSV files to Parquet, PostgreSQL, SQLite, Excel (XLSX), LibreOffice Calc (ODS) and Data Package.",
+  "version": "16.0.0",
+  "description": "Convert CSV files to PostgreSQL, SQLite, Excel (XLSX), LibreOffice Calc (ODS) and Data Package.",
   "category": "conversion",
   "command": {
     "binary": "qsv",
@@ -11,11 +11,10 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: datapackage, ods, parquet, postgres, sqlite, xlsx",
+        "description": "Subcommand to execute. Valid values: datapackage, ods, postgres, sqlite, xlsx",
         "enum": [
           "datapackage",
           "ods",
-          "parquet",
           "postgres",
           "sqlite",
           "xlsx"
@@ -63,7 +62,7 @@
       {
         "flag": "--pipe",
         "type": "flag",
-        "description": "For parquet, allow piping from stdin (using `-`) or from a named pipe."
+        "description": "Adjust output format for piped data (omits row counts and field format columns)."
       },
       {
         "flag": "--print-package",

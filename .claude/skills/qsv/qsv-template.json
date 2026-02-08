@@ -1,6 +1,6 @@
 {
   "name": "qsv-template",
-  "version": "15.0.1",
+  "version": "16.0.0",
   "description": "Renders a template using CSV data with the Mini Jinja template engine (Example).",
   "category": "utility",
   "command": {

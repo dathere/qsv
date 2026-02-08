@@ -1,6 +1,6 @@
 {
   "name": "qsv-sqlp",
-  "version": "15.0.1",
+  "version": "16.0.0",
   "description": "Run Polars SQL (a PostgreSQL dialect) queries against several CSVs, Parquet, JSONL and Arrow files - converting queries to blazing-fast Polars LazyFrame expressions, processing larger than memory CSV files. Query results can be saved in CSV, JSON, JSONL, Parquet, Apache Arrow IPC and Apache Avro formats.",
   "category": "utility",
   "command": {
@@ -66,7 +66,7 @@
       {
         "flag": "--format",
         "type": "string",
-        "description": "The output format to use. Valid values are: csv      Comma-separated values json     JSON jsonl    JSONL (JSON Lines) parquet  Apache Parquet arrow    Apache Arrow IPC avro     Apache Avro",
+        "description": "The output format to use. Valid values are: csv, json, jsonl, parquet, arrow, avro",
         "default": "csv"
       },
       {

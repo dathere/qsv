@@ -1,6 +1,6 @@
 {
   "name": "qsv-stats",
-  "version": "15.0.1",
+  "version": "16.0.0",
   "description": "Compute summary statistics (sum, min/max/range, sort order/sortiness, min/max/sum/avg length, mean, standard error of the mean (SEM), geometric/harmonic means, stddev, variance, Coefficient of Variation (CV), nullcount, max precision, sparsity, quartiles, Interquartile Range (IQR), lower/upper fences, skewness, median, mode/s, antimode/s, cardinality & uniqueness ratio) & make GUARANTEED data type inferences (Null, String, Float, Integer, Date, DateTime, Boolean) for each column in a CSV (Example - more info). Uses multithreading to go faster if an index is present (with an index, can compile \"streaming\" stats on NYC's 311 data (15gb, 28m rows) in less than 7.3 seconds!).",
   "category": "aggregation",
   "command": {
@@ -35,8 +35,8 @@
       {
         "flag": "--dates-whitelist",
         "type": "string",
-        "description": "The comma-separated, case-insensitive patterns to look for when shortlisting fields for date inferencing. i.e. if the field's name has any of these patterns, it is shortlisted for date inferencing. Set to \"all\" to inspect ALL fields for date/datetime types. Ignored if --infer-dates is false.",
-        "default": "date,time,due,open,close,created"
+        "description": "The comma-separated, case-insensitive patterns to look for when shortlisting fields for date inferencing. i.e. if the field's name has any of these patterns, it is shortlisted for date inferencing.",
+        "default": "sniff"
       },
       {
         "flag": "--delimiter",
@@ -171,7 +171,7 @@
       "command": "qsv stats -E nyc311.tsv"
     },
     {
-      "description": "Compute all stats for \"nyc311.tsv\", inferring dates using default date column name patterns",
+      "description": "Compute all stats for \"nyc311.tsv\", inferring dates using sniff to auto-detect date columns",
       "command": "qsv stats -E --infer-dates nyc311.tsv"
     },
     {
@@ -180,7 +180,7 @@
     },
     {
       "description": "Compute all stats, infer dates and boolean data types for \"nyc311.ssv\" file",
-      "command": "qsv stats -E --infer-dates --dates-whitelist _date --infer-boolean nyc311.ssv"
+      "command": "qsv stats -E --infer-dates --infer-boolean nyc311.ssv"
     },
     {
       "description": "In addition to basic \"streaming\" stats, also compute cardinality for \"nyc311.csv\"",

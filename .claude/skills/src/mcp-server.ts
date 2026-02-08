@@ -58,6 +58,8 @@ const CORE_TOOLS = [
   "qsv_pipeline",
   "qsv_command",
   "qsv_to_parquet",
+  "qsv_index",
+  "qsv_stats",
 ] as const;
 
 /**
@@ -306,8 +308,8 @@ class QsvMcpServer {
 
         // Determine if we should expose all tools
         // - true: expose all tools immediately (no deferred loading)
-        // - false: expose only 8 core tools (no deferred loading additions)
-        // - undefined (default): use deferred loading (8 core tools + search-discovered tools)
+        // - false: expose only 10 core tools (no deferred loading additions)
+        // - undefined (default): use deferred loading (10 core tools + search-discovered tools)
         const shouldExposeAll = config.exposeAllTools === true;
 
         // Log tool mode once per session
@@ -318,11 +320,11 @@ class QsvMcpServer {
             );
           } else if (config.exposeAllTools === false) {
             console.error(
-              "[Server] Using core tools only (QSV_MCP_EXPOSE_ALL_TOOLS=false)",
+              "[Server] Using 10 core tools only (QSV_MCP_EXPOSE_ALL_TOOLS=false)",
             );
           } else {
             console.error(
-              "[Server] Using deferred loading (8 core tools + search-discovered)",
+              "[Server] Using deferred loading (10 core tools + search-discovered)",
             );
           }
           this.loggedToolMode = true;
@@ -370,7 +372,7 @@ class QsvMcpServer {
             `[Server] ✓ Loaded ${loadedCount} tools (skipped ${skippedCount} unavailable commands)`,
           );
         } else if (config.exposeAllTools === false) {
-          // Core tools only mode: only expose the 8 core tools
+          // Core tools only mode: only expose the 10 core tools
           // No COMMON_COMMANDS, no search-discovered tools
           console.error(
             `[Server] Core tools only mode - skipping command tools`,

@@ -2,7 +2,7 @@
  * Tests for deferred tool loading mechanism
  *
  * Verifies that:
- * - Core tools are always present (8 tools)
+ * - Core tools are always present (10 tools)
  * - Common commands are loaded in deferred mode
  * - Search-discovered tools are tracked and included
  * - Expose-all mode loads all skills
@@ -15,7 +15,7 @@ import { COMMON_COMMANDS } from '../src/mcp-tools.js';
 import { SkillLoader } from '../src/loader.js';
 
 /**
- * The 8 core tools that should always be loaded
+ * The 10 core tools that should always be loaded
  * (matches CORE_TOOLS in mcp-server.ts)
  */
 const CORE_TOOLS = [
@@ -27,14 +27,16 @@ const CORE_TOOLS = [
   "qsv_pipeline",
   "qsv_command",
   "qsv_to_parquet",
+  "qsv_index",
+  "qsv_stats",
 ] as const;
 
 // ============================================================================
 // Core Tools Count Verification
 // ============================================================================
 
-test('CORE_TOOLS has exactly 8 tools', () => {
-  assert.strictEqual(CORE_TOOLS.length, 8, 'Should have exactly 8 core tools');
+test('CORE_TOOLS has exactly 10 tools', () => {
+  assert.strictEqual(CORE_TOOLS.length, 10, 'Should have exactly 10 core tools');
 });
 
 test('CORE_TOOLS includes all required utility tools', () => {
@@ -47,6 +49,8 @@ test('CORE_TOOLS includes all required utility tools', () => {
     'qsv_pipeline',
     'qsv_command',
     'qsv_to_parquet',
+    'qsv_index',
+    'qsv_stats',
   ];
 
   for (const tool of required) {
@@ -61,8 +65,8 @@ test('CORE_TOOLS includes all required utility tools', () => {
 // Common Commands Verification
 // ============================================================================
 
-test('COMMON_COMMANDS has 13 commands', () => {
-  assert.strictEqual(COMMON_COMMANDS.length, 13, 'Should have 13 common commands');
+test('COMMON_COMMANDS has 11 commands', () => {
+  assert.strictEqual(COMMON_COMMANDS.length, 11, 'Should have 11 common commands');
 });
 
 test('COMMON_COMMANDS and CORE_TOOLS are disjoint sets', () => {
@@ -83,7 +87,7 @@ test('COMMON_COMMANDS and CORE_TOOLS are disjoint sets', () => {
 // ============================================================================
 
 test('deferred loading reduces initial tool count significantly', async () => {
-  // In deferred mode: 8 core tools + 13 common commands = 21 tools initially
+  // In deferred mode: 10 core tools + 11 common commands = 21 tools initially
   // In expose-all mode: all skills from JSON files are available
   // Token reduction = 1 - (initial_tool_count / totalSkillCount)
   // With just core tools (no common), we expect ≥80% reduction

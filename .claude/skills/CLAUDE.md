@@ -50,9 +50,9 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
   - Field-weighted search prioritizes name (3x), category (2x), description (1x), examples (0.5x)
   - Text preprocessing with stemming, lowercasing, and negation propagation
 - **Deferred Tool Loading** - Implements Anthropic's Tool Search Tool pattern
-  - Only 8 core tools loaded initially (reduces token usage ~85%)
+  - Only 10 core tools loaded initially (reduces token usage ~85%)
   - Tools found via search are dynamically added to subsequent ListTools responses
-  - Core tools always available: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, `qsv_command`, `qsv_to_parquet`
+  - Core tools always available: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, `qsv_command`, `qsv_to_parquet`, `qsv_index`, `qsv_stats`
 - **Removed `qsv_data_profile`** - Tool produced ~60KB output filling context window; use `qsv stats --cardinality --stats-jsonl` instead
 
 ### Version 15.1.1
@@ -197,7 +197,7 @@ npm run mcpb:package
 - Auto-enables `--stats-jsonl` for stats command
 - Integrates update checker for background version monitoring
 - **Server instructions**: Provides cross-tool workflow guidance via MCP `initialize` response
-- **Deferred tool loading**: Only 8 core tools loaded initially (~85% token reduction)
+- **Deferred tool loading**: Only 10 core tools loaded initially (~85% token reduction)
 - **Environment-controlled exposure**: Use `QSV_MCP_EXPOSE_ALL_TOOLS=true` for all tools
 
 **Key Functions**:
@@ -215,7 +215,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - **Tool filtering** based on available qsv commands at runtime
 
 **Key Constants**:
-- `COMMON_COMMANDS`: 13 frequently-used commands (select, stats, moarstats, index, search, frequency, headers, count, slice, sqlp, joinp, cat, geocode)
+- `COMMON_COMMANDS`: 11 frequently-used commands (select, moarstats, search, frequency, headers, count, slice, sqlp, joinp, cat, geocode)
 - `ALWAYS_FILE_COMMANDS`: 23 commands that always output to files
 - `METADATA_COMMANDS`: 3 commands returning metadata (count, headers, sniff)
 - `AUTO_INDEX_THRESHOLD`: 10MB - files larger than this are auto-indexed

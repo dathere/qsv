@@ -448,17 +448,18 @@ async function shouldUseTempFile(
 }
 
 /**
- * 13 most essential qsv commands exposed as individual MCP tools
+ * 11 most essential qsv commands exposed as individual MCP tools
  * Optimized for token efficiency while maintaining high-value tool access
+ *
+ * Commands promoted to CORE_TOOLS (always loaded):
+ * stats, index
  *
  * Commands moved to qsv_command generic tool:
  * join, sort, dedup, apply, rename, validate, sample, template, diff, schema
  */
 export const COMMON_COMMANDS = [
   "select", // Column selection (most frequently used)
-  "stats", // Statistical analysis (creates cache)
   "moarstats", // Comprehensive statistics with data type inference
-  "index", // Create index for fast random access (run first)
   "search", // Pattern-based filtering
   "frequency", // Value distribution
   "headers", // Header operations (quick discovery)

@@ -746,6 +746,13 @@ export const config = {
   notifyUpdates: getBooleanEnv("QSV_MCP_NOTIFY_UPDATES", true),
 
   /**
+   * Custom server instructions sent during MCP initialization.
+   * Overrides built-in workflow guidance when non-empty.
+   * Leave empty (default) to use built-in defaults.
+   */
+  serverInstructions: getStringEnv("QSV_MCP_SERVER_INSTRUCTIONS", ""),
+
+  /**
    * Maximum number of examples to show in tool descriptions
    * More examples = better understanding but higher token usage
    * Set to 0 to disable examples in descriptions
@@ -769,7 +776,7 @@ export const config = {
    *
    * Three-state configuration:
    * - true: Always expose all 55+ qsv command tools
-   * - false: Always expose only 8 core tools (overrides auto-detect)
+   * - false: Always expose only 10 core tools (overrides auto-detect)
    * - undefined: Auto-detect based on client (Claude clients get all tools)
    *
    * Auto-detection is enabled for:

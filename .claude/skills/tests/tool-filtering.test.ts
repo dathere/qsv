@@ -33,12 +33,15 @@ test('COMMON_COMMANDS is defined and non-empty', () => {
 });
 
 test('COMMON_COMMANDS contains expected core commands', () => {
-  // Updated for token-optimized list of 11 most essential commands
-  const coreCommands = ['count', 'headers', 'stats', 'select', 'search', 'index', 'frequency', 'slice', 'sqlp', 'joinp', 'moarstats'];
+  // Updated: stats and index moved to CORE_TOOLS in mcp-server.ts
+  const coreCommands = ['count', 'headers', 'select', 'search', 'frequency', 'slice', 'sqlp', 'joinp', 'moarstats'];
   const commandsArray: string[] = [...COMMON_COMMANDS]; // Convert to mutable string array
   for (const cmd of coreCommands) {
     assert.ok(commandsArray.includes(cmd), `Expected COMMON_COMMANDS to include '${cmd}'`);
   }
+  // stats and index are now in CORE_TOOLS, not COMMON_COMMANDS
+  assert.ok(!commandsArray.includes('stats'), 'stats should NOT be in COMMON_COMMANDS (moved to CORE_TOOLS)');
+  assert.ok(!commandsArray.includes('index'), 'index should NOT be in COMMON_COMMANDS (moved to CORE_TOOLS)');
 });
 
 test('filterCommands returns all when availableCommands is undefined', () => {
@@ -50,15 +53,15 @@ test('filterCommands returns all when availableCommands is undefined', () => {
 });
 
 test('filterCommands filters based on available commands', () => {
-  const availableCommands = ['count', 'headers', 'stats', 'select'];
+  const availableCommands = ['count', 'headers', 'select', 'search'];
   const { filtered, skipped } = filterCommands(availableCommands, COMMON_COMMANDS);
 
-  // Should only include commands in availableCommands
+  // Should only include commands in availableCommands that are also in COMMON_COMMANDS
   assert.strictEqual(filtered.length, 4);
   assert.ok(filtered.includes('count'));
   assert.ok(filtered.includes('headers'));
-  assert.ok(filtered.includes('stats'));
   assert.ok(filtered.includes('select'));
+  assert.ok(filtered.includes('search'));
 
   // Should skip commands not in availableCommands
   assert.ok(skipped.length > 0);
@@ -84,7 +87,7 @@ test('filterCommands handles empty available commands', () => {
 
 test('filterCommands simulates qsvlite filtering', () => {
   // Simulate qsvlite which has fewer commands (no moarstats, no Polars commands)
-  // Updated for token-optimized COMMON_COMMANDS (11 essential commands)
+  // Note: stats and index are now CORE_TOOLS, not in COMMON_COMMANDS
   const qsvliteCommands = [
     'cat', 'count', 'dedup', 'diff', 'frequency', 'headers',
     'index', 'join', 'rename', 'sample', 'schema', 'search',
@@ -100,10 +103,8 @@ test('filterCommands simulates qsvlite filtering', () => {
 
   // Core commands should be filtered in
   assert.ok(filtered.includes('count'), 'count should be available for qsvlite');
-  assert.ok(filtered.includes('stats'), 'stats should be available for qsvlite');
   assert.ok(filtered.includes('select'), 'select should be available for qsvlite');
   assert.ok(filtered.includes('search'), 'search should be available for qsvlite');
-  assert.ok(filtered.includes('index'), 'index should be available for qsvlite');
   assert.ok(filtered.includes('frequency'), 'frequency should be available for qsvlite');
 });
 

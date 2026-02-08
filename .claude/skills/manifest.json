@@ -46,6 +46,7 @@
         "QSV_MCP_CHECK_UPDATES_ON_STARTUP": "${user_config.check_updates}",
         "QSV_MCP_NOTIFY_UPDATES": "${user_config.notify_updates}",
         "QSV_MCP_MAX_EXAMPLES": "${user_config.max_examples}",
+        "QSV_MCP_SERVER_INSTRUCTIONS": "${user_config.server_instructions}",
         "MCPB_EXTENSION_MODE": "true"
       },
       "platform_overrides": {
@@ -127,6 +128,13 @@
       "default": 5,
       "min": 0,
       "max": 20
+    },
+    "server_instructions": {
+      "type": "string",
+      "title": "Server Instructions",
+      "description": "Custom instructions sent to the AI during initialization. Guides cross-tool workflow, file handling, and operational constraints. Leave empty to use the built-in default server instructions.",
+      "required": false,
+      "default": ""
     }
   },
   "tools": [

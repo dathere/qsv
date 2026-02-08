@@ -58,7 +58,25 @@ const CORE_TOOLS = [
   "qsv_pipeline",
   "qsv_command",
   "qsv_to_parquet",
+  "qsv_index",
+  "qsv_stats",
 ] as const;
+
+/**
+ * Server instructions sent to MCP clients during initialization.
+ * Injected into the system prompt by compatible clients (Claude Desktop, etc.).
+ * Focuses on cross-tool workflows and operational constraints.
+ * See: https://blog.modelcontextprotocol.io/posts/2025-11-03-using-server-instructions/
+ */
+const QSV_SERVER_INSTRUCTIONS = `qsv is a tabular data-wrangling toolkit. Use qsv_search_tools to discover commands beyond the initially loaded core tools.
+
+WORKFLOW ORDER: For new files: (1) qsv_list_files to discover files, (2) qsv_index for files >5MB, (3) qsv_stats --cardinality --stats-jsonl to create stats cache, (4) then run analysis/transformation commands. The stats cache accelerates: frequency, schema, tojsonl, sqlp, joinp, pivotp, diff, sample.
+
+FILE HANDLING: Save outputs to files with descriptive names rather than returning large results to chat. Ensure output files are saved to the qsv working directory. For CSV files >10MB needing SQL queries, convert to Parquet first with qsv_to_parquet, then query with DuckDB or sqlp SKIP_INPUT + read_parquet(). Parquet is ONLY for sqlp/DuckDB; all other qsv commands require CSV/TSV/SSV input.
+
+TOOL COMPOSITION: Use qsv_pipeline to chain 2+ sequential operations efficiently by streaming data between commands (no automatic .idx creation; run qsv_index explicitly on files you want indexed). For complex SQL, use qsv_sqlp, falling back on qsv_sqlp error to DuckDB using parquet, if available. For custom row-level logic, use qsv_command with command="luau".
+
+MEMORY LIMITS: Commands dedup, sort, reverse, table, transpose load entire files into memory. For files >1GB, prefer extdedup/extsort alternatives via qsv_command. Check column cardinality with qsv_stats before running frequency or pivotp to avoid huge output.`;
 
 /**
  * QSV MCP Server implementation
@@ -90,6 +108,7 @@ class QsvMcpServer {
           resources: {},
           prompts: {},
         },
+        instructions: config.serverInstructions || QSV_SERVER_INSTRUCTIONS,
       },
     );
 
@@ -289,8 +308,8 @@ class QsvMcpServer {
 
         // Determine if we should expose all tools
         // - true: expose all tools immediately (no deferred loading)
-        // - false: expose only 8 core tools (no deferred loading additions)
-        // - undefined (default): use deferred loading (8 core tools + search-discovered tools)
+        // - false: expose only 10 core tools (no deferred loading additions)
+        // - undefined (default): use deferred loading (10 core tools + search-discovered tools)
         const shouldExposeAll = config.exposeAllTools === true;
 
         // Log tool mode once per session
@@ -301,11 +320,11 @@ class QsvMcpServer {
             );
           } else if (config.exposeAllTools === false) {
             console.error(
-              "[Server] Using core tools only (QSV_MCP_EXPOSE_ALL_TOOLS=false)",
+              "[Server] Using 10 core tools only (QSV_MCP_EXPOSE_ALL_TOOLS=false)",
             );
           } else {
             console.error(
-              "[Server] Using deferred loading (8 core tools + search-discovered)",
+              "[Server] Using deferred loading (10 core tools + search-discovered)",
             );
           }
           this.loggedToolMode = true;
@@ -353,7 +372,7 @@ class QsvMcpServer {
             `[Server] ✓ Loaded ${loadedCount} tools (skipped ${skippedCount} unavailable commands)`,
           );
         } else if (config.exposeAllTools === false) {
-          // Core tools only mode: only expose the 8 core tools
+          // Core tools only mode: only expose the 10 core tools
           // No COMMON_COMMANDS, no search-discovered tools
           console.error(
             `[Server] Core tools only mode - skipping command tools`,
@@ -423,6 +442,24 @@ class QsvMcpServer {
             }
           }
           console.error(`[Server] Loaded ${tools.length} command tools (${skillNames.length} common + ${searchedToolNames.length} from search)`);
+        }
+
+        // Load skill-based core tools (qsv_index, qsv_stats)
+        // In expose-all mode these are already loaded above; in deferred/core-only they need explicit loading
+        if (!shouldExposeAll) {
+          const skillCoreTools = ["qsv-index", "qsv-stats"];
+          const loadedSkillCoreTools = await this.loader.loadByNames(skillCoreTools);
+          for (const [skillName, skill] of loadedSkillCoreTools) {
+            const commandName = skillName.replace("qsv-", "");
+            if (availableCommands && !availableCommands.includes(commandName)) {
+              continue;
+            }
+            try {
+              tools.push(createToolDefinition(skill));
+            } catch (error) {
+              console.error(`[Server] ✗ Error loading core skill ${skillName}:`, error);
+            }
+          }
         }
 
         // Add generic qsv_command tool

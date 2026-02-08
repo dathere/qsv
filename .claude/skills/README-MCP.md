@@ -6,7 +6,7 @@ Model Context Protocol (MCP) server that exposes 55 of qsv's tabular data-wrangl
 
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
-- **Deferred Tool Loading**: Only 8 core tools loaded initially (~85% token reduction), with tools discovered via search added dynamically
+- **Deferred Tool Loading**: Only 10 core tools loaded initially (~85% token reduction), with tools discovered via search added dynamically
 - **BM25 Search**: Intelligent tool discovery using probabilistic relevance ranking
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
@@ -25,9 +25,9 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
   - Field-weighted search: name (3x), category (2x), description (1x), examples (0.5x)
   - Text preprocessing with stemming, lowercasing, and negation propagation
 - **Deferred Tool Loading** - Implements Anthropic's Tool Search Tool pattern
-  - Only 8 core tools loaded initially (reduces token usage ~85%)
+  - Only 10 core tools loaded initially (reduces token usage ~85%)
   - Tools found via search are dynamically added to subsequent ListTools responses
-  - Core tools: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, `qsv_command`, `qsv_to_parquet`
+  - Core tools: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, `qsv_command`, `qsv_to_parquet`, `qsv_index`, `qsv_stats`
 - **Removed `qsv_data_profile`** - Tool produced ~60KB output filling context window; use `qsv stats --cardinality --stats-jsonl` instead
 
 ### Version 15.1.1
@@ -179,7 +179,8 @@ This script will:
 | `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates when MCP server starts |
 | `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications in logs |
 | `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repository to check for releases |
-| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 55+ tools immediately (no deferred loading). `false`: use only 8 core tools (no deferred additions). Unset (default): use deferred loading (8 core tools + tools discovered via search) |
+| `QSV_MCP_SERVER_INSTRUCTIONS` | (built-in) | Custom server instructions sent during MCP initialization. Overrides built-in workflow guidance. Leave empty for defaults. |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 55+ tools immediately (no deferred loading). `false`: use only 10 core tools (no deferred additions). Unset (default): use deferred loading (10 core tools + tools discovered via search) |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 
@@ -187,7 +188,7 @@ This script will:
 
 ## Available Tools
 
-### 8 Core Tools (Always Loaded)
+### 10 Core Tools (Always Loaded)
 
 These tools are always available immediately:
 
@@ -201,17 +202,17 @@ These tools are always available immediately:
 | `qsv_pipeline` | Chain multiple qsv operations together |
 | `qsv_command` | Execute any of the 55 qsv commands |
 | `qsv_to_parquet` | Convert CSV to Parquet format |
+| `qsv_index` | Create index for fast random access |
+| `qsv_stats` | Statistical analysis (creates stats cache) |
 
-### 13 Common Command Tools (Loaded on Demand)
+### 11 Common Command Tools (Loaded on Demand)
 
 Tools for frequently used commands, loaded when discovered via search:
 
 | Tool | Description |
 |------|-------------|
 | `qsv_select` | Column selection (most frequently used) |
-| `qsv_stats` | Statistical analysis (creates cache) |
 | `qsv_moarstats` | Comprehensive statistics with data type inference |
-| `qsv_index` | Create index for fast random access |
 | `qsv_search` | Pattern-based filtering |
 | `qsv_frequency` | Value distribution |
 | `qsv_headers` | Header operations |
@@ -250,7 +251,7 @@ The MCP server implements Anthropic's Tool Search Tool pattern for optimal token
 
 ### Deferred Loading (Default)
 
-Only 8 core tools are loaded initially, reducing token usage by ~85%:
+Only 10 core tools are loaded initially, reducing token usage by ~85%:
 
 | Core Tool | Purpose |
 |-----------|---------|
@@ -262,6 +263,8 @@ Only 8 core tools are loaded initially, reducing token usage by ~85%:
 | `qsv_pipeline` | Chain multiple operations |
 | `qsv_command` | Execute any qsv command |
 | `qsv_to_parquet` | Convert CSV to Parquet format |
+| `qsv_index` | Create index for fast random access |
+| `qsv_stats` | Statistical analysis (creates stats cache) |
 
 When Claude searches for tools, discovered tools are dynamically added to subsequent ListTools responses.
 
@@ -275,8 +278,8 @@ The `qsv_search_tools` tool uses probabilistic BM25 relevance ranking:
 ### Manual Override
 Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override deferred loading:
 - `true`: Always expose all 55+ tools immediately (no deferred loading)
-- `false`: Always use 8 core tools only (disables deferred loading)
-- Unset: Default behavior - 8 core tools with deferred loading (recommended)
+- `false`: Always use 10 core tools only (disables deferred loading)
+- Unset: Default behavior - 10 core tools with deferred loading (recommended)
 
 ### Built-in Tool Search (`qsv_search_tools`)
 
@@ -625,6 +628,6 @@ For issues or questions:
 
 **Updated**: 2026-02-06
 **Version**: 16.0.0
-**Tools**: 8 core tools initially (deferred loading), 55+ when discovered via search
+**Tools**: 10 core tools initially (deferred loading), 55+ when discovered via search
 **Skills**: 55 qsv commands
 **Status**: Production Ready

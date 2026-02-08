@@ -245,7 +245,7 @@ stats options:
                               columns to RFC3339 format.
 
                               When set to "sniff", we do two-stage date inferencing.
-                              First runnning sniff on the input file and then second,
+                              First running sniff on the input file and then second,
                               only inferring dates for the columns that sniff identifies
                               as date/datetime candidates.
                               This is much faster than "all", and more convenient than

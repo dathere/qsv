@@ -27,6 +27,7 @@ see [.claude/skills/CHANGELOG.md](https://github.com/dathere/qsv/blob/master/.cl
 
 ### Changed
 
+- refactor: `stats` — make `--dates-whitelist sniff` the default
 - perf: Use foldhash HashMap/HashSet across codebase for faster hashing
   - Replaces std::collections with foldhash in 14 modules
   - foldhash is much faster than std::collections for non-crypto hashing
@@ -40,11 +41,11 @@ see [.claude/skills/CHANGELOG.md](https://github.com/dathere/qsv/blob/master/.cl
 - refactor: Safe fallback on corrupted stats cache
 - deps: bump csv-nose from 0.7.0 to 0.8.0
 - deps: bump pyo3 from 0.27.2 to 0.28.0
-- deps: bump jsonschema from 0.40.0 to latest upstream
+- deps: bump jsonschema from 0.40.0 to 0.41 (latest upstream with unreleased perf improvements)
 - deps: bump redis from 1.0.2 to 1.0.3
 - deps: bump zmij from 1.0.17 to 1.0.19
-- deps: bump zerocopy from 0.8.35 to 0.8.37
-- deps: bump polars to from 0.52.0 at py-1.37.1, e3a6cf7 tag to 0.53.0
+- deps: bump zerocopy from 0.8.35 to 0.8.36
+- deps: bump polars from 0.52.0 at py-1.38.1 tag to 0.53
 - deps: bump reqwest from 0.13.1 to 0.13.2
 - deps: bump async-compression to 0.4.39
 - deps: bump calamine to 0.33

@@ -26,6 +26,9 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 ## What's New
 
 ### Version 16.0.0
+- **Server Instructions** - MCP Server Instructions sent during initialization for cross-tool workflow guidance
+  - Covers workflow ordering, stats cache acceleration, file handling, tool composition, and memory limits
+  - Injected into system prompt by compatible MCP clients (Claude Desktop, Claude Code, etc.)
 - **Claude Plugin Layer** - Claude Code and Cowork integration via plugin manifest
   - Plugin manifest (`.claude-plugin/plugin.json`) and MCP config (`.mcp.json`)
   - 5 slash commands: `/data-profile`, `/data-clean`, `/csv-query`, `/data-convert`, `/data-join`
@@ -193,6 +196,7 @@ npm run mcpb:package
 - Manages server lifecycle with graceful shutdown
 - Auto-enables `--stats-jsonl` for stats command
 - Integrates update checker for background version monitoring
+- **Server instructions**: Provides cross-tool workflow guidance via MCP `initialize` response
 - **Deferred tool loading**: Only 8 core tools loaded initially (~85% token reduction)
 - **Environment-controlled exposure**: Use `QSV_MCP_EXPOSE_ALL_TOOLS=true` for all tools
 

@@ -61,6 +61,22 @@ const CORE_TOOLS = [
 ] as const;
 
 /**
+ * Server instructions sent to MCP clients during initialization.
+ * Injected into the system prompt by compatible clients (Claude Desktop, etc.).
+ * Focuses on cross-tool workflows and operational constraints.
+ * See: https://blog.modelcontextprotocol.io/posts/2025-11-03-using-server-instructions/
+ */
+const QSV_SERVER_INSTRUCTIONS = `qsv is a tabular data-wrangling toolkit. Use qsv_search_tools to discover commands beyond the initially loaded core tools.
+
+WORKFLOW ORDER: For new files: (1) qsv_list_files to discover files, (2) qsv_index for files >5MB, (3) qsv_stats --cardinality --stats-jsonl to create stats cache, (4) then run analysis/transformation commands. The stats cache accelerates: frequency, schema, tojsonl, sqlp, joinp, pivotp, diff, sample.
+
+FILE HANDLING: Save outputs to files with descriptive names rather than returning large results to chat. For CSV files >10MB needing SQL queries, convert to Parquet first with qsv_to_parquet, then query with DuckDB or sqlp SKIP_INPUT + read_parquet(). Parquet is ONLY for sqlp/DuckDB; all other qsv commands require CSV/TSV/SSV input.
+
+TOOL COMPOSITION: Use qsv_pipeline to chain 2+ sequential operations efficiently (handles temp files and indexing automatically). For complex SQL, use qsv_sqlp. For custom row-level logic, use qsv_command with command="luau".
+
+MEMORY LIMITS: Commands dedup, sort, reverse, table, transpose load entire files into memory. For files >1GB, prefer extdedup/extsort alternatives via qsv_command. Check column cardinality with qsv_stats before running frequency or pivotp to avoid huge output.`;
+
+/**
  * QSV MCP Server implementation
  */
 class QsvMcpServer {
@@ -90,6 +106,7 @@ class QsvMcpServer {
           resources: {},
           prompts: {},
         },
+        instructions: QSV_SERVER_INSTRUCTIONS,
       },
     );
 

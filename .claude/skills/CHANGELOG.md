@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [16.0.0] - 2026-02-06
 
 ### Added
+- **Server Instructions** - MCP Server Instructions sent during initialization for cross-tool workflow guidance
+  - Covers workflow ordering, stats cache acceleration, file handling, tool composition, and memory limits
+  - Injected into system prompt by compatible MCP clients (Claude Desktop, Claude Code, etc.)
 - **Claude Plugin Layer** - Full Claude Code and Cowork integration via plugin manifest
   - Plugin manifest (`.claude-plugin/plugin.json`) for plugin discovery
   - MCP server config (`.mcp.json`) with server key `"qsv"` and `QSV_MCP_EXPOSE_ALL_TOOLS=true`

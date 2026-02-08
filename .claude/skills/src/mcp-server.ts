@@ -74,7 +74,7 @@ WORKFLOW ORDER: For new files: (1) qsv_list_files to discover files, (2) qsv_ind
 
 FILE HANDLING: Save outputs to files with descriptive names rather than returning large results to chat. For CSV files >10MB needing SQL queries, convert to Parquet first with qsv_to_parquet, then query with DuckDB or sqlp SKIP_INPUT + read_parquet(). Parquet is ONLY for sqlp/DuckDB; all other qsv commands require CSV/TSV/SSV input.
 
-TOOL COMPOSITION: Use qsv_pipeline to chain 2+ sequential operations efficiently (handles temp files and indexing automatically). For complex SQL, use qsv_sqlp. For custom row-level logic, use qsv_command with command="luau".
+TOOL COMPOSITION: Use qsv_pipeline to chain 2+ sequential operations efficiently by streaming data between commands (no automatic .idx creation; run qsv_index explicitly on files you want indexed). For complex SQL, use qsv_sqlp. For custom row-level logic, use qsv_command with command="luau".
 
 MEMORY LIMITS: Commands dedup, sort, reverse, table, transpose load entire files into memory. For files >1GB, prefer extdedup/extsort alternatives via qsv_command. Check column cardinality with qsv_stats before running frequency or pivotp to avoid huge output.`;
 

@@ -7,7 +7,7 @@
 
 import { readdir, stat, readFile, realpath, access } from "fs/promises";
 import { realpathSync } from "fs";
-import { join, resolve, relative, basename, extname, isAbsolute } from "path";
+import { join, resolve, relative, basename, dirname, extname, isAbsolute } from "path";
 import { homedir } from "os";
 import { spawn } from "child_process";
 import type {
@@ -209,7 +209,9 @@ export class FilesystemResourceProvider {
       if (this.pluginMode) {
         // In plugin mode (Cowork/Code), auto-add the directory to allowedDirs
         // This is safe because the host environment provides filesystem isolation
-        this.allowedDirs.push(newDir);
+        if (!this.allowedDirs.includes(newDir)) {
+          this.allowedDirs.push(newDir);
+        }
         // Also add the original (pre-realpath) resolved path to handle symlinks
         const originalResolved = resolve(expanded);
         if (originalResolved !== newDir && !this.allowedDirs.includes(originalResolved)) {
@@ -280,7 +282,6 @@ export class FilesystemResourceProvider {
       if (this.pluginMode) {
         // In plugin mode (Cowork/Code), auto-add the canonical directory to allowedDirs
         // This is safe because the host environment provides filesystem isolation
-        const { dirname } = await import("path");
         const canonicalDir = dirname(canonical);
         if (!this.allowedDirs.includes(canonicalDir)) {
           this.allowedDirs.push(canonicalDir);

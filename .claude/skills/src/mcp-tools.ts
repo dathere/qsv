@@ -1546,6 +1546,9 @@ export async function handleConfigTool(
   } else {
     configText += `ℹ️ Only working directory is accessible\n`;
   }
+  if (config.isPluginMode) {
+    configText += `\n📌 _Plugin mode: additional directories are auto-added as needed at runtime._\n`;
+  }
 
   // Performance Settings
   configText += `\n## Performance Settings\n\n`;

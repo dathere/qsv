@@ -467,11 +467,6 @@ test('constructor resolves symlinks in workingDirectory', async () => {
 // ============================================================================
 
 test('plugin mode auto-adds directory in setWorkingDirectory', async () => {
-  // Skip on Windows where symlinks require elevated privileges
-  if (process.platform === 'win32') {
-    return;
-  }
-
   const tempDir1 = await mkdtemp(join(tmpdir(), 'qsv-test-'));
   const tempDir2 = await mkdtemp(join(tmpdir(), 'qsv-test-plugin-'));
 
@@ -527,11 +522,6 @@ test('non-plugin mode rejects directory outside allowedDirs in setWorkingDirecto
 });
 
 test('plugin mode auto-adds directory in resolvePath', async () => {
-  // Skip on Windows where symlinks require elevated privileges
-  if (process.platform === 'win32') {
-    return;
-  }
-
   const tempDir1 = await mkdtemp(join(tmpdir(), 'qsv-test-'));
   const tempDir2 = await mkdtemp(join(tmpdir(), 'qsv-test-resolve-'));
 

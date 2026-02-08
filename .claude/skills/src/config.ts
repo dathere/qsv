@@ -600,7 +600,7 @@ export function isExtensionMode(): boolean {
 
 /**
  * Detect if running in Claude Plugin mode (Claude Code or Cowork)
- * Plugin mode is active when CLAUDE_PLUGIN_ROOT is set AND MCPB_EXTENSION_MODE is NOT set.
+ * Plugin mode is active when CLAUDE_PLUGIN_ROOT is set AND MCPB_EXTENSION_MODE is not enabled.
  * In plugin mode, directory security is relaxed because the host environment
  * (Cowork VM or Claude Code) already provides filesystem isolation.
  */

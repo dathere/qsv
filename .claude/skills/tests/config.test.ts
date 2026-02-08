@@ -328,18 +328,55 @@ test('config.isPluginMode exists and has valid type', () => {
 });
 
 test('isPluginMode returns false when CLAUDE_PLUGIN_ROOT is not set', () => {
-  // In a normal test environment, CLAUDE_PLUGIN_ROOT should not be set
-  // so isPluginMode should return false
-  if (!process.env['CLAUDE_PLUGIN_ROOT']) {
+  // isPluginMode() reads process.env at call time, so we can test deterministically
+  const origPluginRoot = process.env['CLAUDE_PLUGIN_ROOT'];
+  const origExtMode = process.env['MCPB_EXTENSION_MODE'];
+  try {
+    delete process.env['CLAUDE_PLUGIN_ROOT'];
+    delete process.env['MCPB_EXTENSION_MODE'];
     assert.strictEqual(isPluginMode(), false);
-    assert.strictEqual(config.isPluginMode, false);
+  } finally {
+    // Restore original values
+    if (origPluginRoot !== undefined) process.env['CLAUDE_PLUGIN_ROOT'] = origPluginRoot;
+    if (origExtMode !== undefined) process.env['MCPB_EXTENSION_MODE'] = origExtMode;
   }
 });
 
-test('isPluginMode returns false when MCPB_EXTENSION_MODE is set', () => {
-  // Even if CLAUDE_PLUGIN_ROOT were set, extension mode takes priority
-  // This documents the exclusion rule
-  if (process.env['MCPB_EXTENSION_MODE'] === 'true') {
+test('isPluginMode returns true when CLAUDE_PLUGIN_ROOT is set and MCPB_EXTENSION_MODE is not', () => {
+  const origPluginRoot = process.env['CLAUDE_PLUGIN_ROOT'];
+  const origExtMode = process.env['MCPB_EXTENSION_MODE'];
+  try {
+    process.env['CLAUDE_PLUGIN_ROOT'] = '/some/path';
+    delete process.env['MCPB_EXTENSION_MODE'];
+    assert.strictEqual(isPluginMode(), true);
+  } finally {
+    if (origPluginRoot !== undefined) {
+      process.env['CLAUDE_PLUGIN_ROOT'] = origPluginRoot;
+    } else {
+      delete process.env['CLAUDE_PLUGIN_ROOT'];
+    }
+    if (origExtMode !== undefined) process.env['MCPB_EXTENSION_MODE'] = origExtMode;
+  }
+});
+
+test('isPluginMode returns false when MCPB_EXTENSION_MODE is enabled', () => {
+  // Extension mode takes priority over plugin mode
+  const origPluginRoot = process.env['CLAUDE_PLUGIN_ROOT'];
+  const origExtMode = process.env['MCPB_EXTENSION_MODE'];
+  try {
+    process.env['CLAUDE_PLUGIN_ROOT'] = '/some/path';
+    process.env['MCPB_EXTENSION_MODE'] = 'true';
     assert.strictEqual(isPluginMode(), false);
+  } finally {
+    if (origPluginRoot !== undefined) {
+      process.env['CLAUDE_PLUGIN_ROOT'] = origPluginRoot;
+    } else {
+      delete process.env['CLAUDE_PLUGIN_ROOT'];
+    }
+    if (origExtMode !== undefined) {
+      process.env['MCPB_EXTENSION_MODE'] = origExtMode;
+    } else {
+      delete process.env['MCPB_EXTENSION_MODE'];
+    }
   }
 });

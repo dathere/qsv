@@ -5,9 +5,16 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [16.0.0] - 2026-02-06
+## [16.0.0] - 2026-02-08
 
 ### Added
+- **CSV-to-Parquet Core Tool** - New `qsv_to_parquet` tool converts CSV files to Parquet format for optimized SQL operations
+  - Auto-generates stats and Polars schema (`.pschema.json`) for correct data type inference
+  - Sniffs CSV for Date/DateTime columns via `--infer-dates --dates-whitelist sniff` for automatic temporal type detection
+  - Skips stats/schema regeneration when already up-to-date (checks file modification times)
+  - Supports comprehensive CSV dialect coverage (delimiter, quoting, encoding)
+  - Outputs Snappy-compressed Parquet with same file stem in working directory
+  - Active guidance recommends Parquet for CSV files >10MB needing SQL queries
 - **Server Instructions** - MCP Server Instructions sent during initialization for cross-tool workflow guidance
   - Covers workflow ordering, stats cache acceleration, file handling, tool composition, and memory limits
   - Injected into system prompt by compatible MCP clients (Claude Desktop, Claude Code, etc.)
@@ -21,6 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Commands include `allowed-tools` restrictions and `argument-hint` for natural invocation
   - Agents have explicit tool lists and reference domain knowledge skills
   - Skills are concise reference tables optimized for Claude scanning
+- **Active Context-Sensitive Guidance** - Beyond passive tool descriptions, added structured guidance dictionaries
+  - `WHEN_TO_USE_GUIDANCE`: Per-command hints for when to choose each tool (e.g., sqlp vs joinp, join vs joinp)
+  - `COMMON_PATTERNS`: Workflow composition patterns (e.g., "index → stats → frequency", "convert to Parquet → query with DuckDB")
+  - `ERROR_PREVENTION_HINTS`: Proactive warnings about common mistakes (OOM on large files, high-cardinality columns, subcommand requirements)
+  - `COMPLEMENTARY_SERVERS`: Cross-server integration hints (Census MCP for geocoded US data)
+  - Moarstats bivariate stats: guidance clarifies `--bivariate` writes to separate `<FILESTEM>.stats.bivariate.csv` file
+- **Promoted `qsv_index` and `qsv_stats` to Core Tools** - Core tools increased from 7 to 10
+  - `qsv_index`, `qsv_stats`, and `qsv_to_parquet` join the 7 existing core tools
+  - Skill definitions properly loaded for deferred/core-only modes
+  - These foundational tools are now always available without search discovery
 - **Executor Timeout Handling** - `runQsv()` now enforces timeout on spawned qsv processes
   - Default timeout: 10 minutes via `config.operationTimeoutMs` (per-call override via `params.timeoutMs`)
   - Graceful termination: sends SIGTERM, then SIGKILL after 1 second
@@ -31,7 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Template variable expansion support for `${PWD}`
 
 ### Changed
-- **Reduced MCP Skills** - Excluded `edit`, `flatten`, `pro`, and `snappy` commands from MCP skills generation, reducing from 60 to 56 skills
+- **Reduced MCP Skills** - Excluded `behead`, `edit`, `flatten`, `pro`, and `snappy` commands from MCP skills generation, reducing from 60 to 55 skills
+  - `behead` - trivial header removal, not needed for AI agent workflows
   - `edit` - interactive command not suitable for AI agent use
   - `flatten` - not suitable for AI agent use
   - `pro` - contains interactive/terminal-dependent subcommands (lens, workflow)
@@ -41,9 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - SIGTERM→143, SIGKILL→137, SIGINT→130, SIGHUP→129, SIGQUIT→131
   - Signal information added to stderr for debugging
 - **Tool Guidance Updates** - Updated command categorization for better accuracy
-  - `ALWAYS_FILE_COMMANDS`: Added slice, sample, template, geocode
-  - `METADATA_COMMANDS`: Removed slice, sample (now in always-file)
-  - Enhanced guidance for search, moarstats, apply, rename, excel commands
+  - `ALWAYS_FILE_COMMANDS` expanded to 25 commands: added slice, sample, template, geocode, schema, validate, diff, cat, transpose, partition, split, explode
+  - `METADATA_COMMANDS` refined to 4 commands: count, headers, index, sniff
+  - Enhanced guidance for sqlp (Parquet-first workflow for large CSVs), moarstats (bivariate stats), and geocode (FIPS examples)
+- **Reduced Default Concurrent Operations** - `QSV_MCP_MAX_CONCURRENT_OPERATIONS` default changed from 10 to 1
+- **Skill Version Sync** - Updated all 55 skill JSON files to version 16.0.0
 
 ### Security
 - **Windows Cross-Drive Path Traversal Fix** - Security fix for path validation on Windows
@@ -60,10 +80,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Removed `qsv_data_profile` tool** - The tool produced ~60KB output for a 40-column file, filling Claude's context window and making it impractical
   - Tool guidance now recommends using `qsv stats --cardinality --stats-jsonl` instead
   - Removed profile cache manager and related configuration options
-  - Core tools reduced from 8 to 7
 - **Removed `QSV_MCP_TIMEOUT_MS`** - Dead code with 5-minute default removed
   - Consolidated to single timeout source: `QSV_MCP_OPERATION_TIMEOUT_MS` (10-minute default)
   - Removed profile cache environment variables: `QSV_MCP_PROFILE_CACHE_ENABLED`, `QSV_MCP_PROFILE_CACHE_SIZE_MB`, `QSV_MCP_PROFILE_CACHE_TTL_MS`
+
+### Dependencies
+- Bumped `@modelcontextprotocol/sdk` from ^1.25.2 to ^1.26.0
 
 ## [15.3.0] - 2026-01-31
 

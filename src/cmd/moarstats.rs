@@ -257,7 +257,7 @@ moarstats options:
                            Requires indexed CSV file (index will be auto-created if missing).
                            Computes pairwise correlations, covariances, mutual information, and
                            normalized mutual information between columns. The bivariate statistics
-                           are saved to a separate file in the same diretory as the input:
+                           are saved to a separate file in the same directory as the input:
                            <FILESTEM>.stats.bivariate.csv.
     -S, --bivariate-stats <stats>
                            Comma-separated list of bivariate statistics to compute.

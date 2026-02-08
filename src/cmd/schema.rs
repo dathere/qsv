@@ -797,7 +797,7 @@ fn generate_string_patterns(
 ) -> CliResult<HashMap<String, String>> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.flag_pattern_columns.clone());
 
     let mut rdr = rconfig.reader()?;

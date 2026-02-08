@@ -124,7 +124,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let faster = args.flag_faster;
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.flag_select);
 
     let Ok(rng_kind) = RngKind::from_str(&args.flag_rng) else {

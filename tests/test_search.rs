@@ -829,3 +829,62 @@ fn search_exact_case_insensitive() {
 
     wrk.assert_success(&mut cmd);
 }
+
+// Test for https://github.com/dathere/qsv/issues/3437
+// QSV_NO_HEADERS env var should work the same as --no-headers flag
+#[test]
+fn search_no_headers_envvar() {
+    let wrk = Workdir::new("search_no_headers_envvar");
+    wrk.create("data.csv", data(false));
+    let mut cmd = wrk.command("search");
+    cmd.env("QSV_NO_HEADERS", "1");
+    cmd.arg("^foo").arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["foobar", "barfoo"], svec!["barfoo", "foobar"]];
+    assert_eq!(got, expected);
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn search_no_headers_envvar_select() {
+    let wrk = Workdir::new("search_no_headers_envvar_select");
+    wrk.create("data.csv", data(false));
+    let mut cmd = wrk.command("search");
+    cmd.env("QSV_NO_HEADERS", "1");
+    cmd.arg("^foo").arg("data.csv");
+    cmd.arg("--select").arg("1");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["foobar", "barfoo"]];
+    assert_eq!(got, expected);
+
+    wrk.assert_success(&mut cmd);
+}
+
+// Exact reproduction of https://github.com/dathere/qsv/issues/3437
+// Given headerless CSV where first row has no '@' in column 1,
+// QSV_NO_HEADERS=1 with `qsv search -s 1 '@'` should NOT output that first row.
+#[test]
+fn search_no_headers_envvar_issue_3437() {
+    let wrk = Workdir::new("search_no_headers_envvar_issue_3437");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["", "foo"],
+            svec!["@", "bar"],
+            svec!["@", "bar"],
+            svec!["@", "bar"],
+        ],
+    );
+    let mut cmd = wrk.command("search");
+    cmd.env("QSV_NO_HEADERS", "1");
+    cmd.arg("-s").arg("1").arg("@").arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["@", "bar"], svec!["@", "bar"], svec!["@", "bar"]];
+    assert_eq!(got, expected);
+
+    wrk.assert_success(&mut cmd);
+}

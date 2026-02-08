@@ -474,7 +474,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .trim(csv::Trim::All)
-        .no_headers(args.flag_no_headers);
+        .no_headers_flag(args.flag_no_headers);
 
     let mut rdr = rconfig.reader()?;
     let mut wtr = if args.flag_new_column.is_some() {
@@ -512,13 +512,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Config::new(args.arg_input.as_ref())
             .delimiter(args.flag_delimiter)
             .trim(csv::Trim::All)
-            .no_headers(args.flag_no_headers)
+            .no_headers_flag(args.flag_no_headers)
             .select(args.arg_column_list.clone())
     } else {
         Config::new(args.arg_input.as_ref())
             .delimiter(args.flag_delimiter)
             .trim(csv::Trim::All)
-            .no_headers(args.flag_no_headers)
+            .no_headers_flag(args.flag_no_headers)
             // we're constructing a payload, ensure all the columns are selected
             .select(SelectColumns::parse("1-")?)
     };

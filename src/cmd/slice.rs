@@ -265,7 +265,7 @@ impl Args {
     fn rconfig(&self) -> Config {
         Config::new(self.arg_input.as_ref())
             .delimiter(self.flag_delimiter)
-            .no_headers(self.flag_no_headers)
+            .no_headers_flag(self.flag_no_headers)
     }
 
     fn wconfig(&self) -> Config {

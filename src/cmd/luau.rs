@@ -384,7 +384,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers);
+        .no_headers_flag(args.flag_no_headers);
 
     let mut luau_script =
         if let Some(script_filepath) = args.arg_main_script.strip_prefix(util::FILE_PATH_PREFIX) {

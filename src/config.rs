@@ -329,11 +329,23 @@ impl Config {
         self.prefer_dmy
     }
 
-    pub fn no_headers(mut self, mut yes: bool) -> Config {
+    /// Explicitly set `no_headers`, unconditionally overriding env var.
+    /// Use this when a command knows the input has (or lacks) headers
+    /// regardless of user configuration (e.g. internally-generated CSVs).
+    pub fn no_headers(mut self, yes: bool) -> Config {
+        self.no_headers = yes;
+        self
+    }
+
+    /// Apply the `--no-headers` CLI flag without overriding `QSV_NO_HEADERS` env var.
+    /// When the flag is `false` (not passed), the env var value is preserved.
+    /// When the flag is `true` (explicitly passed), it sets `no_headers = true`.
+    /// Also respects `QSV_TOGGLE_HEADERS` to flip the flag value.
+    pub fn no_headers_flag(mut self, mut yes: bool) -> Config {
         if env::var("QSV_TOGGLE_HEADERS").unwrap_or_else(|_| "0".to_owned()) == "1" {
             yes = !yes;
         }
-        self.no_headers = yes;
+        self.no_headers = self.no_headers || yes;
         self
     }
 

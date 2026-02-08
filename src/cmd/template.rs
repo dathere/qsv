@@ -272,7 +272,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Set up CSV reader
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers);
+        .no_headers_flag(args.flag_no_headers);
     let mut rdr = rconfig.reader()?;
 
     // Get width of rowcount for padding leading zeroes and early return

@@ -1259,7 +1259,7 @@ impl Args {
     pub fn rconfig(&self) -> Config {
         Config::new(self.arg_input.as_ref())
             .delimiter(self.flag_delimiter)
-            .no_headers(self.flag_no_headers)
+            .no_headers_flag(self.flag_no_headers)
             .select(self.flag_select.clone())
     }
 

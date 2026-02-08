@@ -70,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Cowork mounts workspace at a VM-internal path via symlink, causing `realpathSync()` to resolve
     to a canonical path outside the configured `allowedDirs`, blocking all file operations
   - Added **plugin mode** detection: active when `CLAUDE_PLUGIN_ROOT` env var is set AND
-    `MCPB_EXTENSION_MODE` is NOT set (i.e., running as a Claude Plugin, not a Desktop Extension)
+    `MCPB_EXTENSION_MODE` is NOT enabled (i.e., running as a Claude Plugin, not a Desktop Extension)
   - In plugin mode, directories are auto-added to `allowedDirs` instead of being rejected,
     since Cowork/Code already provides filesystem isolation
   - Working directory defaults to `${PWD}` in plugin mode (vs `${DOWNLOADS}` otherwise)

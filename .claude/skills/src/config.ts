@@ -599,6 +599,16 @@ export function isExtensionMode(): boolean {
 }
 
 /**
+ * Detect if running in Claude Plugin mode (Claude Code or Cowork)
+ * Plugin mode is active when CLAUDE_PLUGIN_ROOT is set AND MCPB_EXTENSION_MODE is NOT set.
+ * In plugin mode, directory security is relaxed because the host environment
+ * (Cowork VM or Claude Code) already provides filesystem isolation.
+ */
+export function isPluginMode(): boolean {
+  return !!process.env["CLAUDE_PLUGIN_ROOT"] && !getBooleanEnv("MCPB_EXTENSION_MODE", false);
+}
+
+/**
  * Initialize qsv binary path with auto-detection
  */
 const qsvBinaryInit = initializeQsvBinaryPath();
@@ -621,9 +631,9 @@ export const config = {
 
   /**
    * Working directory for relative paths
-   * Default: Current working directory
+   * Default: ${PWD} in plugin mode (Cowork/Code), ${DOWNLOADS} otherwise
    */
-  workingDir: getStringEnv("QSV_MCP_WORKING_DIR", "${DOWNLOADS}"),
+  workingDir: getStringEnv("QSV_MCP_WORKING_DIR", isPluginMode() ? "${PWD}" : "${DOWNLOADS}"),
 
   /**
    * Allowed directories for file access
@@ -770,6 +780,13 @@ export const config = {
    * Desktop extensions set MCPB_EXTENSION_MODE=true
    */
   isExtensionMode: isExtensionMode(),
+
+  /**
+   * Detect if running in Claude Plugin mode (Claude Code or Cowork)
+   * When true, directory security is relaxed (auto-expand allowedDirs)
+   * because the host environment provides filesystem isolation
+   */
+  isPluginMode: isPluginMode(),
 
   /**
    * Expose all tools mode

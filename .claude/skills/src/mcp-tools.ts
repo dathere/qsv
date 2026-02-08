@@ -1560,7 +1560,13 @@ export async function handleConfigTool(
 
   // Mode
   configText += `\n## Deployment Mode\n\n`;
-  configText += `${extensionMode ? "🧩 **Desktop Extension Mode**" : "🖥️ **Legacy MCP Server Mode**"}\n`;
+  if (config.isPluginMode) {
+    configText += `🔌 **Claude Plugin Mode** (relaxed directory security)\n`;
+  } else if (extensionMode) {
+    configText += `🧩 **Desktop Extension Mode**\n`;
+  } else {
+    configText += `🖥️ **Legacy MCP Server Mode**\n`;
+  }
 
   // Help Text
   configText += `\n---\n\n`;

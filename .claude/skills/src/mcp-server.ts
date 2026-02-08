@@ -120,6 +120,7 @@ class QsvMcpServer {
       workingDirectory: config.workingDir,
       allowedDirectories: config.allowedDirs,
       qsvBinPath: config.qsvBinPath,
+      pluginMode: config.isPluginMode,
     });
 
     // Initialize update checker with environment configuration

@@ -10,6 +10,7 @@ import {
   parseQsvMemoryInfo,
   parseQsvCommandList,
   expandTemplateVars,
+  isPluginMode,
 } from '../src/config.js';
 
 test('config has all required properties', () => {
@@ -315,4 +316,30 @@ test('expandTemplateVars returns empty string for empty input', () => {
 test('expandTemplateVars returns value unchanged when no templates present', () => {
   const result = expandTemplateVars('/usr/local/bin');
   assert.strictEqual(result, '/usr/local/bin');
+});
+
+// ============================================================================
+// Plugin Mode Tests
+// ============================================================================
+
+test('config.isPluginMode exists and has valid type', () => {
+  assert.ok('isPluginMode' in config);
+  assert.strictEqual(typeof config.isPluginMode, 'boolean');
+});
+
+test('isPluginMode returns false when CLAUDE_PLUGIN_ROOT is not set', () => {
+  // In a normal test environment, CLAUDE_PLUGIN_ROOT should not be set
+  // so isPluginMode should return false
+  if (!process.env['CLAUDE_PLUGIN_ROOT']) {
+    assert.strictEqual(isPluginMode(), false);
+    assert.strictEqual(config.isPluginMode, false);
+  }
+});
+
+test('isPluginMode returns false when MCPB_EXTENSION_MODE is set', () => {
+  // Even if CLAUDE_PLUGIN_ROOT were set, extension mode takes priority
+  // This documents the exclusion rule
+  if (process.env['MCPB_EXTENSION_MODE'] === 'true') {
+    assert.strictEqual(isPluginMode(), false);
+  }
 });

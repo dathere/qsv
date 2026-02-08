@@ -71,6 +71,9 @@ see [.claude/skills/CHANGELOG.md](https://github.com/dathere/qsv/blob/master/.cl
 - fix: `stats` return sentinel when sniff finds no date columns
 - fix: `config` — `QSV_NO_HEADERS` environment variable being ignored; split no_headers into explicit setter and CLI flag method
 
+### Removed
+- removed `cargo install` instructions from README as qsv is rarely `cargo install`able as it uses patched forks on a regular basis and `cargo install` doesn't support git dependencies.
+
 **Full Changelog**: [15.0.1...16.0.0](https://github.com/dathere/qsv/compare/15.0.1...16.0.0)
 
 ---

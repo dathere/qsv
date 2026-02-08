@@ -10,6 +10,7 @@ import {
   parseQsvMemoryInfo,
   parseQsvCommandList,
   expandTemplateVars,
+  isPluginMode,
 } from '../src/config.js';
 
 test('config has all required properties', () => {
@@ -315,4 +316,67 @@ test('expandTemplateVars returns empty string for empty input', () => {
 test('expandTemplateVars returns value unchanged when no templates present', () => {
   const result = expandTemplateVars('/usr/local/bin');
   assert.strictEqual(result, '/usr/local/bin');
+});
+
+// ============================================================================
+// Plugin Mode Tests
+// ============================================================================
+
+test('config.isPluginMode exists and has valid type', () => {
+  assert.ok('isPluginMode' in config);
+  assert.strictEqual(typeof config.isPluginMode, 'boolean');
+});
+
+test('isPluginMode returns false when CLAUDE_PLUGIN_ROOT is not set', () => {
+  // isPluginMode() reads process.env at call time, so we can test deterministically
+  const origPluginRoot = process.env['CLAUDE_PLUGIN_ROOT'];
+  const origExtMode = process.env['MCPB_EXTENSION_MODE'];
+  try {
+    delete process.env['CLAUDE_PLUGIN_ROOT'];
+    delete process.env['MCPB_EXTENSION_MODE'];
+    assert.strictEqual(isPluginMode(), false);
+  } finally {
+    // Restore original values
+    if (origPluginRoot !== undefined) process.env['CLAUDE_PLUGIN_ROOT'] = origPluginRoot;
+    if (origExtMode !== undefined) process.env['MCPB_EXTENSION_MODE'] = origExtMode;
+  }
+});
+
+test('isPluginMode returns true when CLAUDE_PLUGIN_ROOT is set and MCPB_EXTENSION_MODE is not', () => {
+  const origPluginRoot = process.env['CLAUDE_PLUGIN_ROOT'];
+  const origExtMode = process.env['MCPB_EXTENSION_MODE'];
+  try {
+    process.env['CLAUDE_PLUGIN_ROOT'] = '/some/path';
+    delete process.env['MCPB_EXTENSION_MODE'];
+    assert.strictEqual(isPluginMode(), true);
+  } finally {
+    if (origPluginRoot !== undefined) {
+      process.env['CLAUDE_PLUGIN_ROOT'] = origPluginRoot;
+    } else {
+      delete process.env['CLAUDE_PLUGIN_ROOT'];
+    }
+    if (origExtMode !== undefined) process.env['MCPB_EXTENSION_MODE'] = origExtMode;
+  }
+});
+
+test('isPluginMode returns false when MCPB_EXTENSION_MODE is enabled', () => {
+  // Extension mode takes priority over plugin mode
+  const origPluginRoot = process.env['CLAUDE_PLUGIN_ROOT'];
+  const origExtMode = process.env['MCPB_EXTENSION_MODE'];
+  try {
+    process.env['CLAUDE_PLUGIN_ROOT'] = '/some/path';
+    process.env['MCPB_EXTENSION_MODE'] = 'true';
+    assert.strictEqual(isPluginMode(), false);
+  } finally {
+    if (origPluginRoot !== undefined) {
+      process.env['CLAUDE_PLUGIN_ROOT'] = origPluginRoot;
+    } else {
+      delete process.env['CLAUDE_PLUGIN_ROOT'];
+    }
+    if (origExtMode !== undefined) {
+      process.env['MCPB_EXTENSION_MODE'] = origExtMode;
+    } else {
+      delete process.env['MCPB_EXTENSION_MODE'];
+    }
+  }
 });

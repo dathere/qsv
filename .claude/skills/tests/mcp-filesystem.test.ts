@@ -7,6 +7,7 @@ import assert from 'node:assert';
 import { FilesystemResourceProvider } from '../src/mcp-filesystem.js';
 import { config } from '../src/config.js';
 import { mkdtemp, writeFile, rmdir, unlink, mkdir, realpath, symlink } from 'fs/promises';
+import { realpathSync } from 'fs';
 import { join } from 'path';
 import { tmpdir, homedir } from 'os';
 
@@ -456,6 +457,168 @@ test('constructor resolves symlinks in workingDirectory', async () => {
     try {
       await unlink(symlinkPath);
       await rmdir(tempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+// ============================================================================
+// Plugin Mode Tests
+// ============================================================================
+
+test('plugin mode auto-adds directory in setWorkingDirectory', async () => {
+  const tempDir1 = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+  const tempDir2 = await mkdtemp(join(tmpdir(), 'qsv-test-plugin-'));
+
+  try {
+    // Create provider in plugin mode with only tempDir1 allowed
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir1,
+      pluginMode: true,
+    });
+
+    // tempDir2 is NOT in allowedDirs, but plugin mode should auto-add it
+    provider.setWorkingDirectory(tempDir2);
+
+    // Should succeed without throwing
+    // Use realpathSync to match setWorkingDirectory's internal resolution
+    // (on Windows, async realpath resolves 8.3 short names but realpathSync may not)
+    const resolvedDir2 = realpathSync(tempDir2);
+    assert.strictEqual(provider.getWorkingDirectory(), resolvedDir2);
+  } finally {
+    try {
+      await rmdir(tempDir1);
+      await rmdir(tempDir2);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+test('non-plugin mode rejects directory outside allowedDirs in setWorkingDirectory', async () => {
+  const tempDir1 = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+  const tempDir2 = await mkdtemp(join(tmpdir(), 'qsv-test-noplugin-'));
+
+  try {
+    // Create provider NOT in plugin mode with only tempDir1 allowed
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir1,
+      pluginMode: false,
+    });
+
+    // tempDir2 is NOT in allowedDirs, should throw
+    assert.throws(
+      () => {
+        provider.setWorkingDirectory(tempDir2);
+      },
+      /outside allowed directories/
+    );
+  } finally {
+    try {
+      await rmdir(tempDir1);
+      await rmdir(tempDir2);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+test('plugin mode auto-adds directory in resolvePath', async () => {
+  const tempDir1 = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+  const tempDir2 = await mkdtemp(join(tmpdir(), 'qsv-test-resolve-'));
+
+  try {
+    // Create a test file in tempDir2
+    await writeFile(join(tempDir2, 'test.csv'), 'col1,col2\nval1,val2\n');
+
+    // Create provider in plugin mode with only tempDir1 allowed
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir1,
+      pluginMode: true,
+    });
+
+    // Resolve an absolute path in tempDir2 (not in allowedDirs)
+    // In plugin mode, this should auto-add the directory and succeed
+    const resolvedDir2 = await realpath(tempDir2);
+    const resolved = await provider.resolvePath(join(tempDir2, 'test.csv'));
+    assert.strictEqual(resolved, join(resolvedDir2, 'test.csv'));
+  } finally {
+    try {
+      await unlink(join(tempDir2, 'test.csv'));
+      await rmdir(tempDir1);
+      await rmdir(tempDir2);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+test('non-plugin mode rejects path outside allowedDirs in resolvePath', async () => {
+  const tempDir1 = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+  const tempDir2 = await mkdtemp(join(tmpdir(), 'qsv-test-noresolve-'));
+
+  try {
+    // Create a test file in tempDir2
+    await writeFile(join(tempDir2, 'test.csv'), 'col1,col2\nval1,val2\n');
+
+    // Create provider NOT in plugin mode
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir1,
+      pluginMode: false,
+    });
+
+    // Should reject the path
+    await assert.rejects(
+      async () => {
+        await provider.resolvePath(join(tempDir2, 'test.csv'));
+      },
+      /Access denied|outside allowed directories/
+    );
+  } finally {
+    try {
+      await unlink(join(tempDir2, 'test.csv'));
+      await rmdir(tempDir1);
+      await rmdir(tempDir2);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+test('plugin mode handles symlinked directories in setWorkingDirectory', async () => {
+  // Skip on Windows where symlinks require elevated privileges
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  const realDir = await mkdtemp(join(tmpdir(), 'qsv-test-real-'));
+  const symlinkPath = join(tmpdir(), `qsv-symlink-plugin-${Date.now()}`);
+
+  try {
+    // Create symlink to real directory
+    await symlink(realDir, symlinkPath);
+
+    // Create provider with a different working directory, in plugin mode
+    const otherDir = await mkdtemp(join(tmpdir(), 'qsv-test-other-'));
+
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: otherDir,
+      pluginMode: true,
+    });
+
+    // Set working directory to the symlink path
+    // Plugin mode should auto-add both the canonical and symlink paths
+    provider.setWorkingDirectory(symlinkPath);
+
+    const resolvedReal = await realpath(realDir);
+    assert.strictEqual(provider.getWorkingDirectory(), resolvedReal);
+
+    await rmdir(otherDir);
+  } finally {
+    try {
+      await unlink(symlinkPath);
+      await rmdir(realDir);
     } catch {
       // Ignore cleanup errors
     }

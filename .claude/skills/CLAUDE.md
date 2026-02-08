@@ -39,6 +39,10 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
   - Returns exit code 124 (standard timeout code) with descriptive error
 - **Gemini CLI Integration** - New documentation at `docs/guides/GEMINI_CLI.md` with `${PWD}` template variable support
 - **Signal Termination Handling** - Maps signals to conventional exit codes (128 + signal number)
+- **Cowork Compatibility via Plugin Mode** - Auto-expand `allowedDirs` when running inside Cowork VM or Claude Code
+  - Detects plugin mode via `CLAUDE_PLUGIN_ROOT` env var (set by Cowork/Code)
+  - Relaxes directory security since the host environment provides filesystem isolation
+  - Fixes symlink resolution failures when Cowork mounts workspace at VM-internal paths
 - **Windows Cross-Drive Path Traversal Fix** - Security fix with `isAbsolute()` validation
 - **Reduced MCP Skills** - Excluded `edit`, `flatten`, `pro`, `snappy` (60 → 55 skills)
 - **Removed client-detector.ts** - Deferred loading now consistent for ALL clients
@@ -310,6 +314,9 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - Available commands detection at runtime
 - Working directory and allowed directories configuration
 - Extension mode detection (`MCPB_EXTENSION_MODE`)
+- Plugin mode detection (`CLAUDE_PLUGIN_ROOT` set AND `MCPB_EXTENSION_MODE` NOT enabled)
+  - In plugin mode, directory security is relaxed (auto-expand `allowedDirs`)
+  - Working directory defaults to `${PWD}` instead of `${DOWNLOADS}`
 
 **Template Variables Supported**:
 - `${HOME}`, `${USERPROFILE}` - User home directory

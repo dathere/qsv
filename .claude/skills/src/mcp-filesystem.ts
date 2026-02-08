@@ -7,7 +7,7 @@
 
 import { readdir, stat, readFile, realpath, access } from "fs/promises";
 import { realpathSync } from "fs";
-import { join, resolve, relative, basename, extname, isAbsolute } from "path";
+import { join, resolve, relative, basename, dirname, extname, isAbsolute } from "path";
 import { homedir } from "os";
 import { spawn } from "child_process";
 import type {
@@ -75,6 +75,13 @@ export interface FilesystemConfig {
    * Path to qsv binary (default: 'qsv')
    */
   qsvBinPath?: string;
+
+  /**
+   * Plugin mode (Claude Code or Cowork)
+   * When true, directories are auto-added to allowedDirs instead of
+   * being rejected, because the host environment provides filesystem isolation
+   */
+  pluginMode?: boolean;
 }
 
 export class FilesystemResourceProvider {
@@ -96,6 +103,7 @@ export class FilesystemResourceProvider {
   private maxPreviewSize: number;
   private previewLines: number;
   private qsvBinPath: string;
+  private pluginMode: boolean;
   private metadataCache: Map<string, FileMetadata>;
   private metadataCachePromises: Map<string, Promise<FileMetadata | null>>;
 
@@ -146,6 +154,7 @@ export class FilesystemResourceProvider {
     this.maxPreviewSize = config.maxPreviewSize || 1024 * 1024; // 1MB
     this.previewLines = config.previewLines || 20;
     this.qsvBinPath = config.qsvBinPath || "qsv";
+    this.pluginMode = config.pluginMode || false;
     this.metadataCache = new Map();
     this.metadataCachePromises = new Map();
 
@@ -153,6 +162,9 @@ export class FilesystemResourceProvider {
     console.error(`  Working directory: ${this.workingDir}`);
     console.error(`  Allowed directories: ${this.allowedDirs.join(", ")}`);
     console.error(`  QSV binary: ${this.qsvBinPath}`);
+    if (this.pluginMode) {
+      console.error(`  Plugin mode: enabled (relaxed directory security)`);
+    }
   }
 
   /**
@@ -194,9 +206,25 @@ export class FilesystemResourceProvider {
     });
 
     if (!isAllowed) {
-      throw new Error(
-        `Cannot set working directory to ${dir}: outside allowed directories`,
-      );
+      if (this.pluginMode) {
+        // In plugin mode (Cowork/Code), auto-add the directory to allowedDirs
+        // This is safe because the host environment provides filesystem isolation
+        if (!this.allowedDirs.includes(newDir)) {
+          this.allowedDirs.push(newDir);
+        }
+        // Also add the original (pre-realpath) resolved path to handle symlinks
+        const originalResolved = resolve(expanded);
+        if (originalResolved !== newDir && !this.allowedDirs.includes(originalResolved)) {
+          this.allowedDirs.push(originalResolved);
+        }
+        console.error(
+          `[Plugin Mode] Auto-added directory to allowedDirs: ${newDir}`,
+        );
+      } else {
+        throw new Error(
+          `Cannot set working directory to ${dir}: outside allowed directories`,
+        );
+      }
     }
 
     this.workingDir = newDir;
@@ -251,7 +279,19 @@ export class FilesystemResourceProvider {
     });
 
     if (!isAllowed) {
-      throw new Error(`Access denied: ${path} is outside allowed directories`);
+      if (this.pluginMode) {
+        // In plugin mode (Cowork/Code), auto-add the canonical directory to allowedDirs
+        // This is safe because the host environment provides filesystem isolation
+        const canonicalDir = dirname(canonical);
+        if (!this.allowedDirs.includes(canonicalDir)) {
+          this.allowedDirs.push(canonicalDir);
+          console.error(
+            `[Plugin Mode] Auto-added directory to allowedDirs: ${canonicalDir}`,
+          );
+        }
+      } else {
+        throw new Error(`Access denied: ${path} is outside allowed directories`);
+      }
     }
 
     return canonical;

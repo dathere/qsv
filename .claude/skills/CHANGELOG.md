@@ -65,6 +65,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Reduced Default Concurrent Operations** - `QSV_MCP_MAX_CONCURRENT_OPERATIONS` default changed from 10 to 1
 - **Skill Version Sync** - Updated all 55 skill JSON files to version 16.0.0
 
+### Fixed
+- **Cowork Compatibility via Plugin Mode** - MCP server now works correctly inside Claude Cowork's VM
+  - Cowork mounts workspace at a VM-internal path via symlink, causing `realpathSync()` to resolve
+    to a canonical path outside the configured `allowedDirs`, blocking all file operations
+  - Added **plugin mode** detection: active when `CLAUDE_PLUGIN_ROOT` env var is set AND
+    `MCPB_EXTENSION_MODE` is NOT enabled (i.e., running as a Claude Plugin, not a Desktop Extension)
+  - In plugin mode, directories are auto-added to `allowedDirs` instead of being rejected,
+    since Cowork/Code already provides filesystem isolation
+  - Working directory defaults to `${PWD}` in plugin mode (vs `${DOWNLOADS}` otherwise)
+  - `qsv_config` tool now shows three deployment modes: Plugin, Extension, and Legacy
+
 ### Security
 - **Windows Cross-Drive Path Traversal Fix** - Security fix for path validation on Windows
   - `path.relative()` returns absolute path when comparing paths on different drives

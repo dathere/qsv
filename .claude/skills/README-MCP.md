@@ -188,7 +188,7 @@ This script will:
 
 ## Available Tools
 
-### 8 Core Tools (Always Loaded)
+### 10 Core Tools (Always Loaded)
 
 These tools are always available immediately:
 
@@ -202,17 +202,17 @@ These tools are always available immediately:
 | `qsv_pipeline` | Chain multiple qsv operations together |
 | `qsv_command` | Execute any of the 55 qsv commands |
 | `qsv_to_parquet` | Convert CSV to Parquet format |
+| `qsv_index` | Create index for fast random access |
+| `qsv_stats` | Statistical analysis (creates stats cache) |
 
-### 13 Common Command Tools (Loaded on Demand)
+### 11 Common Command Tools (Loaded on Demand)
 
 Tools for frequently used commands, loaded when discovered via search:
 
 | Tool | Description |
 |------|-------------|
 | `qsv_select` | Column selection (most frequently used) |
-| `qsv_stats` | Statistical analysis (creates cache) |
 | `qsv_moarstats` | Comprehensive statistics with data type inference |
-| `qsv_index` | Create index for fast random access |
 | `qsv_search` | Pattern-based filtering |
 | `qsv_frequency` | Value distribution |
 | `qsv_headers` | Header operations |

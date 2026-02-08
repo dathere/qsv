@@ -877,7 +877,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .flexible(true)
         .skip_format_check(true);
 

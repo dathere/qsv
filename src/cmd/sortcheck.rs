@@ -96,7 +96,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let ignore_case = args.flag_ignore_case;
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.flag_select);
 
     let mut rdr = rconfig.reader()?;

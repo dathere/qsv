@@ -2707,7 +2707,7 @@ pub fn get_stats_records(
     // Use qsv's Config system to properly detect delimiter based on file extension
     let rconfig = Config::new(Some(input_path))
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers);
+        .no_headers_flag(args.flag_no_headers);
     let mut rdr = rconfig.reader()?;
     // get the headers from the input file
     let csv_fields = rdr.byte_headers()?.clone();

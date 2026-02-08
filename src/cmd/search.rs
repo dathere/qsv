@@ -199,7 +199,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.flag_select.clone());
 
     // Route to parallel or sequential search
@@ -289,7 +289,7 @@ impl Args {
     fn rconfig(&self) -> Config {
         Config::new(self.arg_input.as_ref())
             .delimiter(self.flag_delimiter)
-            .no_headers(self.flag_no_headers)
+            .no_headers_flag(self.flag_no_headers)
             .select(self.flag_select.clone())
     }
 

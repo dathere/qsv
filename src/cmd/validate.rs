@@ -1151,7 +1151,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     })?;
 
     let mut rconfig = Config::new(Some(&input_path.to_string_lossy().to_string()))
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .set_read_buffer(if std::env::var("QSV_RDR_BUFFER_CAPACITY").is_err() {
             DEFAULT_RDR_BUFFER_CAPACITY * 10
         } else {
@@ -1558,7 +1558,7 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
         }
 
         let mut rconfig = Config::new(Some(&input_path.to_string_lossy().to_string()))
-            .no_headers(args.flag_no_headers)
+            .no_headers_flag(args.flag_no_headers)
             .set_read_buffer(if std::env::var("QSV_RDR_BUFFER_CAPACITY").is_err() {
                 DEFAULT_RDR_BUFFER_CAPACITY * 10
             } else {

@@ -127,7 +127,7 @@ fn sort_csv(
 ) -> Result<(), crate::clitypes::CliError> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.flag_select.clone().unwrap());
 
     let mut idxfile = match rconfig.indexed() {

@@ -401,11 +401,11 @@ impl Args {
     ) -> CliResult<IoState<Box<dyn SeekRead + 'static>, Box<dyn io::Write + 'static>>> {
         let rconf1 = Config::new(Some(self.arg_input1.clone()).as_ref())
             .delimiter(self.flag_delimiter)
-            .no_headers(self.flag_no_headers)
+            .no_headers_flag(self.flag_no_headers)
             .select(self.arg_columns1.clone());
         let rconf2 = Config::new(Some(self.arg_input2.clone()).as_ref())
             .delimiter(self.flag_delimiter)
-            .no_headers(self.flag_no_headers)
+            .no_headers_flag(self.flag_no_headers)
             .select(self.arg_columns2.clone());
 
         let mut rdr1 = match rconf1.reader_file_stdin() {

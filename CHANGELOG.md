@@ -6,7 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [16.0.0] - 2026-02-XX
+## [16.0.0] - 2026-02-08
+
+
+see [.claude/skills/CHANGELOG.md](https://github.com/dathere/qsv/blob/master/.claude/skills/CHANGELOG.md) for qsv MCP Server changes
 
 ### Breaking Changes
 
@@ -37,11 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - refactor: Safe fallback on corrupted stats cache
 - deps: bump csv-nose from 0.7.0 to 0.8.0
 - deps: bump pyo3 from 0.27.2 to 0.28.0
-- deps: bump jsonschema from 0.40.0 to 0.40.2
+- deps: bump jsonschema from 0.40.0 to latest upstream
 - deps: bump redis from 1.0.2 to 1.0.3
 - deps: bump zmij from 1.0.17 to 1.0.19
 - deps: bump zerocopy from 0.8.35 to 0.8.37
-- deps: bump polars to 0.52.0 at py-1.38.1 tag
+- deps: bump polars to from 0.52.0 at py-1.37.1, e3a6cf7 tag to 0.53.0
 - deps: bump reqwest from 0.13.1 to 0.13.2
 - deps: bump async-compression to 0.4.39
 - deps: bump calamine to 0.33
@@ -65,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix: `joinp` switch pschema serialization to serde_json for compound type support
 - fix: adjust jsonl path usage caused by calamine 0.33 release
 - fix: `stats` return sentinel when sniff finds no date columns
+- fix: `config` — `QSV_NO_HEADERS` environment variable being ignored; split no_headers into explicit setter and CLI flag method
 
 **Full Changelog**: [15.0.1...16.0.0](https://github.com/dathere/qsv/compare/15.0.1...16.0.0)
 

@@ -328,9 +328,11 @@ csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "
 geosuggest-core = { git = "https://github.com/estin/geosuggest", rev = "0430e92" }
 geosuggest-utils = { git = "https://github.com/estin/geosuggest", rev = "0430e92" }
 
-
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }
+
+# use latest jsonschema upstream with performance improvements
+jsonschema = { git = "https://github.com/Stranger6667/jsonschema-rs", rev = "104d463" }
 
 # use latest upstream now that our PR has been merged while awaiting a new release
 kiddo = { git = "https://github.com/sdd/kiddo.git", rev = "2056051"}

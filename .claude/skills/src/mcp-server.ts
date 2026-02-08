@@ -444,6 +444,24 @@ class QsvMcpServer {
           console.error(`[Server] Loaded ${tools.length} command tools (${skillNames.length} common + ${searchedToolNames.length} from search)`);
         }
 
+        // Load skill-based core tools (qsv_index, qsv_stats)
+        // In expose-all mode these are already loaded above; in deferred/core-only they need explicit loading
+        if (!shouldExposeAll) {
+          const skillCoreTools = ["qsv-index", "qsv-stats"];
+          const loadedSkillCoreTools = await this.loader.loadByNames(skillCoreTools);
+          for (const [skillName, skill] of loadedSkillCoreTools) {
+            const commandName = skillName.replace("qsv-", "");
+            if (availableCommands && !availableCommands.includes(commandName)) {
+              continue;
+            }
+            try {
+              tools.push(createToolDefinition(skill));
+            } catch (error) {
+              console.error(`[Server] ✗ Error loading core skill ${skillName}:`, error);
+            }
+          }
+        }
+
         // Add generic qsv_command tool
         console.error("[Server] Adding generic command tool...");
         try {

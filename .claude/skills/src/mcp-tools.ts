@@ -448,8 +448,11 @@ async function shouldUseTempFile(
 }
 
 /**
- * 13 most essential qsv commands exposed as individual MCP tools
+ * 11 most essential qsv commands exposed as individual MCP tools
  * Optimized for token efficiency while maintaining high-value tool access
+ *
+ * Commands promoted to CORE_TOOLS (always loaded):
+ * stats, index
  *
  * Commands moved to qsv_command generic tool:
  * join, sort, dedup, apply, rename, validate, sample, template, diff, schema

@@ -7,6 +7,7 @@ import assert from 'node:assert';
 import { FilesystemResourceProvider } from '../src/mcp-filesystem.js';
 import { config } from '../src/config.js';
 import { mkdtemp, writeFile, rmdir, unlink, mkdir, realpath, symlink } from 'fs/promises';
+import { realpathSync } from 'fs';
 import { join } from 'path';
 import { tmpdir, homedir } from 'os';
 
@@ -481,7 +482,9 @@ test('plugin mode auto-adds directory in setWorkingDirectory', async () => {
     provider.setWorkingDirectory(tempDir2);
 
     // Should succeed without throwing
-    const resolvedDir2 = await realpath(tempDir2);
+    // Use realpathSync to match setWorkingDirectory's internal resolution
+    // (on Windows, async realpath resolves 8.3 short names but realpathSync may not)
+    const resolvedDir2 = realpathSync(tempDir2);
     assert.strictEqual(provider.getWorkingDirectory(), resolvedDir2);
   } finally {
     try {

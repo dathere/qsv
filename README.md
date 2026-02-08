@@ -236,46 +236,9 @@ sudo apt update
 sudo apt install qsv
 ```
 
-### Option 3: Install with Rust
+### Option 3: Compile from Source
 
-If you have [Rust installed](https://www.rust-lang.org/tools/install), you can also install from source using Rust's cargo command[^2]:
-
-[^2]: Of course, you'll also need a linker & a C compiler. Linux users should generally install GCC or Clang, according to their distribution’s documentation.
-For example, if you use Ubuntu, you can install the `build-essential` package. On macOS, you can get a C compiler by running `$ xcode-select --install`.
-For Windows, this means installing [Visual Studio 2022](https://visualstudio.microsoft.com/downloads/). When prompted for workloads, include "Desktop Development with C++",
-the Windows 10 or 11 SDK & the English language pack, along with any other language packs your require.
-
-```bash
-cargo install qsv --locked --features all_features
-```
-
-The binary will be installed in `~/.cargo/bin`.
-
-To install different [variants](#variants) and enable optional features, use cargo `--features` (see [Feature Flags](#feature-flags) for more info):
-
-```bash
-# to install qsv with all features enabled
-cargo install qsv --locked --bin qsv --features feature_capable,apply,fetch,foreach,geocode,luau,polars,python,self_update,to,ui
-# or shorthand
-cargo install qsv --locked --bin qsv -F all_features
-# enable all CPU optimizations for the current CPU (warning: creates non-portable binary)
-CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo install qsv --locked --bin qsv -F all_features
-
-# or enable only the apply and polars features
-cargo install qsv --locked --bin qsv -F feature_capable,apply,polars
-
-# or to install qsvlite
-cargo install qsv --locked --bin qsvlite -F lite
-
-# or to install qsvdp
-cargo install qsv --locked --bin qsvdp -F datapusher_plus
-```
-
-> ℹ️ **_NOTE:_** if you get compilation errors when running `cargo install`, use Option 4 to compile from source using `cargo build`. The errors are usually due to `cargo install` only using the latest release version of qsv's dependencies, and ignoring `patch.crates-io` entries in our Cargo.toml.
-
-### Option 4: Compile from Source
-
-Compiling from source also works similarly[^2]:
+If you have [Rust installed](https://www.rust-lang.org/tools/install), you can compile from source[^2]:
 
 ```bash
 git clone https://github.com/dathere/qsv.git
@@ -304,6 +267,11 @@ cargo build --release --locked --bin qsvlite -F lite
 # for qsvdp
 cargo build --release --locked --bin qsvdp -F datapusher_plus
 ```
+
+[^2]: Of course, you'll also need a linker & a C compiler. Linux users should generally install GCC or Clang, according to their distribution’s documentation.
+For example, if you use Ubuntu, you can install the `build-essential` package. On macOS, you can get a C compiler by running `$ xcode-select --install`.
+For Windows, this means installing [Visual Studio 2022](https://visualstudio.microsoft.com/downloads/). When prompted for workloads, include "Desktop Development with C++",
+the Windows 10 or 11 SDK & the English language pack, along with any other language packs your require.
 
 > ℹ️ **_NOTE:_** To build with Rust nightly, see [Nightly Release Builds](docs/PERFORMANCE.md#nightly-release-builds).
 The `feature_capable`, `lite` and `datapusher_plus` are MUTUALLY EXCLUSIVE features. See [Special Build Features](docs/FEATURES.md#special-features-for-building-qsv-binary-variants) for more info.

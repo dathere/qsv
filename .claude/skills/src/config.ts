@@ -746,6 +746,13 @@ export const config = {
   notifyUpdates: getBooleanEnv("QSV_MCP_NOTIFY_UPDATES", true),
 
   /**
+   * Custom server instructions sent during MCP initialization.
+   * Overrides built-in workflow guidance when non-empty.
+   * Leave empty (default) to use built-in defaults.
+   */
+  serverInstructions: getStringEnv("QSV_MCP_SERVER_INSTRUCTIONS", ""),
+
+  /**
    * Maximum number of examples to show in tool descriptions
    * More examples = better understanding but higher token usage
    * Set to 0 to disable examples in descriptions

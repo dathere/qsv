@@ -108,7 +108,7 @@ class QsvMcpServer {
           resources: {},
           prompts: {},
         },
-        instructions: QSV_SERVER_INSTRUCTIONS,
+        instructions: config.serverInstructions || QSV_SERVER_INSTRUCTIONS,
       },
     );
 

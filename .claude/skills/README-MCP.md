@@ -179,6 +179,7 @@ This script will:
 | `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates when MCP server starts |
 | `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications in logs |
 | `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repository to check for releases |
+| `QSV_MCP_SERVER_INSTRUCTIONS` | (built-in) | Custom server instructions sent during MCP initialization. Overrides built-in workflow guidance. Leave empty for defaults. |
 | `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 55+ tools immediately (no deferred loading). `false`: use only 10 core tools (no deferred additions). Unset (default): use deferred loading (10 core tools + tools discovered via search) |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.

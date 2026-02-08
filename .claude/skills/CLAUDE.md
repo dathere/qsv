@@ -314,7 +314,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - Available commands detection at runtime
 - Working directory and allowed directories configuration
 - Extension mode detection (`MCPB_EXTENSION_MODE`)
-- Plugin mode detection (`CLAUDE_PLUGIN_ROOT` set AND `MCPB_EXTENSION_MODE` NOT set)
+- Plugin mode detection (`CLAUDE_PLUGIN_ROOT` set AND `MCPB_EXTENSION_MODE` NOT enabled)
   - In plugin mode, directory security is relaxed (auto-expand `allowedDirs`)
   - Working directory defaults to `${PWD}` instead of `${DOWNLOADS}`
 

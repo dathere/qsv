@@ -16,7 +16,7 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 - **Guidance Enhancement**: Intelligent tool descriptions with USE WHEN, COMMON PATTERNS, and CAUTION hints
 
 **Goals**:
-1. Make all 55 qsv commands discoverable and invokable by AI agents
+1. Make all 55 qsv commands discoverable and invocable by AI agents
 2. Auto-generate tool definitions from qsv usage text (zero documentation debt)
 3. Enable intelligent composition of complex data workflows with multi-format support
 4. Provide seamless integration with Claude Desktop and other MCP clients

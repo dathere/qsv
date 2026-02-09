@@ -20,7 +20,7 @@ Claude Desktop, Code, and Cowork users can now use qsv's powerful data-wrangling
 
 qsv can now automatically detect date and datetime columns and carry that knowledge through the entire pipeline:
 
-- **`stats --dates-whitelist sniff`** is now the default — qsv sniffs the first 1000 rows to identify date/datetime field candidates for further guaranted date/datetime type inferencing
+- **`stats --dates-whitelist sniff`** is now the default — qsv sniffs the first 1000 rows to identify date/datetime field candidates for further guaranteed date/datetime type inferencing
 - **`schema`** auto-detects Date/DateTime columns when generating Polars schemas (`.pschema.json`)
 - **DateTime type support** in Polars schema parsing — temporal types are preserved through `sqlp`, `joinp`, and Parquet conversion
 
@@ -29,7 +29,7 @@ qsv can now automatically detect date and datetime columns and carry that knowle
 The stats cache system that accelerates `frequency`, `schema`, `tojsonl`, `sqlp`, `joinp`, `pivotp`, `diff`, and `sample` is now more robust:
 
 - **Simplified API**: Removed `dataset_stats` from `get_stats_records()`, streamlining all downstream consumers
-- **Safe fallback**: Corrupted or unparseable cache files are gracefully handled instead of erroring out
+- **Safe fallback**: Corrupted or unparsable cache files are gracefully handled instead of erroring out
 - **Auto-regeneration**: Stats cache regenerates on parse error rather than failing
 
 ### Enhanced MCP Server (16.0.0)

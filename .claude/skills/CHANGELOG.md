@@ -64,6 +64,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enhanced guidance for sqlp (Parquet-first workflow for large CSVs), moarstats (bivariate stats), and geocode (FIPS examples)
 - **Reduced Default Concurrent Operations** - `QSV_MCP_MAX_CONCURRENT_OPERATIONS` default changed from 10 to 1
 - **Skill Version Sync** - Updated all 55 skill JSON files to version 16.0.0
+- **Comprehensive Code Deduplication** - Refactored MCP server codebase removing 625 lines across 19 files
+  - Consolidated 3 `runQsv` implementations into shared `runQsvSimple` with `onSpawn`/`onExit` callbacks
+  - Merged 7 guidance tables into single `COMMAND_GUIDANCE` map
+  - Decomposed `handleToolCall` into 4 focused functions
+  - Extracted `errorResult`/`successResult` helpers and shared test helpers
+  - Optimized SkillLoader with parallel reads and single-pass `getStats`
+  - Replaced `Record<string, any>` with `unknown` for type safety
+  - Removed dead code (`getFileContent`, `pipelineToShellScript`)
 
 ### Fixed
 - **Cowork Compatibility via Plugin Mode** - MCP server now works correctly inside Claude Cowork's VM
@@ -75,6 +83,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     since Cowork/Code already provides filesystem isolation
   - Working directory defaults to `${PWD}` in plugin mode (vs `${DOWNLOADS}` otherwise)
   - `qsv_config` tool now shows three deployment modes: Plugin, Extension, and Legacy
+- **isTemporaryFile regex fix** - Corrected regex to match 16-char hex filenames (not 36-char UUID)
+- **Process tracking for shutdown** - Restored `Set<ChildProcess>` tracking so graceful shutdown kills active processes
+- **Concurrency counter scope** - Moved counter to wrap entire `handleToolCall` body for accurate limiting
+- **Version comparison with pre-release metadata** - `compareVersions` now strips pre-release/build metadata
+- **Non-blocking path validation** - `isPathAllowed` uses `isDirectory` hint to avoid blocking `statSync`
+- **Already-prefixed option keys** - `buildSkillExecParams` handles options that already have `--` prefix
+- **Cross-device file moves** - Added EXDEV fallback for file moves across filesystem boundaries
+- **Moarstats help guard** - Bivariate stats block now guarded for `--help` requests without `input_file`
+- **Search guidance typo** - Fixed "to to" duplicate word in search tool guidance
 
 ### Security
 - **Windows Cross-Drive Path Traversal Fix** - Security fix for path validation on Windows

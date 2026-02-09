@@ -175,6 +175,10 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   },
   schema: {
     whenToUse: "Infer data types, generate Polars Schema & JSON Schema.",
+    commonPattern:
+      "Iterate: qsv_schema → validate → fix → validate until clean. Use --polars to generate Polars schema for qsv_to_parquet.",
+    errorPrevention:
+      "Run qsv_stats first for best type inference. Use --polars for Parquet conversion workflows.",
     hasCommonMistakes: true,
   },
   validate: {
@@ -183,9 +187,12 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     needsIndexHint: true,
   },
   sqlp: {
-    whenToUse: "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns. Supports CSV/TSV/SSV, Parquet, JSONL, and Arrow input. For CSV files >10MB needing SQL queries, convert to Parquet first with qsv_to_parquet (same file stem, working dir). Then query the Parquet file - prefer DuckDB if available, otherwise use sqlp with SKIP_INPUT and read_parquet().",
-    commonPattern: "For CSV >10MB: convert to Parquet once (qsv_to_parquet), then query Parquet with DuckDB (preferred) or sqlp using SKIP_INPUT + read_parquet('file.parquet'). Parquet is for sqlp/DuckDB only - use CSV/TSV/SSV for all other qsv commands.",
-    errorPrevention: "For CSV files >10MB, always convert to Parquet first (qsv_to_parquet with same file stem in working dir). Query the Parquet file: prefer DuckDB if available; otherwise use sqlp with SKIP_INPUT and read_parquet('file.parquet'). For complex query errors, try DuckDB. Parquet works ONLY with sqlp and DuckDB - use CSV/TSV/SSV for all other qsv commands.",
+    whenToUse:
+      "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns. Supports CSV/TSV/SSV, Parquet, JSONL, and Arrow input.",
+    commonPattern:
+      "For CSV >10MB: convert to Parquet once (qsv_to_parquet, same file stem), then query with DuckDB (preferred) or sqlp using SKIP_INPUT + read_parquet('file.parquet'). Parquet is for sqlp/DuckDB only - use CSV/TSV/SSV for all other qsv commands.",
+    errorPrevention:
+      "For complex query errors, try DuckDB. Column names are case-sensitive in Polars SQL. Use --try-parsedates for date columns.",
     hasCommonMistakes: true,
   },
   apply: {
@@ -230,17 +237,101 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     whenToUse: "Convert spreadsheets (Excel and OpenDocument) to CSV. Also can be used to get workbook metadata. Supports multi-sheet workbooks.",
   },
   searchset: {
+    whenToUse:
+      "Filter rows matching any pattern from a regex file. For multiple patterns at once. Use qsv_search for single patterns.",
     errorPrevention: "Needs regex file. qsv_search easier for simple patterns.",
     needsIndexHint: true,
     hasCommonMistakes: true,
   },
-  // Commands with only behavioral flags (no guidance text)
-  datefmt: { needsIndexHint: true },
-  luau: { needsIndexHint: true },
-  replace: { needsIndexHint: true },
-  split: { needsIndexHint: true },
-  tojsonl: { needsIndexHint: true },
-  transpose: { needsIndexHint: true },
+  datefmt: {
+    whenToUse:
+      "Parse and reformat date/time columns. Supports diverse input formats and strftime output patterns.",
+    needsIndexHint: true,
+  },
+  luau: {
+    whenToUse:
+      "Run Luau scripts per row. Use map to create new columns, filter to select rows. For complex custom logic beyond apply.",
+    needsIndexHint: true,
+  },
+  replace: {
+    whenToUse:
+      "Find and replace text in columns using regex. For bulk text substitution across the dataset.",
+    needsIndexHint: true,
+  },
+  split: {
+    whenToUse:
+      "Split CSV into chunks of N rows each, writing separate files. For breaking large files into manageable pieces.",
+    needsIndexHint: true,
+  },
+  tojsonl: {
+    whenToUse:
+      "Convert CSV to JSONL/NDJSON with smart type inference. Uses stats cache for accurate types.",
+    commonPattern:
+      "Run qsv_stats first for best type inference. Output uses correct JSON types (numbers, booleans, nulls).",
+    needsIndexHint: true,
+  },
+  transpose: {
+    whenToUse:
+      "Swap rows and columns. Best for small datasets or creating wide-format summaries.",
+    needsMemoryWarning: true,
+    needsIndexHint: true,
+  },
+  // Commands added for guidance coverage
+  reverse: {
+    whenToUse:
+      "Reverse row order preserving relative order (stable). With index: constant memory. Without index: loads entire CSV.",
+    errorPrevention:
+      "Without an index file, loads entire CSV into memory. Run qsv_index first, or use qsv_sort --reverse for sorted reversal.",
+    needsMemoryWarning: true,
+    needsIndexHint: true,
+  },
+  safenames: {
+    whenToUse:
+      "Make headers database-ready/CKAN-ready. Removes special chars, spaces, ensures unique names.",
+  },
+  sniff: {
+    whenToUse:
+      "Detect CSV metadata (delimiter, header, preamble, quote char, encoding, field types). Also a general mime type detector. Supports URLs.",
+    commonPattern:
+      "First step for unknown files: sniff → headers → stats → analysis. Use --json for parseable output.",
+    errorPrevention:
+      "For remote URLs, use --quick for faster detection. Use --sample to control inference depth.",
+  },
+  extdedup: {
+    whenToUse:
+      "Remove duplicates from arbitrarily large files (>1GB) using on-disk hash table. Constant memory. Use instead of qsv_dedup for large files.",
+    errorPrevention:
+      "Does not sort output (unlike dedup). Requires explicit output file argument. Use --dupes-output to capture removed rows.",
+  },
+  extsort: {
+    whenToUse:
+      "Sort arbitrarily large files (>1GB) using external merge sort. Use instead of qsv_sort for large files.",
+    errorPrevention:
+      "Sorts entire rows as text (no column-specific sorting). For column-specific sorting of large files, use qsv_sqlp.",
+    needsIndexHint: true,
+  },
+  partition: {
+    whenToUse:
+      "Split CSV into separate files by column value. One output file per unique value in the partition column.",
+    errorPrevention:
+      "High-cardinality columns create many files. Use qsv_stats --cardinality to check column cardinality first.",
+    hasCommonMistakes: true,
+  },
+  explode: {
+    whenToUse:
+      "Unnest multi-value cells into separate rows. Splits a column on a separator, creating one row per value.",
+  },
+  pseudo: {
+    whenToUse:
+      "Pseudonymize column values with incremental IDs. For de-identification or anonymization before sharing data.",
+  },
+  to: {
+    whenToUse:
+      "Export CSV to databases (PostgreSQL, SQLite) or spreadsheets (XLSX, ODS) or Data Package. Specify subcommand: postgres, sqlite, xlsx, ods, datapackage.",
+    errorPrevention:
+      "Requires appropriate database connection for postgres. For sqlite, creates/replaces table. Subcommand is required.",
+    hasCommonMistakes: true,
+  },
 };
 
 /**

@@ -1,6 +1,6 @@
 {
   "name": "qsv-fixlengths",
-  "version": "16.0.0",
+  "version": "15.0.1",
   "description": "Force a CSV to have same-length records by either padding or truncating them.",
   "category": "formatting",
   "command": {

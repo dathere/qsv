@@ -1,6 +1,6 @@
 {
   "name": "qsv-frequency",
-  "version": "16.0.0",
+  "version": "15.0.1",
   "description": "Build frequency distribution tables of each column. Uses multithreading to go faster if an index is present (Examples: CSV JSON TOON).",
   "category": "aggregation",
   "command": {

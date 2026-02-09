@@ -1,6 +1,6 @@
 {
   "name": "qsv-moarstats",
-  "version": "16.0.0",
+  "version": "15.0.1",
   "description": "Add dozens of additional statistics, including extended outlier, robust & bivariate statistics to an existing stats CSV file.",
   "category": "aggregation",
   "command": {

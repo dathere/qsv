@@ -43,7 +43,7 @@ see [.claude/skills/CHANGELOG.md](https://github.com/dathere/qsv/blob/master/.cl
 - deps: bump pyo3 from 0.27.2 to 0.28.0
 - deps: bump jsonschema from 0.40.0 to 0.41 (latest upstream with unreleased perf improvements)
 - deps: bump redis from 1.0.2 to 1.0.3
-- deps: bump zmij from 1.0.17 to 1.0.19
+- deps: bump zmij from 1.0.17 to 1.0.20
 - deps: bump zerocopy from 0.8.35 to 0.8.36
 - deps: bump polars from 0.52.0 at py-1.38.1 tag to 0.53
 - deps: bump reqwest from 0.13.1 to 0.13.2
@@ -55,6 +55,7 @@ see [.claude/skills/CHANGELOG.md](https://github.com/dathere/qsv/blob/master/.cl
 - deps: bump bytes from 1.11.0 to 1.11.1
 - deps: bump regex from 1.12.2 to 1.12.3
 - deps: bump flate2 from 1.1.8 to 1.1.9
+- deps: we now bundle Luau 0.708 from 0.706
 - deps: bump @modelcontextprotocol/sdk (MCP)
 - applied clippy::semicolon_if_nothing_returned suggestions
 - applied several GH Copilot review suggestions

@@ -58,34 +58,34 @@ The qsv MCP Server receives its largest update yet — see [MCP CHANGELOG](https
 - perf: Use foldhash HashMap/HashSet across codebase for faster hashing
   - Replaces std::collections with foldhash in 14 modules
   - foldhash is much faster than std::collections for non-crypto hashing
-- refactor: Remove dataset_stats from stats cache system
+- refactor: `stats` Remove dataset_stats from stats cache system
   - Simplified get_stats_records() API
   - Centralized rowcount handling in sample command
   - Adapted diff, pivotp, sample, and other commands to new API
+- refactor: `stats` Stats cache now regenerates on parse error (improved robustness)
+- refactor: `stats` Safe fallback on corrupted stats cache
 - refactor: `pivotp` use sparsity for suggestions and uniqueness_ratio for pivot heuristics
 - refactor: `sample` lazily compute row_count only for sampling methods that need it
-- refactor: Stats cache now regenerates on parse error (improved robustness)
-- refactor: Safe fallback on corrupted stats cache
-- deps: bump csv-nose from 0.7.0 to 0.8.0
-- deps: bump pyo3 from 0.27.2 to 0.28.0
-- deps: bump jsonschema from 0.40.0 to 0.41 (latest upstream with unreleased perf improvements)
-- deps: bump redis from 1.0.2 to 1.0.3
-- deps: bump zmij from 1.0.17 to 1.0.20
-- deps: bump zerocopy from 0.8.35 to 0.8.36
-- deps: bump polars from 0.52.0 at py-1.38.1 tag to 0.53
-- deps: bump reqwest from 0.13.1 to 0.13.2
 - deps: bump async-compression to 0.4.39
-- deps: bump calamine to 0.33
-- deps: bump zip from 6 to 7
-- deps: use latest csvlens upstream (PR merged)
-- deps: use latest geosuggest upstream
 - deps: bump bytes from 1.11.0 to 1.11.1
-- deps: bump regex from 1.12.2 to 1.12.3
+- deps: bump calamine to 0.33
+- deps: bump csv-nose from 0.7.0 to 0.8.0
+- deps: bump csvlens to latest upstream (PR merged)
+- deps: bump geosuggest to latest upstream
 - deps: bump flate2 from 1.1.8 to 1.1.9
+- deps: bump jsonschema from 0.40.0 to 0.41 (latest upstream with unreleased perf improvements)
+- deps: bump polars from 0.52.0 at py-1.38.1 tag to 0.53
+- deps: bump pyo3 from 0.27.2 to 0.28.0
+- deps: bump redis from 1.0.2 to 1.0.3
+- deps: bump regex from 1.12.2 to 1.12.3
+- deps: bump reqwest from 0.13.1 to 0.13.2
+- deps: bump zerocopy from 0.8.35 to 0.8.36
+- deps: bump zip from 6 to 7
+- deps: bump zmij from 1.0.17 to 1.0.20
 - deps: we now bundle Luau 0.708 from 0.706
 - deps: bump @modelcontextprotocol/sdk (MCP)
-- applied clippy::semicolon_if_nothing_returned suggestions
-- applied several GH Copilot review suggestions
+- applied several clippy lint suggestions
+- applied several GH Copilot and Claude review suggestions
 
 ### Fixed
 
@@ -95,11 +95,12 @@ The qsv MCP Server receives its largest update yet — see [MCP CHANGELOG](https
 - fix: `sample` handle missing min weight in stats cache
 - fix: `validate` adapt tests to jsonschema 0.40.2 error message format changes
 - fix: `joinp` switch pschema serialization to serde_json for compound type support
-- fix: adjust jsonl path usage caused by calamine 0.33 release
+- fix: `excel` adjust jsonl path usage caused by calamine 0.33 release
 - fix: `stats` return sentinel when sniff finds no date columns
 - fix: `config` — `QSV_NO_HEADERS` environment variable being ignored; split no_headers into explicit setter and CLI flag method
 
 ### Removed
+- removed `to parquet` subcommand in favor of dedicated `qsv_to_parquet` MCP tool and `sqlp` Parquet output support
 - removed `cargo install` instructions from README as qsv is rarely `cargo install`able as it uses patched forks on a regular basis and `cargo install` doesn't support git dependencies.
 
 **Full Changelog**: [15.0.1...16.0.0](https://github.com/dathere/qsv/compare/15.0.1...16.0.0)

@@ -6,32 +6,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { mkdtemp, rm, writeFile, readFile } from 'fs/promises';
+import { writeFile, readFile } from 'fs/promises';
 import { join } from 'path';
-import { tmpdir } from 'os';
 import { UpdateChecker, getUpdateConfigFromEnv } from '../src/update-checker.js';
 import { config } from '../src/config.js';
-
-/**
- * Create a temporary test directory
- */
-async function createTestDir(): Promise<string> {
-  return await mkdtemp(join(tmpdir(), 'qsv-update-test-'));
-}
-
-/**
- * Clean up test directory
- */
-async function cleanupTestDir(dir: string): Promise<void> {
-  try {
-    await rm(dir, { recursive: true, force: true });
-  } catch {
-    // Ignore cleanup errors
-  }
-}
-
-// Skip tests if qsv is not available
-const QSV_AVAILABLE = config.qsvValidation.valid;
+import { QSV_AVAILABLE, createTestDir, cleanupTestDir } from './test-helpers.js';
 
 test('UpdateChecker initializes with default config', () => {
   const checker = new UpdateChecker();

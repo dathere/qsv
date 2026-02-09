@@ -38,7 +38,6 @@ export {
 export {
   createPipelineToolDefinition,
   executePipeline,
-  pipelineToShellScript,
 } from "./mcp-pipeline.js";
 
 // Re-export for convenience

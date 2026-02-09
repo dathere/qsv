@@ -5,46 +5,14 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { writeFile, readFile, unlink, mkdir, rm, stat, access } from 'fs/promises';
+import { readFile, stat, access } from 'fs/promises';
 import { join } from 'path';
-import { tmpdir } from 'os';
 import { handleToolCall, handleToParquetCall } from '../src/mcp-tools.js';
+import { config } from '../src/config.js';
 import { SkillLoader } from '../src/loader.js';
 import { SkillExecutor } from '../src/executor.js';
 import { FilesystemResourceProvider } from '../src/mcp-filesystem.js';
-import { config } from '../src/config.js';
-
-// Skip tests if qsv is not available
-const QSV_AVAILABLE = config.qsvValidation.valid;
-
-/**
- * Create a temporary test directory
- */
-async function createTestDir(): Promise<string> {
-  const testDir = join(tmpdir(), `qsv-integration-test-${Date.now()}`);
-  await mkdir(testDir, { recursive: true });
-  return testDir;
-}
-
-/**
- * Create a test CSV file
- */
-async function createTestCSV(dir: string, filename: string, content: string): Promise<string> {
-  const filepath = join(dir, filename);
-  await writeFile(filepath, content, 'utf8');
-  return filepath;
-}
-
-/**
- * Clean up test directory
- */
-async function cleanupTestDir(dir: string): Promise<void> {
-  try {
-    await rm(dir, { recursive: true, force: true });
-  } catch (error) {
-    // Ignore cleanup errors
-  }
-}
+import { QSV_AVAILABLE, createTestDir, createTestCSV, cleanupTestDir } from './test-helpers.js';
 
 test('qsv_count returns row count', { skip: !QSV_AVAILABLE }, async () => {
   const testDir = await createTestDir();

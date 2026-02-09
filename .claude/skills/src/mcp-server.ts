@@ -20,7 +20,6 @@ import {
 import { SkillLoader } from "./loader.js";
 import { SkillExecutor } from "./executor.js";
 import { FilesystemResourceProvider } from "./mcp-filesystem.js";
-import type { McpToolResult } from "./types.js";
 import { config } from "./config.js";
 import {
   COMMON_COMMANDS,

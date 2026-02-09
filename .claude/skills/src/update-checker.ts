@@ -12,6 +12,8 @@ import { spawn } from "child_process";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { compareVersions } from "./utils.js";
+import { VERSION } from "./version.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -141,23 +143,10 @@ export class UpdateChecker {
   }
 
   /**
-   * Get MCP server version (from package.json)
+   * Get MCP server version (delegates to version.ts)
    */
   getMcpServerVersion(): string {
-    try {
-      const packageJsonPath = join(__dirname, "../package.json");
-      const fallbackPath = join(__dirname, "../../package.json");
-
-      const path = existsSync(packageJsonPath) ? packageJsonPath : fallbackPath;
-      const packageJson = JSON.parse(readFileSync(path, "utf-8"));
-      return packageJson.version || "unknown";
-    } catch (error) {
-      console.error(
-        "[UpdateChecker] Failed to read MCP server version:",
-        error,
-      );
-      return "unknown";
-    }
+    return VERSION;
   }
 
   /**
@@ -240,33 +229,6 @@ export class UpdateChecker {
   }
 
   /**
-   * Compare semantic versions (simple implementation)
-   * Handles only numeric versions like "1.2.3" (pre-release tags are ignored)
-   */
-  private compareVersions(v1: string, v2: string): number {
-    const parts1 = v1.split(".").map(Number);
-    const parts2 = v2.split(".").map(Number);
-
-    // Validate that all parts are valid numbers
-    if (parts1.some(isNaN) || parts2.some(isNaN)) {
-      console.warn(
-        `[UpdateChecker] Invalid version format: "${v1}" or "${v2}" - comparison may be incorrect`,
-      );
-      return 0; // Treat as equal if we can't compare
-    }
-
-    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-      const part1 = parts1[i] || 0;
-      const part2 = parts2[i] || 0;
-
-      if (part1 > part2) return 1;
-      if (part1 < part2) return -1;
-    }
-
-    return 0;
-  }
-
-  /**
    * Perform comprehensive update check
    */
   async checkForUpdates(signal?: AbortSignal): Promise<UpdateCheckResult> {
@@ -287,7 +249,7 @@ export class UpdateChecker {
       currentQsvVersion !== "unknown";
 
     if (skillsOutdated) {
-      const comparison = this.compareVersions(currentQsvVersion, skillsVersion);
+      const comparison = compareVersions(currentQsvVersion, skillsVersion);
       if (comparison > 0) {
         recommendations.push(
           `⚠️  qsv binary (${currentQsvVersion}) is newer than skills (${skillsVersion})`,
@@ -308,7 +270,7 @@ export class UpdateChecker {
       latestQsvVersion = await this.checkGitHubReleases(signal);
       if (
         latestQsvVersion &&
-        this.compareVersions(latestQsvVersion, currentQsvVersion) > 0
+        compareVersions(latestQsvVersion, currentQsvVersion) > 0
       ) {
         recommendations.push(
           `🆕 New qsv release available: ${latestQsvVersion} (you have ${currentQsvVersion})`,
@@ -329,7 +291,7 @@ export class UpdateChecker {
 
     return {
       qsvBinaryOutdated: latestQsvVersion
-        ? this.compareVersions(latestQsvVersion, currentQsvVersion) > 0
+        ? compareVersions(latestQsvVersion, currentQsvVersion) > 0
         : false,
       skillsOutdated,
       mcpServerOutdated: false, // MCP server updates handled via npm

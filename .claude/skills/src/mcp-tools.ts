@@ -2,10 +2,12 @@
  * MCP Tool Definitions and Handlers for QSV Commands
  */
 
-import { spawn, type ChildProcess } from "child_process";
-import { stat, access } from "fs/promises";
+import type { ChildProcess } from "child_process";
+import { randomUUID } from "crypto";
+import { stat, access, readFile, unlink, rename, copyFile, readdir } from "fs/promises";
 import { constants } from "fs";
-import { basename } from "path";
+import { basename, dirname, join } from "path";
+import { tmpdir } from "os";
 import { ConvertedFileManager } from "./converted-file-manager.js";
 import type {
   QsvSkill,
@@ -15,10 +17,22 @@ import type {
   McpToolProperty,
   FilesystemProviderExtended,
 } from "./types.js";
+import { runQsvSimple } from "./executor.js";
 import type { SkillExecutor } from "./executor.js";
 import type { SkillLoader } from "./loader.js";
 import { config, getDetectionDiagnostics } from "./config.js";
 import { formatBytes, findSimilarFiles } from "./utils.js";
+
+/**
+ * MCP tool result helpers to eliminate repetitive { content: [{ type: "text"... }] } boilerplate
+ */
+function errorResult(message: string) {
+  return { content: [{ type: "text" as const, text: message }], isError: true as const };
+}
+
+function successResult(text: string) {
+  return { content: [{ type: "text" as const, text }], isError: false as const };
+}
 
 /**
  * Auto-indexing threshold in MB
@@ -70,122 +84,163 @@ const ALWAYS_FILE_COMMANDS = new Set([
 const METADATA_COMMANDS = new Set(["count", "headers", "index", "sniff"]);
 
 /**
- * Guidance for when to use each command - helps Claude make smart decisions
+ * Consolidated guidance for each command.
+ * Combines when-to-use, common patterns, error prevention, complementary servers,
+ * and behavioral flags into a single lookup.
  */
-const WHEN_TO_USE_GUIDANCE: Record<string, string> = {
-  select:
-    'Choose columns. Syntax: "1,3,5" (specific), "1-10" (range), "!SSN" (exclude), "/<regex>/" (pattern), "_" (last).',
-  slice: "Select rows by position: first N, last N, skip N, range.",
-  search:
-    "Filter rows matching pattern/regex. Search applied to to selected fields. For complex conditions, use qsv_sqlp.",
-  stats:
-    "Quick numeric stats (mean, min/max, stddev). Creates cache for other commands. Run 2nd after index.",
-  moarstats:
-    "Comprehensive stats + bivariate stats + outlier details + data type inference. Slower but richer than stats.",
-  frequency:
-    "Count unique values. Best for low-cardinality categorical columns. Run qsv_stats --cardinality first to identify high-cardinality columns to exclude.",
-  join: "Join CSV files (<50MB). For large/complex joins, use qsv_joinp.",
-  joinp:
-    "Fast Polars-powered joins for large files (>50MB) or SQL-like joins (inner/left/right/outer/cross). Use stats cache (qsv_stats --cardinality) to determine optimal table order (smaller cardinality on right).",
-  dedup:
-    "Remove duplicates. Loads entire CSV. For large files (>1GB), use qsv_extdedup. Use qsv_stats --cardinality to check column cardinality - if key column has unique values only, dedup will be a no-op.",
-  sort: "Sort by columns. Loads entire file. For large files (>1GB), use qsv_extsort. Use stats cache to check if data is already sorted.",
-  count:
-    "Count rows. Very fast with index. Run qsv_index first for files >10MB.",
-  headers: "View/rename column names. Quick CSV structure discovery.",
-  sample:
-    "Random sampling. Fast, memory-efficient. Good for previews or test datasets.",
-  schema: "Infer data types, generate Polars Schema & JSON Schema.",
-  validate:
-    "Validate against JSON Schema. Check data quality, type correctness. Also use this without a JSON Schema to check if a CSV is well-formed.",
-  sqlp: "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns. Supports CSV/TSV/SSV, Parquet, JSONL, and Arrow input. For CSV files >10MB needing SQL queries, convert to Parquet first with qsv_to_parquet (same file stem, working dir). Then query the Parquet file - prefer DuckDB if available, otherwise use sqlp with SKIP_INPUT and read_parquet().",
-  apply:
-    "Transform columns (trim, upper, lower, squeeze, strip). Subcommands: operations, dynfmt, emptyreplace, calcconv. For custom logic, use qsv_luau.",
-  rename: "Rename columns. Supports bulk/regex.",
-  template:
-    "Generate formatted output from CSV using Mini Jinja templates. For reports, markdown, HTML.",
-  index:
-    "Create .idx index. Run FIRST for files >5MB queried multiple times. Enables instant counts, fast slicing.",
-  diff: "Compare CSV files (added/deleted/modified rows). Requires same schema.",
-  cat: "Concatenate CSV files. Subcommands: rows (stack vertically), rowskey (different schemas), columns (side-by-side). Specify via subcommand parameter.",
-  geocode:
-    "Geocode locations using Geonames/MaxMind. Subcommands: suggest, reverse, countryinfo, iplookup. Specify via subcommand parameter.",
-  pivotp:
-    "Polars-powered pivot tables. Use --agg for aggregation (sum/mean/count/first/last/min/max/smart). Use qsv_stats --cardinality to check pivot column cardinality.",
-  excel:
-    "Convert spreadsheets (Excel and OpenDocument) to CSV. Also can be used to get workbook metadata. Supports multi-sheet workbooks.",
-};
+interface CommandGuidance {
+  whenToUse?: string;
+  commonPattern?: string;
+  errorPrevention?: string;
+  complementaryServer?: string;
+  needsMemoryWarning?: boolean;
+  needsIndexHint?: boolean;
+  hasCommonMistakes?: boolean;
+}
 
-/**
- * Common usage patterns to help Claude compose effective workflows
- */
-const COMMON_PATTERNS: Record<string, string> = {
-  stats:
-    "Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, diff, sample.",
-  index: "Run 1st for files >5MB. Makes count instant, slice 100x faster.",
-  select:
-    "First step: select columns → filter → sort → output. Speeds up downstream ops.",
-  search: "Combine with select: search (filter rows) → select (pick columns).",
-  frequency:
-    "Stats → Frequency: Use qsv_stats --cardinality first to identify high-cardinality columns (IDs) to exclude from frequency analysis.",
-  sqlp: "For CSV >10MB: convert to Parquet once (qsv_to_parquet), then query Parquet with DuckDB (preferred) or sqlp using SKIP_INPUT + read_parquet('file.parquet'). Parquet is for sqlp/DuckDB only - use CSV/TSV/SSV for all other qsv commands.",
-  join: "Run qsv_index first on both files for speed.",
-  joinp:
-    "Stats → Join: Use qsv_stats --cardinality on both files, put lower-cardinality join column on right for efficiency.",
-  pivotp:
-    "Stats → Pivot: Use qsv_stats --cardinality to estimate pivot output width (pivot column cardinality × value columns) and keep estimated columns below ~1000 to avoid overly wide pivots.",
-  sample:
-    "Quick preview (100 rows) or test data (1000 rows). Faster than qsv_slice for random.",
-  validate: "Iterate: qsv_schema → validate → fix → validate until clean.",
-  dedup: "Often followed by stats: dedup → stats for distribution.",
-  sort: "Before joins or top-N: sort DESC → slice --end 10.",
-  cat: "Combine files: cat rows → headers from first file only. cat rowskey → handles different schemas. cat columns → side-by-side merge.",
-  moarstats:
-    "Index → Stats → Moarstats for richest analysis. With --bivariate: main stats to --output, bivariate stats to <FILESTEM>.stats.bivariate.csv (separate file next to input).",
-  geocode:
-    "Common: suggest for city lookup, reverse for lat/lon → city, iplookup for IP → location.",
-};
-
-/**
- * Error prevention hints for common mistakes
- */
-const ERROR_PREVENTION_HINTS: Record<string, string> = {
-  join: "Both files need join column(s). Column names case-sensitive. Check with qsv_headers.",
-  joinp: "Use --try-parsedates for date joins.",
-  dedup: "May OOM on files >1GB. Use qsv_extdedup for large files.",
-  sort: "May OOM on files >1GB. Use qsv_extsort for large files.",
-  frequency:
-    "High-cardinality columns (IDs, timestamps) can produce huge output. Use qsv_stats --cardinality to inspect column cardinality before running frequency.",
-  pivotp:
-    "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns.",
-  sqlp: "For CSV files >10MB, always convert to Parquet first (qsv_to_parquet with same file stem in working dir). Query the Parquet file: prefer DuckDB if available; otherwise use sqlp with SKIP_INPUT and read_parquet('file.parquet'). For complex query errors, try DuckDB. Parquet works ONLY with sqlp and DuckDB - use CSV/TSV/SSV for all other qsv commands.",
-  stats:
-    "Works with CSV/TSV/SSV files only. For SQL queries, use sqlp. Run qsv_index first for files >10MB.",
-  count: "Works with CSV/TSV/SSV files only. Very fast with index file (.idx).",
-  headers:
-    "Works with CSV/TSV/SSV files only. For Parquet schema, use sqlp with DESCRIBE.",
-  index:
-    "Creates .idx index for CSV/TSV/SSV files only. Parquet files don't need indexing.",
-  moarstats:
-    "Run stats first to create cache. Slower than stats but richer output. IMPORTANT: --bivariate writes results to a SEPARATE file: <FILESTEM>.stats.bivariate.csv (located next to the input file, NOT in stdout/output). Always read this file to get bivariate results. With --join-inputs, the file is <FILESTEM>.stats.bivariate.joined.csv.",
-  searchset: "Needs regex file. qsv_search easier for simple patterns.",
-  cat: "rows mode requires same column order. Use rowskey for different schemas.",
-  geocode:
-    "Needs Geonames index (auto-downloads on first use). iplookup needs MaxMind GeoLite2 DB.",
-};
-
-/**
- * Hints for complementary MCP servers that can enhance qsv workflows
- */
-const COMPLEMENTARY_SERVERS: Record<string, string> = {
-  geocode:
-    "🔗 CENSUS ENRICHMENT: After geocoding US locations, use Census MCP Server to add demographics. Tools: `resolve-geography-fips` (get FIPS codes), `fetch-aggregate-data` (population, income, education). US data only.",
-  stats:
-    "🔗 CENSUS VALIDATION: If stats show US geographic columns (city, state, county, FIPS), Census MCP Server can validate codes and fetch reference demographics for comparison.",
-  moarstats:
-    "🔗 CENSUS VALIDATION: If analyzing US geographic data, Census MCP Server can provide demographic baselines for statistical comparison.",
-  frequency:
-    "🔗 CENSUS INSIGHT: For US geographic columns, Census MCP Server can enrich frequency results with population/demographic data via `fetch-aggregate-data`.",
+const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
+  select: {
+    whenToUse: 'Choose columns. Syntax: "1,3,5" (specific), "1-10" (range), "!SSN" (exclude), "/<regex>/" (pattern), "_" (last).',
+    commonPattern: "First step: select columns → filter → sort → output. Speeds up downstream ops.",
+  },
+  slice: {
+    whenToUse: "Select rows by position: first N, last N, skip N, range.",
+  },
+  search: {
+    whenToUse: "Filter rows matching pattern/regex. Search applied to selected fields. For complex conditions, use qsv_sqlp.",
+    commonPattern: "Combine with select: search (filter rows) → select (pick columns).",
+    needsIndexHint: true,
+  },
+  stats: {
+    whenToUse: "Quick numeric stats (mean, min/max, stddev). Creates cache for other commands. Run 2nd after index.",
+    commonPattern: "Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, diff, sample.",
+    errorPrevention: "Works with CSV/TSV/SSV files only. For SQL queries, use sqlp. Run qsv_index first for files >10MB.",
+    complementaryServer: "🔗 CENSUS VALIDATION: If stats show US geographic columns (city, state, county, FIPS), Census MCP Server can validate codes and fetch reference demographics for comparison.",
+    needsIndexHint: true,
+  },
+  moarstats: {
+    whenToUse: "Comprehensive stats + bivariate stats + outlier details + data type inference. Slower but richer than stats.",
+    commonPattern: "Index → Stats → Moarstats for richest analysis. With --bivariate: main stats to --output, bivariate stats to <FILESTEM>.stats.bivariate.csv (separate file next to input).",
+    errorPrevention: "Run stats first to create cache. Slower than stats but richer output. IMPORTANT: --bivariate writes results to a SEPARATE file: <FILESTEM>.stats.bivariate.csv (located next to the input file, NOT in stdout/output). Always read this file to get bivariate results. With --join-inputs, the file is <FILESTEM>.stats.bivariate.joined.csv.",
+    complementaryServer: "🔗 CENSUS VALIDATION: If analyzing US geographic data, Census MCP Server can provide demographic baselines for statistical comparison.",
+    needsMemoryWarning: true,
+    hasCommonMistakes: true,
+  },
+  frequency: {
+    whenToUse: "Count unique values. Best for low-cardinality categorical columns. Run qsv_stats --cardinality first to identify high-cardinality columns to exclude.",
+    commonPattern: "Stats → Frequency: Use qsv_stats --cardinality first to identify high-cardinality columns (IDs) to exclude from frequency analysis.",
+    errorPrevention: "High-cardinality columns (IDs, timestamps) can produce huge output. Use qsv_stats --cardinality to inspect column cardinality before running frequency.",
+    complementaryServer: "🔗 CENSUS INSIGHT: For US geographic columns, Census MCP Server can enrich frequency results with population/demographic data via `fetch-aggregate-data`.",
+    needsMemoryWarning: true,
+    hasCommonMistakes: true,
+  },
+  join: {
+    whenToUse: "Join CSV files (<50MB). For large/complex joins, use qsv_joinp.",
+    commonPattern: "Run qsv_index first on both files for speed.",
+    errorPrevention: "Both files need join column(s). Column names case-sensitive. Check with qsv_headers.",
+    hasCommonMistakes: true,
+  },
+  joinp: {
+    whenToUse: "Fast Polars-powered joins for large files (>50MB) or SQL-like joins (inner/left/right/outer/cross). Use stats cache (qsv_stats --cardinality) to determine optimal table order (smaller cardinality on right).",
+    commonPattern: "Stats → Join: Use qsv_stats --cardinality on both files, put lower-cardinality join column on right for efficiency.",
+    errorPrevention: "Use --try-parsedates for date joins.",
+    hasCommonMistakes: true,
+  },
+  dedup: {
+    whenToUse: "Remove duplicates. Loads entire CSV. For large files (>1GB), use qsv_extdedup. Use qsv_stats --cardinality to check column cardinality - if key column has unique values only, dedup will be a no-op.",
+    commonPattern: "Often followed by stats: dedup → stats for distribution.",
+    errorPrevention: "May OOM on files >1GB. Use qsv_extdedup for large files.",
+    needsMemoryWarning: true,
+    hasCommonMistakes: true,
+  },
+  sort: {
+    whenToUse: "Sort by columns. Loads entire file. For large files (>1GB), use qsv_extsort. Use stats cache to check if data is already sorted.",
+    commonPattern: "Before joins or top-N: sort DESC → slice --end 10.",
+    errorPrevention: "May OOM on files >1GB. Use qsv_extsort for large files.",
+    needsMemoryWarning: true,
+    hasCommonMistakes: true,
+  },
+  count: {
+    whenToUse: "Count rows. Very fast with index. Run qsv_index first for files >10MB.",
+    errorPrevention: "Works with CSV/TSV/SSV files only. Very fast with index file (.idx).",
+  },
+  headers: {
+    whenToUse: "View/rename column names. Quick CSV structure discovery.",
+    errorPrevention: "Works with CSV/TSV/SSV files only. For Parquet schema, use sqlp with DESCRIBE.",
+  },
+  sample: {
+    whenToUse: "Random sampling. Fast, memory-efficient. Good for previews or test datasets.",
+    commonPattern: "Quick preview (100 rows) or test data (1000 rows). Faster than qsv_slice for random.",
+    needsIndexHint: true,
+  },
+  schema: {
+    whenToUse: "Infer data types, generate Polars Schema & JSON Schema.",
+    hasCommonMistakes: true,
+  },
+  validate: {
+    whenToUse: "Validate against JSON Schema. Check data quality, type correctness. Also use this without a JSON Schema to check if a CSV is well-formed.",
+    commonPattern: "Iterate: qsv_schema → validate → fix → validate until clean.",
+    needsIndexHint: true,
+  },
+  sqlp: {
+    whenToUse: "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns. Supports CSV/TSV/SSV, Parquet, JSONL, and Arrow input. For CSV files >10MB needing SQL queries, convert to Parquet first with qsv_to_parquet (same file stem, working dir). Then query the Parquet file - prefer DuckDB if available, otherwise use sqlp with SKIP_INPUT and read_parquet().",
+    commonPattern: "For CSV >10MB: convert to Parquet once (qsv_to_parquet), then query Parquet with DuckDB (preferred) or sqlp using SKIP_INPUT + read_parquet('file.parquet'). Parquet is for sqlp/DuckDB only - use CSV/TSV/SSV for all other qsv commands.",
+    errorPrevention: "For CSV files >10MB, always convert to Parquet first (qsv_to_parquet with same file stem in working dir). Query the Parquet file: prefer DuckDB if available; otherwise use sqlp with SKIP_INPUT and read_parquet('file.parquet'). For complex query errors, try DuckDB. Parquet works ONLY with sqlp and DuckDB - use CSV/TSV/SSV for all other qsv commands.",
+    hasCommonMistakes: true,
+  },
+  apply: {
+    whenToUse: "Transform columns (trim, upper, lower, squeeze, strip). Subcommands: operations, dynfmt, emptyreplace, calcconv. For custom logic, use qsv_luau.",
+    needsIndexHint: true,
+  },
+  rename: {
+    whenToUse: "Rename columns. Supports bulk/regex.",
+  },
+  template: {
+    whenToUse: "Generate formatted output from CSV using Mini Jinja templates. For reports, markdown, HTML.",
+    needsIndexHint: true,
+  },
+  index: {
+    whenToUse: "Create .idx index. Run FIRST for files >5MB queried multiple times. Enables instant counts, fast slicing.",
+    commonPattern: "Run 1st for files >5MB. Makes count instant, slice 100x faster.",
+    errorPrevention: "Creates .idx index for CSV/TSV/SSV files only. Parquet files don't need indexing.",
+  },
+  diff: {
+    whenToUse: "Compare CSV files (added/deleted/modified rows). Requires same schema.",
+  },
+  cat: {
+    whenToUse: "Concatenate CSV files. Subcommands: rows (stack vertically), rowskey (different schemas), columns (side-by-side). Specify via subcommand parameter.",
+    commonPattern: "Combine files: cat rows → headers from first file only. cat rowskey → handles different schemas. cat columns → side-by-side merge.",
+    errorPrevention: "rows mode requires same column order. Use rowskey for different schemas.",
+    hasCommonMistakes: true,
+  },
+  geocode: {
+    whenToUse: "Geocode locations using Geonames/MaxMind. Subcommands: suggest, reverse, countryinfo, iplookup. Specify via subcommand parameter.",
+    commonPattern: "Common: suggest for city lookup, reverse for lat/lon → city, iplookup for IP → location.",
+    errorPrevention: "Needs Geonames index (auto-downloads on first use). iplookup needs MaxMind GeoLite2 DB.",
+    complementaryServer: "🔗 CENSUS ENRICHMENT: After geocoding US locations, use Census MCP Server to add demographics. Tools: `resolve-geography-fips` (get FIPS codes), `fetch-aggregate-data` (population, income, education). US data only.",
+    needsIndexHint: true,
+  },
+  pivotp: {
+    whenToUse: "Polars-powered pivot tables. Use --agg for aggregation (sum/mean/count/first/last/min/max/smart). Use qsv_stats --cardinality to check pivot column cardinality.",
+    commonPattern: "Stats → Pivot: Use qsv_stats --cardinality to estimate pivot output width (pivot column cardinality × value columns) and keep estimated columns below ~1000 to avoid overly wide pivots.",
+    errorPrevention: "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns.",
+    hasCommonMistakes: true,
+  },
+  excel: {
+    whenToUse: "Convert spreadsheets (Excel and OpenDocument) to CSV. Also can be used to get workbook metadata. Supports multi-sheet workbooks.",
+  },
+  searchset: {
+    errorPrevention: "Needs regex file. qsv_search easier for simple patterns.",
+    needsIndexHint: true,
+    hasCommonMistakes: true,
+  },
+  // Commands with only behavioral flags (no guidance text)
+  datefmt: { needsIndexHint: true },
+  luau: { needsIndexHint: true },
+  replace: { needsIndexHint: true },
+  split: { needsIndexHint: true },
+  tojsonl: { needsIndexHint: true },
+  transpose: { needsIndexHint: true },
 };
 
 /**
@@ -201,9 +256,16 @@ const LARGE_FILE_THRESHOLD_BYTES = 10 * 1024 * 1024; // 10MB
 const MAX_MCP_RESPONSE_SIZE = 850 * 1024; // 850KB - safe for Claude Desktop (< 1MB limit)
 
 /**
- * Track active child processes for graceful shutdown
+ * Track active child processes for graceful shutdown (SIGTERM on exit).
  */
 const activeProcesses = new Set<ChildProcess>();
+
+/**
+ * Track in-flight operation count for concurrency limiting.
+ * Incremented/decremented in handleToolCall to cover the entire execution path
+ * (both runQsvSimple and SkillExecutor.runQsv).
+ */
+let activeOperationCount = 0;
 
 /**
  * Flag indicating shutdown is in progress
@@ -218,68 +280,22 @@ function getQsvBinaryPath(): string {
 }
 
 /**
- * Run a qsv command with timeout and process tracking
+ * Run a qsv command with timeout, process tracking, and shutdown awareness.
+ * Delegates to shared runQsvSimple for the actual spawning logic.
  */
 async function runQsvWithTimeout(
   qsvBin: string,
   args: string[],
   timeoutMs: number = config.operationTimeoutMs,
 ): Promise<void> {
-  // Reject new operations during shutdown
   if (isShuttingDown) {
     throw new Error("Server is shutting down, operation rejected");
   }
 
-  return new Promise((resolve, reject) => {
-    const proc = spawn(qsvBin, args, {
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-
-    // Track this process
-    activeProcesses.add(proc);
-
-    let stderr = "";
-    let timedOut = false;
-
-    // Cleanup function
-    const cleanup = () => {
-      clearTimeout(timer);
-      activeProcesses.delete(proc);
-    };
-
-    // Set up timeout
-    const timer = setTimeout(() => {
-      timedOut = true;
-      proc.kill("SIGTERM");
-      cleanup();
-      reject(
-        new Error(
-          `Operation timed out after ${timeoutMs}ms: ${qsvBin} ${args.join(" ")}`,
-        ),
-      );
-    }, timeoutMs);
-
-    proc.stderr?.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    proc.on("close", (code) => {
-      cleanup();
-      if (!timedOut) {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`Command failed with exit code ${code}: ${stderr}`));
-        }
-      }
-    });
-
-    proc.on("error", (err) => {
-      cleanup();
-      if (!timedOut) {
-        reject(err);
-      }
-    });
+  await runQsvSimple(qsvBin, args, {
+    timeoutMs,
+    onSpawn: (proc) => activeProcesses.add(proc),
+    onExit: (proc) => activeProcesses.delete(proc),
   });
 }
 
@@ -506,47 +522,6 @@ function enhanceParameterDescription(
   return enhanced;
 }
 
-/**
- * Commands that need specific guidance hints
- */
-const COMMANDS_NEEDING_MEMORY_WARNING = new Set([
-  "dedup",
-  "sort",
-  "frequency",
-  "moarstats",
-]);
-const COMMANDS_NEEDING_INDEX_HINT = new Set([
-  "apply",
-  "count",
-  "datefmt",
-  "frequency",
-  "geocode",
-  "luau",
-  "replace",
-  "search",
-  "searchset",
-  "slice",
-  "split",
-  "stats",
-  "sample",
-  "template",
-  "tojsonl",
-  "transpose",
-  "validate",
-]);
-const COMMANDS_WITH_COMMON_MISTAKES = new Set([
-  "cat",
-  "join",
-  "joinp",
-  "dedup",
-  "sort",
-  "sqlp",
-  "schema",
-  "searchset",
-  "moarstats",
-  "frequency",
-  "pivotp",
-]);
 
 /**
  * Enhance tool description with contextual guidance
@@ -557,14 +532,14 @@ const COMMANDS_WITH_COMMON_MISTAKES = new Set([
  */
 function enhanceDescription(skill: QsvSkill): string {
   const commandName = skill.command.subcommand;
+  const guidance = COMMAND_GUIDANCE[commandName];
 
   // Use concise description from README.md
   let description = skill.description;
 
   // Add when-to-use guidance (critical for tool selection)
-  const whenToUse = WHEN_TO_USE_GUIDANCE[commandName];
-  if (whenToUse) {
-    description += `\n\n💡 ${whenToUse}`;
+  if (guidance?.whenToUse) {
+    description += `\n\n💡 ${guidance.whenToUse}`;
   }
 
   // Add subcommand requirement for commands that need it
@@ -575,15 +550,14 @@ function enhanceDescription(skill: QsvSkill): string {
   }
 
   // Add common patterns (helps Claude compose workflows)
-  const patterns = COMMON_PATTERNS[commandName];
-  if (patterns) {
-    description += `\n\n📋 ${patterns}`;
+  if (guidance?.commonPattern) {
+    description += `\n\n📋 ${guidance.commonPattern}`;
   }
 
   // Add performance hints only for commands that benefit from indexing
   if (skill.hints) {
     // Only show memory warnings for memory-intensive commands
-    if (COMMANDS_NEEDING_MEMORY_WARNING.has(commandName)) {
+    if (guidance?.needsMemoryWarning) {
       if (skill.hints.memory === "full") {
         description += "\n\n⚠️  Loads entire CSV. Best <100MB.";
       } else if (skill.hints.memory === "proportional") {
@@ -592,18 +566,15 @@ function enhanceDescription(skill: QsvSkill): string {
     }
 
     // Only show index hints for commands that are index-accelerated
-    if (COMMANDS_NEEDING_INDEX_HINT.has(commandName) && skill.hints.indexed) {
+    if (guidance?.needsIndexHint && skill.hints.indexed) {
       description +=
         "\n\n🚀 Index-accelerated. Run qsv_index first on files >10MB.";
     }
   }
 
   // Add error prevention hints only for commands with common mistakes
-  if (COMMANDS_WITH_COMMON_MISTAKES.has(commandName)) {
-    const errorHint = ERROR_PREVENTION_HINTS[commandName];
-    if (errorHint) {
-      description += `\n\n⚠️  ${errorHint}`;
-    }
+  if (guidance?.hasCommonMistakes && guidance?.errorPrevention) {
+    description += `\n\n⚠️  ${guidance.errorPrevention}`;
   }
 
   // Add usage examples from skill JSON (if available)
@@ -623,9 +594,8 @@ function enhanceDescription(skill: QsvSkill): string {
   }
 
   // Add complementary server hints (Census MCP integration)
-  const censusHint = COMPLEMENTARY_SERVERS[commandName];
-  if (censusHint) {
-    description += `\n\n${censusHint}`;
+  if (guidance?.complementaryServer) {
+    description += `\n\n${guidance.complementaryServer}`;
   }
 
   return description;
@@ -654,7 +624,7 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
       }
 
       properties[arg.name] = {
-        type: mapArgumentType(arg.type),
+        type: mapSchemaType(arg.type),
         description: arg.description,
       };
 
@@ -681,7 +651,7 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
         };
       } else {
         properties[optName] = {
-          type: mapOptionType(opt.type),
+          type: mapSchemaType(opt.type),
           description: enhanceParameterDescription(optName, opt.description),
         };
         if (opt.default) {
@@ -717,9 +687,10 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
 }
 
 /**
- * Map QSV argument types to JSON Schema types
+ * Map QSV argument/option types to JSON Schema types
+ * (Arguments and options share the same mapping logic)
  */
-function mapArgumentType(
+function mapSchemaType(
   type: string,
 ): "string" | "number" | "boolean" | "object" | "array" {
   switch (type) {
@@ -734,18 +705,374 @@ function mapArgumentType(
 }
 
 /**
- * Map QSV option types to JSON Schema types
+ * Resolve input file path, handle format conversion (Excel/JSONL to CSV),
+ * and auto-index large files. Returns the resolved (possibly converted) input path.
  */
-function mapOptionType(
-  type: string,
-): "string" | "number" | "boolean" | "object" | "array" {
-  switch (type) {
-    case "number":
-      return "number";
-    case "string":
-    default:
-      return "string";
+async function resolveAndConvertInputFile(
+  inputFile: string,
+  filesystemProvider: FilesystemProviderExtended,
+): Promise<string> {
+  const originalInputFile = inputFile;
+  inputFile = await filesystemProvider.resolvePath(inputFile);
+  console.error(
+    `[MCP Tools] Resolved input file: ${originalInputFile} -> ${inputFile}`,
+  );
+
+  // Check if file needs conversion (Excel or JSONL to CSV)
+  if (
+    isFilesystemProviderExtended(filesystemProvider) &&
+    filesystemProvider.needsConversion(inputFile)
+  ) {
+    const conversionCmd = filesystemProvider.getConversionCommand(inputFile);
+    if (!conversionCmd) {
+      throw new Error(
+        `Unable to determine conversion command for: ${inputFile}`,
+      );
+    }
+    console.error(
+      `[MCP Tools] File requires conversion using qsv ${conversionCmd}`,
+    );
+
+    const qsvBin = getQsvBinaryPath();
+
+    // Generate unique converted file path with UUID to prevent collisions
+    // 16 hex chars (64 bits) has 50% collision probability after ~4 billion conversions
+    const uuid = randomUUID().replace(/-/g, "").substring(0, 16);
+    let convertedPath = `${inputFile}.converted.${uuid}.csv`;
+
+    // Validate the generated converted path for defense-in-depth
+    try {
+      convertedPath = await filesystemProvider.resolvePath(convertedPath);
+    } catch (error) {
+      throw new Error(
+        `Invalid converted file path: ${convertedPath} - ${error}`,
+      );
+    }
+
+    // Initialize converted file manager
+    const workingDir = filesystemProvider.getWorkingDirectory();
+    const convertedManager = new ConvertedFileManager(workingDir);
+
+    // Clean up orphaned entries and partial conversions first
+    await convertedManager.cleanupOrphanedEntries();
+
+    // Check if we can reuse an existing converted file
+    const baseName = basename(inputFile);
+    const pattern = `${baseName}.converted.`;
+    let validConverted: string | null = null;
+
+    try {
+      const dir = dirname(inputFile);
+      const files = await readdir(dir);
+
+      for (const file of files) {
+        if (file.startsWith(pattern) && file.endsWith(".csv")) {
+          const filePath = join(dir, file);
+          validConverted =
+            await convertedManager.getValidConvertedFile(
+              inputFile,
+              filePath,
+            );
+          if (validConverted) break;
+        }
+      }
+    } catch (error) {
+      console.error(
+        "[MCP Tools] Error searching for existing converted file:",
+        error,
+      );
+    }
+
+    if (validConverted) {
+      await convertedManager.touchConvertedFile(inputFile);
+      inputFile = validConverted;
+      console.error(
+        `[MCP Tools] Reusing existing conversion: ${validConverted}`,
+      );
+    } else {
+      await convertedManager.registerConversionStart(
+        inputFile,
+        convertedPath,
+      );
+
+      try {
+        const conversionArgs = buildConversionArgs(
+          conversionCmd,
+          inputFile,
+          convertedPath,
+        );
+        console.error(
+          `[MCP Tools] Running conversion: ${qsvBin} ${conversionArgs.join(" ")}`,
+        );
+
+        await runQsvWithTimeout(qsvBin, conversionArgs);
+
+        await convertedManager.registerConvertedFile(
+          inputFile,
+          convertedPath,
+        );
+        await convertedManager.registerConversionComplete(inputFile);
+        inputFile = convertedPath;
+        console.error(
+          `[MCP Tools] Conversion successful: ${convertedPath}`,
+        );
+
+        await autoIndexIfNeeded(convertedPath);
+      } catch (conversionError) {
+        try {
+          await unlink(convertedPath);
+          console.error(
+            `[MCP Tools] Cleaned up partial conversion file: ${convertedPath}`,
+          );
+        } catch {
+          // cleanupPartialConversions will handle it
+        }
+        convertedManager.trackConversionFailure();
+        throw conversionError;
+      }
+    }
   }
+
+  return inputFile;
+}
+
+/**
+ * Build enhanced file-not-found error message with file suggestions
+ */
+async function buildFileNotFoundError(
+  inputFile: string,
+  error: unknown,
+  filesystemProvider: FilesystemProviderExtended,
+): Promise<string> {
+  let errorMessage = `Error resolving file path: ${error instanceof Error ? error.message : String(error)}`;
+
+  const errorStr = error instanceof Error ? error.message : String(error);
+  if (
+    errorStr.includes("outside allowed") ||
+    errorStr.includes("not exist") ||
+    errorStr.includes("cannot access") ||
+    errorStr.includes("ENOENT")
+  ) {
+    try {
+      const { resources } = await filesystemProvider.listFiles(
+        undefined,
+        false,
+      );
+
+      if (resources.length > 0) {
+        const suggestions = findSimilarFiles(inputFile, resources, 3);
+
+        errorMessage += "\n\n";
+
+        if (
+          suggestions.length > 0 &&
+          suggestions[0].distance <= inputFile.length / 2
+        ) {
+          errorMessage += "Did you mean one of these?\n";
+          suggestions.forEach(({ name }) => {
+            errorMessage += `  - ${name}\n`;
+          });
+        } else {
+          errorMessage += `Available files in working directory (${filesystemProvider.getWorkingDirectory()}):\n`;
+          resources.slice(0, 5).forEach((file) => {
+            errorMessage += `  - ${file.name}\n`;
+          });
+
+          if (resources.length > 5) {
+            errorMessage += `  ... and ${resources.length - 5} more file${resources.length - 5 !== 1 ? "s" : ""}`;
+          }
+        }
+      }
+    } catch (listError) {
+      console.error(
+        `[MCP Tools] Failed to list files for suggestions:`,
+        listError,
+      );
+    }
+  }
+
+  return errorMessage;
+}
+
+/**
+ * Build args and options for skill execution from MCP tool params
+ */
+function buildSkillExecParams(
+  skill: QsvSkill,
+  params: Record<string, unknown>,
+  inputFile: string | undefined,
+  outputFile: string | undefined,
+  isHelpRequest: boolean,
+): { args: Record<string, unknown>; options: Record<string, unknown> } {
+  const args: Record<string, unknown> = {};
+  const options: Record<string, unknown> = {};
+
+  // Add input file as 'input' argument if the skill expects it
+  if (skill.command.args.some((a) => a.name === "input")) {
+    args.input = inputFile;
+    console.error(`[MCP Tools] Added input arg: ${inputFile}`);
+  }
+
+  for (const [key, value] of Object.entries(params)) {
+    if (
+      key === "input_file" ||
+      key === "output_file" ||
+      key === "help" ||
+      (key === "input" && args.input)
+    ) {
+      continue;
+    }
+
+    const isArg = skill.command.args.some((a) => a.name === key);
+    if (isArg) {
+      args[key] = value;
+    } else {
+      const optFlag = key.startsWith("-")
+        ? key
+        : `--${key.replace(/_/g, "-")}`;
+      options[optFlag] = value;
+    }
+  }
+
+  if (outputFile) {
+    options["--output"] = outputFile;
+  }
+
+  if (isHelpRequest) {
+    options["help"] = true;
+  }
+
+  return { args, options };
+}
+
+/**
+ * Format successful tool result, handling temp files and performance tips
+ */
+async function formatToolResult(
+  result: import("./types.js").SkillResult,
+  commandName: string,
+  inputFile: string | undefined,
+  outputFile: string | undefined,
+  autoCreatedTempFile: boolean,
+  params: Record<string, unknown>,
+) {
+  let responseText = "";
+
+  if (outputFile) {
+    if (autoCreatedTempFile) {
+      try {
+        const tempFileStats = await stat(outputFile);
+
+        if (tempFileStats.size > MAX_MCP_RESPONSE_SIZE) {
+          console.error(
+            `[MCP Tools] Output file (${formatBytes(tempFileStats.size)}) exceeds MCP response limit (${formatBytes(MAX_MCP_RESPONSE_SIZE)})`,
+          );
+
+          const timestamp = new Date()
+            .toISOString()
+            .replace(/[:.]/g, "-")
+            .replace("T", "_")
+            .split(".")[0];
+          const savedFileName = `qsv-${commandName}-${timestamp}.csv`;
+          const savedPath = join(config.workingDir, savedFileName);
+
+          try {
+            await rename(outputFile, savedPath);
+          } catch (renameErr: unknown) {
+            // Cross-device rename fails with EXDEV; fall back to copy + delete
+            if (renameErr instanceof Error && "code" in renameErr && (renameErr as NodeJS.ErrnoException).code === "EXDEV") {
+              await copyFile(outputFile, savedPath);
+              await unlink(outputFile);
+            } else {
+              throw renameErr;
+            }
+          }
+          console.error(`[MCP Tools] Saved large output to: ${savedPath}`);
+
+          responseText = `✅ Large output saved to file (too large to display in chat)\n\n`;
+          responseText += `File: ${savedFileName}\n`;
+          responseText += `Location: ${config.workingDir}\n`;
+          responseText += `Size: ${formatBytes(tempFileStats.size)}\n`;
+          responseText += `Duration: ${result.metadata.duration}ms\n\n`;
+          responseText += `The file is now available in your working directory and can be processed with additional qsv commands.`;
+        } else {
+          console.error(
+            `[MCP Tools] Output file (${formatBytes(tempFileStats.size)}) is small enough to return directly`,
+          );
+          const fileContents = await readFile(outputFile, "utf-8");
+
+          try {
+            await unlink(outputFile);
+            console.error(`[MCP Tools] Deleted temp file: ${outputFile}`);
+          } catch (unlinkError) {
+            console.error(
+              `[MCP Tools] Failed to delete temp file:`,
+              unlinkError,
+            );
+          }
+
+          responseText = fileContents;
+        }
+      } catch (readError) {
+        console.error(
+          `[MCP Tools] Failed to process temp file:`,
+          readError,
+        );
+        return errorResult(`Error processing output from temp file: ${readError instanceof Error ? readError.message : String(readError)}`);
+      }
+    } else {
+      responseText = `Successfully wrote output to: ${outputFile}\n\n`;
+      responseText += `Metadata:\n`;
+      responseText += `- Command: ${result.metadata.command}\n`;
+      responseText += `- Duration: ${result.metadata.duration}ms\n`;
+      if (result.metadata.rowsProcessed) {
+        responseText += `- Rows processed: ${result.metadata.rowsProcessed}\n`;
+      }
+    }
+  } else {
+    responseText = result.output;
+  }
+
+  // sqlp performance tip for large CSV files
+  if (commandName === "sqlp" && inputFile) {
+    try {
+      const filename = basename(inputFile).toLowerCase();
+      const isCsvLike =
+        filename.endsWith(".csv") ||
+        filename.endsWith(".tsv") ||
+        filename.endsWith(".tab") ||
+        filename.endsWith(".ssv");
+      if (isCsvLike) {
+        const fileStats = await stat(inputFile);
+        if (fileStats.size > LARGE_FILE_THRESHOLD_BYTES) {
+          const sizeMB = (fileStats.size / (1024 * 1024)).toFixed(1);
+          responseText =
+            `⚡ PERFORMANCE TIP: This CSV is ${sizeMB}MB. Convert to Parquet first with qsv_to_parquet for dramatically faster SQL queries. ` +
+            `Prefer DuckDB if available; otherwise use sqlp with input_file="SKIP_INPUT" and sql="SELECT ... FROM read_parquet('file.parquet')".\n\n` +
+            responseText;
+        }
+      }
+    } catch {
+      // Ignore stat errors (e.g. SKIP_INPUT)
+    }
+  }
+
+  // moarstats bivariate output notification (skip for help requests where inputFile is undefined)
+  if (commandName === "moarstats" && params.bivariate && inputFile) {
+    const inputDir = dirname(inputFile as string);
+    const inputStem = basename(inputFile as string).replace(/\.[^.]+$/, "");
+    const bivariateFileName = params.join_inputs
+      ? `${inputStem}.stats.bivariate.joined.csv`
+      : `${inputStem}.stats.bivariate.csv`;
+    const bivariatePath = join(inputDir, bivariateFileName);
+
+    responseText += `\n\n📊 Bivariate statistics were written to a SEPARATE file:\n`;
+    responseText += `File: ${bivariateFileName}\n`;
+    responseText += `Location: ${bivariatePath}\n`;
+    responseText += `Use qsv_command or read this file to view the bivariate correlation results.`;
+  }
+
+  return successResult(responseText);
 }
 
 /**
@@ -759,18 +1086,11 @@ export async function handleToolCall(
   filesystemProvider?: FilesystemProviderExtended,
 ) {
   // Check concurrent operation limit
-  if (activeProcesses.size >= config.maxConcurrentOperations) {
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Error: Maximum concurrent operations limit reached (${config.maxConcurrentOperations}). Please wait for current operations to complete.`,
-        },
-      ],
-      isError: true,
-    };
+  if (activeOperationCount >= config.maxConcurrentOperations) {
+    return errorResult(`Error: Maximum concurrent operations limit reached (${config.maxConcurrentOperations}). Please wait for current operations to complete.`);
   }
 
+  activeOperationCount++;
   try {
     // Extract command name from tool name (qsv_select -> select)
     const commandName = toolName.replace("qsv_", "");
@@ -780,216 +1100,32 @@ export async function handleToolCall(
     const skill = await loader.load(skillName);
 
     if (!skill) {
-      // Calculate remaining commands dynamically
       const totalCommands = loader.getStats().total;
       const remainingCommands = totalCommands - COMMON_COMMANDS.length;
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text:
-              `Error: Skill '${skillName}' not found.\n\n` +
-              `Please verify the command name is correct. ` +
-              `Available commands include: ${COMMON_COMMANDS.join(", ")}, and ${remainingCommands} others. ` +
-              `Use 'qsv_command' with the 'command' parameter for less common commands.`,
-          },
-        ],
-        isError: true,
-      };
+      return errorResult(
+        `Error: Skill '${skillName}' not found.\n\n` +
+        `Please verify the command name is correct. ` +
+        `Available commands include: ${COMMON_COMMANDS.join(", ")}, and ${remainingCommands} others. ` +
+        `Use 'qsv_command' with the 'command' parameter for less common commands.`,
+      );
     }
 
     // Extract input_file and output_file
     let inputFile = params.input_file as string | undefined;
     let outputFile = params.output_file as string | undefined;
-
-    // Check if this is a help request
     const isHelpRequest = params.help === true;
 
-    // Skip input_file requirement for help requests
     if (!inputFile && !isHelpRequest) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: "Error: input_file parameter is required (unless using help=true to view command documentation)",
-          },
-        ],
-        isError: true,
-      };
+      return errorResult("Error: input_file parameter is required (unless using help=true to view command documentation)");
     }
 
     // Resolve file paths using filesystem provider if available (skip for help requests)
     if (filesystemProvider && inputFile) {
       try {
-        const originalInputFile = inputFile;
-        inputFile = await filesystemProvider.resolvePath(inputFile);
-        console.error(
-          `[MCP Tools] Resolved input file: ${originalInputFile} -> ${inputFile}`,
-        );
+        inputFile = await resolveAndConvertInputFile(inputFile, filesystemProvider);
 
-        // Check if file needs conversion (Excel or JSONL to CSV)
-        if (isFilesystemProviderExtended(filesystemProvider)) {
-          const provider = filesystemProvider;
-
-          if (provider.needsConversion(inputFile)) {
-            const conversionCmd = provider.getConversionCommand(inputFile);
-            if (!conversionCmd) {
-              throw new Error(
-                `Unable to determine conversion command for: ${inputFile}`,
-              );
-            }
-            console.error(
-              `[MCP Tools] File requires conversion using qsv ${conversionCmd}`,
-            );
-
-            // Convert file using qsv excel or qsv jsonl
-            try {
-              const qsvBin = getQsvBinaryPath();
-
-              // Generate unique converted file path with UUID to prevent collisions
-              const { randomUUID } = await import("crypto");
-              // Use 16 hex chars (64 bits) for better collision resistance
-              // Remove hyphens to get pure hex digits (randomUUID() includes hyphens)
-              // 8 hex chars (32 bits) has 50% collision probability after ~65k conversions
-              // 16 hex chars (64 bits) has 50% collision probability after ~4 billion conversions
-              const uuid = randomUUID().replace(/-/g, "").substring(0, 16);
-              let convertedPath = `${inputFile}.converted.${uuid}.csv`;
-
-              // Validate the generated converted path for defense-in-depth
-              // Even though it's derived from already-validated inputFile, ensure it's safe
-              try {
-                convertedPath = await provider.resolvePath(convertedPath);
-              } catch (error) {
-                throw new Error(
-                  `Invalid converted file path: ${convertedPath} - ${error}`,
-                );
-              }
-
-              // Initialize converted file manager
-              const workingDir = provider.getWorkingDirectory();
-              const convertedManager = new ConvertedFileManager(workingDir);
-
-              // Clean up orphaned entries and partial conversions first
-              await convertedManager.cleanupOrphanedEntries();
-
-              // Check if we can reuse an existing converted file
-              // Note: This looks for any .converted.*.csv file for this source
-              const {
-                basename: getBasename,
-                dirname: getDirname,
-                join: joinPath,
-              } = await import("path");
-              const { readdir } = await import("fs/promises");
-
-              const baseName = getBasename(inputFile);
-              const pattern = `${baseName}.converted.`;
-              let validConverted: string | null = null;
-
-              // Search for existing converted files in the same directory as the input file
-              try {
-                const dir = getDirname(inputFile);
-                const files = await readdir(dir);
-
-                for (const file of files) {
-                  if (file.startsWith(pattern) && file.endsWith(".csv")) {
-                    const filePath = joinPath(dir, file);
-                    validConverted =
-                      await convertedManager.getValidConvertedFile(
-                        inputFile,
-                        filePath,
-                      );
-                    if (validConverted) break;
-                  }
-                }
-              } catch (error) {
-                // If readdir fails, just proceed with conversion
-                console.error(
-                  "[MCP Tools] Error searching for existing converted file:",
-                  error,
-                );
-              }
-
-              if (validConverted) {
-                // Reuse existing converted file and update timestamp
-                await convertedManager.touchConvertedFile(inputFile);
-                inputFile = validConverted;
-                console.error(
-                  `[MCP Tools] Reusing existing conversion: ${validConverted}`,
-                );
-              } else {
-                // Register conversion start for failure tracking
-                await convertedManager.registerConversionStart(
-                  inputFile,
-                  convertedPath,
-                );
-
-                try {
-                  // Build conversion args based on command type
-                  const conversionArgs = buildConversionArgs(
-                    conversionCmd,
-                    inputFile,
-                    convertedPath,
-                  );
-                  console.error(
-                    `[MCP Tools] Running conversion: ${qsvBin} ${conversionArgs.join(" ")}`,
-                  );
-
-                  await runQsvWithTimeout(qsvBin, conversionArgs);
-
-                  // Conversion succeeded - first register the converted file in the cache
-                  await convertedManager.registerConvertedFile(
-                    inputFile,
-                    convertedPath,
-                  );
-
-                  // Only mark conversion as complete after successful cache registration
-                  await convertedManager.registerConversionComplete(inputFile);
-                  // Use the converted CSV as input
-                  inputFile = convertedPath;
-                  console.error(
-                    `[MCP Tools] Conversion successful: ${convertedPath}`,
-                  );
-
-                  // Auto-index the converted CSV
-                  await autoIndexIfNeeded(convertedPath);
-                } catch (conversionError) {
-                  // Conversion failed - clean up partial file
-                  try {
-                    const { unlink } = await import("fs/promises");
-                    await unlink(convertedPath);
-                    console.error(
-                      `[MCP Tools] Cleaned up partial conversion file: ${convertedPath}`,
-                    );
-                  } catch {
-                    // Ignore cleanup errors - cleanupPartialConversions will handle it
-                  }
-
-                  // Track conversion failure
-                  convertedManager.trackConversionFailure();
-
-                  // Re-throw to outer catch block
-                  throw conversionError;
-                }
-              }
-            } catch (conversionError) {
-              console.error(`[MCP Tools] Conversion error:`, conversionError);
-              return {
-                content: [
-                  {
-                    type: "text" as const,
-                    text: `Error converting ${originalInputFile}: ${conversionError instanceof Error ? conversionError.message : String(conversionError)}`,
-                  },
-                ],
-                isError: true,
-              };
-            }
-          }
-        }
-
-        // Auto-index native CSV files if they're large enough and not indexed
-        // Note: Snappy-compressed files (.sz) cannot be indexed
-        // Skip for help requests
+        // Auto-index native CSV files (skip for help requests)
         if (!isHelpRequest) {
           await autoIndexIfNeeded(inputFile);
         }
@@ -1003,73 +1139,12 @@ export async function handleToolCall(
         }
       } catch (error) {
         console.error(`[MCP Tools] Error resolving file path:`, error);
-
-        // Build enhanced error message with file suggestions
-        let errorMessage = `Error resolving file path: ${error instanceof Error ? error.message : String(error)}`;
-
-        // Add file suggestions if this looks like a file-not-found error and we have filesystem provider
-        if (filesystemProvider && inputFile) {
-          const errorStr =
-            error instanceof Error ? error.message : String(error);
-          if (
-            errorStr.includes("outside allowed") ||
-            errorStr.includes("not exist") ||
-            errorStr.includes("cannot access") ||
-            errorStr.includes("ENOENT")
-          ) {
-            try {
-              // Get list of available files
-              const { resources } = await filesystemProvider.listFiles(
-                undefined,
-                false,
-              );
-
-              if (resources.length > 0) {
-                // Find similar files using fuzzy matching
-                const suggestions = findSimilarFiles(inputFile, resources, 3);
-
-                errorMessage += "\n\n";
-
-                // Show suggestions if we found close matches
-                if (
-                  suggestions.length > 0 &&
-                  suggestions[0].distance <= inputFile.length / 2
-                ) {
-                  errorMessage += "Did you mean one of these?\n";
-                  suggestions.forEach(({ name }) => {
-                    errorMessage += `  - ${name}\n`;
-                  });
-                } else {
-                  // Show available files if no close matches
-                  errorMessage += `Available files in working directory (${filesystemProvider.getWorkingDirectory()}):\n`;
-                  resources.slice(0, 5).forEach((file) => {
-                    errorMessage += `  - ${file.name}\n`;
-                  });
-
-                  if (resources.length > 5) {
-                    errorMessage += `  ... and ${resources.length - 5} more file${resources.length - 5 !== 1 ? "s" : ""}`;
-                  }
-                }
-              }
-            } catch (listError) {
-              // If listing files fails, just show the original error
-              console.error(
-                `[MCP Tools] Failed to list files for suggestions:`,
-                listError,
-              );
-            }
-          }
-        }
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: errorMessage,
-            },
-          ],
-          isError: true,
-        };
+        const errorMessage = await buildFileNotFoundError(
+          inputFile,
+          error,
+          filesystemProvider,
+        );
+        return errorResult(errorMessage);
       }
     }
 
@@ -1081,60 +1156,20 @@ export async function handleToolCall(
       inputFile &&
       (await shouldUseTempFile(commandName, inputFile))
     ) {
-      // Auto-create temp file
-      const { randomUUID } = await import("crypto");
-      const { tmpdir } = await import("os");
-      const { join } = await import("path");
-
       const tempFileName = `qsv-output-${randomUUID()}.csv`;
       outputFile = join(tmpdir(), tempFileName);
       autoCreatedTempFile = true;
-
       console.error(`[MCP Tools] Auto-created temp output file: ${outputFile}`);
     }
 
-    // Build args and options
-    const args: Record<string, unknown> = {};
-    const options: Record<string, unknown> = {};
-
-    // Add input file as 'input' argument if the skill expects it
-    if (skill.command.args.some((a) => a.name === "input")) {
-      args.input = inputFile;
-      console.error(`[MCP Tools] Added input arg: ${inputFile}`);
-    }
-
-    for (const [key, value] of Object.entries(params)) {
-      // Skip input_file, output_file, and help (already handled)
-      // Also skip 'input' if we already set it from input_file
-      if (
-        key === "input_file" ||
-        key === "output_file" ||
-        key === "help" ||
-        (key === "input" && args.input)
-      ) {
-        continue;
-      }
-
-      // Check if this is a positional argument
-      const isArg = skill.command.args.some((a) => a.name === key);
-      if (isArg) {
-        args[key] = value;
-      } else {
-        // It's an option - convert underscore to dash
-        const optFlag = `--${key.replace(/_/g, "-")}`;
-        options[optFlag] = value;
-      }
-    }
-
-    // Add output file option if provided
-    if (outputFile) {
-      options["--output"] = outputFile;
-    }
-
-    // Add help flag if requested
-    if (isHelpRequest) {
-      options["help"] = true;
-    }
+    // Build execution parameters
+    const { args, options } = buildSkillExecParams(
+      skill,
+      params,
+      inputFile,
+      outputFile,
+      isHelpRequest,
+    );
 
     console.error(
       `[MCP Tools] Executing skill with args:`,
@@ -1146,169 +1181,25 @@ export async function handleToolCall(
     );
 
     // Execute the skill
-    const result = await executor.execute(skill, {
-      args,
-      options,
-    });
+    const result = await executor.execute(skill, { args, options });
 
-    // Format result
+    // Format and return result
     if (result.success) {
-      let responseText = "";
-
-      if (outputFile) {
-        if (autoCreatedTempFile) {
-          // Check temp file size before deciding how to handle it
-          try {
-            const { stat, readFile, unlink, rename } =
-              await import("fs/promises");
-            const { join } = await import("path");
-
-            const tempFileStats = await stat(outputFile);
-
-            if (tempFileStats.size > MAX_MCP_RESPONSE_SIZE) {
-              // Output too large for MCP response - save to working directory instead
-              console.error(
-                `[MCP Tools] Output file (${formatBytes(tempFileStats.size)}) exceeds MCP response limit (${formatBytes(MAX_MCP_RESPONSE_SIZE)})`,
-              );
-
-              const timestamp = new Date()
-                .toISOString()
-                .replace(/[:.]/g, "-")
-                .replace("T", "_")
-                .split(".")[0];
-              const savedFileName = `qsv-${commandName}-${timestamp}.csv`;
-              const savedPath = join(config.workingDir, savedFileName);
-
-              // Move temp file to working directory
-              await rename(outputFile, savedPath);
-              console.error(`[MCP Tools] Saved large output to: ${savedPath}`);
-
-              responseText = `✅ Large output saved to file (too large to display in chat)\n\n`;
-              responseText += `File: ${savedFileName}\n`;
-              responseText += `Location: ${config.workingDir}\n`;
-              responseText += `Size: ${formatBytes(tempFileStats.size)}\n`;
-              responseText += `Duration: ${result.metadata.duration}ms\n\n`;
-              responseText += `The file is now available in your working directory and can be processed with additional qsv commands.`;
-            } else {
-              // Small enough - return contents directly
-              console.error(
-                `[MCP Tools] Output file (${formatBytes(tempFileStats.size)}) is small enough to return directly`,
-              );
-              const fileContents = await readFile(outputFile, "utf-8");
-
-              // Clean up temp file
-              try {
-                await unlink(outputFile);
-                console.error(`[MCP Tools] Deleted temp file: ${outputFile}`);
-              } catch (unlinkError) {
-                console.error(
-                  `[MCP Tools] Failed to delete temp file:`,
-                  unlinkError,
-                );
-              }
-
-              // Return the file contents
-              responseText = fileContents;
-            }
-          } catch (readError) {
-            console.error(
-              `[MCP Tools] Failed to process temp file:`,
-              readError,
-            );
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Error processing output from temp file: ${readError instanceof Error ? readError.message : String(readError)}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-        } else {
-          // User-specified output file - just report success
-          responseText = `Successfully wrote output to: ${outputFile}\n\n`;
-          responseText += `Metadata:\n`;
-          responseText += `- Command: ${result.metadata.command}\n`;
-          responseText += `- Duration: ${result.metadata.duration}ms\n`;
-          if (result.metadata.rowsProcessed) {
-            responseText += `- Rows processed: ${result.metadata.rowsProcessed}\n`;
-          }
-        }
-      } else {
-        // Return the CSV output from stdout
-        responseText = result.output;
-      }
-
-      // If sqlp is querying a CSV > 10MB, prepend a Parquet conversion hint
-      if (commandName === "sqlp" && inputFile) {
-        try {
-          const filename = basename(inputFile).toLowerCase();
-          const isCsvLike =
-            filename.endsWith(".csv") ||
-            filename.endsWith(".tsv") ||
-            filename.endsWith(".tab") ||
-            filename.endsWith(".ssv");
-          if (isCsvLike) {
-            const fileStats = await stat(inputFile);
-            if (fileStats.size > LARGE_FILE_THRESHOLD_BYTES) {
-              const sizeMB = (fileStats.size / (1024 * 1024)).toFixed(1);
-              responseText =
-                `⚡ PERFORMANCE TIP: This CSV is ${sizeMB}MB. Convert to Parquet first with qsv_to_parquet for dramatically faster SQL queries. ` +
-                `Prefer DuckDB if available; otherwise use sqlp with input_file="SKIP_INPUT" and sql="SELECT ... FROM read_parquet('file.parquet')".\n\n` +
-                responseText;
-            }
-          }
-        } catch {
-          // Ignore stat errors (e.g. SKIP_INPUT)
-        }
-      }
-
-      // If moarstats with --bivariate, inform about the separate bivariate output file
-      if (commandName === "moarstats" && params.bivariate) {
-        const { basename: getBase, dirname: getDir, join: joinPath } = await import("path");
-        const inputDir = getDir(inputFile as string);
-        const inputStem = getBase(inputFile as string).replace(/\.[^.]+$/, "");
-        const bivariateFileName = params.join_inputs
-          ? `${inputStem}.stats.bivariate.joined.csv`
-          : `${inputStem}.stats.bivariate.csv`;
-        const bivariatePath = joinPath(inputDir, bivariateFileName);
-
-        responseText += `\n\n📊 Bivariate statistics were written to a SEPARATE file:\n`;
-        responseText += `File: ${bivariateFileName}\n`;
-        responseText += `Location: ${bivariatePath}\n`;
-        responseText += `Use qsv_command or read this file to view the bivariate correlation results.`;
-      }
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: responseText,
-          },
-        ],
-      };
+      return await formatToolResult(
+        result,
+        commandName,
+        inputFile,
+        outputFile,
+        autoCreatedTempFile,
+        params,
+      );
     } else {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Error executing ${commandName}:\n${result.stderr}`,
-          },
-        ],
-        isError: true,
-      };
+      return errorResult(`Error executing ${commandName}:\n${result.stderr}`);
     }
   } catch (error) {
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
+    return errorResult(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    activeOperationCount--;
   }
 }
 
@@ -1325,15 +1216,7 @@ export async function handleGenericCommand(
     const commandName = params.command as string | undefined;
 
     if (!commandName) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: "Error: command parameter is required",
-          },
-        ],
-        isError: true,
-      };
+      return errorResult("Error: command parameter is required");
     }
 
     // Flatten nested args and options objects into the params
@@ -1378,15 +1261,7 @@ export async function handleGenericCommand(
       filesystemProvider,
     );
   } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
+    return errorResult(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -1603,12 +1478,12 @@ export async function handleConfigTool(
 export function initiateShutdown(): void {
   isShuttingDown = true;
   console.error(
-    `[MCP Tools] Shutdown initiated, ${activeProcesses.size} active processes`,
+    `[MCP Tools] Shutdown initiated, ${activeOperationCount} active operations, ${activeProcesses.size} tracked processes`,
   );
 }
 
 /**
- * Kill all active child processes
+ * Kill all active child processes for graceful shutdown.
  */
 export function killAllProcesses(): void {
   for (const proc of activeProcesses) {
@@ -1623,10 +1498,17 @@ export function killAllProcesses(): void {
 }
 
 /**
- * Get count of active processes
+ * Get count of active child processes tracked for shutdown
  */
 export function getActiveProcessCount(): number {
   return activeProcesses.size;
+}
+
+/**
+ * Get count of active operations (in-flight tool calls)
+ */
+export function getActiveOperationCount(): number {
+  return activeOperationCount;
 }
 
 /**
@@ -1849,7 +1731,7 @@ export async function handleSearchToolsCall(
     }
 
     // Get when-to-use guidance if available
-    const whenToUse = WHEN_TO_USE_GUIDANCE[skill.command.subcommand];
+    const whenToUse = COMMAND_GUIDANCE[skill.command.subcommand]?.whenToUse;
 
     resultText += `**${toolName}** [${skill.category}]\n`;
     resultText += `  ${shortDesc}\n`;
@@ -1923,15 +1805,7 @@ export async function handleToParquetCall(
   let outputFile = params.output_file as string | undefined;
 
   if (!inputFile) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: "Error: input_file parameter is required",
-        },
-      ],
-      isError: true,
-    };
+    return errorResult("Error: input_file parameter is required");
   }
 
   // Resolve input file path using filesystem provider if available
@@ -1943,15 +1817,7 @@ export async function handleToParquetCall(
         `[MCP Tools] Resolved input file: ${originalInputFile} -> ${inputFile}`,
       );
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error resolving input file path: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      };
+      return errorResult(`Error resolving input file path: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -1998,15 +1864,7 @@ export async function handleToParquetCall(
         `[MCP Tools] Resolved output file: ${originalOutputFile} -> ${resolvedOutputFile}`,
       );
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error resolving output file path: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      };
+      return errorResult(`Error resolving output file path: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -2108,32 +1966,18 @@ export async function handleToParquetCall(
     const statsStatus = needStats ? "generated" : "reused (up-to-date)";
     const schemaStatus = needSchema ? "generated" : "reused (up-to-date)";
 
-    return {
-      content: [
-        {
-          type: "text",
-          text:
-            `✅ Successfully converted CSV to Parquet with optimized schema\n\n` +
-            `Input: ${inputFile}\n` +
-            `Output: ${resolvedOutputFile}${fileSizeInfo}\n` +
-            `Schema: ${schemaFile}\n` +
-            `Duration: ${duration}ms\n\n` +
-            `Stats cache: ${statsStatus}\n` +
-            `Polars schema: ${schemaStatus}\n` +
-            `The Parquet file is now ready for fast SQL queries.\n` +
-            `Prefer DuckDB if available. Otherwise use: qsv_sqlp with input_file="SKIP_INPUT" and sql="SELECT ... FROM read_parquet('${resolvedOutputFile}')".`,
-        },
-      ],
-    };
+    return successResult(
+      `✅ Successfully converted CSV to Parquet with optimized schema\n\n` +
+      `Input: ${inputFile}\n` +
+      `Output: ${resolvedOutputFile}${fileSizeInfo}\n` +
+      `Schema: ${schemaFile}\n` +
+      `Duration: ${duration}ms\n\n` +
+      `Stats cache: ${statsStatus}\n` +
+      `Polars schema: ${schemaStatus}\n` +
+      `The Parquet file is now ready for fast SQL queries.\n` +
+      `Prefer DuckDB if available. Otherwise use: qsv_sqlp with input_file="SKIP_INPUT" and sql="SELECT ... FROM read_parquet('${resolvedOutputFile}')".`,
+    );
   } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error converting CSV to Parquet: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
+    return errorResult(`Error converting CSV to Parquet: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

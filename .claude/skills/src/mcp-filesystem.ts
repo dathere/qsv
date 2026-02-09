@@ -9,15 +9,13 @@ import { readdir, stat, readFile, realpath, access } from "fs/promises";
 import { realpathSync } from "fs";
 import { join, resolve, relative, basename, dirname, extname, isAbsolute } from "path";
 import { homedir } from "os";
-import { spawn } from "child_process";
 import type {
   McpResource,
-  McpResourceContent,
-  FileInfo,
   FileMetadata,
 } from "./types.js";
 import { formatBytes } from "./utils.js";
 import { config } from "./config.js";
+import { runQsvSimple } from "./executor.js";
 
 /**
  * Expand tilde (~) in paths to the user's home directory
@@ -175,6 +173,38 @@ export class FilesystemResourceProvider {
   }
 
   /**
+   * Check if a path is within allowed directories.
+   * In plugin mode, auto-adds the directory if not already allowed.
+   * Returns true if path is allowed (or was auto-added).
+   */
+  private isPathAllowed(targetPath: string, isDirectory = false): boolean {
+    const allowed = this.allowedDirs.some((allowedDir) => {
+      const rel = relative(allowedDir, targetPath);
+      if (rel === "") return true;
+      return (
+        !isAbsolute(rel) &&
+        !rel.startsWith("..") && !rel.startsWith("/") && !rel.startsWith("\\")
+      );
+    });
+
+    if (!allowed && this.pluginMode) {
+      // In plugin mode, auto-add the directory.
+      // If targetPath is itself a directory (from setWorkingDirectory), add it directly.
+      // If targetPath is a file (from resolvePath), add its containing directory.
+      const dirToAdd = isDirectory ? targetPath : dirname(targetPath);
+      if (!this.allowedDirs.includes(dirToAdd)) {
+        this.allowedDirs.push(dirToAdd);
+      }
+      console.error(
+        `[Plugin Mode] Auto-added directory to allowedDirs: ${dirToAdd}`,
+      );
+      return true;
+    }
+
+    return allowed;
+  }
+
+  /**
    * Set a new working directory
    * Only allows directories within existing allowed directories for security
    */
@@ -187,43 +217,17 @@ export class FilesystemResourceProvider {
       // Keep as-is if directory doesn't exist or inaccessible
     }
 
-    // Validate that new working directory is within allowed directories
-    const isAllowed = this.allowedDirs.some((allowedDir) => {
-      const rel = relative(allowedDir, newDir);
-      // Path is allowed if:
-      // 1. It's empty (same as allowed dir), OR
-      // 2. It's not an absolute path (no cross-drive escape on Windows) AND
-      // 3. It doesn't start with '..' (not a parent escape) AND
-      // 4. It doesn't start with a path separator (not an absolute escape)
-      if (rel === "") return true; // Same as allowed directory
-      // On Windows, path.relative() returns an absolute path for cross-drive paths
-      // e.g., relative("C:\\allowed", "D:\\malicious") returns "D:\\malicious"
-      // We must reject if rel is absolute (cross-drive escape on Windows)
-      return (
-        !isAbsolute(rel) &&
-        !rel.startsWith("..") && !rel.startsWith("/") && !rel.startsWith("\\")
+    if (!this.isPathAllowed(newDir, true)) {
+      throw new Error(
+        `Cannot set working directory to ${dir}: outside allowed directories`,
       );
-    });
+    }
 
-    if (!isAllowed) {
-      if (this.pluginMode) {
-        // In plugin mode (Cowork/Code), auto-add the directory to allowedDirs
-        // This is safe because the host environment provides filesystem isolation
-        if (!this.allowedDirs.includes(newDir)) {
-          this.allowedDirs.push(newDir);
-        }
-        // Also add the original (pre-realpath) resolved path to handle symlinks
-        const originalResolved = resolve(expanded);
-        if (originalResolved !== newDir && !this.allowedDirs.includes(originalResolved)) {
-          this.allowedDirs.push(originalResolved);
-        }
-        console.error(
-          `[Plugin Mode] Auto-added directory to allowedDirs: ${newDir}`,
-        );
-      } else {
-        throw new Error(
-          `Cannot set working directory to ${dir}: outside allowed directories`,
-        );
+    // In plugin mode, also add the original (pre-realpath) resolved path to handle symlinks
+    if (this.pluginMode) {
+      const originalResolved = resolve(expanded);
+      if (originalResolved !== newDir && !this.allowedDirs.includes(originalResolved)) {
+        this.allowedDirs.push(originalResolved);
       }
     }
 
@@ -262,36 +266,8 @@ export class FilesystemResourceProvider {
     }
 
     // Security check: ensure canonical path is within allowed directories
-    const isAllowed = this.allowedDirs.some((allowedDir) => {
-      const rel = relative(allowedDir, canonical);
-      // Path is allowed if:
-      // 1. It's empty (file is directly in allowed dir), OR
-      // 2. It doesn't start with '..' (not a parent escape) AND
-      // 3. It's not an absolute path (cross-drive escape on Windows) AND
-      // 4. It doesn't start with path separator (not absolute escape)
-      // Note: On Windows, path.relative() returns an absolute path for cross-drive paths
-      // e.g., relative("C:\\allowed", "D:\\malicious") returns "D:\\malicious"
-      if (rel === "") return true; // File directly in allowed directory
-      return (
-        !isAbsolute(rel) &&
-        !rel.startsWith("..") && !rel.startsWith("/") && !rel.startsWith("\\")
-      );
-    });
-
-    if (!isAllowed) {
-      if (this.pluginMode) {
-        // In plugin mode (Cowork/Code), auto-add the canonical directory to allowedDirs
-        // This is safe because the host environment provides filesystem isolation
-        const canonicalDir = dirname(canonical);
-        if (!this.allowedDirs.includes(canonicalDir)) {
-          this.allowedDirs.push(canonicalDir);
-          console.error(
-            `[Plugin Mode] Auto-added directory to allowedDirs: ${canonicalDir}`,
-          );
-        }
-      } else {
-        throw new Error(`Access denied: ${path} is outside allowed directories`);
-      }
+    if (!this.isPathAllowed(canonical)) {
+      throw new Error(`Access denied: ${path} is outside allowed directories`);
     }
 
     return canonical;
@@ -354,8 +330,8 @@ export class FilesystemResourceProvider {
    * These files should be excluded from the MCP resource list
    */
   private isTemporaryFile(filename: string): boolean {
-    // Converted files: *.converted.{uuid}.csv
-    if (/\.converted\.[a-f0-9-]{36}\.csv$/i.test(filename)) {
+    // Converted files: *.converted.{hex16}.csv (16-char hex from randomUUID without hyphens)
+    if (/\.converted\.[a-f0-9]{16}\.csv$/i.test(filename)) {
       return true;
     }
     // Temporary output files: qsv-output-{uuid}.csv
@@ -539,75 +515,9 @@ export class FilesystemResourceProvider {
    * unresponsive. The process is killed if the timeout is exceeded.
    */
   private async runQsvCommand(args: string[]): Promise<string> {
-    const METADATA_COMMAND_TIMEOUT_MS = 60000; // 60 seconds for metadata operations
-
-    return new Promise((resolve, reject) => {
-      const abortController = new AbortController();
-      const { signal } = abortController;
-
-      const proc = spawn(this.qsvBinPath, args, {
-        stdio: ["ignore", "pipe", "pipe"],
-        signal,
-      });
-
-      let stdout = "";
-      let stderr = "";
-      let timeoutId: NodeJS.Timeout | null = null;
-      let completed = false;
-
-      // Set timeout to kill process if it takes too long
-      timeoutId = setTimeout(() => {
-        if (!completed) {
-          completed = true;
-          abortController.abort();
-          reject(
-            new Error(
-              `qsv ${args[0]} timed out after ${METADATA_COMMAND_TIMEOUT_MS}ms`,
-            ),
-          );
-        }
-      }, METADATA_COMMAND_TIMEOUT_MS);
-
-      proc.stdout.on("data", (chunk) => {
-        stdout += chunk.toString();
-      });
-
-      proc.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
-      });
-
-      proc.on("close", (exitCode) => {
-        if (completed) return;
-        completed = true;
-        if (timeoutId) clearTimeout(timeoutId);
-
-        if (exitCode === 0) {
-          resolve(stdout);
-        } else {
-          reject(
-            new Error(
-              `qsv ${args[0]} failed with exit code ${exitCode}: ${stderr}`,
-            ),
-          );
-        }
-      });
-
-      proc.on("error", (err) => {
-        if (completed) return;
-        completed = true;
-        if (timeoutId) clearTimeout(timeoutId);
-
-        // Check if error is due to abort (timeout)
-        if ((err as NodeJS.ErrnoException).code === "ABORT_ERR") {
-          reject(
-            new Error(
-              `qsv ${args[0]} timed out after ${METADATA_COMMAND_TIMEOUT_MS}ms`,
-            ),
-          );
-        } else {
-          reject(err);
-        }
-      });
+    return runQsvSimple(this.qsvBinPath, args, {
+      timeoutMs: 60_000, // 60 seconds for metadata operations
+      captureStdout: true,
     });
   }
 
@@ -671,121 +581,6 @@ export class FilesystemResourceProvider {
     } catch (error) {
       console.error(`Error scanning directory ${dir}:`, error);
       // Don't throw - just skip inaccessible directories
-    }
-  }
-
-  /**
-   * Get file info and preview as MCP resource content
-   */
-  async getFileContent(uri: string): Promise<McpResourceContent | null> {
-    try {
-      // Parse file:/// URI and decode URL encoding
-      // Handle both file:///path (Unix) and file:///C:/path (Windows)
-      let filePath = uri.replace(/^file:\/\//, "");
-      // Remove leading slash only on Windows when followed by drive letter
-      if (process.platform === "win32" && /^\/[a-zA-Z]:/.test(filePath)) {
-        filePath = filePath.substring(1);
-      }
-      filePath = decodeURIComponent(filePath);
-      const resolved = await this.resolvePath(filePath);
-
-      // Get file stats
-      const stats = await stat(resolved);
-
-      if (!stats.isFile()) {
-        throw new Error(`Not a file: ${filePath}`);
-      }
-
-      const ext =
-        this.getFileExtension(basename(resolved)) ||
-        extname(resolved).toLowerCase();
-      const mimeType = this.getMimeType(ext);
-      const conversionCmd = this.getConversionCommand(resolved);
-
-      // Generate preview if file is small enough
-      let preview = "";
-      if (stats.size <= this.maxPreviewSize) {
-        const content = await readFile(resolved, "utf-8");
-        const allLines = content.split("\n");
-        const lines = allLines.slice(0, this.previewLines);
-        preview = lines.join("\n");
-
-        if (allLines.length > this.previewLines) {
-          preview += `\n... (${allLines.length - this.previewLines} more lines)`;
-        }
-      } else {
-        preview = `File too large for preview (${formatBytes(stats.size)})`;
-      }
-
-      const relativePath = relative(this.workingDir, resolved);
-      const absolutePath = resolved;
-
-      const info: FileInfo = {
-        file: {
-          name: basename(resolved),
-          path: relativePath,
-          absolutePath,
-          size: stats.size,
-          sizeFormatted: formatBytes(stats.size),
-          modified: stats.mtime.toISOString(),
-          extension: ext,
-        },
-        preview,
-        usage: {
-          description: "Use this file path in qsv commands",
-          examples: [
-            `qsv_stats with input_file: "${relativePath}"`,
-            `qsv_headers with input_file: "${absolutePath}"`,
-            `qsv_frequency with input_file: "${relativePath}" and column name`,
-          ],
-        },
-      };
-
-      // Add conversion note if needed
-      if (conversionCmd) {
-        info.conversion = {
-          required: true,
-          command: conversionCmd,
-          note: `This ${ext} file will be automatically converted to CSV using qsv ${conversionCmd} before processing`,
-        };
-      }
-
-      // Get CSV metadata for native CSV formats (not Excel/JSONL that need conversion)
-      if (!conversionCmd) {
-        try {
-          const metadata = await this.getFileMetadata(resolved);
-          if (
-            metadata &&
-            metadata.rowCount !== null &&
-            metadata.columnCount !== null
-          ) {
-            info.metadata = {
-              rowCount: metadata.rowCount,
-              columnCount: metadata.columnCount,
-              columnNames: metadata.columnNames,
-              hasStatsCache: metadata.hasStatsCache,
-            };
-            console.error(
-              `[Filesystem] Added metadata to resource: ${metadata.rowCount} rows, ${metadata.columnCount} columns`,
-            );
-          }
-        } catch (error) {
-          // Metadata is optional - don't fail if we can't get it
-          console.error(
-            `[Filesystem] Failed to get metadata (non-fatal):`,
-            error,
-          );
-        }
-      }
-
-      return {
-        uri,
-        mimeType,
-        text: JSON.stringify(info, null, 2),
-      };
-    } catch (error) {
-      console.error(`Error reading file ${uri}:`, error);
-      return null;
     }
   }
 

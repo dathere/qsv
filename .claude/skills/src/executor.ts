@@ -3,8 +3,8 @@
  * Executes qsv skills by spawning qsv processes
  */
 
-import { spawn } from "child_process";
-import type { QsvSkill, SkillParams, SkillResult } from "./types.js";
+import { spawn, type ChildProcess } from "child_process";
+import type { QsvSkill, Option, SkillParams, SkillResult } from "./types.js";
 import { config } from "./config.js";
 
 /**
@@ -59,6 +59,99 @@ function getSubcommand(skill: QsvSkill, params: SkillParams): string | null {
   // The enum is for documentation/UI purposes only
 
   return subcommand;
+}
+
+/**
+ * Normalize an option key by stripping leading dashes
+ */
+function normalizeOptionKey(key: string): string {
+  if (key.startsWith("--")) return key.substring(2);
+  if (key.startsWith("-")) return key.substring(1);
+  return key;
+}
+
+/**
+ * Find an option definition in a skill's options list
+ */
+function findOptionDef(skill: QsvSkill, key: string): Option | undefined {
+  const normalizedKey = normalizeOptionKey(key);
+  return skill.command.options.find(
+    (o) =>
+      o.flag === key ||
+      o.short === key ||
+      o.flag === `--${normalizedKey}` ||
+      o.short === `-${normalizedKey}` ||
+      o.flag.replace("--", "") === normalizedKey,
+  );
+}
+
+/**
+ * Lightweight qsv process runner for simple operations (indexing, conversion, metadata).
+ * Returns stdout on success, throws on failure or timeout.
+ */
+export async function runQsvSimple(
+  binPath: string,
+  args: string[],
+  options?: {
+    timeoutMs?: number;
+    cwd?: string;
+    captureStdout?: boolean;
+    /** Called with the spawned ChildProcess for external tracking (e.g., shutdown kill). */
+    onSpawn?: (proc: ChildProcess) => void;
+    /** Called when the process exits for external cleanup. */
+    onExit?: (proc: ChildProcess) => void;
+  },
+): Promise<string> {
+  const timeoutMs = options?.timeoutMs ?? 60_000;
+  const captureStdout = options?.captureStdout ?? false;
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn(binPath, args, {
+      stdio: ["ignore", captureStdout ? "pipe" : "ignore", "pipe"],
+      cwd: options?.cwd,
+    });
+
+    options?.onSpawn?.(proc);
+
+    let stdout = "";
+    let stderr = "";
+    let finalized = false;
+
+    // Single finalization path: clears timer, calls onExit exactly once,
+    // then resolves or rejects the promise.
+    const finalize = (err?: Error, code?: number | null) => {
+      if (finalized) return;
+      finalized = true;
+      clearTimeout(timer);
+      options?.onExit?.(proc);
+
+      if (err) {
+        reject(err);
+      } else if (code === 0) {
+        resolve(stdout);
+      } else {
+        reject(new Error(`Command failed with exit code ${code}: ${stderr}`));
+      }
+    };
+
+    const timer = setTimeout(() => {
+      proc.kill("SIGTERM");
+      finalize(new Error(`qsv ${args[0]} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    if (captureStdout) {
+      proc.stdout!.on("data", (chunk) => { stdout += chunk.toString(); });
+    }
+    proc.stderr!.on("data", (chunk) => { stderr += chunk.toString(); });
+
+    proc.on("close", (code) => {
+      finalize(undefined, code);
+    });
+
+    proc.on("error", (err) => {
+      finalize(err);
+    });
+  });
 }
 
 export class SkillExecutor {
@@ -184,12 +277,7 @@ export class SkillExecutor {
     // Add options/flags first
     if (params.options) {
       for (const [key, value] of Object.entries(params.options)) {
-        // Handle keys that may already include the -- prefix
-        const normalizedKey = key.startsWith("--")
-          ? key.substring(2)
-          : key.startsWith("-")
-            ? key.substring(1)
-            : key;
+        const normalizedKey = normalizeOptionKey(key);
 
         // --help is universally available for all qsv commands, even if not in skill definition
         // Note: mcp-tools.ts normalizes all help requests to options['help'] = true
@@ -199,15 +287,7 @@ export class SkillExecutor {
         }
 
         // Find option definition
-        const option = skill.command.options.find(
-          (o) =>
-            o.flag === key ||
-            o.short === key ||
-            o.flag === `--${normalizedKey}` ||
-            o.short === `-${normalizedKey}` ||
-            o.flag.replace("--", "") === normalizedKey,
-        );
-
+        const option = findOptionDef(skill, key);
         if (!option) continue;
 
         if (option.type === "flag") {
@@ -277,6 +357,13 @@ export class SkillExecutor {
       let killTimer: ReturnType<typeof setTimeout> | null = null;
       const MAX_STDOUT_SIZE = 50 * 1024 * 1024; // 50MB limit to prevent memory issues
 
+      // Cleanup helper to clear both timers and mark process as exited
+      const clearTimers = () => {
+        processExited = true;
+        if (timer) { clearTimeout(timer); timer = null; }
+        if (killTimer) { clearTimeout(killTimer); killTimer = null; }
+      };
+
       // Set up timeout handler
       timer = setTimeout(() => {
         timedOut = true;
@@ -340,18 +427,7 @@ export class SkillExecutor {
       });
 
       proc.on("close", (exitCode, signal) => {
-        // Mark process as exited (used by SIGKILL escalation logic)
-        processExited = true;
-
-        // Clear timers
-        if (timer) {
-          clearTimeout(timer);
-          timer = null;
-        }
-        if (killTimer) {
-          clearTimeout(killTimer);
-          killTimer = null;
-        }
+        clearTimers();
 
         console.error(`[Executor] Process exited with code: ${exitCode}, signal: ${signal}`);
         console.error(`[Executor] stdout length: ${stdout.length}`);
@@ -399,18 +475,7 @@ export class SkillExecutor {
       });
 
       proc.on("error", (err) => {
-        // Mark process as exited
-        processExited = true;
-
-        // Clear timers
-        if (timer) {
-          clearTimeout(timer);
-          timer = null;
-        }
-        if (killTimer) {
-          clearTimeout(killTimer);
-          killTimer = null;
-        }
+        clearTimers();
 
         // If we already handled timeout, log the error but don't reject
         // (the timeout handler already resolved the promise)
@@ -456,21 +521,7 @@ export class SkillExecutor {
     // Validate option types
     if (params.options) {
       for (const [key, value] of Object.entries(params.options)) {
-        // Handle keys that may already include the -- prefix
-        const normalizedKey = key.startsWith("--")
-          ? key.substring(2)
-          : key.startsWith("-")
-            ? key.substring(1)
-            : key;
-
-        const option = skill.command.options.find(
-          (o) =>
-            o.flag === key ||
-            o.short === key ||
-            o.flag === `--${normalizedKey}` ||
-            o.short === `-${normalizedKey}` ||
-            o.flag.replace("--", "") === normalizedKey,
-        );
+        const option = findOptionDef(skill, key);
 
         if (!option) {
           console.warn(`Unknown option: ${key}`);

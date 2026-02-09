@@ -47,6 +47,12 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 - **Reduced MCP Skills** - Excluded `edit`, `flatten`, `pro`, `snappy` (60 → 55 skills)
 - **Removed client-detector.ts** - Deferred loading now consistent for ALL clients
 - **Removed `QSV_MCP_TIMEOUT_MS`** - Consolidated to `QSV_MCP_OPERATION_TIMEOUT_MS`
+- **Comprehensive Code Deduplication** - Refactored codebase removing 625 lines across 19 files
+  - Consolidated `runQsv` implementations into shared `runQsvSimple` with `onSpawn`/`onExit` callbacks
+  - Merged 7 guidance tables into single `COMMAND_GUIDANCE` map
+  - Decomposed `handleToolCall` into 4 focused functions
+  - Extracted `errorResult`/`successResult` helpers and shared test helpers (`tests/test-helpers.ts`)
+  - Replaced `Record<string, any>` with `unknown` for type safety
 
 ### Version 15.3.0
 - **BM25 Search Integration** - Upgraded `qsv_search_tools` from substring matching to BM25 relevance ranking
@@ -158,17 +164,23 @@ npm run mcpb:package
 │   ├── utils.ts           # Utility functions
 │   ├── version.ts         # Version management
 │   ├── loader.ts          # Dynamic skill loading and searching
+│   ├── bm25-search.ts     # BM25 search index for tool discovery
 │   ├── pipeline.ts        # Fluent pipeline API for chaining qsv skills
+│   ├── wink-bm25-text-search.d.ts  # Type declarations for wink-bm25
+│   ├── wink-nlp-utils.d.ts         # Type declarations for wink-nlp-utils
 │   └── index.ts           # Module exports
 ├── dist/                   # Compiled JavaScript output
 ├── tests/                  # Test files (TypeScript)
 │   ├── config.test.ts
 │   ├── converted-file-manager.test.ts
 │   ├── executor.test.ts
+│   ├── executor-timeout.test.ts
 │   ├── mcp-filesystem.test.ts
 │   ├── mcp-pipeline.test.ts
 │   ├── mcp-tools.test.ts
+│   ├── pipeline-integration.test.ts
 │   ├── qsv-integration.test.ts
+│   ├── test-helpers.ts     # Shared test utilities (createTestDir, createTestCSV, QSV_AVAILABLE)
 │   ├── tool-filtering.test.ts
 │   ├── update-checker.test.ts
 │   ├── utils.test.ts
@@ -220,8 +232,9 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 
 **Key Constants**:
 - `COMMON_COMMANDS`: 11 frequently-used commands (select, moarstats, search, frequency, headers, count, slice, sqlp, joinp, cat, geocode)
-- `ALWAYS_FILE_COMMANDS`: 23 commands that always output to files
-- `METADATA_COMMANDS`: 3 commands returning metadata (count, headers, sniff)
+- `ALWAYS_FILE_COMMANDS`: 33 commands that always output to files
+- `METADATA_COMMANDS`: 4 commands returning metadata (count, headers, index, sniff)
+- `COMMAND_GUIDANCE`: `Record<string, CommandGuidance>` — Unified per-command guidance map consolidating when-to-use, common patterns, error prevention, complementary servers, and memory/index/mistake warnings into a single structure
 - `AUTO_INDEX_THRESHOLD`: 10MB - files larger than this are auto-indexed
 
 **Tool Structure with Guidance**:
@@ -256,12 +269,22 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - **Stats cache auto-generation**: Forces `--stats-jsonl` for stats command
 - Timeout management and error parsing
 
+**Key Exports**:
+- `runQsvSimple(binPath, args, options?)` - Lightweight shared executor with `onSpawn`/`onExit` callbacks for process tracking (used by update-checker and pipeline)
+- `SkillExecutor` class - Full-featured skill executor with validation, stats cache, and subcommand support
+
 **Key Features**:
 - Validates parameters before execution (unless `--help` requested)
 - Builds shell-safe command arguments
 - Extracts row counts from stderr for metadata
 - Returns structured results with exit codes and timing
 - Graceful process termination on timeout (exit code 124)
+
+#### `utils.ts` - Shared Utility Functions
+- `compareVersions(v1, v2)` - Semantic version comparison, strips pre-release/build metadata
+- `formatBytes(bytes)` - Human-readable byte formatting
+- `levenshteinDistance(str1, str2)` - Fuzzy string matching for file suggestions
+- `findSimilarFiles(target, files, max)` - Find similar filenames sorted by edit distance
 
 #### `update-checker.ts` - Version Management
 - Detects qsv binary version at runtime
@@ -273,7 +296,8 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 **Key Features**:
 - Quick check (local only, no network)
 - Full check (includes GitHub API call)
-- Semantic version comparison
+- `getMcpServerVersion()` imports `VERSION` constant from `version.ts` (not package.json)
+- `compareVersions()` shared from `utils.ts`
 - Extension mode support (skips MCP server version checks)
 
 #### `converted-file-manager.ts` - File Lifecycle Management
@@ -281,7 +305,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - File locking to prevent race conditions
 - Change detection via mtime, size, inode, and optional hash
 - Cache corruption recovery with validation
-- UUID-based temp file names for security
+- UUID-derived temp file names (16-char random hex) for security
 - Secure permissions (0o600)
 - **Windows EPERM retry logic**: Exponential backoff for file locking errors
 
@@ -347,12 +371,12 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - Supports dynamic skill discovery at runtime
 
 **Key Methods**:
-- `loadAll()`: Load all skills from JSON files
+- `loadAll()`: Load all skills from JSON files (uses `Promise.all` for parallel I/O)
 - `load(skillName)`: Load a specific skill by name
 - `search(query)`: Search skills by name, description, or category
 - `getByCategory(category)`: Get skills filtered by category
 - `getCategories()`: Get all available categories
-- `getStats()`: Get statistics (total skills, examples, options, args)
+- `getStats()`: Get statistics via single-pass accumulation (total skills, examples, options, args)
 
 **Skill Categories** (10 categories):
 - `selection` - Column selection and reordering
@@ -448,7 +472,7 @@ When qsv adds a new command or you need to expose an existing one:
 
 3. **Implement handler function**:
    ```typescript
-   async function handleYourCommand(args: any): Promise<ToolResult> {
+   async function handleYourCommand(args: Record<string, unknown>): Promise<ToolResult> {
      validateFileExists(args.input_file);
 
      const qsvArgs = buildQsvArgs("yourcommand", args);
@@ -524,6 +548,7 @@ The 📊 emoji marks stats-related guidance in tool descriptions.
 - Integration tests should use real qsv binary
 - CI runs on Node.js 20, 22, and 24 across macOS, Windows, Linux
 - Cross-platform test runner (`scripts/run-tests.js`) handles glob expansion
+- Common test utilities extracted to `tests/test-helpers.ts` (createTestDir, cleanupTestDir, createTestCSV, QSV_AVAILABLE)
 
 **Test Structure**:
 ```typescript
@@ -900,7 +925,7 @@ async function executeQsv(args: string[]): Promise<{
 ```typescript
 function buildQsvArgs(
   command: string,
-  args: Record<string, any>
+  args: Record<string, unknown>
 ): string[] {
   const qsvArgs = [command];
 
@@ -922,7 +947,7 @@ function buildQsvArgs(
 ### Validating Tool Arguments
 
 ```typescript
-function validateSelectArgs(args: any): QsvSelectArgs {
+function validateSelectArgs(args: Record<string, unknown>): QsvSelectArgs {
   // Skip validation for help requests
   if (args.help) {
     return args as QsvSelectArgs;
@@ -1107,7 +1132,7 @@ The qsv MCP server is also packaged as a **Claude Plugin** for seamless integrat
 ---
 
 **Document Version**: 2.0
-**Last Updated**: 2026-02-06
+**Last Updated**: 2026-02-08
 **Target qsv Version**: 16.x
 **Node.js Version**: >=18.0.0
 **MCP SDK Version**: ^1.25.2

@@ -6,10 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [16.0.0] - 2026-02-08
+# [16.0.0] - 2026-02-08 🤖 **_"The AI-Native Release"_** 🤖
 
+This release makes qsv deeply AI-native — from smarter date detection that flows through to Polars schemas, to a MCP Plugin layer that lets AI agents wield qsv as a first-class data tool.
 
-see [.claude/skills/CHANGELOG.md](https://github.com/dathere/qsv/blob/master/.claude/skills/CHANGELOG.md) for qsv MCP Server changes
+Claude Desktop, Code, and Cowork users can now use qsv's powerful data-wrangling capabilities directly within their AI workflows, with intelligent guidance and seamless integration. Google Gemini is now also supported thanks to @kulnor.
+
+---
+
+## 🌟 Major Features
+
+### Smarter Date/DateTime Detection
+
+qsv can now automatically detect date and datetime columns and carry that knowledge through the entire pipeline:
+
+- **`stats --dates-whitelist sniff`** is now the default — qsv sniffs the first 1000 rows to identify date/datetime field candidates for further guaranted date/datetime type inferencing
+- **`schema`** auto-detects Date/DateTime columns when generating Polars schemas (`.pschema.json`)
+- **DateTime type support** in Polars schema parsing — temporal types are preserved through `sqlp`, `joinp`, and Parquet conversion
+
+### Hardened Stats Cache
+
+The stats cache system that accelerates `frequency`, `schema`, `tojsonl`, `sqlp`, `joinp`, `pivotp`, `diff`, and `sample` is now more robust:
+
+- **Simplified API**: Removed `dataset_stats` from `get_stats_records()`, streamlining all downstream consumers
+- **Safe fallback**: Corrupted or unparseable cache files are gracefully handled instead of erroring out
+- **Auto-regeneration**: Stats cache regenerates on parse error rather than failing
+
+### Enhanced MCP Server (16.0.0)
+
+The qsv MCP Server receives its largest update yet — see [MCP CHANGELOG](https://github.com/dathere/qsv/blob/master/.claude/skills/CHANGELOG.md) for full details.
+
+---
 
 ### Breaking Changes
 

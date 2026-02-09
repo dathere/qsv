@@ -9,6 +9,7 @@ import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { execSync, execFileSync } from "child_process";
 import { statSync } from "fs";
+import { compareVersions } from "./utils.js";
 
 /**
  * Timeout for qsv binary validation commands in milliseconds (5 seconds)
@@ -23,75 +24,35 @@ export function expandTemplateVars(value: string): string {
   if (!value) return value;
 
   const home = homedir();
-
-  // Get special directories (currently same for all platforms)
-  const desktop = join(home, "Desktop");
-  const documents = join(home, "Documents");
-  const downloads = join(home, "Downloads");
   const temp = tmpdir();
+  const vars: Record<string, string> = {
+    HOME: home,
+    USERPROFILE: home,
+    DESKTOP: join(home, "Desktop"),
+    DOCUMENTS: join(home, "Documents"),
+    DOWNLOADS: join(home, "Downloads"),
+    TEMP: temp,
+    TMPDIR: temp,
+    PWD: process.cwd(),
+  };
 
-  // Replace template variables
-  return value
-    .replace(/\$\{HOME\}/g, home)
-    .replace(/\$\{USERPROFILE\}/g, home)
-    .replace(/\$\{DESKTOP\}/g, desktop)
-    .replace(/\$\{DOCUMENTS\}/g, documents)
-    .replace(/\$\{DOWNLOADS\}/g, downloads)
-    .replace(/\$\{TEMP\}/g, temp)
-    .replace(/\$\{TMPDIR\}/g, temp)
-    .replace(/\$\{PWD\}/g, process.cwd());
+  return value.replace(/\$\{(\w+)\}/g, (match, key: string) => vars[key] ?? match);
 }
 
 /**
- * Parse integer from environment variable with validation
+ * Parse numeric value from environment variable with validation
+ * Supports both integer and float parsing via the parser parameter
  */
-function parseIntEnv(
+function parseNumericEnv(
   envVar: string,
   defaultValue: number,
-  min?: number,
-  max?: number,
+  parser: (s: string) => number,
+  opts?: { min?: number; max?: number },
 ): number {
   const value = process.env[envVar];
   if (!value) return defaultValue;
 
-  const parsed = parseInt(value, 10);
-  if (isNaN(parsed)) {
-    console.error(
-      `[Config] Invalid value for ${envVar}: ${value}, using default: ${defaultValue}`,
-    );
-    return defaultValue;
-  }
-
-  if (min !== undefined && parsed < min) {
-    console.error(
-      `[Config] Value for ${envVar} (${parsed}) is below minimum (${min}), using default: ${defaultValue}`,
-    );
-    return defaultValue;
-  }
-
-  if (max !== undefined && parsed > max) {
-    console.error(
-      `[Config] Value for ${envVar} (${parsed}) exceeds maximum (${max}), using default: ${defaultValue}`,
-    );
-    return defaultValue;
-  }
-
-  return parsed;
-}
-
-/**
- * Parse float from environment variable with validation
- */
-function parseFloatEnv(
-  envVar: string,
-  defaultValue: number,
-  min?: number,
-  max?: number,
-): number {
-  const value = process.env[envVar];
-  if (!value) return defaultValue;
-
-  const parsed = parseFloat(value);
+  const parsed = parser(value);
   if (isNaN(parsed) || !Number.isFinite(parsed)) {
     console.error(
       `[Config] Invalid value for ${envVar}: ${value}, using default: ${defaultValue}`,
@@ -99,21 +60,31 @@ function parseFloatEnv(
     return defaultValue;
   }
 
-  if (min !== undefined && parsed < min) {
+  if (opts?.min !== undefined && parsed < opts.min) {
     console.error(
-      `[Config] Value for ${envVar} (${parsed}) is below minimum (${min}), using default: ${defaultValue}`,
+      `[Config] Value for ${envVar} (${parsed}) is below minimum (${opts.min}), using default: ${defaultValue}`,
     );
     return defaultValue;
   }
 
-  if (max !== undefined && parsed > max) {
+  if (opts?.max !== undefined && parsed > opts.max) {
     console.error(
-      `[Config] Value for ${envVar} (${parsed}) exceeds maximum (${max}), using default: ${defaultValue}`,
+      `[Config] Value for ${envVar} (${parsed}) exceeds maximum (${opts.max}), using default: ${defaultValue}`,
     );
     return defaultValue;
   }
 
   return parsed;
+}
+
+/** Parse integer from environment variable with validation */
+function parseIntEnv(envVar: string, defaultValue: number, min?: number, max?: number): number {
+  return parseNumericEnv(envVar, defaultValue, (s) => parseInt(s, 10), { min, max });
+}
+
+/** Parse float from environment variable with validation */
+function parseFloatEnv(envVar: string, defaultValue: number, min?: number, max?: number): number {
+  return parseNumericEnv(envVar, defaultValue, parseFloat, { min, max });
 }
 
 /**
@@ -445,22 +416,6 @@ export function parseQsvCommandList(
   return { commands, count: reportedCount || commands.length };
 }
 
-/**
- * Compare two semantic version strings
- * Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
- */
-function compareVersions(v1: string, v2: string): number {
-  const parts1 = v1.split(".").map(Number);
-  const parts2 = v2.split(".").map(Number);
-
-  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-    const part1 = parts1[i] || 0;
-    const part2 = parts2[i] || 0;
-    if (part1 < part2) return -1;
-    if (part1 > part2) return 1;
-  }
-  return 0;
-}
 
 /**
  * Validate qsv binary at given path

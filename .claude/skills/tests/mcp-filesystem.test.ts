@@ -119,9 +119,9 @@ test('listFiles excludes converted files with UUID pattern', async () => {
     // Create a normal CSV file
     await writeFile(join(tempDir, 'normal.csv'), 'col1,col2\nval1,val2\n');
 
-    // Create a converted file (UUID pattern from ConvertedFileManager)
+    // Create a converted file (16-char hex pattern from ConvertedFileManager)
     await writeFile(
-      join(tempDir, 'data.xlsx.converted.06488439-4c06-4abc-999e-9e6af19b1234.csv'),
+      join(tempDir, 'data.xlsx.converted.06488439a4c0b123.csv'),
       'col1,col2\nval1,val2\n'
     );
 

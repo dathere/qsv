@@ -6,17 +6,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { mkdtemp, writeFile, rm, stat, readFile } from 'fs/promises';
+import { writeFile, rm, stat, readFile } from 'fs/promises';
 import { join } from 'path';
-import { tmpdir } from 'os';
 import { ConvertedFileManager } from '../src/converted-file-manager.js';
-
-/**
- * Create a temporary test directory
- */
-async function createTestDir(): Promise<string> {
-  return await mkdtemp(join(tmpdir(), 'qsv-cfm-test-'));
-}
+import { createTestDir, cleanupTestDir } from './test-helpers.js';
 
 /**
  * Create a test file with specified size
@@ -26,17 +19,6 @@ async function createTestFile(dir: string, filename: string, sizeBytes: number):
   const content = 'x'.repeat(sizeBytes);
   await writeFile(filepath, content, 'utf8');
   return filepath;
-}
-
-/**
- * Clean up test directory
- */
-async function cleanupTestDir(dir: string): Promise<void> {
-  try {
-    await rm(dir, { recursive: true, force: true });
-  } catch {
-    // Ignore cleanup errors
-  }
 }
 
 test('ConvertedFileManager initializes with default settings', async () => {

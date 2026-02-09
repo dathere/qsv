@@ -66,17 +66,22 @@ export class SkillLoader {
 
   /**
    * Internal implementation of loadAll (called once, guarded by loadingPromise)
+   * Uses parallel I/O for faster loading of all skill files
    */
   private async doLoadAll(): Promise<Map<string, QsvSkill>> {
     const files = await readdir(this.skillsDir);
+    const jsonFiles = files.filter((f) => f.endsWith(".json"));
 
-    for (const file of files) {
-      if (!file.endsWith(".json")) continue;
+    // Load all skill files in parallel
+    const loadResults = await Promise.all(
+      jsonFiles.map(async (file) => {
+        const skillPath = join(this.skillsDir, file);
+        const content = await readFile(skillPath, "utf-8");
+        return JSON.parse(content) as QsvSkill;
+      }),
+    );
 
-      const skillPath = join(this.skillsDir, file);
-      const content = await readFile(skillPath, "utf-8");
-      const skill: QsvSkill = JSON.parse(content);
-
+    for (const skill of loadResults) {
       this.skills.set(skill.name, skill);
     }
 
@@ -229,32 +234,28 @@ export class SkillLoader {
   }
 
   /**
-   * Get skill statistics
+   * Get skill statistics (single-pass O(N) computation)
    */
   getStats() {
     const skills = this.getAll();
+    const byCategory: Record<string, number> = {};
+    let totalExamples = 0;
+    let totalOptions = 0;
+    let totalArgs = 0;
+
+    for (const skill of skills) {
+      byCategory[skill.category] = (byCategory[skill.category] || 0) + 1;
+      totalExamples += skill.examples?.length || 0;
+      totalOptions += skill.command.options?.length || 0;
+      totalArgs += skill.command.args?.length || 0;
+    }
 
     return {
       total: skills.length,
-      byCategory: this.getCategories().reduce(
-        (acc, cat) => {
-          acc[cat] = this.getByCategory(cat).length;
-          return acc;
-        },
-        {} as Record<string, number>,
-      ),
-      totalExamples: skills.reduce(
-        (sum, s) => sum + (s.examples?.length || 0),
-        0,
-      ),
-      totalOptions: skills.reduce(
-        (sum, s) => sum + (s.command.options?.length || 0),
-        0,
-      ),
-      totalArgs: skills.reduce(
-        (sum, s) => sum + (s.command.args?.length || 0),
-        0,
-      ),
+      byCategory,
+      totalExamples,
+      totalOptions,
+      totalArgs,
     };
   }
 }

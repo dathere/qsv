@@ -9,9 +9,7 @@ import { spawn } from 'node:child_process';
 import { SkillExecutor } from '../src/executor.js';
 import type { QsvSkill } from '../src/types.js';
 import { config } from '../src/config.js';
-
-// Skip integration tests if qsv is not available
-const QSV_AVAILABLE = config.qsvValidation.valid;
+import { QSV_AVAILABLE } from './test-helpers.js';
 
 /**
  * A skill definition that can be used for timeout testing.

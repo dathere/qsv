@@ -33,7 +33,7 @@ export class QsvPipeline {
   /**
    * Select columns
    */
-  select(selection: string, options?: Record<string, any>): this {
+  select(selection: string, options?: Record<string, unknown>): this {
     return this.add("qsv-select", {
       args: { selection },
       options,
@@ -43,7 +43,7 @@ export class QsvPipeline {
   /**
    * Remove duplicate rows
    */
-  dedup(options?: Record<string, any>): this {
+  dedup(options?: Record<string, unknown>): this {
     return this.add("qsv-dedup", {
       args: {},
       options,
@@ -53,7 +53,7 @@ export class QsvPipeline {
   /**
    * Compute statistics
    */
-  stats(options?: Record<string, any>): this {
+  stats(options?: Record<string, unknown>): this {
     return this.add("qsv-stats", {
       args: {},
       options,
@@ -63,7 +63,7 @@ export class QsvPipeline {
   /**
    * Compute extended statistics
    */
-  moarstats(options?: Record<string, any>): this {
+  moarstats(options?: Record<string, unknown>): this {
     return this.add("qsv-moarstats", {
       args: {},
       options,
@@ -73,7 +73,7 @@ export class QsvPipeline {
   /**
    * Sort by column
    */
-  sortBy(column: string, options?: Record<string, any>): this {
+  sortBy(column: string, options?: Record<string, unknown>): this {
     return this.add("qsv-sort", {
       args: {},
       options: { ...options, select: column },
@@ -86,7 +86,7 @@ export class QsvPipeline {
   search(
     pattern: string,
     column?: string,
-    options?: Record<string, any>,
+    options?: Record<string, unknown>,
   ): this {
     return this.add("qsv-search", {
       args: { regex: pattern },
@@ -100,7 +100,7 @@ export class QsvPipeline {
   filter(
     pattern: string,
     column?: string,
-    options?: Record<string, any>,
+    options?: Record<string, unknown>,
   ): this {
     return this.search(pattern, column, options);
   }
@@ -108,7 +108,7 @@ export class QsvPipeline {
   /**
    * Frequency distribution
    */
-  frequency(options?: Record<string, any>): this {
+  frequency(options?: Record<string, unknown>): this {
     return this.add("qsv-frequency", {
       args: {},
       options,
@@ -118,7 +118,7 @@ export class QsvPipeline {
   /**
    * Join with another CSV
    */
-  join(columns: string, file: string, options?: Record<string, any>): this {
+  join(columns: string, file: string, options?: Record<string, unknown>): this {
     return this.add("qsv-join", {
       args: { columns1: columns, input1: file },
       options,
@@ -131,7 +131,7 @@ export class QsvPipeline {
   rename(
     columns: string,
     newNames: string,
-    options?: Record<string, any>,
+    options?: Record<string, unknown>,
   ): this {
     return this.add("qsv-rename", {
       args: {},
@@ -145,7 +145,7 @@ export class QsvPipeline {
   apply(
     operations: string,
     column: string,
-    options?: Record<string, any>,
+    options?: Record<string, unknown>,
   ): this {
     return this.add("qsv-apply", {
       args: { operations, column },
@@ -156,7 +156,7 @@ export class QsvPipeline {
   /**
    * Slice rows
    */
-  slice(start?: number, end?: number, options?: Record<string, any>): this {
+  slice(start?: number, end?: number, options?: Record<string, unknown>): this {
     const sliceOptions = { ...options };
     if (start !== undefined) sliceOptions.start = start;
     if (end !== undefined) sliceOptions.end = end;
@@ -177,7 +177,7 @@ export class QsvPipeline {
   /**
    * Transpose the CSV
    */
-  transpose(options?: Record<string, any>): this {
+  transpose(options?: Record<string, unknown>): this {
     return this.add("qsv-transpose", {
       args: {},
       options,

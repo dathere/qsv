@@ -48,8 +48,8 @@ export interface BehavioralHints {
 }
 
 export interface SkillParams {
-  args?: Record<string, any>;
-  options?: Record<string, any>;
+  args?: Record<string, unknown>;
+  options?: Record<string, unknown>;
   stdin?: string | Buffer;
   inputFile?: string;
   timeoutMs?: number;

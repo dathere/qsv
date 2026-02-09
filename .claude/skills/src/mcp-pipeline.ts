@@ -7,12 +7,21 @@
 import type {
   McpPipelineStep,
   McpToolDefinition,
-  McpToolResult,
 } from "./types.js";
-import type { SkillExecutor } from "./executor.js";
 import type { SkillLoader } from "./loader.js";
 import { QsvPipeline } from "./pipeline.js";
 import { config } from "./config.js";
+
+/**
+ * MCP tool result helpers
+ */
+function errorResult(message: string) {
+  return { content: [{ type: "text" as const, text: message }], isError: true as const };
+}
+
+function successResult(text: string) {
+  return { content: [{ type: "text" as const, text }], isError: false as const };
+}
 
 /**
  * Create the qsv_pipeline tool definition
@@ -129,15 +138,7 @@ export async function executePipeline(
 
     // Validate required parameters
     if (!inputFile) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: "Error: input_file parameter is required",
-          },
-        ],
-        isError: true,
-      };
+      return errorResult("Error: input_file parameter is required");
     }
 
     // Resolve file paths using filesystem provider if available
@@ -148,41 +149,17 @@ export async function executePipeline(
           outputFile = await filesystemProvider.resolvePath(outputFile);
         }
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error resolving file path: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
+        return errorResult(`Error resolving file path: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
     if (!steps || !Array.isArray(steps) || steps.length === 0) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: "Error: steps parameter is required and must be a non-empty array",
-          },
-        ],
-        isError: true,
-      };
+      return errorResult("Error: steps parameter is required and must be a non-empty array");
     }
 
     // Enforce pipeline step limit
     if (steps.length > config.maxPipelineSteps) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Error: Pipeline exceeds maximum step limit (${config.maxPipelineSteps}). Requested ${steps.length} steps.`,
-          },
-        ],
-        isError: true,
-      };
+      return errorResult(`Error: Pipeline exceeds maximum step limit (${config.maxPipelineSteps}). Requested ${steps.length} steps.`);
     }
 
     // Validate pipeline steps
@@ -190,15 +167,7 @@ export async function executePipeline(
       const step = steps[i];
 
       if (!step.command || typeof step.command !== "string") {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error: Step ${i + 1} missing required 'command' property or command is not a string`,
-            },
-          ],
-          isError: true,
-        };
+        return errorResult(`Error: Step ${i + 1} missing required 'command' property or command is not a string`);
       }
 
       if (
@@ -207,15 +176,7 @@ export async function executePipeline(
           step.params === null ||
           Array.isArray(step.params))
       ) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error: Step ${i + 1} 'params' must be an object (not null or array)`,
-            },
-          ],
-          isError: true,
-        };
+        return errorResult(`Error: Step ${i + 1} 'params' must be an object (not null or array)`);
       }
     }
 
@@ -241,9 +202,7 @@ export async function executePipeline(
     const inputData = await fs.readFile(inputFile);
 
     // Execute pipeline
-    const startTime = Date.now();
     const result = await pipeline.execute(inputData);
-    const duration = Date.now() - startTime;
 
     // Handle output
     if (outputFile) {
@@ -257,35 +216,13 @@ export async function executePipeline(
         )
         .join("\n");
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Pipeline executed successfully!\n\nOutput written to: ${outputFile}\n\nSteps executed:\n${stepSummary}\n\nTotal duration: ${result.totalDuration}ms`,
-          },
-        ],
-      };
+      return successResult(`Pipeline executed successfully!\n\nOutput written to: ${outputFile}\n\nSteps executed:\n${stepSummary}\n\nTotal duration: ${result.totalDuration}ms`);
     } else {
       // Return CSV output
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: result.output.toString("utf-8"),
-          },
-        ],
-      };
+      return successResult(result.output.toString("utf-8"));
     }
   } catch (error) {
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Pipeline execution failed: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
+    return errorResult(`Pipeline execution failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -402,35 +339,3 @@ async function addStepToPipeline(
   }
 }
 
-/**
- * Generate shell script from pipeline parameters
- */
-export async function pipelineToShellScript(
-  params: Record<string, unknown>,
-  loader: SkillLoader,
-): Promise<string> {
-  const inputFile = (params.input_file as string) || "input.csv";
-  const steps = (params.steps as McpPipelineStep[]) || [];
-  const outputFile = params.output_file as string | undefined;
-
-  // Create pipeline
-  const pipeline = new QsvPipeline(loader);
-
-  // Add steps
-  for (const step of steps) {
-    await addStepToPipeline(pipeline, step.command, step.params || {});
-  }
-
-  // Generate shell script
-  let script = await pipeline.toShellScript();
-
-  // Prepend input file as stdin source
-  script = `cat ${inputFile} | ${script}`;
-
-  // Add output redirection if specified
-  if (outputFile) {
-    script += ` > ${outputFile}`;
-  }
-
-  return script;
-}

@@ -1294,12 +1294,24 @@ fn generate_code_based_dictionary(
                 .iter()
                 .take(num_examples as usize)
                 .map(|f| {
-                    let v = if truncate_str > 0 && f.value.chars().count() > truncate_str {
-                        let mut s = f.value.chars().take(truncate_str).collect::<String>();
+                    // Strip "(n)" from "Other (n)" entries - the parenthetical count
+                    // of unique values is redundant when the [count] is shown
+                    let raw_value = if f.rank == 0.0 {
+                        if let Some(pos) = f.value.rfind(" (") {
+                            &f.value[..pos]
+                        } else {
+                            &f.value
+                        }
+                    } else {
+                        &f.value
+                    };
+
+                    let v = if truncate_str > 0 && raw_value.chars().count() > truncate_str {
+                        let mut s = raw_value.chars().take(truncate_str).collect::<String>();
                         s.push('…');
                         s
                     } else {
-                        f.value.clone()
+                        raw_value.to_string()
                     };
                     format!("{} [{}]", v, f.count)
                 })

@@ -6,82 +6,85 @@ const completion: Fig.Spec = {
       name: "apply",
       subcommands: [
         {
-          name: "operations",
+          name: "calcconv",
           options: [
             {
-              name: "--new-column",
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
             },
             {
-              name: "--rename",
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
             },
             {
-              name: "--comparand",
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
             },
             {
-              name: "--replacement",
+              name: ["-C", "--comparand"],
+              isRepeatable: true,
+              args: {
+                name: "comparand",
+                isOptional: true,
+              },
             },
             {
-              name: "--formatstr",
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
             },
             {
-              name: "--jobs",
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
             },
             {
-              name: "--batch",
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
             },
             {
-              name: "--output",
+              name: ["-R", "--replacement"],
+              isRepeatable: true,
+              args: {
+                name: "replacement",
+                isOptional: true,
+              },
             },
             {
-              name: "--no-headers",
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
             },
             {
-              name: "--delimiter",
+              name: ["-n", "--no-headers"],
             },
             {
-              name: "--progressbar",
-            },
-            {
-              name: ["-h", "--help"],
-              description: "Print help",
-            },
-          ],
-        },
-        {
-          name: "emptyreplace",
-          options: [
-            {
-              name: "--new-column",
-            },
-            {
-              name: "--rename",
-            },
-            {
-              name: "--comparand",
-            },
-            {
-              name: "--replacement",
-            },
-            {
-              name: "--formatstr",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--batch",
-            },
-            {
-              name: "--output",
-            },
-            {
-              name: "--no-headers",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
+              name: ["-p", "--progressbar"],
             },
             {
               name: ["-h", "--help"],
@@ -93,37 +96,82 @@ const completion: Fig.Spec = {
           name: "dynfmt",
           options: [
             {
-              name: "--new-column",
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
             },
             {
-              name: "--rename",
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
             },
             {
-              name: "--comparand",
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
             },
             {
-              name: "--replacement",
+              name: ["-C", "--comparand"],
+              isRepeatable: true,
+              args: {
+                name: "comparand",
+                isOptional: true,
+              },
             },
             {
-              name: "--formatstr",
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
             },
             {
-              name: "--jobs",
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
             },
             {
-              name: "--batch",
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
             },
             {
-              name: "--output",
+              name: ["-R", "--replacement"],
+              isRepeatable: true,
+              args: {
+                name: "replacement",
+                isOptional: true,
+              },
             },
             {
-              name: "--no-headers",
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
             },
             {
-              name: "--delimiter",
+              name: ["-n", "--no-headers"],
             },
             {
-              name: "--progressbar",
+              name: ["-p", "--progressbar"],
             },
             {
               name: ["-h", "--help"],
@@ -132,40 +180,172 @@ const completion: Fig.Spec = {
           ],
         },
         {
-          name: "calcconv",
+          name: "emptyreplace",
           options: [
             {
-              name: "--new-column",
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
             },
             {
-              name: "--rename",
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
             },
             {
-              name: "--comparand",
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
             },
             {
-              name: "--replacement",
+              name: ["-C", "--comparand"],
+              isRepeatable: true,
+              args: {
+                name: "comparand",
+                isOptional: true,
+              },
             },
             {
-              name: "--formatstr",
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
             },
             {
-              name: "--jobs",
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
             },
             {
-              name: "--batch",
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
             },
             {
-              name: "--output",
+              name: ["-R", "--replacement"],
+              isRepeatable: true,
+              args: {
+                name: "replacement",
+                isOptional: true,
+              },
             },
             {
-              name: "--no-headers",
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
             },
             {
-              name: "--delimiter",
+              name: ["-n", "--no-headers"],
             },
             {
-              name: "--progressbar",
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "operations",
+          options: [
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-C", "--comparand"],
+              isRepeatable: true,
+              args: {
+                name: "comparand",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-R", "--replacement"],
+              isRepeatable: true,
+              args: {
+                name: "replacement",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-n", "--no-headers"],
+            },
+            {
+              name: ["-p", "--progressbar"],
             },
             {
               name: ["-h", "--help"],
@@ -178,16 +358,16 @@ const completion: Fig.Spec = {
           description: "Print this message or the help of the given subcommand(s)",
           subcommands: [
             {
-              name: "operations",
-            },
-            {
-              name: "emptyreplace",
+              name: "calcconv",
             },
             {
               name: "dynfmt",
             },
             {
-              name: "calcconv",
+              name: "emptyreplace",
+            },
+            {
+              name: "operations",
             },
             {
               name: "help",
@@ -198,37 +378,82 @@ const completion: Fig.Spec = {
       ],
       options: [
         {
-          name: "--new-column",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--rename",
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
         },
         {
-          name: "--comparand",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--replacement",
+          name: ["-C", "--comparand"],
+          isRepeatable: true,
+          args: {
+            name: "comparand",
+            isOptional: true,
+          },
         },
         {
-          name: "--formatstr",
+          name: ["-b", "--batch"],
+          isRepeatable: true,
+          args: {
+            name: "batch",
+            isOptional: true,
+          },
         },
         {
-          name: "--jobs",
+          name: ["-c", "--new-column"],
+          isRepeatable: true,
+          args: {
+            name: "new-column",
+            isOptional: true,
+          },
         },
         {
-          name: "--batch",
+          name: ["-r", "--rename"],
+          isRepeatable: true,
+          args: {
+            name: "rename",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: ["-R", "--replacement"],
+          isRepeatable: true,
+          args: {
+            name: "replacement",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-headers",
+          name: ["-f", "--formatstr"],
+          isRepeatable: true,
+          args: {
+            name: "formatstr",
+            isOptional: true,
+          },
         },
         {
-          name: "--delimiter",
+          name: ["-n", "--no-headers"],
         },
         {
-          name: "--progressbar",
+          name: ["-p", "--progressbar"],
         },
         {
           name: ["-h", "--help"],
@@ -240,10 +465,15 @@ const completion: Fig.Spec = {
       name: "behead",
       options: [
         {
-          name: "--flexible",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: ["-f", "--flexible"],
         },
         {
           name: ["-h", "--help"],
@@ -255,19 +485,98 @@ const completion: Fig.Spec = {
       name: "cat",
       subcommands: [
         {
-          name: "rows",
+          name: "columns",
           options: [
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-N", "--group-name"],
+              isRepeatable: true,
+              args: {
+                name: "group-name",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-g", "--group"],
+              isRepeatable: true,
+              args: {
+                name: "group",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-p", "--pad"],
+            },
             {
               name: "--flexible",
             },
             {
-              name: "--output",
+              name: ["-n", "--no-headers"],
             },
             {
-              name: "--no-headers",
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "rows",
+          options: [
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
             },
             {
-              name: "--delimiter",
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-N", "--group-name"],
+              isRepeatable: true,
+              args: {
+                name: "group-name",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-g", "--group"],
+              isRepeatable: true,
+              args: {
+                name: "group",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-p", "--pad"],
+            },
+            {
+              name: "--flexible",
+            },
+            {
+              name: ["-n", "--no-headers"],
             },
             {
               name: ["-h", "--help"],
@@ -279,40 +588,45 @@ const completion: Fig.Spec = {
           name: "rowskey",
           options: [
             {
-              name: "--group",
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
             },
             {
-              name: "--group-name",
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
             },
             {
-              name: "--output",
+              name: ["-N", "--group-name"],
+              isRepeatable: true,
+              args: {
+                name: "group-name",
+                isOptional: true,
+              },
             },
             {
-              name: "--no-headers",
+              name: ["-g", "--group"],
+              isRepeatable: true,
+              args: {
+                name: "group",
+                isOptional: true,
+              },
             },
             {
-              name: "--delimiter",
+              name: ["-p", "--pad"],
             },
             {
-              name: ["-h", "--help"],
-              description: "Print help",
-            },
-          ],
-        },
-        {
-          name: "columns",
-          options: [
-            {
-              name: "--pad",
+              name: "--flexible",
             },
             {
-              name: "--output",
-            },
-            {
-              name: "--no-headers",
-            },
-            {
-              name: "--delimiter",
+              name: ["-n", "--no-headers"],
             },
             {
               name: ["-h", "--help"],
@@ -325,13 +639,13 @@ const completion: Fig.Spec = {
           description: "Print this message or the help of the given subcommand(s)",
           subcommands: [
             {
+              name: "columns",
+            },
+            {
               name: "rows",
             },
             {
               name: "rowskey",
-            },
-            {
-              name: "columns",
             },
             {
               name: "help",
@@ -342,13 +656,45 @@ const completion: Fig.Spec = {
       ],
       options: [
         {
-          name: "--output",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-headers",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--delimiter",
+          name: ["-N", "--group-name"],
+          isRepeatable: true,
+          args: {
+            name: "group-name",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-g", "--group"],
+          isRepeatable: true,
+          args: {
+            name: "group",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-p", "--pad"],
+        },
+        {
+          name: "--flexible",
+        },
+        {
+          name: ["-n", "--no-headers"],
         },
         {
           name: ["-h", "--help"],
@@ -360,7 +706,7 @@ const completion: Fig.Spec = {
       name: "clipboard",
       options: [
         {
-          name: "--save",
+          name: ["-s", "--save"],
         },
         {
           name: ["-h", "--help"],
@@ -372,22 +718,37 @@ const completion: Fig.Spec = {
       name: "color",
       options: [
         {
-          name: "--color",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--row-numbers",
+          name: ["-t", "--title"],
+          isRepeatable: true,
+          args: {
+            name: "title",
+            isOptional: true,
+          },
         },
         {
-          name: "--title",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--delimiter",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
           name: "--memcheck",
+        },
+        {
+          name: ["-C", "--color"],
+        },
+        {
+          name: ["-n", "--row-numbers"],
         },
         {
           name: ["-h", "--help"],
@@ -399,16 +760,27 @@ const completion: Fig.Spec = {
       name: "count",
       options: [
         {
-          name: "--human-readable",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-H", "--human-readable"],
+        },
+        {
+          name: "--json",
         },
         {
           name: "--width",
         },
         {
-          name: "--width-no-delims",
+          name: ["-f", "--flexible"],
         },
         {
-          name: "--json",
+          name: ["-n", "--no-headers"],
         },
         {
           name: "--no-polars",
@@ -417,13 +789,7 @@ const completion: Fig.Spec = {
           name: "--low-memory",
         },
         {
-          name: "--flexible",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
+          name: "--width-no-delims",
         },
         {
           name: ["-h", "--help"],
@@ -435,28 +801,95 @@ const completion: Fig.Spec = {
       name: "datefmt",
       options: [
         {
-          name: "--formatstr",
+          name: ["-c", "--new-column"],
+          isRepeatable: true,
+          args: {
+            name: "new-column",
+            isOptional: true,
+          },
         },
         {
-          name: "--new-column",
+          name: ["-R", "--ts-resolution"],
+          isRepeatable: true,
+          args: {
+            name: "ts-resolution",
+            isOptional: true,
+          },
         },
         {
-          name: "--rename",
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
         },
         {
-          name: "--prefer-dmy",
+          name: ["-b", "--batch"],
+          isRepeatable: true,
+          args: {
+            name: "batch",
+            isOptional: true,
+          },
         },
         {
-          name: "--keep-zero-time",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
           name: "--input-tz",
+          isRepeatable: true,
+          args: {
+            name: "input-tz",
+            isOptional: true,
+          },
         },
         {
-          name: "--output-tz",
+          name: "--formatstr",
+          isRepeatable: true,
+          args: {
+            name: "formatstr",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-r", "--rename"],
+          isRepeatable: true,
+          args: {
+            name: "rename",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
           name: "--default-tz",
+          isRepeatable: true,
+          args: {
+            name: "default-tz",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--output-tz",
+          isRepeatable: true,
+          args: {
+            name: "output-tz",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--prefer-dmy",
         },
         {
           name: "--utc",
@@ -465,25 +898,13 @@ const completion: Fig.Spec = {
           name: "--zulu",
         },
         {
-          name: "--ts-resolution",
+          name: "--keep-zero-time",
         },
         {
-          name: "--jobs",
+          name: ["-n", "--no-headers"],
         },
         {
-          name: "--batch",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--progressbar",
+          name: ["-p", "--progressbar"],
         },
         {
           name: ["-h", "--help"],
@@ -495,40 +916,65 @@ const completion: Fig.Spec = {
       name: "dedup",
       options: [
         {
-          name: "--select",
+          name: ["-s", "--select"],
+          isRepeatable: true,
+          args: {
+            name: "select",
+            isOptional: true,
+          },
         },
         {
-          name: "--numeric",
+          name: ["-D", "--dupes-output"],
+          isRepeatable: true,
+          args: {
+            name: "dupes-output",
+            isOptional: true,
+          },
         },
         {
-          name: "--ignore-case",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--memcheck",
+        },
+        {
+          name: ["-n", "--no-headers"],
+        },
+        {
+          name: ["-N", "--numeric"],
+        },
+        {
+          name: ["-i", "--ignore-case"],
         },
         {
           name: "--sorted",
         },
         {
-          name: "--dupes-output",
+          name: ["-q", "--quiet"],
         },
         {
-          name: "--human-readable",
-        },
-        {
-          name: "--jobs",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--quiet",
-        },
-        {
-          name: "--memcheck",
+          name: ["-H", "--human-readable"],
         },
         {
           name: ["-h", "--help"],
@@ -540,133 +986,272 @@ const completion: Fig.Spec = {
       name: "describegpt",
       options: [
         {
-          name: "--all",
+          name: "--ckan-api",
+          isRepeatable: true,
+          args: {
+            name: "ckan-api",
+            isOptional: true,
+          },
         },
         {
-          name: "--description",
+          name: "--enum-threshold",
+          isRepeatable: true,
+          args: {
+            name: "enum-threshold",
+            isOptional: true,
+          },
         },
         {
-          name: "--dictionary",
+          name: "--user-agent",
+          isRepeatable: true,
+          args: {
+            name: "user-agent",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--truncate-str",
+          isRepeatable: true,
+          args: {
+            name: "truncate-str",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--tag-vocab",
+          isRepeatable: true,
+          args: {
+            name: "tag-vocab",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--session",
+          isRepeatable: true,
+          args: {
+            name: "session",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-t", "--max-tokens"],
+          isRepeatable: true,
+          args: {
+            name: "max-tokens",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--format",
+          isRepeatable: true,
+          args: {
+            name: "format",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-u", "--base-url"],
+          isRepeatable: true,
+          args: {
+            name: "base-url",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--session-len",
+          isRepeatable: true,
+          args: {
+            name: "session-len",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--num-tags",
+          isRepeatable: true,
+          args: {
+            name: "num-tags",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ckan-token",
+          isRepeatable: true,
+          args: {
+            name: "ckan-token",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--num-examples",
+          isRepeatable: true,
+          args: {
+            name: "num-examples",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--language",
+          isRepeatable: true,
+          args: {
+            name: "language",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-k", "--api-key"],
+          isRepeatable: true,
+          args: {
+            name: "api-key",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-m", "--model"],
+          isRepeatable: true,
+          args: {
+            name: "model",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--sql-results",
+          isRepeatable: true,
+          args: {
+            name: "sql-results",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--stats-options",
+          isRepeatable: true,
+          args: {
+            name: "stats-options",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--cache-dir",
+          isRepeatable: true,
+          args: {
+            name: "cache-dir",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--export-prompt",
+          isRepeatable: true,
+          args: {
+            name: "export-prompt",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--disk-cache-dir",
+          isRepeatable: true,
+          args: {
+            name: "disk-cache-dir",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--addl-cols-list",
+          isRepeatable: true,
+          args: {
+            name: "addl-cols-list",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--timeout",
+          isRepeatable: true,
+          args: {
+            name: "timeout",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--sample-size",
+          isRepeatable: true,
+          args: {
+            name: "sample-size",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--addl-props",
+          isRepeatable: true,
+          args: {
+            name: "addl-props",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--freq-options",
+          isRepeatable: true,
+          args: {
+            name: "freq-options",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-p", "--prompt"],
+          isRepeatable: true,
+          args: {
+            name: "prompt",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--prompt-file",
+          isRepeatable: true,
+          args: {
+            name: "prompt-file",
+            isOptional: true,
+          },
         },
         {
           name: "--tags",
         },
         {
-          name: "--addl-cols",
+          name: "--flush-cache",
         },
         {
-          name: "--addl-cols-list",
+          name: ["-q", "--quiet"],
         },
         {
-          name: "--num-examples",
-        },
-        {
-          name: "--truncate-str",
-        },
-        {
-          name: "--num-tags",
-        },
-        {
-          name: "--tag-vocab",
-        },
-        {
-          name: "--cache-dir",
-        },
-        {
-          name: "--ckan-api",
-        },
-        {
-          name: "--ckan-token",
-        },
-        {
-          name: "--stats-options",
-        },
-        {
-          name: "--freq-options",
-        },
-        {
-          name: "--enum-threshold",
-        },
-        {
-          name: "--sample-size",
-        },
-        {
-          name: "--fewshot-examples",
-        },
-        {
-          name: "--session",
-        },
-        {
-          name: "--session-len",
-        },
-        {
-          name: "--sql-results",
-        },
-        {
-          name: "--api-key",
-        },
-        {
-          name: "--max-tokens",
-        },
-        {
-          name: "--json",
-        },
-        {
-          name: "--jsonl",
-        },
-        {
-          name: "--prompt",
-        },
-        {
-          name: "--prompt-file",
-        },
-        {
-          name: "--base-url",
-        },
-        {
-          name: "--model",
-        },
-        {
-          name: "--language",
-        },
-        {
-          name: "--addl-props",
-        },
-        {
-          name: "--export-prompt",
-        },
-        {
-          name: "--timeout",
-        },
-        {
-          name: "--user-agent",
-        },
-        {
-          name: "--no-cache",
-        },
-        {
-          name: "--disk-cache-dir",
+          name: ["-A", "--all"],
         },
         {
           name: "--redis-cache",
         },
         {
-          name: "--fresh",
+          name: "--description",
+        },
+        {
+          name: "--no-cache",
+        },
+        {
+          name: "--dictionary",
+        },
+        {
+          name: "--fewshot-examples",
+        },
+        {
+          name: "--addl-cols",
         },
         {
           name: "--forget",
         },
         {
-          name: "--flush-cache",
-        },
-        {
-          name: "--format",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--quiet",
+          name: "--fresh",
         },
         {
           name: ["-h", "--help"],
@@ -678,40 +1263,80 @@ const completion: Fig.Spec = {
       name: "diff",
       options: [
         {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--delimiter-left",
+          isRepeatable: true,
+          args: {
+            name: "delimiter-left",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--delimiter-right",
+          isRepeatable: true,
+          args: {
+            name: "delimiter-right",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--delimiter-output",
+          isRepeatable: true,
+          args: {
+            name: "delimiter-output",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-k", "--key"],
+          isRepeatable: true,
+          args: {
+            name: "key",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--sort-columns",
+          isRepeatable: true,
+          args: {
+            name: "sort-columns",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--no-headers-output",
+        },
+        {
           name: "--no-headers-left",
         },
         {
           name: "--no-headers-right",
         },
         {
-          name: "--no-headers-output",
-        },
-        {
-          name: "--delimiter-left",
-        },
-        {
-          name: "--delimiter-right",
-        },
-        {
-          name: "--delimiter-output",
-        },
-        {
-          name: "--key",
-        },
-        {
-          name: "--sort-columns",
-        },
-        {
           name: "--drop-equal-fields",
-        },
-        {
-          name: "--jobs",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--delimiter",
         },
         {
           name: ["-h", "--help"],
@@ -723,13 +1348,18 @@ const completion: Fig.Spec = {
       name: "edit",
       options: [
         {
-          name: "--no-headers",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--in-place",
+          name: ["-i", "--in-place"],
         },
         {
-          name: "--output",
+          name: ["-n", "--no-headers"],
         },
         {
           name: ["-h", "--help"],
@@ -741,19 +1371,68 @@ const completion: Fig.Spec = {
       name: "enum",
       options: [
         {
-          name: "--new-column",
+          name: ["-c", "--new-column"],
+          isRepeatable: true,
+          args: {
+            name: "new-column",
+            isOptional: true,
+          },
         },
         {
-          name: "--start",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
           name: "--increment",
+          isRepeatable: true,
+          args: {
+            name: "increment",
+            isOptional: true,
+          },
         },
         {
           name: "--constant",
+          isRepeatable: true,
+          args: {
+            name: "constant",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--start",
+          isRepeatable: true,
+          args: {
+            name: "start",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--hash",
+          isRepeatable: true,
+          args: {
+            name: "hash",
+            isOptional: true,
+          },
         },
         {
           name: "--copy",
+          isRepeatable: true,
+          args: {
+            name: "copy",
+            isOptional: true,
+          },
         },
         {
           name: "--uuid4",
@@ -762,16 +1441,7 @@ const completion: Fig.Spec = {
           name: "--uuid7",
         },
         {
-          name: "--hash",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
+          name: ["-n", "--no-headers"],
         },
         {
           name: ["-h", "--help"],
@@ -783,46 +1453,104 @@ const completion: Fig.Spec = {
       name: "excel",
       options: [
         {
-          name: "--sheet",
-        },
-        {
-          name: "--header-row",
-        },
-        {
-          name: "--metadata",
-        },
-        {
-          name: "--table",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
           name: "--range",
+          isRepeatable: true,
+          args: {
+            name: "range",
+            isOptional: true,
+          },
         },
         {
           name: "--error-format",
+          isRepeatable: true,
+          args: {
+            name: "error-format",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--date-format",
+          isRepeatable: true,
+          args: {
+            name: "date-format",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--metadata",
+          isRepeatable: true,
+          args: {
+            name: "metadata",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--header-row",
+          isRepeatable: true,
+          args: {
+            name: "header-row",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--table",
+          isRepeatable: true,
+          args: {
+            name: "table",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-s", "--sheet"],
+          isRepeatable: true,
+          args: {
+            name: "sheet",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--cell",
+          isRepeatable: true,
+          args: {
+            name: "cell",
+            isOptional: true,
+          },
         },
         {
           name: "--flexible",
         },
         {
-          name: "--trim",
-        },
-        {
-          name: "--date-format",
+          name: ["-q", "--quiet"],
         },
         {
           name: "--keep-zero-time",
         },
         {
-          name: "--jobs",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--quiet",
+          name: "--trim",
         },
         {
           name: ["-h", "--help"],
@@ -834,85 +1562,26 @@ const completion: Fig.Spec = {
       name: "exclude",
       options: [
         {
-          name: "--ignore-case",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "-v",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: ["-n", "--no-headers"],
         },
         {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: ["-h", "--help"],
-          description: "Print help",
-        },
-      ],
-    },
-    {
-      name: "extdedup",
-      options: [
-        {
-          name: "--select",
-        },
-        {
-          name: "--no-output",
-        },
-        {
-          name: "--dupes-output",
-        },
-        {
-          name: "--human-readable",
-        },
-        {
-          name: "--memory-limit",
-        },
-        {
-          name: "--temp-dir",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--quiet",
-        },
-        {
-          name: ["-h", "--help"],
-          description: "Print help",
-        },
-      ],
-    },
-    {
-      name: "extsort",
-      options: [
-        {
-          name: "--select",
-        },
-        {
-          name: "--reverse",
-        },
-        {
-          name: "--memory-limit",
-        },
-        {
-          name: "--tmp-dir",
-        },
-        {
-          name: "--jobs",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--no-headers",
+          name: ["-i", "--ignore-case"],
         },
         {
           name: ["-h", "--help"],
@@ -924,16 +1593,147 @@ const completion: Fig.Spec = {
       name: "explode",
       options: [
         {
-          name: "--rename",
+          name: ["-r", "--rename"],
+          isRepeatable: true,
+          args: {
+            name: "rename",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-headers",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--delimiter",
+          name: ["-n", "--no-headers"],
+        },
+        {
+          name: ["-h", "--help"],
+          description: "Print help",
+        },
+      ],
+    },
+    {
+      name: "extdedup",
+      options: [
+        {
+          name: ["-s", "--select"],
+          isRepeatable: true,
+          args: {
+            name: "select",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--memory-limit",
+          isRepeatable: true,
+          args: {
+            name: "memory-limit",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-D", "--dupes-output"],
+          isRepeatable: true,
+          args: {
+            name: "dupes-output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--temp-dir",
+          isRepeatable: true,
+          args: {
+            name: "temp-dir",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-H", "--human-readable"],
+        },
+        {
+          name: ["-q", "--quiet"],
+        },
+        {
+          name: ["-n", "--no-headers"],
+        },
+        {
+          name: "--no-output",
+        },
+        {
+          name: ["-h", "--help"],
+          description: "Print help",
+        },
+      ],
+    },
+    {
+      name: "extsort",
+      options: [
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-s", "--select"],
+          isRepeatable: true,
+          args: {
+            name: "select",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--memory-limit",
+          isRepeatable: true,
+          args: {
+            name: "memory-limit",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--tmp-dir",
+          isRepeatable: true,
+          args: {
+            name: "tmp-dir",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-n", "--no-headers"],
+        },
+        {
+          name: ["-R", "--reverse"],
         },
         {
           name: ["-h", "--help"],
@@ -945,61 +1745,136 @@ const completion: Fig.Spec = {
       name: "fetch",
       options: [
         {
-          name: "--url-template",
+          name: ["-H", "--http-header"],
+          isRepeatable: true,
+          args: {
+            name: "http-header",
+            isOptional: true,
+          },
         },
         {
-          name: "--new-column",
-        },
-        {
-          name: "--jaq",
-        },
-        {
-          name: "--jaqfile",
-        },
-        {
-          name: "--pretty",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
           name: "--rate-limit",
+          isRepeatable: true,
+          args: {
+            name: "rate-limit",
+            isOptional: true,
+          },
         },
         {
-          name: "--timeout",
-        },
-        {
-          name: "--http-header",
+          name: "--url-template",
+          isRepeatable: true,
+          args: {
+            name: "url-template",
+            isOptional: true,
+          },
         },
         {
           name: "--max-retries",
+          isRepeatable: true,
+          args: {
+            name: "max-retries",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--user-agent",
+          isRepeatable: true,
+          args: {
+            name: "user-agent",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--report",
+          isRepeatable: true,
+          args: {
+            name: "report",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-c", "--new-column"],
+          isRepeatable: true,
+          args: {
+            name: "new-column",
+            isOptional: true,
+          },
         },
         {
           name: "--max-errors",
+          isRepeatable: true,
+          args: {
+            name: "max-errors",
+            isOptional: true,
+          },
         },
         {
-          name: "--store-error",
+          name: "--timeout",
+          isRepeatable: true,
+          args: {
+            name: "timeout",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--jaq",
+          isRepeatable: true,
+          args: {
+            name: "jaq",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--mem-cache-size",
+          isRepeatable: true,
+          args: {
+            name: "mem-cache-size",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--disk-cache-dir",
+          isRepeatable: true,
+          args: {
+            name: "disk-cache-dir",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--jaqfile",
+          isRepeatable: true,
+          args: {
+            name: "jaqfile",
+            isOptional: true,
+          },
         },
         {
           name: "--cookies",
         },
         {
-          name: "--user-agent",
-        },
-        {
-          name: "--report",
+          name: "--redis-cache",
         },
         {
           name: "--no-cache",
         },
         {
-          name: "--mem-cache-size",
-        },
-        {
-          name: "--disk-cache",
-        },
-        {
-          name: "--disk-cache-dir",
-        },
-        {
-          name: "--redis-cache",
+          name: ["-p", "--progressbar"],
         },
         {
           name: "--cache-error",
@@ -1008,16 +1883,16 @@ const completion: Fig.Spec = {
           name: "--flush-cache",
         },
         {
-          name: "--output",
+          name: "--disk-cache",
         },
         {
-          name: "--no-headers",
+          name: "--store-error",
         },
         {
-          name: "--delimiter",
+          name: ["-n", "--no-headers"],
         },
         {
-          name: "--progressbar",
+          name: "--pretty",
         },
         {
           name: ["-h", "--help"],
@@ -1029,88 +1904,173 @@ const completion: Fig.Spec = {
       name: "fetchpost",
       options: [
         {
-          name: "--payload-tpl",
-        },
-        {
-          name: "--content-type",
-        },
-        {
-          name: "--globals-json",
-        },
-        {
-          name: "--new-column",
-        },
-        {
-          name: "--jaq",
+          name: "--timeout",
+          isRepeatable: true,
+          args: {
+            name: "timeout",
+            isOptional: true,
+          },
         },
         {
           name: "--jaqfile",
-        },
-        {
-          name: "--pretty",
-        },
-        {
-          name: "--rate-limit",
-        },
-        {
-          name: "--timeout",
-        },
-        {
-          name: "--http-header",
-        },
-        {
-          name: "--compress",
+          isRepeatable: true,
+          args: {
+            name: "jaqfile",
+            isOptional: true,
+          },
         },
         {
           name: "--max-retries",
+          isRepeatable: true,
+          args: {
+            name: "max-retries",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--rate-limit",
+          isRepeatable: true,
+          args: {
+            name: "rate-limit",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-H", "--http-header"],
+          isRepeatable: true,
+          args: {
+            name: "http-header",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
           name: "--max-errors",
-        },
-        {
-          name: "--store-error",
-        },
-        {
-          name: "--cookies",
-        },
-        {
-          name: "--user-agent",
-        },
-        {
-          name: "--report",
-        },
-        {
-          name: "--no-cache",
+          isRepeatable: true,
+          args: {
+            name: "max-errors",
+            isOptional: true,
+          },
         },
         {
           name: "--mem-cache-size",
+          isRepeatable: true,
+          args: {
+            name: "mem-cache-size",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--globals-json"],
+          isRepeatable: true,
+          args: {
+            name: "globals-json",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--content-type",
+          isRepeatable: true,
+          args: {
+            name: "content-type",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-c", "--new-column"],
+          isRepeatable: true,
+          args: {
+            name: "new-column",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--report",
+          isRepeatable: true,
+          args: {
+            name: "report",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--disk-cache-dir",
+          isRepeatable: true,
+          args: {
+            name: "disk-cache-dir",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--jaq",
+          isRepeatable: true,
+          args: {
+            name: "jaq",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-t", "--payload-tpl"],
+          isRepeatable: true,
+          args: {
+            name: "payload-tpl",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--user-agent",
+          isRepeatable: true,
+          args: {
+            name: "user-agent",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-n", "--no-headers"],
         },
         {
           name: "--disk-cache",
         },
         {
-          name: "--disk-cache-dir",
-        },
-        {
-          name: "--redis-cache",
-        },
-        {
           name: "--cache-error",
+        },
+        {
+          name: "--compress",
         },
         {
           name: "--flush-cache",
         },
         {
-          name: "--output",
+          name: ["-p", "--progressbar"],
         },
         {
-          name: "--no-headers",
+          name: "--no-cache",
         },
         {
-          name: "--delimiter",
+          name: "--cookies",
         },
         {
-          name: "--progressbar",
+          name: "--redis-cache",
+        },
+        {
+          name: "--store-error",
+        },
+        {
+          name: "--pretty",
         },
         {
           name: ["-h", "--help"],
@@ -1122,25 +2082,45 @@ const completion: Fig.Spec = {
       name: "fill",
       options: [
         {
-          name: "--groupby",
+          name: ["-v", "--default"],
+          isRepeatable: true,
+          args: {
+            name: "default",
+            isOptional: true,
+          },
         },
         {
-          name: "--first",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--backfill",
+          name: ["-g", "--groupby"],
+          isRepeatable: true,
+          args: {
+            name: "groupby",
+            isOptional: true,
+          },
         },
         {
-          name: "--default",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: ["-b", "--backfill"],
         },
         {
-          name: "--no-headers",
+          name: ["-n", "--no-headers"],
         },
         {
-          name: "--delimiter",
+          name: ["-f", "--first"],
         },
         {
           name: ["-h", "--help"],
@@ -1152,28 +2132,58 @@ const completion: Fig.Spec = {
       name: "fixlengths",
       options: [
         {
-          name: "--length",
+          name: ["-i", "--insert"],
+          isRepeatable: true,
+          args: {
+            name: "insert",
+            isOptional: true,
+          },
         },
         {
-          name: "--remove-empty",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--insert",
-        },
-        {
-          name: "--quote",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
           name: "--escape",
+          isRepeatable: true,
+          args: {
+            name: "escape",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: ["-l", "--length"],
+          isRepeatable: true,
+          args: {
+            name: "length",
+            isOptional: true,
+          },
         },
         {
-          name: "--delimiter",
+          name: "--quote",
+          isRepeatable: true,
+          args: {
+            name: "quote",
+            isOptional: true,
+          },
         },
         {
-          name: "--quiet",
+          name: ["-r", "--remove-empty"],
+        },
+        {
+          name: ["-q", "--quiet"],
         },
         {
           name: ["-h", "--help"],
@@ -1185,19 +2195,39 @@ const completion: Fig.Spec = {
       name: "flatten",
       options: [
         {
-          name: "--condense",
+          name: ["-f", "--field-separator"],
+          isRepeatable: true,
+          args: {
+            name: "field-separator",
+            isOptional: true,
+          },
         },
         {
-          name: "--field-separator",
+          name: ["-c", "--condense"],
+          isRepeatable: true,
+          args: {
+            name: "condense",
+            isOptional: true,
+          },
         },
         {
-          name: "--separator",
+          name: ["-s", "--separator"],
+          isRepeatable: true,
+          args: {
+            name: "separator",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-headers",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--delimiter",
+          name: ["-n", "--no-headers"],
         },
         {
           name: ["-h", "--help"],
@@ -1209,34 +2239,59 @@ const completion: Fig.Spec = {
       name: "fmt",
       options: [
         {
-          name: "--out-delimiter",
-        },
-        {
-          name: "--crlf",
-        },
-        {
-          name: "--ascii",
-        },
-        {
           name: "--quote",
+          isRepeatable: true,
+          args: {
+            name: "quote",
+            isOptional: true,
+          },
         },
         {
-          name: "--quote-always",
+          name: ["-t", "--out-delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "out-delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--quote-never",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
           name: "--escape",
+          isRepeatable: true,
+          args: {
+            name: "escape",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
           name: "--no-final-newline",
         },
         {
-          name: "--output",
+          name: "--quote-never",
         },
         {
-          name: "--delimiter",
+          name: "--quote-always",
+        },
+        {
+          name: "--ascii",
+        },
+        {
+          name: "--crlf",
         },
         {
           name: ["-h", "--help"],
@@ -1248,22 +2303,37 @@ const completion: Fig.Spec = {
       name: "foreach",
       options: [
         {
-          name: "--unify",
-        },
-        {
-          name: "--new-column",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
           name: "--dry-run",
+          isRepeatable: true,
+          args: {
+            name: "dry-run",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-headers",
+          name: ["-c", "--new-column"],
+          isRepeatable: true,
+          args: {
+            name: "new-column",
+            isOptional: true,
+          },
         },
         {
-          name: "--delimiter",
+          name: ["-p", "--progressbar"],
         },
         {
-          name: "--progressbar",
+          name: ["-n", "--no-headers"],
+        },
+        {
+          name: ["-u", "--unify"],
         },
         {
           name: ["-h", "--help"],
@@ -1275,58 +2345,169 @@ const completion: Fig.Spec = {
       name: "frequency",
       options: [
         {
-          name: "--select",
+          name: ["-l", "--limit"],
+          isRepeatable: true,
+          args: {
+            name: "limit",
+            isOptional: true,
+          },
         },
         {
-          name: "--limit",
+          name: ["-r", "--rank-strategy"],
+          isRepeatable: true,
+          args: {
+            name: "rank-strategy",
+            isOptional: true,
+          },
         },
         {
-          name: "--unq-limit",
+          name: "--null-text",
+          isRepeatable: true,
+          args: {
+            name: "null-text",
+            isOptional: true,
+          },
         },
         {
-          name: "--lmt-threshold",
+          name: ["-s", "--select"],
+          isRepeatable: true,
+          args: {
+            name: "select",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--all-unique-text",
+          isRepeatable: true,
+          args: {
+            name: "all-unique-text",
+            isOptional: true,
+          },
         },
         {
           name: "--pct-dec-places",
+          isRepeatable: true,
+          args: {
+            name: "pct-dec-places",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--other-text",
+          isRepeatable: true,
+          args: {
+            name: "other-text",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-u", "--unq-limit"],
+          isRepeatable: true,
+          args: {
+            name: "unq-limit",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--stats-filter",
+          isRepeatable: true,
+          args: {
+            name: "stats-filter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--no-float",
+          isRepeatable: true,
+          args: {
+            name: "no-float",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--lmt-threshold",
+          isRepeatable: true,
+          args: {
+            name: "lmt-threshold",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--weight",
+          isRepeatable: true,
+          args: {
+            name: "weight",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-i", "--ignore-case"],
+        },
+        {
+          name: "--memcheck",
+        },
+        {
+          name: "--vis-whitespace",
         },
         {
           name: "--other-sorted",
         },
         {
-          name: "--other-text",
+          name: "--no-stats",
         },
         {
-          name: "--asc",
-        },
-        {
-          name: "--no-trim",
+          name: "--pretty-json",
         },
         {
           name: "--no-nulls",
         },
         {
-          name: "--ignore-case",
+          name: "--no-other",
         },
         {
-          name: "--stats-mode",
+          name: "--null-sorted",
         },
         {
-          name: "--all-unique-text",
+          name: "--pct-nulls",
         },
         {
-          name: "--jobs",
+          name: "--toon",
         },
         {
-          name: "--output",
+          name: ["-n", "--no-headers"],
         },
         {
-          name: "--no-headers",
+          name: ["-a", "--asc"],
         },
         {
-          name: "--delimiter",
+          name: "--no-trim",
         },
         {
-          name: "--memcheck",
+          name: "--json",
         },
         {
           name: ["-h", "--help"],
@@ -1338,328 +2519,149 @@ const completion: Fig.Spec = {
       name: "geocode",
       subcommands: [
         {
-          name: "suggest",
-          options: [
-            {
-              name: "--new-column",
-            },
-            {
-              name: "--rename",
-            },
-            {
-              name: "--country",
-            },
-            {
-              name: "--min-score",
-            },
-            {
-              name: "--admin1",
-            },
-            {
-              name: "--k_weight",
-            },
-            {
-              name: "--formatstr",
-            },
-            {
-              name: "--language",
-            },
-            {
-              name: "--invalid-result",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--batch",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--languages",
-            },
-            {
-              name: "--cities-url",
-            },
-            {
-              name: "--force",
-            },
-            {
-              name: "--output",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
-            },
-            {
-              name: ["-h", "--help"],
-              description: "Print help",
-            },
-          ],
-        },
-        {
-          name: "suggestnow",
-          options: [
-            {
-              name: "--new-column",
-            },
-            {
-              name: "--rename",
-            },
-            {
-              name: "--country",
-            },
-            {
-              name: "--min-score",
-            },
-            {
-              name: "--admin1",
-            },
-            {
-              name: "--k_weight",
-            },
-            {
-              name: "--formatstr",
-            },
-            {
-              name: "--language",
-            },
-            {
-              name: "--invalid-result",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--batch",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--languages",
-            },
-            {
-              name: "--cities-url",
-            },
-            {
-              name: "--force",
-            },
-            {
-              name: "--output",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
-            },
-            {
-              name: ["-h", "--help"],
-              description: "Print help",
-            },
-          ],
-        },
-        {
-          name: "reverse",
-          options: [
-            {
-              name: "--new-column",
-            },
-            {
-              name: "--rename",
-            },
-            {
-              name: "--country",
-            },
-            {
-              name: "--min-score",
-            },
-            {
-              name: "--admin1",
-            },
-            {
-              name: "--k_weight",
-            },
-            {
-              name: "--formatstr",
-            },
-            {
-              name: "--language",
-            },
-            {
-              name: "--invalid-result",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--batch",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--languages",
-            },
-            {
-              name: "--cities-url",
-            },
-            {
-              name: "--force",
-            },
-            {
-              name: "--output",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
-            },
-            {
-              name: ["-h", "--help"],
-              description: "Print help",
-            },
-          ],
-        },
-        {
-          name: "reversenow",
-          options: [
-            {
-              name: "--new-column",
-            },
-            {
-              name: "--rename",
-            },
-            {
-              name: "--country",
-            },
-            {
-              name: "--min-score",
-            },
-            {
-              name: "--admin1",
-            },
-            {
-              name: "--k_weight",
-            },
-            {
-              name: "--formatstr",
-            },
-            {
-              name: "--language",
-            },
-            {
-              name: "--invalid-result",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--batch",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--languages",
-            },
-            {
-              name: "--cities-url",
-            },
-            {
-              name: "--force",
-            },
-            {
-              name: "--output",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
-            },
-            {
-              name: ["-h", "--help"],
-              description: "Print help",
-            },
-          ],
-        },
-        {
           name: "countryinfo",
           options: [
             {
-              name: "--new-column",
-            },
-            {
-              name: "--rename",
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
             },
             {
               name: "--country",
-            },
-            {
-              name: "--min-score",
-            },
-            {
-              name: "--admin1",
-            },
-            {
-              name: "--k_weight",
-            },
-            {
-              name: "--formatstr",
-            },
-            {
-              name: "--language",
-            },
-            {
-              name: "--invalid-result",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--batch",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
             },
             {
               name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
             },
             {
               name: "--force",
             },
             {
-              name: "--output",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
+              name: ["-p", "--progressbar"],
             },
             {
               name: ["-h", "--help"],
@@ -1671,259 +2673,146 @@ const completion: Fig.Spec = {
           name: "countryinfonow",
           options: [
             {
-              name: "--new-column",
-            },
-            {
-              name: "--rename",
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
             },
             {
               name: "--country",
-            },
-            {
-              name: "--min-score",
-            },
-            {
-              name: "--admin1",
-            },
-            {
-              name: "--k_weight",
-            },
-            {
-              name: "--formatstr",
-            },
-            {
-              name: "--language",
-            },
-            {
-              name: "--invalid-result",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--batch",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
             },
             {
               name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
             },
             {
               name: "--force",
             },
             {
-              name: "--output",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
-            },
-            {
-              name: ["-h", "--help"],
-              description: "Print help",
-            },
-          ],
-        },
-        {
-          name: "iplookup",
-          options: [
-            {
-              name: "--new-column",
-            },
-            {
-              name: "--rename",
-            },
-            {
-              name: "--country",
-            },
-            {
-              name: "--min-score",
-            },
-            {
-              name: "--admin1",
-            },
-            {
-              name: "--k_weight",
-            },
-            {
-              name: "--formatstr",
-            },
-            {
-              name: "--language",
-            },
-            {
-              name: "--invalid-result",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--batch",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--languages",
-            },
-            {
-              name: "--cities-url",
-            },
-            {
-              name: "--force",
-            },
-            {
-              name: "--output",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
-            },
-            {
-              name: ["-h", "--help"],
-              description: "Print help",
-            },
-          ],
-        },
-        {
-          name: "iplookupnow",
-          options: [
-            {
-              name: "--new-column",
-            },
-            {
-              name: "--rename",
-            },
-            {
-              name: "--country",
-            },
-            {
-              name: "--min-score",
-            },
-            {
-              name: "--admin1",
-            },
-            {
-              name: "--k_weight",
-            },
-            {
-              name: "--formatstr",
-            },
-            {
-              name: "--language",
-            },
-            {
-              name: "--invalid-result",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--batch",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--languages",
-            },
-            {
-              name: "--cities-url",
-            },
-            {
-              name: "--force",
-            },
-            {
-              name: "--output",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
-            },
-            {
-              name: ["-h", "--help"],
-              description: "Print help",
-            },
-          ],
-        },
-        {
-          name: "index-load",
-          options: [
-            {
-              name: "--new-column",
-            },
-            {
-              name: "--rename",
-            },
-            {
-              name: "--country",
-            },
-            {
-              name: "--min-score",
-            },
-            {
-              name: "--admin1",
-            },
-            {
-              name: "--k_weight",
-            },
-            {
-              name: "--formatstr",
-            },
-            {
-              name: "--language",
-            },
-            {
-              name: "--invalid-result",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--batch",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--languages",
-            },
-            {
-              name: "--cities-url",
-            },
-            {
-              name: "--force",
-            },
-            {
-              name: "--output",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
+              name: ["-p", "--progressbar"],
             },
             {
               name: ["-h", "--help"],
@@ -1935,61 +2824,146 @@ const completion: Fig.Spec = {
           name: "index-check",
           options: [
             {
-              name: "--new-column",
-            },
-            {
-              name: "--rename",
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
             },
             {
               name: "--country",
-            },
-            {
-              name: "--min-score",
-            },
-            {
-              name: "--admin1",
-            },
-            {
-              name: "--k_weight",
-            },
-            {
-              name: "--formatstr",
-            },
-            {
-              name: "--language",
-            },
-            {
-              name: "--invalid-result",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--batch",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
             },
             {
               name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
             },
             {
               name: "--force",
             },
             {
-              name: "--output",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
+              name: ["-p", "--progressbar"],
             },
             {
               name: ["-h", "--help"],
@@ -1998,64 +2972,149 @@ const completion: Fig.Spec = {
           ],
         },
         {
-          name: "index-update",
+          name: "index-load",
           options: [
             {
-              name: "--new-column",
-            },
-            {
-              name: "--rename",
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
             },
             {
               name: "--country",
-            },
-            {
-              name: "--min-score",
-            },
-            {
-              name: "--admin1",
-            },
-            {
-              name: "--k_weight",
-            },
-            {
-              name: "--formatstr",
-            },
-            {
-              name: "--language",
-            },
-            {
-              name: "--invalid-result",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--batch",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
             },
             {
               name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
             },
             {
               name: "--force",
             },
             {
-              name: "--output",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
+              name: ["-p", "--progressbar"],
             },
             {
               name: ["-h", "--help"],
@@ -2067,61 +3126,1203 @@ const completion: Fig.Spec = {
           name: "index-reset",
           options: [
             {
-              name: "--new-column",
-            },
-            {
-              name: "--rename",
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
             },
             {
               name: "--country",
-            },
-            {
-              name: "--min-score",
-            },
-            {
-              name: "--admin1",
-            },
-            {
-              name: "--k_weight",
-            },
-            {
-              name: "--formatstr",
-            },
-            {
-              name: "--language",
-            },
-            {
-              name: "--invalid-result",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--batch",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
             },
             {
               name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
             },
             {
               name: "--force",
             },
             {
-              name: "--output",
+              name: ["-p", "--progressbar"],
             },
             {
-              name: "--delimiter",
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "index-update",
+          options: [
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
             },
             {
-              name: "--progressbar",
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "iplookup",
+          options: [
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "iplookupnow",
+          options: [
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "reverse",
+          options: [
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "reversenow",
+          options: [
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "suggest",
+          options: [
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "suggestnow",
+          options: [
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: ["-p", "--progressbar"],
             },
             {
               name: ["-h", "--help"],
@@ -2134,22 +4335,22 @@ const completion: Fig.Spec = {
           description: "Print this message or the help of the given subcommand(s)",
           subcommands: [
             {
-              name: "suggest",
-            },
-            {
-              name: "suggestnow",
-            },
-            {
-              name: "reverse",
-            },
-            {
-              name: "reversenow",
-            },
-            {
               name: "countryinfo",
             },
             {
               name: "countryinfonow",
+            },
+            {
+              name: "index-check",
+            },
+            {
+              name: "index-load",
+            },
+            {
+              name: "index-reset",
+            },
+            {
+              name: "index-update",
             },
             {
               name: "iplookup",
@@ -2158,16 +4359,16 @@ const completion: Fig.Spec = {
               name: "iplookupnow",
             },
             {
-              name: "index-load",
+              name: "reverse",
             },
             {
-              name: "index-check",
+              name: "reversenow",
             },
             {
-              name: "index-update",
+              name: "suggest",
             },
             {
-              name: "index-reset",
+              name: "suggestnow",
             },
             {
               name: "help",
@@ -2178,61 +4379,146 @@ const completion: Fig.Spec = {
       ],
       options: [
         {
-          name: "--new-column",
-        },
-        {
-          name: "--rename",
+          name: "--min-score",
+          isRepeatable: true,
+          args: {
+            name: "min-score",
+            isOptional: true,
+          },
         },
         {
           name: "--country",
-        },
-        {
-          name: "--min-score",
-        },
-        {
-          name: "--admin1",
-        },
-        {
-          name: "--k_weight",
-        },
-        {
-          name: "--formatstr",
-        },
-        {
-          name: "--language",
-        },
-        {
-          name: "--invalid-result",
-        },
-        {
-          name: "--jobs",
-        },
-        {
-          name: "--batch",
-        },
-        {
-          name: "--timeout",
-        },
-        {
-          name: "--cache-dir",
-        },
-        {
-          name: "--languages",
+          isRepeatable: true,
+          args: {
+            name: "country",
+            isOptional: true,
+          },
         },
         {
           name: "--cities-url",
+          isRepeatable: true,
+          args: {
+            name: "cities-url",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--admin1",
+          isRepeatable: true,
+          args: {
+            name: "admin1",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--cache-dir",
+          isRepeatable: true,
+          args: {
+            name: "cache-dir",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--languages",
+          isRepeatable: true,
+          args: {
+            name: "languages",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-l", "--language"],
+          isRepeatable: true,
+          args: {
+            name: "language",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-r", "--rename"],
+          isRepeatable: true,
+          args: {
+            name: "rename",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-f", "--formatstr"],
+          isRepeatable: true,
+          args: {
+            name: "formatstr",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-c", "--new-column"],
+          isRepeatable: true,
+          args: {
+            name: "new-column",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-k", "--k_weight"],
+          isRepeatable: true,
+          args: {
+            name: "k_weight",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--invalid-result",
+          isRepeatable: true,
+          args: {
+            name: "invalid-result",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--timeout",
+          isRepeatable: true,
+          args: {
+            name: "timeout",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-b", "--batch"],
+          isRepeatable: true,
+          args: {
+            name: "batch",
+            isOptional: true,
+          },
         },
         {
           name: "--force",
         },
         {
-          name: "--output",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--progressbar",
+          name: ["-p", "--progressbar"],
         },
         {
           name: ["-h", "--help"],
@@ -2244,19 +4530,44 @@ const completion: Fig.Spec = {
       name: "geoconvert",
       options: [
         {
-          name: "--geometry",
+          name: ["-g", "--geometry"],
+          isRepeatable: true,
+          args: {
+            name: "geometry",
+            isOptional: true,
+          },
         },
         {
-          name: "--latitude",
+          name: ["-x", "--longitude"],
+          isRepeatable: true,
+          args: {
+            name: "longitude",
+            isOptional: true,
+          },
         },
         {
-          name: "--longitude",
+          name: ["-y", "--latitude"],
+          isRepeatable: true,
+          args: {
+            name: "latitude",
+            isOptional: true,
+          },
         },
         {
-          name: "--max-length",
+          name: ["-l", "--max-length"],
+          isRepeatable: true,
+          args: {
+            name: "max-length",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
           name: ["-h", "--help"],
@@ -2268,19 +4579,24 @@ const completion: Fig.Spec = {
       name: "headers",
       options: [
         {
-          name: "--just-names",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--just-count",
+          name: ["-j", "--just-names"],
         },
         {
-          name: "--intersect",
+          name: ["-J", "--just-count"],
         },
         {
           name: "--trim",
         },
         {
-          name: "--delimiter",
+          name: "--intersect",
         },
         {
           name: ["-h", "--help"],
@@ -2292,7 +4608,12 @@ const completion: Fig.Spec = {
       name: "index",
       options: [
         {
-          name: "--output",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
           name: ["-h", "--help"],
@@ -2305,42 +4626,87 @@ const completion: Fig.Spec = {
       options: [
         {
           name: "--quote",
+          isRepeatable: true,
+          args: {
+            name: "quote",
+            isOptional: true,
+          },
         },
         {
-          name: "--escape",
+          name: "--skip-lastlines",
+          isRepeatable: true,
+          args: {
+            name: "skip-lastlines",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-quoting",
-        },
-        {
-          name: "--quote-style",
+          name: "--comment",
+          isRepeatable: true,
+          args: {
+            name: "comment",
+            isOptional: true,
+          },
         },
         {
           name: "--skip-lines",
+          isRepeatable: true,
+          args: {
+            name: "skip-lines",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--escape",
+          isRepeatable: true,
+          args: {
+            name: "escape",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--quote-style",
+          isRepeatable: true,
+          args: {
+            name: "quote-style",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--encoding-errors",
+          isRepeatable: true,
+          args: {
+            name: "encoding-errors",
+            isOptional: true,
+          },
         },
         {
           name: "--auto-skip",
         },
         {
-          name: "--skip-lastlines",
-        },
-        {
           name: "--trim-headers",
         },
         {
+          name: "--no-quoting",
+        },
+        {
           name: "--trim-fields",
-        },
-        {
-          name: "--comment",
-        },
-        {
-          name: "--encoding-errors",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--delimiter",
         },
         {
           name: ["-h", "--help"],
@@ -2352,49 +4718,64 @@ const completion: Fig.Spec = {
       name: "join",
       options: [
         {
-          name: "--left",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--left-anti",
+          name: "--keys-output",
+          isRepeatable: true,
+          args: {
+            name: "keys-output",
+            isOptional: true,
+          },
         },
         {
-          name: "--left-semi",
-        },
-        {
-          name: "--right",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
           name: "--right-anti",
         },
         {
-          name: "--right-semi",
+          name: "--full",
         },
         {
-          name: "--full",
+          name: ["-n", "--no-headers"],
+        },
+        {
+          name: "--right",
+        },
+        {
+          name: ["-i", "--ignore-case"],
         },
         {
           name: "--cross",
         },
         {
+          name: "--left-anti",
+        },
+        {
+          name: "--left",
+        },
+        {
           name: "--nulls",
         },
         {
-          name: "--keys-output",
+          name: "--left-semi",
         },
         {
-          name: "--ignore-case",
+          name: ["-z", "--ignore-leading-zeros"],
         },
         {
-          name: "--ignore-leading-zeros",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
+          name: "--right-semi",
         },
         {
           name: ["-h", "--help"],
@@ -2406,130 +4787,230 @@ const completion: Fig.Spec = {
       name: "joinp",
       options: [
         {
-          name: "--left",
-        },
-        {
-          name: "--left-anti",
-        },
-        {
-          name: "--left-semi",
-        },
-        {
-          name: "--right",
-        },
-        {
-          name: "--right-anti",
-        },
-        {
-          name: "--right-semi",
-        },
-        {
-          name: "--full",
-        },
-        {
-          name: "--cross",
-        },
-        {
-          name: "--non-equi",
-        },
-        {
-          name: "--coalesce",
-        },
-        {
-          name: "--filter-left",
-        },
-        {
-          name: "--filter-right",
+          name: "--tolerance",
+          isRepeatable: true,
+          args: {
+            name: "tolerance",
+            isOptional: true,
+          },
         },
         {
           name: "--validate",
+          isRepeatable: true,
+          args: {
+            name: "validate",
+            isOptional: true,
+          },
         },
         {
-          name: "--maintain-order",
+          name: "--sql-filter",
+          isRepeatable: true,
+          args: {
+            name: "sql-filter",
+            isOptional: true,
+          },
         },
         {
-          name: "--nulls",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--streaming",
+          name: "--date-format",
+          isRepeatable: true,
+          args: {
+            name: "date-format",
+            isOptional: true,
+          },
         },
         {
-          name: "--try-parsedates",
+          name: "--datetime-format",
+          isRepeatable: true,
+          args: {
+            name: "datetime-format",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--float-precision",
+          isRepeatable: true,
+          args: {
+            name: "float-precision",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--non-equi",
+          isRepeatable: true,
+          args: {
+            name: "non-equi",
+            isOptional: true,
+          },
         },
         {
           name: "--infer-len",
+          isRepeatable: true,
+          args: {
+            name: "infer-len",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--right_by",
+          isRepeatable: true,
+          args: {
+            name: "right_by",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--left_by",
+          isRepeatable: true,
+          args: {
+            name: "left_by",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--maintain-order",
+          isRepeatable: true,
+          args: {
+            name: "maintain-order",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--filter-right",
+          isRepeatable: true,
+          args: {
+            name: "filter-right",
+            isOptional: true,
+          },
         },
         {
           name: "--cache-schema",
+          isRepeatable: true,
+          args: {
+            name: "cache-schema",
+            isOptional: true,
+          },
         },
         {
-          name: "--low-memory",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-optimizations",
+          name: "--time-format",
+          isRepeatable: true,
+          args: {
+            name: "time-format",
+            isOptional: true,
+          },
         },
         {
-          name: "--ignore-errors",
+          name: ["-N", "--norm-unicode"],
+          isRepeatable: true,
+          args: {
+            name: "norm-unicode",
+            isOptional: true,
+          },
         },
         {
-          name: "--decimal-comma",
+          name: "--null-value",
+          isRepeatable: true,
+          args: {
+            name: "null-value",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--strategy",
+          isRepeatable: true,
+          args: {
+            name: "strategy",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--filter-left",
+          isRepeatable: true,
+          args: {
+            name: "filter-left",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-q", "--quiet"],
         },
         {
           name: "--asof",
         },
         {
+          name: "--right-anti",
+        },
+        {
+          name: ["-X", "--allow-exact-matches"],
+        },
+        {
+          name: "--try-parsedates",
+        },
+        {
+          name: ["-z", "--ignore-leading-zeros"],
+        },
+        {
+          name: "--coalesce",
+        },
+        {
+          name: "--ignore-errors",
+        },
+        {
           name: "--no-sort",
         },
         {
-          name: "--left_by",
+          name: "--left",
         },
         {
-          name: "--right_by",
+          name: "--right",
         },
         {
-          name: "--strategy",
+          name: "--left-semi",
         },
         {
-          name: "--tolerance",
+          name: "--cross",
         },
         {
-          name: "--allow-exact-matches",
+          name: "--decimal-comma",
         },
         {
-          name: "--sql-filter",
+          name: "--low-memory",
         },
         {
-          name: "--datetime-format",
+          name: "--streaming",
         },
         {
-          name: "--date-format",
+          name: ["-i", "--ignore-case"],
         },
         {
-          name: "--time-format",
+          name: "--full",
         },
         {
-          name: "--float-precision",
+          name: "--nulls",
         },
         {
-          name: "--null-value",
+          name: "--right-semi",
         },
         {
-          name: "--ignore-case",
+          name: "--left-anti",
         },
         {
-          name: "--ignore-leading-zeros",
-        },
-        {
-          name: "--norm-unicode",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--quiet",
+          name: "--no-optimizations",
         },
         {
           name: ["-h", "--help"],
@@ -2541,13 +5022,28 @@ const completion: Fig.Spec = {
       name: "json",
       options: [
         {
+          name: ["-s", "--select"],
+          isRepeatable: true,
+          args: {
+            name: "select",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
           name: "--jaq",
-        },
-        {
-          name: "--select",
-        },
-        {
-          name: "--output",
+          isRepeatable: true,
+          args: {
+            name: "jaq",
+            isOptional: true,
+          },
         },
         {
           name: ["-h", "--help"],
@@ -2559,19 +5055,39 @@ const completion: Fig.Spec = {
       name: "jsonl",
       options: [
         {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-b", "--batch"],
+          isRepeatable: true,
+          args: {
+            name: "batch",
+            isOptional: true,
+          },
+        },
+        {
           name: "--ignore-errors",
-        },
-        {
-          name: "--jobs",
-        },
-        {
-          name: "--batch",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--delimiter",
         },
         {
           name: ["-h", "--help"],
@@ -2583,43 +5099,89 @@ const completion: Fig.Spec = {
       name: "lens",
       options: [
         {
-          name: "--delimiter",
+          name: "--find",
+          isRepeatable: true,
+          args: {
+            name: "find",
+            isOptional: true,
+          },
         },
         {
-          name: "--tab-separated",
+          name: ["-f", "--freeze-columns"],
+          isRepeatable: true,
+          args: {
+            name: "freeze-columns",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-W", "--wrap-mode"],
+          isRepeatable: true,
+          args: {
+            name: "wrap-mode",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-P", "--prompt"],
+          isRepeatable: true,
+          args: {
+            name: "prompt",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--columns",
+          isRepeatable: true,
+          args: {
+            name: "columns",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--filter",
+          isRepeatable: true,
+          args: {
+            name: "filter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--echo-column",
+          isRepeatable: true,
+          args: {
+            name: "echo-column",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-m", "--monochrome"],
+        },
+        {
+          name: ["-t", "--tab-separated"],
+        },
+        {
+          name: ["-i", "--ignore-case"],
         },
         {
           name: "--no-headers",
         },
         {
-          name: "--columns",
-        },
-        {
-          name: "--filter",
-        },
-        {
-          name: "--find",
-        },
-        {
-          name: "--ignore-case",
-        },
-        {
-          name: "--freeze-columns",
-        },
-        {
-          name: "--monochrome",
-        },
-        {
-          name: "--wrap-mode",
-        },
-        {
-          name: "--prompt",
-        },
-        {
-          name: "--echo-column",
+          name: ["-A", "--auto-reload"],
         },
         {
           name: "--debug",
+        },
+        {
+          name: ["-S", "--streaming-stdin"],
         },
         {
           name: ["-h", "--help"],
@@ -2631,52 +5193,94 @@ const completion: Fig.Spec = {
       name: "luau",
       subcommands: [
         {
-          name: "map",
+          name: "filter",
           options: [
             {
-              name: "--no-globals",
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-token",
+              isRepeatable: true,
+              args: {
+                name: "ckan-token",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-B", "--begin"],
+              isRepeatable: true,
+              args: {
+                name: "begin",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--max-errors",
+              isRepeatable: true,
+              args: {
+                name: "max-errors",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-E", "--end"],
+              isRepeatable: true,
+              args: {
+                name: "end",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-api",
+              isRepeatable: true,
+              args: {
+                name: "ckan-api",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-n", "--no-headers"],
+            },
+            {
+              name: ["-g", "--no-globals"],
+            },
+            {
+              name: ["-p", "--progressbar"],
             },
             {
               name: "--colindex",
             },
             {
-              name: "--remap",
-            },
-            {
-              name: "--begin",
-            },
-            {
-              name: "--end",
-            },
-            {
-              name: "--luau-path",
-            },
-            {
-              name: "--max-errors",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--ckan-api",
-            },
-            {
-              name: "--ckan-token",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--output",
-            },
-            {
-              name: "--no-headers",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
+              name: ["-r", "--remap"],
             },
             {
               name: ["-h", "--help"],
@@ -2685,52 +5289,94 @@ const completion: Fig.Spec = {
           ],
         },
         {
-          name: "filter",
+          name: "map",
           options: [
             {
-              name: "--no-globals",
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-token",
+              isRepeatable: true,
+              args: {
+                name: "ckan-token",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-B", "--begin"],
+              isRepeatable: true,
+              args: {
+                name: "begin",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--max-errors",
+              isRepeatable: true,
+              args: {
+                name: "max-errors",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-E", "--end"],
+              isRepeatable: true,
+              args: {
+                name: "end",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-api",
+              isRepeatable: true,
+              args: {
+                name: "ckan-api",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-n", "--no-headers"],
+            },
+            {
+              name: ["-g", "--no-globals"],
+            },
+            {
+              name: ["-p", "--progressbar"],
             },
             {
               name: "--colindex",
             },
             {
-              name: "--remap",
-            },
-            {
-              name: "--begin",
-            },
-            {
-              name: "--end",
-            },
-            {
-              name: "--luau-path",
-            },
-            {
-              name: "--max-errors",
-            },
-            {
-              name: "--timeout",
-            },
-            {
-              name: "--ckan-api",
-            },
-            {
-              name: "--ckan-token",
-            },
-            {
-              name: "--cache-dir",
-            },
-            {
-              name: "--output",
-            },
-            {
-              name: "--no-headers",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: "--progressbar",
+              name: ["-r", "--remap"],
             },
             {
               name: ["-h", "--help"],
@@ -2743,10 +5389,10 @@ const completion: Fig.Spec = {
           description: "Print this message or the help of the given subcommand(s)",
           subcommands: [
             {
-              name: "map",
+              name: "filter",
             },
             {
-              name: "filter",
+              name: "map",
             },
             {
               name: "help",
@@ -2757,49 +5403,91 @@ const completion: Fig.Spec = {
       ],
       options: [
         {
-          name: "--no-globals",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--timeout",
+          isRepeatable: true,
+          args: {
+            name: "timeout",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--cache-dir",
+          isRepeatable: true,
+          args: {
+            name: "cache-dir",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ckan-token",
+          isRepeatable: true,
+          args: {
+            name: "ckan-token",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-B", "--begin"],
+          isRepeatable: true,
+          args: {
+            name: "begin",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--max-errors",
+          isRepeatable: true,
+          args: {
+            name: "max-errors",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-E", "--end"],
+          isRepeatable: true,
+          args: {
+            name: "end",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ckan-api",
+          isRepeatable: true,
+          args: {
+            name: "ckan-api",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-n", "--no-headers"],
+        },
+        {
+          name: ["-g", "--no-globals"],
+        },
+        {
+          name: ["-p", "--progressbar"],
         },
         {
           name: "--colindex",
         },
         {
-          name: "--remap",
-        },
-        {
-          name: "--begin",
-        },
-        {
-          name: "--end",
-        },
-        {
-          name: "--luau-path",
-        },
-        {
-          name: "--max-errors",
-        },
-        {
-          name: "--timeout",
-        },
-        {
-          name: "--ckan-api",
-        },
-        {
-          name: "--ckan-token",
-        },
-        {
-          name: "--cache-dir",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--progressbar",
+          name: ["-r", "--remap"],
         },
         {
           name: ["-h", "--help"],
@@ -2811,55 +5499,115 @@ const completion: Fig.Spec = {
       name: "moarstats",
       options: [
         {
-          name: "--advanced",
+          name: "--pct-thresholds",
+          isRepeatable: true,
+          args: {
+            name: "pct-thresholds",
+            isOptional: true,
+          },
         },
         {
-          name: "--epsilon",
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
         },
         {
-          name: "--stats-options",
+          name: ["-J", "--join-inputs"],
+          isRepeatable: true,
+          args: {
+            name: "join-inputs",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-e", "--epsilon"],
+          isRepeatable: true,
+          args: {
+            name: "epsilon",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-C", "--cardinality-threshold"],
+          isRepeatable: true,
+          args: {
+            name: "cardinality-threshold",
+            isOptional: true,
+          },
         },
         {
           name: "--round",
+          isRepeatable: true,
+          args: {
+            name: "round",
+            isOptional: true,
+          },
         },
         {
-          name: "--use-percentiles",
+          name: ["-K", "--join-keys"],
+          isRepeatable: true,
+          args: {
+            name: "join-keys",
+            isOptional: true,
+          },
         },
         {
-          name: "--pct-thresholds",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-T", "--join-type"],
+          isRepeatable: true,
+          args: {
+            name: "join-type",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--stats-options",
+          isRepeatable: true,
+          args: {
+            name: "stats-options",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-S", "--bivariate-stats"],
+          isRepeatable: true,
+          args: {
+            name: "bivariate-stats",
+            isOptional: true,
+          },
         },
         {
           name: "--xsd-gdate-scan",
-        },
-        {
-          name: "--bivariate",
-        },
-        {
-          name: "--bivariate-stats",
-        },
-        {
-          name: "--cardinality-threshold",
-        },
-        {
-          name: "--join-inputs",
-        },
-        {
-          name: "--join-keys",
-        },
-        {
-          name: "--join-type",
-        },
-        {
-          name: "--progressbar",
+          isRepeatable: true,
+          args: {
+            name: "xsd-gdate-scan",
+            isOptional: true,
+          },
         },
         {
           name: "--force",
         },
         {
-          name: "--jobs",
+          name: "--advanced",
         },
         {
-          name: "--output",
+          name: ["-B", "--bivariate"],
+        },
+        {
+          name: "--use-percentiles",
+        },
+        {
+          name: ["-p", "--progressbar"],
         },
         {
           name: ["-h", "--help"],
@@ -2871,19 +5619,42 @@ const completion: Fig.Spec = {
       name: "partition",
       options: [
         {
-          name: "--filename",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--prefix-length",
+          name: ["-p", "--prefix-length"],
+          isRepeatable: true,
+          args: {
+            name: "prefix-length",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--filename",
+          isRepeatable: true,
+          args: {
+            name: "filename",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--limit",
+          isRepeatable: true,
+          args: {
+            name: "limit",
+            isOptional: true,
+          },
         },
         {
           name: "--drop",
         },
         {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
+          name: ["-n", "--no-headers"],
         },
         {
           name: ["-h", "--help"],
@@ -2895,43 +5666,81 @@ const completion: Fig.Spec = {
       name: "pivotp",
       options: [
         {
-          name: "--index",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--values",
-        },
-        {
-          name: "--agg",
-        },
-        {
-          name: "--sort-columns",
-        },
-        {
-          name: "--col-separator",
-        },
-        {
-          name: "--validate",
-        },
-        {
-          name: "--try-parsedates",
+          name: ["-a", "--agg"],
+          isRepeatable: true,
+          args: {
+            name: "agg",
+            isOptional: true,
+          },
         },
         {
           name: "--infer-len",
+          isRepeatable: true,
+          args: {
+            name: "infer-len",
+            isOptional: true,
+          },
         },
         {
-          name: "--decimal-comma",
+          name: ["-i", "--index"],
+          isRepeatable: true,
+          args: {
+            name: "index",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--col-separator",
+          isRepeatable: true,
+          args: {
+            name: "col-separator",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-v", "--values"],
+          isRepeatable: true,
+          args: {
+            name: "values",
+            isOptional: true,
+          },
         },
         {
           name: "--ignore-errors",
         },
         {
-          name: "--output",
+          name: "--maintain-order",
         },
         {
-          name: "--delimiter",
+          name: "--try-parsedates",
         },
         {
-          name: "--quiet",
+          name: "--sort-columns",
+        },
+        {
+          name: "--decimal-comma",
+        },
+        {
+          name: ["-q", "--quiet"],
+        },
+        {
+          name: "--validate",
         },
         {
           name: ["-h", "--help"],
@@ -2988,28 +5797,58 @@ const completion: Fig.Spec = {
       name: "prompt",
       options: [
         {
-          name: "--msg",
-        },
-        {
-          name: "--filters",
-        },
-        {
-          name: "--workdir",
-        },
-        {
-          name: "--fd-output",
-        },
-        {
           name: "--save-fname",
+          isRepeatable: true,
+          args: {
+            name: "save-fname",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-m", "--msg"],
+          isRepeatable: true,
+          args: {
+            name: "msg",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-F", "--filters"],
+          isRepeatable: true,
+          args: {
+            name: "filters",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--workdir"],
+          isRepeatable: true,
+          args: {
+            name: "workdir",
+            isOptional: true,
+          },
         },
         {
           name: "--base-delay-ms",
+          isRepeatable: true,
+          args: {
+            name: "base-delay-ms",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--quiet",
+          name: ["-f", "--fd-output"],
+        },
+        {
+          name: ["-q", "--quiet"],
         },
         {
           name: ["-h", "--help"],
@@ -3021,22 +5860,47 @@ const completion: Fig.Spec = {
       name: "pseudo",
       options: [
         {
-          name: "--start",
+          name: "--formatstr",
+          isRepeatable: true,
+          args: {
+            name: "formatstr",
+            isOptional: true,
+          },
         },
         {
           name: "--increment",
+          isRepeatable: true,
+          args: {
+            name: "increment",
+            isOptional: true,
+          },
         },
         {
-          name: "--formatstr",
+          name: "--start",
+          isRepeatable: true,
+          args: {
+            name: "start",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-headers",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--delimiter",
+          name: ["-n", "--no-headers"],
         },
         {
           name: ["-h", "--help"],
@@ -3048,25 +5912,45 @@ const completion: Fig.Spec = {
       name: "py",
       subcommands: [
         {
-          name: "map",
+          name: "filter",
           options: [
             {
-              name: "--helper",
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
             },
             {
-              name: "--batch",
+              name: ["-f", "--helper"],
+              isRepeatable: true,
+              args: {
+                name: "helper",
+                isOptional: true,
+              },
             },
             {
-              name: "--output",
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
             },
             {
-              name: "--no-headers",
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
             },
             {
-              name: "--delimiter",
+              name: ["-n", "--no-headers"],
             },
             {
-              name: "--progressbar",
+              name: ["-p", "--progressbar"],
             },
             {
               name: ["-h", "--help"],
@@ -3075,25 +5959,45 @@ const completion: Fig.Spec = {
           ],
         },
         {
-          name: "filter",
+          name: "map",
           options: [
             {
-              name: "--helper",
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
             },
             {
-              name: "--batch",
+              name: ["-f", "--helper"],
+              isRepeatable: true,
+              args: {
+                name: "helper",
+                isOptional: true,
+              },
             },
             {
-              name: "--output",
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
             },
             {
-              name: "--no-headers",
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
             },
             {
-              name: "--delimiter",
+              name: ["-n", "--no-headers"],
             },
             {
-              name: "--progressbar",
+              name: ["-p", "--progressbar"],
             },
             {
               name: ["-h", "--help"],
@@ -3106,10 +6010,10 @@ const completion: Fig.Spec = {
           description: "Print this message or the help of the given subcommand(s)",
           subcommands: [
             {
-              name: "map",
+              name: "filter",
             },
             {
-              name: "filter",
+              name: "map",
             },
             {
               name: "help",
@@ -3120,22 +6024,42 @@ const completion: Fig.Spec = {
       ],
       options: [
         {
-          name: "--helper",
+          name: ["-b", "--batch"],
+          isRepeatable: true,
+          args: {
+            name: "batch",
+            isOptional: true,
+          },
         },
         {
-          name: "--batch",
+          name: ["-f", "--helper"],
+          isRepeatable: true,
+          args: {
+            name: "helper",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-headers",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--delimiter",
+          name: ["-n", "--no-headers"],
         },
         {
-          name: "--progressbar",
+          name: ["-p", "--progressbar"],
         },
         {
           name: ["-h", "--help"],
@@ -3147,13 +6071,26 @@ const completion: Fig.Spec = {
       name: "rename",
       options: [
         {
-          name: "--output",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-headers",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--delimiter",
+          name: "--pairwise",
+        },
+        {
+          name: ["-n", "--no-headers"],
         },
         {
           name: ["-h", "--help"],
@@ -3165,40 +6102,76 @@ const completion: Fig.Spec = {
       name: "replace",
       options: [
         {
-          name: "--ignore-case",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--size-limit",
+          isRepeatable: true,
+          args: {
+            name: "size-limit",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--dfa-size-limit",
+          isRepeatable: true,
+          args: {
+            name: "dfa-size-limit",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-s", "--select"],
+          isRepeatable: true,
+          args: {
+            name: "select",
+            isOptional: true,
+          },
         },
         {
           name: "--literal",
         },
         {
-          name: "--select",
+          name: "--exact",
         },
         {
-          name: "--unicode",
+          name: ["-p", "--progressbar"],
         },
         {
-          name: "--size-limit",
+          name: ["-u", "--unicode"],
         },
         {
-          name: "--dfa-size-limit",
+          name: ["-q", "--quiet"],
         },
         {
           name: "--not-one",
         },
         {
-          name: "--output",
+          name: ["-n", "--no-headers"],
         },
         {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--progressbar",
-        },
-        {
-          name: "--quiet",
+          name: ["-i", "--ignore-case"],
         },
         {
           name: ["-h", "--help"],
@@ -3210,16 +6183,26 @@ const completion: Fig.Spec = {
       name: "reverse",
       options: [
         {
-          name: "--output",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
           name: "--memcheck",
+        },
+        {
+          name: ["-n", "--no-headers"],
         },
         {
           name: ["-h", "--help"],
@@ -3231,19 +6214,44 @@ const completion: Fig.Spec = {
       name: "safenames",
       options: [
         {
+          name: "--prefix",
+          isRepeatable: true,
+          args: {
+            name: "prefix",
+            isOptional: true,
+          },
+        },
+        {
           name: "--mode",
+          isRepeatable: true,
+          args: {
+            name: "mode",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
           name: "--reserved",
+          isRepeatable: true,
+          args: {
+            name: "reserved",
+            isOptional: true,
+          },
         },
         {
-          name: "--prefix",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--delimiter",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
           name: ["-h", "--help"],
@@ -3255,67 +6263,152 @@ const completion: Fig.Spec = {
       name: "sample",
       options: [
         {
-          name: "--seed",
-        },
-        {
-          name: "--rng",
-        },
-        {
-          name: "--user-agent",
+          name: "--systematic",
+          isRepeatable: true,
+          args: {
+            name: "systematic",
+            isOptional: true,
+          },
         },
         {
           name: "--timeout",
+          isRepeatable: true,
+          args: {
+            name: "timeout",
+            isOptional: true,
+          },
         },
         {
           name: "--max-size",
-        },
-        {
-          name: "--bernoulli",
-        },
-        {
-          name: "--systematic",
-        },
-        {
-          name: "--stratified",
-        },
-        {
-          name: "--weighted",
-        },
-        {
-          name: "--cluster",
-        },
-        {
-          name: "--timeseries",
-        },
-        {
-          name: "--ts-interval",
-        },
-        {
-          name: "--ts-start",
-        },
-        {
-          name: "--ts-adaptive",
+          isRepeatable: true,
+          args: {
+            name: "max-size",
+            isOptional: true,
+          },
         },
         {
           name: "--ts-aggregate",
+          isRepeatable: true,
+          args: {
+            name: "ts-aggregate",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--seed",
+          isRepeatable: true,
+          args: {
+            name: "seed",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--cluster",
+          isRepeatable: true,
+          args: {
+            name: "cluster",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--stratified",
+          isRepeatable: true,
+          args: {
+            name: "stratified",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--timeseries",
+          isRepeatable: true,
+          args: {
+            name: "timeseries",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--weighted",
+          isRepeatable: true,
+          args: {
+            name: "weighted",
+            isOptional: true,
+          },
         },
         {
           name: "--ts-input-tz",
+          isRepeatable: true,
+          args: {
+            name: "ts-input-tz",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ts-interval",
+          isRepeatable: true,
+          args: {
+            name: "ts-interval",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ts-adaptive",
+          isRepeatable: true,
+          args: {
+            name: "ts-adaptive",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ts-start",
+          isRepeatable: true,
+          args: {
+            name: "ts-start",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--user-agent",
+          isRepeatable: true,
+          args: {
+            name: "user-agent",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--rng",
+          isRepeatable: true,
+          args: {
+            name: "rng",
+            isOptional: true,
+          },
         },
         {
           name: "--ts-prefer-dmy",
         },
         {
+          name: "--bernoulli",
+        },
+        {
+          name: ["-n", "--no-headers"],
+        },
+        {
           name: "--force",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
         },
         {
           name: ["-h", "--help"],
@@ -3327,49 +6420,79 @@ const completion: Fig.Spec = {
       name: "schema",
       options: [
         {
+          name: "--pattern-columns",
+          isRepeatable: true,
+          args: {
+            name: "pattern-columns",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--dates-whitelist",
+          isRepeatable: true,
+          args: {
+            name: "dates-whitelist",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
           name: "--enum-threshold",
-        },
-        {
-          name: "--ignore-case",
-        },
-        {
-          name: "--strict-dates",
+          isRepeatable: true,
+          args: {
+            name: "enum-threshold",
+            isOptional: true,
+          },
         },
         {
           name: "--strict-formats",
         },
         {
-          name: "--pattern-columns",
+          name: "--strict-dates",
         },
         {
-          name: "--date-whitelist",
+          name: "--memcheck",
         },
         {
-          name: "--prefer-dmy",
-        },
-        {
-          name: "--force",
+          name: ["-i", "--ignore-case"],
         },
         {
           name: "--stdout",
         },
         {
+          name: "--force",
+        },
+        {
+          name: ["-n", "--no-headers"],
+        },
+        {
+          name: "--prefer-dmy",
+        },
+        {
           name: "--polars",
-        },
-        {
-          name: "--jobs",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--memcheck",
         },
         {
           name: ["-h", "--help"],
@@ -3381,58 +6504,104 @@ const completion: Fig.Spec = {
       name: "search",
       options: [
         {
-          name: "--ignore-case",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--literal",
+          name: ["-f", "--flag"],
+          isRepeatable: true,
+          args: {
+            name: "flag",
+            isOptional: true,
+          },
         },
         {
-          name: "--select",
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
         },
         {
-          name: "--invert-match",
-        },
-        {
-          name: "--unicode",
-        },
-        {
-          name: "--flag",
-        },
-        {
-          name: "--quick",
-        },
-        {
-          name: "--preview-match",
-        },
-        {
-          name: "--count",
+          name: ["-s", "--select"],
+          isRepeatable: true,
+          args: {
+            name: "select",
+            isOptional: true,
+          },
         },
         {
           name: "--size-limit",
+          isRepeatable: true,
+          args: {
+            name: "size-limit",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--preview-match",
+          isRepeatable: true,
+          args: {
+            name: "preview-match",
+            isOptional: true,
+          },
         },
         {
           name: "--dfa-size-limit",
+          isRepeatable: true,
+          args: {
+            name: "dfa-size-limit",
+            isOptional: true,
+          },
         },
         {
-          name: "--json",
+          name: ["-c", "--count"],
+        },
+        {
+          name: ["-v", "--invert-match"],
+        },
+        {
+          name: "--exact",
+        },
+        {
+          name: ["-Q", "--quick"],
+        },
+        {
+          name: ["-p", "--progressbar"],
+        },
+        {
+          name: ["-n", "--no-headers"],
         },
         {
           name: "--not-one",
         },
         {
-          name: "--output",
+          name: "--json",
         },
         {
-          name: "--no-headers",
+          name: "--literal",
         },
         {
-          name: "--delimiter",
+          name: ["-u", "--unicode"],
         },
         {
-          name: "--progressbar",
+          name: ["-q", "--quiet"],
         },
         {
-          name: "--quiet",
+          name: ["-i", "--ignore-case"],
         },
         {
           name: ["-h", "--help"],
@@ -3444,61 +6613,107 @@ const completion: Fig.Spec = {
       name: "searchset",
       options: [
         {
-          name: "--ignore-case",
+          name: ["-f", "--flag"],
+          isRepeatable: true,
+          args: {
+            name: "flag",
+            isOptional: true,
+          },
         },
         {
-          name: "--literal",
+          name: "--size-limit",
+          isRepeatable: true,
+          args: {
+            name: "size-limit",
+            isOptional: true,
+          },
         },
         {
-          name: "--select",
+          name: "--dfa-size-limit",
+          isRepeatable: true,
+          args: {
+            name: "dfa-size-limit",
+            isOptional: true,
+          },
         },
         {
-          name: "--invert-match",
+          name: ["-s", "--select"],
+          isRepeatable: true,
+          args: {
+            name: "select",
+            isOptional: true,
+          },
         },
         {
-          name: "--unicode",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--flag",
+          name: "--jobs",
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--unmatched-output",
+          isRepeatable: true,
+          args: {
+            name: "unmatched-output",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-v", "--invert-match"],
+        },
+        {
+          name: ["-u", "--unicode"],
+        },
+        {
+          name: "--exact",
         },
         {
           name: "--flag-matches-only",
         },
         {
-          name: "--unmatched-output",
+          name: ["-Q", "--quick"],
         },
         {
-          name: "--quick",
-        },
-        {
-          name: "--count",
-        },
-        {
-          name: "--json",
-        },
-        {
-          name: "--size-limit",
-        },
-        {
-          name: "--dfa-size-limit",
+          name: ["-c", "--count"],
         },
         {
           name: "--not-one",
         },
         {
-          name: "--output",
+          name: ["-n", "--no-headers"],
         },
         {
-          name: "--no-headers",
+          name: ["-j", "--json"],
         },
         {
-          name: "--delimiter",
+          name: ["-i", "--ignore-case"],
         },
         {
-          name: "--progressbar",
+          name: ["-p", "--progressbar"],
         },
         {
-          name: "--quiet",
+          name: ["-q", "--quiet"],
+        },
+        {
+          name: "--literal",
         },
         {
           name: ["-h", "--help"],
@@ -3510,22 +6725,37 @@ const completion: Fig.Spec = {
       name: "select",
       options: [
         {
-          name: "--random",
-        },
-        {
           name: "--seed",
+          isRepeatable: true,
+          args: {
+            name: "seed",
+            isOptional: true,
+          },
         },
         {
-          name: "--sort",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-headers",
+          name: ["-S", "--sort"],
         },
         {
-          name: "--delimiter",
+          name: ["-R", "--random"],
+        },
+        {
+          name: ["-n", "--no-headers"],
         },
         {
           name: ["-h", "--help"],
@@ -3537,31 +6767,61 @@ const completion: Fig.Spec = {
       name: "slice",
       options: [
         {
-          name: "--start",
+          name: ["-e", "--end"],
+          isRepeatable: true,
+          args: {
+            name: "end",
+            isOptional: true,
+          },
         },
         {
-          name: "--end",
+          name: ["-i", "--index"],
+          isRepeatable: true,
+          args: {
+            name: "index",
+            isOptional: true,
+          },
         },
         {
-          name: "--len",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--index",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-s", "--start"],
+          isRepeatable: true,
+          args: {
+            name: "start",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-l", "--len"],
+          isRepeatable: true,
+          args: {
+            name: "len",
+            isOptional: true,
+          },
         },
         {
           name: "--json",
         },
         {
+          name: ["-n", "--no-headers"],
+        },
+        {
           name: "--invert",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
         },
         {
           name: ["-h", "--help"],
@@ -3573,25 +6833,92 @@ const completion: Fig.Spec = {
       name: "snappy",
       subcommands: [
         {
-          name: "compress",
+          name: "check",
           options: [
             {
-              name: "--user-agent",
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
             },
             {
               name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
             },
             {
-              name: "--output",
+              name: "--user-agent",
+              isRepeatable: true,
+              args: {
+                name: "user-agent",
+                isOptional: true,
+              },
             },
             {
-              name: "--jobs",
+              name: ["-p", "--progressbar"],
             },
             {
-              name: "--quiet",
+              name: ["-q", "--quiet"],
             },
             {
-              name: "--progressbar",
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "compress",
+          options: [
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--user-agent",
+              isRepeatable: true,
+              args: {
+                name: "user-agent",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: ["-q", "--quiet"],
             },
             {
               name: ["-h", "--help"],
@@ -3603,49 +6930,42 @@ const completion: Fig.Spec = {
           name: "decompress",
           options: [
             {
-              name: "--user-agent",
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
             },
             {
               name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
             },
-            {
-              name: "--output",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--quiet",
-            },
-            {
-              name: "--progressbar",
-            },
-            {
-              name: ["-h", "--help"],
-              description: "Print help",
-            },
-          ],
-        },
-        {
-          name: "check",
-          options: [
             {
               name: "--user-agent",
+              isRepeatable: true,
+              args: {
+                name: "user-agent",
+                isOptional: true,
+              },
             },
             {
-              name: "--timeout",
+              name: ["-p", "--progressbar"],
             },
             {
-              name: "--output",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--quiet",
-            },
-            {
-              name: "--progressbar",
+              name: ["-q", "--quiet"],
             },
             {
               name: ["-h", "--help"],
@@ -3657,22 +6977,42 @@ const completion: Fig.Spec = {
           name: "validate",
           options: [
             {
-              name: "--user-agent",
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
             },
             {
               name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
             },
             {
-              name: "--output",
+              name: "--user-agent",
+              isRepeatable: true,
+              args: {
+                name: "user-agent",
+                isOptional: true,
+              },
             },
             {
-              name: "--jobs",
+              name: ["-p", "--progressbar"],
             },
             {
-              name: "--quiet",
-            },
-            {
-              name: "--progressbar",
+              name: ["-q", "--quiet"],
             },
             {
               name: ["-h", "--help"],
@@ -3685,13 +7025,13 @@ const completion: Fig.Spec = {
           description: "Print this message or the help of the given subcommand(s)",
           subcommands: [
             {
+              name: "check",
+            },
+            {
               name: "compress",
             },
             {
               name: "decompress",
-            },
-            {
-              name: "check",
             },
             {
               name: "validate",
@@ -3705,22 +7045,42 @@ const completion: Fig.Spec = {
       ],
       options: [
         {
-          name: "--user-agent",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
         },
         {
           name: "--timeout",
+          isRepeatable: true,
+          args: {
+            name: "timeout",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: "--user-agent",
+          isRepeatable: true,
+          args: {
+            name: "user-agent",
+            isOptional: true,
+          },
         },
         {
-          name: "--jobs",
+          name: ["-p", "--progressbar"],
         },
         {
-          name: "--quiet",
-        },
-        {
-          name: "--progressbar",
+          name: ["-q", "--quiet"],
         },
         {
           name: ["-h", "--help"],
@@ -3732,49 +7092,79 @@ const completion: Fig.Spec = {
       name: "sniff",
       options: [
         {
-          name: "--sample",
-        },
-        {
-          name: "--prefer-dmy",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--quote",
-        },
-        {
-          name: "--json",
-        },
-        {
-          name: "--pretty-json",
-        },
-        {
           name: "--save-urlsample",
+          isRepeatable: true,
+          args: {
+            name: "save-urlsample",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
           name: "--timeout",
+          isRepeatable: true,
+          args: {
+            name: "timeout",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--sample",
+          isRepeatable: true,
+          args: {
+            name: "sample",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--quote",
+          isRepeatable: true,
+          args: {
+            name: "quote",
+            isOptional: true,
+          },
         },
         {
           name: "--user-agent",
-        },
-        {
-          name: "--stats-types",
+          isRepeatable: true,
+          args: {
+            name: "user-agent",
+            isOptional: true,
+          },
         },
         {
           name: "--no-infer",
         },
         {
+          name: "--prefer-dmy",
+        },
+        {
+          name: "--json",
+        },
+        {
+          name: ["-p", "--progressbar"],
+        },
+        {
+          name: "--pretty-json",
+        },
+        {
           name: "--just-mime",
         },
         {
-          name: "--quick",
+          name: "--stats-types",
         },
         {
           name: "--harvest-mode",
         },
         {
-          name: "--progressbar",
+          name: ["-Q", "--quick"],
         },
         {
           name: ["-h", "--help"],
@@ -3786,49 +7176,79 @@ const completion: Fig.Spec = {
       name: "sort",
       options: [
         {
-          name: "--select",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--numeric",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--natural",
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
         },
         {
-          name: "--reverse",
+          name: "--rng",
+          isRepeatable: true,
+          args: {
+            name: "rng",
+            isOptional: true,
+          },
         },
         {
-          name: "--ignore-case",
+          name: ["-s", "--select"],
+          isRepeatable: true,
+          args: {
+            name: "select",
+            isOptional: true,
+          },
         },
         {
-          name: "--unique",
+          name: "--seed",
+          isRepeatable: true,
+          args: {
+            name: "seed",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-n", "--no-headers"],
+        },
+        {
+          name: ["-i", "--ignore-case"],
+        },
+        {
+          name: ["-N", "--numeric"],
+        },
+        {
+          name: "--memcheck",
         },
         {
           name: "--random",
         },
         {
-          name: "--seed",
+          name: ["-R", "--reverse"],
         },
         {
-          name: "--rng",
+          name: ["-u", "--unique"],
         },
         {
-          name: "--jobs",
+          name: "--natural",
         },
         {
           name: "--faster",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--memcheck",
         },
         {
           name: ["-h", "--help"],
@@ -3840,10 +7260,20 @@ const completion: Fig.Spec = {
       name: "sortcheck",
       options: [
         {
-          name: "--select",
+          name: ["-s", "--select"],
+          isRepeatable: true,
+          args: {
+            name: "select",
+            isOptional: true,
+          },
         },
         {
-          name: "--ignore-case",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
           name: "--all",
@@ -3852,16 +7282,16 @@ const completion: Fig.Spec = {
           name: "--json",
         },
         {
+          name: ["-i", "--ignore-case"],
+        },
+        {
+          name: ["-p", "--progressbar"],
+        },
+        {
+          name: ["-n", "--no-headers"],
+        },
+        {
           name: "--pretty-json",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--progressbar",
         },
         {
           name: ["-h", "--help"],
@@ -3873,40 +7303,80 @@ const completion: Fig.Spec = {
       name: "split",
       options: [
         {
-          name: "--size",
-        },
-        {
-          name: "--chunks",
-        },
-        {
-          name: "--kb-size",
-        },
-        {
-          name: "--jobs",
-        },
-        {
-          name: "--filename",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
           name: "--pad",
+          isRepeatable: true,
+          args: {
+            name: "pad",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-s", "--size"],
+          isRepeatable: true,
+          args: {
+            name: "size",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-k", "--kb-size"],
+          isRepeatable: true,
+          args: {
+            name: "kb-size",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-c", "--chunks"],
+          isRepeatable: true,
+          args: {
+            name: "chunks",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--filename",
+          isRepeatable: true,
+          args: {
+            name: "filename",
+            isOptional: true,
+          },
         },
         {
           name: "--filter",
+          isRepeatable: true,
+          args: {
+            name: "filter",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-n", "--no-headers"],
         },
         {
           name: "--filter-cleanup",
         },
         {
+          name: ["-q", "--quiet"],
+        },
+        {
           name: "--filter-ignore-errors",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--quiet",
         },
         {
           name: ["-h", "--help"],
@@ -3918,70 +7388,130 @@ const completion: Fig.Spec = {
       name: "sqlp",
       options: [
         {
-          name: "--format",
-        },
-        {
-          name: "--try-parsedates",
-        },
-        {
           name: "--infer-len",
+          isRepeatable: true,
+          args: {
+            name: "infer-len",
+            isOptional: true,
+          },
         },
         {
-          name: "--cache-schema",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--streaming",
+          name: "--float-precision",
+          isRepeatable: true,
+          args: {
+            name: "float-precision",
+            isOptional: true,
+          },
         },
         {
-          name: "--low-memory",
+          name: "--date-format",
+          isRepeatable: true,
+          args: {
+            name: "date-format",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--time-format",
+          isRepeatable: true,
+          args: {
+            name: "time-format",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--datetime-format",
+          isRepeatable: true,
+          args: {
+            name: "datetime-format",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--format",
+          isRepeatable: true,
+          args: {
+            name: "format",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--compress-level",
+          isRepeatable: true,
+          args: {
+            name: "compress-level",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--wnull-value",
+          isRepeatable: true,
+          args: {
+            name: "wnull-value",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--compression",
+          isRepeatable: true,
+          args: {
+            name: "compression",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--rnull-values",
+          isRepeatable: true,
+          args: {
+            name: "rnull-values",
+            isOptional: true,
+          },
         },
         {
           name: "--no-optimizations",
         },
         {
+          name: "--cache-schema",
+        },
+        {
           name: "--truncate-ragged-lines",
-        },
-        {
-          name: "--ignore-errors",
-        },
-        {
-          name: "--rnull-values",
-        },
-        {
-          name: "--decimal-comma",
-        },
-        {
-          name: "--datetime-format",
-        },
-        {
-          name: "--date-format",
-        },
-        {
-          name: "--time-format",
-        },
-        {
-          name: "--float-precision",
-        },
-        {
-          name: "--wnull-value",
-        },
-        {
-          name: "--compression",
-        },
-        {
-          name: "--compress-level",
         },
         {
           name: "--statistics",
         },
         {
-          name: "--output",
+          name: "--ignore-errors",
         },
         {
-          name: "--delimiter",
+          name: "--decimal-comma",
         },
         {
-          name: "--quiet",
+          name: "--low-memory",
+        },
+        {
+          name: "--try-parsedates",
+        },
+        {
+          name: "--streaming",
+        },
+        {
+          name: ["-q", "--quiet"],
         },
         {
           name: ["-h", "--help"],
@@ -3993,28 +7523,87 @@ const completion: Fig.Spec = {
       name: "stats",
       options: [
         {
-          name: "--select",
+          name: "--boolean-patterns",
+          isRepeatable: true,
+          args: {
+            name: "boolean-patterns",
+            isOptional: true,
+          },
         },
         {
-          name: "--everything",
+          name: "--dates-whitelist",
+          isRepeatable: true,
+          args: {
+            name: "dates-whitelist",
+            isOptional: true,
+          },
         },
         {
-          name: "--typesonly",
+          name: ["-s", "--select"],
+          isRepeatable: true,
+          args: {
+            name: "select",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--percentile-list",
+          isRepeatable: true,
+          args: {
+            name: "percentile-list",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-c", "--cache-threshold"],
+          isRepeatable: true,
+          args: {
+            name: "cache-threshold",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--weight",
+          isRepeatable: true,
+          args: {
+            name: "weight",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--round",
+          isRepeatable: true,
+          args: {
+            name: "round",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
           name: "--infer-boolean",
-        },
-        {
-          name: "--boolean-patterns",
-        },
-        {
-          name: "--mode",
-        },
-        {
-          name: "--cardinality",
-        },
-        {
-          name: "--median",
         },
         {
           name: "--mad",
@@ -4023,55 +7612,46 @@ const completion: Fig.Spec = {
           name: "--quartiles",
         },
         {
-          name: "--percentiles",
-        },
-        {
-          name: "--percentile-list",
-        },
-        {
-          name: "--round",
+          name: "--infer-dates",
         },
         {
           name: "--nulls",
         },
         {
-          name: "--infer-dates",
-        },
-        {
-          name: "--dates-whitelist",
-        },
-        {
-          name: "--prefer-dmy",
-        },
-        {
-          name: "--force",
-        },
-        {
-          name: "--jobs",
+          name: "--cardinality",
         },
         {
           name: "--stats-jsonl",
         },
         {
-          name: "--cache-threshold",
+          name: "--typesonly",
         },
         {
           name: "--vis-whitespace",
         },
         {
-          name: "--weight",
-        },
-        {
-          name: "--output",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
           name: "--memcheck",
+        },
+        {
+          name: ["-E", "--everything"],
+        },
+        {
+          name: "--force",
+        },
+        {
+          name: ["-n", "--no-headers"],
+        },
+        {
+          name: "--percentiles",
+        },
+        {
+          name: "--mode",
+        },
+        {
+          name: "--median",
+        },
+        {
+          name: "--prefer-dmy",
         },
         {
           name: ["-h", "--help"],
@@ -4083,22 +7663,52 @@ const completion: Fig.Spec = {
       name: "table",
       options: [
         {
-          name: "--width",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--pad",
+          name: ["-a", "--align"],
+          isRepeatable: true,
+          args: {
+            name: "align",
+            isOptional: true,
+          },
         },
         {
-          name: "--align",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--condense",
+          name: ["-c", "--condense"],
+          isRepeatable: true,
+          args: {
+            name: "condense",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: ["-p", "--pad"],
+          isRepeatable: true,
+          args: {
+            name: "pad",
+            isOptional: true,
+          },
         },
         {
-          name: "--delimiter",
+          name: ["-w", "--width"],
+          isRepeatable: true,
+          args: {
+            name: "width",
+            isOptional: true,
+          },
         },
         {
           name: "--memcheck",
@@ -4113,52 +7723,122 @@ const completion: Fig.Spec = {
       name: "template",
       options: [
         {
-          name: "--template",
-        },
-        {
-          name: "--template-file",
-        },
-        {
-          name: "--globals-json",
-        },
-        {
-          name: "--outfilename",
-        },
-        {
-          name: "--outsubdir-size",
-        },
-        {
-          name: "--customfilter-error",
-        },
-        {
-          name: "--jobs",
-        },
-        {
-          name: "--batch",
-        },
-        {
           name: "--timeout",
+          isRepeatable: true,
+          args: {
+            name: "timeout",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--template",
+          isRepeatable: true,
+          args: {
+            name: "template",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-b", "--batch"],
+          isRepeatable: true,
+          args: {
+            name: "batch",
+            isOptional: true,
+          },
         },
         {
           name: "--cache-dir",
+          isRepeatable: true,
+          args: {
+            name: "cache-dir",
+            isOptional: true,
+          },
         },
         {
           name: "--ckan-api",
+          isRepeatable: true,
+          args: {
+            name: "ckan-api",
+            isOptional: true,
+          },
         },
         {
-          name: "--ckan-token",
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
-        },
-        {
-          name: "--no-headers",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
           name: "--delimiter",
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--progressbar",
+          name: ["-t", "--template-file"],
+          isRepeatable: true,
+          args: {
+            name: "template-file",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ckan-token",
+          isRepeatable: true,
+          args: {
+            name: "ckan-token",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--outfilename",
+          isRepeatable: true,
+          args: {
+            name: "outfilename",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--outsubdir-size",
+          isRepeatable: true,
+          args: {
+            name: "outsubdir-size",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--globals-json",
+          isRepeatable: true,
+          args: {
+            name: "globals-json",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--customfilter-error",
+          isRepeatable: true,
+          args: {
+            name: "customfilter-error",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-p", "--progressbar"],
+        },
+        {
+          name: ["-n", "--no-headers"],
         },
         {
           name: ["-h", "--help"],
@@ -4170,142 +7850,71 @@ const completion: Fig.Spec = {
       name: "to",
       subcommands: [
         {
-          name: "postgres",
+          name: "datapackage",
           options: [
             {
-              name: "--print-package",
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
             },
             {
-              name: "--dump",
+              name: ["-p", "--separator"],
+              isRepeatable: true,
+              args: {
+                name: "separator",
+                isOptional: true,
+              },
             },
             {
-              name: "--stats",
+              name: ["-c", "--stats-csv"],
+              isRepeatable: true,
+              args: {
+                name: "stats-csv",
+                isOptional: true,
+              },
             },
             {
-              name: "--stats-csv",
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
             },
             {
-              name: "--quiet",
+              name: ["-s", "--schema"],
+              isRepeatable: true,
+              args: {
+                name: "schema",
+                isOptional: true,
+              },
             },
             {
-              name: "--schema",
+              name: ["-u", "--dump"],
+            },
+            {
+              name: ["-a", "--stats"],
+            },
+            {
+              name: ["-A", "--all-strings"],
+            },
+            {
+              name: ["-i", "--pipe"],
             },
             {
               name: "--drop",
             },
             {
-              name: "--evolve",
+              name: ["-e", "--evolve"],
             },
             {
-              name: "--pipe",
+              name: ["-k", "--print-package"],
             },
             {
-              name: "--separator",
-            },
-            {
-              name: "--all-strings",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: ["-h", "--help"],
-              description: "Print help",
-            },
-          ],
-        },
-        {
-          name: "sqlite",
-          options: [
-            {
-              name: "--print-package",
-            },
-            {
-              name: "--dump",
-            },
-            {
-              name: "--stats",
-            },
-            {
-              name: "--stats-csv",
-            },
-            {
-              name: "--quiet",
-            },
-            {
-              name: "--schema",
-            },
-            {
-              name: "--drop",
-            },
-            {
-              name: "--evolve",
-            },
-            {
-              name: "--pipe",
-            },
-            {
-              name: "--separator",
-            },
-            {
-              name: "--all-strings",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--delimiter",
-            },
-            {
-              name: ["-h", "--help"],
-              description: "Print help",
-            },
-          ],
-        },
-        {
-          name: "xlsx",
-          options: [
-            {
-              name: "--print-package",
-            },
-            {
-              name: "--dump",
-            },
-            {
-              name: "--stats",
-            },
-            {
-              name: "--stats-csv",
-            },
-            {
-              name: "--quiet",
-            },
-            {
-              name: "--schema",
-            },
-            {
-              name: "--drop",
-            },
-            {
-              name: "--evolve",
-            },
-            {
-              name: "--pipe",
-            },
-            {
-              name: "--separator",
-            },
-            {
-              name: "--all-strings",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--delimiter",
+              name: ["-q", "--quiet"],
             },
             {
               name: ["-h", "--help"],
@@ -4317,43 +7926,68 @@ const completion: Fig.Spec = {
           name: "ods",
           options: [
             {
-              name: "--print-package",
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
             },
             {
-              name: "--dump",
+              name: ["-p", "--separator"],
+              isRepeatable: true,
+              args: {
+                name: "separator",
+                isOptional: true,
+              },
             },
             {
-              name: "--stats",
+              name: ["-c", "--stats-csv"],
+              isRepeatable: true,
+              args: {
+                name: "stats-csv",
+                isOptional: true,
+              },
             },
             {
-              name: "--stats-csv",
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
             },
             {
-              name: "--quiet",
+              name: ["-s", "--schema"],
+              isRepeatable: true,
+              args: {
+                name: "schema",
+                isOptional: true,
+              },
             },
             {
-              name: "--schema",
+              name: ["-u", "--dump"],
+            },
+            {
+              name: ["-a", "--stats"],
+            },
+            {
+              name: ["-A", "--all-strings"],
+            },
+            {
+              name: ["-i", "--pipe"],
             },
             {
               name: "--drop",
             },
             {
-              name: "--evolve",
+              name: ["-e", "--evolve"],
             },
             {
-              name: "--pipe",
+              name: ["-k", "--print-package"],
             },
             {
-              name: "--separator",
-            },
-            {
-              name: "--all-strings",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--delimiter",
+              name: ["-q", "--quiet"],
             },
             {
               name: ["-h", "--help"],
@@ -4362,46 +7996,71 @@ const completion: Fig.Spec = {
           ],
         },
         {
-          name: "parquet",
+          name: "postgres",
           options: [
             {
-              name: "--print-package",
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
             },
             {
-              name: "--dump",
+              name: ["-p", "--separator"],
+              isRepeatable: true,
+              args: {
+                name: "separator",
+                isOptional: true,
+              },
             },
             {
-              name: "--stats",
+              name: ["-c", "--stats-csv"],
+              isRepeatable: true,
+              args: {
+                name: "stats-csv",
+                isOptional: true,
+              },
             },
             {
-              name: "--stats-csv",
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
             },
             {
-              name: "--quiet",
+              name: ["-s", "--schema"],
+              isRepeatable: true,
+              args: {
+                name: "schema",
+                isOptional: true,
+              },
             },
             {
-              name: "--schema",
+              name: ["-u", "--dump"],
+            },
+            {
+              name: ["-a", "--stats"],
+            },
+            {
+              name: ["-A", "--all-strings"],
+            },
+            {
+              name: ["-i", "--pipe"],
             },
             {
               name: "--drop",
             },
             {
-              name: "--evolve",
+              name: ["-e", "--evolve"],
             },
             {
-              name: "--pipe",
+              name: ["-k", "--print-package"],
             },
             {
-              name: "--separator",
-            },
-            {
-              name: "--all-strings",
-            },
-            {
-              name: "--jobs",
-            },
-            {
-              name: "--delimiter",
+              name: ["-q", "--quiet"],
             },
             {
               name: ["-h", "--help"],
@@ -4410,46 +8069,144 @@ const completion: Fig.Spec = {
           ],
         },
         {
-          name: "datapackage",
+          name: "sqlite",
           options: [
             {
-              name: "--print-package",
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
             },
             {
-              name: "--dump",
+              name: ["-p", "--separator"],
+              isRepeatable: true,
+              args: {
+                name: "separator",
+                isOptional: true,
+              },
             },
             {
-              name: "--stats",
+              name: ["-c", "--stats-csv"],
+              isRepeatable: true,
+              args: {
+                name: "stats-csv",
+                isOptional: true,
+              },
             },
             {
-              name: "--stats-csv",
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
             },
             {
-              name: "--quiet",
+              name: ["-s", "--schema"],
+              isRepeatable: true,
+              args: {
+                name: "schema",
+                isOptional: true,
+              },
             },
             {
-              name: "--schema",
+              name: ["-u", "--dump"],
+            },
+            {
+              name: ["-a", "--stats"],
+            },
+            {
+              name: ["-A", "--all-strings"],
+            },
+            {
+              name: ["-i", "--pipe"],
             },
             {
               name: "--drop",
             },
             {
-              name: "--evolve",
+              name: ["-e", "--evolve"],
             },
             {
-              name: "--pipe",
+              name: ["-k", "--print-package"],
             },
             {
-              name: "--separator",
+              name: ["-q", "--quiet"],
             },
             {
-              name: "--all-strings",
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "xlsx",
+          options: [
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
             },
             {
-              name: "--jobs",
+              name: ["-p", "--separator"],
+              isRepeatable: true,
+              args: {
+                name: "separator",
+                isOptional: true,
+              },
             },
             {
-              name: "--delimiter",
+              name: ["-c", "--stats-csv"],
+              isRepeatable: true,
+              args: {
+                name: "stats-csv",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-s", "--schema"],
+              isRepeatable: true,
+              args: {
+                name: "schema",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-u", "--dump"],
+            },
+            {
+              name: ["-a", "--stats"],
+            },
+            {
+              name: ["-A", "--all-strings"],
+            },
+            {
+              name: ["-i", "--pipe"],
+            },
+            {
+              name: "--drop",
+            },
+            {
+              name: ["-e", "--evolve"],
+            },
+            {
+              name: ["-k", "--print-package"],
+            },
+            {
+              name: ["-q", "--quiet"],
             },
             {
               name: ["-h", "--help"],
@@ -4462,6 +8219,12 @@ const completion: Fig.Spec = {
           description: "Print this message or the help of the given subcommand(s)",
           subcommands: [
             {
+              name: "datapackage",
+            },
+            {
+              name: "ods",
+            },
+            {
               name: "postgres",
             },
             {
@@ -4469,15 +8232,6 @@ const completion: Fig.Spec = {
             },
             {
               name: "xlsx",
-            },
-            {
-              name: "ods",
-            },
-            {
-              name: "parquet",
-            },
-            {
-              name: "datapackage",
             },
             {
               name: "help",
@@ -4488,43 +8242,68 @@ const completion: Fig.Spec = {
       ],
       options: [
         {
-          name: "--print-package",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--dump",
+          name: ["-p", "--separator"],
+          isRepeatable: true,
+          args: {
+            name: "separator",
+            isOptional: true,
+          },
         },
         {
-          name: "--stats",
+          name: ["-c", "--stats-csv"],
+          isRepeatable: true,
+          args: {
+            name: "stats-csv",
+            isOptional: true,
+          },
         },
         {
-          name: "--stats-csv",
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
         },
         {
-          name: "--quiet",
+          name: ["-s", "--schema"],
+          isRepeatable: true,
+          args: {
+            name: "schema",
+            isOptional: true,
+          },
         },
         {
-          name: "--schema",
+          name: ["-u", "--dump"],
+        },
+        {
+          name: ["-a", "--stats"],
+        },
+        {
+          name: ["-A", "--all-strings"],
+        },
+        {
+          name: ["-i", "--pipe"],
         },
         {
           name: "--drop",
         },
         {
-          name: "--evolve",
+          name: ["-e", "--evolve"],
         },
         {
-          name: "--pipe",
+          name: ["-k", "--print-package"],
         },
         {
-          name: "--separator",
-        },
-        {
-          name: "--all-strings",
-        },
-        {
-          name: "--jobs",
-        },
-        {
-          name: "--delimiter",
+          name: ["-q", "--quiet"],
         },
         {
           name: ["-h", "--help"],
@@ -4536,28 +8315,48 @@ const completion: Fig.Spec = {
       name: "tojsonl",
       options: [
         {
-          name: "--trim",
+          name: ["-b", "--batch"],
+          isRepeatable: true,
+          args: {
+            name: "batch",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-boolean",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--jobs",
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
         },
         {
-          name: "--batch",
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
         },
         {
-          name: "--delimiter",
-        },
-        {
-          name: "--output",
+          name: ["-q", "--quiet"],
         },
         {
           name: "--memcheck",
         },
         {
-          name: "--quiet",
+          name: "--no-boolean",
+        },
+        {
+          name: "--trim",
         },
         {
           name: ["-h", "--help"],
@@ -4569,13 +8368,39 @@ const completion: Fig.Spec = {
       name: "transpose",
       options: [
         {
-          name: "--multipass",
+          name: ["-s", "--select"],
+          isRepeatable: true,
+          args: {
+            name: "select",
+            isOptional: true,
+          },
         },
         {
-          name: "--output",
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
         },
         {
-          name: "--delimiter",
+          name: "--long",
+          isRepeatable: true,
+          args: {
+            name: "long",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-m", "--multipass"],
         },
         {
           name: "--memcheck",
@@ -4588,60 +8413,326 @@ const completion: Fig.Spec = {
     },
     {
       name: "validate",
+      subcommands: [
+        {
+          name: "schema",
+          options: [
+            {
+              name: "--valid-output",
+              isRepeatable: true,
+              args: {
+                name: "valid-output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid",
+              isRepeatable: true,
+              args: {
+                name: "invalid",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--valid",
+              isRepeatable: true,
+              args: {
+                name: "valid",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--email-min-subdomains",
+              isRepeatable: true,
+              args: {
+                name: "email-min-subdomains",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--dfa-size-limit",
+              isRepeatable: true,
+              args: {
+                name: "dfa-size-limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-api",
+              isRepeatable: true,
+              args: {
+                name: "ckan-api",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-token",
+              isRepeatable: true,
+              args: {
+                name: "ckan-token",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--backtrack-limit",
+              isRepeatable: true,
+              args: {
+                name: "backtrack-limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--size-limit",
+              isRepeatable: true,
+              args: {
+                name: "size-limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-n", "--no-headers"],
+            },
+            {
+              name: "--email-required-tld",
+            },
+            {
+              name: "--json",
+            },
+            {
+              name: ["-q", "--quiet"],
+            },
+            {
+              name: "--trim",
+            },
+            {
+              name: "--email-display-text",
+            },
+            {
+              name: "--fancy-regex",
+            },
+            {
+              name: "--pretty-json",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--email-domain-literal",
+            },
+            {
+              name: "--fail-fast",
+            },
+            {
+              name: "--no-format-validation",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "help",
+          description: "Print this message or the help of the given subcommand(s)",
+          subcommands: [
+            {
+              name: "schema",
+            },
+            {
+              name: "help",
+              description: "Print this message or the help of the given subcommand(s)",
+            },
+          ],
+        },
+      ],
       options: [
         {
-          name: "--trim",
+          name: "--valid-output",
+          isRepeatable: true,
+          args: {
+            name: "valid-output",
+            isOptional: true,
+          },
         },
         {
-          name: "--no-format-validation",
-        },
-        {
-          name: "--fail-fast",
-        },
-        {
-          name: "--valid",
+          name: "--timeout",
+          isRepeatable: true,
+          args: {
+            name: "timeout",
+            isOptional: true,
+          },
         },
         {
           name: "--invalid",
+          isRepeatable: true,
+          args: {
+            name: "invalid",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--valid",
+          isRepeatable: true,
+          args: {
+            name: "valid",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--email-min-subdomains",
+          isRepeatable: true,
+          args: {
+            name: "email-min-subdomains",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-b", "--batch"],
+          isRepeatable: true,
+          args: {
+            name: "batch",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--cache-dir",
+          isRepeatable: true,
+          args: {
+            name: "cache-dir",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--dfa-size-limit",
+          isRepeatable: true,
+          args: {
+            name: "dfa-size-limit",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ckan-api",
+          isRepeatable: true,
+          args: {
+            name: "ckan-api",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ckan-token",
+          isRepeatable: true,
+          args: {
+            name: "ckan-token",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--backtrack-limit",
+          isRepeatable: true,
+          args: {
+            name: "backtrack-limit",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--size-limit",
+          isRepeatable: true,
+          args: {
+            name: "size-limit",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-n", "--no-headers"],
+        },
+        {
+          name: "--email-required-tld",
         },
         {
           name: "--json",
         },
         {
+          name: ["-q", "--quiet"],
+        },
+        {
+          name: "--trim",
+        },
+        {
+          name: "--email-display-text",
+        },
+        {
+          name: "--fancy-regex",
+        },
+        {
           name: "--pretty-json",
         },
         {
-          name: "--valid-output",
+          name: ["-p", "--progressbar"],
         },
         {
-          name: "--jobs",
+          name: "--email-domain-literal",
         },
         {
-          name: "--batch",
+          name: "--fail-fast",
         },
         {
-          name: "--timeout",
-        },
-        {
-          name: "--cache-dir",
-        },
-        {
-          name: "--ckan-api",
-        },
-        {
-          name: "--ckan-token",
-        },
-        {
-          name: "--no-headers",
-        },
-        {
-          name: "--delimiter",
-        },
-        {
-          name: "--progressbar",
-        },
-        {
-          name: "--quiet",
+          name: "--no-format-validation",
         },
         {
           name: ["-h", "--help"],
@@ -4657,16 +8748,16 @@ const completion: Fig.Spec = {
           name: "apply",
           subcommands: [
             {
-              name: "operations",
-            },
-            {
-              name: "emptyreplace",
+              name: "calcconv",
             },
             {
               name: "dynfmt",
             },
             {
-              name: "calcconv",
+              name: "emptyreplace",
+            },
+            {
+              name: "operations",
             },
           ],
         },
@@ -4677,13 +8768,13 @@ const completion: Fig.Spec = {
           name: "cat",
           subcommands: [
             {
+              name: "columns",
+            },
+            {
               name: "rows",
             },
             {
               name: "rowskey",
-            },
-            {
-              name: "columns",
             },
           ],
         },
@@ -4721,13 +8812,13 @@ const completion: Fig.Spec = {
           name: "exclude",
         },
         {
+          name: "explode",
+        },
+        {
           name: "extdedup",
         },
         {
           name: "extsort",
-        },
-        {
-          name: "explode",
         },
         {
           name: "fetch",
@@ -4757,22 +8848,22 @@ const completion: Fig.Spec = {
           name: "geocode",
           subcommands: [
             {
-              name: "suggest",
-            },
-            {
-              name: "suggestnow",
-            },
-            {
-              name: "reverse",
-            },
-            {
-              name: "reversenow",
-            },
-            {
               name: "countryinfo",
             },
             {
               name: "countryinfonow",
+            },
+            {
+              name: "index-check",
+            },
+            {
+              name: "index-load",
+            },
+            {
+              name: "index-reset",
+            },
+            {
+              name: "index-update",
             },
             {
               name: "iplookup",
@@ -4781,16 +8872,16 @@ const completion: Fig.Spec = {
               name: "iplookupnow",
             },
             {
-              name: "index-load",
+              name: "reverse",
             },
             {
-              name: "index-check",
+              name: "reversenow",
             },
             {
-              name: "index-update",
+              name: "suggest",
             },
             {
-              name: "index-reset",
+              name: "suggestnow",
             },
           ],
         },
@@ -4825,10 +8916,10 @@ const completion: Fig.Spec = {
           name: "luau",
           subcommands: [
             {
-              name: "map",
+              name: "filter",
             },
             {
-              name: "filter",
+              name: "map",
             },
           ],
         },
@@ -4862,10 +8953,10 @@ const completion: Fig.Spec = {
           name: "py",
           subcommands: [
             {
-              name: "map",
+              name: "filter",
             },
             {
-              name: "filter",
+              name: "map",
             },
           ],
         },
@@ -4903,13 +8994,13 @@ const completion: Fig.Spec = {
           name: "snappy",
           subcommands: [
             {
+              name: "check",
+            },
+            {
               name: "compress",
             },
             {
               name: "decompress",
-            },
-            {
-              name: "check",
             },
             {
               name: "validate",
@@ -4944,6 +9035,12 @@ const completion: Fig.Spec = {
           name: "to",
           subcommands: [
             {
+              name: "datapackage",
+            },
+            {
+              name: "ods",
+            },
+            {
               name: "postgres",
             },
             {
@@ -4951,15 +9048,6 @@ const completion: Fig.Spec = {
             },
             {
               name: "xlsx",
-            },
-            {
-              name: "ods",
-            },
-            {
-              name: "parquet",
-            },
-            {
-              name: "datapackage",
             },
           ],
         },
@@ -4971,6 +9059,11 @@ const completion: Fig.Spec = {
         },
         {
           name: "validate",
+          subcommands: [
+            {
+              name: "schema",
+            },
+          ],
         },
         {
           name: "help",
@@ -4993,7 +9086,7 @@ const completion: Fig.Spec = {
       name: "--updatenow",
     },
     {
-      name: "--version",
+      name: ["-V", "--version"],
     },
     {
       name: ["-h", "--help"],

@@ -1,5 +1,5 @@
-mod cli;
-mod cmd;
+mod usage_parser;
+
 use std::{io, process::exit};
 
 use clap_complete::{
@@ -18,15 +18,27 @@ fn main() {
         exit(1);
     }
 
-    let first_arg = args[1].as_str();
-    match first_arg {
-        "bash" => generate(Bash, &mut cli::build_cli(), "qsv", &mut io::stdout()),
-        "zsh" => generate(Zsh, &mut cli::build_cli(), "qsv", &mut io::stdout()),
-        "fish" => generate(Fish, &mut cli::build_cli(), "qsv", &mut io::stdout()),
-        "powershell" => generate(PowerShell, &mut cli::build_cli(), "qsv", &mut io::stdout()),
-        "nushell" => generate(Nushell, &mut cli::build_cli(), "qsv", &mut io::stdout()),
-        "fig" => generate(Fig, &mut cli::build_cli(), "qsv", &mut io::stdout()),
-        "elvish" => generate(Elvish, &mut cli::build_cli(), "qsv", &mut io::stdout()),
-        _ => println!("{args_error}"),
+    let repo_root = usage_parser::find_repo_root().unwrap_or_else(|| {
+        eprintln!(
+            "Error: Must be run from within the qsv repository \
+             (where Cargo.toml and src/cmd/ exist)."
+        );
+        exit(1);
+    });
+
+    let mut cmd = usage_parser::build_cli(&repo_root);
+
+    match args[1].as_str() {
+        "bash" => generate(Bash, &mut cmd, "qsv", &mut io::stdout()),
+        "zsh" => generate(Zsh, &mut cmd, "qsv", &mut io::stdout()),
+        "fish" => generate(Fish, &mut cmd, "qsv", &mut io::stdout()),
+        "powershell" => generate(PowerShell, &mut cmd, "qsv", &mut io::stdout()),
+        "nushell" => generate(Nushell, &mut cmd, "qsv", &mut io::stdout()),
+        "fig" => generate(Fig, &mut cmd, "qsv", &mut io::stdout()),
+        "elvish" => generate(Elvish, &mut cmd, "qsv", &mut io::stdout()),
+        _ => {
+            println!("{args_error}");
+            exit(1);
+        }
     }
 }

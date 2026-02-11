@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a standalone Rust project that generates shell tab-completion files for the [qsv](../../README.md) CLI tool. It uses the Clap argument parser to programmatically produce completions for 7 shells: **Bash, Zsh, Fish, PowerShell, Nushell, Fig, and Elvish**.
+This is a standalone Rust project that generates shell tab-completion files for the [qsv](../../README.md) CLI tool. It **auto-generates** completions for 7 shells (**Bash, Zsh, Fish, PowerShell, Nushell, Fig, and Elvish**) by reading the `static USAGE` text from qsv's source files (`src/cmd/*.rs`) at build time.
 
-The generated completion files live in `examples/` and cover 65 qsv commands (all except `applydp` and `generate`).
+The generated completion files live in `examples/` and cover 66 qsv commands (all except `applydp` and `generate`).
 
 ## Build & Generate Commands
 
 ```bash
-# Regenerate all shell completions at once
+# Regenerate all shell completions at once (must run from contrib/completions/)
 bash generate_examples.bash
 
 # Generate completions for a single shell
@@ -22,67 +22,54 @@ cargo run -- bash > examples/qsv.bash   # redirect to file
 cargo build
 ```
 
+**Important:** Must be run from within the qsv repository, since it reads `src/cmd/*.rs` at runtime.
+
 Valid shell arguments: `bash`, `zsh`, `fish`, `powershell`, `nushell`, `fig`, `elvish`
 
 ## Architecture
 
 ### Source Structure
 
-- **`src/main.rs`** - Entry point; parses the shell argument and dispatches to `clap_complete::generate()`
-- **`src/cli.rs`** - `build_cli()` assembles the full qsv `Command` tree: global flags (`--list`, `--envlist`, `--update`, `--updatenow`, `--version`) + all 65 subcommands
-- **`src/cmd/mod.rs`** - Module declarations for all command files
-- **`src/cmd/*.rs`** - One file per qsv command, each exporting a `<name>_cmd() -> Command` function
+- **`src/main.rs`** - Entry point; finds the repo root, builds the Command tree, and dispatches to `clap_complete::generate()`
+- **`src/usage_parser.rs`** - Core auto-generation module that reads qsv source files and builds `clap::Command` definitions from USAGE text
 
-### Command Definition Patterns
+### How Auto-Generation Works
 
-**Simple command** (no subcommands):
-```rust
-pub fn count_cmd() -> Command {
-    Command::new("count").args([
-        arg!(--"human-readable"),
-        arg!(--width),
-        // ...
-    ])
-}
-```
+1. **`find_repo_root()`** walks up from CWD to find the qsv repo (looks for `Cargo.toml` + `src/cmd/`)
+2. **`build_cli()`** scans `src/cmd/*.rs` files and for each:
+   - Extracts the `static USAGE` string (handles `r#"` and `r##"` delimiters)
+   - Determines the CLI command name (handles aliases: `enumerate` → `enum`, `python` → `py`)
+   - Parses the USAGE text with `qsv_docopt::parse::Parser` to discover long flags, their types (boolean vs value-taking), and subcommands
+   - Extracts short flag mappings (`-d, --delimiter`) by parsing the USAGE text directly
+   - Builds a `clap::Command` with all flags and subcommands
+3. Assembles everything under a root `qsv` command with global flags
 
-**Command with subcommands** (apply, cat, geocode, luau, python, pro, snappy, to):
-```rust
-pub fn apply_cmd() -> Command {
-    let global_args = [arg!(--"new-column"), arg!(--rename), /* ... */];
-    Command::new("apply")
-        .subcommands([
-            Command::new("operations").args(&global_args),
-            Command::new("emptyreplace").args(&global_args),
-            // ...
-        ])
-        .args(global_args)
-}
-```
+### Key Design Decisions
 
-### Naming Exceptions
-
-- `enumerate` module exports `enum_cmd()` (not `enumerate_cmd()`)
-- `python` module exports `py_cmd()` (not `python_cmd()`)
+- **Short flags** are extracted by direct text parsing (not from docopt's SynonymMap, which doesn't expose synonyms through iteration)
+- **Subcommands** get a copy of all parent flags (slightly permissive, but matches prior behaviour)
+- **Duplicate short flags** (e.g., `-j` used by both `--jobs` and `--globals-json`) are resolved by keeping only the first occurrence
+- **Invalid flag names** (decorative dash lines parsed as flags) are filtered out
+- Files skipped: `mod.rs`, `python.pyo3-23.rs` (internal variant), `applydp.rs` (DataPusher+-specific)
 
 ## Adding/Updating a Command
 
-1. Create or edit `src/cmd/<command>.rs` with a `pub fn <command>_cmd() -> Command` function listing all flags
-2. Add `pub mod <command>;` in `src/cmd/mod.rs`
-3. Import and wire it in `src/cli.rs` (both the `use` import and the `build_cli()` subcommands list)
-4. Run `bash generate_examples.bash` to regenerate all completion files
+No manual steps needed in this project! When qsv adds/removes commands or flags in `src/cmd/*.rs`, just regenerate:
 
-When updating flags for an existing command, only step 4 is needed.
+```bash
+bash generate_examples.bash
+```
 
 ## Dependencies
 
 | Crate | Purpose |
 |-------|---------|
-| `clap` 4.5.x | Core CLI argument definition |
+| `clap` 4.5.x (with `string` feature) | Core CLI argument definition |
 | `clap_complete` | Bash, Zsh, Fish, PowerShell, Elvish generation |
 | `clap_complete_fig` | Fig (JavaScript) generation |
 | `clap_complete_nushell` | Nushell generation |
+| `qsv_docopt` 1.9 | USAGE text parsing (same parser used by qsv itself) |
 
 ## Relationship to Parent qsv Project
 
-This project mirrors the qsv CLI's command structure but is independently compiled. When qsv adds/removes commands or flags, the corresponding `src/cmd/*.rs` files here must be manually updated to stay in sync. The reference for flags is the USAGE text in each `src/cmd/*.rs` file in the main qsv source tree.
+This project reads the `static USAGE` text from qsv's `src/cmd/*.rs` files at runtime. Completions automatically stay in sync with the qsv CLI -- no manual command definition files to maintain.

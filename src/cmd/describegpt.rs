@@ -1294,12 +1294,27 @@ fn generate_code_based_dictionary(
                 .iter()
                 .take(num_examples as usize)
                 .map(|f| {
-                    let v = if truncate_str > 0 && f.value.chars().count() > truncate_str {
-                        let mut s = f.value.chars().take(truncate_str).collect::<String>();
+                    // For frequency bucket entries (rank == 0.0), strip the redundant
+                    // "(n)" count and append "…" to disambiguate from literal values
+                    // with the same name (e.g. bucket "Other… [4,091]" vs literal
+                    // "Other [2,006]")
+                    let raw_value = if f.rank == 0.0 {
+                        let base = if let Some(pos) = f.value.rfind(" (") {
+                            &f.value[..pos]
+                        } else {
+                            &f.value
+                        };
+                        format!("{base}…")
+                    } else {
+                        f.value.clone()
+                    };
+
+                    let v = if truncate_str > 0 && raw_value.chars().count() > truncate_str {
+                        let mut s = raw_value.chars().take(truncate_str).collect::<String>();
                         s.push('…');
                         s
                     } else {
-                        f.value.clone()
+                        raw_value
                     };
                     format!("{} [{}]", v, f.count)
                 })

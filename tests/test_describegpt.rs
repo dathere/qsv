@@ -1716,3 +1716,57 @@ fn describegpt_freq_options_file_not_found() {
 
     wrk.assert_err(&mut cmd);
 }
+
+// Test that frequency bucket "Other" entries get "…" suffix to disambiguate
+// from literal "Other" values in the Examples column
+#[test]
+#[serial]
+fn describegpt_other_bucket_disambiguation() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_other_disambig");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["pickup_location", "value"],
+            svec!["JFK Airport", "1"],
+            svec!["Other", "2"],
+            svec!["LaGuardia", "3"],
+        ],
+    );
+
+    // Create a frequency file where "Other (5)" has rank=0 (bucket entry)
+    // and literal "Other" has rank=2 (actual data value)
+    let freq_content = r#"field,value,count,percentage,rank
+pickup_location,Other (5),10,50.0,0
+pickup_location,Other,4,20.0,2
+pickup_location,JFK Airport,3,15.0,1
+pickup_location,LaGuardia,3,15.0,1
+value,1,1,33.33,1
+value,2,1,33.33,1
+value,3,1,33.33,1
+"#;
+    wrk.create_from_string("freq.csv", freq_content);
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--freq-options", "file:freq.csv"])
+        .args(["--format", "json"])
+        .arg("--no-cache");
+
+    let got = wrk.stdout::<String>(&mut cmd);
+
+    // The bucket "Other (5)" should become "Other…" (stripped parens + ellipsis)
+    assert!(
+        got.contains("Other…"),
+        "Bucket 'Other' entry should have '…' suffix for disambiguation.\nGot: {got}"
+    );
+    // The literal "Other" value should remain as-is (no ellipsis)
+    assert!(
+        got.contains("Other [4]"),
+        "Literal 'Other' value should not have '…' suffix.\nGot: {got}"
+    );
+}

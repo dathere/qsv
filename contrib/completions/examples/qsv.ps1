@@ -32,6 +32,7 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('behead', 'behead', [CompletionResultType]::ParameterValue, 'behead')
             [CompletionResult]::new('cat', 'cat', [CompletionResultType]::ParameterValue, 'cat')
             [CompletionResult]::new('clipboard', 'clipboard', [CompletionResultType]::ParameterValue, 'clipboard')
+            [CompletionResult]::new('color', 'color', [CompletionResultType]::ParameterValue, 'color')
             [CompletionResult]::new('count', 'count', [CompletionResultType]::ParameterValue, 'count')
             [CompletionResult]::new('datefmt', 'datefmt', [CompletionResultType]::ParameterValue, 'datefmt')
             [CompletionResult]::new('dedup', 'dedup', [CompletionResultType]::ParameterValue, 'dedup')
@@ -63,6 +64,7 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('jsonl', 'jsonl', [CompletionResultType]::ParameterValue, 'jsonl')
             [CompletionResult]::new('lens', 'lens', [CompletionResultType]::ParameterValue, 'lens')
             [CompletionResult]::new('luau', 'luau', [CompletionResultType]::ParameterValue, 'luau')
+            [CompletionResult]::new('moarstats', 'moarstats', [CompletionResultType]::ParameterValue, 'moarstats')
             [CompletionResult]::new('partition', 'partition', [CompletionResultType]::ParameterValue, 'partition')
             [CompletionResult]::new('pivotp', 'pivotp', [CompletionResultType]::ParameterValue, 'pivotp')
             [CompletionResult]::new('pro', 'pro', [CompletionResultType]::ParameterValue, 'pro')
@@ -275,6 +277,17 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
         }
+        'qsv;color' {
+            [CompletionResult]::new('--color', '--color', [CompletionResultType]::ParameterName, 'color')
+            [CompletionResult]::new('--row-numbers', '--row-numbers', [CompletionResultType]::ParameterName, 'row-numbers')
+            [CompletionResult]::new('--title', '--title', [CompletionResultType]::ParameterName, 'title')
+            [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'output')
+            [CompletionResult]::new('--delimiter', '--delimiter', [CompletionResultType]::ParameterName, 'delimiter')
+            [CompletionResult]::new('--memcheck', '--memcheck', [CompletionResultType]::ParameterName, 'memcheck')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
         'qsv;count' {
             [CompletionResult]::new('--human-readable', '--human-readable', [CompletionResultType]::ParameterName, 'human-readable')
             [CompletionResult]::new('--width', '--width', [CompletionResultType]::ParameterName, 'width')
@@ -333,6 +346,23 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('--description', '--description', [CompletionResultType]::ParameterName, 'description')
             [CompletionResult]::new('--dictionary', '--dictionary', [CompletionResultType]::ParameterName, 'dictionary')
             [CompletionResult]::new('--tags', '--tags', [CompletionResultType]::ParameterName, 'tags')
+            [CompletionResult]::new('--addl-cols', '--addl-cols', [CompletionResultType]::ParameterName, 'addl-cols')
+            [CompletionResult]::new('--addl-cols-list', '--addl-cols-list', [CompletionResultType]::ParameterName, 'addl-cols-list')
+            [CompletionResult]::new('--num-examples', '--num-examples', [CompletionResultType]::ParameterName, 'num-examples')
+            [CompletionResult]::new('--truncate-str', '--truncate-str', [CompletionResultType]::ParameterName, 'truncate-str')
+            [CompletionResult]::new('--num-tags', '--num-tags', [CompletionResultType]::ParameterName, 'num-tags')
+            [CompletionResult]::new('--tag-vocab', '--tag-vocab', [CompletionResultType]::ParameterName, 'tag-vocab')
+            [CompletionResult]::new('--cache-dir', '--cache-dir', [CompletionResultType]::ParameterName, 'cache-dir')
+            [CompletionResult]::new('--ckan-api', '--ckan-api', [CompletionResultType]::ParameterName, 'ckan-api')
+            [CompletionResult]::new('--ckan-token', '--ckan-token', [CompletionResultType]::ParameterName, 'ckan-token')
+            [CompletionResult]::new('--stats-options', '--stats-options', [CompletionResultType]::ParameterName, 'stats-options')
+            [CompletionResult]::new('--freq-options', '--freq-options', [CompletionResultType]::ParameterName, 'freq-options')
+            [CompletionResult]::new('--enum-threshold', '--enum-threshold', [CompletionResultType]::ParameterName, 'enum-threshold')
+            [CompletionResult]::new('--sample-size', '--sample-size', [CompletionResultType]::ParameterName, 'sample-size')
+            [CompletionResult]::new('--fewshot-examples', '--fewshot-examples', [CompletionResultType]::ParameterName, 'fewshot-examples')
+            [CompletionResult]::new('--session', '--session', [CompletionResultType]::ParameterName, 'session')
+            [CompletionResult]::new('--session-len', '--session-len', [CompletionResultType]::ParameterName, 'session-len')
+            [CompletionResult]::new('--sql-results', '--sql-results', [CompletionResultType]::ParameterName, 'sql-results')
             [CompletionResult]::new('--api-key', '--api-key', [CompletionResultType]::ParameterName, 'api-key')
             [CompletionResult]::new('--max-tokens', '--max-tokens', [CompletionResultType]::ParameterName, 'max-tokens')
             [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'json')
@@ -341,8 +371,18 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('--prompt-file', '--prompt-file', [CompletionResultType]::ParameterName, 'prompt-file')
             [CompletionResult]::new('--base-url', '--base-url', [CompletionResultType]::ParameterName, 'base-url')
             [CompletionResult]::new('--model', '--model', [CompletionResultType]::ParameterName, 'model')
+            [CompletionResult]::new('--language', '--language', [CompletionResultType]::ParameterName, 'language')
+            [CompletionResult]::new('--addl-props', '--addl-props', [CompletionResultType]::ParameterName, 'addl-props')
+            [CompletionResult]::new('--export-prompt', '--export-prompt', [CompletionResultType]::ParameterName, 'export-prompt')
             [CompletionResult]::new('--timeout', '--timeout', [CompletionResultType]::ParameterName, 'timeout')
             [CompletionResult]::new('--user-agent', '--user-agent', [CompletionResultType]::ParameterName, 'user-agent')
+            [CompletionResult]::new('--no-cache', '--no-cache', [CompletionResultType]::ParameterName, 'no-cache')
+            [CompletionResult]::new('--disk-cache-dir', '--disk-cache-dir', [CompletionResultType]::ParameterName, 'disk-cache-dir')
+            [CompletionResult]::new('--redis-cache', '--redis-cache', [CompletionResultType]::ParameterName, 'redis-cache')
+            [CompletionResult]::new('--fresh', '--fresh', [CompletionResultType]::ParameterName, 'fresh')
+            [CompletionResult]::new('--forget', '--forget', [CompletionResultType]::ParameterName, 'forget')
+            [CompletionResult]::new('--flush-cache', '--flush-cache', [CompletionResultType]::ParameterName, 'flush-cache')
+            [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'format')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'output')
             [CompletionResult]::new('--quiet', '--quiet', [CompletionResultType]::ParameterName, 'quiet')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
@@ -487,6 +527,7 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
         'qsv;fetchpost' {
             [CompletionResult]::new('--payload-tpl', '--payload-tpl', [CompletionResultType]::ParameterName, 'payload-tpl')
             [CompletionResult]::new('--content-type', '--content-type', [CompletionResultType]::ParameterName, 'content-type')
+            [CompletionResult]::new('--globals-json', '--globals-json', [CompletionResultType]::ParameterName, 'globals-json')
             [CompletionResult]::new('--new-column', '--new-column', [CompletionResultType]::ParameterName, 'new-column')
             [CompletionResult]::new('--jaq', '--jaq', [CompletionResultType]::ParameterName, 'jaq')
             [CompletionResult]::new('--jaqfile', '--jaqfile', [CompletionResultType]::ParameterName, 'jaqfile')
@@ -1205,6 +1246,28 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
         'qsv;luau;help;help' {
             break
         }
+        'qsv;moarstats' {
+            [CompletionResult]::new('--advanced', '--advanced', [CompletionResultType]::ParameterName, 'advanced')
+            [CompletionResult]::new('--epsilon', '--epsilon', [CompletionResultType]::ParameterName, 'epsilon')
+            [CompletionResult]::new('--stats-options', '--stats-options', [CompletionResultType]::ParameterName, 'stats-options')
+            [CompletionResult]::new('--round', '--round', [CompletionResultType]::ParameterName, 'round')
+            [CompletionResult]::new('--use-percentiles', '--use-percentiles', [CompletionResultType]::ParameterName, 'use-percentiles')
+            [CompletionResult]::new('--pct-thresholds', '--pct-thresholds', [CompletionResultType]::ParameterName, 'pct-thresholds')
+            [CompletionResult]::new('--xsd-gdate-scan', '--xsd-gdate-scan', [CompletionResultType]::ParameterName, 'xsd-gdate-scan')
+            [CompletionResult]::new('--bivariate', '--bivariate', [CompletionResultType]::ParameterName, 'bivariate')
+            [CompletionResult]::new('--bivariate-stats', '--bivariate-stats', [CompletionResultType]::ParameterName, 'bivariate-stats')
+            [CompletionResult]::new('--cardinality-threshold', '--cardinality-threshold', [CompletionResultType]::ParameterName, 'cardinality-threshold')
+            [CompletionResult]::new('--join-inputs', '--join-inputs', [CompletionResultType]::ParameterName, 'join-inputs')
+            [CompletionResult]::new('--join-keys', '--join-keys', [CompletionResultType]::ParameterName, 'join-keys')
+            [CompletionResult]::new('--join-type', '--join-type', [CompletionResultType]::ParameterName, 'join-type')
+            [CompletionResult]::new('--progressbar', '--progressbar', [CompletionResultType]::ParameterName, 'progressbar')
+            [CompletionResult]::new('--force', '--force', [CompletionResultType]::ParameterName, 'force')
+            [CompletionResult]::new('--jobs', '--jobs', [CompletionResultType]::ParameterName, 'jobs')
+            [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'output')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
         'qsv;partition' {
             [CompletionResult]::new('--filename', '--filename', [CompletionResultType]::ParameterName, 'filename')
             [CompletionResult]::new('--prefix-length', '--prefix-length', [CompletionResultType]::ParameterName, 'prefix-length')
@@ -1391,6 +1454,19 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('--user-agent', '--user-agent', [CompletionResultType]::ParameterName, 'user-agent')
             [CompletionResult]::new('--timeout', '--timeout', [CompletionResultType]::ParameterName, 'timeout')
             [CompletionResult]::new('--max-size', '--max-size', [CompletionResultType]::ParameterName, 'max-size')
+            [CompletionResult]::new('--bernoulli', '--bernoulli', [CompletionResultType]::ParameterName, 'bernoulli')
+            [CompletionResult]::new('--systematic', '--systematic', [CompletionResultType]::ParameterName, 'systematic')
+            [CompletionResult]::new('--stratified', '--stratified', [CompletionResultType]::ParameterName, 'stratified')
+            [CompletionResult]::new('--weighted', '--weighted', [CompletionResultType]::ParameterName, 'weighted')
+            [CompletionResult]::new('--cluster', '--cluster', [CompletionResultType]::ParameterName, 'cluster')
+            [CompletionResult]::new('--timeseries', '--timeseries', [CompletionResultType]::ParameterName, 'timeseries')
+            [CompletionResult]::new('--ts-interval', '--ts-interval', [CompletionResultType]::ParameterName, 'ts-interval')
+            [CompletionResult]::new('--ts-start', '--ts-start', [CompletionResultType]::ParameterName, 'ts-start')
+            [CompletionResult]::new('--ts-adaptive', '--ts-adaptive', [CompletionResultType]::ParameterName, 'ts-adaptive')
+            [CompletionResult]::new('--ts-aggregate', '--ts-aggregate', [CompletionResultType]::ParameterName, 'ts-aggregate')
+            [CompletionResult]::new('--ts-input-tz', '--ts-input-tz', [CompletionResultType]::ParameterName, 'ts-input-tz')
+            [CompletionResult]::new('--ts-prefer-dmy', '--ts-prefer-dmy', [CompletionResultType]::ParameterName, 'ts-prefer-dmy')
+            [CompletionResult]::new('--force', '--force', [CompletionResultType]::ParameterName, 'force')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'output')
             [CompletionResult]::new('--no-headers', '--no-headers', [CompletionResultType]::ParameterName, 'no-headers')
             [CompletionResult]::new('--delimiter', '--delimiter', [CompletionResultType]::ParameterName, 'delimiter')
@@ -1402,12 +1478,15 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('--enum-threshold', '--enum-threshold', [CompletionResultType]::ParameterName, 'enum-threshold')
             [CompletionResult]::new('--ignore-case', '--ignore-case', [CompletionResultType]::ParameterName, 'ignore-case')
             [CompletionResult]::new('--strict-dates', '--strict-dates', [CompletionResultType]::ParameterName, 'strict-dates')
+            [CompletionResult]::new('--strict-formats', '--strict-formats', [CompletionResultType]::ParameterName, 'strict-formats')
             [CompletionResult]::new('--pattern-columns', '--pattern-columns', [CompletionResultType]::ParameterName, 'pattern-columns')
             [CompletionResult]::new('--date-whitelist', '--date-whitelist', [CompletionResultType]::ParameterName, 'date-whitelist')
             [CompletionResult]::new('--prefer-dmy', '--prefer-dmy', [CompletionResultType]::ParameterName, 'prefer-dmy')
             [CompletionResult]::new('--force', '--force', [CompletionResultType]::ParameterName, 'force')
             [CompletionResult]::new('--stdout', '--stdout', [CompletionResultType]::ParameterName, 'stdout')
+            [CompletionResult]::new('--polars', '--polars', [CompletionResultType]::ParameterName, 'polars')
             [CompletionResult]::new('--jobs', '--jobs', [CompletionResultType]::ParameterName, 'jobs')
+            [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'output')
             [CompletionResult]::new('--no-headers', '--no-headers', [CompletionResultType]::ParameterName, 'no-headers')
             [CompletionResult]::new('--delimiter', '--delimiter', [CompletionResultType]::ParameterName, 'delimiter')
             [CompletionResult]::new('--memcheck', '--memcheck', [CompletionResultType]::ParameterName, 'memcheck')
@@ -1690,7 +1769,7 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('--stats-jsonl', '--stats-jsonl', [CompletionResultType]::ParameterName, 'stats-jsonl')
             [CompletionResult]::new('--cache-threshold', '--cache-threshold', [CompletionResultType]::ParameterName, 'cache-threshold')
             [CompletionResult]::new('--vis-whitespace', '--vis-whitespace', [CompletionResultType]::ParameterName, 'vis-whitespace')
-            [CompletionResult]::new('--dataset-stats', '--dataset-stats', [CompletionResultType]::ParameterName, 'dataset-stats')
+            [CompletionResult]::new('--weight', '--weight', [CompletionResultType]::ParameterName, 'weight')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'output')
             [CompletionResult]::new('--no-headers', '--no-headers', [CompletionResultType]::ParameterName, 'no-headers')
             [CompletionResult]::new('--delimiter', '--delimiter', [CompletionResultType]::ParameterName, 'delimiter')
@@ -1946,6 +2025,7 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('behead', 'behead', [CompletionResultType]::ParameterValue, 'behead')
             [CompletionResult]::new('cat', 'cat', [CompletionResultType]::ParameterValue, 'cat')
             [CompletionResult]::new('clipboard', 'clipboard', [CompletionResultType]::ParameterValue, 'clipboard')
+            [CompletionResult]::new('color', 'color', [CompletionResultType]::ParameterValue, 'color')
             [CompletionResult]::new('count', 'count', [CompletionResultType]::ParameterValue, 'count')
             [CompletionResult]::new('datefmt', 'datefmt', [CompletionResultType]::ParameterValue, 'datefmt')
             [CompletionResult]::new('dedup', 'dedup', [CompletionResultType]::ParameterValue, 'dedup')
@@ -1977,6 +2057,7 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('jsonl', 'jsonl', [CompletionResultType]::ParameterValue, 'jsonl')
             [CompletionResult]::new('lens', 'lens', [CompletionResultType]::ParameterValue, 'lens')
             [CompletionResult]::new('luau', 'luau', [CompletionResultType]::ParameterValue, 'luau')
+            [CompletionResult]::new('moarstats', 'moarstats', [CompletionResultType]::ParameterValue, 'moarstats')
             [CompletionResult]::new('partition', 'partition', [CompletionResultType]::ParameterValue, 'partition')
             [CompletionResult]::new('pivotp', 'pivotp', [CompletionResultType]::ParameterValue, 'pivotp')
             [CompletionResult]::new('pro', 'pro', [CompletionResultType]::ParameterValue, 'pro')
@@ -2047,6 +2128,9 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             break
         }
         'qsv;help;clipboard' {
+            break
+        }
+        'qsv;help;color' {
             break
         }
         'qsv;help;count' {
@@ -2196,6 +2280,9 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             break
         }
         'qsv;help;luau;filter' {
+            break
+        }
+        'qsv;help;moarstats' {
             break
         }
         'qsv;help;partition' {

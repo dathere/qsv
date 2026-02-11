@@ -29,6 +29,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand behead 'behead'
             cand cat 'cat'
             cand clipboard 'clipboard'
+            cand color 'color'
             cand count 'count'
             cand datefmt 'datefmt'
             cand dedup 'dedup'
@@ -60,6 +61,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand jsonl 'jsonl'
             cand lens 'lens'
             cand luau 'luau'
+            cand moarstats 'moarstats'
             cand partition 'partition'
             cand pivotp 'pivotp'
             cand pro 'pro'
@@ -249,6 +251,16 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand -h 'Print help'
             cand --help 'Print help'
         }
+        &'qsv;color'= {
+            cand --color 'color'
+            cand --row-numbers 'row-numbers'
+            cand --title 'title'
+            cand --output 'output'
+            cand --delimiter 'delimiter'
+            cand --memcheck 'memcheck'
+            cand -h 'Print help'
+            cand --help 'Print help'
+        }
         &'qsv;count'= {
             cand --human-readable 'human-readable'
             cand --width 'width'
@@ -304,6 +316,23 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --description 'description'
             cand --dictionary 'dictionary'
             cand --tags 'tags'
+            cand --addl-cols 'addl-cols'
+            cand --addl-cols-list 'addl-cols-list'
+            cand --num-examples 'num-examples'
+            cand --truncate-str 'truncate-str'
+            cand --num-tags 'num-tags'
+            cand --tag-vocab 'tag-vocab'
+            cand --cache-dir 'cache-dir'
+            cand --ckan-api 'ckan-api'
+            cand --ckan-token 'ckan-token'
+            cand --stats-options 'stats-options'
+            cand --freq-options 'freq-options'
+            cand --enum-threshold 'enum-threshold'
+            cand --sample-size 'sample-size'
+            cand --fewshot-examples 'fewshot-examples'
+            cand --session 'session'
+            cand --session-len 'session-len'
+            cand --sql-results 'sql-results'
             cand --api-key 'api-key'
             cand --max-tokens 'max-tokens'
             cand --json 'json'
@@ -312,8 +341,18 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --prompt-file 'prompt-file'
             cand --base-url 'base-url'
             cand --model 'model'
+            cand --language 'language'
+            cand --addl-props 'addl-props'
+            cand --export-prompt 'export-prompt'
             cand --timeout 'timeout'
             cand --user-agent 'user-agent'
+            cand --no-cache 'no-cache'
+            cand --disk-cache-dir 'disk-cache-dir'
+            cand --redis-cache 'redis-cache'
+            cand --fresh 'fresh'
+            cand --forget 'forget'
+            cand --flush-cache 'flush-cache'
+            cand --format 'format'
             cand --output 'output'
             cand --quiet 'quiet'
             cand -h 'Print help'
@@ -448,6 +487,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
         &'qsv;fetchpost'= {
             cand --payload-tpl 'payload-tpl'
             cand --content-type 'content-type'
+            cand --globals-json 'globals-json'
             cand --new-column 'new-column'
             cand --jaq 'jaq'
             cand --jaqfile 'jaqfile'
@@ -1116,6 +1156,27 @@ set edit:completion:arg-completer[qsv] = {|@words|
         }
         &'qsv;luau;help;help'= {
         }
+        &'qsv;moarstats'= {
+            cand --advanced 'advanced'
+            cand --epsilon 'epsilon'
+            cand --stats-options 'stats-options'
+            cand --round 'round'
+            cand --use-percentiles 'use-percentiles'
+            cand --pct-thresholds 'pct-thresholds'
+            cand --xsd-gdate-scan 'xsd-gdate-scan'
+            cand --bivariate 'bivariate'
+            cand --bivariate-stats 'bivariate-stats'
+            cand --cardinality-threshold 'cardinality-threshold'
+            cand --join-inputs 'join-inputs'
+            cand --join-keys 'join-keys'
+            cand --join-type 'join-type'
+            cand --progressbar 'progressbar'
+            cand --force 'force'
+            cand --jobs 'jobs'
+            cand --output 'output'
+            cand -h 'Print help'
+            cand --help 'Print help'
+        }
         &'qsv;partition'= {
             cand --filename 'filename'
             cand --prefix-length 'prefix-length'
@@ -1280,6 +1341,19 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --user-agent 'user-agent'
             cand --timeout 'timeout'
             cand --max-size 'max-size'
+            cand --bernoulli 'bernoulli'
+            cand --systematic 'systematic'
+            cand --stratified 'stratified'
+            cand --weighted 'weighted'
+            cand --cluster 'cluster'
+            cand --timeseries 'timeseries'
+            cand --ts-interval 'ts-interval'
+            cand --ts-start 'ts-start'
+            cand --ts-adaptive 'ts-adaptive'
+            cand --ts-aggregate 'ts-aggregate'
+            cand --ts-input-tz 'ts-input-tz'
+            cand --ts-prefer-dmy 'ts-prefer-dmy'
+            cand --force 'force'
             cand --output 'output'
             cand --no-headers 'no-headers'
             cand --delimiter 'delimiter'
@@ -1290,12 +1364,15 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --enum-threshold 'enum-threshold'
             cand --ignore-case 'ignore-case'
             cand --strict-dates 'strict-dates'
+            cand --strict-formats 'strict-formats'
             cand --pattern-columns 'pattern-columns'
             cand --date-whitelist 'date-whitelist'
             cand --prefer-dmy 'prefer-dmy'
             cand --force 'force'
             cand --stdout 'stdout'
+            cand --polars 'polars'
             cand --jobs 'jobs'
+            cand --output 'output'
             cand --no-headers 'no-headers'
             cand --delimiter 'delimiter'
             cand --memcheck 'memcheck'
@@ -1557,7 +1634,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --stats-jsonl 'stats-jsonl'
             cand --cache-threshold 'cache-threshold'
             cand --vis-whitespace 'vis-whitespace'
-            cand --dataset-stats 'dataset-stats'
+            cand --weight 'weight'
             cand --output 'output'
             cand --no-headers 'no-headers'
             cand --delimiter 'delimiter'
@@ -1792,6 +1869,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand behead 'behead'
             cand cat 'cat'
             cand clipboard 'clipboard'
+            cand color 'color'
             cand count 'count'
             cand datefmt 'datefmt'
             cand dedup 'dedup'
@@ -1823,6 +1901,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand jsonl 'jsonl'
             cand lens 'lens'
             cand luau 'luau'
+            cand moarstats 'moarstats'
             cand partition 'partition'
             cand pivotp 'pivotp'
             cand pro 'pro'
@@ -1882,6 +1961,8 @@ set edit:completion:arg-completer[qsv] = {|@words|
         &'qsv;help;cat;columns'= {
         }
         &'qsv;help;clipboard'= {
+        }
+        &'qsv;help;color'= {
         }
         &'qsv;help;count'= {
         }
@@ -1986,6 +2067,8 @@ set edit:completion:arg-completer[qsv] = {|@words|
         &'qsv;help;luau;map'= {
         }
         &'qsv;help;luau;filter'= {
+        }
+        &'qsv;help;moarstats'= {
         }
         &'qsv;help;partition'= {
         }

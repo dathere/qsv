@@ -24,6 +24,7 @@ pub fn stats_cmd() -> Command {
         arg!(--"stats-jsonl"),
         arg!(--"cache-threshold"),
         arg!(--"vis-whitespace"),
+        arg!(--weight),
         arg!(--output),
         arg!(--"no-headers"),
         arg!(--delimiter),

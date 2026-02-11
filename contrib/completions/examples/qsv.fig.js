@@ -369,6 +369,33 @@ const completion: Fig.Spec = {
       ],
     },
     {
+      name: "color",
+      options: [
+        {
+          name: "--color",
+        },
+        {
+          name: "--row-numbers",
+        },
+        {
+          name: "--title",
+        },
+        {
+          name: "--output",
+        },
+        {
+          name: "--delimiter",
+        },
+        {
+          name: "--memcheck",
+        },
+        {
+          name: ["-h", "--help"],
+          description: "Print help",
+        },
+      ],
+    },
+    {
       name: "count",
       options: [
         {
@@ -525,6 +552,57 @@ const completion: Fig.Spec = {
           name: "--tags",
         },
         {
+          name: "--addl-cols",
+        },
+        {
+          name: "--addl-cols-list",
+        },
+        {
+          name: "--num-examples",
+        },
+        {
+          name: "--truncate-str",
+        },
+        {
+          name: "--num-tags",
+        },
+        {
+          name: "--tag-vocab",
+        },
+        {
+          name: "--cache-dir",
+        },
+        {
+          name: "--ckan-api",
+        },
+        {
+          name: "--ckan-token",
+        },
+        {
+          name: "--stats-options",
+        },
+        {
+          name: "--freq-options",
+        },
+        {
+          name: "--enum-threshold",
+        },
+        {
+          name: "--sample-size",
+        },
+        {
+          name: "--fewshot-examples",
+        },
+        {
+          name: "--session",
+        },
+        {
+          name: "--session-len",
+        },
+        {
+          name: "--sql-results",
+        },
+        {
           name: "--api-key",
         },
         {
@@ -549,10 +627,40 @@ const completion: Fig.Spec = {
           name: "--model",
         },
         {
+          name: "--language",
+        },
+        {
+          name: "--addl-props",
+        },
+        {
+          name: "--export-prompt",
+        },
+        {
           name: "--timeout",
         },
         {
           name: "--user-agent",
+        },
+        {
+          name: "--no-cache",
+        },
+        {
+          name: "--disk-cache-dir",
+        },
+        {
+          name: "--redis-cache",
+        },
+        {
+          name: "--fresh",
+        },
+        {
+          name: "--forget",
+        },
+        {
+          name: "--flush-cache",
+        },
+        {
+          name: "--format",
         },
         {
           name: "--output",
@@ -925,6 +1033,9 @@ const completion: Fig.Spec = {
         },
         {
           name: "--content-type",
+        },
+        {
+          name: "--globals-json",
         },
         {
           name: "--new-column",
@@ -2697,6 +2808,66 @@ const completion: Fig.Spec = {
       ],
     },
     {
+      name: "moarstats",
+      options: [
+        {
+          name: "--advanced",
+        },
+        {
+          name: "--epsilon",
+        },
+        {
+          name: "--stats-options",
+        },
+        {
+          name: "--round",
+        },
+        {
+          name: "--use-percentiles",
+        },
+        {
+          name: "--pct-thresholds",
+        },
+        {
+          name: "--xsd-gdate-scan",
+        },
+        {
+          name: "--bivariate",
+        },
+        {
+          name: "--bivariate-stats",
+        },
+        {
+          name: "--cardinality-threshold",
+        },
+        {
+          name: "--join-inputs",
+        },
+        {
+          name: "--join-keys",
+        },
+        {
+          name: "--join-type",
+        },
+        {
+          name: "--progressbar",
+        },
+        {
+          name: "--force",
+        },
+        {
+          name: "--jobs",
+        },
+        {
+          name: "--output",
+        },
+        {
+          name: ["-h", "--help"],
+          description: "Print help",
+        },
+      ],
+    },
+    {
       name: "partition",
       options: [
         {
@@ -3099,6 +3270,45 @@ const completion: Fig.Spec = {
           name: "--max-size",
         },
         {
+          name: "--bernoulli",
+        },
+        {
+          name: "--systematic",
+        },
+        {
+          name: "--stratified",
+        },
+        {
+          name: "--weighted",
+        },
+        {
+          name: "--cluster",
+        },
+        {
+          name: "--timeseries",
+        },
+        {
+          name: "--ts-interval",
+        },
+        {
+          name: "--ts-start",
+        },
+        {
+          name: "--ts-adaptive",
+        },
+        {
+          name: "--ts-aggregate",
+        },
+        {
+          name: "--ts-input-tz",
+        },
+        {
+          name: "--ts-prefer-dmy",
+        },
+        {
+          name: "--force",
+        },
+        {
           name: "--output",
         },
         {
@@ -3126,6 +3336,9 @@ const completion: Fig.Spec = {
           name: "--strict-dates",
         },
         {
+          name: "--strict-formats",
+        },
+        {
           name: "--pattern-columns",
         },
         {
@@ -3141,7 +3354,13 @@ const completion: Fig.Spec = {
           name: "--stdout",
         },
         {
+          name: "--polars",
+        },
+        {
           name: "--jobs",
+        },
+        {
+          name: "--output",
         },
         {
           name: "--no-headers",
@@ -3840,7 +4059,7 @@ const completion: Fig.Spec = {
           name: "--vis-whitespace",
         },
         {
-          name: "--dataset-stats",
+          name: "--weight",
         },
         {
           name: "--output",
@@ -4472,6 +4691,9 @@ const completion: Fig.Spec = {
           name: "clipboard",
         },
         {
+          name: "color",
+        },
+        {
           name: "count",
         },
         {
@@ -4609,6 +4831,9 @@ const completion: Fig.Spec = {
               name: "filter",
             },
           ],
+        },
+        {
+          name: "moarstats",
         },
         {
           name: "partition",

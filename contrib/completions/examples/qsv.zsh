@@ -263,6 +263,18 @@ _arguments "${_arguments_options[@]}" : \
 '--help[Print help]' \
 && ret=0
 ;;
+(color)
+_arguments "${_arguments_options[@]}" : \
+'--color[]' \
+'--row-numbers[]' \
+'--title[]' \
+'--output[]' \
+'--delimiter[]' \
+'--memcheck[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (count)
 _arguments "${_arguments_options[@]}" : \
 '--human-readable[]' \
@@ -325,6 +337,23 @@ _arguments "${_arguments_options[@]}" : \
 '--description[]' \
 '--dictionary[]' \
 '--tags[]' \
+'--addl-cols[]' \
+'--addl-cols-list[]' \
+'--num-examples[]' \
+'--truncate-str[]' \
+'--num-tags[]' \
+'--tag-vocab[]' \
+'--cache-dir[]' \
+'--ckan-api[]' \
+'--ckan-token[]' \
+'--stats-options[]' \
+'--freq-options[]' \
+'--enum-threshold[]' \
+'--sample-size[]' \
+'--fewshot-examples[]' \
+'--session[]' \
+'--session-len[]' \
+'--sql-results[]' \
 '--api-key[]' \
 '--max-tokens[]' \
 '--json[]' \
@@ -333,8 +362,18 @@ _arguments "${_arguments_options[@]}" : \
 '--prompt-file[]' \
 '--base-url[]' \
 '--model[]' \
+'--language[]' \
+'--addl-props[]' \
+'--export-prompt[]' \
 '--timeout[]' \
 '--user-agent[]' \
+'--no-cache[]' \
+'--disk-cache-dir[]' \
+'--redis-cache[]' \
+'--fresh[]' \
+'--forget[]' \
+'--flush-cache[]' \
+'--format[]' \
 '--output[]' \
 '--quiet[]' \
 '-h[Print help]' \
@@ -489,6 +528,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--payload-tpl[]' \
 '--content-type[]' \
+'--globals-json[]' \
 '--new-column[]' \
 '--jaq[]' \
 '--jaqfile[]' \
@@ -1272,6 +1312,29 @@ esac
     ;;
 esac
 ;;
+(moarstats)
+_arguments "${_arguments_options[@]}" : \
+'--advanced[]' \
+'--epsilon[]' \
+'--stats-options[]' \
+'--round[]' \
+'--use-percentiles[]' \
+'--pct-thresholds[]' \
+'--xsd-gdate-scan[]' \
+'--bivariate[]' \
+'--bivariate-stats[]' \
+'--cardinality-threshold[]' \
+'--join-inputs[]' \
+'--join-keys[]' \
+'--join-type[]' \
+'--progressbar[]' \
+'--force[]' \
+'--jobs[]' \
+'--output[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (partition)
 _arguments "${_arguments_options[@]}" : \
 '--filename[]' \
@@ -1517,6 +1580,19 @@ _arguments "${_arguments_options[@]}" : \
 '--user-agent[]' \
 '--timeout[]' \
 '--max-size[]' \
+'--bernoulli[]' \
+'--systematic[]' \
+'--stratified[]' \
+'--weighted[]' \
+'--cluster[]' \
+'--timeseries[]' \
+'--ts-interval[]' \
+'--ts-start[]' \
+'--ts-adaptive[]' \
+'--ts-aggregate[]' \
+'--ts-input-tz[]' \
+'--ts-prefer-dmy[]' \
+'--force[]' \
 '--output[]' \
 '--no-headers[]' \
 '--delimiter[]' \
@@ -1529,12 +1605,15 @@ _arguments "${_arguments_options[@]}" : \
 '--enum-threshold[]' \
 '--ignore-case[]' \
 '--strict-dates[]' \
+'--strict-formats[]' \
 '--pattern-columns[]' \
 '--date-whitelist[]' \
 '--prefer-dmy[]' \
 '--force[]' \
 '--stdout[]' \
+'--polars[]' \
 '--jobs[]' \
+'--output[]' \
 '--no-headers[]' \
 '--delimiter[]' \
 '--memcheck[]' \
@@ -1852,7 +1931,7 @@ _arguments "${_arguments_options[@]}" : \
 '--stats-jsonl[]' \
 '--cache-threshold[]' \
 '--vis-whitespace[]' \
-'--dataset-stats[]' \
+'--weight[]' \
 '--output[]' \
 '--no-headers[]' \
 '--delimiter[]' \
@@ -2213,6 +2292,10 @@ esac
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(color)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (count)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -2416,6 +2499,10 @@ _arguments "${_arguments_options[@]}" : \
         esac
     ;;
 esac
+;;
+(moarstats)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
 ;;
 (partition)
 _arguments "${_arguments_options[@]}" : \
@@ -2657,6 +2744,7 @@ _qsv_commands() {
 'behead:' \
 'cat:' \
 'clipboard:' \
+'color:' \
 'count:' \
 'datefmt:' \
 'dedup:' \
@@ -2688,6 +2776,7 @@ _qsv_commands() {
 'jsonl:' \
 'lens:' \
 'luau:' \
+'moarstats:' \
 'partition:' \
 'pivotp:' \
 'pro:' \
@@ -2852,6 +2941,11 @@ _qsv__cat__rowskey_commands() {
 _qsv__clipboard_commands() {
     local commands; commands=()
     _describe -t commands 'qsv clipboard commands' commands "$@"
+}
+(( $+functions[_qsv__color_commands] )) ||
+_qsv__color_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv color commands' commands "$@"
 }
 (( $+functions[_qsv__count_commands] )) ||
 _qsv__count_commands() {
@@ -3133,6 +3227,7 @@ _qsv__help_commands() {
 'behead:' \
 'cat:' \
 'clipboard:' \
+'color:' \
 'count:' \
 'datefmt:' \
 'dedup:' \
@@ -3164,6 +3259,7 @@ _qsv__help_commands() {
 'jsonl:' \
 'lens:' \
 'luau:' \
+'moarstats:' \
 'partition:' \
 'pivotp:' \
 'pro:' \
@@ -3260,6 +3356,11 @@ _qsv__help__cat__rowskey_commands() {
 _qsv__help__clipboard_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help clipboard commands' commands "$@"
+}
+(( $+functions[_qsv__help__color_commands] )) ||
+_qsv__help__color_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help color commands' commands "$@"
 }
 (( $+functions[_qsv__help__count_commands] )) ||
 _qsv__help__count_commands() {
@@ -3506,6 +3607,11 @@ _qsv__help__luau__filter_commands() {
 _qsv__help__luau__map_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help luau map commands' commands "$@"
+}
+(( $+functions[_qsv__help__moarstats_commands] )) ||
+_qsv__help__moarstats_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help moarstats commands' commands "$@"
 }
 (( $+functions[_qsv__help__partition_commands] )) ||
 _qsv__help__partition_commands() {
@@ -3817,6 +3923,11 @@ _qsv__luau__help__map_commands() {
 _qsv__luau__map_commands() {
     local commands; commands=()
     _describe -t commands 'qsv luau map commands' commands "$@"
+}
+(( $+functions[_qsv__moarstats_commands] )) ||
+_qsv__moarstats_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv moarstats commands' commands "$@"
 }
 (( $+functions[_qsv__partition_commands] )) ||
 _qsv__partition_commands() {

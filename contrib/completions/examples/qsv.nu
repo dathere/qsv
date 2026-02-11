@@ -164,6 +164,16 @@ module completions {
     --help(-h)                # Print help
   ]
 
+  export extern "qsv color" [
+    --color
+    --row-numbers
+    --title
+    --output
+    --delimiter
+    --memcheck
+    --help(-h)                # Print help
+  ]
+
   export extern "qsv count" [
     --human-readable
     --width
@@ -219,6 +229,23 @@ module completions {
     --description
     --dictionary
     --tags
+    --addl-cols
+    --addl-cols-list
+    --num-examples
+    --truncate-str
+    --num-tags
+    --tag-vocab
+    --cache-dir
+    --ckan-api
+    --ckan-token
+    --stats-options
+    --freq-options
+    --enum-threshold
+    --sample-size
+    --fewshot-examples
+    --session
+    --session-len
+    --sql-results
     --api-key
     --max-tokens
     --json
@@ -227,8 +254,18 @@ module completions {
     --prompt-file
     --base-url
     --model
+    --language
+    --addl-props
+    --export-prompt
     --timeout
     --user-agent
+    --no-cache
+    --disk-cache-dir
+    --redis-cache
+    --fresh
+    --forget
+    --flush-cache
+    --format
     --output
     --quiet
     --help(-h)                # Print help
@@ -363,6 +400,7 @@ module completions {
   export extern "qsv fetchpost" [
     --payload-tpl
     --content-type
+    --globals-json
     --new-column
     --jaq
     --jaqfile
@@ -1021,6 +1059,27 @@ module completions {
   export extern "qsv luau help help" [
   ]
 
+  export extern "qsv moarstats" [
+    --advanced
+    --epsilon
+    --stats-options
+    --round
+    --use-percentiles
+    --pct-thresholds
+    --xsd-gdate-scan
+    --bivariate
+    --bivariate-stats
+    --cardinality-threshold
+    --join-inputs
+    --join-keys
+    --join-type
+    --progressbar
+    --force
+    --jobs
+    --output
+    --help(-h)                # Print help
+  ]
+
   export extern "qsv partition" [
     --filename
     --prefix-length
@@ -1185,6 +1244,19 @@ module completions {
     --user-agent
     --timeout
     --max-size
+    --bernoulli
+    --systematic
+    --stratified
+    --weighted
+    --cluster
+    --timeseries
+    --ts-interval
+    --ts-start
+    --ts-adaptive
+    --ts-aggregate
+    --ts-input-tz
+    --ts-prefer-dmy
+    --force
     --output
     --no-headers
     --delimiter
@@ -1195,12 +1267,15 @@ module completions {
     --enum-threshold
     --ignore-case
     --strict-dates
+    --strict-formats
     --pattern-columns
     --date-whitelist
     --prefer-dmy
     --force
     --stdout
+    --polars
     --jobs
+    --output
     --no-headers
     --delimiter
     --memcheck
@@ -1460,7 +1535,7 @@ module completions {
     --stats-jsonl
     --cache-threshold
     --vis-whitespace
-    --dataset-stats
+    --weight
     --output
     --no-headers
     --delimiter
@@ -1723,6 +1798,9 @@ module completions {
   export extern "qsv help clipboard" [
   ]
 
+  export extern "qsv help color" [
+  ]
+
   export extern "qsv help count" [
   ]
 
@@ -1856,6 +1934,9 @@ module completions {
   ]
 
   export extern "qsv help luau filter" [
+  ]
+
+  export extern "qsv help moarstats" [
   ]
 
   export extern "qsv help partition" [

@@ -4,6 +4,7 @@ pub fn fetchpost_cmd() -> Command {
     Command::new("fetchpost").args([
         arg!(--"payload-tpl"),
         arg!(--"content-type"),
+        arg!(--"globals-json"),
         arg!(--"new-column"),
         arg!(--jaq),
         arg!(--jaqfile),

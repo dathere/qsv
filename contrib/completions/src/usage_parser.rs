@@ -16,6 +16,10 @@ use std::{
 use clap::{Arg, ArgAction, Command};
 use qsv_docopt::parse::{Argument as DocoptArgument, Atom, Parser};
 
+/// Safety limit for directory traversal depth when searching for the repo root.
+/// Well beyond any realistic nesting depth.
+const MAX_DIR_TRAVERSAL_DEPTH: usize = 100;
+
 /// Files to skip when scanning `src/cmd/` (not user-facing commands).
 const SKIP_FILES: &[&str] = &[
     "mod",            // module declarations, not a command
@@ -26,7 +30,7 @@ const SKIP_FILES: &[&str] = &[
 /// Walk up from CWD to find the qsv repository root (contains `Cargo.toml` + `src/cmd/`).
 pub fn find_repo_root() -> Option<PathBuf> {
     let mut dir = std::env::current_dir().ok()?;
-    for _ in 0..100 {
+    for _ in 0..MAX_DIR_TRAVERSAL_DEPTH {
         if dir.join("Cargo.toml").exists() && dir.join("src/cmd").is_dir() {
             return Some(dir);
         }
@@ -43,7 +47,9 @@ fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
     let content =
         fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {e}"))?;
 
-    // Find USAGE constant - handle both r#" and r##" delimiters
+    // Find the first `static USAGE` declaration in the file.
+    // Using `find()` returns the first occurrence, which is always the actual
+    // USAGE constant (not a comment or string literal containing the pattern).
     let (usage_start, skip_len, end_delimiter) =
         if let Some(pos) = content.find("static USAGE: &str = r##\"") {
             (pos, 26, "\"##;")
@@ -197,6 +203,7 @@ fn build_command_from_usage(command_name: &str, usage_text: &str) -> Result<Comm
     // the old manually-written behaviour for most commands).
     if !subcommands.is_empty() {
         subcommands.sort_unstable();
+        subcommands.dedup();
         for sub_name in &subcommands {
             let sub_cmd = Command::new(sub_name.clone()).args(args.iter().cloned());
             cmd = cmd.subcommand(sub_cmd);
@@ -234,11 +241,13 @@ pub fn build_cli(repo_root: &Path) -> Command {
 
     for entry in entries {
         let path = entry.path();
-        let file_stem = path
-            .file_stem()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
+        let file_stem = match path.file_stem() {
+            Some(s) => s.to_string_lossy().into_owned(),
+            None => {
+                eprintln!("Warning: skipping {}: no file stem", path.display());
+                continue;
+            }
+        };
 
         // Extract USAGE text
         let usage_text = match extract_usage_from_file(&path) {

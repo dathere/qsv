@@ -80,7 +80,7 @@ fn extract_command_name<'a>(file_stem: &'a str, usage_text: &str) -> &'a str {
 
 /// Check whether a long flag name is valid for clap.
 /// Filters out decorative lines of dashes or other non-flag strings
-/// that docopt may mis-parse as long flags.
+/// that docopt may misparse as long flags.
 fn is_valid_long_flag(name: &str) -> bool {
     !name.is_empty() && name.chars().any(|c| c.is_alphanumeric())
 }

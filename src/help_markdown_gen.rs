@@ -1323,7 +1323,7 @@ fn generate_table_of_contents(commands: &[CommandInfo], repo_root: &Path) -> Str
             // Rewrite image paths from docs/images/ to ../images/ since the ToC
             // lives in docs/help/ and needs to reference docs/images/ as a sibling
             let markers = cmd.emoji_markers.replace("docs/images/", "../images/");
-            format!(" {markers}")
+            format!("<br>{markers}")
         };
         let _ = writeln!(
             md,

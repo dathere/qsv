@@ -72,7 +72,7 @@ Options:
     --envlist            List all qsv-relevant environment variables.
     -u, --update         Update qsv to the latest release from GitHub.
     -U, --updatenow      Update qsv to the latest release from GitHub without confirming.
-    --generate-help-markdown  Generate Markdown help files in docs/help/."#;
+    --generate-help-md   Generate Markdown help files in docs/help/."#;
 
 #[cfg(feature = "mcp")]
 const USAGE_MCP: &str =
@@ -91,14 +91,14 @@ const USAGE: &str = const_format::concatcp!(USAGE_COMMON, "\n", USAGE_FOOTER);
 
 #[derive(Deserialize)]
 struct Args {
-    arg_command:                 Option<Command>,
-    flag_list:                   bool,
-    flag_envlist:                bool,
-    flag_update:                 bool,
-    flag_updatenow:              bool,
-    flag_generate_help_markdown: bool,
+    arg_command:            Option<Command>,
+    flag_list:              bool,
+    flag_envlist:           bool,
+    flag_update:            bool,
+    flag_updatenow:         bool,
+    flag_generate_help_md:  bool,
     #[cfg(feature = "mcp")]
-    flag_update_mcp_skills:      bool,
+    flag_update_mcp_skills: bool,
 }
 
 fn main() -> QsvExitCode {
@@ -271,7 +271,7 @@ fn main() -> QsvExitCode {
         util::log_end(qsv_args, now);
         return QsvExitCode::Good;
     }
-    if args.flag_generate_help_markdown {
+    if args.flag_generate_help_md {
         match help_markdown_gen::generate_help_markdown() {
             Ok(()) => {
                 util::log_end(qsv_args, now);

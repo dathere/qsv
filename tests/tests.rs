@@ -102,6 +102,7 @@ mod test_moarstats;
 mod test_partition;
 #[cfg(feature = "polars")]
 mod test_pivotp;
+mod test_pragmastat;
 #[cfg(feature = "prompt")]
 mod test_prompt;
 mod test_pseudo;

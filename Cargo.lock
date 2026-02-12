@@ -5607,6 +5607,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pragmastat"
+version = "8.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90c7a8f93bce4a0175bb67dc09232fea53268995a46c4dc6610136ab11fbc56a"
+
+[[package]]
 name = "precomputed-hash"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5857,6 +5863,7 @@ dependencies = [
  "ort",
  "phf 0.13.1",
  "polars",
+ "pragmastat",
  "pyo3",
  "qsv-dateparser",
  "qsv-stats",

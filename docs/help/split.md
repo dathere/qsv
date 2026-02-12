@@ -35,49 +35,53 @@ where {start} is the index of the first record of the chunk (starting at 0).
 
 ## Examples
 
+> Create files with names like chunk_0.csv, chunk_100.csv, etc.
+
+> in the directory 'outdir', creating the directory if it does not exist.
+
 ```console
 qsv split outdir --size 100 --filename chunk_{}.csv input.csv
 ```
 
-> This will create files with names like chunk_0.csv, chunk_100.csv, etc.
+> Create files with names like chunk_00000.csv, chunk_00100.csv, etc.
 
-> in the directory 'outdir', creating the directory if it does not exist.
+> in the directory 'outdir/subdir', creating the directories if they do not exist.
 
 ```console
 qsv split outdir/subdir -s 100 --filename chunk_{}.csv --pad 5 input.csv
 ```
 
-> This will create files with names like chunk_00000.csv, chunk_00100.csv, etc.
-
-> in the directory 'outdir/subdir', creating the directories if they do not exist.
+> Create files like 0.csv, 100.csv, etc. in the current directory.
 
 ```console
 qsv split . -s 100 input.csv
 ```
 
-> This will create files like 0.csv, 100.csv, etc. in the current directory.
-
-```console
-qsv split outdir --kb-size 1000 input.csv
-```
-
-> This will create files with names like 0.csv, 994.csv, etc. in the directory
+> Create files with names like 0.csv, 994.csv, etc. in the directory
 
 > 'outdir', creating the directory if it does not exist. Each file will be close
 
 > to 1000KB in size.
 
-$ cat in.csv | qsv split mysplitoutput -s 1000
+```console
+qsv split outdir --kb-size 1000 input.csv
+```
+
+> Read from stdin and create files like mysplitoutput_0.csv, mysplitoutput_1000.csv, etc.
+
+cat in.csv | qsv split mysplitoutput -s 1000
+> Create 10 files with names like 0.csv, 1000.csv, etc. in the directory 'outdir',
+
 ```console
 qsv split outdir --chunks 10 input.csv
 ```
 
-```console
-qsv split splitoutdir -c 10 -j 4 input.csv
-```
+> Create 10 files with names like splitoutdir_0.csv, splitoutdir_1000.csv, etc.
+
+> using 4 parallel jobs. Note that the input CSV must have an index
 
 ```console
-qsv split outdir -s 100 --filter "gzip $FILE" input.csv
+qsv split splitoutdir -c 10 -j 4 input.csv
 ```
 
 > This will create files with names like 0.csv, 100.csv, etc. in the directory
@@ -85,12 +89,16 @@ qsv split outdir -s 100 --filter "gzip $FILE" input.csv
 > 'outdir', and then run the command "gzip" on each chunk.
 
 ```console
-qsv split outdir --filter "powershell Compress-Archive -Path $FILE -Destination {}.zip" input.csv
+qsv split outdir -s 100 --filter "gzip $FILE" input.csv
 ```
 
 > WINDOWS: This will create files with names like 0.zip, 100.zip, etc. in the directory
 
 > 'outdir', and then run the command "Compress-Archive" on each chunk.
+
+```console
+qsv split outdir --filter "powershell Compress-Archive -Path $FILE -Destination {}.zip" input.csv
+```
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_split.rs).
 

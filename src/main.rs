@@ -53,6 +53,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 mod clitypes;
 mod cmd;
 mod config;
+mod help_markdown_gen;
 mod index;
 mod lookup;
 #[cfg(feature = "mcp")]
@@ -70,7 +71,8 @@ Options:
     --list               List all commands available.
     --envlist            List all qsv-relevant environment variables.
     -u, --update         Update qsv to the latest release from GitHub.
-    -U, --updatenow      Update qsv to the latest release from GitHub without confirming."#;
+    -U, --updatenow      Update qsv to the latest release from GitHub without confirming.
+    --generate-help-markdown  Generate Markdown help files in docs/help/."#;
 
 #[cfg(feature = "mcp")]
 const USAGE_MCP: &str =
@@ -89,13 +91,14 @@ const USAGE: &str = const_format::concatcp!(USAGE_COMMON, "\n", USAGE_FOOTER);
 
 #[derive(Deserialize)]
 struct Args {
-    arg_command:            Option<Command>,
-    flag_list:              bool,
-    flag_envlist:           bool,
-    flag_update:            bool,
-    flag_updatenow:         bool,
+    arg_command:                 Option<Command>,
+    flag_list:                   bool,
+    flag_envlist:                bool,
+    flag_update:                 bool,
+    flag_updatenow:              bool,
+    flag_generate_help_markdown: bool,
     #[cfg(feature = "mcp")]
-    flag_update_mcp_skills: bool,
+    flag_update_mcp_skills:      bool,
 }
 
 fn main() -> QsvExitCode {
@@ -268,17 +271,39 @@ fn main() -> QsvExitCode {
         util::log_end(qsv_args, now);
         return QsvExitCode::Good;
     }
+    if args.flag_generate_help_markdown {
+        match help_markdown_gen::generate_help_markdown() {
+            Ok(()) => {
+                util::log_end(qsv_args, now);
+                return QsvExitCode::Good;
+            },
+            Err(e) => {
+                util::log_end(qsv_args, now);
+                werr!("Help Markdown generation error: {e}");
+                return QsvExitCode::Bad;
+            },
+        }
+    }
     #[cfg(feature = "mcp")]
     {
         if args.flag_update_mcp_skills {
             match mcp_skills_gen::generate_mcp_skills() {
+                Ok(()) => {},
+                Err(e) => {
+                    util::log_end(qsv_args, now);
+                    werr!("MCP skills generation error: {e}");
+                    return QsvExitCode::Bad;
+                },
+            }
+            // Also generate help markdown when updating MCP skills
+            match help_markdown_gen::generate_help_markdown() {
                 Ok(()) => {
                     util::log_end(qsv_args, now);
                     return QsvExitCode::Good;
                 },
                 Err(e) => {
                     util::log_end(qsv_args, now);
-                    werr!("MCP skills generation error: {e}");
+                    werr!("Help Markdown generation error: {e}");
                     return QsvExitCode::Bad;
                 },
             }

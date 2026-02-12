@@ -1,0 +1,213 @@
+# fetchpost
+
+> Similar to `fetch`, but uses **HTTP Post** (HTTP GET vs POST methods). Supports HTML form (application/x-www-form-urlencoded), JSON (application/json) and custom content types - with the ability to render payloads using CSV data using the Mini Jinja template engine.
+
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetchpost.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetchpost.rs)**
+
+## Description
+
+Fetchpost sends/fetches data to/from web services for every row using HTTP Post.
+As opposed to fetch, which uses HTTP Get.
+
+CSV data is posted using two methods:
+1. As an HTML Form using using the <column-list> argument
+The columns are used to construct the HTML form data and posted to the server
+as a URL-encoded form. (content-type: application/x-www-form-urlencoded)
+2. As a payload using a MiniJinja template with the --payload-tpl <file> option
+The template file is used to construct the payload and posted to the server
+as JSON by default (content-type: application/json), with automatic checking if the
+rendered template is valid JSON.
+The --content-type option can override the expected content type. However, it is
+the user's responsibility to ensure the content-type format is valid.
+
+Fetchpost is integrated with `jaq` (a jq clone) to directly parse out values from an API JSON response.
+(See https://github.com/01mf02/jaq for more info on how to use the jaq JSON Query Language)
+
+CACHE OPTIONS:
+Fetchpost caches responses to minimize traffic and maximize performance. It has four
+mutually-exclusive caching options:
+
+1. In memory cache (the default)
+2. Disk cache
+3. Redis cache
+4. No cache
+
+In memory Cache:
+In memory cache is the default and is used if no caching option is set.
+It uses a non-persistent, in-memory, 2 million entry Least Recently Used (LRU)
+cache for each fetch session. To change the maximum number of entries in the cache,
+set the --mem-cache-size option.
+
+Disk Cache:
+For persistent, inter-session caching, a DiskCache can be enabled with the --disk-cache flag.
+By default, it will store the cache in the directory ~/.qsv/cache/fetchpost, with a cache expiry
+Time-to-Live (TTL) of 2,419,200 seconds (28 days), and cache hits NOT refreshing the TTL
+of cached values.
+
+Set the --disk-cache-dir option and the environment variables QSV_DISKCACHE_TTL_SECS and
+QSV_DISKCACHE_TTL_REFRESH to change default DiskCache settings.
+
+Redis Cache:
+Another persistent, inter-session cache option is a Redis cache enabled with the --redis flag.
+By default, it will connect to a local Redis instance at redis://127.0.0.1:6379/2,
+with a cache expiry Time-to-Live (TTL) of 2,419,200 seconds (28 days),
+and cache hits NOT refreshing the TTL of cached values.
+
+Set the environment variables QSV_FP_REDIS_CONNSTR, QSV_REDIS_TTL_SECONDS and
+QSV_REDIS_TTL_REFRESH to change default Redis settings.
+
+Note that the default values are the same as the fetch command, except fetchpost creates the
+cache at database 2, as opposed to database 1 with fetch.
+
+If you don't want responses to be cached at all, use the --no-cache flag.
+
+NETWORK OPTIONS:
+Fetchpost recognizes RateLimit and Retry-After headers and dynamically throttles requests
+to be as fast as allowed. The --rate-limit option sets the maximum number of queries per second
+(QPS) to be made. The default is 0, which means to go as fast as possible, automatically
+throttling as required, based on rate-limit and retry-after response headers.
+
+To use a proxy, please set env vars HTTP_PROXY, HTTPS_PROXY or ALL_PROXY
+(e.g. export HTTPS_PROXY=socks5://127.0.0.1:1086).
+
+```console
+qsv fetchpost supports brotli, gzip and deflate automatic decompression for improved throughput
+```
+
+and performance, preferring brotli over gzip over deflate.
+
+Gzip compression of requests bodies is supported with the --compress flag. Note that
+public APIs typically do not support gzip compression of request bodies because of the
+"zip bomb" vulnerability. This option should only be used with private APIs where this
+is not a concern.
+
+It automatically upgrades its connection to the much faster and more efficient HTTP/2 protocol
+with adaptive flow control if the server supports it.
+See https://www.cloudflare.com/learning/performance/http2-vs-http1.1/ and
+https://medium.com/coderscorner/http-2-flow-control-77e54f7fd518 for more info.
+
+URL OPTIONS:
+<url-column> needs to be a fully qualified URL path. It can be specified as a column name
+from which the URL value will be retrieved for each record, or as the URL literal itself.
+
+EXAMPLES:
+
+data.csv
+URL, zipcode, country
+https://httpbin.org/post, 90210, USA
+https://httpbin.org/post, 94105, USA
+https://httpbin.org/post, 92802, USA
+
+Given the data.csv above, fetch the JSON response.
+
+```console
+$ qsv fetchpost URL zipcode,country data.csv
+```
+
+
+Note the output will be a JSONL file - with a minified JSON response per line, not a CSV file.
+
+Now, if we want to generate a CSV file with a parsed response - getting only the "form" property,
+we use the new-column and jaq options.
+
+```console
+$ qsv fetchpost URL zipcode,country --new-column form --jaq '."form"' data.csv > data_with_response.csv
+```
+
+
+data_with_response.csv
+URL,zipcode,country,form
+https://httpbin.org/post,90210,USA,"{""country"": String(""USA""), ""zipcode"": String(""90210"")}"
+https://httpbin.org/post,94105,USA,"{""country"": String(""USA""), ""zipcode"": String(""94105"")}"
+https://httpbin.org/post,92802,USA,"{""country"": String(""USA""), ""zipcode"": String(""92802"")}"
+
+Alternatively, since we're using the same URL for all the rows, we can just pass the url directly on the command-line.
+
+```console
+$ qsv fetchpost https://httpbin.org/post 2,3 --new-column form --jaqfile form.jaq data.csv > data_with_formdata.csv
+```
+
+
+Also note that for the column-list argument, we used the column index (2,3 for second & third column)
+instead of using the column names, and we loaded the jaq selector from the form.jaq file.
+
+The form.jaq file simply contains the string literal ".form", including the enclosing double quotes:
+
+form.jaq
+".form"
+
+USING THE HTTP-HEADER OPTION:
+
+The --http-header option allows you to append arbitrary key value pairs (a valid pair is a key and value
+separated by a colon) to the HTTP header (to authenticate against an API, pass custom header fields, etc.).
+Note that you can pass as many key-value pairs by using --http-header option repeatedly. For example:
+
+```console
+$ qsv fetchpost https://httpbin.org/post col1-col3 data.csv -H "X-Api-Key:TEST_KEY" -H "X-Api-Secret:ABC123XYZ"
+```
+
+
+For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs.
+
+
+## Usage
+
+```console
+qsv fetchpost (<url-column>) (<column-list> | --payload-tpl <file>) [--jaq <selector> | --jaqfile <file>] [--http-header <k:v>...] [options] [<input>]
+qsv fetchpost --help
+```
+
+## Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `<url-column>` | Name of the column with the URL. Otherwise, if the argument starts with `http`, the URL to use. |
+| `<column-list>` | Comma-delimited list of columns to insert into the HTTP Post body. Uses `qsv select` syntax - i.e. Columns can be referenced by index or by name if there is a header row (duplicate column names can be disambiguated with more indexing). Column ranges can also be specified. Finally, columns can be selected using regular expressions. See 'qsv select --help' for examples. |
+
+## Fetchpost Options
+
+| Option | Type | Description | Default |
+|--------|------|-------------|--------|
+| `-t, --payload-tpl` | string | Instead of <column-list>, use a MiniJinja template file to render a JSON payload in the HTTP Post body. You can also use --payload-tpl to render a non-JSON payload, but --content-type will have to be set manually. If a rendered JSON is invalid, `fetchpost` will abort and return an error. |  |
+| `--content-type` | string | Overrides automatic content types for `<column-list>` (`application/x-www-form-urlencoded`) and `--payload-tpl` (`application/json`). Typical alternative values are `multipart/form-data` and `text/plain`. It is the responsibility of the user to format the payload accordingly when using --payload-tpl. |  |
+| `-j, --globals-json` | string | A JSON file containing global variables. When posting as an HTML Form, this file is added to the Form data. When constructing a payload using a MiniJinja template, the JSON properties can be accessed in templates using the "qsv_g" namespace (e.g. {{qsv_g.api_key}}, {{qsv_g.base_url}}). |  |
+| `-c, --new-column` | string | Put the fetched values in a new column. Specifying this option results in a CSV. Otherwise, the output is in JSONL format. |  |
+| `--jaq` | string | Apply jaq selector to API returned JSON response. Mutually exclusive with --jaqfile. |  |
+| `--jaqfile` | string | Load jaq selector from file instead. Mutually exclusive with --jaq. |  |
+| `--pretty` | flag | Prettify JSON responses. Otherwise, they're minified. If the response is not in JSON format, it's passed through unchanged. Note that --pretty requires the --new-column option. |  |
+| `--rate-limit` | string | Rate Limit in Queries Per Second (max: 1000). Note that fetch dynamically throttles as well based on rate-limit and retry-after response headers. Set to 0 to go as fast as possible, automatically throttling as required. CAUTION: Only use zero for APIs that use RateLimit and/or Retry-After headers, otherwise your fetchpost job may look like a Denial Of Service attack. Even though zero is the default, this is mitigated by --max-errors having a default of 10. | `0` |
+| `--timeout` | string | Timeout for each URL request. | `30` |
+| `-H, --http-header` | string | Append custom header(s) to the HTTP header. Pass multiple key-value pairs by adding this option multiple times, once for each pair. The key and value should be separated by a colon. |  |
+| `--compress` | flag | Compress the HTTP request body using gzip. Note that most servers do not support compressed request bodies unless they are specifically configured to do so. This should only be enabled for trusted scenarios where "zip bombs" are not a concern. see https://github.com/postmanlabs/httpbin/issues/577#issuecomment-875814469 for more info. |  |
+| `--max-retries` | string | Maximum number of retries per record before an error is raised. | `5` |
+| `--max-errors` | string | Maximum number of errors before aborting. Set to zero (0) to continue despite errors. | `10` |
+| `--store-error` | flag | On error, store error code/message instead of blank value. |  |
+| `--cookies` | flag | Allow cookies. |  |
+| `--user-agent` | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent |  |
+| `--report` | string | Creates a report of the fetchpost job. The report has the same name as the input file with the ".fetchpost-report" suffix. There are two kinds of report - d for "detailed" & s for "short". The detailed report has the same columns as the input CSV with seven additional columns - qsv_fetchp_url, qsv_fetchp_form, qsv_fetchp_status, qsv_fetchp_cache_hit, qsv_fetchp_retries, qsv_fetchp_elapsed_ms & qsv_fetchp_response. The short report only has the seven columns without the "qsv_fetchp_" prefix. | `none` |
+
+## Caching Options
+
+| Option | Type | Description | Default |
+|--------|------|-------------|--------|
+| `--no-cache` | flag | Do not cache responses. |  |
+| `--mem-cache-size` | string | Maximum number of entries in the in-memory LRU cache. | `2000000` |
+| `--disk-cache` | flag | Use a persistent disk cache for responses. The cache is stored in the directory specified by --disk-cache-dir. If the directory does not exist, it will be created. If the directory exists, it will be used as is. It has a default Time To Live (TTL)/lifespan of 28 days and cache hits do not refresh the TTL of cached values. Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars to change DiskCache settings. |  |
+| `--disk-cache-dir` | string | The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different fetchpost jobs (e.g. one for geocoding, another for weather, etc.) | `~/.qsv/cache/fetchpost` |
+| `--redis-cache` | flag | Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/2" with a connection pool size of 20, with a TTL of 28 days, and a cache hit NOT renewing an entry's TTL. Adjust the QSV_FP_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS & QSV_REDIS_TTL_REFRESH respectively to change Redis settings. |  |
+| `--cache-error` | flag | Cache error responses even if a request fails. If an identical URL is requested, the cached error is returned. Otherwise, the fetch is attempted again for --max-retries. |  |
+| `--flush-cache` | flag | Flush all the keys in the current cache on startup. This only applies to Disk and Redis caches. |  |
+
+## Common Options
+
+| Option | Type | Description | Default |
+|--------|------|-------------|--------|
+| `-h, --help` | flag | Display this message |  |
+| `-o, --output` | string | Write output to <file> instead of stdout. |  |
+| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
+| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-p, --progressbar` | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |
+
+---
+**Source:** [`src/cmd/fetchpost.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/fetchpost.rs)
+| **[Table of Contents](TableOfContents.md)** | **[README](../../README.md)**

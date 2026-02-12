@@ -14,7 +14,7 @@ CSV data.
 Note that multiple CSV files may be given to this command. This is useful with
 the --intersect flag.
 
-For examples, see https://github.com/dathere/qsv/blob/master/tests/test_headers.rs.
+For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_headers.rs>.
 
 
 ## Usage

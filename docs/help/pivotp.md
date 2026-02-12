@@ -14,7 +14,7 @@ The pivot operation consists of:
 - A values column that will be aggregated
 - An aggregation function to apply. Features "smart" aggregation auto-selection.
 
-For examples, see https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs.
+For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs>.
 
 
 ## Usage

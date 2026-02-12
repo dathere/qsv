@@ -64,7 +64,7 @@ with a string (using --replacement) (Rust replace)
 * regex_replace: Replace all regex matches in --comparand w/ --replacement.
 Specify <NULL> as --replacement to remove matches.
 * titlecase - capitalizes English text using Daring Fireball titlecase style
-https://daringfireball.net/2008/05/title_case
+<https://daringfireball.net/2008/05/title_case>
 * censor: profanity filter. Add additional comma-delimited profanities with --comparand.
 * censor_check: check if profanity is detected (boolean).
 Add additional comma-delimited profanities with -comparand.
@@ -106,7 +106,7 @@ If language detection confidence is below the threshold, it will still show the 
 guess, followed by the confidence score, ending with a question mark.
 If you want to always displays the confidence score, end the --comparand value with a
 question mark (e.g. 0.9?)
-https://github.com/greyblake/whatlang-rs/blob/master/SUPPORTED_LANGUAGES.md
+<https://github.com/greyblake/whatlang-rs/blob/master/SUPPORTED_LANGUAGES.md>
 
 EMPTYREPLACE (multi-column capable)
 Replace empty cells with <--replacement> string.
@@ -128,7 +128,7 @@ The math expression is built dynamically using the <--formatstr> template, simil
 subcommand, with the addition that if the literal '<UNIT>' is found at the end of the template, the
 inferred unit will be appended to the result.
 
-For a complete list of supported units, constants, operators and functions, see https://docs.rs/cpc
+For a complete list of supported units, constants, operators and functions, see <https://docs.rs/cpc>
 
 
 ## Examples
@@ -295,7 +295,7 @@ qsv apply calcconv --formatstr '({col1} + {col2})km to light years <UNIT>' -c li
 qsv apply calcconv --formatstr '{col1}m/s + {col2}mi/h in kilometers per h' -c kms_per_h file.csv
 ```
 
-> Use math functions - see https://docs.rs/cpc/latest/cpc/enum.FunctionIdentifier.html for list of functions:
+> Use math functions - see <https://docs.rs/cpc/latest/cpc/enum.FunctionIdentifier.html> for list of functions:
 
 ```console
 qsv apply calcconv --formatstr 'round(sqrt{col1}^4)! liters' -c liters file.csv
@@ -313,7 +313,8 @@ qsv apply calcconv --formatstr '10% of abs(sin(pi)) horsepower to watts' -c watt
 qsv apply calcconv --formatstr '{col1} Billion Trillion * {col2} quadrillion vigintillion' -c num_atoms file.csv
 ```
 
-For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_apply.rs.
+For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_apply.rs).
+
 
 ## Usage
 

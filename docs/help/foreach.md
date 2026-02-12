@@ -9,7 +9,7 @@
 Execute a shell command once per record in a given CSV file.
 
 NOTE: Windows users are recommended to use Git Bash as their terminal when
-running this command. Download it from https://git-scm.com/downloads. When installing,
+running this command. Download it from <https://git-scm.com/downloads>. When installing,
 be sure to select "Use Git from the Windows Command Prompt" to ensure that the
 necessary Unix tools are available in the terminal.
 

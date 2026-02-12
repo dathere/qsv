@@ -49,7 +49,7 @@ SUPPORTED MODELS & LLM PROVIDERS:
 OpenAI's open-weights gpt-oss model (both 20b and 120b variants) was used during development &
 is recommended for most use cases.
 It was also tested with OpenAI, TogetherAI, OpenRouter and Google Gemini cloud providers.
-For Gemini, use the base URL "https://generativelanguage.googleapis.com/v1beta/openai".
+For Gemini, use the base URL "<https://generativelanguage.googleapis.com/v1beta/openai">.
 Local LLMs tested include Ollama, Jan and LM Studio.
 
 NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
@@ -181,7 +181,7 @@ qsv describegpt data.csv --all --stats-options "file:my_stats.csv" --freq-option
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs).
 
 For more detailed info on how describegpt works and how to prepare a prompt file,
-see https://github.com/dathere/qsv/blob/master/docs/Describegpt.md
+see <https://github.com/dathere/qsv/blob/master/docs/Describegpt.md>
 
 ## Usage
 
@@ -228,9 +228,9 @@ qsv describegpt --help
 |--------|------|-------------|--------|
 | `-p, --prompt` | string | Custom prompt to answer questions about the dataset. The prompt will be answered based on the dataset's Summary Statistics, Frequency data & Data Dictionary. If the prompt CANNOT be answered by looking at these metadata, a SQL query will be generated to answer the question. If the "polars" or the "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set & the `--sql-results` option is used, the SQL query will be automatically executed and its results returned. Otherwise, the SQL query will be returned along with the reasoning behind it. If it starts with "file:" prefix, the prompt is read from the file specified. e.g. "file:my_long_prompt.txt" |  |
 | `--sql-results` | string | The file to save the SQL query results to. Only valid if the --prompt option is used & the "polars" or the "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set. If the SQL query executes successfully, the results will be saved with a ".csv" extension. Otherwise, it will be saved with a ".sql" extension so the user can inspect why it failed and modify it. |  |
-| `--prompt-file` | string | The configurable TOML file containing prompts to use for inferencing. If no file is provided, default prompts will be used. The prompt file uses the Mini Jinja template engine (https://docs.rs/minijinja) See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml |  |
+| `--prompt-file` | string | The configurable TOML file containing prompts to use for inferencing. If no file is provided, default prompts will be used. The prompt file uses the Mini Jinja template engine (<https://docs.rs/minijinja>) See <https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml> |  |
 | `--sample-size` | string | The number of rows to randomly sample from the input file for the sample data. Uses the INDEXED sampling method with the qsv sample command. | `100` |
-| `--fewshot-examples` | flag | By default, few-shot examples are NOT included in the LLM prompt when generating SQL queries. When this option is set, few-shot examples in the default prompt file are included. Though this will increase the quality of the generated SQL, it comes at a cost - increased LLM API call cost in terms of tokens and execution time. See https://en.wikipedia.org/wiki/Prompt_engineering for more info. |  |
+| `--fewshot-examples` | flag | By default, few-shot examples are NOT included in the LLM prompt when generating SQL queries. When this option is set, few-shot examples in the default prompt file are included. Though this will increase the quality of the generated SQL, it comes at a cost - increased LLM API call cost in terms of tokens and execution time. See <https://en.wikipedia.org/wiki/Prompt_engineering> for more info. |  |
 | `--session` | string | Enable stateful session mode for iterative SQL RAG refinement. The session name is the file path of the markdown file where session messages will be stored. When used with --prompt, subsequent queries in the same session will refine the baseline SQL query. SQL query results (10-row sample) and errors are automatically included in subsequent messages for context. |  |
 | `--session-len` | string | Maximum number of recent messages to keep in session context before summarizing older messages. Only used when --session is specified. | `10` |
 
@@ -238,14 +238,14 @@ qsv describegpt --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-u, --base-url` | string | The LLM API URL. Supports APIs & local LLMs compatible with the OpenAI API specification. Some common base URLs: OpenAI: https://api.openai.com/v1 Gemini: https://generativelanguage.googleapis.com/v1beta/openai TogetherAI: https://api.together.ai/v1 | `http://localhost:1234/v1` |
+| `-u, --base-url` | string | The LLM API URL. Supports APIs & local LLMs compatible with the OpenAI API specification. Some common base URLs: OpenAI: <https://api.openai.com/v1> Gemini: <https://generativelanguage.googleapis.com/v1beta/openai> TogetherAI: <https://api.together.ai/v1> | `http://localhost:1234/v1` |
 | `-m, --model` | string | The model to use for inferencing. If set, takes precedence over the QSV_LLM_MODEL environment variable. | `openai/gpt-oss-20b` |
 | `--language` | string | The output language/dialect to use for the response. (e.g., "Spanish", "French", "Hindi", "Mandarin", "Italian", "Castilian", "Franglais", "Taglish", "Pig Latin", "Valley Girl", "Pirate", "Shakespearean English", "Chavacano", "Gen Z", "Yoda", etc.) |  |
 | `--addl-props` | string | Additional model properties to pass to the LLM chat/completion API. Various models support different properties beyond the standard ones. For instance, gpt-oss-20b supports the "reasoning_effort" property. e.g. to set the "reasoning_effort" property to "high" & "temperature" to 0.5, use '{"reasoning_effort": "high", "temperature": 0.5}' |  |
 | `-k, --api-key` | string | The API key to use. If set, takes precedence over the QSV_LLM_APIKEY envvar. Required when the base URL is not localhost. Set to NONE to suppress sending the API key. |  |
 | `-t, --max-tokens` | string | Limits the number of generated tokens in the output. Set to 0 to disable token limits. If the --base-url is localhost, indicating a local LLM, the default is automatically set to 0. | `10000` |
 | `--timeout` | string | Timeout for completions in seconds. If 0, no timeout is used. | `300` |
-| `--user-agent` | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent |  |
+| `--user-agent` | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
 | `--export-prompt` | string | Export the default prompts to the specified file that can be used with the --prompt-file option. The file will be saved with a .toml extension. If the file already exists, it will be overwritten. It will exit after exporting the prompts. |  |
 
 ## Caching Options
@@ -264,7 +264,7 @@ qsv describegpt --help
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-h, --help` | flag | Display this message |  |
-| `--format` | string | Output format: Markdown, TSV, JSON, or TOON. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See https://toonformat.dev/ for more info. | `Markdown` |
+| `--format` | string | Output format: Markdown, TSV, JSON, or TOON. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See <https://toonformat.dev/> for more info. | `Markdown` |
 | `-o, --output` | string | Write output to <file> instead of stdout. If --format is set to TSV, separate files will be created for each prompt type with the pattern {filestem}.{kind}.tsv (e.g., output.dictionary.tsv, output.tags.tsv). |  |
 | `-q, --quiet` | flag | Do not print status messages to stderr. |  |
 

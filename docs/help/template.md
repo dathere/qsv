@@ -7,15 +7,15 @@
 ## Description
 
 Renders a template using CSV data with the MiniJinja template engine.
-https://docs.rs/minijinja/latest/minijinja/
+<https://docs.rs/minijinja/latest/minijinja/>
 
 This command processes each row of the CSV file, making the column values available as variables.
 Each row is rendered using the template. Column headers become variable names, with non-alphanumeric
 characters converted to underscore (_).
 
-Templates use Jinja2 syntax (https://jinja.palletsprojects.com/en/stable/templates/)
+Templates use Jinja2 syntax (<https://jinja.palletsprojects.com/en/stable/templates/>)
 and can access an extensive library of built-in filters/functions, with additional ones
-from minijinja_contrib https://docs.rs/minijinja-contrib/latest/minijinja_contrib/.
+from minijinja_contrib <https://docs.rs/minijinja-contrib/latest/minijinja_contrib/>.
 Additional qsv custom filters are also documented at the end of this file.
 
 If the <outdir> argument is specified, it will create a file for each row in <outdir>, with
@@ -61,8 +61,8 @@ $ qsv template --template-file template.tpl data.csv
 ```
 
 
-For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_template.rs.
-For a relatively complex MiniJinja template, see https://github.com/dathere/qsv/blob/master/scripts/template.tpl
+For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_template.rs>.
+For a relatively complex MiniJinja template, see <https://github.com/dathere/qsv/blob/master/scripts/template.tpl>
 
 
 ## Usage

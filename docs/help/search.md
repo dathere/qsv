@@ -87,7 +87,7 @@ qsv search --help
 
 | Argument | Description |
 |----------|-------------|
-| `<regex>` | Regular expression to match. Uses Rust regex syntax. See https://docs.rs/regex/latest/regex/index.html#syntax or https://regex101.com with the Rust flavor for more info. |
+| `<regex>` | Regular expression to match. Uses Rust regex syntax. See <https://docs.rs/regex/latest/regex/index.html#syntax> or <https://regex101.com> with the Rust flavor for more info. |
 | `<input>` | The CSV file to read. If not given, reads from stdin. |
 
 ## Search Options

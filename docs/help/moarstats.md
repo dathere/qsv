@@ -8,10 +8,10 @@
 
 Add dozens of additional statistics, including extended outlier, robust & bivariate
 statistics to an existing stats CSV file. It also maps the field type to the most specific
-W3C XML Schema Definition (XSD) datatype (https://www.w3.org/TR/xmlschema-2/).
+W3C XML Schema Definition (XSD) datatype (<https://www.w3.org/TR/xmlschema-2/>).
 
 The `moarstats` command extends an existing stats CSV file (created by the `stats` command)
-by computing "moar" (https://www.dictionary.com/culture/slang/moar) statistics that can be
+by computing "moar" (<https://www.dictionary.com/culture/slang/moar>) statistics that can be
 derived from existing stats columns and by scanning the original CSV file.
 
 It looks for the `<FILESTEM>.stats.csv` file for a given CSV input. If the stats CSV file
@@ -25,14 +25,14 @@ Currently computes the following 18 additional univariate statistics:
 1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
 Measures asymmetry of the distribution.
 Positive values indicate right skew, negative values indicate left skew.
-https://en.wikipedia.org/wiki/Skewness
+<https://en.wikipedia.org/wiki/Skewness>
 2. Range to Standard Deviation Ratio: range / stddev
 Normalizes the spread of data.
 Higher values indicate more extreme outliers relative to the variability.
 3. Quartile Coefficient of Dispersion: (Q3 - Q1) / (Q3 + Q1)
 Measures relative variability using quartiles.
 Useful for comparing dispersion across different scales.
-https://en.wikipedia.org/wiki/Quartile_coefficient_of_dispersion
+<https://en.wikipedia.org/wiki/Quartile_coefficient_of_dispersion>
 4. Z-Score of Mode: (mode - mean) / stddev
 Indicates how typical the mode is relative to the distribution.
 Values near 0 suggest the mode is near the mean.
@@ -58,39 +58,39 @@ Higher values suggest presence of outliers affecting stddev.
 Positive values indicate heavy tails, negative values indicate light tails.
 Values near 0 indicate a normal distribution.
 Requires --advanced flag.
-https://en.wikipedia.org/wiki/Kurtosis
+<https://en.wikipedia.org/wiki/Kurtosis>
 12. Bimodality Coefficient: Measures whether a distribution has two modes (peaks) or is unimodal.
 BC < 0.555 indicates unimodal, BC >= 0.555 indicates bimodal/multimodal.
 Computed as (skewness² + 1) / (kurtosis + 3).
 Requires --advanced flag (needs skewness from base stats and kurtosis from --advanced flag).
-https://en.wikipedia.org/wiki/Bimodality
+<https://en.wikipedia.org/wiki/Bimodality>
 13. Gini Coefficient: Measures inequality/dispersion in the distribution.
 Values range from 0 (perfect equality) to 1 (maximum inequality).
 Requires --advanced flag.
-https://en.wikipedia.org/wiki/Gini_coefficient
+<https://en.wikipedia.org/wiki/Gini_coefficient>
 14. Atkinson Index: Measures inequality in the distribution with a sensitivity parameter.
 Values range from 0 (perfect equality) to 1 (maximum inequality).
 The Atkinson Index is a more general form of the Gini coefficient that allows for
 different sensitivity to inequality. Sensitivity is configurable via --epsilon.
 Requires --advanced flag.
-https://en.wikipedia.org/wiki/Atkinson_index
+<https://en.wikipedia.org/wiki/Atkinson_index>
 15. Shannon Entropy: Measures the information content/uncertainty in the distribution.
 Higher values indicate more diversity, lower values indicate more concentration.
 Values range from 0 (all values identical) to log2(n) where n is the number of unique values.
 Requires --advanced flag.
-https://en.wikipedia.org/wiki/Entropy_(information_theory)
+<https://en.wikipedia.org/wiki/Entropy_(information_theory)>
 16. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
 Values range from 0 (all values identical) to 1 (all values equally distributed).
 Computed as shannon_entropy / log2(cardinality).
 Requires shannon_entropy (from --advanced flag) and cardinality (from base stats).
 17. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
 All values are included in the calculation, but extreme values are capped at thresholds.
-https://en.wikipedia.org/wiki/Winsorized_mean
+<https://en.wikipedia.org/wiki/Winsorized_mean>
 Also computes: winsorized_stddev, winsorized_variance, winsorized_cv, winsorized_range,
 and winsorized_stddev_ratio (winsorized_stddev / overall_stddev).
 18. Trimmed Mean: Excludes values outside thresholds, then computes mean.
 Only values within thresholds are included in the calculation.
-https://en.wikipedia.org/wiki/Truncated_mean
+<https://en.wikipedia.org/wiki/Truncated_mean>
 Also computes: trimmed_stddev, trimmed_variance, trimmed_cv, trimmed_range,
 and trimmed_stddev_ratio (trimmed_stddev / overall_stddev).
 By default, uses Q1 and Q3 as thresholds (25% winsorization/trimming).
@@ -98,7 +98,7 @@ With --use-percentiles, uses configurable percentiles (e.g., 5th/95th) as thresh
 with --pct-thresholds.
 
 In addition, it computes the following univariate outlier statistics (24 outlier statistics total).
-https://en.wikipedia.org/wiki/Outlier
+<https://en.wikipedia.org/wiki/Outlier>
 (requires --quartiles or --everything in stats):
 
 Outlier Counts (7 statistics):
@@ -155,30 +155,30 @@ The `moarstats` command also computes the following 6 bivariate statistics:
 Measures linear correlation between two numeric/date fields.
 Values range from -1 (perfect negative correlation) to +1 (perfect positive correlation).
 0 indicates no linear correlation.
-https://en.wikipedia.org/wiki/Pearson_correlation_coefficient
+<https://en.wikipedia.org/wiki/Pearson_correlation_coefficient>
 2. Spearman's rank correlation
 Measures monotonic correlation between two numeric/date fields.
 Values range from -1 (perfect negative correlation) to +1 (perfect positive correlation).
 0 indicates no monotonic correlation.
-https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient
+<https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient>
 3. Kendall's tau
 Measures monotonic correlation between two numeric/date fields.
 Values range from -1 (perfect negative correlation) to +1 (perfect positive correlation).
 0 indicates no monotonic correlation.
-https://en.wikipedia.org/wiki/Kendall_rank_correlation_coefficient
+<https://en.wikipedia.org/wiki/Kendall_rank_correlation_coefficient>
 4. Covariance
 Measures the linear relationship between two numeric/date fields.
 Values range from negative infinity to positive infinity.
 0 indicates no linear relationship.
-https://en.wikipedia.org/wiki/Covariance
+<https://en.wikipedia.org/wiki/Covariance>
 5. Mutual Information
 Measures the amount of information obtained about one field by observing another.
 Values range from 0 (independent) to positive infinity.
-https://en.wikipedia.org/wiki/Mutual_information
+<https://en.wikipedia.org/wiki/Mutual_information>
 6. Normalized Mutual Information
 Normalized version of mutual information, scaled by the geometric mean of individual entropies.
 Values range from 0 (independent) to 1 (perfectly dependent).
-https://en.wikipedia.org/wiki/Mutual_information#Normalized_variants
+<https://en.wikipedia.org/wiki/Mutual_information#Normalized_variants>
 
 These bivariate statistics are computed when the `--bivariate` flag is used
 and require an indexed CSV file (index will be auto-created if missing).

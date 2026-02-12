@@ -10,9 +10,9 @@ Formats recognized date fields (19 formats recognized) to a specified date forma
 using strftime date format specifiers.
 
 For recognized date formats, see
-https://github.com/dathere/qsv-dateparser?tab=readme-ov-file#accepted-date-formats
+<https://github.com/dathere/qsv-dateparser?tab=readme-ov-file#accepted-date-formats>
 
-See https://docs.rs/chrono/latest/chrono/format/strftime/ for
+See <https://docs.rs/chrono/latest/chrono/format/strftime/> for
 accepted date format specifiers for --formatstr.
 Defaults to ISO 8601/RFC 3339 format when --formatstr is not specified.
 ( "%Y-%m-%dT%H:%M:%S%z" - e.g. 2001-07-08T00:34:60.026490+09:30 )
@@ -62,7 +62,8 @@ qsv datefmt OpenDate --formatstr '%V' --new-column week_number file.csv
 qsv datefmt OpenDate,CloseDate --formatstr '%u' --rename Open_weekday,Close_weekday file.csv
 ```
 
-For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs.
+For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs).
+
 
 ## Usage
 
@@ -86,7 +87,7 @@ qsv datefmt --help
 | `-r, --rename` | string | New name for the transformed column. |  |
 | `--prefer-dmy` | flag | Prefer to parse dates in dmy format. Otherwise, use mdy format. |  |
 | `--keep-zero-time` | flag | If a formatted date ends with "T00:00:00+00:00", keep the time instead of removing it. |  |
-| `--input-tz=<string>` | string | The timezone to use for the input date if the date does not have timezone specified. The timezone must be a valid IANA timezone name or the string "local" for the local timezone. See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for a list of valid timezone names. | `UTC` |
+| `--input-tz=<string>` | string | The timezone to use for the input date if the date does not have timezone specified. The timezone must be a valid IANA timezone name or the string "local" for the local timezone. See <https://en.wikipedia.org/wiki/List_of_tz_database_time_zones> for a list of valid timezone names. | `UTC` |
 | `--output-tz=<string>` | string | The timezone to use for the output date. The timezone must be a valid IANA timezone name or the string "local". | `UTC` |
 | `--default-tz=<string>` | string | The timezone to use for BOTH input and output dates when they do have timezone. Shortcut for --input-tz and --output-tz set to the same timezone. The timezone must be a valid IANA timezone name or the string "local". |  |
 | `--utc` | flag | Shortcut for --input-tz and --output-tz set to UTC. |  |

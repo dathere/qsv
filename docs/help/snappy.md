@@ -7,7 +7,7 @@
 ## Description
 
 Does streaming compression/decompression of the input using the Snappy framing format.
-https://github.com/google/snappy/blob/main/framing_format.txt
+<https://github.com/google/snappy/blob/main/framing_format.txt>
 
 It has four subcommands:
 compress:   Compress the input (multithreaded).
@@ -28,7 +28,7 @@ single-threaded compression.
 
 Also, this command is not specific to CSV data, it can compress/decompress ANY file.
 
-For examples, see https://github.com/dathere/qsv/blob/master/tests/test_snappy.rs.
+For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_snappy.rs>.
 
 
 ## Usage
@@ -51,7 +51,7 @@ qsv snappy --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--user-agent` | string | Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent |  |
+| `--user-agent` | string | Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
 | `--timeout` | string | Timeout for downloading URLs in seconds. | `60` |
 
 ## Common Options

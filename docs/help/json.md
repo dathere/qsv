@@ -19,7 +19,7 @@ Objects with duplicate keys are not recommended as only one key and its values m
 
 If your JSON data is not in the expected format and/or is nested or complex, try using
 the --jaq option to pass a jq-like filter before parsing with the above constraints.
-Learn more about jaqhere: https://github.com/01mf02/jaq
+Learn more about jaqhere: <https://github.com/01mf02/jaq>
 
 As an example, say we have the following JSON data in a file fruits.json:
 
@@ -139,7 +139,7 @@ $ qsv prompt -F json | qsv json --jaq .data
 ```
 
 
-For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_json.rs.
+For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_json.rs>.
 
 
 ## Usage
@@ -153,7 +153,7 @@ qsv json --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--jaq` | string | Filter JSON data using jaq syntax (https://github.com/01mf02/jaq), which is identical to the popular JSON command-line tool - jq. https://jqlang.github.io/jq/ Note that the filter is applied BEFORE converting JSON to CSV |  |
+| `--jaq` | string | Filter JSON data using jaq syntax (<https://github.com/01mf02/jaq>), which is identical to the popular JSON command-line tool - jq. <https://jqlang.github.io/jq/> Note that the filter is applied BEFORE converting JSON to CSV |  |
 | `-s, --select` | string | Select, reorder or drop columns for output. Otherwise, all the columns will be output in the same order as the first object's keys in the JSON data. See 'qsv select --help' for the full syntax. Note however that <cols> NEED to be a comma-delimited list of column NAMES and NOT column INDICES. | `1-` |
 
 ## Common Options

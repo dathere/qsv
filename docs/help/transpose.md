@@ -53,7 +53,7 @@ qsv transpose --long 1-3 data.csv
 qsv transpose --long /^name/ data.csv
 ```
 
-See https://github.com/dathere/qsv/blob/master/tests/test_transpose.rs for more examples.
+See <https://github.com/dathere/qsv/blob/master/tests/test_transpose.rs> for more examples.
 transpose options:
 -m, --multipass        Process the transpose by making multiple passes
 over the dataset. Consumes memory relative to

@@ -73,9 +73,9 @@ Though it can be created as a "quoted identifier" in PostgreSQL, it is still mar
 by default, unless mode is set to "conditional."
 
 It is discouraged because the embedded spaces can cause problems later on.
-(see https://lerner.co.il/2013/11/30/quoting-postgresql/ for more info).
+(see <https://lerner.co.il/2013/11/30/quoting-postgresql/> for more info).
 
-For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_safenames.rs.
+For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_safenames.rs>.
 
 
 ## Usage

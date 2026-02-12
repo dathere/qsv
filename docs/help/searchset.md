@@ -28,7 +28,7 @@ the first match.
 
 When the CSV is indexed, a faster parallel search is used.
 
-For examples, see https://github.com/dathere/qsv/blob/master/tests/test_searchset.rs.
+For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_searchset.rs>.
 
 
 ## Usage
@@ -42,7 +42,7 @@ qsv searchset --help
 
 | Argument | Description |
 |----------|-------------|
-| `<regexset-file>` | The file containing regular expressions to match, with a regular expression on each line. See https://docs.rs/regex/latest/regex/index.html#syntax or https://regex101.com with the Rust flavor for regex syntax. |
+| `<regexset-file>` | The file containing regular expressions to match, with a regular expression on each line. See <https://docs.rs/regex/latest/regex/index.html#syntax> or <https://regex101.com> with the Rust flavor for regex syntax. |
 | `<input>` | The CSV file to read. If not given, reads from stdin. |
 
 ## Searchset Options

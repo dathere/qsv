@@ -68,7 +68,7 @@ qsv replace --help
 
 | Argument | Description |
 |----------|-------------|
-| `<pattern>` | Regular expression pattern to match. Uses Rust regex syntax. See https://docs.rs/regex/latest/regex/index.html#syntax or https://regex101.com with the Rust flavor for more info. |
+| `<pattern>` | Regular expression pattern to match. Uses Rust regex syntax. See <https://docs.rs/regex/latest/regex/index.html#syntax> or <https://regex101.com> with the Rust flavor for more info. |
 | `<input>` | The CSV file to read. If not given, reads from stdin. |
 | `<replacement>` | Replacement string. Set to '<NULL>' if you want to replace matches with ''. |
 

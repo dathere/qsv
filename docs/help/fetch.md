@@ -9,7 +9,7 @@
 Send/Fetch data to/from web services for every row using HTTP Get.
 
 Fetch is integrated with `jaq` (a jq clone) to directly parse out values from an API JSON response.
-(See https://github.com/01mf02/jaq for more info on how to use the jaq JSON Query Language)
+(See <https://github.com/01mf02/jaq> for more info on how to use the jaq JSON Query Language)
 
 CACHE OPTIONS:
 Fetch caches responses to minimize traffic and maximize performance. It has four
@@ -63,8 +63,8 @@ and performance, preferring brotli over gzip over deflate.
 
 It automatically upgrades its connection to the much faster and more efficient HTTP/2 protocol
 with adaptive flow control if the server supports it.
-See https://www.cloudflare.com/learning/performance/http2-vs-http1.1/ and
-https://medium.com/coderscorner/http-2-flow-control-77e54f7fd518 for more info.
+See <https://www.cloudflare.com/learning/performance/http2-vs-http1.1/> and
+<https://medium.com/coderscorner/http-2-flow-control-77e54f7fd518> for more info.
 
 URL OPTIONS:
 <url-column> needs to be a fully qualified URL path. Alternatively, you can dynamically
@@ -75,9 +75,9 @@ EXAMPLES USING THE URL-COLUMN ARGUMENT:
 data.csv
 ### Url
 
-https://api.zippopotam.us/us/90210
-https://api.zippopotam.us/us/94105
-https://api.zippopotam.us/us/92802
+<https://api.zippopotam.us/us/90210>
+<https://api.zippopotam.us/us/94105>
+<https://api.zippopotam.us/us/92802>
 
 Given the data.csv above, fetch the JSON response.
 
@@ -99,9 +99,9 @@ data.csv > data_with_CityState.csv
 
 data_with_CityState.csv
 URL, CityState,
-https://api.zippopotam.us/us/90210, "[\"Beverly Hills\",\"CA\"]"
-https://api.zippopotam.us/us/94105, "[\"San Francisco\",\"CA\"]"
-https://api.zippopotam.us/us/92802, "[\"Anaheim\",\"CA\"]"
+<https://api.zippopotam.us/us/90210>, "[\"Beverly Hills\",\"CA\"]"
+<https://api.zippopotam.us/us/94105>, "[\"San Francisco\",\"CA\"]"
+<https://api.zippopotam.us/us/92802>, "[\"Anaheim\",\"CA\"]"
 
 As you can see, entering jaq selectors on the command line is error prone and can quickly become cumbersome.
 Alternatively, the jaq selector can be saved and loaded from a file using the --jaqfile option.
@@ -160,7 +160,7 @@ $ qsv fetch URL data.csv --http-header "X-Api-Key:TEST_KEY" -H "X-Api-Secret:ABC
 ```
 
 
-For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs.
+For more extensive examples, see <https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs>.
 
 
 ## Usage
@@ -186,7 +186,7 @@ qsv fetch --help
 | `--max-errors` | string | Maximum number of errors before aborting. Set to zero (0) to continue despite errors. | `10` |
 | `--store-error` | flag | On error, store error code/message instead of blank value. |  |
 | `--cookies` | flag | Allow cookies. |  |
-| `--user-agent` | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent |  |
+| `--user-agent` | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
 | `--report` | string | Creates a report of the fetch job. The report has the same name as the input file with the ".fetch-report" suffix. There are two kinds of report - d for "detailed" & s for "short". The detailed report has the same columns as the input CSV with six additional columns - qsv_fetch_url, qsv_fetch_status, qsv_fetch_cache_hit, qsv_fetch_retries, qsv_fetch_elapsed_ms & qsv_fetch_response. The short report only has the six columns without the "qsv_fetch_" prefix. | `none` |
 
 ## Caching Options

@@ -19,7 +19,7 @@ When qsv is compiled with the optional `magika` feature, it uses Google's Magika
 AI-powered content detection to identify file types with high accuracy. Magika detects over
 200 content types including CSV, MS Office/Open Document files, JSON, XML, PDF, PNG, JPEG
 and many more.
-See https://opensource.googleblog.com/2025/11/announcing-magika-10-now-faster-smarter.html.
+See <https://opensource.googleblog.com/2025/11/announcing-magika-10-now-faster-smarter.html>.
 
 When the `magika` feature is not enabled in a build (e.g., MUSL builds, qsvlite, qsvdp), it falls back
 to the file-format crate which provides basic MIME type detection.
@@ -91,7 +91,7 @@ qsv sniff --help
 | `--pretty-json` | flag | Return results in pretty JSON format. |  |
 | `--save-urlsample` | string | Save the URL sample to a file. Valid only when input is a URL. |  |
 | `--timeout` | string | Timeout when sniffing URLs in seconds. If 0, no timeout is used. | `30` |
-| `--user-agent` | string | Specify custom user agent to use when sniffing a CSV on a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent |  |
+| `--user-agent` | string | Specify custom user agent to use when sniffing a CSV on a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
 | `--stats-types` | flag | Use the same data type names as `stats`. (Unsigned, Signed => Integer, Text => String, everything else the same) |  |
 | `--no-infer` | flag | Do not infer the schema. Only return the file's mime type, size and last modified date. Use this to use sniff as a general mime type detector. Note that CSV and TSV files will only be detected as mime type plain/text in this mode. |  |
 | `--just-mime` | flag | Only return the file's mime type. Use this to use sniff as a general mime type detector. Synonym for --no-infer. |  |

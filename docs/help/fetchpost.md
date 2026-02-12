@@ -21,7 +21,7 @@ The --content-type option can override the expected content type. However, it is
 the user's responsibility to ensure the content-type format is valid.
 
 Fetchpost is integrated with `jaq` (a jq clone) to directly parse out values from an API JSON response.
-(See https://github.com/01mf02/jaq for more info on how to use the jaq JSON Query Language)
+(See <https://github.com/01mf02/jaq> for more info on how to use the jaq JSON Query Language)
 
 CACHE OPTIONS:
 Fetchpost caches responses to minimize traffic and maximize performance. It has four
@@ -83,8 +83,8 @@ is not a concern.
 
 It automatically upgrades its connection to the much faster and more efficient HTTP/2 protocol
 with adaptive flow control if the server supports it.
-See https://www.cloudflare.com/learning/performance/http2-vs-http1.1/ and
-https://medium.com/coderscorner/http-2-flow-control-77e54f7fd518 for more info.
+See <https://www.cloudflare.com/learning/performance/http2-vs-http1.1/> and
+<https://medium.com/coderscorner/http-2-flow-control-77e54f7fd518> for more info.
 
 URL OPTIONS:
 <url-column> needs to be a fully qualified URL path. It can be specified as a column name
@@ -94,9 +94,9 @@ EXAMPLES:
 
 data.csv
 URL, zipcode, country
-https://httpbin.org/post, 90210, USA
-https://httpbin.org/post, 94105, USA
-https://httpbin.org/post, 92802, USA
+<https://httpbin.org/post>, 90210, USA
+<https://httpbin.org/post>, 94105, USA
+<https://httpbin.org/post>, 92802, USA
 
 Given the data.csv above, fetch the JSON response.
 
@@ -117,9 +117,9 @@ $ qsv fetchpost URL zipcode,country --new-column form --jaq '."form"' data.csv >
 
 data_with_response.csv
 URL,zipcode,country,form
-https://httpbin.org/post,90210,USA,"{""country"": String(""USA""), ""zipcode"": String(""90210"")}"
-https://httpbin.org/post,94105,USA,"{""country"": String(""USA""), ""zipcode"": String(""94105"")}"
-https://httpbin.org/post,92802,USA,"{""country"": String(""USA""), ""zipcode"": String(""92802"")}"
+<https://httpbin.org/post,90210,USA,"{""country"">: String(""USA""), ""zipcode"": String(""90210"")}"
+<https://httpbin.org/post,94105,USA,"{""country"">: String(""USA""), ""zipcode"": String(""94105"")}"
+<https://httpbin.org/post,92802,USA,"{""country"">: String(""USA""), ""zipcode"": String(""92802"")}"
 
 Alternatively, since we're using the same URL for all the rows, we can just pass the url directly on the command-line.
 
@@ -147,7 +147,7 @@ $ qsv fetchpost https://httpbin.org/post col1-col3 data.csv -H "X-Api-Key:TEST_K
 ```
 
 
-For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs.
+For more extensive examples, see <https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs>.
 
 
 ## Usage
@@ -178,12 +178,12 @@ qsv fetchpost --help
 | `--rate-limit` | string | Rate Limit in Queries Per Second (max: 1000). Note that fetch dynamically throttles as well based on rate-limit and retry-after response headers. Set to 0 to go as fast as possible, automatically throttling as required. CAUTION: Only use zero for APIs that use RateLimit and/or Retry-After headers, otherwise your fetchpost job may look like a Denial Of Service attack. Even though zero is the default, this is mitigated by --max-errors having a default of 10. | `0` |
 | `--timeout` | string | Timeout for each URL request. | `30` |
 | `-H, --http-header` | string | Append custom header(s) to the HTTP header. Pass multiple key-value pairs by adding this option multiple times, once for each pair. The key and value should be separated by a colon. |  |
-| `--compress` | flag | Compress the HTTP request body using gzip. Note that most servers do not support compressed request bodies unless they are specifically configured to do so. This should only be enabled for trusted scenarios where "zip bombs" are not a concern. see https://github.com/postmanlabs/httpbin/issues/577#issuecomment-875814469 for more info. |  |
+| `--compress` | flag | Compress the HTTP request body using gzip. Note that most servers do not support compressed request bodies unless they are specifically configured to do so. This should only be enabled for trusted scenarios where "zip bombs" are not a concern. see <https://github.com/postmanlabs/httpbin/issues/577#issuecomment-875814469> for more info. |  |
 | `--max-retries` | string | Maximum number of retries per record before an error is raised. | `5` |
 | `--max-errors` | string | Maximum number of errors before aborting. Set to zero (0) to continue despite errors. | `10` |
 | `--store-error` | flag | On error, store error code/message instead of blank value. |  |
 | `--cookies` | flag | Allow cookies. |  |
-| `--user-agent` | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent |  |
+| `--user-agent` | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
 | `--report` | string | Creates a report of the fetchpost job. The report has the same name as the input file with the ".fetchpost-report" suffix. There are two kinds of report - d for "detailed" & s for "short". The detailed report has the same columns as the input CSV with seven additional columns - qsv_fetchp_url, qsv_fetchp_form, qsv_fetchp_status, qsv_fetchp_cache_hit, qsv_fetchp_retries, qsv_fetchp_elapsed_ms & qsv_fetchp_response. The short report only has the seven columns without the "qsv_fetchp_" prefix. | `none` |
 
 ## Caching Options

@@ -13,7 +13,7 @@ The Geonames cities index can be retrieved and updated using the `geocode index-
 
 The GeoLite2 City database will need to be MANUALLY downloaded from MaxMind. Though it is
 free, you will need to create a MaxMind account to download the GeoIP2 Binary database (mmdb)
-from https://www.maxmind.com/en/accounts/current/geoip/downloads.
+from <https://www.maxmind.com/en/accounts/current/geoip/downloads>.
 Copy the GeoLite2-City.mmdb file to the ~/.qsv-cache/ directory or point to it using the
 QSV_GEOIP2_FILENAME environment variable.
 
@@ -23,7 +23,7 @@ index using the `geocode index-*` subcommands.
 
 By default, the prebuilt index uses the Geonames Gazeteer cities15000.zip file using
 English names. It contains cities with populations > 15,000 (about ~26k cities).
-See https://download.geonames.org/export/dump/ for more information.
+See <https://download.geonames.org/export/dump/> for more information.
 
 It has seven major subcommands:
 * suggest        - given a partial City name, return the closest City's location metadata
@@ -352,7 +352,7 @@ qsv geocode --help
 |--------|------|-------------|--------|
 | `-c, --new-column` | string | Put the transformed values in a new column instead. Not valid when using the '%dyncols:' --formatstr option. |  |
 | `-r, --rename` | string | New name for the transformed column. |  |
-| `--country` | string | The comma-delimited, case-insensitive list of countries to filter for. Country is specified as a ISO 3166-1 alpha-2 (two-letter) country code. https://en.wikipedia.org/wiki/ISO_3166-2 |  |
+| `--country` | string | The comma-delimited, case-insensitive list of countries to filter for. Country is specified as a ISO 3166-1 alpha-2 (two-letter) country code. <https://en.wikipedia.org/wiki/ISO_3166-2> |  |
 
 ## Suggest Only Options
 
@@ -388,8 +388,8 @@ qsv geocode --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--languages` | string | The comma-delimited, case-insensitive list of languages to use when building the Geonames cities index. The languages are specified as a comma-separated list of ISO 639-2 codes. See https://download.geonames.org/export/dump/iso-languagecodes.txt to look up codes and https://download.geonames.org/export/dump/alternatenames/ for the supported language files. 253 languages are currently supported. | `en` |
-| `--cities-url` | string | The URL to download the Geonames cities file from. There are several available at https://download.geonames.org/export/dump/. cities500.zip   - cities with populations > 500; ~200k cities, 56mb cities1000.zip  - population > 1000; ~140k cities, 44mb cities5000.zip  - population > 5000; ~53k cities, 21mb cities15000.zip - population > 15000; ~26k cities, 13mb Note that the more cities are included, the larger the local index file will be, lookup times will be slower, and the search results will be different. For convenience, if this is set to 500, 1000, 5000 or 15000, it will be converted to a geonames cities URL. | `https://download.geonames.org/export/dump/cities15000.zip` |
+| `--languages` | string | The comma-delimited, case-insensitive list of languages to use when building the Geonames cities index. The languages are specified as a comma-separated list of ISO 639-2 codes. See <https://download.geonames.org/export/dump/iso-languagecodes.txt> to look up codes and <https://download.geonames.org/export/dump/alternatenames/> for the supported language files. 253 languages are currently supported. | `en` |
+| `--cities-url` | string | The URL to download the Geonames cities file from. There are several available at <https://download.geonames.org/export/dump/>. cities500.zip   - cities with populations > 500; ~200k cities, 56mb cities1000.zip  - population > 1000; ~140k cities, 44mb cities5000.zip  - population > 5000; ~53k cities, 21mb cities15000.zip - population > 15000; ~26k cities, 13mb Note that the more cities are included, the larger the local index file will be, lookup times will be slower, and the search results will be different. For convenience, if this is set to 500, 1000, 5000 or 15000, it will be converted to a geonames cities URL. | `https://download.geonames.org/export/dump/cities15000.zip` |
 | `--force` | flag | Force update the Geonames cities index. If not set, qsv will check if there are updates available at Geonames.org before updating the index. |  |
 
 ## Common Options

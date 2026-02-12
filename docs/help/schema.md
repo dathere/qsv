@@ -12,7 +12,7 @@ Generate JSON Schema or Polars Schema (with the `--polars` option) from CSV data
 
 This command derives a JSON Schema Validation (Draft 2020-12) file from CSV data,
 including validation rules based on data type and input data domain/range.
-https://json-schema.org/draft/2020-12/json-schema-validation.html
+<https://json-schema.org/draft/2020-12/json-schema-validation.html>
 
 Running `validate` command on original input CSV with generated schema
 should not flag any invalid records.
@@ -57,7 +57,7 @@ skip schema inferencing which may fail when the inferencing sample is too low, i
 Polars to optimize the query and gives the user the option to tailor the schema to their specific
 query needs (e.g. using a Decimal type with explicit precision and scale instead of a Float type).
 
-For examples, see https://github.com/dathere/qsv/blob/master/tests/test_schema.rs.
+For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_schema.rs>.
 
 
 ## Usage

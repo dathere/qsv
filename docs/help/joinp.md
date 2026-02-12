@@ -17,7 +17,7 @@ non-equi & asof joins and its output columns can be coalesced (no duplicate colu
 
 Returns the shape of the join result (number of rows, number of columns) to stderr.
 
-For examples, see https://github.com/dathere/qsv/blob/master/tests/test_joinp.rs.
+For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_joinp.rs>.
 
 
 ## Usage
@@ -85,7 +85,7 @@ qsv joinp --help
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--sql-filter` | string | The SQL expression to apply against the join result. Used to select columns and filter rows AFTER running the join. Be sure to select from the "join_result" table when formulating the SQL expression. (e.g. "select c1, c2 as colname from join_result where c2 > 20") |  |
-| `--datetime-format` | string | The datetime format to use writing datetimes. See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for the list of valid format specifiers. |  |
+| `--datetime-format` | string | The datetime format to use writing datetimes. See <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for the list of valid format specifiers. |  |
 | `--date-format` | string | The date format to use writing dates. |  |
 | `--time-format` | string | The time format to use writing times. |  |
 | `--float-precision` | string | The number of digits of precision to use when writing floats. (default: 6) |  |

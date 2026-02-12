@@ -277,7 +277,7 @@ fn generate_command_markdown(
                 md.push_str(&format!(
                     "| `{}` | {} |\n",
                     arg.name,
-                    escape_table_cell(&arg.description)
+                    escape_table_cell(&linkify_bare_urls(&arg.description))
                 ));
             }
             md.push('\n');
@@ -308,7 +308,7 @@ fn generate_command_markdown(
                 short_str,
                 opt.flag,
                 opt.option_type,
-                escape_table_cell(&opt.description),
+                escape_table_cell(&linkify_bare_urls(&opt.description)),
                 default_str
             ));
         }
@@ -330,6 +330,53 @@ fn escape_table_cell(text: &str) -> String {
     text.replace('|', "\\|")
         .replace('\n', " ")
         .replace('\r', "")
+}
+
+/// Convert bare URLs (https://...) in text to markdown autolinks (<https://...>).
+/// Skips URLs that are already inside markdown links `[text](url)` or autolinks `<url>`.
+fn linkify_bare_urls(text: &str) -> String {
+    // Match URLs not preceded by ]( (markdown link) or < (autolink).
+    // URLs may be surrounded by parentheses like (https://example.com) — we handle that.
+    let url_re = regex_oncelock!(r"(^|[^<])(https?://[^\s>\]]+)");
+    url_re
+        .replace_all(text, |caps: &regex::Captures| {
+            let prefix = &caps[1];
+            // Skip if this is inside a markdown link: ](url)
+            if prefix.ends_with("](") {
+                return caps[0].to_string();
+            }
+            let mut url: &str = &caps[2];
+            // Strip trailing punctuation that isn't part of the URL
+            let mut suffix = String::new();
+            while url.ends_with(['.', ',', ';', ':']) {
+                suffix.insert(0, url.as_bytes()[url.len() - 1] as char);
+                url = &url[..url.len() - 1];
+            }
+            // Handle trailing ) that closes a surrounding (...) but isn't part of the URL
+            // by checking balanced parens
+            if url.ends_with(')') && !url_has_balanced_parens(url) {
+                suffix.insert(0, ')');
+                url = &url[..url.len() - 1];
+            }
+            format!("{prefix}<{url}>{suffix}")
+        })
+        .to_string()
+}
+
+/// Check if a URL has balanced parentheses (for URLs like Wikipedia that contain parens)
+fn url_has_balanced_parens(url: &str) -> bool {
+    let mut depth: i32 = 0;
+    for c in url.chars() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {},
+        }
+        if depth < 0 {
+            return false;
+        }
+    }
+    depth == 0
 }
 
 /// Sections parsed from USAGE text
@@ -584,7 +631,7 @@ fn format_description(lines: &[String]) -> String {
 
         // Bullet list items
         if trimmed.starts_with("* ") || trimmed.starts_with("- ") {
-            md.push_str(trimmed);
+            md.push_str(&linkify_bare_urls(trimmed));
             md.push('\n');
             prev_empty = false;
             continue;
@@ -592,14 +639,14 @@ fn format_description(lines: &[String]) -> String {
 
         // Numbered list items
         if trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) && trimmed.contains(". ") {
-            md.push_str(trimmed);
+            md.push_str(&linkify_bare_urls(trimmed));
             md.push('\n');
             prev_empty = false;
             continue;
         }
 
         // Regular paragraph text
-        md.push_str(trimmed);
+        md.push_str(&linkify_bare_urls(trimmed));
         md.push('\n');
         prev_empty = false;
     }
@@ -663,8 +710,11 @@ fn format_examples(lines: &[String]) -> String {
             continue;
         }
 
-        // "For more examples, see ..." or "For examples, see ..."
-        if trimmed.starts_with("For more examples, see") || trimmed.starts_with("For examples, see")
+        // "For more examples, see ..." or "For examples, see ..." or "For more extensive
+        // examples, see ..."
+        if trimmed.starts_with("For more examples, see")
+            || trimmed.starts_with("For examples, see")
+            || trimmed.starts_with("For more extensive examples, see")
         {
             if in_code_block {
                 md.push_str("```\n\n");
@@ -697,7 +747,7 @@ fn format_examples(lines: &[String]) -> String {
                 in_code_block = false;
             }
             let comment = trimmed.trim_start_matches('#').trim();
-            md.push_str(&format!("> {comment}\n\n"));
+            md.push_str(&format!("> {}\n\n", linkify_bare_urls(comment)));
             continue;
         }
 
@@ -731,7 +781,7 @@ fn format_examples(lines: &[String]) -> String {
         }
 
         // Any other text (description paragraphs within examples)
-        md.push_str(trimmed);
+        md.push_str(&linkify_bare_urls(trimmed));
         md.push('\n');
     }
 

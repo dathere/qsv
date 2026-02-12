@@ -44,7 +44,7 @@ $ qsv enum --copy names
 
 5. HASH. Create a new column with the deterministic hash of the given column/s.
 The hash uses the xxHash algorithm and is platform-agnostic.
-(see https://github.com/DoumanAsh/xxhash-rust for more information):
+(see <https://github.com/DoumanAsh/xxhash-rust> for more information):
 ```console
 $ qsv enum --hash 1- // hash all columns, auto-ignores existing "hash" column
 ```
@@ -75,7 +75,7 @@ $ qsv enum --uuid4 file.csv | qsv sort -s uuid4 > shuffled.csv
 
 This will shuffle the lines of the file.csv file as uuids generated using the v4
 specification are random and for practical purposes, are unique (1 in 2^122).
-See https://en.wikipedia.org/wiki/Universally_unique_identifier#Collisions
+See <https://en.wikipedia.org/wiki/Universally_unique_identifier#Collisions>
 
 However, sorting on uuid7 identifiers will not work as they are time-based
 and monotonically increasing, and will not shuffle the lines.
@@ -169,7 +169,7 @@ qsv enum --help
 | `--constant` | string | Fill a new column with the given value. Changes the default column name to "constant" unless overridden by --new-column. To specify a null value, pass the literal "<NULL>". |  |
 | `--copy` | string | Name of a column to copy. Changes the default column name to "{column}_copy" unless overridden by --new-column. |  |
 | `--uuid4` | flag | When set, the column will be populated with uuids (v4) instead of the incremental identifier. Changes the default column name to "uuid4" unless overridden by --new-column. |  |
-| `--uuid7` | flag | When set, the column will be populated with uuids (v7) instead of the incremental identifier. uuid v7 is a time-based uuid and is monotonically increasing. See https://buildkite.com/blog/goodbye-integers-hello-uuids Changes the default column name to "uuid7" unless overridden by --new-column. |  |
+| `--uuid7` | flag | When set, the column will be populated with uuids (v7) instead of the incremental identifier. uuid v7 is a time-based uuid and is monotonically increasing. See <https://buildkite.com/blog/goodbye-integers-hello-uuids> Changes the default column name to "uuid7" unless overridden by --new-column. |  |
 | `--hash` | string | Create a new column filled with the hash of the given column/s. Use "1-" to hash all columns. Changes the default column name to "hash" unless overridden by --new-column. Will remove an existing "hash" column if it exists. |  |
 
 ## Common Options

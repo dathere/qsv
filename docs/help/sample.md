@@ -12,12 +12,12 @@ It supports eight sampling methods:
 - RESERVOIR: the default sampling method when NO INDEX is present and no sampling method
 is specified. Visits every CSV record exactly once, using MEMORY PROPORTIONAL to the
 sample size (k) - O(k).
-https://en.wikipedia.org/wiki/Reservoir_sampling
+<https://en.wikipedia.org/wiki/Reservoir_sampling>
 
 - INDEXED: the default sampling method when an INDEX is present and no sampling method
 is specified. Uses random I/O to sample efficiently, as it only visits records selected
 by random indexing, using MEMORY PROPORTIONAL to the sample size (k) - O(k).
-https://en.wikipedia.org/wiki/Random_access
+<https://en.wikipedia.org/wiki/Random_access>
 
 - BERNOULLI: the sampling method when the --bernoulli option is specified.
 Each record has an independent probability p of being selected, where p is
@@ -26,7 +26,7 @@ has a 10% chance of being selected, regardless of the other records. The final
 sample size is random and follows a binomial distribution. Uses CONSTANT MEMORY - O(1).
 When sampling from a remote URL, processes the file in chunks without downloading it
 entirely, making it especially efficient for sampling large remote files.
-https://en.wikipedia.org/wiki/Bernoulli_sampling
+<https://en.wikipedia.org/wiki/Bernoulli_sampling>
 
 - SYSTEMATIC: the sampling method when the --systematic option is specified.
 Selects every nth record from the input, where n is the integer part of <sample-size>
@@ -36,7 +36,7 @@ population. If <sample-size> is a whole number (no fractional part), it will sel
 every nth record for the whole population. Uses CONSTANT memory - O(1). The starting
 point can be specified as "random" or "first". Useful for time series data or when you
 want evenly spaced samples.
-https://en.wikipedia.org/wiki/Systematic_sampling
+<https://en.wikipedia.org/wiki/Systematic_sampling>
 
 - STRATIFIED: the sampling method when the --stratified option is specified.
 Stratifies the population by the specified column and then samples from each stratum.
@@ -47,7 +47,7 @@ you can stratify the population by US state and then sample 20 records from each
 This will ensure that you have a representative sample from each of the 50 states.
 The sample size must be a whole number. Uses MEMORY PROPORTIONAL to the
 number of strata (s) and samples per stratum (k) as specified by <sample-size> - O(s*k).
-https://en.wikipedia.org/wiki/Stratified_sampling
+<https://en.wikipedia.org/wiki/Stratified_sampling>
 
 - WEIGHTED: the sampling method when the --weighted option is specified.
 Samples records with probabilities proportional to values in a specified weight column.
@@ -57,7 +57,7 @@ will have a higher chance of being included. Non-numeric weights are treated as 
 The weights are automatically normalized using the maximum weight in the dataset.
 Specify the desired sample size with <sample-size>. Uses MEMORY PROPORTIONAL to the
 sample size (k) - O(k).
-"Weighted random sampling with a reservoir" https://doi.org/10.1016/j.ipl.2005.11.003
+"Weighted random sampling with a reservoir" <https://doi.org/10.1016/j.ipl.2005.11.003>
 
 - CLUSTER: the sampling method when the --cluster option is specified.
 Samples entire groups of records together based on a cluster identifier column.
@@ -67,7 +67,7 @@ For example, if you have records grouped by neighborhood and specify a sample si
 it will randomly select 10 neighborhoods and include ALL records from those neighborhoods
 in the output. This ensures that natural groupings in the data are preserved.
 Uses MEMORY PROPORTIONAL to the number of clusters (c) - O(c).
-https://en.wikipedia.org/wiki/Cluster_sampling
+<https://en.wikipedia.org/wiki/Cluster_sampling>
 
 - TIMESERIES: the sampling method when the --timeseries option is specified.
 Samples records based on time intervals from a time-series dataset. Groups records by
@@ -174,7 +174,7 @@ REMOTE FILE OPTIONS:
 It supports the following variables -
 $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
 Try to follow the syntax here -
-https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
+<https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent>
 --timeout <secs>       Timeout for downloading URLs in seconds. If 0, no timeout is used.
 [default: 30]
 --max-size <mb>        Maximum size of the file to download in MB before sampling.

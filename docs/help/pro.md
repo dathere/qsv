@@ -6,7 +6,7 @@
 
 ## Description
 
-Interact with qsv pro API. Learn more about qsv pro at: https://qsvpro.dathere.com.
+Interact with qsv pro API. Learn more about qsv pro at: <https://qsvpro.dathere.com>.
 
 - qsv pro must be running for this command to work as described.
 - Some features of this command require a paid plan of qsv pro and may require an Internet connection.

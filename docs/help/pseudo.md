@@ -7,7 +7,7 @@
 ## Description
 
 Pseudonymise the value of a given column by replacing it with an
-incremental identifier. See https://en.wikipedia.org/wiki/Pseudonymization
+incremental identifier. See <https://en.wikipedia.org/wiki/Pseudonymization>
 
 Once a value is pseudonymised, it will always be replaced with the same
 identifier. This means that the same value will always be replaced with
@@ -46,7 +46,7 @@ ID-1010,orange
 ID-1005,magenta
 ID-1000,cyan
 
-For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_pseudo.rs.
+For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_pseudo.rs>.
 
 
 ## Usage

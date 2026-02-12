@@ -12,7 +12,7 @@ Note that this requires reading all of the CSV data into memory. If
 you need to sort a large file that may not fit into memory, use the
 extsort command instead.
 
-For examples, see https://github.com/dathere/qsv/blob/master/tests/test_sort.rs.
+For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_sort.rs>.
 
 
 ## Usage
@@ -28,7 +28,7 @@ qsv sort --help
 |--------|------|-------------|--------|
 | `-s, --select` | string | Select a subset of columns to sort. See 'qsv select --help' for the format details. |  |
 | `-N, --numeric` | flag | Compare according to string numerical value |  |
-| `--natural` | flag | Compare strings using natural sort order (treats numbers within strings as actual numbers, e.g. "data1.txt", "data2.txt", "data10.txt", as opposed to "data1.txt", "data10.txt", "data2.txt" when sorting lexicographically) https://en.wikipedia.org/wiki/Natural_sort_order |  |
+| `--natural` | flag | Compare strings using natural sort order (treats numbers within strings as actual numbers, e.g. "data1.txt", "data2.txt", "data10.txt", as opposed to "data1.txt", "data10.txt", "data2.txt" when sorting lexicographically) <https://en.wikipedia.org/wiki/Natural_sort_order> |  |
 | `-R, --reverse` | flag | Reverse order |  |
 | `-i, --ignore-case` | flag | Compare strings disregarding case |  |
 | `-u, --unique` | flag | When set, identical consecutive lines will be dropped to keep only one line per sorted value. |  |

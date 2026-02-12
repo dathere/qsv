@@ -46,7 +46,7 @@ $ qsv luau map c --colindex "col[1] + col[2]"
 There is some magic in the previous example as 'a' and 'b' are passed in
 as strings (not numbers), but Luau still manages to add them up.
 A more explicit way of doing it, is by using the tonumber() function.
-See https://luau-lang.org/library for a list of built-in functions.
+See <https://luau-lang.org/library> for a list of built-in functions.
 ```console
 $ qsv luau map c "tonumber(a) + tonumber(b)"
 ```
@@ -72,7 +72,7 @@ $ qsv luau map Total "tot = (tot or 900) + Amount; return tot"
 
 
 Use the qsv_cumsum() helper function to compute the running total.
-See https://github.com/dathere/qsv/wiki/Luau-Helper-Functions-Examples for more examples.
+See <https://github.com/dathere/qsv/wiki/Luau-Helper-Functions-Examples> for more examples.
 
 ```console
 $ qsv luau map Total "qsv_cumsum(Amount)"
@@ -135,7 +135,7 @@ Common gotchas:
 - Dots in email addresses, URLs, or decimal numbers
 - Hyphens in phone numbers or dates
 
-For more on Lua patterns: https://www.lua.org/manual/5.4/manual.html#6.4.1
+For more on Lua patterns: <https://www.lua.org/manual/5.4/manual.html#6.4.1>
 
 Typing long scripts on the command line gets tiresome rather quickly. Use the
 "file:" prefix or the ".lua/.luau" file extension to read non-trivial scripts
@@ -191,12 +191,12 @@ Similarly, if the CSV has no index, qsv will also abort with an error unless
 "qsv_autoindex()" is called in the BEGIN script to create an index.
 
 For security and safety reasons as a purpose-built embeddable interpreter,
-Luau's standard library is relatively minimal (https://luau-lang.org/library).
+Luau's standard library is relatively minimal (<https://luau-lang.org/library>).
 That's why qsv bundles & preloads LuaDate v2.2.1 as date manipulation is a common task.
-See https://tieske.github.io/date/ on how to use the LuaDate library.
+See <https://tieske.github.io/date/> on how to use the LuaDate library.
 
 Additional libraries can be loaded using Luau's "require" function.
-See https://github.com/LewisJEllis/awesome-lua for a list of other libraries.
+See <https://github.com/LewisJEllis/awesome-lua> for a list of other libraries.
 
 With the judicious use of "require", the BEGIN script & special variables, one can
 create variables, tables, arrays & functions that can be used for complex aggregation
@@ -221,9 +221,9 @@ There are more Luau helper functions in addition to "qsv_log", notably the power
 CSVs on the filesystem, a URL, datHere's lookup repo or CKAN instances.
 
 Detailed descriptions of these helpers can be found in the "setup_helpers" section at
-the bottom of this file and on the Wiki (https://github.com/dathere/qsv/wiki)
+the bottom of this file and on the Wiki (<https://github.com/dathere/qsv/wiki>)
 
-For more detailed examples, see https://github.com/dathere/qsv/blob/master/tests/test_luau.rs.
+For more detailed examples, see <https://github.com/dathere/qsv/blob/master/tests/test_luau.rs>.
 
 
 ## Usage

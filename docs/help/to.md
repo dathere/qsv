@@ -11,7 +11,7 @@ Convert CSV files to PostgreSQL, SQLite, Excel XLSX, ODS and Data Package.
 ### Postgresql
 
 To convert to postgres you need to supply connection string.
-The format is described here - https://docs.rs/postgres/latest/postgres/config/struct.Config.html#examples-1.
+The format is described here - <https://docs.rs/postgres/latest/postgres/config/struct.Config.html#examples-1>.
 Additionally you can use `env=MY_ENV_VAR` and qsv will get the connection string from the
 environment variable `MY_ENV_VAR`.
 
@@ -51,7 +51,7 @@ Drop tables if they exist before loading.
 qsv to postgres 'postgres://testuser:pass@localhost/test' --drop file1.csv file2.csv
 ```
 
-Evolve tables if they exist before loading. Read http://datapackage_convert.opendata.coop/evolve.html
+Evolve tables if they exist before loading. Read <http://datapackage_convert.opendata.coop/evolve.html>
 to explain how evolving works.
 ```console
 qsv to postgres 'postgres://testuser:pass@localhost/test' --evolve file1.csv file2.csv
@@ -92,7 +92,7 @@ Drop tables if they exist before loading.
 qsv to sqlite test.db --drop file1.csv file2.csv
 ```
 
-Evolve tables if they exist. Read http://datapackage_convert.opendata.coop/evolve.html
+Evolve tables if they exist. Read <http://datapackage_convert.opendata.coop/evolve.html>
 to explain how evolving is done.
 ```console
 qsv to sqlite test.db --evolve file1.csv file2.csv

@@ -6,7 +6,7 @@
 
 ## Description
 
-Explore tabular data files interactively using the csvlens (https://github.com/YS-L/csvlens) engine.
+Explore tabular data files interactively using the csvlens (<https://github.com/YS-L/csvlens>) engine.
 
 If the polars feature is enabled, lens can browse tabular data in Arrow, Avro/IPC, Parquet, JSON (JSON Array)
 and JSONL files. It also automatically decompresses csv/tsv/tab/ssv files using the gz,zlib & zst
@@ -162,8 +162,8 @@ the $'...' syntax is used to do so:
 qsv lens --prompt $'\033[1;5;31mBlinking red, bold text\033[0m'
 ```
 
-see https://en.wikipedia.org/wiki/ANSI_escape_code#Colors or
-https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+see <https://en.wikipedia.org/wiki/ANSI_escape_code#Colors> or
+<https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797>
 for more info on ANSI escape codes.
 Typing a complicated prompt on the command line can be tricky.
 If the prompt starts with "file:", it's interpreted as a filepath

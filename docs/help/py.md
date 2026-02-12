@@ -114,7 +114,7 @@ With "py filter", if the expression is invalid for a record, that record is not 
 
 If any record has an invalid result, an exitcode of 1 is returned and an error count is logged.
 
-For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_py.rs.
+For more extensive examples, see <https://github.com/dathere/qsv/blob/master/tests/test_py.rs>.
 
 
 ## Usage

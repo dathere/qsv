@@ -34,7 +34,7 @@ nyc311-Manhattan.csv
 nyc311-Queens.csv
 nyc311-Staten_Island.csv
 
-For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_partition.rs.
+For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_partition.rs>.
 
 
 ## Usage

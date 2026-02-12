@@ -26,7 +26,7 @@ A "validation-errors.tsv" report is also created with the following columns:
 
 It uses the JSON Schema Validation Specification (draft 2020-12) to validate the CSV.
 It validates the structure of the file, as well as the data types and domain/range of the fields.
-See https://json-schema.org/draft/2020-12/json-schema-validation.html
+See <https://json-schema.org/draft/2020-12/json-schema-validation.html>
 
 qsv supports a custom format - `currency`. This format will only accept a valid currency, defined as:
 
@@ -62,7 +62,7 @@ dynamicEnum = "data.csv"
 dynamicEnum = "/lookupdir/data.csv|Agency"
 
 // get data.csv; use the 3rd column for validation (2 as the col index is 0-based)
-dynamicEnum = "https://example.com/data.csv|2"
+dynamicEnum = "<https://example.com/data.csv|2">
 
 // on other qsv binary variants, dynamicEnum has expanded caching functionality
 dynamicEnum = "[cache_name;cache_age]|URI|colname" where cache_name and cache_age are optional
@@ -72,10 +72,10 @@ dynamicEnum = "[cache_name;cache_age]|URI|colname" where cache_name and cache_ag
 dynamicEnum = "data.csv"
 
 // get data.csv; cache it as custom_name, cache age 600 seconds
-dynamicEnum = "custom_name;600|https://example.com/data.csv"
+dynamicEnum = "custom_name;600|<https://example.com/data.csv">
 
 // get data.csv; cache it as data, cache age 800 seconds
-dynamicEnum = ";800|https://example.com/data.csv"
+dynamicEnum = ";800|<https://example.com/data.csv">
 
 // get the top matching result for nyc_neighborhoods (signaled by trailing ?),
 // cache it as nyc_neighborhood_data.csv (NOTE: cache name is required when using CKAN scheme)
@@ -160,7 +160,7 @@ JSON SCHEMA SCHEMA VALIDATION SUBMODE:
 ### Rfc 4180 Validation Mode:
 
 If run without a JSON Schema file, the CSV is validated for RFC 4180 CSV standard compliance
-(see https://github.com/dathere/qsv#rfc-4180-csv-standard).
+(see <https://github.com/dathere/qsv#rfc-4180-csv-standard>).
 
 It also confirms if the CSV is UTF-8 encoded.
 
@@ -202,7 +202,7 @@ qsv validate files.infile-list schema.json
 
 For more examples, see the tests included in this file (denoted by '#[test]') or see
 
-https://github.com/dathere/qsv/blob/master/tests/test_validate.rs.
+<https://github.com/dathere/qsv/blob/master/tests/test_validate.rs>.
 
 ## Usage
 

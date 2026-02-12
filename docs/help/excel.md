@@ -168,7 +168,7 @@ qsv excel --help
 | `-, -` | flag | (#DIV/0!; #N/A; #NAME?; #NULL!; #NUM!; #REF!; #VALUE!; #DATA!) |  |
 | `--flexible` | flag | Continue even if the number of columns is different from row to row. |  |
 | `--trim` | flag | Trim all fields so that leading & trailing whitespaces are removed. Also removes embedded linebreaks. |  |
-| `--date-format` | string | Optional date format to use when formatting dates. See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for the full list of supported format specifiers. Note that if a date format is invalid, qsv will fall back and return the date as if no date-format was specified. |  |
+| `--date-format` | string | Optional date format to use when formatting dates. See <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for the full list of supported format specifiers. Note that if a date format is invalid, qsv will fall back and return the date as if no date-format was specified. |  |
 | `--keep-zero-time` | flag | Keep the time part of a date-time field if it is 00:00:00. By default, qsv will remove the time part if it is 00:00:00. |  |
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 

@@ -10,11 +10,11 @@ Run blazing-fast Polars SQL queries against several CSVs - replete with joins, a
 grouping, table functions, sorting, and more - working on larger than memory CSV files directly,
 without having to load it first into a database.
 
-Polars SQL is a PostgreSQL dialect (https://docs.pola.rs/user-guide/sql/intro/), converting SQL
-queries to ultra-fast Polars LazyFrame expressions (https://docs.pola.rs/user-guide/lazy/).
+Polars SQL is a PostgreSQL dialect (<https://docs.pola.rs/user-guide/sql/intro/>), converting SQL
+queries to ultra-fast Polars LazyFrame expressions (<https://docs.pola.rs/user-guide/lazy/>).
 
 For a list of SQL functions and keywords supported by Polars SQL, see
-https://docs.pola.rs/py-polars/html/reference/sql/index.html though be aware that it's for
+<https://docs.pola.rs/py-polars/html/reference/sql/index.html> though be aware that it's for
 the Python version of Polars, so there will be some minor syntax differences.
 
 Returns the shape of the query result (number of rows, number of columns) to stderr.
@@ -48,7 +48,7 @@ $ qsv sqlp data.csv data2.csv 'SELECT col1 FROM data WHERE col1 IN (SELECT col2 
 
 
 # Use dollar-quoting to avoid escaping reserved characters in literals.
-https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-DOLLAR-QUOTING
+<https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-DOLLAR-QUOTING>
 ```console
 $ qsv sqlp data.csv "SELECT * FROM data WHERE col1 = $$O'Reilly$$"
 ```
@@ -99,7 +99,7 @@ $ qsv sqlp tbl1.csv "SELECT x FROM tbl1 WHERE x IN (SELECT y FROM tbl1)"
 ```
 
 
-# Natural Joins are supported too! (https://www.w3resource.com/sql/joins/natural-join.php)
+# Natural Joins are supported too! (<https://www.w3resource.com/sql/joins/natural-join.php>)
 ```console
 $ qsv sqlp data1.csv data2.csv data3.csv \
 "SELECT COLUMNS('^[^:]+$') FROM data1 NATURAL JOIN data2 NATURAL JOIN data3 ORDER BY COMPANY_ID",
@@ -140,7 +140,7 @@ $ qsv sqlp data.csv "select CASE col*5 WHEN 10 THEN 'foo' WHEN 5 THEN 'bar' ELSE
 
 # spaceship operator: "<=>" (three-way comparison operator)
 #  returns -1 if left < right, 0 if left == right, 1 if left > right
-# https://en.wikipedia.org/wiki/Three-way_comparison#Spaceship_operator
+# <https://en.wikipedia.org/wiki/Three-way_comparison#Spaceship_operator>
 ```console
 $ qsv sqlp data.csv data2.csv "select data.c2 <=> data2.c2 from data join data2 on data.c1 = data2.c1"
 ```
@@ -277,7 +277,7 @@ $ qsv sqlp data.csv 'explain select * from data where col1 > 10 order by col2 de
 ```
 
 
-For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_sqlp.rs.
+For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_sqlp.rs>.
 
 
 ## Usage
@@ -312,7 +312,7 @@ qsv sqlp --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--datetime-format` | string | The datetime format to use writing datetimes. See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for the list of valid format specifiers. |  |
+| `--datetime-format` | string | The datetime format to use writing datetimes. See <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for the list of valid format specifiers. |  |
 | `--date-format` | string | The date format to use writing dates. |  |
 | `--time-format` | string | The time format to use writing times. |  |
 | `--float-precision` | string | The number of digits of precision to use when writing floats. |  |

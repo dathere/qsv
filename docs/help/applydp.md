@@ -175,7 +175,8 @@ qsv applydp dynfmt --formatstr '{house_number} {street}, {city} {zip_code} USA' 
 qsv applydp dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullName file.csv
 ```
 
-For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_applydp.rs.
+For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_applydp.rs).
+
 
 ## Usage
 

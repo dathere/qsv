@@ -9,17 +9,17 @@
 Randomly samples CSV data.
 
 It supports eight sampling methods:
-- RESERVOIR: the default sampling method when NO INDEX is present and no sampling method
+* RESERVOIR: the default sampling method when NO INDEX is present and no sampling method
 is specified. Visits every CSV record exactly once, using MEMORY PROPORTIONAL to the
 sample size (k) - O(k).
 <https://en.wikipedia.org/wiki/Reservoir_sampling>
 
-- INDEXED: the default sampling method when an INDEX is present and no sampling method
+* INDEXED: the default sampling method when an INDEX is present and no sampling method
 is specified. Uses random I/O to sample efficiently, as it only visits records selected
 by random indexing, using MEMORY PROPORTIONAL to the sample size (k) - O(k).
 <https://en.wikipedia.org/wiki/Random_access>
 
-- BERNOULLI: the sampling method when the --bernoulli option is specified.
+* BERNOULLI: the sampling method when the --bernoulli option is specified.
 Each record has an independent probability p of being selected, where p is
 specified by the <sample-size> argument. For example, if p=0.1, then each record
 has a 10% chance of being selected, regardless of the other records. The final
@@ -28,7 +28,7 @@ When sampling from a remote URL, processes the file in chunks without downloadin
 entirely, making it especially efficient for sampling large remote files.
 <https://en.wikipedia.org/wiki/Bernoulli_sampling>
 
-- SYSTEMATIC: the sampling method when the --systematic option is specified.
+* SYSTEMATIC: the sampling method when the --systematic option is specified.
 Selects every nth record from the input, where n is the integer part of <sample-size>
 and the fraction part is the percentage of the population to sample.
 For example, if <sample-size> is 10.5, it will select every 10th record and 50% of the
@@ -38,7 +38,7 @@ point can be specified as "random" or "first". Useful for time series data or wh
 want evenly spaced samples.
 <https://en.wikipedia.org/wiki/Systematic_sampling>
 
-- STRATIFIED: the sampling method when the --stratified option is specified.
+* STRATIFIED: the sampling method when the --stratified option is specified.
 Stratifies the population by the specified column and then samples from each stratum.
 Particularly useful when a population has distinct subgroups (strata) that are
 heterogeneous within but homogeneous between in terms of the variable of interest.
@@ -49,7 +49,7 @@ The sample size must be a whole number. Uses MEMORY PROPORTIONAL to the
 number of strata (s) and samples per stratum (k) as specified by <sample-size> - O(s*k).
 <https://en.wikipedia.org/wiki/Stratified_sampling>
 
-- WEIGHTED: the sampling method when the --weighted option is specified.
+* WEIGHTED: the sampling method when the --weighted option is specified.
 Samples records with probabilities proportional to values in a specified weight column.
 Records with higher weights are more likely to be selected. For example, if you have
 sales data and want to sample transactions weighted by revenue, high-value transactions
@@ -59,7 +59,7 @@ Specify the desired sample size with <sample-size>. Uses MEMORY PROPORTIONAL to 
 sample size (k) - O(k).
 "Weighted random sampling with a reservoir" <https://doi.org/10.1016/j.ipl.2005.11.003>
 
-- CLUSTER: the sampling method when the --cluster option is specified.
+* CLUSTER: the sampling method when the --cluster option is specified.
 Samples entire groups of records together based on a cluster identifier column.
 The number of clusters is specified by the <sample-size> argument.
 Useful when records are naturally grouped (e.g., by household, neighborhood, etc.).
@@ -69,7 +69,7 @@ in the output. This ensures that natural groupings in the data are preserved.
 Uses MEMORY PROPORTIONAL to the number of clusters (c) - O(c).
 <https://en.wikipedia.org/wiki/Cluster_sampling>
 
-- TIMESERIES: the sampling method when the --timeseries option is specified.
+* TIMESERIES: the sampling method when the --timeseries option is specified.
 Samples records based on time intervals from a time-series dataset. Groups records by
 time windows (e.g., hourly, daily, weekly) and selects one record per interval.
 Supports adaptive sampling (e.g., prefer business hours or weekends) and aggregation
@@ -203,7 +203,6 @@ qsv sample --help
 |--------|------|-------------|--------|
 | `--seed` | string | Random Number Generator (RNG) seed. |  |
 | `--rng` | string | The Random Number Generator (RNG) algorithm to use. | `standard` |
-| `-, -` | flag | 1.5 GB/s throughput. |  |
 
 ## Sampling Methods Options
 

@@ -50,10 +50,10 @@ qsv fill --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-g, -g` | string | Group by specified columns. |  |
-| `-f, -f` | flag | Fill using the first valid value of a column, instead of the latest. |  |
-| `-b, -b` | flag | Fill initial empty values with the first valid value. |  |
-| `-v, -v` | string | Fill using this default value. |  |
+| `-g, --groupby` | string | Group by specified columns. |  |
+| `-f, --first` | flag | Fill using the first valid value of a column, instead of the latest. |  |
+| `-b, --backfill` | flag | Fill initial empty values with the first valid value. |  |
+| `-v, --default` | string | Fill using this default value. |  |
 
 ## Common Options
 

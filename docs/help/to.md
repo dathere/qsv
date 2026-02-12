@@ -67,8 +67,7 @@ Print dump to stdout.
 qsv to postgres --dump - file1.csv file2.csv
 ```
 
-SQLITE
-### 
+### Sqlite
 
 Convert to sqlite db file. Will be created if it does not exist.
 If using the `--dump` option, instead of a sqlite database file, put the name of the dump file or `-` for stdout.
@@ -108,8 +107,7 @@ Print dump to stdout.
 qsv to sqlite --dump - file1.csv file2.csv
 ```
 
-EXCEL XLSX
-### 
+### Excel Xlsx
 
 Convert to new xlsx file.
 Example:
@@ -130,8 +128,7 @@ Load files listed in the 'ourdata.infile-list' into xlsx file.
 qsv to xlsx output.xlsx ourdata.infile-list
 ```
 
-ODS
-### 
+### Ods
 
 Convert to new ODS (Open Document Spreadsheet) file.
 Example:
@@ -152,8 +149,7 @@ Load files listed in the 'ourdata.infile-list' into ODS file.
 qsv to ods output.ods ourdata.infile-list
 ```
 
-DATA PACKAGE
-### 
+### Data Package
 
 Generate a datapackage, which contains stats and information about what is in the CSV files.
 Generate a `datapackage.json` file from `file1.csv` and `file2.csv' files.

@@ -107,7 +107,7 @@ qsv exclude --help
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-i, --ignore-case` | flag | When set, matching is done case insensitively. |  |
-| `-v, -v` | flag | When set, matching rows will be the only ones included, forming set intersection, instead of the ones discarded. |  |
+| `-v, --invert` | flag | When set, matching rows will be the only ones included, forming set intersection, instead of the ones discarded. |  |
 
 ## Common Options
 

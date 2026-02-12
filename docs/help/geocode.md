@@ -367,12 +367,6 @@ qsv geocode --help
 |--------|------|-------------|--------|
 | `-k, --k_weight` | string | Use population-weighted distance for reverse subcommand. (i.e. nearest.distance - k * city.population) Larger values will favor more populated cities. If not set (default), the population is not used and the nearest city is returned. |  |
 
-## Predefined Formats Options
-
-| Option | Type | Description | Default |
-|--------|------|-------------|--------|
-| `-, -` | flag |  |  |
-
 ## Dynamic Formatting Options
 
 | Option | Type | Description | Default |

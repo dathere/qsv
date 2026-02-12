@@ -78,10 +78,6 @@ qsv template --help
 |----------|-------------|
 | `<input>` | The CSV file to read. If not given, input is read from STDIN. |
 | `<outdir>` | The directory where the output files will be written. If it does not exist, it will be created. If not set, output will be sent to stdout or the specified --output. When writing to <outdir>, files are organized into subdirectories of --outsubdir-size (default: 1000) files each to avoid filesystem navigation & performance issues. |
-| `<outdir>` | /0000/0001.txt through <outdir>/0000/1000.txt |
-| `<outdir>` | /0001/1001.txt through <outdir>/0001/2000.txt |
-| `<outdir>` | /0002/2001.txt through <outdir>/0002/3000.txt |
-| `<outdir>` | /0003/3001.txt through <outdir>/0003/4000.txt |
 
 ## Template Options
 

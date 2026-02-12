@@ -40,7 +40,6 @@ qsv sort --help
 | `--random` | flag | Randomize (scramble) the data by row |  |
 | `--seed` | string | Random Number Generator (RNG) seed to use if --random is set |  |
 | `--rng` | string | The RNG algorithm to use if --random is set. | `standard` |
-| `-, -` | flag | 1.5 GB/s throughput. |  |
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | `--faster` | flag | When set, the sort will be faster. This is done by using a faster sorting algorithm that is not "stable" (i.e. the order of identical values is not guaranteed to be preserved). It has the added side benefit that the sort will also be in-place (i.e. does not allocate), which is useful for sorting large files that will otherwise NOT fit in memory using the default allocating stable sort. |  |
 

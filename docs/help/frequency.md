@@ -93,7 +93,6 @@ qsv frequency --help
 | `-u, --unq-limit` | string | If a column has all unique values, limit the frequency table to a sample of N unique items. Set to '0' to disable a unique_limit. | `10` |
 | `--lmt-threshold` | string | The threshold for which --limit and --unq-limit will be applied. If the number of unique items in a column >= threshold, the limits will be applied. Set to '0' to disable the threshold and always apply limits. | `0` |
 | `-r, --rank-strategy` | string | The strategy to use when there are count-tied values in the frequency table. See <https://en.wikipedia.org/wiki/Ranking> for more info. | `dense` |
-| `-, -` | flag | incrementing by 1 for each new count value (AKA "1223" ranking). |  |
 | `--pct-dec-places` | string | The number of decimal places to round the percentage to. If negative, the number of decimal places will be set automatically to the minimum number of decimal places needed to represent the percentage accurately, up to the absolute value of the negative number. | `-5` |
 | `--other-sorted` | flag | By default, the "Other" category is placed at the end of the frequency table for a field. If this is enabled, the "Other" category will be sorted with the rest of the values by count. |  |
 | `--other-text` | string | The text to use for the "Other" category. If set to "<NONE>", the "Other" category will not be included in the frequency table. | `Other` |

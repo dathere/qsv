@@ -164,8 +164,7 @@ qsv excel --help
 | `--table` | string | An Excel table (case-insensitive) to extract to a CSV. Only valid for XLSX files. The --sheet option is ignored as a table could be in any sheet. Overrides --range option. |  |
 | `--range` | string | An Excel format range - like RangeName, C:T, C3:T25 or 'Sheet1!C3:T25' to extract to the CSV. If the specified range contains the required sheet, the --sheet option is ignored. If the range is not found, qsv will exit with an error. |  |
 | `--cell` | string | A single cell reference - like C3 or 'Sheet1!C3' to extract. This is a convenience option equivalent to --range C3:C3. If both --cell and --range are specified, --cell takes precedence. |  |
-| `--error-format` | string | The format to use when formatting error cells. There are 3 formats: | `code` |
-| `-, -` | flag | (#DIV/0!; #N/A; #NAME?; #NULL!; #NUM!; #REF!; #VALUE!; #DATA!) |  |
+| `--error-format` | string | The format to use when formatting error cells. There are 3 formats: * "code": return the error code. (#DIV/0!; #N/A; #NAME?; #NULL!; #NUM!; #REF!; #VALUE!; #DATA!) * "formula": return the formula, prefixed with '#'. (e.g. #=A1/B1 where B1 is 0; #=100/0) * "both": return both error code and the formula. (e.g. #DIV/0!: =A1/B1) | `code` |
 | `--flexible` | flag | Continue even if the number of columns is different from row to row. |  |
 | `--trim` | flag | Trim all fields so that leading & trailing whitespaces are removed. Also removes embedded linebreaks. |  |
 | `--date-format` | string | Optional date format to use when formatting dates. See <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for the full list of supported format specifiers. Note that if a date format is invalid, qsv will fall back and return the date as if no date-format was specified. |  |

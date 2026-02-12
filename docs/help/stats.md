@@ -244,12 +244,11 @@ qsv stats --help
 |--------|------|-------------|--------|
 | `--infer-dates` | flag | Infer date/datetime data types. This is an expensive option and should only be used when you know there are date/datetime fields. Also, if timezone is not specified in the data, it'll be set to UTC. |  |
 | `--dates-whitelist` | string | The comma-separated, case-insensitive patterns to look for when shortlisting fields for date inferencing. i.e. if the field's name has any of these patterns, it is shortlisted for date inferencing. | `sniff` |
-| `-, -` | flag |  |  |
 | `--prefer-dmy` | flag | Parse dates in dmy format. Otherwise, use mdy format. Ignored if --infer-dates is false. |  |
 | `--force` | flag | Force recomputing stats even if valid precomputed stats cache exists. |  |
 | `-j, --jobs` | string | The number of jobs to run in parallel. This works only when the given CSV has an index. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | `--stats-jsonl` | flag | Also write the stats in JSONL format. If set, the stats will be written to <FILESTEM>.stats.csv.data.jsonl. Note that this option used internally by other qsv "smart" commands (see <https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#stats-cache>) to load cached stats to make them work smarter & faster. You can preemptively create the stats-jsonl file by using this option BEFORE running "smart" commands and they will automatically use it. |  |
-| `-c, --cache-threshold` | string | Controls the creation of stats cache files. | `5000` |
+| `-c, --cache-threshold` | string | Controls the creation of stats cache files. * when greater than 1, the threshold in milliseconds before caching stats results. If a stats run takes longer than this threshold, the stats results will be cached. * 0 to suppress caching. * 1 to force caching. * a negative number to automatically create an index when the input file size is greater than abs(arg) in bytes. If the negative number ends with 5, it will delete the index file and the stats cache file after the stats run. Otherwise, the index file and the cache files are kept. | `5000` |
 | `--vis-whitespace` | flag | Visualize whitespace characters in the output. See <https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers> for the list of whitespace markers. |  |
 
 ## Common Options

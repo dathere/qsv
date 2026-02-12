@@ -36,10 +36,10 @@ Usage:
     qsv fill --help
 
 fill options:
-    -g --groupby <keys>    Group by specified columns.
-    -f --first             Fill using the first valid value of a column, instead of the latest.
-    -b --backfill          Fill initial empty values with the first valid value.
-    -v --default <value>   Fill using this default value.
+    -g, --groupby <keys>    Group by specified columns.
+    -f, --first             Fill using the first valid value of a column, instead of the latest.
+    -b, --backfill          Fill initial empty values with the first valid value.
+    -v, --default <value>   Fill using this default value.
 
 Common options:
     -h, --help             Display this message

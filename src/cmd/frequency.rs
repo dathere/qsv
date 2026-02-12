@@ -98,12 +98,12 @@ frequency options:
 -r, --rank-strategy <arg>   The strategy to use when there are count-tied values in the frequency table.
                             See https://en.wikipedia.org/wiki/Ranking for more info.
                             Valid values are:
-                              - dense: Assigns consecutive integers regardless of ties,
+                              * dense: Assigns consecutive integers regardless of ties,
                                 incrementing by 1 for each new count value (AKA "1223" ranking).
-                              - min: Tied items receive the minimum rank position (AKA "1224" ranking).
-                              - max: Tied items receive the maximum rank position (AKA "1334" ranking).
-                              - ordinal: The next rank is the current rank plus 1 (AKA "1234" ranking).
-                              - average: Tied items receive the average of their ordinal positions
+                              * min: Tied items receive the minimum rank position (AKA "1224" ranking).
+                              * max: Tied items receive the maximum rank position (AKA "1334" ranking).
+                              * ordinal: The next rank is the current rank plus 1 (AKA "1234" ranking).
+                              * average: Tied items receive the average of their ordinal positions
                                 (AKA "1 2.5 2.5 4" ranking).
                             Note that tied values with the same rank are sorted alphabetically.
                             [default: dense]

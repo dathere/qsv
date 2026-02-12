@@ -699,12 +699,14 @@ impl UsageParser {
             if let Ok(readme_content) = fs::read_to_string(readme_path) {
                 // Find the line for this command in the table
                 // Format: | [command](/src/cmd/command.rs#L2)✨<br>📇🚀🧠🤖🔣👆| Description |
+                // Also handles updated format: | [command](docs/help/command.md)✨<br>📇|...
                 // Note: The #L2 line number varies, so we need to match more flexibly
-                let command_pattern = format!("| [{command_name}](/src/cmd/{command_name}.rs#");
+                let src_pattern = format!("| [{command_name}](/src/cmd/{command_name}.rs#");
+                let help_pattern = format!("| [{command_name}](docs/help/{command_name}.md)");
 
                 if let Some(line) = readme_content
                     .lines()
-                    .find(|l| l.contains(&command_pattern))
+                    .find(|l| l.contains(&src_pattern) || l.contains(&help_pattern))
                 {
                     // Extract only the emoji marker section (between <br> and the next |)
                     // to avoid matching emojis in the description text (e.g., "index" has 📇 in
@@ -742,11 +744,13 @@ impl UsageParser {
             if let Ok(readme_content) = fs::read_to_string(readme_path) {
                 // Find the line for this command in the table
                 // Format: | [command](/src/cmd/command.rs#L2)✨<br>📇| Description |
-                let command_pattern = format!("| [{command_name}](/src/cmd/{command_name}.rs#");
+                // Also handles updated format: | [command](docs/help/command.md)✨<br>📇|...
+                let src_pattern = format!("| [{command_name}](/src/cmd/{command_name}.rs#");
+                let help_pattern = format!("| [{command_name}](docs/help/{command_name}.md)");
 
                 if let Some(line) = readme_content
                     .lines()
-                    .find(|l| l.contains(&command_pattern))
+                    .find(|l| l.contains(&src_pattern) || l.contains(&help_pattern))
                 {
                     // Handle escaped pipes in markdown table (e.g., \| in code examples)
                     // Replace escaped pipes with placeholder before splitting

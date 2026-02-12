@@ -287,28 +287,28 @@ geocode options:
                                    columns to the output CSV using fields from a geocode result.
     
                                 PREDEFINED FORMATS:
-                                  - '%city-state' - e.g. Brooklyn, New York
-                                  - '%city-country' - Brooklyn, US
-                                  - '%city-state-country' | '%city-admin1-country' - Brooklyn, New York US
-                                  - '%city-county-state' | '%city-admin2-admin1' - Brooklyn, Kings County, New York
-                                  - '%city' - Brooklyn
-                                  - '%state' | '%admin1' - New York
-                                  - "%county' | '%admin2' - Kings County
-                                  - '%country' - US
-                                  - '%country_name' - United States
-                                  - '%cityrecord' - returns the full city record as a string
-                                  - '%admin1record' - returns the full admin1 record as a string
-                                  - '%admin2record' - returns the full admin2 record as a string
-                                  - '%lat-long' - <latitude>, <longitude>
-                                  - '%location' - (<latitude>, <longitude>)
-                                  - '%id' - the Geonames ID
-                                  - '%capital' - the capital
-                                  - '%continent' - the continent (only valid for countryinfo subcommand)
-                                  - '%population' - the population
-                                  - '%timezone' - the timezone
-                                  - '%json' - the full city record as JSON
-                                  - '%pretty-json' - the full city record as pretty JSON
-                                  - '%+' - use the subcommand's default format. 
+                                  * '%city-state' - e.g. Brooklyn, New York
+                                  * '%city-country' - Brooklyn, US
+                                  * '%city-state-country' | '%city-admin1-country' - Brooklyn, New York US
+                                  * '%city-county-state' | '%city-admin2-admin1' - Brooklyn, Kings County, New York
+                                  * '%city' - Brooklyn
+                                  * '%state' | '%admin1' - New York
+                                  * '%county' | '%admin2' - Kings County
+                                  * '%country' - US
+                                  * '%country_name' - United States
+                                  * '%cityrecord' - returns the full city record as a string
+                                  * '%admin1record' - returns the full admin1 record as a string
+                                  * '%admin2record' - returns the full admin2 record as a string
+                                  * '%lat-long' - <latitude>, <longitude>
+                                  * '%location' - (<latitude>, <longitude>)
+                                  * '%id' - the Geonames ID
+                                  * '%capital' - the capital
+                                  * '%continent' - the continent (only valid for countryinfo subcommand)
+                                  * '%population' - the population
+                                  * '%timezone' - the timezone
+                                  * '%json' - the full city record as JSON
+                                  * '%pretty-json' - the full city record as pretty JSON
+                                  * '%+' - use the subcommand's default format. 
                                            suggest - '%location'
                                            suggestnow - '{name}, {admin1} {country}: {latitude}, {longitude}'
                                            reverse & reversenow - '%city-admin1-country'

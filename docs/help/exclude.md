@@ -1,5 +1,7 @@
 # exclude
 
+📇👆
+
 > Removes a set of CSV data from another set based on the specified columns.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/exclude.rs](https://github.com/dathere/qsv/blob/master/src/cmd/exclude.rs)**

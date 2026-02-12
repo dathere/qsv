@@ -1,5 +1,7 @@
 # enum
 
+👆
+
 > Add a new column enumerating rows by adding a column of incremental or uuid identifiers. Can also be used to copy a column or fill a new column with a constant value.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/enumerate.rs](https://github.com/dathere/qsv/blob/master/src/cmd/enumerate.rs)**

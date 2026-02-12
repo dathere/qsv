@@ -1,5 +1,7 @@
 # moarstats
 
+📇🏎️
+
 > Add dozens of additional statistics, including extended outlier, robust & bivariate statistics to an existing stats CSV file. (example).
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/moarstats.rs](https://github.com/dathere/qsv/blob/master/src/cmd/moarstats.rs)**

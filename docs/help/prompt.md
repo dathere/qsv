@@ -1,5 +1,7 @@
 # prompt
 
+🐻‍❄️🖥️
+
 > Open a file dialog to either pick a file as input or save output to a file.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/prompt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/prompt.rs)**

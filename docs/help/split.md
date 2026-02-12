@@ -1,5 +1,7 @@
 # split
 
+📇🏎️
+
 > Split one CSV file into many CSV files. It can split by number of rows, number of chunks or file size. Uses multithreading to go faster if an index is present when splitting by rows or chunks.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/split.rs](https://github.com/dathere/qsv/blob/master/src/cmd/split.rs)**

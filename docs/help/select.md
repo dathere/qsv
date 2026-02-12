@@ -1,5 +1,7 @@
 # select
 
+👆
+
 > Select, re-order, reverse, duplicate or drop columns.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/select.rs](https://github.com/dathere/qsv/blob/master/src/cmd/select.rs)**

@@ -1,5 +1,7 @@
 # partition
 
+👆
+
 > Partition a CSV based on a column value.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/partition.rs](https://github.com/dathere/qsv/blob/master/src/cmd/partition.rs)**

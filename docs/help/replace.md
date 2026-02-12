@@ -1,5 +1,7 @@
 # replace
 
+📇👆🏎️
+
 > Replace CSV data using a regex. Applies the regex to each field individually.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/replace.rs](https://github.com/dathere/qsv/blob/master/src/cmd/replace.rs)**

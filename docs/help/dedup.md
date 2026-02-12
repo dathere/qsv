@@ -1,5 +1,7 @@
 # dedup
 
+🤯🚀👆
+
 > Remove duplicate rows (See also `extdedup`, `extsort`, `sort` & `sortcheck` commands).
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/dedup.rs](https://github.com/dathere/qsv/blob/master/src/cmd/dedup.rs)**

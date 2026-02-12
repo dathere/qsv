@@ -1,5 +1,7 @@
 # table
 
+🤯
+
 > Align output of a CSV using elastic tabstops for viewing; or to create an "aligned TSV" file or Fixed Width Format file. To interactively view a CSV, use the `lens` command.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/table.rs](https://github.com/dathere/qsv/blob/master/src/cmd/table.rs)**

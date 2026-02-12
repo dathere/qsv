@@ -1,5 +1,7 @@
 # frequency
 
+📇😣🏎️👆🪄![Luau](../images/luau.png)
+
 > Build frequency distribution tables of each column. Uses multithreading to go faster if an index is present (Examples: CSV JSON TOON).
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/frequency.rs](https://github.com/dathere/qsv/blob/master/src/cmd/frequency.rs)**

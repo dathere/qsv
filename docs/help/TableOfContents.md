@@ -76,28 +76,28 @@
 
 ### Legend
 
-: enabled by a [feature flag](#feature-flags).
-📇: uses an index when available.
-🤯: loads entire CSV into memory, though `dedup`, `stats` & `transpose` have "streaming" modes as well.
-😣: uses additional memory proportional to the cardinality of the columns in the CSV.
-🧠: expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.
-🗄️: [Extended input support](#extended-input-support).
-🗃️: [Limited Extended input support](#limited-extended-input-support).
-🐻‍❄️: command powered/accelerated by [![polars 0.53.0](https://img.shields.io/badge/polars-0.53.0-blue?logo=polars
-)](https://github.com/pola-rs/polars/releases/tag/rs-0.53.0) vectorized query engine.
-🤖: command uses Natural Language Processing or Generative AI.
-🏎️: multithreaded and/or faster when an index (📇) is available.
-🚀: multithreaded even without an index.
-![CKAN](../images/ckan.png) : has [CKAN](https://ckan.org)-aware integration options.
-🌐: has web-aware options.
-🔣: requires UTF-8 encoded input.
-👆: has powerful column selector support. See [`select`](https://github.com/dathere/qsv/blob/master/src/cmd/select.rs#L2) for syntax.
-🪄: "automagical" commands that uses stats and/or frequency tables to work "smarter" & "faster".
-📚: has lookup table support, enabling runtime "lookups" against local or remote reference CSVs.
-🌎: has geospatial capabilities.
-⛩️: uses [Mini Jinja](https://docs.rs/minijinja/latest/minijinja/) template engine.
-![Luau](../images/luau.png) : uses [Luau](https://luau.org/) [0.708](https://github.com/Roblox/luau/releases/tag/0.708) as an embedded scripting [DSL](https://en.wikipedia.org/wiki/Domain-specific_language).
-🖥️: part of the User Interface (UI) feature group
+: enabled by a [feature flag](#feature-flags).  
+📇: uses an index when available.  
+🤯: loads entire CSV into memory, though `dedup`, `stats` & `transpose` have "streaming" modes as well.  
+😣: uses additional memory proportional to the cardinality of the columns in the CSV.  
+🧠: expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.  
+🗄️: [Extended input support](#extended-input-support).  
+🗃️: [Limited Extended input support](#limited-extended-input-support).  
+🐻‍❄️: command powered/accelerated by [![polars 0.53.0](https://img.shields.io/badge/polars-0.53.0-blue?logo=polars  
+)](https://github.com/pola-rs/polars/releases/tag/rs-0.53.0) vectorized query engine.  
+🤖: command uses Natural Language Processing or Generative AI.  
+🏎️: multithreaded and/or faster when an index (📇) is available.  
+🚀: multithreaded even without an index.  
+![CKAN](../images/ckan.png) : has [CKAN](https://ckan.org)-aware integration options.  
+🌐: has web-aware options.  
+🔣: requires UTF-8 encoded input.  
+👆: has powerful column selector support. See [`select`](https://github.com/dathere/qsv/blob/master/src/cmd/select.rs#L2) for syntax.  
+🪄: "automagical" commands that uses stats and/or frequency tables to work "smarter" & "faster".  
+📚: has lookup table support, enabling runtime "lookups" against local or remote reference CSVs.  
+🌎: has geospatial capabilities.  
+⛩️: uses [Mini Jinja](https://docs.rs/minijinja/latest/minijinja/) template engine.  
+![Luau](../images/luau.png) : uses [Luau](https://luau.org/) [0.708](https://github.com/Roblox/luau/releases/tag/0.708) as an embedded scripting [DSL](https://en.wikipedia.org/wiki/Domain-specific_language).  
+🖥️: part of the User Interface (UI) feature group  
 
 ---
 **[README](../../README.md)**

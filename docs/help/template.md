@@ -1,5 +1,7 @@
 # template
 
+📇🚀🔣📚⛩️![CKAN](../images/ckan.png)
+
 > Renders a template using CSV data with the Mini Jinja template engine (Example).
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/template.rs](https://github.com/dathere/qsv/blob/master/src/cmd/template.rs)**

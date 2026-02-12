@@ -1,5 +1,7 @@
 # explode
 
+🔣👆
+
 > Explode rows into multiple ones by splitting a column value based on the given separator.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/explode.rs](https://github.com/dathere/qsv/blob/master/src/cmd/explode.rs)**

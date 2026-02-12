@@ -1,5 +1,7 @@
 # search
 
+📇🏎️👆
+
 > Run a regex over a CSV. Applies the regex to selected fields & shows only matching rows.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/search.rs](https://github.com/dathere/qsv/blob/master/src/cmd/search.rs)**

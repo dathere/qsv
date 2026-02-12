@@ -1,5 +1,7 @@
 # excel
 
+🚀
+
 > Exports a specified Excel/ODS sheet to a CSV file.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/excel.rs](https://github.com/dathere/qsv/blob/master/src/cmd/excel.rs)**

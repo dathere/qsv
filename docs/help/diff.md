@@ -1,5 +1,7 @@
 # diff
 
+🚀🪄
+
 > Find the difference between two CSVs with ludicrous speed! e.g. _compare two CSVs with 1M rows x 9 columns in under 600ms!_
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/diff.rs](https://github.com/dathere/qsv/blob/master/src/cmd/diff.rs)**

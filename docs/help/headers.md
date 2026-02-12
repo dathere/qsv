@@ -1,5 +1,7 @@
 # headers
 
+🗄️
+
 > Show the headers of a CSV. Or show the intersection of all headers between many CSV files.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/headers.rs](https://github.com/dathere/qsv/blob/master/src/cmd/headers.rs)**

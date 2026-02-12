@@ -1,5 +1,7 @@
 # datefmt
 
+📇🚀👆
+
 > Formats recognized date fields (19 formats recognized) to a specified date format using strftime date format specifiers.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/datefmt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/datefmt.rs)**

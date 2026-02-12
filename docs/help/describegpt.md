@@ -1,5 +1,7 @@
 # describegpt
 
+🌐🤖🪄🗃️📚⛩️ ![CKAN](../images/ckan.png)
+
 > Infer a "neuro-symbolic" Data Dictionary, Description & Tags or ask questions about a CSV with a configurable, Mini Jinja prompt file, using any OpenAI API-compatible LLM, including local LLMs via Ollama, Jan & LM Studio. (e.g. Markdown, JSON, TOON, Everything, Spanish, Mandarin, Controlled Tags; --prompt "What are the top 10 complaint types by community board & borough by year?" - deterministic, hallucination-free SQL RAG result; iterative, session-based SQL RAG refinement - refined SQL RAG result)
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/describegpt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/describegpt.rs)**

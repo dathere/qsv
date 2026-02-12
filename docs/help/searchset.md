@@ -1,5 +1,7 @@
 # searchset
 
+📇🏎️👆
+
 > _Run multiple regexes over a CSV in a single pass._ Applies the regexes to each field individually & shows only matching rows.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/searchset.rs](https://github.com/dathere/qsv/blob/master/src/cmd/searchset.rs)**

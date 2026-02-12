@@ -1,5 +1,7 @@
 # extsort
 
+🚀📇👆
+
 > Sort an arbitrarily large CSV/text file using a multithreaded external merge sort algorithm.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/extsort.rs](https://github.com/dathere/qsv/blob/master/src/cmd/extsort.rs)**

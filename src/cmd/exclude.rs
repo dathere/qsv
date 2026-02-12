@@ -60,7 +60,7 @@ input arguments:
 
 exclude options:
     -i, --ignore-case      When set, matching is done case insensitively.
-    -v                     When set, matching rows will be the only ones included,
+    -v, --invert     When set, matching rows will be the only ones included,
                            forming set intersection, instead of the ones discarded.
 
 Common options:
@@ -94,7 +94,7 @@ struct Args {
     arg_input1:       String,
     arg_columns2:     SelectColumns,
     arg_input2:       String,
-    flag_v:           bool,
+    flag_invert:      bool,
     flag_output:      Option<String>,
     flag_no_headers:  bool,
     flag_ignore_case: bool,
@@ -105,7 +105,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     let mut state = args.new_io_state()?;
     state.write_headers()?;
-    state.exclude(args.flag_v)
+    state.exclude(args.flag_invert)
 }
 
 struct IoState<R, W: io::Write> {

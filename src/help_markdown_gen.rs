@@ -687,8 +687,14 @@ fn titlecase_heading(s: &str) -> String {
 fn format_examples(lines: &[String]) -> String {
     let mut md = String::new();
     let mut in_code_block = false;
+    let mut skip_next = false;
 
-    for line in lines {
+    for (idx, line) in lines.iter().enumerate() {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+
         let trimmed = line.trim();
 
         // Skip empty lines
@@ -700,6 +706,49 @@ fn format_examples(lines: &[String]) -> String {
             continue;
         }
 
+        // Skip bare === underlines (must come before == HEADING == check since
+        // "======" matches both patterns)
+        if trimmed.chars().all(|c| c == '=') {
+            continue;
+        }
+
+        // Check if this line + next line form an underlined heading (HEADING\n======)
+        let next_is_underline = lines.get(idx + 1).is_some_and(|next| {
+            let nt = next.trim();
+            !nt.is_empty() && nt.chars().all(|c| c == '=')
+        });
+
+        if next_is_underline {
+            if in_code_block {
+                md.push_str("```\n\n");
+                in_code_block = false;
+            }
+            md.push_str(&format!("### {}\n\n", titlecase_heading(trimmed)));
+            skip_next = true; // skip the === underline
+            continue;
+        }
+
+        // ALL-CAPS lines are headings
+        if trimmed.len() > 2
+            && trimmed.chars().all(|c| {
+                c.is_uppercase()
+                    || c.is_whitespace()
+                    || c == '('
+                    || c == ')'
+                    || c == '-'
+                    || c == '_'
+                    || c == '/'
+                    || c == '&'
+            })
+        {
+            if in_code_block {
+                md.push_str("```\n\n");
+                in_code_block = false;
+            }
+            md.push_str(&format!("### {}\n\n", titlecase_heading(trimmed)));
+            continue;
+        }
+
         // Section headers: == SUBCOMMAND ==
         if trimmed.starts_with("==") && trimmed.ends_with("==") {
             if in_code_block {
@@ -707,12 +756,9 @@ fn format_examples(lines: &[String]) -> String {
                 in_code_block = false;
             }
             let heading = trimmed.trim_start_matches('=').trim_end_matches('=').trim();
-            md.push_str(&format!("### {heading}\n\n"));
-            continue;
-        }
-
-        // Skip bare === underlines
-        if !trimmed.is_empty() && trimmed.chars().all(|c| c == '=') {
+            if !heading.is_empty() {
+                md.push_str(&format!("### {heading}\n\n"));
+            }
             continue;
         }
 

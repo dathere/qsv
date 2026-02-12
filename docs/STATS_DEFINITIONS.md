@@ -737,7 +737,7 @@ When `--no-stats` is NOT set, JSON output includes 17 additional statistics per 
 
 ### Memory-Aware Processing
 
-The frequency command uses memory-aware chunking for large datasets to avoid out-of-memory errors. Unlike `stats` (which can fall back to CPU-based chunking), frequency ALWAYS uses memory-aware chunking since it builds hash tables that require predictable memory.
+The frequency command defaults to memory-aware chunking for large datasets to avoid out-of-memory errors. Unlike `stats` (which may default to CPU-based chunking), frequency’s default strategy is memory-aware because it builds hash tables that benefit from predictable memory usage. However, it can be explicitly configured to use CPU-based chunking via `QSV_FREQ_CHUNK_MEMORY_MB = -1`.
 
 **Chunking Behavior:**
 - Automatically enabled for indexed files

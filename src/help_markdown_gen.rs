@@ -1086,7 +1086,7 @@ fn parse_options_with_docopt(
                             (
                                 docopt_map
                                     .get(&flag_str)
-                                    .map_or("string".to_string(), |v| v.0.clone()),
+                                    .map_or_else(|| "string".to_string(), |v| v.0.clone()),
                                 docopt_map.get(&flag_str).and_then(|v| v.1.clone()),
                                 Some(flag_str),
                             ),
@@ -1132,7 +1132,7 @@ fn parse_options_with_docopt(
                             (
                                 docopt_map
                                     .get(&flag_str)
-                                    .map_or("string".to_string(), |v| v.0.clone()),
+                                    .map_or_else(|| "string".to_string(), |v| v.0.clone()),
                                 docopt_map.get(&flag_str).and_then(|v| v.1.clone()),
                                 Some(flag_str),
                             ),
@@ -1237,7 +1237,7 @@ fn parse_option_line(
     }
 
     // Primary flag is the long one, or short if no long
-    let flag = long.clone().or_else(|| short.clone())?;
+    let flag = long.or_else(|| short.clone())?;
 
     // Collect full description
     let mut description = desc_part.to_string();

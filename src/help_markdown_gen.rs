@@ -803,8 +803,13 @@ fn format_examples(lines: &[String]) -> String {
             continue;
         }
 
-        // Command lines: $ qsv ... or qsv ...
-        if trimmed.starts_with("$ qsv") || trimmed.starts_with("qsv ") {
+        // Command lines: $ qsv ..., qsv ..., or piped commands containing qsv
+        // (e.g. "cat in.csv | qsv split ..." or "$ cat in.csv | qsv split ...")
+        if trimmed.starts_with("$ qsv")
+            || trimmed.starts_with("qsv ")
+            || (trimmed.contains("| qsv ") || trimmed.contains("|qsv "))
+            || (trimmed.starts_with("$ ") && trimmed.contains("qsv "))
+        {
             if !in_code_block {
                 md.push_str("```console\n");
                 in_code_block = true;
@@ -1378,7 +1383,7 @@ fn update_readme_links(repo_root: &Path) -> Result<usize, String> {
 }
 
 /// Public function to generate help markdown files.
-/// Called via `qsv --generate-help-markdown` flag.
+/// Called via `qsv --generate-help-md` flag.
 pub fn generate_help_markdown() -> CliResult<()> {
     // Determine repository root
     let mut repo_root = std::env::current_dir()?;
@@ -1418,7 +1423,7 @@ pub fn generate_help_markdown() -> CliResult<()> {
     let output_dir = repo_root.join("docs/help");
     fs::create_dir_all(&output_dir)?;
 
-    eprintln!("QSV Help Markdown Generator (via qsv --generate-help-markdown)");
+    eprintln!("QSV Help Markdown Generator (via qsv --generate-help-md)");
     eprintln!("===============================================================");
     eprintln!("Repository: {}", repo_root.display());
     eprintln!("Output: {}", output_dir.display());

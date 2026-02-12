@@ -69,7 +69,10 @@ qsv split outdir --kb-size 1000 input.csv
 
 > Read from stdin and create files like mysplitoutput_0.csv, mysplitoutput_1000.csv, etc.
 
+```console
 cat in.csv | qsv split mysplitoutput -s 1000
+```
+
 > Create 10 files with names like 0.csv, 1000.csv, etc. in the directory 'outdir',
 
 ```console

@@ -7,7 +7,7 @@
 // Uses qsv-docopt Parser for robust structured parsing of options, arguments and defaults,
 // combined with manual text parsing for descriptions and prose content.
 
-use std::{fs, path::Path};
+use std::{fmt::Write, fs, path::Path};
 
 use foldhash::{HashMap, HashMapExt};
 use qsv_docopt::parse::{Argument as DocoptArgument, Atom, Parser};
@@ -226,25 +226,26 @@ fn generate_command_markdown(
     let source_url = format!("{GITHUB_BASE}{source_path}");
 
     // Title
-    md.push_str(&format!("# {}\n\n", cmd_info.invocation_name));
+    let _ = write!(md, "# {}\n\n", cmd_info.invocation_name);
 
     // Emoji markers from README table
     if !cmd_info.emoji_markers.is_empty() {
         // Rewrite image paths for the docs/help/ location
         let markers = cmd_info.emoji_markers.replace("docs/images/", "../images/");
-        md.push_str(&format!("{markers}\n\n"));
+        let _ = write!(md, "{markers}\n\n");
     }
 
     // Short description from README
     if !cmd_info.description.is_empty() {
-        md.push_str(&format!("> {}\n\n", cmd_info.description));
+        let _ = write!(md, "> {}\n\n", cmd_info.description);
     }
 
     // Navigation
-    md.push_str(&format!(
+    let _ = write!(
+        md,
         "**[Table of Contents](TableOfContents.md)** | **Source: \
          [{source_path}]({source_url})**\n\n"
-    ));
+    );
 
     // Parse the USAGE text into sections
     let sections = parse_usage_sections(usage_text);
@@ -281,11 +282,12 @@ fn generate_command_markdown(
             md.push_str("| Argument | Description |\n");
             md.push_str("|----------|-------------|\n");
             for arg in &parsed_args {
-                md.push_str(&format!(
-                    "| `{}` | {} |\n",
+                let _ = writeln!(
+                    md,
+                    "| `{}` | {} |",
                     arg.name,
                     escape_table_cell(&linkify_bare_urls(&arg.description))
-                ));
+                );
             }
             md.push('\n');
         }
@@ -298,7 +300,7 @@ fn generate_command_markdown(
         if options.is_empty() {
             continue;
         }
-        md.push_str(&format!("## {section_title}\n\n"));
+        let _ = write!(md, "## {section_title}\n\n");
         md.push_str("| Option | Type | Description | Default |\n");
         md.push_str("|--------|------|-------------|--------|\n");
         for opt in options {
@@ -310,24 +312,26 @@ fn generate_command_markdown(
                 .default
                 .as_ref()
                 .map_or(String::new(), |d| format!("`{d}`"));
-            md.push_str(&format!(
-                "| `{}{}` | {} | {} | {} |\n",
+            let _ = writeln!(
+                md,
+                "| `{}{}` | {} | {} | {} |",
                 short_str,
                 opt.flag,
                 opt.option_type,
                 escape_table_cell(&linkify_bare_urls(&opt.description)),
                 default_str
-            ));
+            );
         }
         md.push('\n');
     }
 
     // Footer
     md.push_str("---\n");
-    md.push_str(&format!(
+    let _ = write!(
+        md,
         "**Source:** [`{source_path}`]({source_url})\n| **[Table of \
          Contents](TableOfContents.md)** | **[README](../../README.md)**\n"
-    ));
+    );
 
     md
 }
@@ -397,14 +401,6 @@ struct UsageSections {
 
 /// Parse USAGE text into distinct sections using a state machine
 fn parse_usage_sections(usage_text: &str) -> UsageSections {
-    let lines: Vec<&str> = usage_text.lines().collect();
-
-    let mut description = Vec::new();
-    let mut examples = Vec::new();
-    let mut usage_patterns = Vec::new();
-    let mut arguments_text = Vec::new();
-    let mut option_groups: Vec<(String, Vec<String>)> = Vec::new();
-
     #[derive(PartialEq)]
     enum State {
         Description,
@@ -413,6 +409,14 @@ fn parse_usage_sections(usage_text: &str) -> UsageSections {
         Arguments,
         Options,
     }
+
+    let lines: Vec<&str> = usage_text.lines().collect();
+
+    let mut description = Vec::new();
+    let mut examples = Vec::new();
+    let mut usage_patterns = Vec::new();
+    let mut arguments_text = Vec::new();
+    let mut option_groups: Vec<(String, Vec<String>)> = Vec::new();
 
     let mut state = State::Description;
     let mut current_option_group_name = String::new();
@@ -594,7 +598,7 @@ fn format_description(lines: &[String]) -> String {
                 md.push_str("```\n\n");
                 in_code_block = false;
             }
-            md.push_str(&format!("### {}\n\n", titlecase_heading(trimmed)));
+            let _ = write!(md, "### {}\n\n", titlecase_heading(trimmed));
             prev_empty = true;
             prev_was_heading = true;
             continue;
@@ -730,7 +734,7 @@ fn format_examples(lines: &[String]) -> String {
                 md.push_str("```\n\n");
                 in_code_block = false;
             }
-            md.push_str(&format!("### {}\n\n", titlecase_heading(trimmed)));
+            let _ = write!(md, "### {}\n\n", titlecase_heading(trimmed));
             skip_next = true; // skip the === underline
             continue;
         }
@@ -752,7 +756,7 @@ fn format_examples(lines: &[String]) -> String {
                 md.push_str("```\n\n");
                 in_code_block = false;
             }
-            md.push_str(&format!("### {}\n\n", titlecase_heading(trimmed)));
+            let _ = write!(md, "### {}\n\n", titlecase_heading(trimmed));
             continue;
         }
 
@@ -764,7 +768,7 @@ fn format_examples(lines: &[String]) -> String {
             }
             let heading = trimmed.trim_start_matches('=').trim_end_matches('=').trim();
             if !heading.is_empty() {
-                md.push_str(&format!("### {heading}\n\n"));
+                let _ = write!(md, "### {heading}\n\n");
             }
             continue;
         }
@@ -782,7 +786,7 @@ fn format_examples(lines: &[String]) -> String {
             // Convert URL to markdown link if present
             if let Some(url_start) = trimmed.find("https://") {
                 let url = trimmed[url_start..].trim_end_matches('.');
-                md.push_str(&format!("For more examples, see [tests]({url}).\n\n"));
+                let _ = write!(md, "For more examples, see [tests]({url}).\n\n");
             } else {
                 md.push_str(trimmed);
                 md.push_str("\n\n");
@@ -806,7 +810,7 @@ fn format_examples(lines: &[String]) -> String {
                 in_code_block = false;
             }
             let comment = trimmed.trim_start_matches('#').trim();
-            md.push_str(&format!("> {}\n\n", linkify_bare_urls(comment)));
+            let _ = write!(md, "> {}\n\n", linkify_bare_urls(comment));
             continue;
         }
 
@@ -1321,13 +1325,14 @@ fn generate_table_of_contents(commands: &[CommandInfo], repo_root: &Path) -> Str
             let markers = cmd.emoji_markers.replace("docs/images/", "../images/");
             format!(" {markers}")
         };
-        md.push_str(&format!(
-            "| [{}]({}.md){} | {} |\n",
+        let _ = writeln!(
+            md,
+            "| [{}]({}.md){} | {} |",
             cmd.invocation_name,
             cmd.invocation_name,
             emoji_str,
             escape_table_cell(&cmd.description)
-        ));
+        );
     }
 
     // Add legend

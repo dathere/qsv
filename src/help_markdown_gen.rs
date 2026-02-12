@@ -1331,7 +1331,9 @@ fn generate_table_of_contents(commands: &[CommandInfo], repo_root: &Path) -> Str
     let legend_start = readme_content.find("<a name=\"legend_deeplink\">");
     if let Some(start) = legend_start {
         let legend_text = &readme_content[start..];
-        // Collect legend lines until we hit an empty line or other section
+        // Collect legend lines until we hit an empty line or other section.
+        // Each entry must be on its own line — use trailing `  ` (two spaces)
+        // for markdown line breaks so they don't run together as a paragraph.
         for line in legend_text.lines() {
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -1346,7 +1348,8 @@ fn generate_table_of_contents(commands: &[CommandInfo], repo_root: &Path) -> Str
             // Rewrite image paths for the docs/help/ location
             let cleaned = cleaned.replace("docs/images/", "../images/");
             md.push_str(&cleaned);
-            md.push('\n');
+            // Preserve markdown line breaks (two trailing spaces + newline)
+            md.push_str("  \n");
         }
     } else {
         // Fallback minimal legend

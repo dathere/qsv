@@ -70,6 +70,7 @@ pub mod partition;
     any(feature = "feature_capable", feature = "datapusher_plus")
 ))]
 pub mod pivotp;
+pub mod pragmastat;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod pro;
 #[cfg(feature = "prompt")]

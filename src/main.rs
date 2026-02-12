@@ -190,7 +190,10 @@ fn main() -> QsvExitCode {
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
     enabled_commands.push_str("    pivotp      Pivots CSV files using the Pola.rs engine\n");
 
-    enabled_commands.push_str("    pro         Interact with the qsv pro API\n");
+    enabled_commands.push_str(
+        "    pragmastat  Pragmatic statistical toolkit
+    pro         Interact with the qsv pro API\n",
+    );
 
     #[cfg(all(feature = "prompt", feature = "feature_capable"))]
     enabled_commands.push_str("    prompt      Open a file dialog to pick a file\n");
@@ -449,6 +452,7 @@ enum Command {
     Partition,
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
     PivotP,
+    Pragmastat,
     Pro,
     #[cfg(all(feature = "prompt", feature = "feature_capable"))]
     Prompt,
@@ -554,6 +558,7 @@ impl Command {
             Command::Partition => cmd::partition::run(argv),
             #[cfg(all(feature = "polars", feature = "feature_capable"))]
             Command::PivotP => cmd::pivotp::run(argv),
+            Command::Pragmastat => cmd::pragmastat::run(argv),
             Command::Pro => cmd::pro::run(argv),
             #[cfg(all(feature = "prompt", feature = "feature_capable"))]
             Command::Prompt => cmd::prompt::run(argv),

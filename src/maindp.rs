@@ -69,6 +69,7 @@ static COMMAND_LIST: &str = r#"
     luau        Execute Luau script on CSV data 👑
     moarstats   Add "moar" statistics to existing stats CSV
     pivotp      Pivot CSV data 🐻‍❄️
+    pragmastat  Pragmatic statistical toolkit
     pseudo      Pseudonymise the values of a column
     rename      Rename the columns of CSV data efficiently
     replace     Replace patterns in CSV data
@@ -267,6 +268,7 @@ enum Command {
     Luau,
     #[cfg(feature = "polars")]
     PivotP,
+    Pragmastat,
     Pseudo,
     Rename,
     Replace,
@@ -331,6 +333,7 @@ impl Command {
             Command::Luau => cmd::luau::run(argv),
             #[cfg(feature = "polars")]
             Command::PivotP => cmd::pivotp::run(argv),
+            Command::Pragmastat => cmd::pragmastat::run(argv),
             Command::Pseudo => cmd::pseudo::run(argv),
             Command::Rename => cmd::rename::run(argv),
             Command::Replace => cmd::replace::run(argv),

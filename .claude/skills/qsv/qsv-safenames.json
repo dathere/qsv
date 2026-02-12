@@ -1,6 +1,6 @@
 {
   "name": "qsv-safenames",
-  "version": "15.0.1",
+  "version": "16.0.0",
   "description": "Modify headers of a CSV to only have \"safe\" names - guaranteed \"database-ready\"/\"CKAN-ready\" names.",
   "category": "validation",
   "command": {

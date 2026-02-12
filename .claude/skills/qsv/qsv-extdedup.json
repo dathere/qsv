@@ -1,6 +1,6 @@
 {
   "name": "qsv-extdedup",
-  "version": "15.0.1",
+  "version": "16.0.0",
   "description": "Remove duplicate rows from an arbitrarily large CSV/text file using a memory-mapped, on-disk hash table. Unlike the `dedup` command, this command does not load the entire file into memory nor does it sort the deduped file.",
   "category": "utility",
   "command": {

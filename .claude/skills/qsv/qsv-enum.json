@@ -1,7 +1,7 @@
 {
   "name": "qsv-enum",
-  "version": "15.0.1",
-  "description": "Add a new column enumerating the lines of a CSV file.",
+  "version": "16.0.0",
+  "description": "Add a new column enumerating rows by adding a column of incremental or uuid identifiers. Can also be used to copy a column or fill a new column with a constant value.",
   "category": "utility",
   "command": {
     "binary": "qsv",

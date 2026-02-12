@@ -1,6 +1,6 @@
 {
   "name": "qsv-transpose",
-  "version": "15.0.1",
+  "version": "16.0.0",
   "description": "Transpose rows/columns of a CSV.",
   "category": "transformation",
   "command": {

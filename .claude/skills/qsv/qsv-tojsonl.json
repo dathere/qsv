@@ -1,6 +1,6 @@
 {
   "name": "qsv-tojsonl",
-  "version": "15.0.1",
+  "version": "16.0.0",
   "description": "Smartly converts CSV to a newline-delimited JSON (JSONL/NDJSON). By scanning the CSV first, it \"smartly\" infers the appropriate JSON data type for each column. See `jsonl` command to convert JSONL to CSV.",
   "category": "conversion",
   "command": {

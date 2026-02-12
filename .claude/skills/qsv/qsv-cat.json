@@ -1,6 +1,6 @@
 {
   "name": "qsv-cat",
-  "version": "15.0.1",
+  "version": "16.0.0",
   "description": "Concatenate CSV files by row or by column.",
   "category": "utility",
   "command": {

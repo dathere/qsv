@@ -44,6 +44,7 @@
 | [moarstats](moarstats.md)<br>📇🏎️ | Add dozens of additional statistics, including extended outlier, robust & bivariate statistics to an existing stats CSV file. (example). |
 | [partition](partition.md)<br>👆 | Partition a CSV based on a column value. |
 | [pivotp](pivotp.md)<br>🚀🐻‍❄️🪄 | Pivot CSV data. Features "smart" aggregation auto-selection based on data type & stats. |
+| [pragmastat](pragmastat.md)<br>🤯 | Compute pragmatic statistics using the Pragmastat library. |
 | [pro](pro.md) | Interact with the qsv pro API. |
 | [prompt](prompt.md)<br>🐻‍❄️🖥️ | Open a file dialog to either pick a file as input or save output to a file. |
 | [pseudo](pseudo.md)<br>🔣👆 | Pseudonymise the value of the given column by replacing them with an incremental identifier. |

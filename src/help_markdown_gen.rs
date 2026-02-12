@@ -228,6 +228,13 @@ fn generate_command_markdown(
     // Title
     md.push_str(&format!("# {}\n\n", cmd_info.invocation_name));
 
+    // Emoji markers from README table
+    if !cmd_info.emoji_markers.is_empty() {
+        // Rewrite image paths for the docs/help/ location
+        let markers = cmd_info.emoji_markers.replace("docs/images/", "../images/");
+        md.push_str(&format!("{markers}\n\n"));
+    }
+
     // Short description from README
     if !cmd_info.description.is_empty() {
         md.push_str(&format!("> {}\n\n", cmd_info.description));

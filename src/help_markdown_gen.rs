@@ -430,8 +430,14 @@ fn parse_usage_sections(usage_text: &str) -> UsageSections {
             continue;
         }
 
-        // Detect arguments/options sections that come after Usage:
-        if state == State::UsagePatterns || state == State::Arguments || state == State::Options {
+        // Detect arguments/options sections that come after Usage: or Examples:
+        // Some commands (e.g. transpose) have Examples before options sections,
+        // so we need to detect options/arguments headers from the Examples state too.
+        if state == State::UsagePatterns
+            || state == State::Arguments
+            || state == State::Options
+            || state == State::Examples
+        {
             // Check if this is an arguments header
             if (trimmed.ends_with("arguments:")
                 || trimmed.ends_with("argument:")
@@ -1252,7 +1258,10 @@ fn generate_table_of_contents(commands: &[CommandInfo], repo_root: &Path) -> Str
         let emoji_str = if cmd.emoji_markers.is_empty() {
             String::new()
         } else {
-            format!(" {}", cmd.emoji_markers)
+            // Rewrite image paths from docs/images/ to ../images/ since the ToC
+            // lives in docs/help/ and needs to reference docs/images/ as a sibling
+            let markers = cmd.emoji_markers.replace("docs/images/", "../images/");
+            format!(" {markers}")
         };
         md.push_str(&format!(
             "| [{}]({}.md){} | {} |\n",
@@ -1283,7 +1292,9 @@ fn generate_table_of_contents(commands: &[CommandInfo], repo_root: &Path) -> Str
             } else {
                 trimmed
             };
-            md.push_str(cleaned);
+            // Rewrite image paths for the docs/help/ location
+            let cleaned = cleaned.replace("docs/images/", "../images/");
+            md.push_str(&cleaned);
             md.push('\n');
         }
     } else {
@@ -1402,13 +1413,24 @@ pub fn generate_help_markdown() -> CliResult<()> {
         success_count += 1;
     }
 
-    // Generate Table of Contents
+    eprintln!(
+        "\n📊 Summary: {} succeeded, {} failed out of {} total",
+        success_count,
+        error_count,
+        commands.len()
+    );
+
+    if error_count > 0 {
+        eprintln!("⚠️  Skipping Table of Contents and README link updates due to errors.");
+        return fail_clierror!("{} help file(s) failed to generate", error_count);
+    }
+
+    // Generate Table of Contents and update README only when all commands succeeded
     let toc = generate_table_of_contents(&commands, &repo_root);
     let toc_file = output_dir.join("TableOfContents.md");
     fs::write(&toc_file, &toc)?;
-    eprintln!("\n✅ Generated: {}", toc_file.display());
+    eprintln!("✅ Generated: {}", toc_file.display());
 
-    // Update README.md links
     match update_readme_links(&repo_root) {
         Ok(count) => {
             eprintln!("✅ Updated {count} links in README.md");
@@ -1420,16 +1442,6 @@ pub fn generate_help_markdown() -> CliResult<()> {
 
     eprintln!("\n✨ Help Markdown generation complete!");
     eprintln!("📁 Output directory: {}", output_dir.display());
-    eprintln!(
-        "📊 Summary: {} succeeded, {} failed out of {} total",
-        success_count,
-        error_count,
-        commands.len()
-    );
-
-    if error_count > 0 {
-        return fail_clierror!("{} help file(s) failed to generate", error_count);
-    }
 
     Ok(())
 }

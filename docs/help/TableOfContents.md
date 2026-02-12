@@ -5,7 +5,7 @@
 | Command | Description |
 | --- | --- |
 | [apply](apply.md) 📇🚀🧠🤖🔣👆 | Apply series of string, date, math & currency transformations to given CSV column/s. It also has some basic NLP functions (similarity, sentiment analysis, profanity, eudex, language & name gender) detection. |
-| [applydp](applydp.md) 📇🚀🔣👆 ![CKAN](docs/images/ckan.png) | applydp is a slimmed-down version of `apply` with only Datapusher+ relevant subcommands/operations (`qsvdp` binary variant only). |
+| [applydp](applydp.md) 📇🚀🔣👆 ![CKAN](../images/ckan.png) | applydp is a slimmed-down version of `apply` with only Datapusher+ relevant subcommands/operations (`qsvdp` binary variant only). |
 | [behead](behead.md) | Drop headers from a CSV. |
 | [cat](cat.md) 🗄️ | Concatenate CSV files by row or by column. |
 | [clipboard](clipboard.md) 🖥️ | Provide input from the clipboard or save output to the clipboard. |
@@ -13,7 +13,7 @@
 | [count](count.md) 📇🏎️🐻‍❄️ | Count the rows and optionally compile record width statistics of a CSV file. (11.87 seconds for a 15gb, 27m row NYC 311 dataset without an index. Instantaneous with an index.) If the `polars` feature is enabled, uses Polars' multithreaded, mem-mapped CSV reader for fast counts even without an index |
 | [datefmt](datefmt.md) 📇🚀👆 | Formats recognized date fields (19 formats recognized) to a specified date format using strftime date format specifiers. |
 | [dedup](dedup.md) 🤯🚀👆 | Remove duplicate rows (See also `extdedup`, `extsort`, `sort` & `sortcheck` commands). |
-| [describegpt](describegpt.md) 🌐🤖🪄🗃️📚⛩️ ![CKAN](docs/images/ckan.png) | Infer a "neuro-symbolic" Data Dictionary, Description & Tags or ask questions about a CSV with a configurable, Mini Jinja prompt file, using any OpenAI API-compatible LLM, including local LLMs via Ollama, Jan & LM Studio. (e.g. Markdown, JSON, TOON, Everything, Spanish, Mandarin, Controlled Tags; --prompt "What are the top 10 complaint types by community board & borough by year?" - deterministic, hallucination-free SQL RAG result; iterative, session-based SQL RAG refinement - refined SQL RAG result) |
+| [describegpt](describegpt.md) 🌐🤖🪄🗃️📚⛩️ ![CKAN](../images/ckan.png) | Infer a "neuro-symbolic" Data Dictionary, Description & Tags or ask questions about a CSV with a configurable, Mini Jinja prompt file, using any OpenAI API-compatible LLM, including local LLMs via Ollama, Jan & LM Studio. (e.g. Markdown, JSON, TOON, Everything, Spanish, Mandarin, Controlled Tags; --prompt "What are the top 10 complaint types by community board & borough by year?" - deterministic, hallucination-free SQL RAG result; iterative, session-based SQL RAG refinement - refined SQL RAG result) |
 | [diff](diff.md) 🚀🪄 | Find the difference between two CSVs with ludicrous speed! e.g. _compare two CSVs with 1M rows x 9 columns in under 600ms!_ |
 | [edit](edit.md) | Replace the value of a cell specified by its row and column. |
 | [enum](enum.md) 👆 | Add a new column enumerating rows by adding a column of incremental or uuid identifiers. Can also be used to copy a column or fill a new column with a constant value. |
@@ -29,7 +29,7 @@
 | [flatten](flatten.md) | A flattened view of CSV records. Useful for viewing one record at a time. e.g. `qsv slice -i 5 data.csv \| qsv flatten`. |
 | [fmt](fmt.md) | Reformat a CSV with different delimiters, record terminators or quoting rules. (Supports ASCII delimited data.) |
 | [foreach](foreach.md) 📇 | Execute a shell command once per record in a given CSV file. |
-| [frequency](frequency.md) 📇😣🏎️👆🪄![Luau](docs/images/luau.png) | Build frequency distribution tables of each column. Uses multithreading to go faster if an index is present (Examples: CSV JSON TOON). |
+| [frequency](frequency.md) 📇😣🏎️👆🪄![Luau](../images/luau.png) | Build frequency distribution tables of each column. Uses multithreading to go faster if an index is present (Examples: CSV JSON TOON). |
 | [geocode](geocode.md) 📇🧠🌐🚀🔣👆🌎 | Geocodes a location against an updatable local copy of the Geonames cities & the Maxmind GeoLite2 databases. With caching and multi-threading, it geocodes up to 360,000 records/sec! |
 | [geoconvert](geoconvert.md) 🌎 | Convert between various spatial formats and CSV/SVG including GeoJSON, SHP, and more. |
 | [headers](headers.md) 🗄️ | Show the headers of a CSV. Or show the intersection of all headers between many CSV files. |
@@ -40,7 +40,7 @@
 | [json](json.md) 👆 | Convert JSON array to CSV. |
 | [jsonl](jsonl.md) 🚀🔣 | Convert newline-delimited JSON (JSONL/NDJSON) to CSV. See `tojsonl` command to convert CSV to JSONL. |
 | [lens](lens.md) 🐻‍❄️🖥️ | Interactively view, search & filter tabular data files using the csvlens engine. Apart from CSV and its dialects, Arrow, Avro/IPC, Parquet, JSON array & JSONL formats are supported with the "polars" feature. |
-| [luau](luau.md) 📇🌐🔣📚 ![CKAN](docs/images/ckan.png) | Create multiple new computed columns, filter rows, compute aggregations and build complex data pipelines by executing a Luau 0.708 expression/script for every row of a CSV file (sequential mode), or using random access with an index (random access mode). Can process a single Luau expression or full-fledged data-wrangling scripts using lookup tables with discrete BEGIN, MAIN and END sections. It is not just another qsv command, it is qsv's Domain-specific Language (DSL) with numerous qsv-specific helper functions to build production data pipelines. |
+| [luau](luau.md) 📇🌐🔣📚 ![CKAN](../images/ckan.png) | Create multiple new computed columns, filter rows, compute aggregations and build complex data pipelines by executing a Luau 0.708 expression/script for every row of a CSV file (sequential mode), or using random access with an index (random access mode). Can process a single Luau expression or full-fledged data-wrangling scripts using lookup tables with discrete BEGIN, MAIN and END sections. It is not just another qsv command, it is qsv's Domain-specific Language (DSL) with numerous qsv-specific helper functions to build production data pipelines. |
 | [moarstats](moarstats.md) 📇🏎️ | Add dozens of additional statistics, including extended outlier, robust & bivariate statistics to an existing stats CSV file. (example). |
 | [partition](partition.md) 👆 | Partition a CSV based on a column value. |
 | [pivotp](pivotp.md) 🚀🐻‍❄️🪄 | Pivot CSV data. Features "smart" aggregation auto-selection based on data type & stats. |
@@ -51,7 +51,7 @@
 | [rename](rename.md) | Rename the columns of a CSV efficiently. |
 | [replace](replace.md) 📇👆🏎️ | Replace CSV data using a regex. Applies the regex to each field individually. |
 | [reverse](reverse.md) 📇🤯 | Reverse order of rows in a CSV. Unlike the `sort --reverse` command, it preserves the order of rows with the same key. If an index is present, it works with constant memory. Otherwise, it will load all the data into memory. |
-| [safenames](safenames.md) ![CKAN](docs/images/ckan.png) | Modify headers of a CSV to only have "safe" names - guaranteed "database-ready"/"CKAN-ready" names. |
+| [safenames](safenames.md) ![CKAN](../images/ckan.png) | Modify headers of a CSV to only have "safe" names - guaranteed "database-ready"/"CKAN-ready" names. |
 | [sample](sample.md) 📇🌐🏎️ | Randomly draw rows (with optional seed) from a CSV using seven different sampling methods - reservoir (default), indexed, bernoulli, systematic, stratified, weighted & cluster sampling. Supports sampling from CSVs on remote URLs. |
 | [schema](schema.md) 📇😣🏎️👆🪄🐻‍❄️ | Infer either a JSON Schema Validation Draft 2020-12 (Example) or Polars Schema (Example) from CSV data. In JSON Schema Validation mode, it produces a `.schema.json` file replete with inferred data type & domain/range validation rules derived from `stats`. Uses multithreading to go faster if an index is present. See `validate` command to use the generated JSON Schema to validate if similar CSVs comply with the schema. With the `--polars` option, it produces a `.pschema.json` file that all polars commands (`sqlp`, `joinp` & `pivotp`) use to determine the data type of each column & to optimize performance. Both schemas are editable and can be fine-tuned. For JSON Schema, to refine the inferred validation rules. For Polars Schema, to change the inferred Polars data types. |
 | [search](search.md) 📇🏎️👆 | Run a regex over a CSV. Applies the regex to selected fields & shows only matching rows. |
@@ -59,18 +59,18 @@
 | [select](select.md) 👆 | Select, re-order, reverse, duplicate or drop columns. |
 | [slice](slice.md) 📇🏎️🗃️ | Slice rows from any part of a CSV. When an index is present, this only has to parse the rows in the slice (instead of all rows leading up to the start of the slice). |
 | [snappy](snappy.md) 🚀🌐 | Does streaming compression/decompression of the input using Google's Snappy framing format (more info). |
-| [sniff](sniff.md) 📇🌐🤖 ![CKAN](docs/images/ckan.png) | Quickly sniff & infer CSV metadata (delimiter, header row, preamble rows, quote character, flexible, is_utf8, average record length, number of records, content length & estimated number of records if sniffing a CSV on a URL, number of fields, field names & data types). It is also a general mime type detector. |
+| [sniff](sniff.md) 📇🌐🤖 ![CKAN](../images/ckan.png) | Quickly sniff & infer CSV metadata (delimiter, header row, preamble rows, quote character, flexible, is_utf8, average record length, number of records, content length & estimated number of records if sniffing a CSV on a URL, number of fields, field names & data types). It is also a general mime type detector. |
 | [sort](sort.md) 🚀🤯👆 | Sorts CSV data in lexicographical, natural, numerical, reverse, unique or random (with optional seed) order (Also see `extsort` & `sortcheck` commands). |
 | [sortcheck](sortcheck.md) 📇👆 | Check if a CSV is sorted. With the --json options, also retrieve record count, sort breaks & duplicate count. |
 | [split](split.md) 📇🏎️ | Split one CSV file into many CSV files. It can split by number of rows, number of chunks or file size. Uses multithreading to go faster if an index is present when splitting by rows or chunks. |
 | [sqlp](sqlp.md) 📇🚀🐻‍❄️🗄️🪄 | Run Polars SQL (a PostgreSQL dialect) queries against several CSVs, Parquet, JSONL and Arrow files - converting queries to blazing-fast Polars LazyFrame expressions, processing larger than memory CSV files. Query results can be saved in CSV, JSON, JSONL, Parquet, Apache Arrow IPC and Apache Avro formats. |
 | [stats](stats.md) 📇🤯🏎️👆🪄 | Compute summary statistics (sum, min/max/range, sort order/sortiness, min/max/sum/avg length, mean, standard error of the mean (SEM), geometric/harmonic means, stddev, variance, Coefficient of Variation (CV), nullcount, max precision, sparsity, quartiles, Interquartile Range (IQR), lower/upper fences, skewness, median, mode/s, antimode/s, cardinality & uniqueness ratio) & make GUARANTEED data type inferences (Null, String, Float, Integer, Date, DateTime, Boolean) for each column in a CSV (Example - more info). Uses multithreading to go faster if an index is present (with an index, can compile "streaming" stats on NYC's 311 data (15gb, 28m rows) in less than 7.3 seconds!). |
 | [table](table.md) 🤯 | Align output of a CSV using elastic tabstops for viewing; or to create an "aligned TSV" file or Fixed Width Format file. To interactively view a CSV, use the `lens` command. |
-| [template](template.md) 📇🚀🔣📚⛩️![CKAN](docs/images/ckan.png) | Renders a template using CSV data with the Mini Jinja template engine (Example). |
+| [template](template.md) 📇🚀🔣📚⛩️![CKAN](../images/ckan.png) | Renders a template using CSV data with the Mini Jinja template engine (Example). |
 | [to](to.md) 🚀🗄️ | Convert CSV files to PostgreSQL, SQLite, Excel (XLSX), LibreOffice Calc (ODS) and Data Package. |
 | [tojsonl](tojsonl.md) 📇😣🚀🔣🪄🗃️ | Smartly converts CSV to a newline-delimited JSON (JSONL/NDJSON). By scanning the CSV first, it "smartly" infers the appropriate JSON data type for each column. See `jsonl` command to convert JSONL to CSV. |
 | [transpose](transpose.md) 🤯👆 | Transpose rows/columns of a CSV. |
-| [validate](validate.md) 📇🚀🌐📚🗄️![CKAN](docs/images/ckan.png) | Validate CSV data _blazingly-fast_ using JSON Schema Validation (Draft 2020-12) (e.g. _up to 780,031 rows/second_[^1] using NYC's 311 schema generated by the `schema` command) & put invalid records into a separate file along with a detailed validation error report. Supports several custom JSON Schema formats & keywords: * `currency` custom format with ISO-4217 validation * `dynamicEnum` custom keyword that supports enum validation against a CSV on the filesystem or a URL (http/https/ckan & dathere URL schemes supported) * `uniqueCombinedWith` custom keyword to validate uniqueness across multiple columns for composite key validation. If no JSON schema file is provided, validates if a CSV conforms to the RFC 4180 standard and is UTF-8 encoded. |
+| [validate](validate.md) 📇🚀🌐📚🗄️![CKAN](../images/ckan.png) | Validate CSV data _blazingly-fast_ using JSON Schema Validation (Draft 2020-12) (e.g. _up to 780,031 rows/second_[^1] using NYC's 311 schema generated by the `schema` command) & put invalid records into a separate file along with a detailed validation error report. Supports several custom JSON Schema formats & keywords: * `currency` custom format with ISO-4217 validation * `dynamicEnum` custom keyword that supports enum validation against a CSV on the filesystem or a URL (http/https/ckan & dathere URL schemes supported) * `uniqueCombinedWith` custom keyword to validate uniqueness across multiple columns for composite key validation. If no JSON schema file is provided, validates if a CSV conforms to the RFC 4180 standard and is UTF-8 encoded. |
 
 ---
 
@@ -88,7 +88,7 @@
 🤖: command uses Natural Language Processing or Generative AI.
 🏎️: multithreaded and/or faster when an index (📇) is available.
 🚀: multithreaded even without an index.
-![CKAN](docs/images/ckan.png) : has [CKAN](https://ckan.org)-aware integration options.
+![CKAN](../images/ckan.png) : has [CKAN](https://ckan.org)-aware integration options.
 🌐: has web-aware options.
 🔣: requires UTF-8 encoded input.
 👆: has powerful column selector support. See [`select`](https://github.com/dathere/qsv/blob/master/src/cmd/select.rs#L2) for syntax.
@@ -96,7 +96,7 @@
 📚: has lookup table support, enabling runtime "lookups" against local or remote reference CSVs.
 🌎: has geospatial capabilities.
 ⛩️: uses [Mini Jinja](https://docs.rs/minijinja/latest/minijinja/) template engine.
-![Luau](docs/images/luau.png) : uses [Luau](https://luau.org/) [0.708](https://github.com/Roblox/luau/releases/tag/0.708) as an embedded scripting [DSL](https://en.wikipedia.org/wiki/Domain-specific_language).
+![Luau](../images/luau.png) : uses [Luau](https://luau.org/) [0.708](https://github.com/Roblox/luau/releases/tag/0.708) as an embedded scripting [DSL](https://en.wikipedia.org/wiki/Domain-specific_language).
 🖥️: part of the User Interface (UI) feature group
 
 ---

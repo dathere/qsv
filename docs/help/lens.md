@@ -114,68 +114,6 @@ Find and highlight cells that have all numeric values in a column.
 qsv lens --find '^\d+$' data.csv
 ```
 
-lens options:
--d, --delimiter <char>           Delimiter character (comma by default)
-"auto" to auto-detect the delimiter
--t, --tab-separated              Use tab separation. Shortcut for -d '\t'
---no-headers                 Do not interpret the first row as headers
---columns <regex>            Use this regex to select columns to display by default.
-Example: "col1|col2|col3" to select columns "col1", "col2" and "col3"
-and also columns like "col1_1", "col22" and "col3-more".
---filter <regex>             Use this regex to filter rows to display by default.
-The regex is matched against each cell in every column.
-Example: "val1|val2" filters rows with any cells containing "val1", "val2"
-or text like "my_val1" or "val234".
---find <regex>               Use this regex to find and highlight matches by default.
-Automatically sets --monochrome to true so the matches are easier to see.
-The regex is matched against each cell in every column.
-Example: "val1|val2" highlights text containing "val1", "val2" or
-longer text like "val1_ok" or "val2_error".
--i, --ignore-case                Searches ignore case. Ignored if any uppercase letters
-are present in the search string
--f, --freeze-columns <num>       Freeze the first N columns
-[default: 1]
--m, --monochrome                 Disable color output
--W, --wrap-mode <mode>           Set the wrap mode for the output.
-Valid modes are:
-"words": Wrap at word boundaries
-"chars": Wrap at character boundaries
-"disabled": No wrapping
-For convenience, the first character can be used as a shortcut:
-```console
-qsv lens -W w data.csv // wrap at word boundaries
-```
-
-[default: disabled]
--A, --auto-reload                Automatically reload the data when the file changes.
--S, --streaming-stdin            Enable streaming stdin (load input as it's being piped in)
-NOTE: This option only applies to stdin input.
--P, --prompt <prompt>            Set a custom prompt in the status bar. Normally paired w/ --echo-column:
-```console
-qsv lens --prompt 'Select City:' --echo-column 'City'
-```
-
-Supports ANSI escape codes for colored or styled text. When using
-escape codes, ensure it's properly escaped. For example, in bash/zsh,
-the $'...' syntax is used to do so:
-```console
-qsv lens --prompt $'\033[1;5;31mBlinking red, bold text\033[0m'
-```
-
-see <https://en.wikipedia.org/wiki/ANSI_escape_code#Colors> or
-<https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797>
-for more info on ANSI escape codes.
-Typing a complicated prompt on the command line can be tricky.
-If the prompt starts with "file:", it's interpreted as a filepath
-from which to load the prompt, e.g.
-```console
-qsv lens --prompt "file:prompt.txt"
-```
-
---echo-column <column_name>  Print the value of this column to stdout for the selected row
---debug                      Show stats for debugging
-Common options:
--h, --help      Display this message
 
 ## Usage
 
@@ -183,6 +121,32 @@ Common options:
 qsv lens [options] [<input>]
 qsv lens --help
 ```
+
+## Lens Options
+
+| Option | Type | Description | Default |
+|--------|------|-------------|--------|
+| `-d, --delimiter` | string | Delimiter character (comma by default) "auto" to auto-detect the delimiter |  |
+| `-t, --tab-separated` | flag | Use tab separation. Shortcut for -d '\t' |  |
+| `--no-headers` | flag | Do not interpret the first row as headers |  |
+| `--columns` | string | Use this regex to select columns to display by default. Example: "col1\|col2\|col3" to select columns "col1", "col2" and "col3" and also columns like "col1_1", "col22" and "col3-more". |  |
+| `--filter` | string | Use this regex to filter rows to display by default. The regex is matched against each cell in every column. Example: "val1\|val2" filters rows with any cells containing "val1", "val2" or text like "my_val1" or "val234". |  |
+| `--find` | string | Use this regex to find and highlight matches by default. Automatically sets --monochrome to true so the matches are easier to see. The regex is matched against each cell in every column. Example: "val1\|val2" highlights text containing "val1", "val2" or longer text like "val1_ok" or "val2_error". |  |
+| `-i, --ignore-case` | flag | Searches ignore case. Ignored if any uppercase letters are present in the search string |  |
+| `-f, --freeze-columns` | string | Freeze the first N columns | `1` |
+| `-m, --monochrome` | flag | Disable color output |  |
+| `-W, --wrap-mode` | string | Set the wrap mode for the output. | `disabled` |
+| `-A, --auto-reload` | flag | Automatically reload the data when the file changes. |  |
+| `-S, --streaming-stdin` | flag | Enable streaming stdin (load input as it's being piped in) NOTE: This option only applies to stdin input. |  |
+| `-P, --prompt` | string | Set a custom prompt in the status bar. Normally paired w/ --echo-column: qsv lens --prompt 'Select City:' --echo-column 'City' Supports ANSI escape codes for colored or styled text. When using escape codes, ensure it's properly escaped. For example, in bash/zsh, the $'...' syntax is used to do so: qsv lens --prompt $'\033[1;5;31mBlinking red, bold text\033[0m' see <https://en.wikipedia.org/wiki/ANSI_escape_code#Colors> or <https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797> for more info on ANSI escape codes. Typing a complicated prompt on the command line can be tricky. If the prompt starts with "file:", it's interpreted as a filepath from which to load the prompt, e.g. qsv lens --prompt "file:prompt.txt" |  |
+| `--echo-column` | string | Print the value of this column to stdout for the selected row |  |
+| `--debug` | flag | Show stats for debugging |  |
+
+## Common Options
+
+| Option | Type | Description | Default |
+|--------|------|-------------|--------|
+| `-h, --help` | flag | Display this message |  |
 
 ---
 **Source:** [`src/cmd/lens.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/lens.rs)

@@ -54,39 +54,6 @@ qsv transpose --long /^name/ data.csv
 ```
 
 See <https://github.com/dathere/qsv/blob/master/tests/test_transpose.rs> for more examples.
-transpose options:
--m, --multipass        Process the transpose by making multiple passes
-over the dataset. Consumes memory relative to
-the number of rows.
-Note that in general it is faster to
-process the transpose in memory.
-Useful for really big datasets as the default
-is to read the entire dataset into memory.
--s, --select <arg>     Select a subset of columns to transpose.
-When used with --long, this filters which columns
-become attribute rows (the field columns are unaffected).
-See 'qsv select --help' for the full selection syntax.
---long <selection>     Convert wide-format CSV to "long" format.
-Output format is three columns:
-field, attribute, value. Empty values are skipped.
-Mutually exclusive with --multipass.
-The <selection> argument is REQUIRED when using --long,
-it specifies which column(s) to use as the "field" identifier.
-It uses the same selection syntax as 'qsv select':
-- Column names: --long varname or --long "column name"
-- Column indices (1-based): --long 5 or --long 2,3
-- Ranges: --long 1-4 or --long 3-
-- Regex patterns: --long /^prefix/
-- Comma-separated: --long var1,var2 or --long 1,3,5
-Multiple field columns are concatenated with | separator.
-Common options:
--h, --help             Display this message
--o, --output <file>    Write output to <file> instead of stdout.
--d, --delimiter <arg>  The field delimiter for reading CSV data.
-Must be a single character. (default: ,)
---memcheck             Check if there is enough memory to load the entire
-CSV into memory using CONSERVATIVE heuristics.
-Ignored when --multipass or --long option is enabled.
 
 ## Usage
 
@@ -94,6 +61,24 @@ Ignored when --multipass or --long option is enabled.
 qsv transpose [options] [<input>]
 qsv transpose --help
 ```
+
+## Transpose Options
+
+| Option | Type | Description | Default |
+|--------|------|-------------|--------|
+| `-m, --multipass` | flag | Process the transpose by making multiple passes over the dataset. Consumes memory relative to the number of rows. Note that in general it is faster to process the transpose in memory. Useful for really big datasets as the default is to read the entire dataset into memory. |  |
+| `-s, --select` | string | Select a subset of columns to transpose. When used with --long, this filters which columns become attribute rows (the field columns are unaffected). See 'qsv select --help' for the full selection syntax. |  |
+| `--long` | string | Convert wide-format CSV to "long" format. |  |
+| `-, -` | flag |  |  |
+
+## Common Options
+
+| Option | Type | Description | Default |
+|--------|------|-------------|--------|
+| `-h, --help` | flag | Display this message |  |
+| `-o, --output` | string | Write output to <file> instead of stdout. |  |
+| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `--memcheck` | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. Ignored when --multipass or --long option is enabled. |  |
 
 ---
 **Source:** [`src/cmd/transpose.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/transpose.rs)

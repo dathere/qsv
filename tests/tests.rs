@@ -143,7 +143,7 @@ mod test_validate;
 fn qcheck<T: Testable>(p: T) {
     // safety: we are in single-threaded code.
     unsafe { env::set_var("QSV_SKIPUTF8_CHECK", "1") };
-    QuickCheck::new().r#gen(Gen::new(5)).quickcheck(p);
+    QuickCheck::new().rng(Gen::new(5)).quickcheck(p);
     // safety: we are in single-threaded code.
     unsafe { env::set_var("QSV_SKIPUTF8_CHECK", "") };
 }
@@ -151,7 +151,7 @@ fn qcheck<T: Testable>(p: T) {
 fn qcheck_sized<T: Testable>(p: T, size: usize) {
     // safety: we are in single-threaded code.
     unsafe { env::set_var("QSV_SKIPUTF8_CHECK", "1") };
-    QuickCheck::new().r#gen(Gen::new(size)).quickcheck(p);
+    QuickCheck::new().rng(Gen::new(size)).quickcheck(p);
     // safety: we are in single-threaded code.
     unsafe { env::set_var("QSV_SKIPUTF8_CHECK", "") };
 }

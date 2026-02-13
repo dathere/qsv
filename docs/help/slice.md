@@ -114,12 +114,12 @@ qsv slice --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-s,`<br>`--start` | string | The index of the record to slice from. If negative, starts from the last record. |  |
-| `-e,`<br>`--end` | string | The index of the record to slice to. |  |
-| `-l,`<br>`--len` | string | The length of the slice (can be used instead of --end). |  |
-| `-i,`<br>`--index` | string | Slice a single record (shortcut for -s N -l 1). If negative, starts from the last record. |  |
-| `--json` | flag | Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based). |  |
-| `--invert` | flag | slice all records EXCEPT those in the specified range. |  |
+| &nbsp;`-s,`<br>`--start`&nbsp; | string | The index of the record to slice from. If negative, starts from the last record. |  |
+| &nbsp;`-e,`<br>`--end`&nbsp; | string | The index of the record to slice to. |  |
+| &nbsp;`-l,`<br>`--len`&nbsp; | string | The length of the slice (can be used instead of --end). |  |
+| &nbsp;`-i,`<br>`--index`&nbsp; | string | Slice a single record (shortcut for -s N -l 1). If negative, starts from the last record. |  |
+| &nbsp;`--json`&nbsp; | flag | Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based). |  |
+| &nbsp;`--invert`&nbsp; | flag | slice all records EXCEPT those in the specified range. |  |
 
 <a name="common-options"></a>
 
@@ -127,10 +127,10 @@ qsv slice --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. Otherwise, the first row will always appear in the output as the header row. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Otherwise, the first row will always appear in the output as the header row. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/slice.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/slice.rs)

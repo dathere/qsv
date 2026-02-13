@@ -115,16 +115,16 @@ qsv diff --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--no-headers-left` | flag | When set, the first row will be considered as part of the left CSV to diff. (When not set, the first row is the header row and will be skipped during the diff. It will always appear in the output.) |  |
-| `--no-headers-right` | flag | When set, the first row will be considered as part of the right CSV to diff. (When not set, the first row is the header row and will be skipped during the diff. It will always appear in the output.) |  |
-| `--no-headers-output` | flag | When set, the diff result won't have a header row in its output. If not set and both CSVs have no headers, headers in the result will be: _col_1,_col_2, etc. |  |
-| `--delimiter-left` | string | The field delimiter for reading CSV data on the left. Must be a single character. (default: ,) |  |
-| `--delimiter-right` | string | The field delimiter for reading CSV data on the right. Must be a single character. (default: ,) |  |
-| `--delimiter-output` | string | The field delimiter for writing the CSV diff result. Must be a single character. (default: ,) |  |
-| `-k,`<br>`--key` | string | The column indices that uniquely identify a record as a comma separated list of 0-based indices, e.g. 0,1,2 or column names, e.g. name,age. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. (default: 0) |  |
-| `--sort-columns` | string | The column indices by which the diff result should be sorted as a comma separated list of indices, e.g. 0,1,2 or column names, e.g. name,age. Records in the diff result that are marked as "modified" ("delete" and "add" records that have the same key, but have different content) will always be kept together in the sorted diff result and so won't be sorted independently from each other. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. |  |
-| `--drop-equal-fields` | flag | Drop values of equal fields in modified rows of the CSV diff result (and replace them with the empty string). Key field values will not be dropped. |  |
-| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`--no-headers-left`&nbsp; | flag | When set, the first row will be considered as part of the left CSV to diff. (When not set, the first row is the header row and will be skipped during the diff. It will always appear in the output.) |  |
+| &nbsp;`--no-headers-right`&nbsp; | flag | When set, the first row will be considered as part of the right CSV to diff. (When not set, the first row is the header row and will be skipped during the diff. It will always appear in the output.) |  |
+| &nbsp;`--no-headers-output`&nbsp; | flag | When set, the diff result won't have a header row in its output. If not set and both CSVs have no headers, headers in the result will be: _col_1,_col_2, etc. |  |
+| &nbsp;`--delimiter-left`&nbsp; | string | The field delimiter for reading CSV data on the left. Must be a single character. (default: ,) |  |
+| &nbsp;`--delimiter-right`&nbsp; | string | The field delimiter for reading CSV data on the right. Must be a single character. (default: ,) |  |
+| &nbsp;`--delimiter-output`&nbsp; | string | The field delimiter for writing the CSV diff result. Must be a single character. (default: ,) |  |
+| &nbsp;`-k,`<br>`--key`&nbsp; | string | The column indices that uniquely identify a record as a comma separated list of 0-based indices, e.g. 0,1,2 or column names, e.g. name,age. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. (default: 0) |  |
+| &nbsp;`--sort-columns`&nbsp; | string | The column indices by which the diff result should be sorted as a comma separated list of indices, e.g. 0,1,2 or column names, e.g. name,age. Records in the diff result that are marked as "modified" ("delete" and "add" records that have the same key, but have different content) will always be kept together in the sorted diff result and so won't be sorted independently from each other. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. |  |
+| &nbsp;`--drop-equal-fields`&nbsp; | flag | Drop values of equal fields in modified rows of the CSV diff result (and replace them with the empty string). Key field values will not be dropped. |  |
+| &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 
 <a name="common-options"></a>
 
@@ -132,9 +132,9 @@ qsv diff --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-d,`<br>`--delimiter` | string | Set ALL delimiters to this character. Overrides --delimiter-right, --delimiter-left and --delimiter-output. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | Set ALL delimiters to this character. Overrides --delimiter-right, --delimiter-left and --delimiter-output. |  |
 
 ---
 **Source:** [`src/cmd/diff.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/diff.rs)

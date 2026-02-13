@@ -150,7 +150,7 @@ qsv select --help
 
 | Argument | Description |
 |----------|-------------|
-| `<selection>` | The columns to select. You can select columns by index, by name, by range, by regex and any combination of these. If the first character is '!', the selection will be inverted. If the selection contains embedded spaces or characters that conflict with selector syntax, it must be quoted. See examples above. |
+| &nbsp;`<selection>`&nbsp; | The columns to select. You can select columns by index, by name, by range, by regex and any combination of these. If the first character is '!', the selection will be inverted. If the selection contains embedded spaces or characters that conflict with selector syntax, it must be quoted. See examples above. |
 
 <a name="select-options"></a>
 
@@ -158,9 +158,9 @@ qsv select --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-R,`<br>`--random` | flag | Randomly shuffle the columns in the selection. |  |
-| `--seed` | string | Seed for the random number generator. |  |
-| `-S,`<br>`--sort` | flag | Sort the selected columns lexicographically, i.e. by their byte values. |  |
+| &nbsp;`-R,`<br>`--random`&nbsp; | flag | Randomly shuffle the columns in the selection. |  |
+| &nbsp;`--seed`&nbsp; | string | Seed for the random number generator. |  |
+| &nbsp;`-S,`<br>`--sort`&nbsp; | flag | Sort the selected columns lexicographically, i.e. by their byte values. |  |
 
 <a name="common-options"></a>
 
@@ -168,10 +168,10 @@ qsv select --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/select.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/select.rs)

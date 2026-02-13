@@ -42,10 +42,10 @@ qsv tojsonl --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--trim` | flag | Trim leading and trailing whitespace from fields before converting to JSON. |  |
-| `--no-boolean` | flag | Do not infer boolean fields. |  |
-| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `-b,`<br>`--batch` | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
+| &nbsp;`--trim`&nbsp; | flag | Trim leading and trailing whitespace from fields before converting to JSON. |  |
+| &nbsp;`--no-boolean`&nbsp; | flag | Do not infer boolean fields. |  |
+| &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`-b,`<br>`--batch`&nbsp; | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
 
 <a name="common-options"></a>
 
@@ -53,11 +53,11 @@ qsv tojsonl --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `--memcheck` | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
-| `-q,`<br>`--quiet` | flag | Do not display enum/const list inferencing messages. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`--memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
+| &nbsp;`-q,`<br>`--quiet`&nbsp; | flag | Do not display enum/const list inferencing messages. |  |
 
 ---
 **Source:** [`src/cmd/tojsonl.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/tojsonl.rs)

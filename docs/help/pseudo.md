@@ -69,8 +69,8 @@ qsv pseudo --help
 
 | Argument | Description |
 |----------|-------------|
-| `<column>` | The column to pseudonymise. You can use the `--select` option to select the column by name or index. See `select` command for more details. |
-| `<input>` | The CSV file to read from. If not specified, then the input will be read from stdin. |
+| &nbsp;`<column>`&nbsp; | The column to pseudonymise. You can use the `--select` option to select the column by name or index. See `select` command for more details. |
+| &nbsp;`<input>`&nbsp; | The CSV file to read from. If not specified, then the input will be read from stdin. |
 
 <a name="common-options"></a>
 
@@ -78,13 +78,13 @@ qsv pseudo --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `--start` | string | The starting number for the incremental identifier. | `0` |
-| `--increment` | string | The increment for the incremental identifier. | `1` |
-| `--formatstr` | string | The format string for the incremental identifier. The format string must contain a single "{}" which will be replaced with the incremental identifier. | `{}` |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`--start`&nbsp; | string | The starting number for the incremental identifier. | `0` |
+| &nbsp;`--increment`&nbsp; | string | The increment for the incremental identifier. | `1` |
+| &nbsp;`--formatstr`&nbsp; | string | The format string for the incremental identifier. The format string must contain a single "{}" which will be replaced with the incremental identifier. | `{}` |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/pseudo.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/pseudo.rs)

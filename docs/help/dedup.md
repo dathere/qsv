@@ -83,13 +83,13 @@ qsv dedup --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-s,`<br>`--select` | string | Select a subset of columns to dedup. Note that the outputs will remain at the full width of the CSV. See 'qsv select --help' for the format details. |  |
-| `-N,`<br>`--numeric` | flag | Compare according to string numerical value |  |
-| `-i,`<br>`--ignore-case` | flag | Compare strings disregarding case. |  |
-| `--sorted` | flag | The input is already sorted. Do not load the CSV into memory to sort it first. Meant to be used in tandem and after an extsort. |  |
-| `-D,`<br>`--dupes-output` | string | Write duplicates to <file>. |  |
-| `-H,`<br>`--human-readable` | flag | Comma separate duplicate count. |  |
-| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel when sorting an unsorted CSV, before deduping. When not set, the number of jobs is set to the number of CPUs detected. Does not work with --sorted option as its not multithreaded. |  |
+| &nbsp;`-s,`<br>`--select`&nbsp; | string | Select a subset of columns to dedup. Note that the outputs will remain at the full width of the CSV. See 'qsv select --help' for the format details. |  |
+| &nbsp;`-N,`<br>`--numeric`&nbsp; | flag | Compare according to string numerical value |  |
+| &nbsp;`-i,`<br>`--ignore-case`&nbsp; | flag | Compare strings disregarding case. |  |
+| &nbsp;`--sorted`&nbsp; | flag | The input is already sorted. Do not load the CSV into memory to sort it first. Meant to be used in tandem and after an extsort. |  |
+| &nbsp;`-D,`<br>`--dupes-output`&nbsp; | string | Write duplicates to <file>. |  |
+| &nbsp;`-H,`<br>`--human-readable`&nbsp; | flag | Comma separate duplicate count. |  |
+| &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel when sorting an unsorted CSV, before deduping. When not set, the number of jobs is set to the number of CPUs detected. Does not work with --sorted option as its not multithreaded. |  |
 
 <a name="common-options"></a>
 
@@ -97,12 +97,12 @@ qsv dedup --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. That is, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-q,`<br>`--quiet` | flag | Do not print duplicate count to stderr. |  |
-| `--memcheck` | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. That is, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-q,`<br>`--quiet`&nbsp; | flag | Do not print duplicate count to stderr. |  |
+| &nbsp;`--memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
 
 ---
 **Source:** [`src/cmd/dedup.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/dedup.rs)

@@ -37,7 +37,7 @@ qsv headers --help
 
 | Argument | Description |
 |----------|-------------|
-| `<input>` | ...             The CSV file(s) to read. Use '-' for standard input. If input is a directory, all files in the directory will be read as input. If the input is a file with a '.infile-list' extension, the file will be read as a list of input files. If the input are snappy-compressed files(s), it will be decompressed automatically. |
+| &nbsp;`<input>`&nbsp; | ...             The CSV file(s) to read. Use '-' for standard input. If input is a directory, all files in the directory will be read as input. If the input is a file with a '.infile-list' extension, the file will be read as a list of input files. If the input are snappy-compressed files(s), it will be decompressed automatically. |
 
 <a name="headers-options"></a>
 
@@ -45,10 +45,10 @@ qsv headers --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-j,`<br>`--just-names` | flag | Only show the header names (hide column index). This is automatically enabled if more than one input is given. |  |
-| `-J,`<br>`--just-count` | flag | Only show the number of headers. |  |
-| `--intersect` | flag | Shows the intersection of all headers in all of the inputs given. |  |
-| `--trim` | flag | Trim space & quote characters from header name. |  |
+| &nbsp;`-j,`<br>`--just-names`&nbsp; | flag | Only show the header names (hide column index). This is automatically enabled if more than one input is given. |  |
+| &nbsp;`-J,`<br>`--just-count`&nbsp; | flag | Only show the number of headers. |  |
+| &nbsp;`--intersect`&nbsp; | flag | Shows the intersection of all headers in all of the inputs given. |  |
+| &nbsp;`--trim`&nbsp; | flag | Trim space & quote characters from header name. |  |
 
 <a name="common-options"></a>
 
@@ -56,8 +56,8 @@ qsv headers --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/headers.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/headers.rs)

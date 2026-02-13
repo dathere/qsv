@@ -98,9 +98,9 @@ qsv safenames --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--mode` | string | Rename header names to "safe" names - i.e. guaranteed "database-ready" names. It has six modes - conditional, always, verify, Verbose, with Verbose having two submodes - JSON & pretty JSON. | `Always` |
-| `--reserved` | string | Comma-delimited list of additional case-insensitive reserved names that should be considered "unsafe." If a header name is found in the reserved list, it will be prefixed with "reserved_". | `_id` |
-| `--prefix` | string | Certain systems do not allow header names to start with "_" (e.g. CKAN Datastore). This option allows the specification of the unsafe prefix to use when a header starts with "_". | `unsafe_` |
+| &nbsp;`--mode`&nbsp; | string | Rename header names to "safe" names - i.e. guaranteed "database-ready" names. It has six modes - conditional, always, verify, Verbose, with Verbose having two submodes - JSON & pretty JSON. | `Always` |
+| &nbsp;`--reserved`&nbsp; | string | Comma-delimited list of additional case-insensitive reserved names that should be considered "unsafe." If a header name is found in the reserved list, it will be prefixed with "reserved_". | `_id` |
+| &nbsp;`--prefix`&nbsp; | string | Certain systems do not allow header names to start with "_" (e.g. CKAN Datastore). This option allows the specification of the unsafe prefix to use when a header starts with "_". | `unsafe_` |
 
 <a name="common-options"></a>
 
@@ -108,9 +108,9 @@ qsv safenames --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. Note that no output is generated for Verify and Verbose modes. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. Note that no output is generated for Verify and Verbose modes. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/safenames.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/safenames.rs)

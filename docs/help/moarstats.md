@@ -260,13 +260,13 @@ qsv moarstats --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--advanced` | flag | Compute Kurtosis, Shannon Entropy, Bimodality Coefficient, Gini Coefficient and Atkinson Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing. |  |
-| `-e,`<br>`--epsilon` | string | The Atkinson Index Inequality Aversion parameter. Epsilon controls the sensitivity of the Atkinson Index to inequality. The higher the epsilon, the more sensitive the index is to inequality. Typical values are 0.5 (standard in economic research), 1.0 (natural boundary), or 2.0 (useful for poverty analysis). | `1.0` |
-| `--stats-options` | string | Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace. | `--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl` |
-| `--round` | string | Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule. | `4` |
-| `--use-percentiles` | flag | Use percentiles instead of Q1/Q3 for winsorization/trimming. Requires percentiles to be computed in the stats CSV. |  |
-| `--pct-thresholds` | string | Comma-separated percentile pair (e.g., "10,90") to use for winsorization/trimming when --use-percentiles is set. Both values must be between 0 and 100, and lower < upper. | `5,95` |
-| `--xsd-gdate-scan` | string | Gregorian XSD date type detection mode. "quick": Fast detection using min/max values. Produces types with ?? suffix (less confident). "thorough": Comprehensive detection checking all percentile values. Slower but ensures all values match the pattern. Produces types with ? suffix (more confident). | `quick` |
+| &nbsp;`--advanced`&nbsp; | flag | Compute Kurtosis, Shannon Entropy, Bimodality Coefficient, Gini Coefficient and Atkinson Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing. |  |
+| &nbsp;`-e,`<br>`--epsilon`&nbsp; | string | The Atkinson Index Inequality Aversion parameter. Epsilon controls the sensitivity of the Atkinson Index to inequality. The higher the epsilon, the more sensitive the index is to inequality. Typical values are 0.5 (standard in economic research), 1.0 (natural boundary), or 2.0 (useful for poverty analysis). | `1.0` |
+| &nbsp;`--stats-options`&nbsp; | string | Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace. | `--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl` |
+| &nbsp;`--round`&nbsp; | string | Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule. | `4` |
+| &nbsp;`--use-percentiles`&nbsp; | flag | Use percentiles instead of Q1/Q3 for winsorization/trimming. Requires percentiles to be computed in the stats CSV. |  |
+| &nbsp;`--pct-thresholds`&nbsp; | string | Comma-separated percentile pair (e.g., "10,90") to use for winsorization/trimming when --use-percentiles is set. Both values must be between 0 and 100, and lower < upper. | `5,95` |
+| &nbsp;`--xsd-gdate-scan`&nbsp; | string | Gregorian XSD date type detection mode. "quick": Fast detection using min/max values. Produces types with ?? suffix (less confident). "thorough": Comprehensive detection checking all percentile values. Slower but ensures all values match the pattern. Produces types with ? suffix (more confident). | `quick` |
 
 <a name="bivariate-statistics-options"></a>
 
@@ -274,13 +274,13 @@ qsv moarstats --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-B,`<br>`--bivariate` | flag | Enable bivariate statistics computation. Requires indexed CSV file (index will be auto-created if missing). Computes pairwise correlations, covariances, mutual information, and normalized mutual information between columns. The bivariate statistics |  |
-| `-S,`<br>`--bivariate-stats` | string | Comma-separated list of bivariate statistics to compute. Options: pearson, spearman, kendall, covariance, mi (mutual information), nmi (normalized mutual information) Use "all" to compute all statistics or "fast" to compute only pearson & covariance, which is much faster as it doesn't require storing all values and uses streaming algorithms. | `fast` |
-| `-C,`<br>`--cardinality-threshold` | string | Skip mutual information computation for field pairs where either field has cardinality exceeding this threshold. Helps avoid expensive computations for high-cardinality fields. | `1000000` |
-| `-J,`<br>`--join-inputs` | string | Additional datasets to join. Comma-separated list of CSV files to join with the primary input. e.g.: --join-inputs customers.csv,products.csv |  |
-| `-K,`<br>`--join-keys` | string | Join keys for each dataset. Comma-separated list of join key column names, one per dataset. Must specify same number of keys as datasets (primary + addl). e.g.: --join-keys customer_id,customer_id,product_id |  |
-| `-T,`<br>`--join-type` | string | Join type when using --join-inputs. Valid values: inner, left, right, full | `inner` |
-| `-p,`<br>`--progressbar` | flag | Show progress bars when computing bivariate statistics. |  |
+| &nbsp;`-B,`<br>`--bivariate`&nbsp; | flag | Enable bivariate statistics computation. Requires indexed CSV file (index will be auto-created if missing). Computes pairwise correlations, covariances, mutual information, and normalized mutual information between columns. The bivariate statistics |  |
+| &nbsp;`-S,`<br>`--bivariate-stats`&nbsp; | string | Comma-separated list of bivariate statistics to compute. Options: pearson, spearman, kendall, covariance, mi (mutual information), nmi (normalized mutual information) Use "all" to compute all statistics or "fast" to compute only pearson & covariance, which is much faster as it doesn't require storing all values and uses streaming algorithms. | `fast` |
+| &nbsp;`-C,`<br>`--cardinality-threshold`&nbsp; | string | Skip mutual information computation for field pairs where either field has cardinality exceeding this threshold. Helps avoid expensive computations for high-cardinality fields. | `1000000` |
+| &nbsp;`-J,`<br>`--join-inputs`&nbsp; | string | Additional datasets to join. Comma-separated list of CSV files to join with the primary input. e.g.: --join-inputs customers.csv,products.csv |  |
+| &nbsp;`-K,`<br>`--join-keys`&nbsp; | string | Join keys for each dataset. Comma-separated list of join key column names, one per dataset. Must specify same number of keys as datasets (primary + addl). e.g.: --join-keys customer_id,customer_id,product_id |  |
+| &nbsp;`-T,`<br>`--join-type`&nbsp; | string | Join type when using --join-inputs. Valid values: inner, left, right, full | `inner` |
+| &nbsp;`-p,`<br>`--progressbar`&nbsp; | flag | Show progress bars when computing bivariate statistics. |  |
 
 <a name="common-options"></a>
 
@@ -288,10 +288,10 @@ qsv moarstats --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--force` | flag | Force recomputing stats even if valid precomputed stats cache exists. |  |
-| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. This works only when the given CSV has an index. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of overwriting the stats CSV file. |  |
+| &nbsp;`--force`&nbsp; | flag | Force recomputing stats even if valid precomputed stats cache exists. |  |
+| &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. This works only when the given CSV has an index. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of overwriting the stats CSV file. |  |
 
 ---
 **Source:** [`src/cmd/moarstats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/moarstats.rs)

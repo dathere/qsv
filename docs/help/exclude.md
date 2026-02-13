@@ -110,8 +110,8 @@ qsv exclude --help
 
 | Argument | Description |
 |----------|-------------|
-| `<input1>` | is the file from which data will be removed. |
-| `<input2>` | is the file containing the data to be removed from <input1> e.g. 'qsv exclude id records.csv id previously-processed.csv' |
+| &nbsp;`<input1>`&nbsp; | is the file from which data will be removed. |
+| &nbsp;`<input2>`&nbsp; | is the file containing the data to be removed from <input1> e.g. 'qsv exclude id records.csv id previously-processed.csv' |
 
 <a name="exclude-options"></a>
 
@@ -119,8 +119,8 @@ qsv exclude --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-i,`<br>`--ignore-case` | flag | When set, matching is done case insensitively. |  |
-| `-v,`<br>`--invert` | flag | When set, matching rows will be the only ones included, forming set intersection, instead of the ones discarded. |  |
+| &nbsp;`-i,`<br>`--ignore-case`&nbsp; | flag | When set, matching is done case insensitively. |  |
+| &nbsp;`-v,`<br>`--invert`&nbsp; | flag | When set, matching rows will be the only ones included, forming set intersection, instead of the ones discarded. |  |
 
 <a name="common-options"></a>
 
@@ -128,10 +128,10 @@ qsv exclude --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/exclude.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/exclude.rs)

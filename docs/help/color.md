@@ -44,9 +44,9 @@ qsv color --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-C,`<br>`--color` | flag | Force color on, even in situations where colors would normally be disabled. |  |
-| `-n,`<br>`--row-numbers` | flag | Show row numbers. |  |
-| `-t,`<br>`--title` | string | Add a title row above the headers. |  |
+| &nbsp;`-C,`<br>`--color`&nbsp; | flag | Force color on, even in situations where colors would normally be disabled. |  |
+| &nbsp;`-n,`<br>`--row-numbers`&nbsp; | flag | Show row numbers. |  |
+| &nbsp;`-t,`<br>`--title`&nbsp; | string | Add a title row above the headers. |  |
 
 <a name="common-options"></a>
 
@@ -54,10 +54,10 @@ qsv color --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `--memcheck` | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`--memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
 
 ---
 **Source:** [`src/cmd/color.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/color.rs)

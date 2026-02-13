@@ -54,7 +54,7 @@ qsv snappy --help
 
 | Argument | Description |
 |----------|-------------|
-| `<input>` | The input file to compress/decompress. This can be a local file, stdin, or a URL (http and https schemes supported). |
+| &nbsp;`<input>`&nbsp; | The input file to compress/decompress. This can be a local file, stdin, or a URL (http and https schemes supported). |
 
 <a name="snappy-options"></a>
 
@@ -62,8 +62,8 @@ qsv snappy --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--user-agent` | string | Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
-| `--timeout` | string | Timeout for downloading URLs in seconds. | `60` |
+| &nbsp;`--user-agent`&nbsp; | string | Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
+| &nbsp;`--timeout`&nbsp; | string | Timeout for downloading URLs in seconds. | `60` |
 
 <a name="common-options"></a>
 
@@ -71,11 +71,11 @@ qsv snappy --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <output> instead of stdout. |  |
-| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel when compressing. When not set, its set to the number of CPUs - 1 |  |
-| `-q,`<br>`--quiet` | flag | Suppress status messages to stderr. |  |
-| `-p,`<br>`--progressbar` | flag | Show download progress bars. Only valid for URL input. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <output> instead of stdout. |  |
+| &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel when compressing. When not set, its set to the number of CPUs - 1 |  |
+| &nbsp;`-q,`<br>`--quiet`&nbsp; | flag | Suppress status messages to stderr. |  |
+| &nbsp;`-p,`<br>`--progressbar`&nbsp; | flag | Show download progress bars. Only valid for URL input. |  |
 
 ---
 **Source:** [`src/cmd/snappy.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/snappy.rs)

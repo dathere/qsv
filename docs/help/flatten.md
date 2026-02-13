@@ -37,9 +37,9 @@ qsv flatten --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-c,`<br>`--condense` | string | Limits the length of each field to the value specified. If the field is UTF-8 encoded, then <arg> refers to the number of code points. Otherwise, it refers to the number of bytes. |  |
-| `-f,`<br>`--field-separator` | string | A string of character to write between a column name and its value. |  |
-| `-s,`<br>`--separator` | string | A string of characters to write after each record. When non-empty, a new line is automatically appended to the separator. | `#` |
+| &nbsp;`-c,`<br>`--condense`&nbsp; | string | Limits the length of each field to the value specified. If the field is UTF-8 encoded, then <arg> refers to the number of code points. Otherwise, it refers to the number of bytes. |  |
+| &nbsp;`-f,`<br>`--field-separator`&nbsp; | string | A string of character to write between a column name and its value. |  |
+| &nbsp;`-s,`<br>`--separator`&nbsp; | string | A string of characters to write after each record. When non-empty, a new line is automatically appended to the separator. | `#` |
 
 <a name="common-options"></a>
 
@@ -47,9 +47,9 @@ qsv flatten --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. When set, the name of each field will be its index. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. When set, the name of each field will be its index. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/flatten.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/flatten.rs)

@@ -162,8 +162,8 @@ qsv json --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--jaq` | string | Filter JSON data using jaq syntax (<https://github.com/01mf02/jaq>), which is identical to the popular JSON command-line tool - jq. <https://jqlang.github.io/jq/> Note that the filter is applied BEFORE converting JSON to CSV |  |
-| `-s,`<br>`--select` | string | Select, reorder or drop columns for output. Otherwise, all the columns will be output in the same order as the first object's keys in the JSON data. See 'qsv select --help' for the full syntax. Note however that <cols> NEED to be a comma-delimited list of column NAMES and NOT column INDICES. | `1-` |
+| &nbsp;`--jaq`&nbsp; | string | Filter JSON data using jaq syntax (<https://github.com/01mf02/jaq>), which is identical to the popular JSON command-line tool - jq. <https://jqlang.github.io/jq/> Note that the filter is applied BEFORE converting JSON to CSV |  |
+| &nbsp;`-s,`<br>`--select`&nbsp; | string | Select, reorder or drop columns for output. Otherwise, all the columns will be output in the same order as the first object's keys in the JSON data. See 'qsv select --help' for the full syntax. Note however that <cols> NEED to be a comma-delimited list of column NAMES and NOT column INDICES. | `1-` |
 
 <a name="common-options"></a>
 
@@ -171,8 +171,8 @@ qsv json --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
 
 ---
 **Source:** [`src/cmd/json.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/json.rs)

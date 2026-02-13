@@ -228,8 +228,8 @@ qsv validate --help
 
 | Argument | Description |
 |----------|-------------|
-| `<input>` | ...                 Input CSV file(s) to validate. If not provided, will read from stdin. If input is a directory, all files in the directory will be validated. If the input is a file with a '.infile-list' extension, the file will be read as a list of input files. If the input are snappy-compressed files(s), it will be decompressed automatically. Extended Input Support is only available for RFC 4180 validation mode. |
-| `<json-schema>` | JSON Schema file to validate against. If not provided, `validate` will run in RFC 4180 validation mode. The file can be a local file or a URL (http and https schemes supported). |
+| &nbsp;`<input>`&nbsp; | ...                 Input CSV file(s) to validate. If not provided, will read from stdin. If input is a directory, all files in the directory will be validated. If the input is a file with a '.infile-list' extension, the file will be read as a list of input files. If the input are snappy-compressed files(s), it will be decompressed automatically. Extended Input Support is only available for RFC 4180 validation mode. |
+| &nbsp;`<json-schema>`&nbsp; | JSON Schema file to validate against. If not provided, `validate` will run in RFC 4180 validation mode. The file can be a local file or a URL (http and https schemes supported). |
 
 <a name="validate-options"></a>
 
@@ -237,16 +237,16 @@ qsv validate --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--trim` | flag | Trim leading and trailing whitespace from fields before validating. |  |
-| `--no-format-validation` | flag | Disable JSON Schema format validation. Ignores all JSON Schema "format" keywords (e.g. date,email, uri, currency, etc.). This is useful when you want to validate the structure of the CSV file w/o worrying about the data types and domain/range of the fields. |  |
-| `--fail-fast` | flag | Stops on first error. |  |
-| `--valid` | string | Valid record output file suffix. | `valid` |
-| `--invalid` | string | Invalid record output file suffix. | `invalid` |
-| `--json` | flag | When validating without a JSON Schema, return the RFC 4180 check as a JSON file instead of a message. |  |
-| `--pretty-json` | flag | Same as --json, but pretty printed. |  |
-| `--valid-output` | string | Change validation mode behavior so if ALL rows are valid, to pass it to output, return exit code 1, and set stderr to the number of valid rows. Setting this will override the default behavior of creating a valid file only when there are invalid records. To send valid records to stdout, use `-` as the filename. |  |
-| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `-b,`<br>`--batch` | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
+| &nbsp;`--trim`&nbsp; | flag | Trim leading and trailing whitespace from fields before validating. |  |
+| &nbsp;`--no-format-validation`&nbsp; | flag | Disable JSON Schema format validation. Ignores all JSON Schema "format" keywords (e.g. date,email, uri, currency, etc.). This is useful when you want to validate the structure of the CSV file w/o worrying about the data types and domain/range of the fields. |  |
+| &nbsp;`--fail-fast`&nbsp; | flag | Stops on first error. |  |
+| &nbsp;`--valid`&nbsp; | string | Valid record output file suffix. | `valid` |
+| &nbsp;`--invalid`&nbsp; | string | Invalid record output file suffix. | `invalid` |
+| &nbsp;`--json`&nbsp; | flag | When validating without a JSON Schema, return the RFC 4180 check as a JSON file instead of a message. |  |
+| &nbsp;`--pretty-json`&nbsp; | flag | Same as --json, but pretty printed. |  |
+| &nbsp;`--valid-output`&nbsp; | string | Change validation mode behavior so if ALL rows are valid, to pass it to output, return exit code 1, and set stderr to the number of valid rows. Setting this will override the default behavior of creating a valid file only when there are invalid records. To send valid records to stdout, use `-` as the filename. |  |
+| &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`-b,`<br>`--batch`&nbsp; | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
 
 <a name="fancy-regex-options"></a>
 
@@ -254,8 +254,8 @@ qsv validate --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--fancy-regex` | flag | Use the fancy regex engine instead of the default regex engine for validation. The fancy engine supports advanced regex features such as lookaround and backreferences, but is not as performant as the default regex engine which guarantees linear-time matching, prevents DoS attacks, and is more efficient for simple patterns. |  |
-| `--backtrack-limit` | string | Set the approximate number of backtracking steps allowed. This is only used when --fancy-regex is set. | `1000000` |
+| &nbsp;`--fancy-regex`&nbsp; | flag | Use the fancy regex engine instead of the default regex engine for validation. The fancy engine supports advanced regex features such as lookaround and backreferences, but is not as performant as the default regex engine which guarantees linear-time matching, prevents DoS attacks, and is more efficient for simple patterns. |  |
+| &nbsp;`--backtrack-limit`&nbsp; | string | Set the approximate number of backtracking steps allowed. This is only used when --fancy-regex is set. | `1000000` |
 
 <a name="options-for-both-regex-engines"></a>
 
@@ -263,12 +263,12 @@ qsv validate --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--size-limit` | string | Set the approximate size limit, in megabytes, of a compiled regex. | `50` |
-| `--dfa-size-limit` | string | Set the approximate capacity, in megabytes, of the cache of transitions used by the engine's lazy Discrete Finite Automata. | `10` |
-| `--timeout` | string | Timeout for downloading json-schemas on URLs and for 'dynamicEnum' lookups on URLs. If 0, no timeout is used. | `30` |
-| `--cache-dir` | string | The directory to use for caching downloaded dynamicEnum resources. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. Not available on qsvlite. | `~/.qsv-cache` |
-| `--ckan-api` | string | The URL of the CKAN API to use for downloading dynamicEnum resources with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. Not available on qsvlite. | `https://data.dathere.com/api/3/action` |
-| `--ckan-token` | string | The CKAN API token to use. Only required if downloading private resources. If the QSV_CKAN_TOKEN envvar is set, it will be used instead. Not available on qsvlite. |  |
+| &nbsp;`--size-limit`&nbsp; | string | Set the approximate size limit, in megabytes, of a compiled regex. | `50` |
+| &nbsp;`--dfa-size-limit`&nbsp; | string | Set the approximate capacity, in megabytes, of the cache of transitions used by the engine's lazy Discrete Finite Automata. | `10` |
+| &nbsp;`--timeout`&nbsp; | string | Timeout for downloading json-schemas on URLs and for 'dynamicEnum' lookups on URLs. If 0, no timeout is used. | `30` |
+| &nbsp;`--cache-dir`&nbsp; | string | The directory to use for caching downloaded dynamicEnum resources. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. Not available on qsvlite. | `~/.qsv-cache` |
+| &nbsp;`--ckan-api`&nbsp; | string | The URL of the CKAN API to use for downloading dynamicEnum resources with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. Not available on qsvlite. | `https://data.dathere.com/api/3/action` |
+| &nbsp;`--ckan-token`&nbsp; | string | The CKAN API token to use. Only required if downloading private resources. If the QSV_CKAN_TOKEN envvar is set, it will be used instead. Not available on qsvlite. |  |
 
 <a name="email-validation-options"></a>
 
@@ -276,10 +276,10 @@ qsv validate --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--email-required-tld` | flag | Require the email to have a valid Top-Level Domain (TLD) (e.g. .com, .org, .net, etc.). e.g. "john.doe@example" is VALID if this option is NOT set. |  |
-| `--email-display-text` | flag | Allow display text in emails. e.g. "John Doe <john.doe@example.com>" is INVALID if this option is NOT set. |  |
-| `--email-min-subdomains` | string | Minimum number of subdomains required in the email. e.g. "jdoe@example.com" is INVALID if this option is set to 3, but "jdoe@sub.example.com" is VALID. | `2` |
-| `--email-domain-literal` | flag | Allow domain literals in emails. e.g. "john.doe@[127.0.0.1]" is VALID if this option is set. |  |
+| &nbsp;`--email-required-tld`&nbsp; | flag | Require the email to have a valid Top-Level Domain (TLD) (e.g. .com, .org, .net, etc.). e.g. "john.doe@example" is VALID if this option is NOT set. |  |
+| &nbsp;`--email-display-text`&nbsp; | flag | Allow display text in emails. e.g. "John Doe <john.doe@example.com>" is INVALID if this option is NOT set. |  |
+| &nbsp;`--email-min-subdomains`&nbsp; | string | Minimum number of subdomains required in the email. e.g. "jdoe@example.com" is INVALID if this option is set to 3, but "jdoe@sub.example.com" is VALID. | `2` |
+| &nbsp;`--email-domain-literal`&nbsp; | flag | Allow domain literals in emails. e.g. "john.doe@[127.0.0.1]" is VALID if this option is set. |  |
 
 <a name="common-options"></a>
 
@@ -287,11 +287,11 @@ qsv validate --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. It will be validated with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. Note that this option is only valid when running in RFC 4180 validation mode as JSON Schema validation requires headers. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. |  |
-| `-p,`<br>`--progressbar` | flag | Show progress bars. Not valid for stdin. |  |
-| `-q,`<br>`--quiet` | flag | Do not display validation summary message. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. It will be validated with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. Note that this option is only valid when running in RFC 4180 validation mode as JSON Schema validation requires headers. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. |  |
+| &nbsp;`-p,`<br>`--progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |
+| &nbsp;`-q,`<br>`--quiet`&nbsp; | flag | Do not display validation summary message. |  |
 
 ---
 **Source:** [`src/cmd/validate.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/validate.rs)

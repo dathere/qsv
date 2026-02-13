@@ -38,9 +38,9 @@ qsv jsonl --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--ignore-errors` | flag | Skip malformed input lines. |  |
-| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `-b,`<br>`--batch` | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
+| &nbsp;`--ignore-errors`&nbsp; | flag | Skip malformed input lines. |  |
+| &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`-b,`<br>`--batch`&nbsp; | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
 
 <a name="common-options"></a>
 
@@ -48,9 +48,9 @@ qsv jsonl --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-d,`<br>`--delimiter` | string | The delimiter to use when writing CSV data. Must be a single character. | `,` |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The delimiter to use when writing CSV data. Must be a single character. | `,` |
 
 ---
 **Source:** [`src/cmd/jsonl.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/jsonl.rs)

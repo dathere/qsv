@@ -46,12 +46,12 @@ qsv extdedup --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-s,`<br>`--select` | string | Select a subset of columns to dedup. Note that the outputs will remain at the full width of the CSV. If --select is NOT set, extdedup will work in LINE MODE, deduping the input as a text file on a line-by-line basis. |  |
-| `--no-output` | flag | Do not write deduplicated output to <output>. Use this if you only want to know the duplicate count. |  |
-| `-D,`<br>`--dupes-output` | string | Write duplicates to <file>. Note that the file will NOT be a valid CSV. It is a list of duplicate lines, with the row number of the duplicate separated by a tab from the duplicate line itself. |  |
-| `-H,`<br>`--human-readable` | flag | Comma separate duplicate count. |  |
-| `--memory-limit` | string | The maximum amount of memory to buffer the on-disk hash table. If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory. | `10` |
-| `--temp-dir` | string | Directory to store temporary hash table file. If not specified, defaults to operating system temp directory. |  |
+| &nbsp;`-s,`<br>`--select`&nbsp; | string | Select a subset of columns to dedup. Note that the outputs will remain at the full width of the CSV. If --select is NOT set, extdedup will work in LINE MODE, deduping the input as a text file on a line-by-line basis. |  |
+| &nbsp;`--no-output`&nbsp; | flag | Do not write deduplicated output to <output>. Use this if you only want to know the duplicate count. |  |
+| &nbsp;`-D,`<br>`--dupes-output`&nbsp; | string | Write duplicates to <file>. Note that the file will NOT be a valid CSV. It is a list of duplicate lines, with the row number of the duplicate separated by a tab from the duplicate line itself. |  |
+| &nbsp;`-H,`<br>`--human-readable`&nbsp; | flag | Comma separate duplicate count. |  |
+| &nbsp;`--memory-limit`&nbsp; | string | The maximum amount of memory to buffer the on-disk hash table. If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory. | `10` |
+| &nbsp;`--temp-dir`&nbsp; | string | Directory to store temporary hash table file. If not specified, defaults to operating system temp directory. |  |
 
 <a name="csv-mode-only-options"></a>
 
@@ -59,10 +59,10 @@ qsv extdedup --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. That is, it will be deduped with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-q,`<br>`--quiet` | flag | Do not print duplicate count to stderr. |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. That is, it will be deduped with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-q,`<br>`--quiet`&nbsp; | flag | Do not print duplicate count to stderr. |  |
 
 ---
 **Source:** [`src/cmd/extdedup.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/extdedup.rs)

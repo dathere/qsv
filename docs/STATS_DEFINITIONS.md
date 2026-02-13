@@ -29,9 +29,16 @@
     - [Outlier Variance/Spread Statistics](#outlier-variancespread-statistics)
     - [Outlier Impact Statistics](#outlier-impact-statistics)
     - [Outlier Boundary Statistics](#outlier-boundary-statistics)
+- [pragmastat](#pragmastat)
+  - [One-Sample Mode (Default)](#one-sample-mode-default)
+  - [Two-Sample Mode](#two-sample-mode)
+  - [Options](#options)
+  - [When Values Are Blank](#when-values-are-blank)
 - [frequency](#frequency)
   - [Frequency Table Output](#frequency-table-output)
   - [Ranking Strategies](#ranking-strategies)
+  - [NULL Handling](#null-handling)
+  - [Column Filtering](#column-filtering)
   - [Weighted Frequencies](#weighted-frequencies)
   - [Stats Cache Integration](#stats-cache-integration)
   - [JSON/TOON Output](#jsontoon-output)
@@ -46,7 +53,7 @@ Each statistic is categorized by its relevant section, with its identifier (colu
 
 > **Note**: "Streaming" statistics are computed in constant memory. "Non-Streaming" statistics require loading the column data into memory (or multiple passes) and may use approximation or exact calculation depending on configuration.
 
-**Important:** Unlike the `sniff` command, `stats` data type inferences are **GUARANTEED**, as the entire file is scanned, not just sampled. This makes `stats` a central command in qsv that underpins other "smart" commands (`frequency`, `pivotp`, `sample`, `schema`, `validate`, `tojsonl`, `sqlp`, `joinp`) which use cached statistical information to work smarter & faster.
+**Important:** Unlike the `sniff` command, `stats` data type inferences are **GUARANTEED**, as the entire file is scanned, not just sampled. This makes `stats` a central command in qsv that underpins other "smart" commands (`describegpt`, `frequency`, `joinp`, `pivotp`, `schema`, `sqlp`, `tojsonl`) which use cached statistical information to work smarter & faster.
 
 The command supports various caching options to improve performance on subsequent runs. See `--stats-jsonl` and `--cache-threshold` options for details.
 
@@ -97,8 +104,9 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 - Mean, geometric mean, and harmonic mean for dates/datetimes are returned in RFC3339 format
 
 **Date Column Selection:**
-- By default, only columns with names containing patterns from `--dates-whitelist` are checked (default: `date,time,due,open,close,created`)
-- **Examples of column names that trigger date inference:** "start_date", "Observation Time", "timestamp", "Date Closed"
+- By default, `--dates-whitelist` is set to `sniff`, which uses two-stage date inferencing: first runs `qsv sniff` on the input file, then only infers dates for the columns that sniff identifies as date/datetime candidates. This is much faster than `all`, and more convenient than manually specifying patterns in the whitelist
+- Alternatively, set `--dates-whitelist` to a comma-separated, case-insensitive list of patterns to match against column names (e.g., `date,time,due,open,close,created`). Only columns whose names contain one of the patterns will be checked
+- **Examples of column names that trigger date inference** (with a manual whitelist like `date,time,due,open,close,created`): "start_date", "Observation Time", "timestamp", "Date Closed"
 - **Examples that do NOT trigger:** "start_dt", "create_dt", "tmstmp", "close_dt" (unless added to whitelist)
 - Use `--dates-whitelist all` to inspect all fields (may cause false positives with numeric data like Unix epoch timestamps)
 - Use `--prefer-dmy` to parse dates in day/month/year format instead of month/day/year
@@ -236,9 +244,14 @@ When stats are cached, the `.stats.csv.json` file includes file-level metadata t
 
 | Field | Description | Computation |
 |:---|:---|:---|
+| `canonical_input_path` | Canonical path to the input file. | Filesystem canonical (absolute) path. |
+| `canonical_stats_path` | Canonical path to the stats output file. | Filesystem canonical (absolute) path. |
 | `record_count` | Total number of rows (records). | Count of records processed (excluding header). |
 | `field_count` | Total number of columns. | Count of fields in the header/first record. |
 | `filesize_bytes` | Total file size in bytes. | Filesystem metadata size. |
+| `date_generated` | When the stats were generated. | RFC3339 timestamp (UTC). |
+| `compute_duration_ms` | Time taken to compute stats. | Elapsed wall-clock time in milliseconds. |
+| `qsv_version` | Version of qsv used to generate stats. | `CARGO_PKG_VERSION` at compile time. Used for cache invalidation when qsv is upgraded. |
 | `hash.blake3` | BLAKE3 fingerprint hash of the dataset's stats. | BLAKE3 hash of the first 26 columns ("streaming" stats) + dataset stats (record_count, field_count, filesize_bytes). This allows users to quickly detect duplicate files without having to load the entire file to compute the hash. Especially useful for detecting duplicates of very large files with pre-existing stats cache metadata. |
 
 ### Whitespace Visualization
@@ -266,11 +279,11 @@ The following whitespace markers are used (as defined in the [Rust reference](ht
 
 ### Performance & Caching
 
-The `stats` command is central to qsv and underpins other "smart" commands (`frequency`, `pivotp`, `sample`, `schema`, `validate`, `tojsonl`, `sqlp`, `joinp`) that use cached statistical information to work smarter & faster.
+The `stats` command is central to qsv and underpins other "smart" commands (`describegpt`, `frequency`, `joinp`, `pivotp`, `schema`, `sqlp`, `tojsonl`) that use cached statistical information to work smarter & faster.
 
 **Caching Behavior:**
 - Statistics are cached in `<FILESTEM>.stats.csv` and optionally `<FILESTEM>.stats.csv.data.jsonl` (with `--stats-jsonl`)
-- The arguments used to generate cached stats are saved in `<FILESTEM>.stats.csv.json`
+- The arguments and file-level metadata used to generate cached stats are saved in `<FILESTEM>.stats.csv.json`
 - If stats have already been computed with similar arguments and the file hasn't changed, stats are loaded from cache instead of recomputing
 - Use `--force` to force recomputing stats even if valid cache exists
 - Use `--cache-threshold` to control caching behavior (default: 5000ms)
@@ -288,7 +301,7 @@ The `moarstats` command extends an existing stats CSV file (created by the `stat
 
 **How it works:**
 - Looks for `<FILESTEM>.stats.csv` for a given CSV input
-- If the stats CSV file doesn't exist, it will first run the `stats` command with configurable options (via `--stats-options`) to establish baseline stats
+- If the stats CSV file doesn't exist, it will first run the `stats` command with configurable options (via `--stats-options`, default: `--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl`) to establish baseline stats
 - If the `.stats.csv` file is found, it skips running stats and just appends the additional stats columns
 - Statistics are rounded using Bankers Rounding (Midpoint Nearest Even) to the specified number of decimal places (default: 4, configurable with `--round`)
 - Uses parallel processing when an index is available for large files
@@ -466,6 +479,70 @@ See: [Outlier](https://en.wikipedia.org/wiki/Outlier)
 | `lower_outer_fence_zscore` | Variable | Z-score of the lower outer fence boundary. | `(lower_outer_fence - mean) / stddev`. Shows how extreme the lower outlier boundary is relative to the distribution. Returns `None` if stddev is zero. |
 | `upper_outer_fence_zscore` | Variable | Z-score of the upper outer fence boundary. | `(upper_outer_fence - mean) / stddev`. Shows how extreme the upper outlier boundary is relative to the distribution. Returns `None` if stddev is zero. |
 
+## `pragmastat`
+
+The `pragmastat` command computes robust, median-of-pairwise statistics using the [Pragmastat library](https://pragmastat.dev/) (v8.0.0). Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
+
+Sourced from `src/cmd/pragmastat.rs`.
+
+**Key Features:**
+- Only finite numeric values are used; non-numeric/NaN/Inf values are ignored
+- Each column is treated as its own sample (two-sample compares columns, not rows)
+- Non-numeric columns appear with n=0 and empty estimator cells
+- Loads all numeric values into memory
+
+### One-Sample Mode (Default)
+
+Output columns: `field, n, center, spread, rel_spread, center_lower, center_upper`
+
+| Identifier | Level | Summary | Computation |
+|:---|:---:|:---|:---|
+| `field` | Variable | Column name (or 1-based index if `--no-headers`). | From CSV header. |
+| `n` | Variable | Count of finite numeric values. | Count after filtering non-numeric, NaN, Inf. |
+| `center` | Variable | Hodges-Lehmann estimator — robust location. | Median of pairwise averages. Tolerates up to 29% corrupted data. Like the mean but stable with outliers. |
+| `spread` | Variable | Shamos estimator — robust dispersion. | Median of pairwise absolute differences. Same units as data. Also tolerates up to 29% corrupted data. |
+| `rel_spread` | Variable | Relative dispersion. | `spread / center`. Dimensionless robust coefficient of variation; compares variability across scales. Requires all values > 0. |
+| `center_lower` | Variable | Lower confidence bound for center. | Exact under weak symmetry, with error rate = misrate. |
+| `center_upper` | Variable | Upper confidence bound for center. | Exact under weak symmetry, with error rate = misrate. |
+
+### Two-Sample Mode
+
+Enabled with the `--twosample` option. Computes statistics for all unordered column pairs.
+
+Output columns: `field_x, field_y, n_x, n_y, shift, ratio, avg_spread, disparity, shift_lower, shift_upper, ratio_lower, ratio_upper`
+
+| Identifier | Level | Summary | Computation |
+|:---|:---:|:---|:---|
+| `field_x`, `field_y` | Pairwise | Column names being compared. | From CSV header. |
+| `n_x`, `n_y` | Pairwise | Counts of finite numeric values. | Per-column counts after filtering non-numeric/NaN/Inf. |
+| `shift` | Pairwise | Hodges-Lehmann difference — robust location difference. | Median of pairwise differences between columns. Negative means first column tends to be lower. |
+| `ratio` | Pairwise | Robust multiplicative ratio. | `exp(shift(log x, log y))`. Use for positive-valued quantities (latency, price, concentration). Requires all values > 0. |
+| `avg_spread` | Pairwise | Pooled robust dispersion. | Weighted by sample sizes. Note: this is pooled scale, not Spread(x union y). |
+| `disparity` | Pairwise | Effect size (robust Cohen's d). | `shift / avg_spread`. |
+| `shift_lower`, `shift_upper` | Pairwise | Confidence bounds for shift. | Error rate = misrate. If bounds exclude 0, the difference is reliable. Ties may be conservative. |
+| `ratio_lower`, `ratio_upper` | Pairwise | Confidence bounds for ratio. | Error rate = misrate. If bounds exclude 1, the difference is reliable. Ties may be conservative. |
+
+### Options
+
+| Option | Default | Description |
+|:---|:---|:---|
+| `--twosample` / `-t` | off | Compute two-sample estimators for all column pairs. |
+| `--select <cols>` / `-s` | all columns | Select columns for analysis using qsv's column selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed. |
+| `--misrate <n>` / `-m` | `0.001` | Probability that bounds fail to contain the true parameter. Lower values produce wider bounds. Must be achievable for the given sample size. Use `1e-3` for everyday analysis or `1e-6` for critical decisions. |
+| `--output <file>` / `-o` | stdout | Write output to file instead of stdout. |
+| `--delimiter <c>` / `-d` | `,` | Field delimiter for reading/writing CSV data. |
+| `--no-headers` / `-n` | off | When set, the first row will not be treated as headers. |
+
+### When Values Are Blank
+
+Cells are empty (blank) when:
+- **No numeric data (n=0):** The column contains no finite numeric values
+- **Positivity required:** `rel_spread`, `ratio`, `ratio_lower`, and `ratio_upper` require all values > 0
+- **Sparity required:** `spread`, `avg_spread`, and `disparity` need real variability (not tie-dominant data)
+- **Insufficient data for bounds:** `center_lower`, `center_upper`, `shift_lower`, `shift_upper` need enough data for the requested misrate; try a higher misrate or more data
+
+See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/releases/download/v8.0.0/pragmastat-v8.0.0.pdf), [pragmastat.dev](https://pragmastat.dev/)
+
 ## `frequency`
 
 The `frequency` command computes exact frequency distribution tables for CSV columns, with support for multiple output formats, ranking strategies, and weighted frequencies.
@@ -501,10 +578,15 @@ In CSV output mode (default), the table is formatted as CSV data with the follow
 | `percentage` | Percentage of total (count/total * 100) |
 | `rank` | Rank based on count (1 = most frequent, or least frequent if `--asc` is used) |
 
+**Formatting Options:**
+- `--pct-dec-places <arg>` — decimal places for percentage rounding (default: -5). When negative, the number of decimal places is automatically determined to the minimum needed to represent the percentage accurately, up to the absolute value of the negative number.
+- `--no-trim` — don't trim whitespace from values when computing frequencies. By default, leading and trailing whitespace is trimmed.
+- `--vis-whitespace` — visualize whitespace characters in the output using the same markers as `stats` (see [Whitespace Visualization](#whitespace-visualization)).
+
 **Special Values:**
 - `<ALL_UNIQUE>` (configurable via `--all-unique-text`): For ID columns detected via stats cache, indicates all values are unique. Count equals row count, percentage is 100%, rank is 0.
-- `Other (N)` (configurable via `--other-text`): When `--limit` is used, remaining values are grouped into this category. N indicates the count of unique values grouped. Rank is 0.
-- `(NULL)` (configurable via `--null-text`): Represents empty/missing values. Can be excluded with `--no-nulls`.
+- `Other (N)` (configurable via `--other-text`, default: `Other`): When `--limit` is used, remaining values are grouped into this category. N indicates the count of unique values grouped. Rank is 0. Use `--no-other` (alias for `--other-text "<NONE>"`) to exclude the "Other" category entirely.
+- `(NULL)` (configurable via `--null-text`, default: `(NULL)`): Represents empty/missing values. Can be excluded with `--no-nulls` (alias for `--null-text "<NONE>"`).
 
 **Limit Behavior:**
 - `--limit N` (positive): Keep only top N most frequent values
@@ -532,6 +614,26 @@ The `--rank-strategy` option controls how ranks are assigned when multiple value
 
 **Note:** Tied values with the same rank are sorted alphabetically within their rank group.
 
+### NULL Handling
+
+The frequency command provides several options for controlling how NULL (empty) values are handled:
+
+| Option | Default | Description |
+|:---|:---|:---|
+| `--null-text <arg>` | `(NULL)` | Customize the display text for NULL values. Set to `<NONE>` to exclude NULLs entirely. |
+| `--no-nulls` | off | Don't include NULLs in the frequency table. Alias for `--null-text "<NONE>"`. |
+| `--null-sorted` | off | Sort NULL entries with other values by count instead of placing them at the end of the frequency table (after "Other" if present). |
+| `--pct-nulls` | off | Include NULL values in percentage and rank calculations. When disabled (default), percentages are "valid percentages" with NULLs excluded from the denominator, and NULL entries display empty percentage and rank values. When enabled, NULLs are included in the denominator (original behavior). Has no effect when `--no-nulls` is set. |
+
+### Column Filtering
+
+The frequency command supports filtering columns from the frequency analysis:
+
+| Option | Description |
+|:---|:---|
+| `--no-float <cols>` | Exclude Float columns from frequency analysis. Floats typically contain continuous values where frequency tables are not meaningful. Use `--no-float "*"` to exclude ALL Float columns, or specify a comma-separated list of Float columns to INCLUDE as exceptions (e.g., `--no-float price,rate` excludes all Floats except "price" and "rate"). Requires stats cache for type detection. |
+| `--stats-filter <expr>` | Filter columns based on their statistics using a Luau expression. Columns where the expression evaluates to `true` are EXCLUDED. Available fields include: `field`, `type`, `is_ascii`, `cardinality`, `nullcount`, `sum`, `min`, `max`, `range`, `sort_order`, `min_length`, `max_length`, `mean`, `stddev`, `variance`, `cv`, `sparsity`, `q1`, `q2_median`, `q3`, `iqr`, `mad`, `skewness`, `mode`, `antimode`, `n_negative`, `n_zero`, `n_positive`, etc. Examples: `"nullcount > 1000"`, `"type == 'Float'"`, `"cardinality > 500 and nullcount > 0"`. Requires stats cache and the `luau` feature. |
+
 ### Weighted Frequencies
 
 When the `--weight <column>` option is specified, frequency counts are multiplied by the weight value for each row.
@@ -539,8 +641,9 @@ When the `--weight <column>` option is specified, frequency counts are multiplie
 **Weight Handling:**
 - Weight column must be numeric
 - Weight column is automatically excluded from frequency computation
-- Missing or non-numeric weights default to 1.0
+- Missing or unparsable weights default to 1.0
 - Zero, negative, NaN, and infinite weights are ignored and do not contribute to frequencies
+- Weight tolerance calculation uses stats cache (stddev/range/mean) for scale-aware tolerance when available
 
 **Output:**
 - Count column shows weighted sum (displayed as rounded integer)
@@ -634,7 +737,7 @@ When `--no-stats` is NOT set, JSON output includes 17 additional statistics per 
 
 ### Memory-Aware Processing
 
-The frequency command uses memory-aware chunking for large datasets to avoid out-of-memory errors.
+The frequency command defaults to memory-aware chunking for large datasets to avoid out-of-memory errors. Unlike `stats` (which may default to CPU-based chunking), frequency’s default strategy is memory-aware because it builds hash tables that benefit from predictable memory usage. However, it can be explicitly configured to use CPU-based chunking via `QSV_FREQ_CHUNK_MEMORY_MB = -1`.
 
 **Chunking Behavior:**
 - Automatically enabled for indexed files

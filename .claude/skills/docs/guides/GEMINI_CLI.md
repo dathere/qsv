@@ -52,6 +52,7 @@ By using the `${PWD}` template variable, you can configure `qsv` once in your gl
       "command": "node",
       "args": ["/absolute/path/to/qsv/.claude/skills/dist/mcp-server.js"],
       "env": {
+        "QSV_MCP_PLUGIN_MODE": "true",
         "QSV_MCP_WORKING_DIR": "${PWD}",
         "QSV_MCP_ALLOWED_DIRS": "${PWD}"
       }
@@ -76,6 +77,7 @@ If you want to isolate a specific project or restrict access to a particular dat
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
+| `QSV_MCP_PLUGIN_MODE` | Set to `true` to enable plugin mode (relaxed directory security). **Required for Gemini CLI** since it doesn't set `CLAUDE_PLUGIN_ROOT`. | Unset (auto-detect) |
 | `QSV_MCP_BIN_PATH` | Path to the `qsv` executable. | Auto-detected |
 | `QSV_MCP_WORKING_DIR` | The directory where files are read from. Use `${PWD}` for auto-mapping. | `${PWD}` |
 | `QSV_MCP_ALLOWED_DIRS` | A security list (colon-separated) of permitted directories. | Working Dir |

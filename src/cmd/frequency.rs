@@ -186,12 +186,14 @@ frequency options:
                             of rowcount) get a single HIGH_CARDINALITY sentinel.
     --high-card-threshold <arg>  Absolute cardinality threshold for HIGH_CARDINALITY
                             classification in the frequency cache.
-                            Can also be set with QSV_FREQ_HIGH_CARD_THRESHOLD env var.
+                            Can also be set with QSV_FREQ_HIGH_CARD_THRESHOLD env var
+                            (env var takes precedence when CLI value equals the default).
                             Only used with --frequency-jsonl.
                             [default: 1000]
     --high-card-pct <arg>   Percentage of rowcount threshold for HIGH_CARDINALITY
-                            classification in the frequency cache.
-                            Can also be set with QSV_FREQ_HIGH_CARD_PCT env var.
+                            classification in the frequency cache. Must be between 1 and 100.
+                            Can also be set with QSV_FREQ_HIGH_CARD_PCT env var
+                            (env var takes precedence when CLI value equals the default).
                             Only used with --frequency-jsonl.
                             [default: 90]
 
@@ -583,6 +585,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let is_stdin = rconfig.is_stdin();
 
+    // Validate --frequency-jsonl early, before any computation
+    if args.flag_frequency_jsonl && is_stdin {
+        return fail_clierror!("--frequency-jsonl requires a file input, not stdin.");
+    }
+
     // if stdin and args.flag_json is true, save stdin to tempfile
     // so we can derive stats
     let mut stdin_temp_file;
@@ -683,6 +690,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         {
             args.flag_high_card_pct = parsed;
         }
+
+        // Validate --high-card-pct is in range 1-100
+        if args.flag_high_card_pct == 0 || args.flag_high_card_pct > 100 {
+            return fail_incorrectusage_clierror!(
+                "--high-card-pct must be between 1 and 100, got {}.",
+                args.flag_high_card_pct
+            );
+        }
     }
 
     let (headers, tables, weighted_tables) = if let Some(idx) = indexed_result
@@ -695,9 +710,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Write frequency cache if --frequency-jsonl is set
     if args.flag_frequency_jsonl {
-        if is_stdin {
-            return fail_clierror!("--frequency-jsonl requires a file input, not stdin.");
-        }
         args.write_frequency_jsonl(&headers, &tables, &rconfig)?;
     }
 
@@ -1346,9 +1358,15 @@ impl Args {
         // Build cache path: <FILESTEM>.freq.csv.data.jsonl
         let freq_jsonl_path = path.with_extension("freq.csv.data.jsonl");
 
-        // safety: these OnceLocks are set in sel_headers -> get_unique_headers
-        let unique_headers = UNIQUE_COLUMNS_VEC.get().unwrap();
+        static EMPTY_USIZE_VEC: Vec<usize> = Vec::new();
+        let unique_headers = UNIQUE_COLUMNS_VEC.get().unwrap_or(&EMPTY_USIZE_VEC);
         let row_count = *FREQ_ROW_COUNT.get().unwrap_or(&0);
+        if row_count == 0 {
+            log::warn!(
+                "--frequency-jsonl: row count is 0, skipping frequency cache (no data to cache)"
+            );
+            return Ok(());
+        }
         let col_cardinality = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
 
         // Compute HIGH_CARDINALITY effective threshold

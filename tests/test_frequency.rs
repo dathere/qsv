@@ -4677,3 +4677,155 @@ fn frequency_jsonl_normal_output_unchanged() {
 
     assert_eq!(got1, got2, "stdout output should be identical with or without --frequency-jsonl");
 }
+
+#[test]
+fn frequency_jsonl_no_headers() {
+    let wrk = Workdir::new("frequency_jsonl_no_headers");
+    let rows = vec![
+        svec!["Alice", "red"],
+        svec!["Bob", "blue"],
+        svec!["Alice", "red"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache (with --no-headers)
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl")
+        .arg("--no-headers");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .arg("--no-headers");
+
+    wrk.assert_success(&mut cmd);
+
+    // Verify JSONL cache file was created
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(jsonl_path.exists(), "JSONL cache file should exist");
+
+    let contents = std::fs::read_to_string(&jsonl_path).unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+    assert_eq!(lines.len(), 2, "Should have one line per column");
+
+    // With --no-headers, field names should be 1-based indices
+    let entry1: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(entry1["field"], "1");
+    let entry2: Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(entry2["field"], "2");
+}
+
+#[test]
+fn frequency_jsonl_empty_file() {
+    let wrk = Workdir::new("frequency_jsonl_empty_file");
+    // Create a file with only headers, no data rows
+    let rows = vec![svec!["h1", "h2"]];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").arg("--frequency-jsonl");
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn frequency_jsonl_high_card_pct_invalid() {
+    // --high-card-pct of 0 should error
+    let wrk = Workdir::new("frequency_jsonl_high_card_pct_zero");
+    let rows = vec![svec!["h1"], svec!["a"], svec!["b"]];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .args(["--high-card-pct", "0"]);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn frequency_jsonl_high_card_pct_over_100() {
+    // --high-card-pct > 100 should error
+    let wrk = Workdir::new("frequency_jsonl_high_card_pct_over_100");
+    let rows = vec![svec!["h1"], svec!["a"], svec!["b"]];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .args(["--high-card-pct", "101"]);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn frequency_jsonl_high_card_at_threshold() {
+    // Test cardinality exactly at the threshold boundary
+    let wrk = Workdir::new("frequency_jsonl_high_card_at_threshold");
+
+    // Create dataset: 10 rows, category has cardinality exactly 5
+    let mut rows = vec![svec!["id", "category"]];
+    for i in 1..=10 {
+        rows.push(vec![
+            format!("{i}"),
+            format!("cat_{}", if i <= 5 { i } else { i - 5 }),
+        ]);
+    }
+    wrk.create("in.csv", rows);
+
+    // Create stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Set threshold exactly at cardinality (5) - should NOT be HIGH_CARDINALITY
+    // because the condition is cardinality > threshold (strictly greater)
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .args(["--high-card-threshold", "5"]);
+    wrk.assert_success(&mut cmd);
+
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    let contents = std::fs::read_to_string(&jsonl_path).unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+
+    let cat_entry: Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(cat_entry["field"], "category");
+    let freqs = cat_entry["frequencies"].as_array().unwrap();
+    // cardinality 5 == threshold 5, so NOT high cardinality (strictly greater required)
+    assert!(
+        freqs.len() > 1,
+        "Cardinality at threshold should have full frequency data, not HIGH_CARDINALITY"
+    );
+
+    // Set threshold to 4 - cardinality 5 > 4, so should be HIGH_CARDINALITY
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .args(["--high-card-threshold", "4"]);
+    wrk.assert_success(&mut cmd2);
+
+    let contents2 = std::fs::read_to_string(&jsonl_path).unwrap();
+    let lines2: Vec<&str> = contents2.lines().collect();
+
+    let cat_entry2: Value = serde_json::from_str(lines2[1]).unwrap();
+    let freqs2 = cat_entry2["frequencies"].as_array().unwrap();
+    assert_eq!(freqs2.len(), 1, "Cardinality above threshold should be HIGH_CARDINALITY");
+    assert_eq!(freqs2[0]["value"], "<HIGH_CARDINALITY>");
+}

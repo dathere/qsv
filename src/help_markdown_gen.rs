@@ -547,14 +547,14 @@ fn parse_usage_sections(usage_text: &str) -> UsageSections {
             if state == State::Options
                 && trimmed.ends_with(':')
                 && trimmed.len() > 3
-                && trimmed[..trimmed.len() - 1]
-                    .chars()
-                    .all(|c| c.is_uppercase()
+                && trimmed[..trimmed.len() - 1].chars().all(|c| {
+                    c.is_uppercase()
                         || c.is_whitespace()
                         || c == '_'
                         || c == '-'
                         || c == '/'
-                        || c == '&')
+                        || c == '&'
+                })
             {
                 // Finalize previous option group
                 if !current_option_lines.is_empty() {
@@ -752,9 +752,8 @@ fn format_description(lines: &[String]) -> String {
 
 /// Known acronyms that should be preserved as all-uppercase in title-cased headings
 const ACRONYMS: &[&str] = &[
-    "API", "CKAN", "CSV", "CV", "HTTP", "HTTPS", "ID", "IP", "IPC", "IQR", "JSON", "JSONL",
-    "LLM", "NLP", "ODS", "RAG", "SEM", "SQL", "SSV", "TOML", "TOON", "TSV", "URL", "UUID",
-    "XLSX",
+    "API", "CKAN", "CSV", "CV", "HTTP", "HTTPS", "ID", "IP", "IPC", "IQR", "JSON", "JSONL", "LLM",
+    "NLP", "ODS", "RAG", "SEM", "SQL", "SSV", "TOML", "TOON", "TSV", "URL", "UUID", "XLSX",
 ];
 
 /// Title-case a single part (word fragment), preserving known acronyms

@@ -558,9 +558,26 @@ export function isExtensionMode(): boolean {
  * Plugin mode is active when CLAUDE_PLUGIN_ROOT is set AND MCPB_EXTENSION_MODE is not enabled.
  * In plugin mode, directory security is relaxed because the host environment
  * (Cowork VM or Claude Code) already provides filesystem isolation.
+ *
+ * Now also includes detection for other AI CLI agents (Google Gemini CLI) which
+ * provide their own terminal-based isolation.
  */
 export function isPluginMode(): boolean {
-  return !!process.env["CLAUDE_PLUGIN_ROOT"] && !getBooleanEnv("MCPB_EXTENSION_MODE", false);
+  // Explicit override via environment variable
+  const pluginEnv = process.env["QSV_MCP_PLUGIN_MODE"];
+  if (pluginEnv !== undefined) {
+    const lower = pluginEnv.toLowerCase();
+    return lower === "true" || lower === "1" || lower === "yes";
+  }
+
+  const hasPluginRoot = !!process.env["CLAUDE_PLUGIN_ROOT"];
+  const inExtensionMode = getBooleanEnv("MCPB_EXTENSION_MODE", false);
+
+  // Gemini CLI often sets GOOGLE_API_KEY or runs in a way that should be trusted locally
+  // We check for GOOGLE_API_KEY as a proxy for Gemini CLI/Google Cloud SDK environments
+  const isGoogleEnv = !!process.env["GOOGLE_API_KEY"] || !!process.env["GCLOUD_PROJECT"];
+
+  return (hasPluginRoot || isGoogleEnv) && !inExtensionMode;
 }
 
 /**

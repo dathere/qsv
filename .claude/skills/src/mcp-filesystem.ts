@@ -179,12 +179,39 @@ export class FilesystemResourceProvider {
    */
   private isPathAllowed(targetPath: string, isDirectory = false): boolean {
     const allowed = this.allowedDirs.some((allowedDir) => {
+      // Direct equality check (both should be canonicalized by now)
+      if (targetPath === allowedDir) return true;
+
       const rel = relative(allowedDir, targetPath);
       if (rel === "") return true;
-      return (
+
+      // Ensure relative path is safe:
+      // 1. Not an absolute path (cross-drive/root escape)
+      // 2. Doesn't escape to parent ('..')
+      // 3. Doesn't start with partition indicators on Windows ('/') or root on POSIX
+      const isSafeSubpath =
         !isAbsolute(rel) &&
-        !rel.startsWith("..") && !rel.startsWith("/") && !rel.startsWith("\\")
-      );
+        !rel.startsWith("..") &&
+        !rel.startsWith("/") &&
+        !rel.startsWith("\\");
+
+      if (isSafeSubpath) return true;
+
+      // Fallback for macOS /private/var discrepancies or case-preserving comparison
+      // if normal relative check fails
+      if (process.platform === "darwin" || process.platform === "win32") {
+        const lowerAllowed = allowedDir.toLowerCase();
+        const lowerTarget = targetPath.toLowerCase();
+
+        // Check if target starts with allowed dir (case-insensitive)
+        if (lowerTarget === lowerAllowed) return true;
+
+        const sep = process.platform === "win32" ? "\\" : "/";
+        const prefix = lowerAllowed.endsWith(sep) ? lowerAllowed : lowerAllowed + sep;
+        if (lowerTarget.startsWith(prefix)) return true;
+      }
+
+      return false;
     });
 
     if (!allowed && this.pluginMode) {

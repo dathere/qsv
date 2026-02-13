@@ -33,7 +33,6 @@ struct SkillDefinition {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct CommandSpec {
-    binary:     String,
     subcommand: String,
     args:       Vec<Argument>,
     options:    Vec<Option_>,
@@ -116,7 +115,6 @@ impl UsageParser {
             description,
             category,
             command: CommandSpec {
-                binary: "qsv".to_string(),
                 subcommand: self.command_name.clone(),
                 args,
                 options,

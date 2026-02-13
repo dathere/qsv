@@ -13,7 +13,6 @@ export interface QsvSkill {
 }
 
 export interface CommandSpec {
-  binary: string;
   subcommand: string;
   args: Argument[];
   options: Option[];

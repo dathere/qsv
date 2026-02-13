@@ -172,7 +172,7 @@ qsv enum --help
 
 ## Enum Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-c,`<br>`--new-column`&nbsp; | string | Name of the column to create. Will default to "index". |  |
 | &nbsp;`--start`&nbsp; | string | The value to start the enumeration from. Only applies in Increment mode. (default: 0) |  |
@@ -187,7 +187,7 @@ qsv enum --help
 
 ## Common Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

@@ -356,8 +356,15 @@ fn generate_command_markdown(
             continue;
         }
         write_heading(&mut md, section_title);
-        // Pad header to the longest long flag to prevent word-wrap
-        let max_flag_len = options.iter().map(|o| o.flag.len()).max().unwrap_or(0);
+        // Pad header to the longest long flag to prevent word-wrap.
+        // Minimum width of 14 (length of "--no-headers") ensures even sections
+        // with only short flags like --jobs/--batch don't word-wrap on hyphens.
+        let max_flag_len = options
+            .iter()
+            .map(|o| o.flag.len())
+            .max()
+            .unwrap_or(0)
+            .max(14);
         let total_pad = max_flag_len.saturating_sub(4);
         let pad_left = "&nbsp;".repeat(total_pad / 2);
         let pad_right = "&nbsp;".repeat(total_pad - total_pad / 2);

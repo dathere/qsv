@@ -123,7 +123,7 @@ qsv frequency --help
 
 ## JSON Output Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--json`&nbsp; | flag | Output frequency table as nested JSON instead of CSV. The JSON output includes additional metadata: row count, field count, data type, cardinality, null count, sparsity, uniqueness_ratio and 17 additional stats (e.g. sum, min, max, range, sort_order, mean, sem, etc.). |  |
 | &nbsp;`--pretty-json`&nbsp; | flag | Same as --json but pretty prints the JSON output. |  |
@@ -135,7 +135,7 @@ qsv frequency --help
 
 ## Common Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

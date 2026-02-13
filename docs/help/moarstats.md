@@ -286,7 +286,7 @@ qsv moarstats --help
 
 ## Common Options [↩](#nav)
 
-| &nbsp;&nbsp;Option&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--force`&nbsp; | flag | Force recomputing stats even if valid precomputed stats cache exists. |  |
 | &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. This works only when the given CSV has an index. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected. |  |

@@ -212,7 +212,7 @@ qsv sample --help
 
 ## Sample Options [↩](#nav)
 
-| &nbsp;Option&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--seed`&nbsp; | string | Random Number Generator (RNG) seed. |  |
 | &nbsp;`--rng`&nbsp; | string | The Random Number Generator (RNG) algorithm to use. | `standard` |
@@ -221,7 +221,7 @@ qsv sample --help
 
 ## Sampling Methods Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--bernoulli`&nbsp; | flag | Use Bernoulli sampling instead of indexed or reservoir sampling. When this flag is set, <sample-size> must be between 0 and 1 and represents the probability of selecting each record. |  |
 | &nbsp;`--systematic`&nbsp; | string | Use systematic sampling (every nth record as specified by <sample-size>). If <arg> is "random", the starting point is randomly chosen between 0 & n. If <arg> is "first", the starting point is the first record. The sample size must be a whole number. Uses CONSTANT memory - O(1). |  |
@@ -234,7 +234,7 @@ qsv sample --help
 
 ## Time-series Sampling Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--ts-interval`&nbsp; | string | Time interval for grouping records. Format: <number><unit> where unit is h (hour), d (day), w (week), m (month), y (year). |  |
 
@@ -242,7 +242,7 @@ qsv sample --help
 
 ## Common Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

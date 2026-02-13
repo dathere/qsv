@@ -27,7 +27,7 @@ qsv behead --help
 
 ## Common Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-f,`<br>`--flexible`&nbsp; | flag | Do not validate if the CSV has different number of fields per record, increasing performance. |  |

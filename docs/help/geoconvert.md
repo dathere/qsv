@@ -65,7 +65,7 @@ qsv geoconvert --help
 
 ## Geoconvert Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-g,`<br>`--geometry`&nbsp; | string | The name of the column that has WKT geometry. Alternative to --latitude and --longitude. |  |
 | &nbsp;`-y,`<br>`--latitude`&nbsp; | string | The name of the column with northing values. |  |
@@ -76,7 +76,7 @@ qsv geoconvert --help
 
 ## Common Options [↩](#nav)
 
-| &nbsp;&nbsp;Option&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

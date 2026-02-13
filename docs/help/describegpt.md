@@ -204,7 +204,7 @@ qsv describegpt --help
 
 ## Data Analysis/Inferencing Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--dictionary`&nbsp; | flag | Create a Data Dictionary using a hybrid "neuro-procedural" pipeline - i.e. the Dictionary is populated deterministically using Summary Statistics and Frequency Distribution data, and only the human-friendly Label and Description are populated by the LLM using the same statistical context. |  |
 | &nbsp;`--description`&nbsp; | flag | Infer a general Description of the dataset based on detailed statistical context. An Attribution signature is embedded in the Description. |  |
@@ -226,7 +226,7 @@ qsv describegpt --help
 
 ## Tag Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--num-tags`&nbsp; | string | The maximum number of tags to infer when the --tags option is used. Maximum allowed value is 50. | `10` |
 | &nbsp;`--tag-vocab`&nbsp; | string | The CSV file containing the tag vocabulary to use for inferring tags. If no tag vocabulary file is provided, the model will use free-form tags. Supports local files, remote URLs (http/https), CKAN resources (ckan://), and dathere:// scheme. Remote resources are cached locally. The CSV file must have two columns with headers: first column is the tag, second column is the description. Note that qsvlite only supports local files. |  |
@@ -291,7 +291,7 @@ qsv describegpt --help
 
 ## Common Options [↩](#nav)
 
-| &nbsp;&nbsp;Option&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`--format`&nbsp; | string | Output format: Markdown, TSV, JSON, or TOON. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See <https://toonformat.dev/> for more info. | `Markdown` |

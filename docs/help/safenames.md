@@ -96,7 +96,7 @@ qsv safenames --help
 
 ## Safenames Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--mode`&nbsp; | string | Rename header names to "safe" names - i.e. guaranteed "database-ready" names. It has six modes - conditional, always, verify, Verbose, with Verbose having two submodes - JSON & pretty JSON. | `Always` |
 | &nbsp;`--reserved`&nbsp; | string | Comma-delimited list of additional case-insensitive reserved names that should be considered "unsafe." If a header name is found in the reserved list, it will be prefixed with "reserved_". | `_id` |
@@ -106,7 +106,7 @@ qsv safenames --help
 
 ## Common Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. Note that no output is generated for Verify and Verbose modes. |  |

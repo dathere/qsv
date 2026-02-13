@@ -4929,16 +4929,14 @@ fn frequency_jsonl_limit_does_not_affect_cache() {
 
 #[test]
 fn frequency_jsonl_stdin_error() {
-    // --frequency-jsonl requires a file input, not stdin
+    // --frequency-jsonl requires a file input, not stdin.
+    // We use raw spawn() + wait_with_output() instead of wrk.command()/wrk.assert_err()
+    // because we need to pipe CSV data via stdin, which the Workdir harness doesn't support.
     use std::io::Write;
 
     let wrk = Workdir::new("frequency_jsonl_stdin_error");
-    wrk.create(
-        "in.csv",
-        vec![svec!["h1", "h2"], svec!["a", "b"], svec!["c", "d"]],
-    );
 
-    let file_content = wrk.read_to_string("in.csv").unwrap();
+    let csv_content = "h1,h2\na,b\nc,d\n";
 
     let mut cmd = wrk.command("frequency");
     cmd.arg("--frequency-jsonl")
@@ -4949,7 +4947,7 @@ fn frequency_jsonl_stdin_error() {
     let mut child = cmd.spawn().unwrap();
     {
         let mut stdin = child.stdin.take().unwrap();
-        stdin.write_all(file_content.as_bytes()).unwrap();
+        stdin.write_all(csv_content.as_bytes()).unwrap();
     }
 
     let output = child.wait_with_output().unwrap();
@@ -4959,7 +4957,7 @@ fn frequency_jsonl_stdin_error() {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("not stdin") || stderr.contains("file input"),
+        stderr.contains("--frequency-jsonl requires a file input, not stdin"),
         "Error message should mention that stdin is not supported, got: {stderr}"
     );
 }

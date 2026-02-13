@@ -21,12 +21,11 @@ applied in order:
       Damerau-Levenshtein similarity to --comparand
 
 Operations support multi-column transformations. Just make sure the
-number of transformed columns with the --rename option is the same. e.g.:
+number of transformed columns with the --rename option is the same.
+For example, to trim and fold to uppercase the col1,col2 and col3 columns &
+rename them to newcol1,newcol2 and newcol3:
 
-# trim and fold to uppercase the col1,col2 and col3 columns and rename them
-# to newcol1,newcol2 and newcol3
-
-  $ qsv apply operations trim,upper col1,col2,col3 -r newcol1,newcol2,newcol3 file.csv
+  qsv apply operations trim,upper col1,col2,col3 -r newcol1,newcol2,newcol3 file.csv
 
 It has 40 supported operations:
 

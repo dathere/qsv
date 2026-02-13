@@ -331,23 +331,30 @@ test('isPluginMode returns false when CLAUDE_PLUGIN_ROOT is not set', () => {
   // isPluginMode() reads process.env at call time, so we can test deterministically
   const origPluginRoot = process.env['CLAUDE_PLUGIN_ROOT'];
   const origExtMode = process.env['MCPB_EXTENSION_MODE'];
+  const origPluginMode = process.env['QSV_MCP_PLUGIN_MODE'];
   try {
     delete process.env['CLAUDE_PLUGIN_ROOT'];
     delete process.env['MCPB_EXTENSION_MODE'];
+    delete process.env['QSV_MCP_PLUGIN_MODE'];
     assert.strictEqual(isPluginMode(), false);
   } finally {
-    // Restore original values
     if (origPluginRoot !== undefined) process.env['CLAUDE_PLUGIN_ROOT'] = origPluginRoot;
+    else delete process.env['CLAUDE_PLUGIN_ROOT'];
     if (origExtMode !== undefined) process.env['MCPB_EXTENSION_MODE'] = origExtMode;
+    else delete process.env['MCPB_EXTENSION_MODE'];
+    if (origPluginMode !== undefined) process.env['QSV_MCP_PLUGIN_MODE'] = origPluginMode;
+    else delete process.env['QSV_MCP_PLUGIN_MODE'];
   }
 });
 
 test('isPluginMode returns true when CLAUDE_PLUGIN_ROOT is set and MCPB_EXTENSION_MODE is not', () => {
   const origPluginRoot = process.env['CLAUDE_PLUGIN_ROOT'];
   const origExtMode = process.env['MCPB_EXTENSION_MODE'];
+  const origPluginMode = process.env['QSV_MCP_PLUGIN_MODE'];
   try {
     process.env['CLAUDE_PLUGIN_ROOT'] = '/some/path';
     delete process.env['MCPB_EXTENSION_MODE'];
+    delete process.env['QSV_MCP_PLUGIN_MODE'];
     assert.strictEqual(isPluginMode(), true);
   } finally {
     if (origPluginRoot !== undefined) {
@@ -356,6 +363,9 @@ test('isPluginMode returns true when CLAUDE_PLUGIN_ROOT is set and MCPB_EXTENSIO
       delete process.env['CLAUDE_PLUGIN_ROOT'];
     }
     if (origExtMode !== undefined) process.env['MCPB_EXTENSION_MODE'] = origExtMode;
+    else delete process.env['MCPB_EXTENSION_MODE'];
+    if (origPluginMode !== undefined) process.env['QSV_MCP_PLUGIN_MODE'] = origPluginMode;
+    else delete process.env['QSV_MCP_PLUGIN_MODE'];
   }
 });
 
@@ -363,9 +373,11 @@ test('isPluginMode returns false when MCPB_EXTENSION_MODE is enabled', () => {
   // Extension mode takes priority over plugin mode
   const origPluginRoot = process.env['CLAUDE_PLUGIN_ROOT'];
   const origExtMode = process.env['MCPB_EXTENSION_MODE'];
+  const origPluginMode = process.env['QSV_MCP_PLUGIN_MODE'];
   try {
     process.env['CLAUDE_PLUGIN_ROOT'] = '/some/path';
     process.env['MCPB_EXTENSION_MODE'] = 'true';
+    delete process.env['QSV_MCP_PLUGIN_MODE'];
     assert.strictEqual(isPluginMode(), false);
   } finally {
     if (origPluginRoot !== undefined) {
@@ -378,5 +390,102 @@ test('isPluginMode returns false when MCPB_EXTENSION_MODE is enabled', () => {
     } else {
       delete process.env['MCPB_EXTENSION_MODE'];
     }
+    if (origPluginMode !== undefined) {
+      process.env['QSV_MCP_PLUGIN_MODE'] = origPluginMode;
+    } else {
+      delete process.env['QSV_MCP_PLUGIN_MODE'];
+    }
+  }
+});
+
+// ============================================================================
+// QSV_MCP_PLUGIN_MODE Override Tests
+// ============================================================================
+
+test('QSV_MCP_PLUGIN_MODE=true enables plugin mode regardless of CLAUDE_PLUGIN_ROOT', () => {
+  const origPluginRoot = process.env['CLAUDE_PLUGIN_ROOT'];
+  const origExtMode = process.env['MCPB_EXTENSION_MODE'];
+  const origPluginMode = process.env['QSV_MCP_PLUGIN_MODE'];
+  try {
+    delete process.env['CLAUDE_PLUGIN_ROOT'];
+    delete process.env['MCPB_EXTENSION_MODE'];
+    process.env['QSV_MCP_PLUGIN_MODE'] = 'true';
+    assert.strictEqual(isPluginMode(), true);
+  } finally {
+    if (origPluginRoot !== undefined) process.env['CLAUDE_PLUGIN_ROOT'] = origPluginRoot;
+    else delete process.env['CLAUDE_PLUGIN_ROOT'];
+    if (origExtMode !== undefined) process.env['MCPB_EXTENSION_MODE'] = origExtMode;
+    else delete process.env['MCPB_EXTENSION_MODE'];
+    if (origPluginMode !== undefined) process.env['QSV_MCP_PLUGIN_MODE'] = origPluginMode;
+    else delete process.env['QSV_MCP_PLUGIN_MODE'];
+  }
+});
+
+test('QSV_MCP_PLUGIN_MODE=false disables plugin mode even with CLAUDE_PLUGIN_ROOT set', () => {
+  const origPluginRoot = process.env['CLAUDE_PLUGIN_ROOT'];
+  const origExtMode = process.env['MCPB_EXTENSION_MODE'];
+  const origPluginMode = process.env['QSV_MCP_PLUGIN_MODE'];
+  try {
+    process.env['CLAUDE_PLUGIN_ROOT'] = '/some/path';
+    delete process.env['MCPB_EXTENSION_MODE'];
+    process.env['QSV_MCP_PLUGIN_MODE'] = 'false';
+    assert.strictEqual(isPluginMode(), false);
+  } finally {
+    if (origPluginRoot !== undefined) process.env['CLAUDE_PLUGIN_ROOT'] = origPluginRoot;
+    else delete process.env['CLAUDE_PLUGIN_ROOT'];
+    if (origExtMode !== undefined) process.env['MCPB_EXTENSION_MODE'] = origExtMode;
+    else delete process.env['MCPB_EXTENSION_MODE'];
+    if (origPluginMode !== undefined) process.env['QSV_MCP_PLUGIN_MODE'] = origPluginMode;
+    else delete process.env['QSV_MCP_PLUGIN_MODE'];
+  }
+});
+
+test('QSV_MCP_PLUGIN_MODE takes precedence over CLAUDE_PLUGIN_ROOT', () => {
+  const origPluginRoot = process.env['CLAUDE_PLUGIN_ROOT'];
+  const origExtMode = process.env['MCPB_EXTENSION_MODE'];
+  const origPluginMode = process.env['QSV_MCP_PLUGIN_MODE'];
+  try {
+    // Even with CLAUDE_PLUGIN_ROOT set, QSV_MCP_PLUGIN_MODE=false wins
+    process.env['CLAUDE_PLUGIN_ROOT'] = '/some/path';
+    delete process.env['MCPB_EXTENSION_MODE'];
+    process.env['QSV_MCP_PLUGIN_MODE'] = 'no';
+    assert.strictEqual(isPluginMode(), false);
+
+    // And QSV_MCP_PLUGIN_MODE=true wins even without CLAUDE_PLUGIN_ROOT
+    delete process.env['CLAUDE_PLUGIN_ROOT'];
+    process.env['QSV_MCP_PLUGIN_MODE'] = '1';
+    assert.strictEqual(isPluginMode(), true);
+  } finally {
+    if (origPluginRoot !== undefined) process.env['CLAUDE_PLUGIN_ROOT'] = origPluginRoot;
+    else delete process.env['CLAUDE_PLUGIN_ROOT'];
+    if (origExtMode !== undefined) process.env['MCPB_EXTENSION_MODE'] = origExtMode;
+    else delete process.env['MCPB_EXTENSION_MODE'];
+    if (origPluginMode !== undefined) process.env['QSV_MCP_PLUGIN_MODE'] = origPluginMode;
+    else delete process.env['QSV_MCP_PLUGIN_MODE'];
+  }
+});
+
+test('QSV_MCP_PLUGIN_MODE with invalid value falls back to auto-detection', () => {
+  const origPluginRoot = process.env['CLAUDE_PLUGIN_ROOT'];
+  const origExtMode = process.env['MCPB_EXTENSION_MODE'];
+  const origPluginMode = process.env['QSV_MCP_PLUGIN_MODE'];
+  try {
+    // Invalid value should be treated as unset (getOptionalBooleanEnv returns undefined)
+    delete process.env['CLAUDE_PLUGIN_ROOT'];
+    delete process.env['MCPB_EXTENSION_MODE'];
+    process.env['QSV_MCP_PLUGIN_MODE'] = 'invalid';
+    // Falls through to auto-detection: no CLAUDE_PLUGIN_ROOT → false
+    assert.strictEqual(isPluginMode(), false);
+
+    // With CLAUDE_PLUGIN_ROOT set, invalid override falls through to auto-detection → true
+    process.env['CLAUDE_PLUGIN_ROOT'] = '/some/path';
+    assert.strictEqual(isPluginMode(), true);
+  } finally {
+    if (origPluginRoot !== undefined) process.env['CLAUDE_PLUGIN_ROOT'] = origPluginRoot;
+    else delete process.env['CLAUDE_PLUGIN_ROOT'];
+    if (origExtMode !== undefined) process.env['MCPB_EXTENSION_MODE'] = origExtMode;
+    else delete process.env['MCPB_EXTENSION_MODE'];
+    if (origPluginMode !== undefined) process.env['QSV_MCP_PLUGIN_MODE'] = origPluginMode;
+    else delete process.env['QSV_MCP_PLUGIN_MODE'];
   }
 });

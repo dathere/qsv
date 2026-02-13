@@ -293,6 +293,14 @@ QSV_TIMEOUT = 30
 # (default: empty - only working directory allowed)
 # QSV_MCP_ALLOWED_DIRS = ${DOCUMENTS}:${DESKTOP}
 
+# Explicitly enable or disable plugin mode. When true, directory security is
+# relaxed (directories are auto-added to allowedDirs) because the host
+# environment provides filesystem isolation. Use this for AI CLI agents
+# (e.g. Gemini CLI) that don't set CLAUDE_PLUGIN_ROOT.
+# When not set, auto-detects based on CLAUDE_PLUGIN_ROOT.
+# (default: unset - auto-detect)
+# QSV_MCP_PLUGIN_MODE = false
+
 # --- Performance Tuning ---
 
 # Command timeout in milliseconds. Used by Desktop extension mode.

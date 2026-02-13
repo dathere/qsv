@@ -185,30 +185,28 @@ export class FilesystemResourceProvider {
       const rel = relative(allowedDir, targetPath);
       if (rel === "") return true;
 
-      // Ensure relative path is safe:
-      // 1. Not an absolute path (cross-drive/root escape)
+      // Ensure relative path stays within the allowed directory:
+      // 1. Not an absolute path (cross-drive escape on Windows)
       // 2. Doesn't escape to parent ('..')
-      // 3. Doesn't start with partition indicators on Windows ('/') or root on POSIX
-      const isSafeSubpath =
+      // 3. Belt-and-suspenders: reject leading separators (already caught by isAbsolute)
+      const isContainedSubpath =
         !isAbsolute(rel) &&
         !rel.startsWith("..") &&
         !rel.startsWith("/") &&
         !rel.startsWith("\\");
 
-      if (isSafeSubpath) return true;
+      if (isContainedSubpath) return true;
 
-      // Fallback for macOS /private/var discrepancies or case-preserving comparison
-      // if normal relative check fails
+      // Case-insensitive fallback for platforms with case-insensitive filesystems
+      // (macOS APFS default, Windows NTFS). Handles /private/var symlink
+      // discrepancies on macOS and case-preserving but case-insensitive paths.
       if (process.platform === "darwin" || process.platform === "win32") {
         const lowerAllowed = allowedDir.toLowerCase();
         const lowerTarget = targetPath.toLowerCase();
 
-        // Check if target starts with allowed dir (case-insensitive)
-        if (lowerTarget === lowerAllowed) return true;
-
         const sep = process.platform === "win32" ? "\\" : "/";
         const prefix = lowerAllowed.endsWith(sep) ? lowerAllowed : lowerAllowed + sep;
-        if (lowerTarget.startsWith(prefix)) return true;
+        if (lowerTarget === lowerAllowed || lowerTarget.startsWith(prefix)) return true;
       }
 
       return false;

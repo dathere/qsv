@@ -538,7 +538,7 @@ Output columns: `field_x, field_y, n_x, n_y, shift, ratio, avg_spread, disparity
 Cells are empty (blank) when:
 - **No numeric data (n=0):** The column contains no finite numeric values
 - **Positivity required:** `rel_spread`, `ratio`, `ratio_lower`, and `ratio_upper` require all values > 0
-- **Variability required:** `spread`, `avg_spread`, and `disparity` need real variability (not tie-dominant data)
+- **Sparity required:** `spread`, `avg_spread`, and `disparity` need real variability (not tie-dominant data)
 - **Insufficient data for bounds:** `center_lower`, `center_upper`, `shift_lower`, `shift_upper` need enough data for the requested misrate; try a higher misrate or more data
 
 See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/releases/download/v8.0.0/pragmastat-v8.0.0.pdf), [pragmastat.dev](https://pragmastat.dev/)

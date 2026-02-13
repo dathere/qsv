@@ -87,7 +87,7 @@ export type SkillCategory =
   | "validation"
   | "formatting"
   | "conversion"
-  | "analysis"
+  | "documentation"
   | "utility";
 
 /**

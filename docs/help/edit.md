@@ -4,6 +4,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/edit.rs](https://github.com/dathere/qsv/blob/master/src/cmd/edit.rs)**
 
+[Description](#description) | [Usage](#usage) | [Edit Options](#edit-options) | [Common Options](#common-options)
+
 ## Description
 
 Replace the value of a cell specified by its row and column.

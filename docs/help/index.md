@@ -4,6 +4,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/index.rs](https://github.com/dathere/qsv/blob/master/src/cmd/index.rs)**
 
+[Description](#description) | [Usage](#usage) | [Index Options](#index-options) | [Common Options](#common-options)
+
 ## Description
 
 Creates an index of the given CSV data, which can make other operations like

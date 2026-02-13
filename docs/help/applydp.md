@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/applydp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/applydp.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Applydp Options](#applydp-options) | [Operations Options](#operations-options) | [Common Options](#common-options)
+
 ## Description
 
 applydp is a slimmed-down version of apply specifically created for Datapusher+.

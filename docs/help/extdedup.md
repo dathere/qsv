@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/extdedup.rs](https://github.com/dathere/qsv/blob/master/src/cmd/extdedup.rs)**
 
+[Description](#description) | [Usage](#usage) | [Extdedup Options](#extdedup-options) | [Csv Mode Only Options](#csv-mode-only-options)
+
 ## Description
 
 Remove duplicate rows from an arbitrarily large CSV/text file using a memory-mapped,

@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/safenames.rs](https://github.com/dathere/qsv/blob/master/src/cmd/safenames.rs)**
 
+[Description](#description) | [Usage](#usage) | [Safenames Options](#safenames-options) | [Common Options](#common-options)
+
 ## Description
 
 Modify headers of a CSV to only have "safe" names - guaranteed "database-ready" names

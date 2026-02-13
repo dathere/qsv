@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/slice.rs](https://github.com/dathere/qsv/blob/master/src/cmd/slice.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Slice Options](#slice-options) | [Common Options](#common-options)
+
 ## Description
 
 Returns the rows in the range specified (starting at 0, half-open interval).

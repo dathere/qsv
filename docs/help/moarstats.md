@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/moarstats.rs](https://github.com/dathere/qsv/blob/master/src/cmd/moarstats.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Moarstats Options](#moarstats-options) | [Bivariate Statistics Options](#bivariate-statistics-options) | [Common Options](#common-options)
+
 ## Description
 
 Add dozens of additional statistics, including extended outlier, robust & bivariate

@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/geocode.rs](https://github.com/dathere/qsv/blob/master/src/cmd/geocode.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Geocode Options](#geocode-options) | [Suggest Only Options](#suggest-only-options) | [Reverse Only Option](#reverse-only-option) | [Dynamic Formatting Options](#dynamic-formatting-options) | [Index-update Only Options](#index-update-only-options) | [Common Options](#common-options)
+
 ## Description
 
 Geocodes a location in CSV data against an updatable local copy of the Geonames cities index

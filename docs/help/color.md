@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/color.rs](https://github.com/dathere/qsv/blob/master/src/cmd/color.rs)**
 
+[Description](#description) | [Usage](#usage) | [Color Options](#color-options) | [Common Options](#common-options)
+
 ## Description
 
 Outputs tabular data as a pretty, colorized table that always fits into the

@@ -4,6 +4,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fmt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fmt.rs)**
 
+[Description](#description) | [Usage](#usage) | [Fmt Options](#fmt-options) | [Common Options](#common-options)
+
 ## Description
 
 Formats CSV data with a custom delimiter or CRLF line endings.

@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/validate.rs](https://github.com/dathere/qsv/blob/master/src/cmd/validate.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Validate Options](#validate-options) | [Fancy Regex Options](#fancy-regex-options) | [Options For Both Regex Engines](#options-for-both-regex-engines) | [Email Validation Options](#email-validation-options) | [Common Options](#common-options)
+
 ## Description
 
 Validates CSV data using two main modes:

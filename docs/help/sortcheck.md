@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sortcheck.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sortcheck.rs)**
 
+[Description](#description) | [Usage](#usage) | [Sort Options](#sort-options) | [Common Options](#common-options)
+
 ## Description
 
 Check if a CSV is sorted. The check is done on a streaming basis (i.e. constant memory).

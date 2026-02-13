@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/headers.rs](https://github.com/dathere/qsv/blob/master/src/cmd/headers.rs)**
 
+[Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Headers Options](#headers-options) | [Common Options](#common-options)
+
 ## Description
 
 Prints the fields of the first row in the CSV data.

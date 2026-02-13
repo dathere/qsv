@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/template.rs](https://github.com/dathere/qsv/blob/master/src/cmd/template.rs)**
 
+[Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Template Options](#template-options) | [Common Options](#common-options)
+
 ## Description
 
 Renders a template using CSV data with the MiniJinja template engine.

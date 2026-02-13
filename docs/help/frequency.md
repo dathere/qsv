@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/frequency.rs](https://github.com/dathere/qsv/blob/master/src/cmd/frequency.rs)**
 
+[Description](#description) | [Usage](#usage) | [Frequency Options](#frequency-options) | [Json Output Options](#json-output-options) | [Common Options](#common-options)
+
 ## Description
 
 Compute a frequency distribution table on input data. It has CSV and JSON output modes.

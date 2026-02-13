@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pseudo.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pseudo.rs)**
 
+[Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Common Options](#common-options)
+
 ## Description
 
 Pseudonymise the value of a given column by replacing it with an

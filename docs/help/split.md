@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/split.rs](https://github.com/dathere/qsv/blob/master/src/cmd/split.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Split Options](#split-options) | [Filter Options](#filter-options) | [Common Options](#common-options)
+
 ## Description
 
 Splits the given CSV data into chunks. It has three modes: by size (rowcount),

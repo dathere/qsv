@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/reverse.rs](https://github.com/dathere/qsv/blob/master/src/cmd/reverse.rs)**
 
+[Description](#description) | [Usage](#usage) | [Common Options](#common-options)
+
 ## Description
 
 Reverses rows of CSV data.

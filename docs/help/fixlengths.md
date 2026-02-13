@@ -4,6 +4,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fixlengths.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fixlengths.rs)**
 
+[Description](#description) | [Usage](#usage) | [Fixlengths Options](#fixlengths-options) | [Common Options](#common-options)
+
 ## Description
 
 Transforms CSV data so that all records have the same length. The length is

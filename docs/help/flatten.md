@@ -4,6 +4,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/flatten.rs](https://github.com/dathere/qsv/blob/master/src/cmd/flatten.rs)**
 
+[Description](#description) | [Usage](#usage) | [Flatten Options](#flatten-options) | [Common Options](#common-options)
+
 ## Description
 
 Prints flattened records such that fields are labeled separated by a new line.

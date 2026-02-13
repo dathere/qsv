@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/luau.rs](https://github.com/dathere/qsv/blob/master/src/cmd/luau.rs)**
 
+[Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Luau Options](#luau-options) | [Common Options](#common-options)
+
 ## Description
 
 Create multiple new computed columns, filter rows or compute aggregations by

@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/jsonl.rs](https://github.com/dathere/qsv/blob/master/src/cmd/jsonl.rs)**
 
+[Description](#description) | [Usage](#usage) | [Jsonl Options](#jsonl-options) | [Common Options](#common-options)
+
 ## Description
 
 Convert newline-delimited JSON (JSONL/NDJSON) to CSV.

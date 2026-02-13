@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/joinp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/joinp.rs)**
 
+[Description](#description) | [Usage](#usage) | [Joinp Options](#joinp-options) | [Join Options](#join-options) | [Polars Csv Parsing Options](#polars-csv-parsing-options) | [Asof Join Options](#asof-join-options) | [Output Format Options](#output-format-options) | [Join Key Transformation Options](#join-key-transformation-options) | [Common Options](#common-options)
+
 ## Description
 
 Joins two sets of CSV data on the specified columns using the Polars engine.

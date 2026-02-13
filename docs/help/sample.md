@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sample.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sample.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sample Options](#sample-options) | [Sampling Methods Options](#sampling-methods-options) | [Time-series Sampling Options](#time-series-sampling-options) | [Common Options](#common-options)
+
 ## Description
 
 Randomly samples CSV data.

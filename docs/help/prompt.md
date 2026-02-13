@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/prompt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/prompt.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Prompt Options](#prompt-options) | [Common Options](#common-options)
+
 ## Description
 
 Open a file dialog to pick a file as input or save to an output file.

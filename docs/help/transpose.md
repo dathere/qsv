@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/transpose.rs](https://github.com/dathere/qsv/blob/master/src/cmd/transpose.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Transpose Options](#transpose-options) | [Common Options](#common-options)
+
 ## Description
 
 Transpose the rows/columns of CSV data.

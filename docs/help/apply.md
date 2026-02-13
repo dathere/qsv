@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/apply.rs](https://github.com/dathere/qsv/blob/master/src/cmd/apply.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Apply Options](#apply-options) | [Operations Options](#operations-options) | [Common Options](#common-options)
+
 ## Description
 
 Apply a series of transformation functions to given CSV column/s. This can be used to

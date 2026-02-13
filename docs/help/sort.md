@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sort.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sort.rs)**
 
+[Description](#description) | [Usage](#usage) | [Sort Options](#sort-options) | [Random Sorting Options](#random-sorting-options) | [Common Options](#common-options)
+
 ## Description
 
 Sorts CSV data in lexicographical, natural, numerical, reverse, unique or random order.

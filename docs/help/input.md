@@ -4,6 +4,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/input.rs](https://github.com/dathere/qsv/blob/master/src/cmd/input.rs)**
 
+[Description](#description) | [Usage](#usage) | [Input Options](#input-options) | [Common Options](#common-options)
+
 ## Description
 
 Read CSV data with special commenting, quoting, trimming, line-skipping &

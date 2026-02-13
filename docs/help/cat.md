@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/cat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/cat.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Columns Option](#columns-option) | [Rows Option](#rows-option) | [Rowskey Options](#rowskey-options) | [Common Options](#common-options)
+
 ## Description
 
 Concatenate CSV files by row or by column.

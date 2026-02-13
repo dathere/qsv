@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/schema.rs](https://github.com/dathere/qsv/blob/master/src/cmd/schema.rs)**
 
+[Description](#description) | [Usage](#usage) | [Schema Options](#schema-options) | [Common Options](#common-options)
+
 ## Description
 
 Generate JSON Schema or Polars Schema (with the `--polars` option) from CSV data.

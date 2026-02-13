@@ -2,7 +2,7 @@ use std::{env, io, time::Instant};
 
 extern crate qsv_docopt as docopt;
 use docopt::Docopt;
-use rand::Rng;
+use rand::RngExt;
 use serde::Deserialize;
 
 use crate::{

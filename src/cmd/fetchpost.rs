@@ -270,7 +270,7 @@ use log::{
 };
 use minijinja::Environment;
 use minijinja_contrib::pycompat::unknown_method_callback;
-use rand::Rng;
+use rand::RngExt;
 use regex::Regex;
 use reqwest::{
     blocking::Client,

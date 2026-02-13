@@ -259,7 +259,7 @@ use log::{
     Level::{Debug, Trace, Warn},
     debug, error, info, log_enabled, warn,
 };
-use rand::Rng;
+use rand::RngExt;
 use regex::Regex;
 use reqwest::{
     blocking::Client,

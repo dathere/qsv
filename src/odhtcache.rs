@@ -292,7 +292,7 @@ impl Drop for ExtDedupCache {
 mod tests {
     use std::fs;
 
-    use rand::{Rng, distr::Alphanumeric, rng};
+    use rand::{RngExt, distr::Alphanumeric, rng};
     use tempfile::TempDir;
 
     use super::*;

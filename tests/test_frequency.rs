@@ -4895,16 +4895,19 @@ fn frequency_jsonl_limit_does_not_affect_cache() {
         .arg("--frequency-jsonl")
         .args(["-l", "2"]);
 
-    // Verify stdout output IS limited to 2 entries (+ header + "Other" summary row)
+    // Verify stdout output IS limited to 2 entries (+ header + "Other" summary row).
+    // read_stdout implicitly validates command success: it parses CSV from stdout
+    // and will panic on empty/invalid output if the command fails.
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    // got includes header row + 2 top-value rows + 1 "Other" aggregation row
+    // The input has 5 distinct values (red, blue, green, yellow, orange), so --limit 2
+    // produces: header + 2 top-value rows + 1 "Other" aggregation row = 4 rows.
     assert_eq!(
         got.len(),
         4,
         "stdout should have header + 2 value rows + 1 Other row when --limit 2 is set, got: \
          {got:?}"
     );
-    // The last row should be the "Other" summary
+    // The last row should be the "Other" summary (matches frequency command's output format)
     assert!(
         got[3][1].starts_with("Other"),
         "last stdout row should be 'Other' summary, got: {:?}",

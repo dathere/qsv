@@ -46,9 +46,9 @@ qsv pivotp --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-i, --index` | string | The column(s) to use as the index (row labels). Specify multiple columns by separating them with a comma. The output will have one row for each unique combination of the index's values. If None, all remaining columns not specified on --on and --values will be used. At least one of --index and --values must be specified. |  |
-| `-v, --values` | string | The column(s) containing values to aggregate. If an aggregation is specified, these are the values on which the aggregation will be computed. If None, all remaining columns not specified on --on and --index will be used. At least one of --index and --values must be specified. |  |
-| `-a, --agg` | string | The aggregation function to use: first - First value encountered last - Last value encountered sum - Sum of values min - Minimum value max - Maximum value mean - Average value median - Median value len - Count of values item - Get single value from group. Raises error if there are multiple values. smart - use value column data type & statistics to pick an aggregation. Will only work if there is one value column, otherwise it falls back to `first` | `smart` |
+| `-i,`<br>`--index` | string | The column(s) to use as the index (row labels). Specify multiple columns by separating them with a comma. The output will have one row for each unique combination of the index's values. If None, all remaining columns not specified on --on and --values will be used. At least one of --index and --values must be specified. |  |
+| `-v,`<br>`--values` | string | The column(s) containing values to aggregate. If an aggregation is specified, these are the values on which the aggregation will be computed. If None, all remaining columns not specified on --on and --index will be used. At least one of --index and --values must be specified. |  |
+| `-a,`<br>`--agg` | string | The aggregation function to use: first - First value encountered last - Last value encountered sum - Sum of values min - Minimum value max - Maximum value mean - Average value median - Median value len - Count of values item - Get single value from group. Raises error if there are multiple values. smart - use value column data type & statistics to pick an aggregation. Will only work if there is one value column, otherwise it falls back to `first` | `smart` |
 | `--sort-columns` | flag | Sort the transposed columns by name. |  |
 | `--maintain-order` | flag | Maintain the order of the input columns. |  |
 | `--col-separator` | string | The separator in generated column names in case of multiple --values columns. | `_` |
@@ -64,10 +64,10 @@ qsv pivotp --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-d, --delimiter` | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
-| `-q, --quiet` | flag | Do not return smart aggregation chosen nor pivot result shape to stderr. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
+| `-q,`<br>`--quiet` | flag | Do not return smart aggregation chosen nor pivot result shape to stderr. |  |
 
 ---
 **Source:** [`src/cmd/pivotp.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/pivotp.rs)

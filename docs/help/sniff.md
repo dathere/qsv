@@ -98,7 +98,7 @@ qsv sniff --help
 |--------|------|-------------|--------|
 | `--sample` | string | First n rows to sample to sniff out the metadata. When sample size is between 0 and 1 exclusive, it is treated as a percentage of the CSV to sample (e.g. 0.20 is 20 percent). When it is zero, the entire file will be sampled. When the input is a URL, the sample size dictates how many lines to sample without having to download the entire file. Ignored when --no-infer is enabled. | `1000` |
 | `--prefer-dmy` | flag | Prefer to parse dates in dmy format. Otherwise, use mdy format. Ignored when --no-infer is enabled. |  |
-| `-d, --delimiter` | string | The delimiter for reading CSV data. Specify this when the delimiter is known beforehand, as the delimiter inferencing algorithm can sometimes fail. Must be a single ascii character. |  |
+| `-d,`<br>`--delimiter` | string | The delimiter for reading CSV data. Specify this when the delimiter is known beforehand, as the delimiter inferencing algorithm can sometimes fail. Must be a single ascii character. |  |
 | `--quote` | string | The quote character for reading CSV data. Specify this when the quote character is known beforehand, as the quote char inferencing algorithm can sometimes fail. Must be a single ascii character - typically, double quote ("), single quote ('), or backtick (`). |  |
 | `--json` | flag | Return results in JSON format. |  |
 | `--pretty-json` | flag | Return results in pretty JSON format. |  |
@@ -108,7 +108,7 @@ qsv sniff --help
 | `--stats-types` | flag | Use the same data type names as `stats`. (Unsigned, Signed => Integer, Text => String, everything else the same) |  |
 | `--no-infer` | flag | Do not infer the schema. Only return the file's mime type, size and last modified date. Use this to use sniff as a general mime type detector. Note that CSV and TSV files will only be detected as mime type plain/text in this mode. |  |
 | `--just-mime` | flag | Only return the file's mime type. Use this to use sniff as a general mime type detector. Synonym for --no-infer. |  |
-| `-Q, --quick` | flag | When sniffing a non-CSV remote file, only download the first chunk of the file before attempting to detect the mime type. This is faster but less accurate as some mime types cannot be detected with just the first downloaded chunk. |  |
+| `-Q,`<br>`--quick` | flag | When sniffing a non-CSV remote file, only download the first chunk of the file before attempting to detect the mime type. This is faster but less accurate as some mime types cannot be detected with just the first downloaded chunk. |  |
 | `--harvest-mode` | flag | This is a convenience flag when using sniff in CKAN harvesters. It is equivalent to --quick --timeout 10 --stats-types --json and --user-agent "CKAN-harvest/$QSV_VERSION ($QSV_TARGET; $QSV_BIN_NAME)" |  |
 
 <a name="common-options"></a>
@@ -117,8 +117,8 @@ qsv sniff --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-p, --progressbar` | flag | Show progress bars. Only valid for URL input. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-p,`<br>`--progressbar` | flag | Show progress bars. Only valid for URL input. |  |
 
 ---
 **Source:** [`src/cmd/sniff.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/sniff.rs)

@@ -44,8 +44,8 @@ qsv tojsonl --help
 |--------|------|-------------|--------|
 | `--trim` | flag | Trim leading and trailing whitespace from fields before converting to JSON. |  |
 | `--no-boolean` | flag | Do not infer boolean fields. |  |
-| `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `-b, --batch` | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-b,`<br>`--batch` | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
 
 <a name="common-options"></a>
 
@@ -53,11 +53,11 @@ qsv tojsonl --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
 | `--memcheck` | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
-| `-q, --quiet` | flag | Do not display enum/const list inferencing messages. |  |
+| `-q,`<br>`--quiet` | flag | Do not display enum/const list inferencing messages. |  |
 
 ---
 **Source:** [`src/cmd/tojsonl.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/tojsonl.rs)

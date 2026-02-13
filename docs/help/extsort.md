@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/extsort.rs](https://github.com/dathere/qsv/blob/master/src/cmd/extsort.rs)** | 🚀📇👆
 
 <a name="nav"></a>
-[Description](#description) | [Usage](#usage) | [External Sort Option](#external-sort-option) | [Csv Mode Only Options](#csv-mode-only-options)
+[Description](#description) | [Usage](#usage) | [External Sort Option](#external-sort-option) | [CSV Mode Only Options](#csv-mode-only-options)
 
 <a name="description"></a>
 
@@ -39,21 +39,21 @@ qsv extsort --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-s, --select` | string | Select a subset of columns to sort (CSV MODE). Note that the outputs will remain at the full width of the CSV. If --select is NOT set, extsort will work in LINE MODE, sorting the input as a text file on a line-by-line basis. |  |
-| `-R, --reverse` | flag | Reverse order |  |
+| `-s,`<br>`--select` | string | Select a subset of columns to sort (CSV MODE). Note that the outputs will remain at the full width of the CSV. If --select is NOT set, extsort will work in LINE MODE, sorting the input as a text file on a line-by-line basis. |  |
+| `-R,`<br>`--reverse` | flag | Reverse order |  |
 | `--memory-limit` | string | The maximum amount of memory to buffer the external merge sort. If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory. | `20` |
 | `--tmp-dir` | string | The directory to use for externally sorting file segments. | `./` |
-| `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 
 <a name="csv-mode-only-options"></a>
 
-## Csv Mode Only Options [↩](#nav)
+## CSV Mode Only Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-h, --help` | flag | Display this message |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers and will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers and will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
 
 ---
 **Source:** [`src/cmd/extsort.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/extsort.rs)

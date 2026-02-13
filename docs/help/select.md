@@ -158,9 +158,9 @@ qsv select --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-R, --random` | flag | Randomly shuffle the columns in the selection. |  |
+| `-R,`<br>`--random` | flag | Randomly shuffle the columns in the selection. |  |
 | `--seed` | string | Seed for the random number generator. |  |
-| `-S, --sort` | flag | Sort the selected columns lexicographically, i.e. by their byte values. |  |
+| `-S,`<br>`--sort` | flag | Sort the selected columns lexicographically, i.e. by their byte values. |  |
 
 <a name="common-options"></a>
 
@@ -168,10 +168,10 @@ qsv select --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/select.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/select.rs)

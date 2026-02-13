@@ -171,7 +171,7 @@ qsv excel --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-s, --sheet` | string | Name (case-insensitive) or zero-based index of sheet to export. Negative indices start from the end (-1 = last sheet). If the sheet cannot be found, qsv will read the first sheet. | `0` |
+| `-s,`<br>`--sheet` | string | Name (case-insensitive) or zero-based index of sheet to export. Negative indices start from the end (-1 = last sheet). If the sheet cannot be found, qsv will read the first sheet. | `0` |
 | `--header-row` | string | The header row. Set if other than the first non-empty row of the sheet. |  |
 | `--metadata` | string | Outputs workbook metadata in CSV or JSON format: index, sheet_name, headers, type, visible, column_count, row_count, safe_headers, safe_headers_count, unsafe_headers, unsafe_headers_count and duplicate_headers_count, names, name_count, tables, table_count. headers is a list of the first row which is presumed to be the header row. type is the sheet type (WorkSheet, DialogSheet, MacroSheet, ChartSheet, Vba). visible is the sheet visibility (Visible, Hidden, VeryHidden). row_count includes all rows, including the first row. safe_headers is a list of headers with "safe"(PostgreSQL-ready) names. unsafe_headers is a list of headers with "unsafe" names. duplicate_headers_count is a count of duplicate header names. names is a list of defined names in the workbook, with the associated formula. name_count is the number of defined names in the workbook. tables is a list of tables in the workbook, along with the sheet where the table is found, the columns and the column_count.  (XLSX only) table_count is the number of tables in the workbook.  (XLSX only) | `none` |
 | `--table` | string | An Excel table (case-insensitive) to extract to a CSV. Only valid for XLSX files. The --sheet option is ignored as a table could be in any sheet. Overrides --range option. |  |
@@ -182,7 +182,7 @@ qsv excel --help
 | `--trim` | flag | Trim all fields so that leading & trailing whitespaces are removed. Also removes embedded linebreaks. |  |
 | `--date-format` | string | Optional date format to use when formatting dates. See <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for the full list of supported format specifiers. Note that if a date format is invalid, qsv will fall back and return the date as if no date-format was specified. |  |
 | `--keep-zero-time` | flag | Keep the time part of a date-time field if it is 00:00:00. By default, qsv will remove the time part if it is 00:00:00. |  |
-| `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 
 <a name="common-options"></a>
 
@@ -190,10 +190,10 @@ qsv excel --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-d, --delimiter` | string | The delimiter to use when writing CSV data. Must be a single character. | `,` |
-| `-q, --quiet` | flag | Do not display export summary message. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-d,`<br>`--delimiter` | string | The delimiter to use when writing CSV data. Must be a single character. | `,` |
+| `-q,`<br>`--quiet` | flag | Do not display export summary message. |  |
 
 ---
 **Source:** [`src/cmd/excel.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/excel.rs)

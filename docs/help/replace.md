@@ -89,15 +89,15 @@ qsv replace --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-i, --ignore-case` | flag | Case insensitive search. This is equivalent to prefixing the regex with '(?i)'. |  |
+| `-i,`<br>`--ignore-case` | flag | Case insensitive search. This is equivalent to prefixing the regex with '(?i)'. |  |
 | `--literal` | flag | Treat the regex pattern as a literal string. This allows you to search for matches that contain regex special characters. |  |
 | `--exact` | flag | Match the ENTIRE field exactly. Treats the pattern as a literal string (like --literal) and automatically anchors it to match the complete field value (^pattern$). |  |
-| `-s, --select` | string | Select the columns to search. See 'qsv select -h' for the full syntax. |  |
-| `-u, --unicode` | flag | Enable unicode support. When enabled, character classes will match all unicode word characters instead of only ASCII word characters. Decreases performance. |  |
+| `-s,`<br>`--select` | string | Select the columns to search. See 'qsv select -h' for the full syntax. |  |
+| `-u,`<br>`--unicode` | flag | Enable unicode support. When enabled, character classes will match all unicode word characters instead of only ASCII word characters. Decreases performance. |  |
 | `--size-limit` | string | Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned. | `50` |
 | `--dfa-size-limit` | string | Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. | `10` |
 | `--not-one` | flag | Use exit code 0 instead of 1 for no replacement found. |  |
-| `-j, --jobs` | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
 
 <a name="common-options"></a>
 
@@ -105,12 +105,12 @@ qsv replace --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-p, --progressbar` | flag | Show progress bars. Not valid for stdin. |  |
-| `-q, --quiet` | flag | Do not print number of replacements to stderr. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-p,`<br>`--progressbar` | flag | Show progress bars. Not valid for stdin. |  |
+| `-q,`<br>`--quiet` | flag | Do not print number of replacements to stderr. |  |
 
 ---
 **Source:** [`src/cmd/replace.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/replace.rs)

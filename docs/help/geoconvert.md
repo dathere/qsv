@@ -67,10 +67,10 @@ qsv geoconvert --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-g, --geometry` | string | The name of the column that has WKT geometry. Alternative to --latitude and --longitude. |  |
-| `-y, --latitude` | string | The name of the column with northing values. |  |
-| `-x, --longitude` | string | The name of the column with easting values. |  |
-| `-l, --max-length` | string | The maximum column length when the output format is CSV. Oftentimes, the geometry column is too long to fit in a CSV file, causing other tools like Python & PostgreSQL to fail. If a column is too long, it will be truncated to the specified length and an ellipsis ("...") will be appended. |  |
+| `-g,`<br>`--geometry` | string | The name of the column that has WKT geometry. Alternative to --latitude and --longitude. |  |
+| `-y,`<br>`--latitude` | string | The name of the column with northing values. |  |
+| `-x,`<br>`--longitude` | string | The name of the column with easting values. |  |
+| `-l,`<br>`--max-length` | string | The maximum column length when the output format is CSV. Oftentimes, the geometry column is too long to fit in a CSV file, causing other tools like Python & PostgreSQL to fail. If a column is too long, it will be truncated to the specified length and an ellipsis ("...") will be appended. |  |
 
 <a name="common-options"></a>
 
@@ -78,8 +78,8 @@ qsv geoconvert --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
 
 ---
 **Source:** [`src/cmd/geoconvert.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/geoconvert.rs)

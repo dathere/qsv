@@ -38,9 +38,9 @@ qsv fixlengths --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-l, --length` | string | Forcefully set the length of each record. If a record is not the size given, then it is truncated or expanded as appropriate. |  |
-| `-r, --remove-empty` | flag | Remove empty columns. |  |
-| `-i, --insert` | string | If empty fields need to be inserted, insert them at <pos>. If <pos> is zero, then it is inserted at the end of each record. If <pos> is negative, it is inserted from the END of each record going backwards. If <pos> is positive, it is inserted from the BEGINNING of each record going forward. | `0` |
+| `-l,`<br>`--length` | string | Forcefully set the length of each record. If a record is not the size given, then it is truncated or expanded as appropriate. |  |
+| `-r,`<br>`--remove-empty` | flag | Remove empty columns. |  |
+| `-i,`<br>`--insert` | string | If empty fields need to be inserted, insert them at <pos>. If <pos> is zero, then it is inserted at the end of each record. If <pos> is negative, it is inserted from the END of each record going backwards. If <pos> is positive, it is inserted from the BEGINNING of each record going forward. | `0` |
 | `--quote` | string | The quote character to use. | `"` |
 | `--escape` | string | The escape character to use. When not specified, quotes are escaped by doubling them. |  |
 
@@ -50,10 +50,10 @@ qsv fixlengths --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-q, --quiet` | flag | Don't print removed column information. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-q,`<br>`--quiet` | flag | Don't print removed column information. |  |
 
 ---
 **Source:** [`src/cmd/fixlengths.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/fixlengths.rs)

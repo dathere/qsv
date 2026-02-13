@@ -65,8 +65,8 @@ qsv join --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-i, --ignore-case` | flag | When set, joins are done case insensitively. |  |
-| `-z, --ignore-leading-zeros` | flag | When set, leading zeros are ignored in join keys. |  |
+| `-i,`<br>`--ignore-case` | flag | When set, joins are done case insensitively. |  |
+| `-z,`<br>`--ignore-leading-zeros` | flag | When set, leading zeros are ignored in join keys. |  |
 
 <a name="common-options"></a>
 
@@ -74,10 +74,10 @@ qsv join --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/join.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/join.rs)

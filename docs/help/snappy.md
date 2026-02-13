@@ -71,11 +71,11 @@ qsv snappy --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <output> instead of stdout. |  |
-| `-j, --jobs` | string | The number of jobs to run in parallel when compressing. When not set, its set to the number of CPUs - 1 |  |
-| `-q, --quiet` | flag | Suppress status messages to stderr. |  |
-| `-p, --progressbar` | flag | Show download progress bars. Only valid for URL input. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <output> instead of stdout. |  |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel when compressing. When not set, its set to the number of CPUs - 1 |  |
+| `-q,`<br>`--quiet` | flag | Suppress status messages to stderr. |  |
+| `-p,`<br>`--progressbar` | flag | Show download progress bars. Only valid for URL input. |  |
 
 ---
 **Source:** [`src/cmd/snappy.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/snappy.rs)

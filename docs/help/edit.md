@@ -52,7 +52,7 @@ qsv edit --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-i, --in-place` | flag | Overwrite the input file data with the output. The input file is renamed to a .bak file in the same directory. |  |
+| `-i,`<br>`--in-place` | flag | Overwrite the input file data with the output. The input file is renamed to a .bak file in the same directory. |  |
 
 <a name="common-options"></a>
 
@@ -60,9 +60,9 @@ qsv edit --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | Start row indices from the header row as 0 (allows editing the header row). |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | Start row indices from the header row as 0 (allows editing the header row). |  |
 
 ---
 **Source:** [`src/cmd/edit.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/edit.rs)

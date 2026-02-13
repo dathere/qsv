@@ -13,7 +13,7 @@
 
 Validates CSV data using two main modes:
 
-### Json Schema Validation Mode:
+### JSON Schema Validation Mode:
 
 This mode is invoked if a JSON Schema file (draft 2020-12) is provided.
 
@@ -245,8 +245,8 @@ qsv validate --help
 | `--json` | flag | When validating without a JSON Schema, return the RFC 4180 check as a JSON file instead of a message. |  |
 | `--pretty-json` | flag | Same as --json, but pretty printed. |  |
 | `--valid-output` | string | Change validation mode behavior so if ALL rows are valid, to pass it to output, return exit code 1, and set stderr to the number of valid rows. Setting this will override the default behavior of creating a valid file only when there are invalid records. To send valid records to stdout, use `-` as the filename. |  |
-| `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `-b, --batch` | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-b,`<br>`--batch` | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
 
 <a name="fancy-regex-options"></a>
 
@@ -287,11 +287,11 @@ qsv validate --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. It will be validated with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. Note that this option is only valid when running in RFC 4180 validation mode as JSON Schema validation requires headers. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. |  |
-| `-p, --progressbar` | flag | Show progress bars. Not valid for stdin. |  |
-| `-q, --quiet` | flag | Do not display validation summary message. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. It will be validated with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. Note that this option is only valid when running in RFC 4180 validation mode as JSON Schema validation requires headers. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. |  |
+| `-p,`<br>`--progressbar` | flag | Show progress bars. Not valid for stdin. |  |
+| `-q,`<br>`--quiet` | flag | Do not display validation summary message. |  |
 
 ---
 **Source:** [`src/cmd/validate.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/validate.rs)

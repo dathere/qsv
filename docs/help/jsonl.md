@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/jsonl.rs](https://github.com/dathere/qsv/blob/master/src/cmd/jsonl.rs)** | 🚀🔣
 
 <a name="nav"></a>
-[Description](#description) | [Usage](#usage) | [Jsonl Options](#jsonl-options) | [Common Options](#common-options)
+[Description](#description) | [Usage](#usage) | [JSONL Options](#jsonl-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -34,13 +34,13 @@ qsv jsonl --help
 
 <a name="jsonl-options"></a>
 
-## Jsonl Options [↩](#nav)
+## JSONL Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--ignore-errors` | flag | Skip malformed input lines. |  |
-| `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `-b, --batch` | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-b,`<br>`--batch` | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
 
 <a name="common-options"></a>
 
@@ -48,9 +48,9 @@ qsv jsonl --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-d, --delimiter` | string | The delimiter to use when writing CSV data. Must be a single character. | `,` |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-d,`<br>`--delimiter` | string | The delimiter to use when writing CSV data. Must be a single character. | `,` |
 
 ---
 **Source:** [`src/cmd/jsonl.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/jsonl.rs)

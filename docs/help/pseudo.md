@@ -78,13 +78,13 @@ qsv pseudo --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
 | `--start` | string | The starting number for the incremental identifier. | `0` |
 | `--increment` | string | The increment for the incremental identifier. | `1` |
 | `--formatstr` | string | The format string for the incremental identifier. The format string must contain a single "{}" which will be replaced with the incremental identifier. | `{}` |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/pseudo.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/pseudo.rs)

@@ -352,11 +352,11 @@ qsv apply --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-c, --new-column` | string | Put the transformed values in a new column instead. |  |
-| `-r, --rename` | string | New name for the transformed column. |  |
-| `-C, --comparand=<string>` | string | The string to compare against for replace & similarity operations. Also used with numtocurrency operation to specify currency symbol. |  |
-| `-R, --replacement=<string>` | string | The string to use for the replace & emptyreplace operations. Also used with numtocurrency operation to conversion rate. |  |
-| `-f, --formatstr=<string>` | string | This option is used by several subcommands: |  |
+| `-c,`<br>`--new-column` | string | Put the transformed values in a new column instead. |  |
+| `-r,`<br>`--rename` | string | New name for the transformed column. |  |
+| `-C,`<br>`--comparand=<string>` | string | The string to compare against for replace & similarity operations. Also used with numtocurrency operation to specify currency symbol. |  |
+| `-R,`<br>`--replacement=<string>` | string | The string to use for the replace & emptyreplace operations. Also used with numtocurrency operation to conversion rate. |  |
+| `-f,`<br>`--formatstr=<string>` | string | This option is used by several subcommands: |  |
 
 <a name="operations-options"></a>
 
@@ -364,8 +364,8 @@ qsv apply --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `-b, --batch` | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-b,`<br>`--batch` | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
 
 <a name="common-options"></a>
 
@@ -373,11 +373,11 @@ qsv apply --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-p, --progressbar` | flag | Show progress bars. Not valid for stdin. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-p,`<br>`--progressbar` | flag | Show progress bars. Not valid for stdin. |  |
 
 ---
 **Source:** [`src/cmd/apply.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/apply.rs)

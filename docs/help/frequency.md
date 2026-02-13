@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/frequency.rs](https://github.com/dathere/qsv/blob/master/src/cmd/frequency.rs)** | 📇😣🏎️👆🪄![Luau](../images/luau.png)
 
 <a name="nav"></a>
-[Description](#description) | [Usage](#usage) | [Frequency Options](#frequency-options) | [Json Output Options](#json-output-options) | [Common Options](#common-options)
+[Description](#description) | [Usage](#usage) | [Frequency Options](#frequency-options) | [JSON Output Options](#json-output-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -97,31 +97,31 @@ qsv frequency --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-s, --select` | string | Select a subset of columns to compute frequencies for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv frequency' will disable the use of indexing. |  |
-| `-l, --limit` | string | Limit the frequency table to the N most common items. Set to '0' to disable a limit. If negative, only return values with an occurrence count >= absolute value of the negative limit. e.g. --limit -2 will only return values with an occurrence count >= 2. | `10` |
-| `-u, --unq-limit` | string | If a column has all unique values, limit the frequency table to a sample of N unique items. Set to '0' to disable a unique_limit. | `10` |
+| `-s,`<br>`--select` | string | Select a subset of columns to compute frequencies for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv frequency' will disable the use of indexing. |  |
+| `-l,`<br>`--limit` | string | Limit the frequency table to the N most common items. Set to '0' to disable a limit. If negative, only return values with an occurrence count >= absolute value of the negative limit. e.g. --limit -2 will only return values with an occurrence count >= 2. | `10` |
+| `-u,`<br>`--unq-limit` | string | If a column has all unique values, limit the frequency table to a sample of N unique items. Set to '0' to disable a unique_limit. | `10` |
 | `--lmt-threshold` | string | The threshold for which --limit and --unq-limit will be applied. If the number of unique items in a column >= threshold, the limits will be applied. Set to '0' to disable the threshold and always apply limits. | `0` |
-| `-r, --rank-strategy` | string | The strategy to use when there are count-tied values in the frequency table. See <https://en.wikipedia.org/wiki/Ranking> for more info. | `dense` |
+| `-r,`<br>`--rank-strategy` | string | The strategy to use when there are count-tied values in the frequency table. See <https://en.wikipedia.org/wiki/Ranking> for more info. | `dense` |
 | `--pct-dec-places` | string | The number of decimal places to round the percentage to. If negative, the number of decimal places will be set automatically to the minimum number of decimal places needed to represent the percentage accurately, up to the absolute value of the negative number. | `-5` |
 | `--other-sorted` | flag | By default, the "Other" category is placed at the end of the frequency table for a field. If this is enabled, the "Other" category will be sorted with the rest of the values by count. |  |
 | `--other-text` | string | The text to use for the "Other" category. If set to "<NONE>", the "Other" category will not be included in the frequency table. | `Other` |
 | `--no-other` | flag | Don't include the "Other" category in the frequency table. This is equivalent to --other-text "<NONE>". |  |
 | `--null-sorted` | flag | By default, the NULL category (controlled by --null-text) is placed at the end of the frequency table for a field, after "Other" if present. If this is enabled, the NULL category will be sorted with the rest of the values by count. |  |
-| `-a, --asc` | flag | Sort the frequency tables in ascending order by count. The default is descending order. Note that this option will also reverse ranking - i.e. the LEAST frequent values will have a rank of 1. |  |
+| `-a,`<br>`--asc` | flag | Sort the frequency tables in ascending order by count. The default is descending order. Note that this option will also reverse ranking - i.e. the LEAST frequent values will have a rank of 1. |  |
 | `--no-trim` | flag | Don't trim whitespace from values when computing frequencies. The default is to trim leading and trailing whitespaces. |  |
 | `--null-text` | string | The text to use for NULL values. If set to "<NONE>", NULLs will not be included in the frequency table (equivalent to --no-nulls). | `(NULL)` |
 | `--no-nulls` | flag | Don't include NULLs in the frequency table. This is equivalent to --null-text "<NONE>". |  |
 | `--pct-nulls` | flag | Include NULL values in percentage and rank calculations. When disabled (default), percentages are "valid percentages" calculated with NULLs excluded from the denominator, and NULL entries display empty percentage and rank values. When enabled, NULLs are included in the denominator (original behavior). Has no effect when --no-nulls is set. |  |
-| `-i, --ignore-case` | flag | Ignore case when computing frequencies. |  |
+| `-i,`<br>`--ignore-case` | flag | Ignore case when computing frequencies. |  |
 | `--no-float` | string | Exclude Float columns from frequency analysis. Floats typically contain continuous values where frequency tables are not meaningful. To exclude ALL Float columns, use --no-float "*" To exclude Floats except specific columns, specify a comma-separated list of Float columns to INCLUDE. e.g. "--no-float *" excludes all Floats "--no-float price,rate" excludes Floats except 'price' and 'rate' Requires stats cache for type detection. |  |
 | `--stats-filter` | string | Filter columns based on their statistics using a Luau expression. Columns where the expression evaluates to `true` are EXCLUDED. Available fields: field, type, is_ascii, cardinality, nullcount, sum, min, max, range, sort_order, min_length, max_length, mean, stddev, variance, cv, sparsity, q1, q2_median, q3, iqr, mad, skewness, mode, antimode, n_negative, n_zero, n_positive, etc. e.g. "nullcount > 1000" - exclude columns with many nulls "type == 'Float'" - exclude Float columns "cardinality > 500 and nullcount > 0" - compound expression Requires stats cache and the "luau" feature. |  |
 | `--all-unique-text` | string | The text to use for the "<ALL_UNIQUE>" category. | `<ALL_UNIQUE>` |
 | `--vis-whitespace` | flag | Visualize whitespace characters in the output. See <https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers> for the list of whitespace markers. |  |
-| `-j, --jobs` | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
 
 <a name="json-output-options"></a>
 
-## Json Output Options [↩](#nav)
+## JSON Output Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -137,10 +137,10 @@ qsv frequency --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will NOT be included in the frequency table. Additionally, the 'field' column will be 1-based indices instead of header names. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will NOT be included in the frequency table. Additionally, the 'field' column will be 1-based indices instead of header names. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | `--memcheck` | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
 
 ---

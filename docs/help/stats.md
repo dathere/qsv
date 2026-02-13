@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/stats.rs](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs)** | 📇🤯🏎️👆🪄
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Stats Options](#stats-options) | [Boolean Inferencing Options](#boolean-inferencing-options) | [Date Inferencing Options](#date-inferencing-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Stats Options](#stats-options) | [Boolean Inferencing Options](#boolean-inferencing-options) | [Numeric & Date/Datetime Stats That Require In-memory Sorting Options](#numeric-&-date/datetime-stats-that-require-in-memory-sorting-options) | [Date Inferencing Options](#date-inferencing-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -228,8 +228,8 @@ qsv stats --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-s, --select` | string | Select a subset of columns to compute stats for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv stats' will prevent the use of indexing. |  |
-| `-E, --everything` | flag | Compute all statistics available. |  |
+| `-s,`<br>`--select` | string | Select a subset of columns to compute stats for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv stats' will prevent the use of indexing. |  |
+| `-E,`<br>`--everything` | flag | Compute all statistics available. |  |
 | `--typesonly` | flag | Infer data types only and do not compute statistics. Note that if you want to infer dates and boolean types, you'll still need to use the --infer-dates & --infer-boolean options. |  |
 
 <a name="boolean-inferencing-options"></a>
@@ -242,6 +242,13 @@ qsv stats --help
 | `--boolean-patterns` | string | Comma-separated list of boolean pattern pairs in the format "true_pattern:false_pattern". Each pattern can be a string of any length. The patterns are case-insensitive. If a pattern ends with a "*", it is treated as a prefix. For example, "t*:f*,y*:n*" will match "true", "truthy", "Truth" as boolean true values so long as the corresponding false pattern (e.g. False, f, etc.) is also matched & cardinality is 2. Ignored if --infer-boolean is false. | `1:0,t*:f*,y*:n*` |
 | `--mode` | flag | Compute the mode/s & antimode/s. Multimodal-aware. If there are multiple modes/antimodes, they are separated by the QSV_STATS_SEPARATOR environment variable. If not set, the default separator is "\|". Uses memory proportional to the cardinality of each column. |  |
 | `--cardinality` | flag | Compute the cardinality and the uniqueness ratio. This is automatically enabled if --infer-boolean is enabled. <https://en.wikipedia.org/wiki/Cardinality_(SQL_statements)> Uses memory proportional to the number of unique values in each column. |  |
+
+<a name="numeric-&-date/datetime-stats-that-require-in-memory-sorting-options"></a>
+
+## Numeric & Date/Datetime Stats That Require In-memory Sorting Options [↩](#nav)
+
+| Option | Type | Description | Default |
+|--------|------|-------------|--------|
 | `--median` | flag | Compute the median. Loads & sorts all the selected columns' data in memory. <https://en.wikipedia.org/wiki/Median> |  |
 | `--mad` | flag | Compute the median absolute deviation (MAD). <https://en.wikipedia.org/wiki/Median_absolute_deviation> |  |
 | `--quartiles` | flag | Compute the quartiles (using method 3), the IQR, the lower/upper, inner/outer fences and skewness. <https://en.wikipedia.org/wiki/Quartile#Method_3> |  |
@@ -261,9 +268,9 @@ qsv stats --help
 | `--dates-whitelist` | string | The comma-separated, case-insensitive patterns to look for when shortlisting fields for date inferencing. i.e. if the field's name has any of these patterns, it is shortlisted for date inferencing. | `sniff` |
 | `--prefer-dmy` | flag | Parse dates in dmy format. Otherwise, use mdy format. Ignored if --infer-dates is false. |  |
 | `--force` | flag | Force recomputing stats even if valid precomputed stats cache exists. |  |
-| `-j, --jobs` | string | The number of jobs to run in parallel. This works only when the given CSV has an index. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. This works only when the given CSV has an index. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | `--stats-jsonl` | flag | Also write the stats in JSONL format. If set, the stats will be written to <FILESTEM>.stats.csv.data.jsonl. Note that this option used internally by other qsv "smart" commands (see <https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#stats-cache>) to load cached stats to make them work smarter & faster. You can preemptively create the stats-jsonl file by using this option BEFORE running "smart" commands and they will automatically use it. |  |
-| `-c, --cache-threshold` | string | Controls the creation of stats cache files. * when greater than 1, the threshold in milliseconds before caching stats results. If a stats run takes longer than this threshold, the stats results will be cached. * 0 to suppress caching. * 1 to force caching. * a negative number to automatically create an index when the input file size is greater than abs(arg) in bytes. If the negative number ends with 5, it will delete the index file and the stats cache file after the stats run. Otherwise, the index file and the cache files are kept. | `5000` |
+| `-c,`<br>`--cache-threshold` | string | Controls the creation of stats cache files. * when greater than 1, the threshold in milliseconds before caching stats results. If a stats run takes longer than this threshold, the stats results will be cached. * 0 to suppress caching. * 1 to force caching. * a negative number to automatically create an index when the input file size is greater than abs(arg) in bytes. If the negative number ends with 5, it will delete the index file and the stats cache file after the stats run. Otherwise, the index file and the cache files are kept. | `5000` |
 | `--vis-whitespace` | flag | Visualize whitespace characters in the output. See <https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers> for the list of whitespace markers. |  |
 
 <a name="common-options"></a>
@@ -272,10 +279,10 @@ qsv stats --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will NOT be interpreted as column names. i.e., They will be included in statistics. |  |
-| `-d, --delimiter` | string | The field delimiter for READING CSV data. Must be a single character. (default: ,) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will NOT be interpreted as column names. i.e., They will be included in statistics. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for READING CSV data. Must be a single character. (default: ,) |  |
 | `--memcheck` | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. This option is ignored when computing default, streaming statistics, as it is not needed. |  |
 
 ---

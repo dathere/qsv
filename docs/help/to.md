@@ -114,7 +114,7 @@ Print dump to stdout.
 qsv to sqlite --dump - file1.csv file2.csv
 ```
 
-### Excel Xlsx
+### Excel XLSX
 
 Convert to new xlsx file.
 Example:
@@ -135,7 +135,7 @@ Load files listed in the 'ourdata.infile-list' into xlsx file.
 qsv to xlsx output.xlsx ourdata.infile-list
 ```
 
-### Ods
+### ODS
 
 Convert to new ODS (Open Document Spreadsheet) file.
 Example:
@@ -206,18 +206,18 @@ qsv to --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-k, --print-package` | flag | Print statistics as datapackage, by default will print field summary. |  |
-| `-u, --dump` | flag | Create database dump file for use with `psql` or `sqlite3` command line tools (postgres/sqlite only). |  |
-| `-a, --stats` | flag | Produce extra statistics about the data beyond just type guessing. |  |
-| `-c, --stats-csv` | string | Output stats as CSV to specified file. |  |
-| `-q, --quiet` | flag | Do not print out field summary. |  |
-| `-s, --schema` | string | The schema to load the data into. (postgres only). |  |
-| `-d, --drop` | flag | Drop tables before loading new data into them (postgres/sqlite only). |  |
-| `-e, --evolve` | flag | If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only). |  |
-| `-i, --pipe` | flag | Adjust output format for piped data (omits row counts and field format columns). |  |
-| `-p, --separator` | string | For xlsx, use this character to help truncate xlsx sheet names. Defaults to space. |  |
-| `-A, --all-strings` | flag | Convert all fields to strings. |  |
-| `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-k,`<br>`--print-package` | flag | Print statistics as datapackage, by default will print field summary. |  |
+| `-u,`<br>`--dump` | flag | Create database dump file for use with `psql` or `sqlite3` command line tools (postgres/sqlite only). |  |
+| `-a,`<br>`--stats` | flag | Produce extra statistics about the data beyond just type guessing. |  |
+| `-c,`<br>`--stats-csv` | string | Output stats as CSV to specified file. |  |
+| `-q,`<br>`--quiet` | flag | Do not print out field summary. |  |
+| `-s,`<br>`--schema` | string | The schema to load the data into. (postgres only). |  |
+| `-d,`<br>`--drop` | flag | Drop tables before loading new data into them (postgres/sqlite only). |  |
+| `-e,`<br>`--evolve` | flag | If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only). |  |
+| `-i,`<br>`--pipe` | flag | Adjust output format for piped data (omits row counts and field format columns). |  |
+| `-p,`<br>`--separator` | string | For xlsx, use this character to help truncate xlsx sheet names. Defaults to space. |  |
+| `-A,`<br>`--all-strings` | flag | Convert all fields to strings. |  |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 
 <a name="common-options"></a>
 
@@ -225,8 +225,8 @@ qsv to --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/to.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/to.rs)

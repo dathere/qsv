@@ -88,7 +88,7 @@ qsv count --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-H, --human-readable` | flag | Comma separate counts. |  |
+| `-H,`<br>`--human-readable` | flag | Comma separate counts. |  |
 
 <a name="width-options"></a>
 
@@ -115,10 +115,10 @@ qsv count --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-f, --flexible` | flag | Do not validate if the CSV has different number of fields per record, increasing performance when counting without an index. |  |
-| `-n, --no-headers` | flag | When set, the first row will be included in the count. |  |
-| `-d, --delimiter` | string | The delimiter to use when reading CSV data. Must be a single character. | `,` |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-f,`<br>`--flexible` | flag | Do not validate if the CSV has different number of fields per record, increasing performance when counting without an index. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will be included in the count. |  |
+| `-d,`<br>`--delimiter` | string | The delimiter to use when reading CSV data. Must be a single character. | `,` |
 
 ---
 **Source:** [`src/cmd/count.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/count.rs)

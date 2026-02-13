@@ -59,10 +59,10 @@ qsv fill --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-g, --groupby` | string | Group by specified columns. |  |
-| `-f, --first` | flag | Fill using the first valid value of a column, instead of the latest. |  |
-| `-b, --backfill` | flag | Fill initial empty values with the first valid value. |  |
-| `-v, --default` | string | Fill using this default value. |  |
+| `-g,`<br>`--groupby` | string | Group by specified columns. |  |
+| `-f,`<br>`--first` | flag | Fill using the first valid value of a column, instead of the latest. |  |
+| `-b,`<br>`--backfill` | flag | Fill initial empty values with the first valid value. |  |
+| `-v,`<br>`--default` | string | Fill using this default value. |  |
 
 <a name="common-options"></a>
 
@@ -70,10 +70,10 @@ qsv fill --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/fill.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/fill.rs)

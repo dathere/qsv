@@ -95,13 +95,13 @@ qsv template --help
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--template` | string | MiniJinja template string to use (alternative to --template-file) |  |
-| `-t, --template-file` | string | MiniJinja template file to use |  |
-| `-j, --globals-json` | string | A JSON file containing global variables to make available in templates. The JSON properties can be accessed in templates using the "qsv_g" namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}). This allows sharing common values across all template renders. |  |
+| `-t,`<br>`--template-file` | string | MiniJinja template file to use |  |
+| `-j,`<br>`--globals-json` | string | A JSON file containing global variables to make available in templates. The JSON properties can be accessed in templates using the "qsv_g" namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}). This allows sharing common values across all template renders. |  |
 | `--outfilename` | string | MiniJinja template string to use to create the filename of the output files to write to <outdir>. If set to just QSV_ROWNO, the filestem is set to the current rowno of the record, padded with leading zeroes, with the ".txt" extension (e.g. 001.txt, 002.txt, etc.) Note that all the fields, including QSV_ROWNO, are available when defining the filename template. | `QSV_ROWNO` |
 | `--outsubdir-size` | string | The number of files per subdirectory in <outdir>. | `1000` |
 | `--customfilter-error` | string | The value to return when a custom filter returns an error. Use "<empty string>" to return an empty string. | `<FILTER_ERROR>` |
-| `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `-b, --batch` | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-b,`<br>`--batch` | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
 | `--timeout` | string | Timeout for downloading lookups on URLs. | `30` |
 | `--cache-dir` | string | The directory to use for caching downloaded lookup resources. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
 | `--ckan-api` | string | The URL of the CKAN API to use for downloading lookup resources with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. | `https://data.dathere.com/api/3/action` |
@@ -113,11 +113,11 @@ qsv template --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. Templates must use numeric 1-based indices with the "_c" prefix.(e.g. col1: {{_c1}} col2: {{_c2}}) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. Templates must use numeric 1-based indices with the "_c" prefix.(e.g. col1: {{_c1}} col2: {{_c2}}) |  |
 | `--delimiter` | string | Field separator for reading CSV | `,` |
-| `-p, --progressbar` | flag | Show progress bars. Not valid for stdin. |  |
+| `-p,`<br>`--progressbar` | flag | Show progress bars. Not valid for stdin. |  |
 
 ---
 **Source:** [`src/cmd/template.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/template.rs)

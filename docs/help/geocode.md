@@ -363,8 +363,8 @@ qsv geocode --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-c, --new-column` | string | Put the transformed values in a new column instead. Not valid when using the '%dyncols:' --formatstr option. |  |
-| `-r, --rename` | string | New name for the transformed column. |  |
+| `-c,`<br>`--new-column` | string | Put the transformed values in a new column instead. Not valid when using the '%dyncols:' --formatstr option. |  |
+| `-r,`<br>`--rename` | string | New name for the transformed column. |  |
 | `--country` | string | The comma-delimited, case-insensitive list of countries to filter for. Country is specified as a ISO 3166-1 alpha-2 (two-letter) country code. <https://en.wikipedia.org/wiki/ISO_3166-2> |  |
 
 <a name="suggest-only-options"></a>
@@ -382,7 +382,7 @@ qsv geocode --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-k, --k_weight` | string | Use population-weighted distance for reverse subcommand. (i.e. nearest.distance - k * city.population) Larger values will favor more populated cities. If not set (default), the population is not used and the nearest city is returned. |  |
+| `-k,`<br>`--k_weight` | string | Use population-weighted distance for reverse subcommand. (i.e. nearest.distance - k * city.population) Larger values will favor more populated cities. If not set (default), the population is not used and the nearest city is returned. |  |
 
 <a name="dynamic-formatting-options"></a>
 
@@ -390,10 +390,10 @@ qsv geocode --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-l, --language` | string | The language to use when geocoding. The language is specified as a ISO 639-1 code. Note that the Geonames index must have been built with the specified language using the `index-update` subcommand with the --languages option. If the language is not available, the first language in the index is used. | `en` |
+| `-l,`<br>`--language` | string | The language to use when geocoding. The language is specified as a ISO 639-1 code. Note that the Geonames index must have been built with the specified language using the `index-update` subcommand with the --languages option. If the language is not available, the first language in the index is used. | `en` |
 | `--invalid-result` | string | The string to return when the geocode result is empty/invalid. If not set, the original value is used. |  |
-| `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `-b, --batch` | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-b,`<br>`--batch` | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
 | `--timeout` | string | Timeout for downloading Geonames cities index. | `120` |
 | `--cache-dir` | string | The directory to use for caching the Geonames cities index. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
 
@@ -413,10 +413,10 @@ qsv geocode --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-p, --progressbar` | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-p,`<br>`--progressbar` | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |
 
 ---
 **Source:** [`src/cmd/geocode.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/geocode.rs)

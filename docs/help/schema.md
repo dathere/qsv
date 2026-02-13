@@ -13,7 +13,7 @@
 
 Generate JSON Schema or Polars Schema (with the `--polars` option) from CSV data.
 
-### Json Schema Validation:
+### JSON Schema Validation:
 
 This command derives a JSON Schema Validation (Draft 2020-12) file from CSV data,
 including validation rules based on data type and input data domain/range.
@@ -81,7 +81,7 @@ qsv schema --help
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--enum-threshold` | string | Cardinality threshold for adding enum constraints. Enum constraints are compiled for String & Integer types. | `50` |
-| `-i, --ignore-case` | flag | Ignore case when compiling unique values for enum constraints. Do note however that the `validate` command is case-sensitive when validating against enum constraints. |  |
+| `-i,`<br>`--ignore-case` | flag | Ignore case when compiling unique values for enum constraints. Do note however that the `validate` command is case-sensitive when validating against enum constraints. |  |
 | `--strict-dates` | flag | Enforce Internet Datetime format (RFC-3339) for detected date/datetime columns. Otherwise, even if columns are inferred as date/datetime, they are set to type "string" in the schema instead of "date" or "date-time". |  |
 | `--strict-formats` | flag | Enforce JSON Schema format constraints for detected email, hostname, and IP address columns. When enabled, String fields are checked against email, hostname, IPv4, and IPv6 formats. Format constraints are only added if ALL unique values in the field match the detected format. |  |
 | `--pattern-columns` | string | Select columns to derive regex pattern constraints. That is, this will create a regular expression that matches all values for each specified column. Columns are selected using `select` syntax (see `qsv select --help` for details). |  |
@@ -89,8 +89,8 @@ qsv schema --help
 | `--prefer-dmy` | flag | Prefer to parse dates in dmy format. Otherwise, use mdy format. |  |
 | `--force` | flag | Force recomputing cardinality and unique values even if stats cache file exists and is current. |  |
 | `--stdout` | flag | Send generated JSON schema file to stdout instead. |  |
-| `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `-o, --output` | string | Write output to <file> instead of using the default filename. For JSON Schema, the default is <input>.schema.json. For Polars schema, the default is <input>.pschema.json. |  |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of using the default filename. For JSON Schema, the default is <input>.schema.json. For Polars schema, the default is <input>.pschema.json. |  |
 | `--polars` | flag | Infer a Polars schema instead of a JSON Schema. This option is only available if the `polars` feature is enabled. The generated Polars schema will be written to a file with the `.pschema.json` suffix appended to the input filename. |  |
 
 <a name="common-options"></a>
@@ -99,9 +99,9 @@ qsv schema --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. Namely, it will be processed with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. Namely, it will be processed with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. |  |
 | `--memcheck` | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
 
 ---

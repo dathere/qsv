@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sqlp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sqlp.rs)** | 📇🚀🐻‍❄️🗄️🪄
 
 <a name="nav"></a>
-[Description](#description) | [Usage](#usage) | [Sqlp Options](#sqlp-options) | [Polars Csv Input Parsing Options](#polars-csv-input-parsing-options) | [Csv Output Format Only Options](#csv-output-format-only-options) | [Parquet Output Format Only Options](#parquet-output-format-only-options) | [Common Options](#common-options)
+[Description](#description) | [Usage](#usage) | [Sqlp Options](#sqlp-options) | [Polars CSV Input Parsing Options](#polars-csv-input-parsing-options) | [CSV Output Format Only Options](#csv-output-format-only-options) | [Arrow/Avro/Parquet Output Formats Only Options](#arrow/avro/parquet-output-formats-only-options) | [Parquet Output Format Only Options](#parquet-output-format-only-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -304,7 +304,7 @@ qsv sqlp --help
 
 <a name="polars-csv-input-parsing-options"></a>
 
-## Polars Csv Input Parsing Options [↩](#nav)
+## Polars CSV Input Parsing Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -321,7 +321,7 @@ qsv sqlp --help
 
 <a name="csv-output-format-only-options"></a>
 
-## Csv Output Format Only Options [↩](#nav)
+## CSV Output Format Only Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -330,6 +330,13 @@ qsv sqlp --help
 | `--time-format` | string | The time format to use writing times. |  |
 | `--float-precision` | string | The number of digits of precision to use when writing floats. |  |
 | `--wnull-value` | string | The string to use when WRITING null values. | `<empty string>` |
+
+<a name="arrow/avro/parquet-output-formats-only-options"></a>
+
+## Arrow/Avro/Parquet Output Formats Only Options [↩](#nav)
+
+| Option | Type | Description | Default |
+|--------|------|-------------|--------|
 | `--compression` | string | The compression codec to use when writing arrow or parquet files. For Arrow, valid values are: zstd, lz4, uncompressed For Avro, valid values are: deflate, snappy, uncompressed (default) For Parquet, valid values are: zstd, lz4raw, gzip, snappy, uncompressed | `zstd` |
 
 <a name="parquet-output-format-only-options"></a>
@@ -347,10 +354,10 @@ qsv sqlp --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-d, --delimiter` | string | The field delimiter for reading and writing CSV data. Must be a single character. | `,` |
-| `-q, --quiet` | flag | Do not return result shape to stderr. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading and writing CSV data. Must be a single character. | `,` |
+| `-q,`<br>`--quiet` | flag | Do not return result shape to stderr. |  |
 
 ---
 **Source:** [`src/cmd/sqlp.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/sqlp.rs)

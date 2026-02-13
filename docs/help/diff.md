@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Diff Options](#diff-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Find the difference between two CSVs with ludicrous speed.
@@ -26,6 +28,8 @@ $ qsv extdedup --select keycol data.csv --no-output
 
 The duplicate count will be printed to stderr.
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -98,12 +102,16 @@ qsv diff --no-headers-left --no-headers-right left.csv right.csv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_diff.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv diff [options] [<input-left>] [<input-right>]
 qsv diff --help
 ```
+
+<a name="diff-options"></a>
 
 ## Diff Options [↩](#nav)
 
@@ -119,6 +127,8 @@ qsv diff --help
 | `--sort-columns` | string | The column indices by which the diff result should be sorted as a comma separated list of indices, e.g. 0,1,2 or column names, e.g. name,age. Records in the diff result that are marked as "modified" ("delete" and "add" records that have the same key, but have different content) will always be kept together in the sorted diff result and so won't be sorted independently from each other. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. |  |
 | `--drop-equal-fields` | flag | Drop values of equal fields in modified rows of the CSV diff result (and replace them with the empty string). Key field values will not be dropped. |  |
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

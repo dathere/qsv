@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Extdedup Options](#extdedup-options) | [Csv Mode Only Options](#csv-mode-only-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Remove duplicate rows from an arbitrarily large CSV/text file using a memory-mapped,
@@ -31,12 +33,16 @@ line-by-line basis.
 A duplicate count will be sent to <stderr>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv extdedup [options] [<input>] [<output>]
 qsv extdedup --help
 ```
+
+<a name="extdedup-options"></a>
 
 ## Extdedup Options [↩](#nav)
 
@@ -48,6 +54,8 @@ qsv extdedup --help
 | `-H, --human-readable` | flag | Comma separate duplicate count. |  |
 | `--memory-limit` | string | The maximum amount of memory to buffer the on-disk hash table. If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory. | `10` |
 | `--temp-dir` | string | Directory to store temporary hash table file. If not specified, defaults to operating system temp directory. |  |
+
+<a name="csv-mode-only-options"></a>
 
 ## Csv Mode Only Options [↩](#nav)
 

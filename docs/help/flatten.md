@@ -7,6 +7,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Flatten Options](#flatten-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Prints flattened records such that fields are labeled separated by a new line.
@@ -20,12 +22,16 @@ contents of each field to provide a summary view.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_flatten.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv flatten [options] [<input>]
 qsv flatten --help
 ```
+
+<a name="flatten-options"></a>
 
 ## Flatten Options [↩](#nav)
 
@@ -34,6 +40,8 @@ qsv flatten --help
 | `-c, --condense` | string | Limits the length of each field to the value specified. If the field is UTF-8 encoded, then <arg> refers to the number of code points. Otherwise, it refers to the number of bytes. |  |
 | `-f, --field-separator` | string | A string of character to write between a column name and its value. |  |
 | `-s, --separator` | string | A string of characters to write after each record. When non-empty, a new line is automatically appended to the separator. | `#` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

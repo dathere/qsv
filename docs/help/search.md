@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Search Options](#search-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Filters CSV data by whether the given regex matches a row.
@@ -27,6 +29,8 @@ the first match.
 
 When the CSV is indexed, a faster parallel search is used.
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -81,6 +85,8 @@ qsv search --preview-match 5 'warning' data.csv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_search.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -88,12 +94,16 @@ qsv search [options] <regex> [<input>]
 qsv search --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<regex>` | Regular expression to match. Uses Rust regex syntax. See <https://docs.rs/regex/latest/regex/index.html#syntax> or <https://regex101.com> with the Rust flavor for more info. |
 | `<input>` | The CSV file to read. If not given, reads from stdin. |
+
+<a name="search-options"></a>
 
 ## Search Options [↩](#nav)
 
@@ -114,6 +124,8 @@ qsv search --help
 | `--json` | flag | Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based). Automatically sets --quiet. |  |
 | `--not-one` | flag | Use exit code 0 instead of 1 for no match found. |  |
 | `-j, --jobs` | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

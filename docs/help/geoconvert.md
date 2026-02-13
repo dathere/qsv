@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Geoconvert Options](#geoconvert-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Convert between various spatial formats and CSV/SVG including GeoJSON, SHP, and more.
@@ -42,12 +44,16 @@ $ qsv geoconvert file.csv csv geojson --latitude lat --longitude lon
 
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv geoconvert [options] (<input>) (<input-format>) (<output-format>)
 qsv geoconvert --help
 ```
+
+<a name="arguments"></a>
 
 ## Arguments [↩](#nav)
 
@@ -57,6 +63,8 @@ qsv geoconvert --help
 | `<input-format>` | Valid values are "geojson", "shp", and "csv" |
 | `<output-format>` | Valid values are: |
 
+<a name="geoconvert-options"></a>
+
 ## Geoconvert Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -65,6 +73,8 @@ qsv geoconvert --help
 | `-y, --latitude` | string | The name of the column with northing values. |  |
 | `-x, --longitude` | string | The name of the column with easting values. |  |
 | `-l, --max-length` | string | The maximum column length when the output format is CSV. Oftentimes, the geometry column is too long to fit in a CSV file, causing other tools like Python & PostgreSQL to fail. If a column is too long, it will be truncated to the specified length and an ellipsis ("...") will be appended. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

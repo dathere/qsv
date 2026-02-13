@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Joinp Options](#joinp-options) | [Join Options](#join-options) | [Polars Csv Parsing Options](#polars-csv-parsing-options) | [Asof Join Options](#asof-join-options) | [Output Format Options](#output-format-options) | [Join Key Transformation Options](#join-key-transformation-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Joins two sets of CSV data on the specified columns using the Polars engine.
@@ -25,6 +27,8 @@ Returns the shape of the join result (number of rows, number of columns) to stde
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_joinp.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -33,6 +37,8 @@ qsv joinp --cross [--validate <arg>] <input1> <input2> [--decimal-comma] [--deli
 qsv joinp --non-equi <expr> <input1> <input2> [options] [--output <file>]
 qsv joinp --help
 ```
+
+<a name="joinp-options"></a>
 
 ## Joinp Options [↩](#nav)
 
@@ -52,6 +58,8 @@ qsv joinp --help
 | `--filter-right` | string | Filter the right CSV data set by the given Polars SQL expression BEFORE the join. Only rows that evaluates to true are used in the join. |  |
 | `--validate` | string | Validate the join keys BEFORE performing the join. | `none` |
 
+<a name="join-options"></a>
+
 ## Join Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -59,6 +67,8 @@ qsv joinp --help
 | `--maintain-order` | string | Which row order to preserve, if any. Valid values are: none, left, right, left_right, right_left Do not rely on any observed ordering without explicitly setting this parameter. Not specifying any order can improve performance. Supported for inner, left, right and full joins. | `none` |
 | `--nulls` | flag | When set, joins will work on empty fields. Otherwise, empty fields are completely ignored. |  |
 | `--streaming` | flag | When set, the join will be done in a streaming fashion. Only use this when you get out of memory errors. |  |
+
+<a name="polars-csv-parsing-options"></a>
 
 ## Polars Csv Parsing Options [↩](#nav)
 
@@ -72,6 +82,8 @@ qsv joinp --help
 | `--ignore-errors` | flag | Ignore errors when parsing CSVs. If set, rows with errors will be skipped. If not set, the query will fail. Only use this when debugging queries, as polars does batched parsing and will skip the entire batch where the error occurred. To get more detailed error messages, set the environment variable POLARS_BACKTRACE_IN_ERR=1 before running the join. |  |
 | `--decimal-comma` | flag | Use comma as the decimal separator when parsing & writing CSVs. Otherwise, use period as the decimal separator. Note that you'll need to set --delimiter to an alternate delimiter other than the default comma if you are using this option. |  |
 
+<a name="asof-join-options"></a>
+
 ## Asof Join Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -84,6 +96,8 @@ qsv joinp --help
 | `--tolerance` | string | The tolerance for the nearest asof join. This is only used when the nearest strategy is used. The tolerance is a positive integer that specifies the maximum number of rows to search for a match. |  |
 | `-X, --allow-exact-matches` | flag | When set, the asof join will allow exact matches. (i.e. less-than-or-equal-to or greater-than-or-equal-to) Otherwise, the asof join will only allow nearest matches (strictly less-than or greater-than) by default. |  |
 
+<a name="output-format-options"></a>
+
 ## Output Format Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -95,6 +109,8 @@ qsv joinp --help
 | `--float-precision` | string | The number of digits of precision to use when writing floats. (default: 6) |  |
 | `--null-value` | string | The string to use when writing null values. (default: <empty string>) |  |
 
+<a name="join-key-transformation-options"></a>
+
 ## Join Key Transformation Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -102,6 +118,8 @@ qsv joinp --help
 | `-i, --ignore-case` | flag | When set, joins are done case insensitively. |  |
 | `-z, --ignore-leading-zeros` | flag | When set, joins are done ignoring leading zeros. Note that this is only applied to the join keys for both numeric and string columns. Also note that Polars will automatically remove leading zeros from numeric columns when it infers the schema. To force the schema to be all String types, set --cache-schema to -1 or -2. |  |
 | `-N, --norm-unicode` | string | When set, join keys are Unicode normalized. | `none` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

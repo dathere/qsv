@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Frequency Options](#frequency-options) | [Json Output Options](#json-output-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Compute a frequency distribution table on input data. It has CSV and JSON output modes.
@@ -82,12 +84,16 @@ of unique items and not to columns with a small number of unique items.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_frequency.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv frequency [options] [<input>]
 qsv frequency --help
 ```
+
+<a name="frequency-options"></a>
 
 ## Frequency Options [↩](#nav)
 
@@ -115,6 +121,8 @@ qsv frequency --help
 | `--vis-whitespace` | flag | Visualize whitespace characters in the output. See <https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers> for the list of whitespace markers. |  |
 | `-j, --jobs` | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
 
+<a name="json-output-options"></a>
+
 ## Json Output Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -124,6 +132,8 @@ qsv frequency --help
 | `--toon` | flag | Output frequency table and select stats in TOON format instead of CSV. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See <https://toonformat.dev/> for more info. |  |
 | `--no-stats` | flag | When using the JSON or TOON output mode, do not include the additional stats. |  |
 | `--weight` | string | Compute weighted frequencies using the specified column as weights. The weight column must be numeric. When specified, frequency counts are multiplied by the weight value for each row. The weight column is automatically excluded from frequency computation. Missing or unparsable weights default to 1.0. Zero, negative, NaN and infinite weights are ignored and do not contribute to frequencies. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Fetchpost Options](#fetchpost-options) | [Caching Options](#caching-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Fetchpost sends/fetches data to/from web services for every row using HTTP Post.
@@ -155,6 +157,8 @@ $ qsv fetchpost https://httpbin.org/post col1-col3 data.csv -H "X-Api-Key:TEST_K
 For more extensive examples, see <https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -162,12 +166,16 @@ qsv fetchpost (<url-column>) (<column-list> | --payload-tpl <file>) [--jaq <sele
 qsv fetchpost --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<url-column>` | Name of the column with the URL. Otherwise, if the argument starts with `http`, the URL to use. |
 | `<column-list>` | Comma-delimited list of columns to insert into the HTTP Post body. Uses `qsv select` syntax - i.e. Columns can be referenced by index or by name if there is a header row (duplicate column names can be disambiguated with more indexing). Column ranges can also be specified. Finally, columns can be selected using regular expressions. See 'qsv select --help' for examples. |
+
+<a name="fetchpost-options"></a>
 
 ## Fetchpost Options [↩](#nav)
 
@@ -191,6 +199,8 @@ qsv fetchpost --help
 | `--user-agent` | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
 | `--report` | string | Creates a report of the fetchpost job. The report has the same name as the input file with the ".fetchpost-report" suffix. There are two kinds of report - d for "detailed" & s for "short". The detailed report has the same columns as the input CSV with seven additional columns - qsv_fetchp_url, qsv_fetchp_form, qsv_fetchp_status, qsv_fetchp_cache_hit, qsv_fetchp_retries, qsv_fetchp_elapsed_ms & qsv_fetchp_response. The short report only has the seven columns without the "qsv_fetchp_" prefix. | `none` |
 
+<a name="caching-options"></a>
+
 ## Caching Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -202,6 +212,8 @@ qsv fetchpost --help
 | `--redis-cache` | flag | Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/2" with a connection pool size of 20, with a TTL of 28 days, and a cache hit NOT renewing an entry's TTL. Adjust the QSV_FP_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS & QSV_REDIS_TTL_REFRESH respectively to change Redis settings. |  |
 | `--cache-error` | flag | Cache error responses even if a request fails. If an identical URL is requested, the cached error is returned. Otherwise, the fetch is attempted again for --max-retries. |  |
 | `--flush-cache` | flag | Flush all the keys in the current cache on startup. This only applies to Disk and Redis caches. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

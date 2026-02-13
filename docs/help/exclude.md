@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Exclude Options](#exclude-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Removes a set of CSV data from another set based on the specified columns.
@@ -25,6 +27,8 @@ separating them with a comma. Specify a range of columns with `-`. Both
 columns1 and columns2 must specify exactly the same number of columns.
 (See 'qsv select --help' for the full syntax.)
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -93,12 +97,16 @@ qsv --sorted dedup > new-sorted-deduped-records.csv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_exclude.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv exclude [options] <columns1> <input1> <columns2> <input2>
 qsv exclude --help
 ```
+
+<a name="arguments"></a>
 
 ## Arguments [↩](#nav)
 
@@ -107,12 +115,16 @@ qsv exclude --help
 | `<input1>` | is the file from which data will be removed. |
 | `<input2>` | is the file containing the data to be removed from <input1> e.g. 'qsv exclude id records.csv id previously-processed.csv' |
 
+<a name="exclude-options"></a>
+
 ## Exclude Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-i, --ignore-case` | flag | When set, matching is done case insensitively. |  |
 | `-v, --invert` | flag | When set, matching rows will be the only ones included, forming set intersection, instead of the ones discarded. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

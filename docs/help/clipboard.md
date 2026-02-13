@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Clip Options](#clip-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Provide input from the clipboard or save output to the clipboard.
@@ -16,6 +18,8 @@ Provide input from the clipboard or save output to the clipboard.
 Note when saving to clipboard on Windows, line breaks may be represented as \r\n (CRLF).
 Meanwhile on Linux and macOS, they may be represented as \n (LF).
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -31,6 +35,8 @@ qsv clipboard | qsv stats | qsv clipboard -s
 ```
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -38,11 +44,15 @@ qsv clipboard [options]
 qsv clipboard --help
 ```
 
+<a name="clip-options"></a>
+
 ## Clip Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-s, --save` | flag | Save output to clipboard. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

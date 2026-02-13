@@ -7,6 +7,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Input Options](#input-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Read CSV data with special commenting, quoting, trimming, line-skipping &
@@ -36,12 +38,16 @@ to normalize & prepare CSVs for further processing with other qsv commands.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_input.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv input [options] [<input>]
 qsv input --help
 ```
+
+<a name="input-options"></a>
 
 ## Input Options [↩](#nav)
 
@@ -58,6 +64,8 @@ qsv input --help
 | `--trim-fields` | flag | Trim leading & trailing whitespace from field values. |  |
 | `--comment` | string | The comment character to use. When set, lines starting with this character will be skipped. |  |
 | `--encoding-errors` | string | How to handle UTF-8 encoding errors. Possible values: replace, skip, strict. replace: Replace invalid UTF-8 sequences with �. skip: Fields with encoding errors are "<SKIPPED>". strict: Fail on any encoding errors. | `replace` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

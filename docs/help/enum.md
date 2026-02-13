@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Enum Options](#enum-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Add a new column enumerating the lines of a CSV file. This can be useful to keep
@@ -86,6 +88,8 @@ However, sorting on uuid7 identifiers will not work as they are time-based
 and monotonically increasing, and will not shuffle the lines.
 
 
+<a name="examples"></a>
+
 ## Examples [↩](#nav)
 
 > Add an incremental index column starting from 0 (default)
@@ -157,12 +161,16 @@ qsv enum --hash "/record|name|address/" data.csv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_enumerate.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv enum [options] [<input>]
 qsv enum --help
 ```
+
+<a name="enum-options"></a>
 
 ## Enum Options [↩](#nav)
 
@@ -176,6 +184,8 @@ qsv enum --help
 | `--uuid4` | flag | When set, the column will be populated with uuids (v4) instead of the incremental identifier. Changes the default column name to "uuid4" unless overridden by --new-column. |  |
 | `--uuid7` | flag | When set, the column will be populated with uuids (v7) instead of the incremental identifier. uuid v7 is a time-based uuid and is monotonically increasing. See <https://buildkite.com/blog/goodbye-integers-hello-uuids> Changes the default column name to "uuid7" unless overridden by --new-column. |  |
 | `--hash` | string | Create a new column filled with the hash of the given column/s. Use "1-" to hash all columns. Changes the default column name to "hash" unless overridden by --new-column. Will remove an existing "hash" column if it exists. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

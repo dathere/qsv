@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Geocode Options](#geocode-options) | [Suggest Only Options](#suggest-only-options) | [Reverse Only Option](#reverse-only-option) | [Dynamic Formatting Options](#dynamic-formatting-options) | [Index-update Only Options](#index-update-only-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Geocodes a location in CSV data against an updatable local copy of the Geonames cities index
@@ -299,6 +301,8 @@ $ qsv geocode index-load my_geonames_index.rkyv
 
 
 
+<a name="examples"></a>
+
 ## Examples [↩](#nav)
 
 > For US locations, you can retrieve the us_state_fips_code and us_county_fips_code fields of a US City
@@ -324,6 +328,8 @@ input_data.csv -o output_data_with_fips.csv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_geocode.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -342,6 +348,8 @@ qsv geocode index-reset
 qsv geocode --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
@@ -351,6 +359,8 @@ qsv geocode --help
 | `<location>` | The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL. |
 | `<index-file>` | The alternate geonames index file to use. It must be a .rkyv file. For convenience, if this is set to 500, 1000, 5000 or 15000, it will download the corresponding English-only Geonames index rkyv file from the qsv GitHub repo for the current qsv version and use it. Only used by the index-load subcommand. |
 
+<a name="geocode-options"></a>
+
 ## Geocode Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -359,6 +369,8 @@ qsv geocode --help
 | `-r, --rename` | string | New name for the transformed column. |  |
 | `--country` | string | The comma-delimited, case-insensitive list of countries to filter for. Country is specified as a ISO 3166-1 alpha-2 (two-letter) country code. <https://en.wikipedia.org/wiki/ISO_3166-2> |  |
 
+<a name="suggest-only-options"></a>
+
 ## Suggest Only Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -366,11 +378,15 @@ qsv geocode --help
 | `--min-score` | string | The minimum Jaro-Winkler distance score. | `0.8` |
 | `--admin1` | string | The comma-delimited, case-insensitive list of admin1s to filter for. |  |
 
+<a name="reverse-only-option"></a>
+
 ## Reverse Only Option [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-k, --k_weight` | string | Use population-weighted distance for reverse subcommand. (i.e. nearest.distance - k * city.population) Larger values will favor more populated cities. If not set (default), the population is not used and the nearest city is returned. |  |
+
+<a name="dynamic-formatting-options"></a>
 
 ## Dynamic Formatting Options [↩](#nav)
 
@@ -383,6 +399,8 @@ qsv geocode --help
 | `--timeout` | string | Timeout for downloading Geonames cities index. | `120` |
 | `--cache-dir` | string | The directory to use for caching the Geonames cities index. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
 
+<a name="index-update-only-options"></a>
+
 ## Index-update Only Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -390,6 +408,8 @@ qsv geocode --help
 | `--languages` | string | The comma-delimited, case-insensitive list of languages to use when building the Geonames cities index. The languages are specified as a comma-separated list of ISO 639-2 codes. See <https://download.geonames.org/export/dump/iso-languagecodes.txt> to look up codes and <https://download.geonames.org/export/dump/alternatenames/> for the supported language files. 253 languages are currently supported. | `en` |
 | `--cities-url` | string | The URL to download the Geonames cities file from. There are several available at <https://download.geonames.org/export/dump/>. cities500.zip   - cities with populations > 500; ~200k cities, 56mb cities1000.zip  - population > 1000; ~140k cities, 44mb cities5000.zip  - population > 5000; ~53k cities, 21mb cities15000.zip - population > 15000; ~26k cities, 13mb Note that the more cities are included, the larger the local index file will be, lookup times will be slower, and the search results will be different. For convenience, if this is set to 500, 1000, 5000 or 15000, it will be converted to a geonames cities URL. | `https://download.geonames.org/export/dump/cities15000.zip` |
 | `--force` | flag | Force update the Geonames cities index. If not set, qsv will check if there are updates available at Geonames.org before updating the index. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Explode Options](#explode-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Explodes a row into multiple ones by splitting a column value based on the
@@ -28,6 +30,8 @@ John,yellow
 Mary,red
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -35,11 +39,15 @@ qsv explode [options] <column> <separator> [<input>]
 qsv explode --help
 ```
 
+<a name="explode-options"></a>
+
 ## Explode Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-r, --rename` | string | New name for the exploded column. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

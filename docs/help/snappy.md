@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Snappy Options](#snappy-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Does streaming compression/decompression of the input using the Snappy framing format.
@@ -36,6 +38,8 @@ Also, this command is not specific to CSV data, it can compress/decompress ANY f
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_snappy.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -46,11 +50,15 @@ qsv snappy validate [options] [<input>]
 qsv snappy --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<input>` | The input file to compress/decompress. This can be a local file, stdin, or a URL (http and https schemes supported). |
+
+<a name="snappy-options"></a>
 
 ## Snappy Options [↩](#nav)
 
@@ -58,6 +66,8 @@ qsv snappy --help
 |--------|------|-------------|--------|
 | `--user-agent` | string | Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
 | `--timeout` | string | Timeout for downloading URLs in seconds. | `60` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

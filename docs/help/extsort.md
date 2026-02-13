@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [External Sort Option](#external-sort-option) | [Csv Mode Only Options](#csv-mode-only-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Sort an arbitrarily large CSV/text file using a multithreaded external sort algorithm.
@@ -24,12 +26,16 @@ line-by-line basis. If sorting a non-CSV file, be sure to set --no-headers,
 otherwise, the first line will not be included in the external sort.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv extsort [options] [<input>] [<output>]
 qsv extsort --help
 ```
+
+<a name="external-sort-option"></a>
 
 ## External Sort Option [↩](#nav)
 
@@ -40,6 +46,8 @@ qsv extsort --help
 | `--memory-limit` | string | The maximum amount of memory to buffer the external merge sort. If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory. | `20` |
 | `--tmp-dir` | string | The directory to use for externally sorting file segments. | `./` |
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+
+<a name="csv-mode-only-options"></a>
 
 ## Csv Mode Only Options [↩](#nav)
 

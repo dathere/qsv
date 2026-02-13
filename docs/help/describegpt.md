@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Describegpt Options](#describegpt-options) | [Dictionary Options](#dictionary-options) | [Tag Options](#tag-options) | [Custom Prompt Options](#custom-prompt-options) | [Llm Api Options](#llm-api-options) | [Caching Options](#caching-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Create a "neuro-procedural" Data Dictionary and/or infer Description & Tags about a Dataset
@@ -75,6 +77,8 @@ The Redis cache is stored in database 3 by default with a TTL of 28 days and cac
 an existing cached value's TTL. Adjust the QSV_DG_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE,
 QSV_REDIS_TTL_SECONDS & QSV_REDIS_TTL_REFRESH env vars to change Redis cache settings.
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -188,6 +192,8 @@ For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/
 For more detailed info on how describegpt works and how to prepare a prompt file,
 see <https://github.com/dathere/qsv/blob/master/docs/Describegpt.md>
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -195,6 +201,8 @@ qsv describegpt [options] [<input>]
 qsv describegpt (--redis-cache) (--flush-cache)
 qsv describegpt --help
 ```
+
+<a name="describegpt-options"></a>
 
 ## Describegpt Options [↩](#nav)
 
@@ -205,6 +213,8 @@ qsv describegpt --help
 | `--tags` | flag | Infer Tags that categorize the dataset based on detailed statistical context. Useful for grouping datasets and filtering. |  |
 | `-A, --all` | flag | Shortcut for --dictionary --description --tags. |  |
 
+<a name="dictionary-options"></a>
+
 ## Dictionary Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -213,6 +223,8 @@ qsv describegpt --help
 | `--truncate-str` | string | The maximum length of an Example value in the dictionary. An ellipsis is appended to the truncated value. If zero, no truncation is performed. | `25` |
 | `--addl-cols` | flag | Add additional columns to the dictionary from the Summary Statistics. |  |
 | `--addl-cols-list` | string | A comma-separated list of additional stats columns to add to the dictionary. The columns must be present in the Summary Statistics. If the columns are not present in the Summary Statistics or already in the dictionary, they will be ignored. | `sort_order, sortiness, mean, median, mad, stddev, variance, cv` |
+
+<a name="tag-options"></a>
 
 ## Tag Options [↩](#nav)
 
@@ -227,6 +239,8 @@ qsv describegpt --help
 | `--freq-options` | string | Options for the frequency command used to generate frequency distributions. You can use this to exclude certain variable types from frequency analysis (e.g., --select '!id,!uuid'), limit results differently per use case, or control output format. If --limit is specified here, it takes precedence over --enum-threshold. If it starts with "file:" prefix, the frequency data is read from the specified CSV file instead of running the frequency command. e.g. "file:my_custom_frequency.csv" | `--rank-strategy dense` |
 | `--enum-threshold` | string | The threshold for compiling Enumerations with the frequency command before bucketing other unique values into the "Other" category. This is a convenience shortcut for --freq-options --limit <n>. If --freq-options contains --limit, this flag is ignored. | `10` |
 
+<a name="custom-prompt-options"></a>
+
 ## Custom Prompt Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -238,6 +252,8 @@ qsv describegpt --help
 | `--fewshot-examples` | flag | By default, few-shot examples are NOT included in the LLM prompt when generating SQL queries. When this option is set, few-shot examples in the default prompt file are included. Though this will increase the quality of the generated SQL, it comes at a cost - increased LLM API call cost in terms of tokens and execution time. See <https://en.wikipedia.org/wiki/Prompt_engineering> for more info. |  |
 | `--session` | string | Enable stateful session mode for iterative SQL RAG refinement. The session name is the file path of the markdown file where session messages will be stored. When used with --prompt, subsequent queries in the same session will refine the baseline SQL query. SQL query results (10-row sample) and errors are automatically included in subsequent messages for context. |  |
 | `--session-len` | string | Maximum number of recent messages to keep in session context before summarizing older messages. Only used when --session is specified. | `10` |
+
+<a name="llm-api-options"></a>
 
 ## Llm Api Options [↩](#nav)
 
@@ -253,6 +269,8 @@ qsv describegpt --help
 | `--user-agent` | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
 | `--export-prompt` | string | Export the default prompts to the specified file that can be used with the --prompt-file option. The file will be saved with a .toml extension. If the file already exists, it will be overwritten. It will exit after exporting the prompts. |  |
 
+<a name="caching-options"></a>
+
 ## Caching Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -263,6 +281,8 @@ qsv describegpt --help
 | `--fresh` | flag | Send a fresh request to the LLM API, refreshing a cached response if it exists. When a --prompt SQL query fails, you can also use this option to request the LLM to generate a new SQL query. |  |
 | `--forget` | flag | Remove a cached response if it exists and then exit. |  |
 | `--flush-cache` | flag | Flush the current cache entries on startup. WARNING: This operation is irreversible. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

@@ -7,6 +7,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Index Options](#index-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Creates an index of the given CSV data, which can make other operations like
@@ -23,6 +25,8 @@ automatically create an index when the input file size >= specified size (bytes)
 It will also automatically update stale indices as well.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -30,11 +34,15 @@ qsv index [options] <input>
 qsv index --help
 ```
 
+<a name="index-options"></a>
+
 ## Index Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-o, --output` | string | Write index to <file> instead of <input>.idx. Generally, this is not currently useful because the only way to use an index is if it is specially named <input>.idx. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

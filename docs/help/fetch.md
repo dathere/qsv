@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Fetch Options](#fetch-options) | [Caching Options](#caching-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Send/Fetch data to/from web services for every row using HTTP Get.
@@ -168,12 +170,16 @@ $ qsv fetch URL data.csv --http-header "X-Api-Key:TEST_KEY" -H "X-Api-Secret:ABC
 For more extensive examples, see <https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv fetch [<url-column> | --url-template <template>] [--jaq <selector> | --jaqfile <file>] [--http-header <k:v>...] [options] [<input>]
 qsv fetch --help
 ```
+
+<a name="fetch-options"></a>
 
 ## Fetch Options [↩](#nav)
 
@@ -194,6 +200,8 @@ qsv fetch --help
 | `--user-agent` | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
 | `--report` | string | Creates a report of the fetch job. The report has the same name as the input file with the ".fetch-report" suffix. There are two kinds of report - d for "detailed" & s for "short". The detailed report has the same columns as the input CSV with six additional columns - qsv_fetch_url, qsv_fetch_status, qsv_fetch_cache_hit, qsv_fetch_retries, qsv_fetch_elapsed_ms & qsv_fetch_response. The short report only has the six columns without the "qsv_fetch_" prefix. | `none` |
 
+<a name="caching-options"></a>
+
 ## Caching Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -205,6 +213,8 @@ qsv fetch --help
 | `--redis-cache` | flag | Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/1" with a connection pool size of 20, with a TTL of 28 days, and a cache hit NOT renewing an entry's TTL. Adjust the QSV_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS & QSV_REDIS_TTL_REFRESH env vars respectively to change Redis settings. This option is ignored if the --disk-cache option is enabled. |  |
 | `--cache-error` | flag | Cache error responses even if a request fails. If an identical URL is requested, the cached error is returned. Otherwise, the fetch is attempted again for --max-retries. |  |
 | `--flush-cache` | flag | Flush all the keys in the current cache on startup. This only applies to Disk and Redis caches. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

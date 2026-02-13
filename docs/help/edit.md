@@ -7,6 +7,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Edit Options](#edit-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Replace the value of a cell specified by its row and column.
@@ -35,6 +37,8 @@ Specifying a column as a number is prioritized by index rather than name.
 If there is no newline (\n) at the end of the input data, it may be added to the output.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -42,11 +46,15 @@ qsv edit [options] <input> <column> <row> <value>
 qsv edit --help
 ```
 
+<a name="edit-options"></a>
+
 ## Edit Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-i, --in-place` | flag | Overwrite the input file data with the output. The input file is renamed to a .bak file in the same directory. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

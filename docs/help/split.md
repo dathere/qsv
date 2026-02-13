@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Split Options](#split-options) | [Filter Options](#filter-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Splits the given CSV data into chunks. It has three modes: by size (rowcount),
@@ -37,6 +39,8 @@ The default is to split by size with a chunk size of 500.
 The files are written to the directory given with the name '{start}.csv',
 where {start} is the index of the first record of the chunk (starting at 0).
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -111,6 +115,8 @@ qsv split outdir --filter "powershell Compress-Archive -Path $FILE -Destination 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_split.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -118,12 +124,16 @@ qsv split [options] (--size <arg> | --chunks <arg> | --kb-size <arg>) <outdir> [
 qsv split --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<outdir>` | The directory where the output files will be written. If it does not exist, it will be created. |
 | `<input>` | The CSV file to read. If not given, input is read from STDIN. |
+
+<a name="split-options"></a>
 
 ## Split Options [↩](#nav)
 
@@ -136,6 +146,8 @@ qsv split --help
 | `--filename` | string | A filename template to use when constructing the names of the output files.  The string '{}' will be replaced by the zero-based row number of the first row in the chunk. | `{}.csv` |
 | `--pad` | string | The zero padding width that is used in the generated filename. | `0` |
 
+<a name="filter-options"></a>
+
 ## Filter Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -143,6 +155,8 @@ qsv split --help
 | `--filter` | string | Run the specified command on each chunk after it is written. The command should use the FILE environment variable ($FILE on Linux/macOS, %FILE% on Windows), which is set to the path of the output file for each chunk. The string '{}' in the command will be replaced by the zero-based row number of the first row in the chunk. |  |
 | `--filter-cleanup` | flag | Cleanup the original output filename AFTER the filter command is run successfully for EACH chunk. If the filter command is not successful, the original filename is not removed. Only valid when --filter is used. |  |
 | `--filter-ignore-errors` | flag | Ignore errors when running the filter command. Only valid when --filter is used. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

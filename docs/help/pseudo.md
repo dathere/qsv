@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Pseudonymise the value of a given column by replacing it with an
@@ -54,6 +56,8 @@ ID-1000,cyan
 For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_pseudo.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -61,12 +65,16 @@ qsv pseudo [options] <column> [<input>]
 qsv pseudo --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<column>` | The column to pseudonymise. You can use the `--select` option to select the column by name or index. See `select` command for more details. |
 | `<input>` | The CSV file to read from. If not specified, then the input will be read from stdin. |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

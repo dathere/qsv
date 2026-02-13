@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Table Options](#table-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Outputs CSV data as a table with columns in alignment.
@@ -28,12 +30,16 @@ Therefore, you should use the 'sample' or 'slice' command to trim down large
 CSV data before formatting it with this command.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv table [options] [<input>]
 qsv table --help
 ```
+
+<a name="table-options"></a>
 
 ## Table Options [↩](#nav)
 
@@ -43,6 +49,8 @@ qsv table --help
 | `-p, --pad` | string | The minimum number of spaces between each column. | `2` |
 | `-a, --align` | string | How entries should be aligned in a column. Options: "left", "right", "center". "leftendtab" & "leftfwf" "leftendtab" is a special alignment that similar to "left" but with whitespace padding ending with a tab character. The resulting output still validates as a valid TSV file, while also being more human-readable (aka "aligned" TSV). "leftfwf" is similar to "left" with Fixed Width Format allgnment. The first line is a comment (prefixed with "#") that enumerates the position (1-based, comma-separated) of each column. | `left` |
 | `-c, --condense` | string | Limits the length of each field to the value specified. If the field is UTF-8 encoded, then <arg> refers to the number of code points. Otherwise, it refers to the number of bytes. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

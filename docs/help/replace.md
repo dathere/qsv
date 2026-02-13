@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Replace Options](#replace-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Replace occurrences of a pattern across a CSV file.
@@ -32,6 +34,8 @@ Returns exitcode 1 when no replacements are done, unless the '--not-one' flag is
 When the CSV is indexed, a faster parallel replace is used.
 If there were any replacements, the index will be refreshed.
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -62,12 +66,16 @@ qsv replace '([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})' \
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_replace.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv replace [options] <pattern> <replacement> [<input>]
 qsv replace --help
 ```
+
+<a name="arguments"></a>
 
 ## Arguments [↩](#nav)
 
@@ -76,6 +84,8 @@ qsv replace --help
 | `<pattern>` | Regular expression pattern to match. Uses Rust regex syntax. See <https://docs.rs/regex/latest/regex/index.html#syntax> or <https://regex101.com> with the Rust flavor for more info. |
 | `<input>` | The CSV file to read. If not given, reads from stdin. |
 | `<replacement>` | Replacement string. Set to '<NULL>' if you want to replace matches with ''. |
+
+<a name="replace-options"></a>
 
 ## Replace Options [↩](#nav)
 
@@ -90,6 +100,8 @@ qsv replace --help
 | `--dfa-size-limit` | string | Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. | `10` |
 | `--not-one` | flag | Use exit code 0 instead of 1 for no replacement found. |  |
 | `-j, --jobs` | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

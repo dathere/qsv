@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Pivotp Options](#pivotp-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Pivots CSV data using the Polars engine.
@@ -22,6 +24,8 @@ The pivot operation consists of:
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -29,12 +33,16 @@ qsv pivotp [options] <on-cols> <input>
 qsv pivotp --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<on-cols>` | The column(s) to pivot on (creates new columns). |
 | `<input>` | is the input CSV file. The file must have headers. If the file has a pschema.json file, it will be used to inform the pivot operation unless --infer-len is explicitly set to a value other than the default of 10,000 rows. Stdin is not supported. |
+
+<a name="pivotp-options"></a>
 
 ## Pivotp Options [↩](#nav)
 
@@ -51,6 +59,8 @@ qsv pivotp --help
 | `--infer-len` | string | Number of rows to scan when inferring schema. Set to 0 to scan entire file. | `10000` |
 | `--decimal-comma` | flag | Use comma as decimal separator when READING the input. Note that you will need to specify an alternate --delimiter. |  |
 | `--ignore-errors` | flag | Skip rows that can't be parsed. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

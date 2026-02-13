@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Searchset Options](#searchset-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Filters CSV data by whether the given regex set matches a row.
@@ -36,6 +38,8 @@ When the CSV is indexed, a faster parallel search is used.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_searchset.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -43,12 +47,16 @@ qsv searchset [options] (<regexset-file>) [<input>]
 qsv searchset --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<regexset-file>` | The file containing regular expressions to match, with a regular expression on each line. See <https://docs.rs/regex/latest/regex/index.html#syntax> or <https://regex101.com> with the Rust flavor for regex syntax. |
 | `<input>` | The CSV file to read. If not given, reads from stdin. |
+
+<a name="searchset-options"></a>
 
 ## Searchset Options [↩](#nav)
 
@@ -70,6 +78,8 @@ qsv searchset --help
 | `--dfa-size-limit` | string | Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. Modify this only if you're getting regular expression compilation errors. | `10` |
 | `--not-one` | flag | Use exit code 0 instead of 1 for no match found. |  |
 | `--jobs` | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

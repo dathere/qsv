@@ -9,10 +9,14 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Prompt Options](#prompt-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Open a file dialog to pick a file as input or save to an output file.
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -35,12 +39,16 @@ qsv excel - | qsv prompt -m 'Save exported CSV to...' --fd-output
 ```
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv prompt [options]
 qsv prompt --help
 ```
+
+<a name="prompt-options"></a>
 
 ## Prompt Options [↩](#nav)
 
@@ -52,6 +60,8 @@ qsv prompt --help
 | `-f, --fd-output` | flag | Write output to a file by using a save file dialog. Used when piping into qsv prompt. Mutually exclusive with --output. |  |
 | `--save-fname` | string | The filename to save the output as when using --fd-output. | `output.csv` |
 | `--base-delay-ms` | string | The base delay in milliseconds to use when opening INPUT dialog. This is to ensure that the INPUT dialog is shown before/over the OUTPUT dialog when using the prompt command is used in both INPUT and OUTPUT modes in a single pipeline. | `200` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Reverses rows of CSV data.
@@ -20,12 +22,16 @@ Note that if the CSV is not indexed, this operation will require reading all of 
 CSV data into memory
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv reverse [options] [<input>]
 qsv reverse --help
 ```
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

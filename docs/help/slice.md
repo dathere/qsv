@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Slice Options](#slice-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Returns the rows in the range specified (starting at 0, half-open interval).
@@ -25,6 +27,8 @@ first. With an index, the command requires parsing just the rows that are
 sliced. Without an index, all rows up to the first row in the slice must be
 parsed.
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -97,12 +101,16 @@ qsv slice --start 9 --len 10 --invert --json data.csv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_slice.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv slice [options] [<input>]
 qsv slice --help
 ```
+
+<a name="slice-options"></a>
 
 ## Slice Options [↩](#nav)
 
@@ -114,6 +122,8 @@ qsv slice --help
 | `-i, --index` | string | Slice a single record (shortcut for -s N -l 1). If negative, starts from the last record. |  |
 | `--json` | flag | Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based). |  |
 | `--invert` | flag | slice all records EXCEPT those in the specified range. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

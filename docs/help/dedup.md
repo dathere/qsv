@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Dedup Options](#dedup-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Deduplicates CSV rows.
@@ -24,6 +26,8 @@ Either way, the output will not only be deduplicated, it will also be sorted.
 
 A duplicate count will also be sent to <stderr>.
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -66,12 +70,16 @@ qsv dedup -s col1,col2 --dupes-output dupes.csv unsorted.csv -o deduped.csv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_dedup.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv dedup [options] [<input>]
 qsv dedup --help
 ```
+
+<a name="dedup-options"></a>
 
 ## Dedup Options [↩](#nav)
 
@@ -84,6 +92,8 @@ qsv dedup --help
 | `-D, --dupes-output` | string | Write duplicates to <file>. |  |
 | `-H, --human-readable` | flag | Comma separate duplicate count. |  |
 | `-j, --jobs` | string | The number of jobs to run in parallel when sorting an unsorted CSV, before deduping. When not set, the number of jobs is set to the number of CPUs detected. Does not work with --sorted option as its not multithreaded. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

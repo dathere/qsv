@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Select Options](#select-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Select columns from CSV data efficiently.
@@ -19,6 +21,8 @@ name if there is a header row (duplicate column names can be disambiguated with
 more indexing). Column ranges can also be specified. Finally, columns can be
 selected using regular expressions.
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -133,6 +137,8 @@ qsv select '\"Date - Opening\",\"Date - Actual Closing\"'
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_select.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -140,11 +146,15 @@ qsv select [options] [--] <selection> [<input>]
 qsv select --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<selection>` | The columns to select. You can select columns by index, by name, by range, by regex and any combination of these. If the first character is '!', the selection will be inverted. If the selection contains embedded spaces or characters that conflict with selector syntax, it must be quoted. See examples above. |
+
+<a name="select-options"></a>
 
 ## Select Options [↩](#nav)
 
@@ -153,6 +163,8 @@ qsv select --help
 | `-R, --random` | flag | Randomly shuffle the columns in the selection. |  |
 | `--seed` | string | Seed for the random number generator. |  |
 | `-S, --sort` | flag | Sort the selected columns lexicographically, i.e. by their byte values. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

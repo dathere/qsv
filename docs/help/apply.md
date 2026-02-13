@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Apply Options](#apply-options) | [Operations Options](#operations-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Apply a series of transformation functions to given CSV column/s. This can be used to
@@ -134,6 +136,8 @@ inferred unit will be appended to the result.
 
 For a complete list of supported units, constants, operators and functions, see <https://docs.rs/cpc>
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -320,6 +324,8 @@ qsv apply calcconv --formatstr '{col1} Billion Trillion * {col2} quadrillion vig
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_apply.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -329,6 +335,8 @@ qsv apply dynfmt --formatstr=<string> [options] --new-column=<name> [<input>]
 qsv apply calcconv --formatstr=<string> [options] --new-column=<name> [<input>]
 qsv apply --help
 ```
+
+<a name="arguments"></a>
 
 ## Arguments [↩](#nav)
 
@@ -340,6 +348,8 @@ qsv apply --help
 | `<column>` | The column/s to check for emptiness. |
 | `<input>` | The input file to read from. If not specified, reads from stdin. |
 
+<a name="apply-options"></a>
+
 ## Apply Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -350,12 +360,16 @@ qsv apply --help
 | `-R, --replacement=<string>` | string | The string to use for the replace & emptyreplace operations. Also used with numtocurrency operation to conversion rate. |  |
 | `-f, --formatstr=<string>` | string | This option is used by several subcommands: |  |
 
+<a name="operations-options"></a>
+
 ## Operations Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | `-b, --batch` | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

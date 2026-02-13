@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Foreach Options](#foreach-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Execute a shell command once per record in a given CSV file.
@@ -28,6 +30,8 @@ become a footgun and possibly fry your computer, eat your lunch, and expose an e
 datacenter to a cancerous virus in your unvetted batch file you grabbed from some
 stranger on the internet that runs...FOR EACH LINE in your CSV file. GASP!"
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -49,12 +53,16 @@ qsv foreach query -u -c from_query 'search {}' queries.csv > results.csv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_foreach.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv foreach [options] <column> <command> [<input>]
 qsv foreach --help
 ```
+
+<a name="foreach-options"></a>
 
 ## Foreach Options [↩](#nav)
 
@@ -63,6 +71,8 @@ qsv foreach --help
 | `-u, --unify` | flag | If the output of the executed command is a CSV, unify the result by skipping headers on each subsequent command. Does not work when --dry-run is true. |  |
 | `-c, --new-column` | string | If unifying, add a new column with given name and copying the value of the current input file line. |  |
 | `--dry-run` | string | If set to true (the default for safety reasons), the commands are sent to stdout instead of executing them. If set to a file, the commands will be written to the specified text file instead of executing them. Only if set to false will the commands be actually executed. | `true` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [To Options](#to-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Convert CSV files to PostgreSQL, SQLite, Excel XLSX, ODS and Data Package.
@@ -22,6 +24,8 @@ environment variable `MY_ENV_VAR`.
 
 If using the `--dump` option instead of a connection string put a name of a file or `-` for stdout.
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -185,6 +189,8 @@ qsv to xlsx datapackage.xlsx --stats --print-package file1.csv file2.csv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_to.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -195,6 +201,8 @@ qsv to ods [options] <ods> [<input>...]
 qsv to datapackage [options] <datapackage> [<input>...]
 qsv to --help
 ```
+
+<a name="to-options"></a>
 
 ## To Options [↩](#nav)
 
@@ -212,6 +220,8 @@ qsv to --help
 | `-p, --separator` | string | For xlsx, use this character to help truncate xlsx sheet names. Defaults to space. |  |
 | `-A, --all-strings` | flag | Convert all fields to strings. |  |
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

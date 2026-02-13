@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Count Options](#count-options) | [Width Options](#width-options) | [When The Polars Feature Is Enabled Options](#when-the-polars-feature-is-enabled-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Returns a count of the number of records in the CSV data.
@@ -29,6 +31,8 @@ single-threaded CSV reader.
 Note that the count will not include the header row (unless --no-headers is
 given).
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -71,6 +75,8 @@ qsv count --width --json data.csv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_count.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -78,11 +84,15 @@ qsv count [options] [<input>]
 qsv count --help
 ```
 
+<a name="count-options"></a>
+
 ## Count Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-H, --human-readable` | flag | Comma separate counts. |  |
+
+<a name="width-options"></a>
 
 ## Width Options [↩](#nav)
 
@@ -92,12 +102,16 @@ qsv count --help
 | `--width-no-delims` | flag | Same as --width but does not count the delimiters in the width. |  |
 | `--json` | flag | Output the width stats in JSON format. |  |
 
+<a name="when-the-polars-feature-is-enabled-options"></a>
+
 ## When The Polars Feature Is Enabled Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--no-polars` | flag | Use the "regular", single-threaded, streaming CSV reader instead of the much faster multithreaded, mem-mapped Polars CSV reader. Use this when you encounter memory issues when counting with the Polars CSV reader. The streaming reader is slower but can read any valid CSV file of any size. |  |
 | `--low-memory` | flag | Use the Polars CSV Reader's low-memory mode. This mode is slower but uses less memory. If counting still fails, use --no-polars instead to use the streaming CSV reader. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

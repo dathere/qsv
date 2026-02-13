@@ -7,6 +7,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Fixlengths Options](#fixlengths-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Transforms CSV data so that all records have the same length. The length is
@@ -21,12 +23,16 @@ Alternatively, if --length is set, then all records are forced to that length.
 This requires a single pass and can be done with stdin.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv fixlengths [options] [<input>]
 qsv fixlengths --help
 ```
+
+<a name="fixlengths-options"></a>
 
 ## Fixlengths Options [↩](#nav)
 
@@ -37,6 +43,8 @@ qsv fixlengths --help
 | `-i, --insert` | string | If empty fields need to be inserted, insert them at <pos>. If <pos> is zero, then it is inserted at the end of each record. If <pos> is negative, it is inserted from the END of each record going backwards. If <pos> is positive, it is inserted from the BEGINNING of each record going forward. | `0` |
 | `--quote` | string | The quote character to use. | `"` |
 | `--escape` | string | The escape character to use. When not specified, quotes are escaped by doubling them. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

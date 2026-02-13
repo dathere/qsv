@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Datefmt Options](#datefmt-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Formats recognized date fields (19 formats recognized) to a specified date format
@@ -22,6 +24,8 @@ accepted date format specifiers for --formatstr.
 Defaults to ISO 8601/RFC 3339 format when --formatstr is not specified.
 ( "%Y-%m-%dT%H:%M:%S%z" - e.g. 2001-07-08T00:34:60.026490+09:30 )
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -70,6 +74,8 @@ qsv datefmt OpenDate,CloseDate --formatstr '%u' --rename Open_weekday,Close_week
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -77,12 +83,16 @@ qsv datefmt [--formatstr=<string>] [options] <column> [<input>]
 qsv datefmt --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<column>` | The column/s to apply the date formats to. Note that the <column> argument supports multiple columns. See 'qsv select --help' for the format details. |
 | `<input>` | The input file to read from. If not specified, reads from stdin. |
+
+<a name="datefmt-options"></a>
 
 ## Datefmt Options [↩](#nav)
 
@@ -100,6 +110,8 @@ qsv datefmt --help
 | `-R, --ts-resolution` | string | The resolution to use when parsing Unix timestamps. Valid values are "sec", "milli", "micro", "nano". | `sec` |
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | `-b, --batch` | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

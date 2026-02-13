@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Sort Options](#sort-options) | [Random Sorting Options](#random-sorting-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Sorts CSV data in lexicographical, natural, numerical, reverse, unique or random order.
@@ -20,12 +22,16 @@ extsort command instead.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_sort.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv sort [options] [<input>]
 qsv sort --help
 ```
+
+<a name="sort-options"></a>
 
 ## Sort Options [↩](#nav)
 
@@ -38,6 +44,8 @@ qsv sort --help
 | `-i, --ignore-case` | flag | Compare strings disregarding case |  |
 | `-u, --unique` | flag | When set, identical consecutive lines will be dropped to keep only one line per sorted value. |  |
 
+<a name="random-sorting-options"></a>
+
 ## Random Sorting Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -47,6 +55,8 @@ qsv sort --help
 | `--rng` | string | The RNG algorithm to use if --random is set. | `standard` |
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | `--faster` | flag | When set, the sort will be faster. This is done by using a faster sorting algorithm that is not "stable" (i.e. the order of identical values is not guaranteed to be preserved). It has the added side benefit that the sort will also be in-place (i.e. does not allocate), which is useful for sorting large files that will otherwise NOT fit in memory using the default allocating stable sort. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

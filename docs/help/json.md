@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Json Options](#json-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Convert JSON to CSV.
@@ -147,6 +149,8 @@ $ qsv prompt -F json | qsv json --jaq .data
 For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_json.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -154,12 +158,16 @@ qsv json [options] [<input>]
 qsv json --help
 ```
 
+<a name="json-options"></a>
+
 ## Json Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--jaq` | string | Filter JSON data using jaq syntax (<https://github.com/01mf02/jaq>), which is identical to the popular JSON command-line tool - jq. <https://jqlang.github.io/jq/> Note that the filter is applied BEFORE converting JSON to CSV |  |
 | `-s, --select` | string | Select, reorder or drop columns for output. Otherwise, all the columns will be output in the same order as the first object's keys in the JSON data. See 'qsv select --help' for the full syntax. Note however that <cols> NEED to be a comma-delimited list of column NAMES and NOT column INDICES. | `1-` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

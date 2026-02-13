@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Stats Options](#stats-options) | [Boolean Inferencing Options](#boolean-inferencing-options) | [Date Inferencing Options](#date-inferencing-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Compute summary statistics & infers data types for each column in a CSV.
@@ -96,6 +98,8 @@ If the cached stats are not current (i.e., the input file is newer than the cach
 the cached stats will be ignored and recomputed. For example, see the "boston311" test files in
 <https://github.com/dathere/qsv/blob/4529d51273218347fef6aca15ac24e22b85b2ec4/tests/test_stats.rs#L608>.
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -211,12 +215,16 @@ qsv stats data.ssv.zst // Zstd-compressed Semicolon-separated
 
 For more info, see <https://github.com/dathere/qsv/blob/master/docs/STATS_DEFINITIONS.md>
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv stats [options] [<input>]
 qsv stats --help
 ```
+
+<a name="stats-options"></a>
 
 ## Stats Options [↩](#nav)
 
@@ -225,6 +233,8 @@ qsv stats --help
 | `-s, --select` | string | Select a subset of columns to compute stats for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv stats' will prevent the use of indexing. |  |
 | `-E, --everything` | flag | Compute all statistics available. |  |
 | `--typesonly` | flag | Infer data types only and do not compute statistics. Note that if you want to infer dates and boolean types, you'll still need to use the --infer-dates & --infer-boolean options. |  |
+
+<a name="boolean-inferencing-options"></a>
 
 ## Boolean Inferencing Options [↩](#nav)
 
@@ -243,6 +253,8 @@ qsv stats --help
 | `--nulls` | flag | Include NULLs in the population size for computing mean and standard deviation. |  |
 | `--weight` | string | Compute weighted statistics using the specified column as weights. The weight column must be numeric. When specified, all statistics (mean, stddev, variance, median, quartiles, mode, etc.) will be computed using weighted algorithms. The weight column is automatically excluded from statistics computation. Missing or non-numeric weights default to 1.0. Zero and negative weights are ignored and do not contribute to the statistics. The output filename will be <FILESTEM>.stats.weighted.csv to distinguish from unweighted statistics. |  |
 
+<a name="date-inferencing-options"></a>
+
 ## Date Inferencing Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -255,6 +267,8 @@ qsv stats --help
 | `--stats-jsonl` | flag | Also write the stats in JSONL format. If set, the stats will be written to <FILESTEM>.stats.csv.data.jsonl. Note that this option used internally by other qsv "smart" commands (see <https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#stats-cache>) to load cached stats to make them work smarter & faster. You can preemptively create the stats-jsonl file by using this option BEFORE running "smart" commands and they will automatically use it. |  |
 | `-c, --cache-threshold` | string | Controls the creation of stats cache files. * when greater than 1, the threshold in milliseconds before caching stats results. If a stats run takes longer than this threshold, the stats results will be cached. * 0 to suppress caching. * 1 to force caching. * a negative number to automatically create an index when the input file size is greater than abs(arg) in bytes. If the negative number ends with 5, it will delete the index file and the stats cache file after the stats run. Otherwise, the index file and the cache files are kept. | `5000` |
 | `--vis-whitespace` | flag | Visualize whitespace characters in the output. See <https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers> for the list of whitespace markers. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

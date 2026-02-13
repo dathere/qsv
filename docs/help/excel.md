@@ -9,11 +9,15 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Excel Options](#excel-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Exports a specified Excel/ODS sheet to a CSV file.
 The first non-empty row of a sheet is assumed to be the header row.
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -146,6 +150,8 @@ qsv excel --metadata Short input.xlsx
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_excel.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -153,11 +159,15 @@ qsv excel [options] [<input>]
 qsv excel --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<input>` | The spreadsheet file to read. Use "-" to read from stdin. Supported formats: xls, xlsx, xlsm, xlsb, ods. |
+
+<a name="excel-options"></a>
 
 ## Excel Options [↩](#nav)
 
@@ -175,6 +185,8 @@ qsv excel --help
 | `--date-format` | string | Optional date format to use when formatting dates. See <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for the full list of supported format specifiers. Note that if a date format is invalid, qsv will fall back and return the date as if no date-format was specified. |  |
 | `--keep-zero-time` | flag | Keep the time part of a date-time field if it is 00:00:00. By default, qsv will remove the time part if it is 00:00:00. |  |
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

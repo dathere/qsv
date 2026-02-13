@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Luau Options](#luau-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Create multiple new computed columns, filter rows or compute aggregations by
@@ -231,6 +233,8 @@ the bottom of this file and on the Wiki (<https://github.com/dathere/qsv/wiki>)
 For more detailed examples, see <https://github.com/dathere/qsv/blob/master/tests/test_luau.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -242,11 +246,15 @@ qsv luau filter --help
 qsv luau --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<new-columns>` | is a comma-separated list of new computed columns to add to the CSV when using "luau map". The new columns are added to the CSV after the existing columns, unless the --remap option is used. |
+
+<a name="luau-options"></a>
 
 ## Luau Options [↩](#nav)
 
@@ -262,6 +270,8 @@ qsv luau --help
 | `--ckan-api` | string | The URL of the CKAN API to use for downloading lookup_table resources using the qsv_register_lookup() helper function with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. | `https://data.dathere.com/api/3/action` |
 | `--ckan-token` | string | The CKAN API token to use. Only required if downloading private resources. If the QSV_CKAN_TOKEN envvar is set, it will be used instead. |  |
 | `--cache-dir` | string | The directory to use for caching downloaded lookup_table resources using the qsv_register_lookup() helper function. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

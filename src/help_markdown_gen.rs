@@ -292,26 +292,36 @@ fn generate_command_markdown(
         md.push_str("\n\n");
     }
 
-    // Back-link suffix for section headings
-    let nav_back = if has_nav { " [↩](#nav)" } else { "" };
+    // Helper: write a section heading with an explicit anchor and optional back-link.
+    // The explicit <a name="..."> ensures nav bar links resolve correctly even though
+    // the back-link text changes the auto-generated heading ID.
+    let write_heading = |md: &mut String, title: &str| {
+        if has_nav {
+            let _ = write!(md, "<a name=\"{}\"></a>\n\n", heading_to_anchor(title));
+            let _ = write!(md, "## {title} [↩](#nav)\n\n");
+        } else {
+            let _ = write!(md, "## {title}\n\n");
+        }
+    };
 
     // Description section
     if !sections.description.is_empty() {
-        let _ = write!(md, "## Description{nav_back}\n\n");
+        write_heading(&mut md, "Description");
         md.push_str(&format_description(&sections.description));
         md.push('\n');
     }
 
     // Examples section
     if !sections.examples.is_empty() {
-        let _ = write!(md, "## Examples{nav_back}\n\n");
+        write_heading(&mut md, "Examples");
         md.push_str(&format_examples(&sections.examples));
         md.push('\n');
     }
 
     // Usage patterns section
     if !sections.usage_patterns.is_empty() {
-        let _ = write!(md, "## Usage{nav_back}\n\n```console\n");
+        write_heading(&mut md, "Usage");
+        md.push_str("```console\n");
         for line in &sections.usage_patterns {
             md.push_str(line);
             md.push('\n');
@@ -321,7 +331,7 @@ fn generate_command_markdown(
 
     // Arguments section
     if !parsed_args.is_empty() {
-        let _ = write!(md, "## Arguments{nav_back}\n\n");
+        write_heading(&mut md, "Arguments");
         md.push_str("| Argument | Description |\n");
         md.push_str("|----------|-------------|\n");
         for arg in &parsed_args {
@@ -340,7 +350,7 @@ fn generate_command_markdown(
         if options.is_empty() {
             continue;
         }
-        let _ = write!(md, "## {section_title}{nav_back}\n\n");
+        write_heading(&mut md, section_title);
         md.push_str("| Option | Type | Description | Default |\n");
         md.push_str("|--------|------|-------------|--------|\n");
         for opt in options {

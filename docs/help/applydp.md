@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Applydp Options](#applydp-options) | [Operations Options](#operations-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 applydp is a slimmed-down version of apply specifically created for Datapusher+.
@@ -75,6 +77,8 @@ column name in curly braces, replacing all non-alphanumeric characters with unde
 If you need to dynamically construct a column with more complex formatting requirements and
 computed values, check out the py command to take advantage of Python's f-string formatting.
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -183,6 +187,8 @@ qsv applydp dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullN
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_applydp.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -191,6 +197,8 @@ qsv applydp emptyreplace --replacement=<string> [options] <column> [<input>]
 qsv applydp dynfmt --formatstr=<string> [options] --new-column=<name> [<input>]
 qsv applydp --help
 ```
+
+<a name="arguments"></a>
 
 ## Arguments [↩](#nav)
 
@@ -202,6 +210,8 @@ qsv applydp --help
 | `<column>` | The column/s to check for emptiness. |
 | `<input>` | The input file to read from. If not specified, reads from stdin. |
 
+<a name="applydp-options"></a>
+
 ## Applydp Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -212,12 +222,16 @@ qsv applydp --help
 | `-R, --replacement=<string>` | string | The string to use for the replace & emptyreplace operations. |  |
 | `-f, --formatstr=<string>` | string | This option is used by several subcommands: |  |
 
+<a name="operations-options"></a>
+
 ## Operations Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | `-b, --batch` | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

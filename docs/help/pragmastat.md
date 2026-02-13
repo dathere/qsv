@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Pragmastat Options](#pragmastat-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Pragmatic statistical toolkit.
@@ -65,6 +67,8 @@ misrate is the probability that bounds miss the true value (lower => wider bound
 1e-6    Critical decisions
 
 
+<a name="examples"></a>
+
 ## Examples [↩](#nav)
 
 ```console
@@ -87,12 +91,16 @@ Full Pragmastat manual:
 <https://github.com/AndreyAkinshin/pragmastat/releases/download/v8.0.0/pragmastat-v8.0.0.pdf>
 <https://pragmastat.dev/> (latest version)
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv pragmastat [options] [<input>]
 qsv pragmastat --help
 ```
+
+<a name="pragmastat-options"></a>
 
 ## Pragmastat Options [↩](#nav)
 
@@ -101,6 +109,8 @@ qsv pragmastat --help
 | `-t, --twosample` | flag | Compute two-sample estimators for all column pairs. |  |
 | `-s, --select` | string | Select columns for analysis. Uses qsv's column selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed. |  |
 | `-m, --misrate` | string | Probability that bounds fail to contain the true parameter. Lower values produce wider bounds. Must be achievable for the given sample size. | `0.001` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

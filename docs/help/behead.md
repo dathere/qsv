@@ -7,10 +7,14 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Drop a CSV file's header.
 
+
+<a name="usage"></a>
 
 ## Usage [↩](#nav)
 
@@ -18,6 +22,8 @@ Drop a CSV file's header.
 qsv behead [options] [<input>]
 qsv behead --help
 ```
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

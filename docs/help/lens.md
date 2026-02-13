@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Lens Options](#lens-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Explore tabular data files interactively using the csvlens (<https://github.com/YS-L/csvlens>) engine.
@@ -22,6 +24,8 @@ its snappy-compressed variants (CSV.sz, TSV.sz, Tab.sz & SSV.sz).
 
 Press 'q' to exit. Press '?' for help.
 
+
+<a name="examples"></a>
 
 ## Examples [↩](#nav)
 
@@ -120,12 +124,16 @@ qsv lens --find '^\d+$' data.csv
 ```
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv lens [options] [<input>]
 qsv lens --help
 ```
+
+<a name="lens-options"></a>
 
 ## Lens Options [↩](#nav)
 
@@ -146,6 +154,8 @@ qsv lens --help
 | `-P, --prompt` | string | Set a custom prompt in the status bar. Normally paired w/ --echo-column: qsv lens --prompt 'Select City:' --echo-column 'City' Supports ANSI escape codes for colored or styled text. When using escape codes, ensure it's properly escaped. For example, in bash/zsh, the $'...' syntax is used to do so: qsv lens --prompt $'\033[1;5;31mBlinking red, bold text\033[0m' see <https://en.wikipedia.org/wiki/ANSI_escape_code#Colors> or <https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797> for more info on ANSI escape codes. Typing a complicated prompt on the command line can be tricky. If the prompt starts with "file:", it's interpreted as a filepath from which to load the prompt, e.g. qsv lens --prompt "file:prompt.txt" |  |
 | `--echo-column` | string | Print the value of this column to stdout for the selected row |  |
 | `--debug` | flag | Show stats for debugging |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

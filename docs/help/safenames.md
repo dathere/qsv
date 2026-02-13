@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Safenames Options](#safenames-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Modify headers of a CSV to only have "safe" names - guaranteed "database-ready" names
@@ -83,12 +85,16 @@ It is discouraged because the embedded spaces can cause problems later on.
 For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_safenames.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv safenames [options] [<input>]
 qsv safenames --help
 ```
+
+<a name="safenames-options"></a>
 
 ## Safenames Options [↩](#nav)
 
@@ -97,6 +103,8 @@ qsv safenames --help
 | `--mode` | string | Rename header names to "safe" names - i.e. guaranteed "database-ready" names. It has six modes - conditional, always, verify, Verbose, with Verbose having two submodes - JSON & pretty JSON. | `Always` |
 | `--reserved` | string | Comma-delimited list of additional case-insensitive reserved names that should be considered "unsafe." If a header name is found in the reserved list, it will be prefixed with "reserved_". | `_id` |
 | `--prefix` | string | Certain systems do not allow header names to start with "_" (e.g. CKAN Datastore). This option allows the specification of the unsafe prefix to use when a header starts with "_". | `unsafe_` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Py Options](#py-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Create a new computed column or filter rows by evaluating a Python expression on
@@ -122,6 +124,8 @@ If any record has an invalid result, an exitcode of 1 is returned and an error c
 For more extensive examples, see <https://github.com/dathere/qsv/blob/master/tests/test_py.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -134,11 +138,15 @@ qsv py filter --help
 qsv py --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<expression>` | Can either be a Python expression, or if it starts with "file:" or ends with ".py" - the filepath from which to load the Python expression. Note that argument expects a SINGLE expression, and not a full-blown Python script. Use the --helper option to load helper code that you can call from the expression. |
+
+<a name="py-options"></a>
 
 ## Py Options [↩](#nav)
 
@@ -146,6 +154,8 @@ qsv py --help
 |--------|------|-------------|--------|
 | `-f, --helper` | string | File containing Python code that's loaded into the qsv_uh Python module. Functions with a return statement in the file can be called with the prefix "qsv_uh". The returned value is used in the map or filter operation. |  |
 | `-b, --batch` | string | The number of rows per batch to process before releasing memory and acquiring a new GILpool. Set to 0 to process the entire file in one batch. | `50000` |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

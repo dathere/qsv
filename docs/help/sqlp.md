@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Sqlp Options](#sqlp-options) | [Polars Csv Input Parsing Options](#polars-csv-input-parsing-options) | [Csv Output Format Only Options](#csv-output-format-only-options) | [Parquet Output Format Only Options](#parquet-output-format-only-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Run blazing-fast Polars SQL queries against several CSVs - replete with joins, aggregations,
@@ -285,6 +287,8 @@ $ qsv sqlp data.csv 'explain select * from data where col1 > 10 order by col2 de
 For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_sqlp.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -292,11 +296,15 @@ qsv sqlp [options] <input>... <sql>
 qsv sqlp --help
 ```
 
+<a name="sqlp-options"></a>
+
 ## Sqlp Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--format` | string | The output format to use. Valid values are: csv, json, jsonl, parquet, arrow, avro | `csv` |
+
+<a name="polars-csv-input-parsing-options"></a>
 
 ## Polars Csv Input Parsing Options [↩](#nav)
 
@@ -313,6 +321,8 @@ qsv sqlp --help
 | `--rnull-values` | string | The comma-delimited list of case-sensitive strings to consider as null values when READING CSV files (e.g. NULL, NONE, <empty string>). Use "<empty string>" to consider an empty string a null value. | `<empty string>` |
 | `--decimal-comma` | flag | Use comma as the decimal separator when parsing & writing CSVs. Otherwise, use period as the decimal separator. Note that you'll need to set --delimiter to an alternate delimiter other than the default comma if you are using this option. |  |
 
+<a name="csv-output-format-only-options"></a>
+
 ## Csv Output Format Only Options [↩](#nav)
 
 | Option | Type | Description | Default |
@@ -324,12 +334,16 @@ qsv sqlp --help
 | `--wnull-value` | string | The string to use when WRITING null values. | `<empty string>` |
 | `--compression` | string | The compression codec to use when writing arrow or parquet files. For Arrow, valid values are: zstd, lz4, uncompressed For Avro, valid values are: deflate, snappy, uncompressed (default) For Parquet, valid values are: zstd, lz4raw, gzip, snappy, uncompressed | `zstd` |
 
+<a name="parquet-output-format-only-options"></a>
+
 ## Parquet Output Format Only Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--compress-level` | string | The compression level to use when using zstd or gzip compression. When using zstd, valid values are -7 to 22, with -7 being the lowest compression level and 22 being the highest compression level. When using gzip, valid values are 1-9, with 1 being the lowest compression level and 9 being the highest compression level. Higher compression levels are slower. The zstd default is 3, and the gzip default is 6. |  |
 | `--statistics` | flag | Compute column statistics when writing parquet files. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

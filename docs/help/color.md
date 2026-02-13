@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Color Options](#color-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Outputs tabular data as a pretty, colorized table that always fits into the
@@ -29,12 +31,16 @@ if possible. Set QSV_THEME to DARK or LIGHT to skip detection. QSV_TERMWIDTH
 can be used to override terminal size.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv color [options] [<input>]
 qsv color --help
 ```
+
+<a name="color-options"></a>
 
 ## Color Options [↩](#nav)
 
@@ -43,6 +49,8 @@ qsv color --help
 | `-C, --color` | flag | Force color on, even in situations where colors would normally be disabled. |  |
 | `-n, --row-numbers` | flag | Show row numbers. |  |
 | `-t, --title` | string | Add a title row above the headers. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

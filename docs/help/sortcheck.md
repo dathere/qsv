@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Sort Options](#sort-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Check if a CSV is sorted. The check is done on a streaming basis (i.e. constant memory).
@@ -35,12 +37,16 @@ Returns exit code 0 if a CSV is sorted, and exit code 1 otherwise.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_sortcheck.rs>.
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
 qsv sortcheck [options] [<input>]
 qsv sortcheck --help
 ```
+
+<a name="sort-options"></a>
 
 ## Sort Options [↩](#nav)
 
@@ -51,6 +57,8 @@ qsv sortcheck --help
 | `--all` | flag | Check all records. Do not stop/short-circuit the check on the first unsorted record. |  |
 | `--json` | flag | Return results in JSON format, scanning --all records. The JSON result has the following properties - sorted (boolean), record_count (number), unsorted_breaks (number) & dupe_count (number). Unsorted breaks count the number of times two consecutive rows are unsorted (i.e. n row > n+1 row). Dupe count is the number of times two consecutive rows are equal. Note that dupe count does not apply if the file is not sorted and is set to -1. |  |
 | `--pretty-json` | flag | Same as --json but in pretty JSON format. |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

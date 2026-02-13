@@ -9,6 +9,8 @@
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sniff Options](#sniff-options) | [Common Options](#common-options)
 
+<a name="description"></a>
+
 ## Description [↩](#nav)
 
 Quickly sniff the first n rows and infer CSV metadata (delimiter, header row, number of
@@ -42,6 +44,8 @@ CSVs, unlike `sniff` which can work with remote files, various CSV dialects and 
 regardless of file size.
 
 
+<a name="examples"></a>
+
 ## Examples [↩](#nav)
 
 > Sniff a local CSV file
@@ -71,6 +75,8 @@ qsv sniff --sample 0.20 data.ssv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_sniff.rs).
 
 
+<a name="usage"></a>
+
 ## Usage [↩](#nav)
 
 ```console
@@ -78,11 +84,15 @@ qsv sniff [options] [<input>]
 qsv sniff --help
 ```
 
+<a name="arguments"></a>
+
 ## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<input>` | The file to sniff. This can be a local file, stdin or a URL (http and https schemes supported). |
+
+<a name="sniff-options"></a>
 
 ## Sniff Options [↩](#nav)
 
@@ -102,6 +112,8 @@ qsv sniff --help
 | `--just-mime` | flag | Only return the file's mime type. Use this to use sniff as a general mime type detector. Synonym for --no-infer. |  |
 | `-Q, --quick` | flag | When sniffing a non-CSV remote file, only download the first chunk of the file before attempting to detect the mime type. This is faster but less accurate as some mime types cannot be detected with just the first downloaded chunk. |  |
 | `--harvest-mode` | flag | This is a convenience flag when using sniff in CKAN harvesters. It is equivalent to --quick --timeout 10 --stats-types --json and --user-agent "CKAN-harvest/$QSV_VERSION ($QSV_TARGET; $QSV_BIN_NAME)" |  |
+
+<a name="common-options"></a>
 
 ## Common Options [↩](#nav)
 

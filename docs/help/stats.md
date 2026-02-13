@@ -226,7 +226,7 @@ qsv stats --help
 
 ## Stats Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-s,`<br>`--select`&nbsp; | string | Select a subset of columns to compute stats for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv stats' will prevent the use of indexing. |  |
 | &nbsp;`-E,`<br>`--everything`&nbsp; | flag | Compute all statistics available. |  |
@@ -236,7 +236,7 @@ qsv stats --help
 
 ## Boolean Inferencing Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--infer-boolean`&nbsp; | flag | Infer boolean data type. This automatically enables the --cardinality option. When a column's cardinality is 2, and the 2 values' are in the true/false patterns specified by --boolean-patterns, the data type is inferred as boolean. |  |
 | &nbsp;`--boolean-patterns`&nbsp; | string | Comma-separated list of boolean pattern pairs in the format "true_pattern:false_pattern". Each pattern can be a string of any length. The patterns are case-insensitive. If a pattern ends with a "*", it is treated as a prefix. For example, "t*:f*,y*:n*" will match "true", "truthy", "Truth" as boolean true values so long as the corresponding false pattern (e.g. False, f, etc.) is also matched & cardinality is 2. Ignored if --infer-boolean is false. | `1:0,t*:f*,y*:n*` |
@@ -247,7 +247,7 @@ qsv stats --help
 
 ## Numeric & Date/Datetime Stats That Require In-memory Sorting Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--median`&nbsp; | flag | Compute the median. Loads & sorts all the selected columns' data in memory. <https://en.wikipedia.org/wiki/Median> |  |
 | &nbsp;`--mad`&nbsp; | flag | Compute the median absolute deviation (MAD). <https://en.wikipedia.org/wiki/Median_absolute_deviation> |  |
@@ -262,7 +262,7 @@ qsv stats --help
 
 ## Date Inferencing Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--infer-dates`&nbsp; | flag | Infer date/datetime data types. This is an expensive option and should only be used when you know there are date/datetime fields. Also, if timezone is not specified in the data, it'll be set to UTC. |  |
 | &nbsp;`--dates-whitelist`&nbsp; | string | The comma-separated, case-insensitive patterns to look for when shortlisting fields for date inferencing. i.e. if the field's name has any of these patterns, it is shortlisted for date inferencing. | `sniff` |
@@ -277,7 +277,7 @@ qsv stats --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

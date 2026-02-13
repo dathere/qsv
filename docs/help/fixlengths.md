@@ -36,7 +36,7 @@ qsv fixlengths --help
 
 ## Fixlengths Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-l,`<br>`--length`&nbsp; | string | Forcefully set the length of each record. If a record is not the size given, then it is truncated or expanded as appropriate. |  |
 | &nbsp;`-r,`<br>`--remove-empty`&nbsp; | flag | Remove empty columns. |  |
@@ -48,7 +48,7 @@ qsv fixlengths --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

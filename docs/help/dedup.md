@@ -81,7 +81,7 @@ qsv dedup --help
 
 ## Dedup Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-s,`<br>`--select`&nbsp; | string | Select a subset of columns to dedup. Note that the outputs will remain at the full width of the CSV. See 'qsv select --help' for the format details. |  |
 | &nbsp;`-N,`<br>`--numeric`&nbsp; | flag | Compare according to string numerical value |  |
@@ -95,7 +95,7 @@ qsv dedup --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

@@ -258,7 +258,7 @@ qsv moarstats --help
 
 ## Moarstats Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--advanced`&nbsp; | flag | Compute Kurtosis, Shannon Entropy, Bimodality Coefficient, Gini Coefficient and Atkinson Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing. |  |
 | &nbsp;`-e,`<br>`--epsilon`&nbsp; | string | The Atkinson Index Inequality Aversion parameter. Epsilon controls the sensitivity of the Atkinson Index to inequality. The higher the epsilon, the more sensitive the index is to inequality. Typical values are 0.5 (standard in economic research), 1.0 (natural boundary), or 2.0 (useful for poverty analysis). | `1.0` |
@@ -272,7 +272,7 @@ qsv moarstats --help
 
 ## Bivariate Statistics Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-B,`<br>`--bivariate`&nbsp; | flag | Enable bivariate statistics computation. Requires indexed CSV file (index will be auto-created if missing). Computes pairwise correlations, covariances, mutual information, and normalized mutual information between columns. The bivariate statistics |  |
 | &nbsp;`-S,`<br>`--bivariate-stats`&nbsp; | string | Comma-separated list of bivariate statistics to compute. Options: pearson, spearman, kendall, covariance, mi (mutual information), nmi (normalized mutual information) Use "all" to compute all statistics or "fast" to compute only pearson & covariance, which is much faster as it doesn't require storing all values and uses streaming algorithms. | `fast` |
@@ -286,7 +286,7 @@ qsv moarstats --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;Option&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--force`&nbsp; | flag | Force recomputing stats even if valid precomputed stats cache exists. |  |
 | &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. This works only when the given CSV has an index. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected. |  |

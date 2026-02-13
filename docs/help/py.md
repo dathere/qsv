@@ -140,7 +140,7 @@ qsv py --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<expression>`&nbsp; | Can either be a Python expression, or if it starts with "file:" or ends with ".py" - the filepath from which to load the Python expression. Note that argument expects a SINGLE expression, and not a full-blown Python script. Use the --helper option to load helper code that you can call from the expression. |
 
@@ -148,7 +148,7 @@ qsv py --help
 
 ## Py Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;Option&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-f,`<br>`--helper`&nbsp; | string | File containing Python code that's loaded into the qsv_uh Python module. Functions with a return statement in the file can be called with the prefix "qsv_uh". The returned value is used in the map or filter operation. |  |
 | &nbsp;`-b,`<br>`--batch`&nbsp; | string | The number of rows per batch to process before releasing memory and acquiring a new GILpool. Set to 0 to process the entire file in one batch. | `50000` |
@@ -157,7 +157,7 @@ qsv py --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

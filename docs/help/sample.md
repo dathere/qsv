@@ -203,7 +203,7 @@ qsv sample --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | The CSV file to sample. This can be a local file, stdin, or a URL (http and https schemes supported). |
 | &nbsp;`<sample-size>`&nbsp; | When using INDEXED, RESERVOIR or WEIGHTED sampling, the sample size. Can either be a whole number or a value between value between 0 and 1. If a fraction, specifies the sample size as a percentage of the population. (e.g. 0.15 - 15 percent of the CSV) When using BERNOULLI sampling, the probability of selecting each record (between 0 and 1). When using SYSTEMATIC sampling, the integer part is the interval between records to sample & the fractional part is the percentage of the population to sample. When there is no fractional part, it will select every nth record for the entire population. When using STRATIFIED sampling, the stratum sample size. When using CLUSTER sampling, the number of clusters. When using TIMESERIES sampling, the interval number (treated as hours by default, e.g., 1 = 1 hour). Use --ts-interval for custom intervals like "1d" (daily), "1w" (weekly), "1m" (monthly), "1y" (yearly), etc. |
@@ -212,7 +212,7 @@ qsv sample --help
 
 ## Sample Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;Option&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--seed`&nbsp; | string | Random Number Generator (RNG) seed. |  |
 | &nbsp;`--rng`&nbsp; | string | The Random Number Generator (RNG) algorithm to use. | `standard` |
@@ -221,7 +221,7 @@ qsv sample --help
 
 ## Sampling Methods Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--bernoulli`&nbsp; | flag | Use Bernoulli sampling instead of indexed or reservoir sampling. When this flag is set, <sample-size> must be between 0 and 1 and represents the probability of selecting each record. |  |
 | &nbsp;`--systematic`&nbsp; | string | Use systematic sampling (every nth record as specified by <sample-size>). If <arg> is "random", the starting point is randomly chosen between 0 & n. If <arg> is "first", the starting point is the first record. The sample size must be a whole number. Uses CONSTANT memory - O(1). |  |
@@ -234,7 +234,7 @@ qsv sample --help
 
 ## Time-series Sampling Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--ts-interval`&nbsp; | string | Time interval for grouping records. Format: <number><unit> where unit is h (hour), d (day), w (week), m (month), y (year). |  |
 
@@ -242,7 +242,7 @@ qsv sample --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

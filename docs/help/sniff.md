@@ -86,7 +86,7 @@ qsv sniff --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | The file to sniff. This can be a local file, stdin or a URL (http and https schemes supported). |
 
@@ -94,7 +94,7 @@ qsv sniff --help
 
 ## Sniff Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--sample`&nbsp; | string | First n rows to sample to sniff out the metadata. When sample size is between 0 and 1 exclusive, it is treated as a percentage of the CSV to sample (e.g. 0.20 is 20 percent). When it is zero, the entire file will be sampled. When the input is a URL, the sample size dictates how many lines to sample without having to download the entire file. Ignored when --no-infer is enabled. | `1000` |
 | &nbsp;`--prefer-dmy`&nbsp; | flag | Prefer to parse dates in dmy format. Otherwise, use mdy format. Ignored when --no-infer is enabled. |  |
@@ -115,7 +115,7 @@ qsv sniff --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-p,`<br>`--progressbar`&nbsp; | flag | Show progress bars. Only valid for URL input. |  |

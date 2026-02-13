@@ -108,7 +108,7 @@ qsv exclude --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input1>`&nbsp; | is the file from which data will be removed. |
 | &nbsp;`<input2>`&nbsp; | is the file containing the data to be removed from <input1> e.g. 'qsv exclude id records.csv id previously-processed.csv' |
@@ -117,7 +117,7 @@ qsv exclude --help
 
 ## Exclude Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-i,`<br>`--ignore-case`&nbsp; | flag | When set, matching is done case insensitively. |  |
 | &nbsp;`-v,`<br>`--invert`&nbsp; | flag | When set, matching rows will be the only ones included, forming set intersection, instead of the ones discarded. |  |
@@ -126,7 +126,7 @@ qsv exclude --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

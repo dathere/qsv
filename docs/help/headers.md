@@ -35,7 +35,7 @@ qsv headers --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | ...             The CSV file(s) to read. Use '-' for standard input. If input is a directory, all files in the directory will be read as input. If the input is a file with a '.infile-list' extension, the file will be read as a list of input files. If the input are snappy-compressed files(s), it will be decompressed automatically. |
 
@@ -43,7 +43,7 @@ qsv headers --help
 
 ## Headers Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-j,`<br>`--just-names`&nbsp; | flag | Only show the header names (hide column index). This is automatically enabled if more than one input is given. |  |
 | &nbsp;`-J,`<br>`--just-count`&nbsp; | flag | Only show the number of headers. |  |
@@ -54,7 +54,7 @@ qsv headers --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |

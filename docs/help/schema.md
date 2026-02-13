@@ -78,7 +78,7 @@ qsv schema --help
 
 ## Schema Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--enum-threshold`&nbsp; | string | Cardinality threshold for adding enum constraints. Enum constraints are compiled for String & Integer types. | `50` |
 | &nbsp;`-i,`<br>`--ignore-case`&nbsp; | flag | Ignore case when compiling unique values for enum constraints. Do note however that the `validate` command is case-sensitive when validating against enum constraints. |  |
@@ -97,7 +97,7 @@ qsv schema --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Namely, it will be processed with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |

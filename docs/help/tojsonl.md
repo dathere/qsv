@@ -40,7 +40,7 @@ qsv tojsonl --help
 
 ## Tojsonl Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--trim`&nbsp; | flag | Trim leading and trailing whitespace from fields before converting to JSON. |  |
 | &nbsp;`--no-boolean`&nbsp; | flag | Do not infer boolean fields. |  |
@@ -51,7 +51,7 @@ qsv tojsonl --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |

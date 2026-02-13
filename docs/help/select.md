@@ -148,7 +148,7 @@ qsv select --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<selection>`&nbsp; | The columns to select. You can select columns by index, by name, by range, by regex and any combination of these. If the first character is '!', the selection will be inverted. If the selection contains embedded spaces or characters that conflict with selector syntax, it must be quoted. See examples above. |
 
@@ -156,7 +156,7 @@ qsv select --help
 
 ## Select Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;Option&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-R,`<br>`--random`&nbsp; | flag | Randomly shuffle the columns in the selection. |  |
 | &nbsp;`--seed`&nbsp; | string | Seed for the random number generator. |  |
@@ -166,7 +166,7 @@ qsv select --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

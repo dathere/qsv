@@ -68,7 +68,7 @@ qsv rename --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;Argument&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<headers>`&nbsp; | The new headers to use for the CSV. Separate multiple headers with a comma. If "_all_generic" is given, the headers will be renamed to generic column names, where the column name uses the format "_col_N" where N is the 1-based column index. Alternatively, specify pairs of old,new column names to rename only specific columns. |
 
@@ -76,7 +76,7 @@ qsv rename --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

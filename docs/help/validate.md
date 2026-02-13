@@ -226,7 +226,7 @@ qsv validate --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | ...                 Input CSV file(s) to validate. If not provided, will read from stdin. If input is a directory, all files in the directory will be validated. If the input is a file with a '.infile-list' extension, the file will be read as a list of input files. If the input are snappy-compressed files(s), it will be decompressed automatically. Extended Input Support is only available for RFC 4180 validation mode. |
 | &nbsp;`<json-schema>`&nbsp; | JSON Schema file to validate against. If not provided, `validate` will run in RFC 4180 validation mode. The file can be a local file or a URL (http and https schemes supported). |
@@ -235,7 +235,7 @@ qsv validate --help
 
 ## Validate Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--trim`&nbsp; | flag | Trim leading and trailing whitespace from fields before validating. |  |
 | &nbsp;`--no-format-validation`&nbsp; | flag | Disable JSON Schema format validation. Ignores all JSON Schema "format" keywords (e.g. date,email, uri, currency, etc.). This is useful when you want to validate the structure of the CSV file w/o worrying about the data types and domain/range of the fields. |  |
@@ -252,7 +252,7 @@ qsv validate --help
 
 ## Fancy Regex Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--fancy-regex`&nbsp; | flag | Use the fancy regex engine instead of the default regex engine for validation. The fancy engine supports advanced regex features such as lookaround and backreferences, but is not as performant as the default regex engine which guarantees linear-time matching, prevents DoS attacks, and is more efficient for simple patterns. |  |
 | &nbsp;`--backtrack-limit`&nbsp; | string | Set the approximate number of backtracking steps allowed. This is only used when --fancy-regex is set. | `1000000` |
@@ -261,7 +261,7 @@ qsv validate --help
 
 ## Options For Both Regex Engines [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--size-limit`&nbsp; | string | Set the approximate size limit, in megabytes, of a compiled regex. | `50` |
 | &nbsp;`--dfa-size-limit`&nbsp; | string | Set the approximate capacity, in megabytes, of the cache of transitions used by the engine's lazy Discrete Finite Automata. | `10` |
@@ -274,7 +274,7 @@ qsv validate --help
 
 ## Email Validation Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--email-required-tld`&nbsp; | flag | Require the email to have a valid Top-Level Domain (TLD) (e.g. .com, .org, .net, etc.). e.g. "john.doe@example" is VALID if this option is NOT set. |  |
 | &nbsp;`--email-display-text`&nbsp; | flag | Allow display text in emails. e.g. "John Doe <john.doe@example.com>" is INVALID if this option is NOT set. |  |
@@ -285,7 +285,7 @@ qsv validate --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. It will be validated with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. Note that this option is only valid when running in RFC 4180 validation mode as JSON Schema validation requires headers. |  |

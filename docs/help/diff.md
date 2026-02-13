@@ -113,7 +113,7 @@ qsv diff --help
 
 ## Diff Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--no-headers-left`&nbsp; | flag | When set, the first row will be considered as part of the left CSV to diff. (When not set, the first row is the header row and will be skipped during the diff. It will always appear in the output.) |  |
 | &nbsp;`--no-headers-right`&nbsp; | flag | When set, the first row will be considered as part of the right CSV to diff. (When not set, the first row is the header row and will be skipped during the diff. It will always appear in the output.) |  |
@@ -130,7 +130,7 @@ qsv diff --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

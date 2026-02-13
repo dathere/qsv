@@ -55,7 +55,7 @@ qsv partition --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<column>`&nbsp; | The column to use as a key for partitioning. You can use the `--select` option to select the column by name or index, but only one column can be used for partitioning. See `select` command for more details. |
 | &nbsp;`<outdir>`&nbsp; | The directory to write the output files to. |
@@ -65,7 +65,7 @@ qsv partition --help
 
 ## Partition Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--filename`&nbsp; | string | A filename template to use when constructing the names of the output files.  The string '{}' will be replaced by a value based on the partition column, but sanitized for shell safety. | `{}.csv` |
 | &nbsp;`-p,`<br>`--prefix-length`&nbsp; | string | Truncate the partition column after the specified number of bytes when creating the output file. |  |
@@ -76,7 +76,7 @@ qsv partition --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will NOT be interpreted as column names. Otherwise, the first row will appear in all chunks as the header row. |  |

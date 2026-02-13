@@ -298,7 +298,7 @@ qsv sqlp --help
 
 ## Sqlp Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;Option&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--format`&nbsp; | string | The output format to use. Valid values are: csv, json, jsonl, parquet, arrow, avro | `csv` |
 
@@ -306,7 +306,7 @@ qsv sqlp --help
 
 ## Polars CSV Input Parsing Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--try-parsedates`&nbsp; | flag | Automatically try to parse dates/datetimes and time. If parsing fails, columns remain as strings. Note that if dates are not well-formatted in your CSV, that you may want to try to set `--ignore-errors` to relax the CSV parsing of dates. |  |
 | &nbsp;`--infer-len`&nbsp; | string | The number of rows to scan when inferring the schema of the CSV. Set to 0 to do a full table scan (warning: can be slow). | `10000` |
@@ -323,7 +323,7 @@ qsv sqlp --help
 
 ## CSV Output Format Only Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--datetime-format`&nbsp; | string | The datetime format to use writing datetimes. See <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for the list of valid format specifiers. |  |
 | &nbsp;`--date-format`&nbsp; | string | The date format to use writing dates. |  |
@@ -335,7 +335,7 @@ qsv sqlp --help
 
 ## Arrow/Avro/Parquet Output Formats Only Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--compression`&nbsp; | string | The compression codec to use when writing arrow or parquet files. For Arrow, valid values are: zstd, lz4, uncompressed For Avro, valid values are: deflate, snappy, uncompressed (default) For Parquet, valid values are: zstd, lz4raw, gzip, snappy, uncompressed | `zstd` |
 
@@ -343,7 +343,7 @@ qsv sqlp --help
 
 ## Parquet Output Format Only Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--compress-level`&nbsp; | string | The compression level to use when using zstd or gzip compression. When using zstd, valid values are -7 to 22, with -7 being the lowest compression level and 22 being the highest compression level. When using gzip, valid values are 1-9, with 1 being the lowest compression level and 9 being the highest compression level. Higher compression levels are slower. The zstd default is 3, and the gzip default is 6. |  |
 | &nbsp;`--statistics`&nbsp; | flag | Compute column statistics when writing parquet files. |  |
@@ -352,7 +352,7 @@ qsv sqlp --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

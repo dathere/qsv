@@ -135,7 +135,7 @@ qsv lens --help
 
 ## Lens Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | Delimiter character (comma by default) "auto" to auto-detect the delimiter |  |
 | &nbsp;`-t,`<br>`--tab-separated`&nbsp; | flag | Use tab separation. Shortcut for -d '\t' |  |
@@ -157,7 +157,7 @@ qsv lens --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;Option&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 

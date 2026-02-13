@@ -95,7 +95,7 @@ qsv frequency --help
 
 ## Frequency Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-s,`<br>`--select`&nbsp; | string | Select a subset of columns to compute frequencies for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv frequency' will disable the use of indexing. |  |
 | &nbsp;`-l,`<br>`--limit`&nbsp; | string | Limit the frequency table to the N most common items. Set to '0' to disable a limit. If negative, only return values with an occurrence count >= absolute value of the negative limit. e.g. --limit -2 will only return values with an occurrence count >= 2. | `10` |
@@ -123,7 +123,7 @@ qsv frequency --help
 
 ## JSON Output Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--json`&nbsp; | flag | Output frequency table as nested JSON instead of CSV. The JSON output includes additional metadata: row count, field count, data type, cardinality, null count, sparsity, uniqueness_ratio and 17 additional stats (e.g. sum, min, max, range, sort_order, mean, sem, etc.). |  |
 | &nbsp;`--pretty-json`&nbsp; | flag | Same as --json but pretty prints the JSON output. |  |
@@ -135,7 +135,7 @@ qsv frequency --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

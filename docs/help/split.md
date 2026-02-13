@@ -126,7 +126,7 @@ qsv split --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<outdir>`&nbsp; | The directory where the output files will be written. If it does not exist, it will be created. |
 | &nbsp;`<input>`&nbsp; | The CSV file to read. If not given, input is read from STDIN. |
@@ -135,7 +135,7 @@ qsv split --help
 
 ## Split Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-s,`<br>`--size`&nbsp; | string | The number of records to write into each chunk. | `500` |
 | &nbsp;`-c,`<br>`--chunks`&nbsp; | string | The number of chunks to split the data into. This option is mutually exclusive with --size. The number of rows in each chunk is determined by the number of records in the CSV data and the number of desired chunks. If the number of records is not evenly divisible by the number of chunks, the last chunk will have fewer records. |  |
@@ -148,7 +148,7 @@ qsv split --help
 
 ## Filter Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--filter`&nbsp; | string | Run the specified command on each chunk after it is written. The command should use the FILE environment variable ($FILE on Linux/macOS, %FILE% on Windows), which is set to the path of the output file for each chunk. The string '{}' in the command will be replaced by the zero-based row number of the first row in the chunk. |  |
 | &nbsp;`--filter-cleanup`&nbsp; | flag | Cleanup the original output filename AFTER the filter command is run successfully for EACH chunk. If the filter command is not successful, the original filename is not removed. Only valid when --filter is used. |  |
@@ -158,7 +158,7 @@ qsv split --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will NOT be interpreted as column names. Otherwise, the first row will appear in all chunks as the header row. |  |

@@ -332,7 +332,12 @@ fn generate_command_markdown(
     // Arguments section
     if !parsed_args.is_empty() {
         write_heading(&mut md, "Arguments");
-        md.push_str("| Argument | Description |\n");
+        // Pad header to the longest argument name to prevent word-wrap
+        let max_arg_len = parsed_args.iter().map(|a| a.name.len()).max().unwrap_or(0);
+        let total_pad = max_arg_len.saturating_sub(6);
+        let pad_left = "&nbsp;".repeat(total_pad / 2);
+        let pad_right = "&nbsp;".repeat(total_pad - total_pad / 2);
+        let _ = writeln!(md, "| {pad_left}Argument{pad_right} | Description |");
         md.push_str("|----------|-------------|\n");
         for arg in &parsed_args {
             let _ = writeln!(
@@ -351,7 +356,15 @@ fn generate_command_markdown(
             continue;
         }
         write_heading(&mut md, section_title);
-        md.push_str("| Option | Type | Description | Default |\n");
+        // Pad header to the longest long flag to prevent word-wrap
+        let max_flag_len = options.iter().map(|o| o.flag.len()).max().unwrap_or(0);
+        let total_pad = max_flag_len.saturating_sub(4);
+        let pad_left = "&nbsp;".repeat(total_pad / 2);
+        let pad_right = "&nbsp;".repeat(total_pad - total_pad / 2);
+        let _ = writeln!(
+            md,
+            "| {pad_left}Option{pad_right} | Type | Description | Default |"
+        );
         md.push_str("|--------|------|-------------|--------|\n");
         for opt in options {
             let option_display = if let Some(short) = &opt.short {

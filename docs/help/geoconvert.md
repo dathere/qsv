@@ -55,7 +55,7 @@ qsv geoconvert --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;&nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | The spatial file to convert. To use stdin instead, use a dash "-". Note: SHP input must be a path to a .shp file and cannot use stdin. |
 | &nbsp;`<input-format>`&nbsp; | Valid values are "geojson", "shp", and "csv" |
@@ -65,7 +65,7 @@ qsv geoconvert --help
 
 ## Geoconvert Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-g,`<br>`--geometry`&nbsp; | string | The name of the column that has WKT geometry. Alternative to --latitude and --longitude. |  |
 | &nbsp;`-y,`<br>`--latitude`&nbsp; | string | The name of the column with northing values. |  |
@@ -76,7 +76,7 @@ qsv geoconvert --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;Option&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

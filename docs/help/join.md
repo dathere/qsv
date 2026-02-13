@@ -36,7 +36,7 @@ qsv join --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;&nbsp;Argument&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input1>`&nbsp; | is the first CSV data set to join. |
 | &nbsp;`<input2>`&nbsp; | is the second CSV data set to join. |
@@ -46,7 +46,7 @@ qsv join --help
 
 ## Join Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--left`&nbsp; | flag | Do a 'left outer' join. This returns all rows in first CSV data set, including rows with no corresponding row in the second data set. When no corresponding row exists, it is padded out with empty fields. |  |
 | &nbsp;`--left-anti`&nbsp; | flag | Do a 'left anti' join. This returns all rows in first CSV data set that has no match with the second data set. |  |
@@ -63,7 +63,7 @@ qsv join --help
 
 ## Join Key Transformation Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-i,`<br>`--ignore-case`&nbsp; | flag | When set, joins are done case insensitively. |  |
 | &nbsp;`-z,`<br>`--ignore-leading-zeros`&nbsp; | flag | When set, leading zeros are ignored in join keys. |  |
@@ -72,7 +72,7 @@ qsv join --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

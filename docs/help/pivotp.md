@@ -35,7 +35,7 @@ qsv pivotp --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;Argument&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<on-cols>`&nbsp; | The column(s) to pivot on (creates new columns). |
 | &nbsp;`<input>`&nbsp; | is the input CSV file. The file must have headers. If the file has a pschema.json file, it will be used to inform the pivot operation unless --infer-len is explicitly set to a value other than the default of 10,000 rows. Stdin is not supported. |
@@ -44,7 +44,7 @@ qsv pivotp --help
 
 ## Pivotp Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-i,`<br>`--index`&nbsp; | string | The column(s) to use as the index (row labels). Specify multiple columns by separating them with a comma. The output will have one row for each unique combination of the index's values. If None, all remaining columns not specified on --on and --values will be used. At least one of --index and --values must be specified. |  |
 | &nbsp;`-v,`<br>`--values`&nbsp; | string | The column(s) containing values to aggregate. If an aggregation is specified, these are the values on which the aggregation will be computed. If None, all remaining columns not specified on --on and --index will be used. At least one of --index and --values must be specified. |  |
@@ -62,7 +62,7 @@ qsv pivotp --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

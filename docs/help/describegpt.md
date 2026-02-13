@@ -204,7 +204,7 @@ qsv describegpt --help
 
 ## Data Analysis/Inferencing Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--dictionary`&nbsp; | flag | Create a Data Dictionary using a hybrid "neuro-procedural" pipeline - i.e. the Dictionary is populated deterministically using Summary Statistics and Frequency Distribution data, and only the human-friendly Label and Description are populated by the LLM using the same statistical context. |  |
 | &nbsp;`--description`&nbsp; | flag | Infer a general Description of the dataset based on detailed statistical context. An Attribution signature is embedded in the Description. |  |
@@ -215,7 +215,7 @@ qsv describegpt --help
 
 ## Dictionary Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--num-examples`&nbsp; | string | The number of Example values to include in the dictionary. | `5` |
 | &nbsp;`--truncate-str`&nbsp; | string | The maximum length of an Example value in the dictionary. An ellipsis is appended to the truncated value. If zero, no truncation is performed. | `25` |
@@ -226,7 +226,7 @@ qsv describegpt --help
 
 ## Tag Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--num-tags`&nbsp; | string | The maximum number of tags to infer when the --tags option is used. Maximum allowed value is 50. | `10` |
 | &nbsp;`--tag-vocab`&nbsp; | string | The CSV file containing the tag vocabulary to use for inferring tags. If no tag vocabulary file is provided, the model will use free-form tags. Supports local files, remote URLs (http/https), CKAN resources (ckan://), and dathere:// scheme. Remote resources are cached locally. The CSV file must have two columns with headers: first column is the tag, second column is the description. Note that qsvlite only supports local files. |  |
@@ -238,7 +238,7 @@ qsv describegpt --help
 
 ## Stats/Frequency Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--stats-options`&nbsp; | string | Options for the stats command used to generate summary statistics. If it starts with "file:" prefix, the statistics are read from the specified CSV file instead of running the stats command. e.g. "file:my_custom_stats.csv" | `--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl` |
 | &nbsp;`--freq-options`&nbsp; | string | Options for the frequency command used to generate frequency distributions. You can use this to exclude certain variable types from frequency analysis (e.g., --select '!id,!uuid'), limit results differently per use case, or control output format. If --limit is specified here, it takes precedence over --enum-threshold. If it starts with "file:" prefix, the frequency data is read from the specified CSV file instead of running the frequency command. e.g. "file:my_custom_frequency.csv" | `--rank-strategy dense` |
@@ -248,7 +248,7 @@ qsv describegpt --help
 
 ## Custom Prompt Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-p,`<br>`--prompt`&nbsp; | string | Custom prompt to answer questions about the dataset. The prompt will be answered based on the dataset's Summary Statistics, Frequency data & Data Dictionary. If the prompt CANNOT be answered by looking at these metadata, a SQL query will be generated to answer the question. If the "polars" or the "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set & the `--sql-results` option is used, the SQL query will be automatically executed and its results returned. Otherwise, the SQL query will be returned along with the reasoning behind it. If it starts with "file:" prefix, the prompt is read from the file specified. e.g. "file:my_long_prompt.txt" |  |
 | &nbsp;`--sql-results`&nbsp; | string | The file to save the SQL query results to. Only valid if the --prompt option is used & the "polars" or the "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set. If the SQL query executes successfully, the results will be saved with a ".csv" extension. Otherwise, it will be saved with a ".sql" extension so the user can inspect why it failed and modify it. |  |
@@ -262,7 +262,7 @@ qsv describegpt --help
 
 ## LLM API Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-u,`<br>`--base-url`&nbsp; | string | The LLM API URL. Supports APIs & local LLMs compatible with the OpenAI API specification. Some common base URLs: OpenAI: <https://api.openai.com/v1> Gemini: <https://generativelanguage.googleapis.com/v1beta/openai> TogetherAI: <https://api.together.ai/v1> | `http://localhost:1234/v1` |
 | &nbsp;`-m,`<br>`--model`&nbsp; | string | The model to use for inferencing. If set, takes precedence over the QSV_LLM_MODEL environment variable. | `openai/gpt-oss-20b` |
@@ -278,7 +278,7 @@ qsv describegpt --help
 
 ## Caching Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--no-cache`&nbsp; | flag | Disable default disk cache. |  |
 | &nbsp;`--disk-cache-dir`&nbsp; | string | The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different describegpt jobs (e.g. one for a data portal, another for internal data exchange, etc.) | `~/.qsv/cache/describegpt` |
@@ -291,7 +291,7 @@ qsv describegpt --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;Option&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`--format`&nbsp; | string | Output format: Markdown, TSV, JSON, or TOON. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See <https://toonformat.dev/> for more info. | `Markdown` |

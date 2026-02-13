@@ -40,7 +40,7 @@ qsv joinp --help
 
 ## Joinp Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--left`&nbsp; | flag | Do a 'left outer' join. This returns all rows in first CSV data set, including rows with no corresponding row in the second data set. When no corresponding row exists, it is padded out with empty fields. |  |
 | &nbsp;`--left-anti`&nbsp; | flag | This returns only the rows in the first CSV data set that do not have a corresponding row in the second data set. The output schema is the same as the first dataset. |  |
@@ -60,7 +60,7 @@ qsv joinp --help
 
 ## Join Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--maintain-order`&nbsp; | string | Which row order to preserve, if any. Valid values are: none, left, right, left_right, right_left Do not rely on any observed ordering without explicitly setting this parameter. Not specifying any order can improve performance. Supported for inner, left, right and full joins. | `none` |
 | &nbsp;`--nulls`&nbsp; | flag | When set, joins will work on empty fields. Otherwise, empty fields are completely ignored. |  |
@@ -70,7 +70,7 @@ qsv joinp --help
 
 ## Polars CSV Parsing Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--try-parsedates`&nbsp; | flag | When set, will attempt to parse the columns as dates. If the parse fails, columns remain as strings. This is useful when the join keys are formatted as dates with differing date formats, as the date formats will be normalized. Note that this will be automatically enabled when using asof joins. |  |
 | &nbsp;`--infer-len`&nbsp; | string | The number of rows to scan when inferring the schema of the CSV. Set to 0 to do a full table scan (warning: very slow). Only used when --cache-schema is 0 or 1 and no cached schema exists or when --infer-len is 0. | `10000` |
@@ -84,7 +84,7 @@ qsv joinp --help
 
 ## Asof Join Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--asof`&nbsp; | flag | Do an 'asof' join. This is similar to a left inner join, except we match on nearest key rather than equal keys (see --allow-exact-matches). Particularly useful for time series data. Note that both CSV data sets will be SORTED on the join columns by default, unless --no-sort is set. |  |
 | &nbsp;`--no-sort`&nbsp; | flag | Do not sort the CSV data sets on the join columns by default. Note that asof joins REQUIRE the join keys to be sorted, so this option should only be used as a performance optimization when you know the CSV join keys are already sorted. If the CSV join keys are not sorted, the asof join will fail or return incorrect results. |  |
@@ -98,7 +98,7 @@ qsv joinp --help
 
 ## Output Format Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--sql-filter`&nbsp; | string | The SQL expression to apply against the join result. Used to select columns and filter rows AFTER running the join. Be sure to select from the "join_result" table when formulating the SQL expression. (e.g. "select c1, c2 as colname from join_result where c2 > 20") |  |
 | &nbsp;`--datetime-format`&nbsp; | string | The datetime format to use writing datetimes. See <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for the list of valid format specifiers. |  |
@@ -111,7 +111,7 @@ qsv joinp --help
 
 ## Join Key Transformation Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-i,`<br>`--ignore-case`&nbsp; | flag | When set, joins are done case insensitively. |  |
 | &nbsp;`-z,`<br>`--ignore-leading-zeros`&nbsp; | flag | When set, joins are done ignoring leading zeros. Note that this is only applied to the join keys for both numeric and string columns. Also note that Polars will automatically remove leading zeros from numeric columns when it infers the schema. To force the schema to be all String types, set --cache-schema to -1 or -2. |  |
@@ -121,7 +121,7 @@ qsv joinp --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

@@ -77,7 +77,7 @@ qsv replace --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<pattern>`&nbsp; | Regular expression pattern to match. Uses Rust regex syntax. See <https://docs.rs/regex/latest/regex/index.html#syntax> or <https://regex101.com> with the Rust flavor for more info. |
 | &nbsp;`<input>`&nbsp; | The CSV file to read. If not given, reads from stdin. |
@@ -87,7 +87,7 @@ qsv replace --help
 
 ## Replace Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-i,`<br>`--ignore-case`&nbsp; | flag | Case insensitive search. This is equivalent to prefixing the regex with '(?i)'. |  |
 | &nbsp;`--literal`&nbsp; | flag | Treat the regex pattern as a literal string. This allows you to search for matches that contain regex special characters. |  |
@@ -103,7 +103,7 @@ qsv replace --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

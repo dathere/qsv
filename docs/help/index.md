@@ -38,7 +38,7 @@ qsv index --help
 
 ## Index Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;Option&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write index to <file> instead of <input>.idx. Generally, this is not currently useful because the only way to use an index is if it is specially named <input>.idx. |  |
 
@@ -46,7 +46,7 @@ qsv index --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;Option&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 

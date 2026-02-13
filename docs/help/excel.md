@@ -161,7 +161,7 @@ qsv excel --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | The spreadsheet file to read. Use "-" to read from stdin. Supported formats: xls, xlsx, xlsm, xlsb, ods. |
 
@@ -169,7 +169,7 @@ qsv excel --help
 
 ## Excel Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-s,`<br>`--sheet`&nbsp; | string | Name (case-insensitive) or zero-based index of sheet to export. Negative indices start from the end (-1 = last sheet). If the sheet cannot be found, qsv will read the first sheet. | `0` |
 | &nbsp;`--header-row`&nbsp; | string | The header row. Set if other than the first non-empty row of the sheet. |  |
@@ -188,7 +188,7 @@ qsv excel --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

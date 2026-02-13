@@ -168,7 +168,7 @@ qsv fetchpost --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<url-column>`&nbsp; | Name of the column with the URL. Otherwise, if the argument starts with `http`, the URL to use. |
 | &nbsp;`<column-list>`&nbsp; | Comma-delimited list of columns to insert into the HTTP Post body. Uses `qsv select` syntax - i.e. Columns can be referenced by index or by name if there is a header row (duplicate column names can be disambiguated with more indexing). Column ranges can also be specified. Finally, columns can be selected using regular expressions. See 'qsv select --help' for examples. |
@@ -177,7 +177,7 @@ qsv fetchpost --help
 
 ## Fetchpost Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-t,`<br>`--payload-tpl`&nbsp; | string | Instead of <column-list>, use a MiniJinja template file to render a JSON payload in the HTTP Post body. You can also use --payload-tpl to render a non-JSON payload, but --content-type will have to be set manually. If a rendered JSON is invalid, `fetchpost` will abort and return an error. |  |
 | &nbsp;`--content-type`&nbsp; | string | Overrides automatic content types for `<column-list>` (`application/x-www-form-urlencoded`) and `--payload-tpl` (`application/json`). Typical alternative values are `multipart/form-data` and `text/plain`. It is the responsibility of the user to format the payload accordingly when using --payload-tpl. |  |
@@ -201,7 +201,7 @@ qsv fetchpost --help
 
 ## Caching Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--no-cache`&nbsp; | flag | Do not cache responses. |  |
 | &nbsp;`--mem-cache-size`&nbsp; | string | Maximum number of entries in the in-memory LRU cache. | `2000000` |
@@ -215,7 +215,7 @@ qsv fetchpost --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

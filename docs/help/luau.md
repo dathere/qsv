@@ -248,7 +248,7 @@ qsv luau --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<new-columns>`&nbsp; | is a comma-separated list of new computed columns to add to the CSV when using "luau map". The new columns are added to the CSV after the existing columns, unless the --remap option is used. |
 
@@ -256,7 +256,7 @@ qsv luau --help
 
 ## Luau Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-g,`<br>`--no-globals`&nbsp; | flag | Don't create Luau global variables for each column, only `col`. Useful when some column names mask standard Luau globals and to increase PERFORMANCE. Note: access to Luau globals thru _G remains even with -g. |  |
 | &nbsp;`--colindex`&nbsp; | flag | Create a 1-based column index. Useful when some column names mask standard Luau globals. Automatically enabled with --no-headers. |  |
@@ -273,7 +273,7 @@ qsv luau --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

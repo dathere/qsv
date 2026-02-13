@@ -200,7 +200,7 @@ qsv applydp --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<column>`&nbsp; | The column/s to apply the transformation to. Note that the <column> argument supports multiple columns for the operations & emptyreplace subcommands. See 'qsv select --help' for the format details. |
 | &nbsp;`<operations>`&nbsp; | The operation/s to apply. |
@@ -212,7 +212,7 @@ qsv applydp --help
 
 ## Applydp Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-c,`<br>`--new-column`&nbsp; | string | Put the transformed values in a new column instead. |  |
 | &nbsp;`-r,`<br>`--rename`&nbsp; | string | New name for the transformed column. |  |
@@ -224,7 +224,7 @@ qsv applydp --help
 
 ## Operations Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;Option&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | &nbsp;`-b,`<br>`--batch`&nbsp; | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
@@ -233,7 +233,7 @@ qsv applydp --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

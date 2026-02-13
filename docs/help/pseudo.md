@@ -67,7 +67,7 @@ qsv pseudo --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<column>`&nbsp; | The column to pseudonymise. You can use the `--select` option to select the column by name or index. See `select` command for more details. |
 | &nbsp;`<input>`&nbsp; | The CSV file to read from. If not specified, then the input will be read from stdin. |
@@ -76,7 +76,7 @@ qsv pseudo --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`--start`&nbsp; | string | The starting number for the incremental identifier. | `0` |

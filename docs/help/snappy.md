@@ -52,7 +52,7 @@ qsv snappy --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | The input file to compress/decompress. This can be a local file, stdin, or a URL (http and https schemes supported). |
 
@@ -60,7 +60,7 @@ qsv snappy --help
 
 ## Snappy Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--user-agent`&nbsp; | string | Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
 | &nbsp;`--timeout`&nbsp; | string | Timeout for downloading URLs in seconds. | `60` |
@@ -69,7 +69,7 @@ qsv snappy --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <output> instead of stdout. |  |

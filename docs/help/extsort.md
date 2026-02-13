@@ -37,7 +37,7 @@ qsv extsort --help
 
 ## External Sort Option [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-s,`<br>`--select`&nbsp; | string | Select a subset of columns to sort (CSV MODE). Note that the outputs will remain at the full width of the CSV. If --select is NOT set, extsort will work in LINE MODE, sorting the input as a text file on a line-by-line basis. |  |
 | &nbsp;`-R,`<br>`--reverse`&nbsp; | flag | Reverse order |  |
@@ -49,7 +49,7 @@ qsv extsort --help
 
 ## CSV Mode Only Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |

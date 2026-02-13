@@ -46,7 +46,7 @@ qsv clipboard --help
 
 ## Clip Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;Option&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-s,`<br>`--save`&nbsp; | flag | Save output to clipboard. |  |
 
@@ -54,7 +54,7 @@ qsv clipboard --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;Option&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 

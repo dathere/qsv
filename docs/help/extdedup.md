@@ -44,7 +44,7 @@ qsv extdedup --help
 
 ## Extdedup Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-s,`<br>`--select`&nbsp; | string | Select a subset of columns to dedup. Note that the outputs will remain at the full width of the CSV. If --select is NOT set, extdedup will work in LINE MODE, deduping the input as a text file on a line-by-line basis. |  |
 | &nbsp;`--no-output`&nbsp; | flag | Do not write deduplicated output to <output>. Use this if you only want to know the duplicate count. |  |
@@ -57,7 +57,7 @@ qsv extdedup --help
 
 ## CSV Mode Only Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. That is, it will be deduped with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
 | &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |

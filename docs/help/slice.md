@@ -112,7 +112,7 @@ qsv slice --help
 
 ## Slice Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;Option&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-s,`<br>`--start`&nbsp; | string | The index of the record to slice from. If negative, starts from the last record. |  |
 | &nbsp;`-e,`<br>`--end`&nbsp; | string | The index of the record to slice to. |  |
@@ -125,7 +125,7 @@ qsv slice --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

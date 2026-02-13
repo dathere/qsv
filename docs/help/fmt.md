@@ -35,7 +35,7 @@ qsv fmt --help
 
 ## Fmt Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-t,`<br>`--out-delimiter`&nbsp; | string | The field delimiter for writing CSV data. Must be a single character. If set to "T", uses tab as the delimiter. | `,` |
 | &nbsp;`--crlf`&nbsp; | flag | Use '\r\n' line endings in the output. |  |
@@ -50,7 +50,7 @@ qsv fmt --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

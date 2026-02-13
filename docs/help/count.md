@@ -86,7 +86,7 @@ qsv count --help
 
 ## Count Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-H,`<br>`--human-readable`&nbsp; | flag | Comma separate counts. |  |
 
@@ -94,7 +94,7 @@ qsv count --help
 
 ## Width Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--width`&nbsp; | flag | Also return the estimated widths of each record. Its an estimate as it doesn't count quotes, and will be an undercount if the record has quoted fields. The count and width are separated by a semicolon. It will return the max, avg, median, min, variance, stddev & MAD widths, separated by hyphens. If --human-readable is set, the widths will be labeled as "max", "avg", "median", "min", "stddev" & "mad" respectively, separated by spaces. Note that this option will require scanning the entire file using the "regular", single-threaded, streaming CSV reader, using the index if available for the count. If the file is very large, it may not be able to compile some stats - particularly avg, variance, stddev & MAD. In this case, it will return 0.0 for those stats. |  |
 | &nbsp;`--width-no-delims`&nbsp; | flag | Same as --width but does not count the delimiters in the width. |  |
@@ -104,7 +104,7 @@ qsv count --help
 
 ## When The Polars Feature Is Enabled Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--no-polars`&nbsp; | flag | Use the "regular", single-threaded, streaming CSV reader instead of the much faster multithreaded, mem-mapped Polars CSV reader. Use this when you encounter memory issues when counting with the Polars CSV reader. The streaming reader is slower but can read any valid CSV file of any size. |  |
 | &nbsp;`--low-memory`&nbsp; | flag | Use the Polars CSV Reader's low-memory mode. This mode is slower but uses less memory. If counting still fails, use --no-polars instead to use the streaming CSV reader. |  |
@@ -113,7 +113,7 @@ qsv count --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-f,`<br>`--flexible`&nbsp; | flag | Do not validate if the CSV has different number of fields per record, increasing performance when counting without an index. |  |

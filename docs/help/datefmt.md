@@ -85,7 +85,7 @@ qsv datefmt --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<column>`&nbsp; | The column/s to apply the date formats to. Note that the <column> argument supports multiple columns. See 'qsv select --help' for the format details. |
 | &nbsp;`<input>`&nbsp; | The input file to read from. If not specified, reads from stdin. |
@@ -94,7 +94,7 @@ qsv datefmt --help
 
 ## Datefmt Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-c,`<br>`--new-column`&nbsp; | string | Put the transformed values in a new column instead. |  |
 | &nbsp;`-r,`<br>`--rename`&nbsp; | string | New name for the transformed column. |  |
@@ -113,7 +113,7 @@ qsv datefmt --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

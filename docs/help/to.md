@@ -204,7 +204,7 @@ qsv to --help
 
 ## To Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-k,`<br>`--print-package`&nbsp; | flag | Print statistics as datapackage, by default will print field summary. |  |
 | &nbsp;`-u,`<br>`--dump`&nbsp; | flag | Create database dump file for use with `psql` or `sqlite3` command line tools (postgres/sqlite only). |  |
@@ -223,7 +223,7 @@ qsv to --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |

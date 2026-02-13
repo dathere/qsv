@@ -83,7 +83,7 @@ qsv template --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| &nbsp;Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | The CSV file to read. If not given, input is read from STDIN. |
 | &nbsp;`<outdir>`&nbsp; | The directory where the output files will be written. If it does not exist, it will be created. If not set, output will be sent to stdout or the specified --output. When writing to <outdir>, files are organized into subdirectories of --outsubdir-size (default: 1000) files each to avoid filesystem navigation & performance issues. |
@@ -92,7 +92,7 @@ qsv template --help
 
 ## Template Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--template`&nbsp; | string | MiniJinja template string to use (alternative to --template-file) |  |
 | &nbsp;`-t,`<br>`--template-file`&nbsp; | string | MiniJinja template file to use |  |
@@ -111,7 +111,7 @@ qsv template --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout |  |

@@ -35,7 +35,7 @@ qsv pro --help
 
 ## Arguments [↩](#nav)
 
-| Argument | Description |
+| Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | The input file path to send to the qsv pro API. This must be a local file path, not stdin. Workflow supports: CSV, TSV, SSV, TAB, XLSX, XLS, XLSB, XLSM, ODS. |
 
@@ -43,7 +43,7 @@ qsv pro --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;Option&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 

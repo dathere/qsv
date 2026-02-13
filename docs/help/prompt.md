@@ -50,7 +50,7 @@ qsv prompt --help
 
 ## Prompt Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-m,`<br>`--msg`&nbsp; | string | The prompt message to display in the file dialog title. When not using --fd-output, the default is "Select a File". When using --fd-output, the default is "Save File As". |  |
 | &nbsp;`-F,`<br>`--filters`&nbsp; | string | The filter to use for the INPUT file dialog. Set to "None" to disable filters. Filters are comma-delimited file extensions. Defaults to csv,tsv,tab,ssv,xls,xlsx,xlsm,xlsb,ods. If the polars feature is enabled, it adds avro,arrow,ipc,parquet, json,jsonl,ndjson & gz,zst,zlib compressed files to the filter. |  |
@@ -63,7 +63,7 @@ qsv prompt --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;Option&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> without showing a save dialog. Mutually exclusive with --fd-output. |  |

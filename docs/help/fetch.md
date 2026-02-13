@@ -181,7 +181,7 @@ qsv fetch --help
 
 ## Fetch Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--url-template`&nbsp; | string | URL template to use. Use column names enclosed with curly braces to insert the CSV data for a record. Mutually exclusive with url-column. |  |
 | &nbsp;`-c,`<br>`--new-column`&nbsp; | string | Put the fetched values in a new column. Specifying this option results in a CSV. Otherwise, the output is in JSONL format. |  |
@@ -202,7 +202,7 @@ qsv fetch --help
 
 ## Caching Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--no-cache`&nbsp; | flag | Do not cache responses. |  |
 | &nbsp;`--mem-cache-size`&nbsp; | string | Maximum number of entries in the in-memory LRU cache. | `2000000` |
@@ -216,7 +216,7 @@ qsv fetch --help
 
 ## Common Options [↩](#nav)
 
-| Option | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 | &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |

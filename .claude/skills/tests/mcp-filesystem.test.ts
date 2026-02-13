@@ -630,7 +630,9 @@ test('plugin mode handles symlinked directories in setWorkingDirectory', async (
 // ============================================================================
 
 test('isPathAllowed allows direct equality match', async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+  // Use realpath to normalize temp dir (resolves 8.3 short names on Windows)
+  const rawTempDir = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+  const tempDir = await realpath(rawTempDir);
 
   try {
     await writeFile(join(tempDir, 'test.csv'), 'col1,col2\nval1,val2\n');
@@ -641,12 +643,11 @@ test('isPathAllowed allows direct equality match', async () => {
 
     // File within working directory (direct child) should be allowed
     const resolved = await provider.resolvePath('test.csv');
-    const resolvedTempDir = realpathSync(tempDir);
-    assert.strictEqual(resolved, join(resolvedTempDir, 'test.csv'));
+    assert.strictEqual(resolved, join(tempDir, 'test.csv'));
   } finally {
     try {
       await unlink(join(tempDir, 'test.csv'));
-      await rmdir(tempDir);
+      await rmdir(rawTempDir);
     } catch {
       // Ignore cleanup errors
     }
@@ -684,7 +685,9 @@ test('isPathAllowed handles case-insensitive prefix matching on macOS', async ()
     return;
   }
 
-  const tempDir = await mkdtemp(join(tmpdir(), 'qsv-test-CasE-'));
+  // Use realpath to normalize temp dir (resolves 8.3 short names on Windows)
+  const rawTempDir = await mkdtemp(join(tmpdir(), 'qsv-test-CasE-'));
+  const tempDir = await realpath(rawTempDir);
 
   try {
     await writeFile(join(tempDir, 'test.csv'), 'col1,col2\nval1,val2\n');
@@ -699,7 +702,7 @@ test('isPathAllowed handles case-insensitive prefix matching on macOS', async ()
   } finally {
     try {
       await unlink(join(tempDir, 'test.csv'));
-      await rmdir(tempDir);
+      await rmdir(rawTempDir);
     } catch {
       // Ignore cleanup errors
     }

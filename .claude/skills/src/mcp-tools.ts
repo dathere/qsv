@@ -303,7 +303,7 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     whenToUse:
       "Detect CSV metadata (delimiter, header, preamble, quote char, encoding, field types). Also a general mime type detector. Supports URLs.",
     commonPattern:
-      "First step for unknown files: sniff → headers → stats → analysis. Use --json for parseable output.",
+      "First step for unknown files: sniff → headers → stats → frequency. Use --json for parseable output.",
     errorPrevention:
       "For remote URLs, use --quick for faster detection. Use --sample to control inference depth.",
   },
@@ -1628,7 +1628,7 @@ export function createSearchToolsTool(): McpToolDefinition {
 
 🔍 SEARCH MODES:
 - **Keyword**: Matches tool names, descriptions, and examples
-- **Category**: Filter by category (selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, analysis, utility)
+- **Category**: Filter by category (selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, documentation, utility)
 - **Regex**: Use regex patterns for advanced matching
 
 📋 RETURNS: List of matching tools with names and descriptions, suitable for tool discovery.`,
@@ -1643,7 +1643,7 @@ export function createSearchToolsTool(): McpToolDefinition {
         category: {
           type: "string",
           description:
-            "Filter by category: selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, analysis, utility",
+            "Filter by category: selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, documentation, utility",
           enum: [
             "selection",
             "filtering",
@@ -1653,7 +1653,7 @@ export function createSearchToolsTool(): McpToolDefinition {
             "validation",
             "formatting",
             "conversion",
-            "analysis",
+            "documentation",
             "utility",
           ],
         },
@@ -1718,7 +1718,7 @@ export async function handleSearchToolsCall(
     "validation",
     "formatting",
     "conversion",
-    "analysis",
+    "documentation",
     "utility",
   ];
   const queryLower = query.toLowerCase();

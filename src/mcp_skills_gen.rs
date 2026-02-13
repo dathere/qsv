@@ -847,7 +847,7 @@ impl UsageParser {
             "apply" | "applydp" | "rename" | "transpose" | "reverse" | "datefmt" | "replace" => {
                 "transformation"
             },
-            "stats" | "moarstats" | "frequency" | "count" | "groupby" => "aggregation",
+            "stats" | "moarstats" | "frequency" | "count" | "groupby" | "pragmastat" => "aggregation",
             "join" | "joinp" => "joining",
             "schema" | "validate" | "safenames" => "validation",
             "fmt" | "fixlengths" | "table" | "align" => "formatting",
@@ -1054,6 +1054,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "moarstats",
         "partition",
         "pivotp",
+        "pragmastat",
         "pseudo",
         "rename",
         "replace",

@@ -74,6 +74,7 @@ const ALWAYS_FILE_COMMANDS = new Set([
   "safenames",
   "sqlp",
   "pivotp",
+  "pragmastat",
   "to",
   "tojsonl",
 ]);
@@ -125,6 +126,15 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     complementaryServer: "🔗 CENSUS VALIDATION: If analyzing US geographic data, Census MCP Server can provide demographic baselines for statistical comparison.",
     needsMemoryWarning: true,
     hasCommonMistakes: true,
+  },
+  pragmastat: {
+    whenToUse:
+      "Robust outlier-resistant statistics (Hodges-Lehmann center, Shamos spread). Use when data is messy, heavy-tailed, or outlier-prone. Use --twosample to compare column pairs (shift, ratio, disparity).",
+    commonPattern:
+      "Index → Pragmastat for single-sample analysis. For comparisons: --twosample --select col1,col2. Use --misrate 1e-6 for critical decisions (default 1e-3).",
+    errorPrevention:
+      "Only processes numeric columns (non-numeric appear with n=0). All numeric values loaded into memory. Blank cells in output mean insufficient data or positivity requirement not met.",
+    needsMemoryWarning: true,
   },
   frequency: {
     whenToUse: "Count unique values. Best for low-cardinality categorical columns. Run qsv_stats --cardinality first to identify high-cardinality columns to exclude.",
@@ -293,7 +303,7 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     whenToUse:
       "Detect CSV metadata (delimiter, header, preamble, quote char, encoding, field types). Also a general mime type detector. Supports URLs.",
     commonPattern:
-      "First step for unknown files: sniff → headers → stats → analysis. Use --json for parseable output.",
+      "First step for unknown files: sniff → headers → stats → frequency. Use --json for parseable output.",
     errorPrevention:
       "For remote URLs, use --quick for faster detection. Use --sample to control inference depth.",
   },
@@ -1618,7 +1628,7 @@ export function createSearchToolsTool(): McpToolDefinition {
 
 🔍 SEARCH MODES:
 - **Keyword**: Matches tool names, descriptions, and examples
-- **Category**: Filter by category (selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, analysis, utility)
+- **Category**: Filter by category (selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, documentation, utility)
 - **Regex**: Use regex patterns for advanced matching
 
 📋 RETURNS: List of matching tools with names and descriptions, suitable for tool discovery.`,
@@ -1633,7 +1643,7 @@ export function createSearchToolsTool(): McpToolDefinition {
         category: {
           type: "string",
           description:
-            "Filter by category: selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, analysis, utility",
+            "Filter by category: selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, documentation, utility",
           enum: [
             "selection",
             "filtering",
@@ -1643,7 +1653,7 @@ export function createSearchToolsTool(): McpToolDefinition {
             "validation",
             "formatting",
             "conversion",
-            "analysis",
+            "documentation",
             "utility",
           ],
         },
@@ -1708,7 +1718,7 @@ export async function handleSearchToolsCall(
     "validation",
     "formatting",
     "conversion",
-    "analysis",
+    "documentation",
     "utility",
   ];
   const queryLower = query.toLowerCase();

@@ -842,17 +842,17 @@ impl UsageParser {
 
     fn infer_category(&self) -> String {
         match self.command_name.as_str() {
-            "select" | "slice" | "take" | "sample" | "head" | "tail" => "selection",
-            "search" | "searchset" | "grep" | "filter" => "filtering",
+            "select" | "slice" | "sample" => "selection",
+            "search" | "searchset" => "filtering",
             "apply" | "applydp" | "rename" | "transpose" | "reverse" | "datefmt" | "replace" => {
                 "transformation"
             },
-            "stats" | "moarstats" | "frequency" | "count" | "groupby" => "aggregation",
+            "stats" | "moarstats" | "frequency" | "count" | "pragmastat" => "aggregation",
             "join" | "joinp" => "joining",
             "schema" | "validate" | "safenames" => "validation",
-            "fmt" | "fixlengths" | "table" | "align" => "formatting",
+            "fmt" | "fixlengths" | "table" => "formatting",
             "to" | "input" | "excel" | "json" | "jsonl" | "tojsonl" => "conversion",
-            "correlation" | "describegpt" => "analysis",
+            "describegpt" => "documentation",
             _ => "utility",
         }
         .to_string()
@@ -1054,6 +1054,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "moarstats",
         "partition",
         "pivotp",
+        "pragmastat",
         "pseudo",
         "rename",
         "replace",

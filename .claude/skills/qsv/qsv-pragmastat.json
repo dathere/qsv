@@ -1,0 +1,55 @@
+{
+  "name": "qsv-pragmastat",
+  "version": "16.0.0",
+  "description": "Compute pragmatic statistics using the Pragmastat library.",
+  "category": "aggregation",
+  "command": {
+    "binary": "qsv",
+    "subcommand": "pragmastat",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading/writing CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--misrate",
+        "type": "string",
+        "description": "Probability that bounds fail to contain the true parameter. Lower values produce wider bounds. Must be achievable for the given sample size.",
+        "default": "0.001"
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be treated as headers."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select columns for analysis. Uses qsv's column selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed."
+      },
+      {
+        "flag": "--twosample",
+        "type": "flag",
+        "description": "Compute two-sample estimators for all column pairs."
+      }
+    ]
+  },
+  "hints": {
+    "streamable": false,
+    "memory": "full"
+  }
+}

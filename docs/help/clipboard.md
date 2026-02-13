@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/clipboard.rs](https://github.com/dathere/qsv/blob/master/src/cmd/clipboard.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Clip Options](#clip-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Provide input from the clipboard or save output to the clipboard.
 
@@ -16,7 +17,7 @@ Note when saving to clipboard on Windows, line breaks may be represented as \r\n
 Meanwhile on Linux and macOS, they may be represented as \n (LF).
 
 
-## Examples
+## Examples [↩](#nav)
 
 Pipe into qsv stats using qsv clipboard and render it as a table:
 ```console
@@ -30,20 +31,20 @@ qsv clipboard | qsv stats | qsv clipboard -s
 ```
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv clipboard [options]
 qsv clipboard --help
 ```
 
-## Clip Options
+## Clip Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-s, --save` | flag | Save output to clipboard. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

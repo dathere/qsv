@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/validate.rs](https://github.com/dathere/qsv/blob/master/src/cmd/validate.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Validate Options](#validate-options) | [Fancy Regex Options](#fancy-regex-options) | [Options For Both Regex Engines](#options-for-both-regex-engines) | [Email Validation Options](#email-validation-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Validates CSV data using two main modes:
 
@@ -172,7 +173,7 @@ For both modes, returns exit code 0 when the CSV file is valid, exitcode > 0 oth
 If all records are valid, no output files are produced.
 
 
-## Examples
+## Examples [↩](#nav)
 
 > Validate a CSV file. Use this to check if a CSV file is readable by qsv.
 
@@ -208,7 +209,7 @@ For more examples, see the tests included in this file (denoted by '#[test]') or
 
 <https://github.com/dathere/qsv/blob/master/tests/test_validate.rs>.
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv validate schema [--no-format-validation] [<json-schema>]
@@ -217,14 +218,14 @@ qsv validate [options] [<input>] <json-schema>
 qsv validate --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<input>` | ...                 Input CSV file(s) to validate. If not provided, will read from stdin. If input is a directory, all files in the directory will be validated. If the input is a file with a '.infile-list' extension, the file will be read as a list of input files. If the input are snappy-compressed files(s), it will be decompressed automatically. Extended Input Support is only available for RFC 4180 validation mode. |
 | `<json-schema>` | JSON Schema file to validate against. If not provided, `validate` will run in RFC 4180 validation mode. The file can be a local file or a URL (http and https schemes supported). |
 
-## Validate Options
+## Validate Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -239,14 +240,14 @@ qsv validate --help
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | `-b, --batch` | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
 
-## Fancy Regex Options
+## Fancy Regex Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--fancy-regex` | flag | Use the fancy regex engine instead of the default regex engine for validation. The fancy engine supports advanced regex features such as lookaround and backreferences, but is not as performant as the default regex engine which guarantees linear-time matching, prevents DoS attacks, and is more efficient for simple patterns. |  |
 | `--backtrack-limit` | string | Set the approximate number of backtracking steps allowed. This is only used when --fancy-regex is set. | `1000000` |
 
-## Options For Both Regex Engines
+## Options For Both Regex Engines [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -257,7 +258,7 @@ qsv validate --help
 | `--ckan-api` | string | The URL of the CKAN API to use for downloading dynamicEnum resources with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. Not available on qsvlite. | `https://data.dathere.com/api/3/action` |
 | `--ckan-token` | string | The CKAN API token to use. Only required if downloading private resources. If the QSV_CKAN_TOKEN envvar is set, it will be used instead. Not available on qsvlite. |  |
 
-## Email Validation Options
+## Email Validation Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -266,7 +267,7 @@ qsv validate --help
 | `--email-min-subdomains` | string | Minimum number of subdomains required in the email. e.g. "jdoe@example.com" is INVALID if this option is set to 3, but "jdoe@sub.example.com" is VALID. | `2` |
 | `--email-domain-literal` | flag | Allow domain literals in emails. e.g. "john.doe@[127.0.0.1]" is VALID if this option is set. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

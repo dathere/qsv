@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetchpost.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetchpost.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Fetchpost Options](#fetchpost-options) | [Caching Options](#caching-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Fetchpost sends/fetches data to/from web services for every row using HTTP Post.
 As opposed to fetch, which uses HTTP Get.
@@ -154,21 +155,21 @@ $ qsv fetchpost https://httpbin.org/post col1-col3 data.csv -H "X-Api-Key:TEST_K
 For more extensive examples, see <https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv fetchpost (<url-column>) (<column-list> | --payload-tpl <file>) [--jaq <selector> | --jaqfile <file>] [--http-header <k:v>...] [options] [<input>]
 qsv fetchpost --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<url-column>` | Name of the column with the URL. Otherwise, if the argument starts with `http`, the URL to use. |
 | `<column-list>` | Comma-delimited list of columns to insert into the HTTP Post body. Uses `qsv select` syntax - i.e. Columns can be referenced by index or by name if there is a header row (duplicate column names can be disambiguated with more indexing). Column ranges can also be specified. Finally, columns can be selected using regular expressions. See 'qsv select --help' for examples. |
 
-## Fetchpost Options
+## Fetchpost Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -190,7 +191,7 @@ qsv fetchpost --help
 | `--user-agent` | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
 | `--report` | string | Creates a report of the fetchpost job. The report has the same name as the input file with the ".fetchpost-report" suffix. There are two kinds of report - d for "detailed" & s for "short". The detailed report has the same columns as the input CSV with seven additional columns - qsv_fetchp_url, qsv_fetchp_form, qsv_fetchp_status, qsv_fetchp_cache_hit, qsv_fetchp_retries, qsv_fetchp_elapsed_ms & qsv_fetchp_response. The short report only has the seven columns without the "qsv_fetchp_" prefix. | `none` |
 
-## Caching Options
+## Caching Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -202,7 +203,7 @@ qsv fetchpost --help
 | `--cache-error` | flag | Cache error responses even if a request fails. If an identical URL is requested, the cached error is returned. Otherwise, the fetch is attempted again for --max-retries. |  |
 | `--flush-cache` | flag | Flush all the keys in the current cache on startup. This only applies to Disk and Redis caches. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

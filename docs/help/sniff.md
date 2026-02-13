@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sniff.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sniff.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sniff Options](#sniff-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Quickly sniff the first n rows and infer CSV metadata (delimiter, header row, number of
 preamble rows, quote character, flexible, is_utf8, average record length, number of records,
@@ -41,7 +42,7 @@ CSVs, unlike `sniff` which can work with remote files, various CSV dialects and 
 regardless of file size.
 
 
-## Examples
+## Examples [↩](#nav)
 
 > Sniff a local CSV file
 
@@ -70,20 +71,20 @@ qsv sniff --sample 0.20 data.ssv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_sniff.rs).
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv sniff [options] [<input>]
 qsv sniff --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<input>` | The file to sniff. This can be a local file, stdin or a URL (http and https schemes supported). |
 
-## Sniff Options
+## Sniff Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -102,7 +103,7 @@ qsv sniff --help
 | `-Q, --quick` | flag | When sniffing a non-CSV remote file, only download the first chunk of the file before attempting to detect the mime type. This is faster but less accurate as some mime types cannot be detected with just the first downloaded chunk. |  |
 | `--harvest-mode` | flag | This is a convenience flag when using sniff in CKAN harvesters. It is equivalent to --quick --timeout 10 --stats-types --json and --user-agent "CKAN-harvest/$QSV_VERSION ($QSV_TARGET; $QSV_BIN_NAME)" |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

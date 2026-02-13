@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pragmastat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pragmastat.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Pragmastat Options](#pragmastat-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Pragmatic statistical toolkit.
 
@@ -64,7 +65,7 @@ misrate is the probability that bounds miss the true value (lower => wider bound
 1e-6    Critical decisions
 
 
-## Examples
+## Examples [↩](#nav)
 
 ```console
 qsv pragmastat data.csv
@@ -86,14 +87,14 @@ Full Pragmastat manual:
 <https://github.com/AndreyAkinshin/pragmastat/releases/download/v8.0.0/pragmastat-v8.0.0.pdf>
 <https://pragmastat.dev/> (latest version)
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv pragmastat [options] [<input>]
 qsv pragmastat --help
 ```
 
-## Pragmastat Options
+## Pragmastat Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -101,7 +102,7 @@ qsv pragmastat --help
 | `-s, --select` | string | Select columns for analysis. Uses qsv's column selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed. |  |
 | `-m, --misrate` | string | Probability that bounds fail to contain the true parameter. Lower values produce wider bounds. Must be achievable for the given sample size. | `0.001` |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

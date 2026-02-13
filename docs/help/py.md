@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/python.rs](https://github.com/dathere/qsv/blob/master/src/cmd/python.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Py Options](#py-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Create a new computed column or filter rows by evaluating a Python expression on
 every row of a CSV file.
@@ -121,7 +122,7 @@ If any record has an invalid result, an exitcode of 1 is returned and an error c
 For more extensive examples, see <https://github.com/dathere/qsv/blob/master/tests/test_py.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv py map [options] -n <expression> [<input>]
@@ -133,20 +134,20 @@ qsv py filter --help
 qsv py --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<expression>` | Can either be a Python expression, or if it starts with "file:" or ends with ".py" - the filepath from which to load the Python expression. Note that argument expects a SINGLE expression, and not a full-blown Python script. Use the --helper option to load helper code that you can call from the expression. |
 
-## Py Options
+## Py Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-f, --helper` | string | File containing Python code that's loaded into the qsv_uh Python module. Functions with a return statement in the file can be called with the prefix "qsv_uh". The returned value is used in the map or filter operation. |  |
 | `-b, --batch` | string | The number of rows per batch to process before releasing memory and acquiring a new GILpool. Set to 0 to process the entire file in one batch. | `50000` |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

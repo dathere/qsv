@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/geoconvert.rs](https://github.com/dathere/qsv/blob/master/src/cmd/geoconvert.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Geoconvert Options](#geoconvert-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Convert between various spatial formats and CSV/SVG including GeoJSON, SHP, and more.
 
@@ -41,14 +42,14 @@ $ qsv geoconvert file.csv csv geojson --latitude lat --longitude lon
 
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv geoconvert [options] (<input>) (<input-format>) (<output-format>)
 qsv geoconvert --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
@@ -56,7 +57,7 @@ qsv geoconvert --help
 | `<input-format>` | Valid values are "geojson", "shp", and "csv" |
 | `<output-format>` | Valid values are: |
 
-## Geoconvert Options
+## Geoconvert Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -65,7 +66,7 @@ qsv geoconvert --help
 | `-x, --longitude` | string | The name of the column with easting values. |  |
 | `-l, --max-length` | string | The maximum column length when the output format is CSV. Oftentimes, the geometry column is too long to fit in a CSV file, causing other tools like Python & PostgreSQL to fail. If a column is too long, it will be truncated to the specified length and an ellipsis ("...") will be appended. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

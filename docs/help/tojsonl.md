@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/tojsonl.rs](https://github.com/dathere/qsv/blob/master/src/cmd/tojsonl.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Tojsonl Options](#tojsonl-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Smartly converts CSV to a newline-delimited JSON (JSONL/NDJSON).
 
@@ -26,14 +27,14 @@ skip recomputing stats.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_tojsonl.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv tojsonl [options] [<input>]
 qsv tojsonl --help
 ```
 
-## Tojsonl Options
+## Tojsonl Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -42,7 +43,7 @@ qsv tojsonl --help
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | `-b, --batch` | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

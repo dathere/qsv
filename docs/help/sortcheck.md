@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sortcheck.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sortcheck.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Sort Options](#sort-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Check if a CSV is sorted. The check is done on a streaming basis (i.e. constant memory).
 With the --json options, also retrieve record count, sort breaks & duplicate count.
@@ -34,14 +35,14 @@ Returns exit code 0 if a CSV is sorted, and exit code 1 otherwise.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_sortcheck.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv sortcheck [options] [<input>]
 qsv sortcheck --help
 ```
 
-## Sort Options
+## Sort Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -51,7 +52,7 @@ qsv sortcheck --help
 | `--json` | flag | Return results in JSON format, scanning --all records. The JSON result has the following properties - sorted (boolean), record_count (number), unsorted_breaks (number) & dupe_count (number). Unsorted breaks count the number of times two consecutive rows are unsorted (i.e. n row > n+1 row). Dupe count is the number of times two consecutive rows are equal. Note that dupe count does not apply if the file is not sorted and is set to -1. |  |
 | `--pretty-json` | flag | Same as --json but in pretty JSON format. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/safenames.rs](https://github.com/dathere/qsv/blob/master/src/cmd/safenames.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Safenames Options](#safenames-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Modify headers of a CSV to only have "safe" names - guaranteed "database-ready" names
 (optimized specifically for PostgreSQL column identifiers).
@@ -82,14 +83,14 @@ It is discouraged because the embedded spaces can cause problems later on.
 For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_safenames.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv safenames [options] [<input>]
 qsv safenames --help
 ```
 
-## Safenames Options
+## Safenames Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -97,7 +98,7 @@ qsv safenames --help
 | `--reserved` | string | Comma-delimited list of additional case-insensitive reserved names that should be considered "unsafe." If a header name is found in the reserved list, it will be prefixed with "reserved_". | `_id` |
 | `--prefix` | string | Certain systems do not allow header names to start with "_" (e.g. CKAN Datastore). This option allows the specification of the unsafe prefix to use when a header starts with "_". | `unsafe_` |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

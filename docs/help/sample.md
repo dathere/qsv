@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sample.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sample.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sample Options](#sample-options) | [Sampling Methods Options](#sampling-methods-options) | [Time-series Sampling Options](#time-series-sampling-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Randomly samples CSV data.
 
@@ -98,7 +99,7 @@ is too big to fit into memory (for example, for use with commands like
 'qsv stats' with the '--everything' option).
 
 
-## Examples
+## Examples [↩](#nav)
 
 > Take a sample of 1000 records from data.csv using RESERVOIR or INDEXED sampling
 
@@ -187,28 +188,28 @@ If the CSV is partially downloaded, the sample will be taken
 only from the downloaded portion.
 --force                Do not use stats cache, even if its available.
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv sample [options] <sample-size> [<input>]
 qsv sample --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<input>` | The CSV file to sample. This can be a local file, stdin, or a URL (http and https schemes supported). |
 | `<sample-size>` | When using INDEXED, RESERVOIR or WEIGHTED sampling, the sample size. Can either be a whole number or a value between value between 0 and 1. If a fraction, specifies the sample size as a percentage of the population. (e.g. 0.15 - 15 percent of the CSV) When using BERNOULLI sampling, the probability of selecting each record (between 0 and 1). When using SYSTEMATIC sampling, the integer part is the interval between records to sample & the fractional part is the percentage of the population to sample. When there is no fractional part, it will select every nth record for the entire population. When using STRATIFIED sampling, the stratum sample size. When using CLUSTER sampling, the number of clusters. When using TIMESERIES sampling, the interval number (treated as hours by default, e.g., 1 = 1 hour). Use --ts-interval for custom intervals like "1d" (daily), "1w" (weekly), "1m" (monthly), "1y" (yearly), etc. |
 
-## Sample Options
+## Sample Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--seed` | string | Random Number Generator (RNG) seed. |  |
 | `--rng` | string | The Random Number Generator (RNG) algorithm to use. | `standard` |
 
-## Sampling Methods Options
+## Sampling Methods Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -219,13 +220,13 @@ qsv sample --help
 | `--cluster` | string | Use cluster sampling. The cluster column is specified by <col>. Can be either a column name or 0-based column index. Uses MEMORY PROPORTIONAL to the number of clusters (c) - O(c). |  |
 | `--timeseries` | string | Use time-series sampling. The time column is specified by <col>. Can be either a column name or 0-based column index. Sorts records by the specified time column and then groups by time intervals and selects one record per interval. Supports various date formats (19 formats recognized by qsv-dateparser). Uses MEMORY PROPORTIONAL to the number of records - O(n). |  |
 
-## Time-series Sampling Options
+## Time-series Sampling Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--ts-interval` | string | Time interval for grouping records. Format: <number><unit> where unit is h (hour), d (day), w (week), m (month), y (year). |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

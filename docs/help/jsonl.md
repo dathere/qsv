@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/jsonl.rs](https://github.com/dathere/qsv/blob/master/src/cmd/jsonl.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Jsonl Options](#jsonl-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Convert newline-delimited JSON (JSONL/NDJSON) to CSV.
 
@@ -22,14 +23,14 @@ as the first JSON line will be used to infer the headers of the CSV output.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_jsonl.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv jsonl [options] [<input>]
 qsv jsonl --help
 ```
 
-## Jsonl Options
+## Jsonl Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -37,7 +38,7 @@ qsv jsonl --help
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | `-b, --batch` | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

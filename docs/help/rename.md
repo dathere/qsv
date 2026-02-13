@@ -4,9 +4,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/rename.rs](https://github.com/dathere/qsv/blob/master/src/cmd/rename.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Rename the columns of a CSV efficiently. It has two modes of operation:
 
@@ -20,7 +21,7 @@ The new column names are given as a comma-separated list of pairs of old and new
 column names. The format is "old1,new1,old2,new2,...".
 
 
-## Examples
+## Examples [↩](#nav)
 
 Change the column names of a CSV with three columns:
 ```console
@@ -50,20 +51,20 @@ qsv rename '"Date - Opening","Date - Actual Closing"'
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_rename.rs).
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv rename [options] [--] <headers> [<input>]
 qsv rename --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<headers>` | The new headers to use for the CSV. Separate multiple headers with a comma. If "_all_generic" is given, the headers will be renamed to generic column names, where the column name uses the format "_col_N" where N is the 1-based column index. Alternatively, specify pairs of old,new column names to rename only specific columns. |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

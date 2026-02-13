@@ -6,15 +6,16 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/excel.rs](https://github.com/dathere/qsv/blob/master/src/cmd/excel.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Excel Options](#excel-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Exports a specified Excel/ODS sheet to a CSV file.
 The first non-empty row of a sheet is assumed to be the header row.
 
 
-## Examples
+## Examples [↩](#nav)
 
 > Export the first sheet of an Excel file to a CSV file:
 
@@ -145,20 +146,20 @@ qsv excel --metadata Short input.xlsx
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_excel.rs).
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv excel [options] [<input>]
 qsv excel --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<input>` | The spreadsheet file to read. Use "-" to read from stdin. Supported formats: xls, xlsx, xlsm, xlsb, ods. |
 
-## Excel Options
+## Excel Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -175,7 +176,7 @@ qsv excel --help
 | `--keep-zero-time` | flag | Keep the time part of a date-time field if it is 00:00:00. By default, qsv will remove the time part if it is 00:00:00. |  |
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

@@ -280,33 +280,38 @@ fn generate_command_markdown(
         }
     }
 
-    // Write heading links bar
-    if headings.len() > 1 {
+    // Write heading links bar with anchor for back-navigation
+    let has_nav = headings.len() > 1;
+    if has_nav {
         let links: Vec<String> = headings
             .iter()
             .map(|h| format!("[{h}](#{})", heading_to_anchor(h)))
             .collect();
+        md.push_str("<a name=\"nav\"></a>\n");
         md.push_str(&links.join(" | "));
         md.push_str("\n\n");
     }
 
+    // Back-link suffix for section headings
+    let nav_back = if has_nav { " [↩](#nav)" } else { "" };
+
     // Description section
     if !sections.description.is_empty() {
-        md.push_str("## Description\n\n");
+        let _ = write!(md, "## Description{nav_back}\n\n");
         md.push_str(&format_description(&sections.description));
         md.push('\n');
     }
 
     // Examples section
     if !sections.examples.is_empty() {
-        md.push_str("## Examples\n\n");
+        let _ = write!(md, "## Examples{nav_back}\n\n");
         md.push_str(&format_examples(&sections.examples));
         md.push('\n');
     }
 
     // Usage patterns section
     if !sections.usage_patterns.is_empty() {
-        md.push_str("## Usage\n\n```console\n");
+        let _ = write!(md, "## Usage{nav_back}\n\n```console\n");
         for line in &sections.usage_patterns {
             md.push_str(line);
             md.push('\n');
@@ -316,7 +321,7 @@ fn generate_command_markdown(
 
     // Arguments section
     if !parsed_args.is_empty() {
-        md.push_str("## Arguments\n\n");
+        let _ = write!(md, "## Arguments{nav_back}\n\n");
         md.push_str("| Argument | Description |\n");
         md.push_str("|----------|-------------|\n");
         for arg in &parsed_args {
@@ -335,7 +340,7 @@ fn generate_command_markdown(
         if options.is_empty() {
             continue;
         }
-        let _ = write!(md, "## {section_title}\n\n");
+        let _ = write!(md, "## {section_title}{nav_back}\n\n");
         md.push_str("| Option | Type | Description | Default |\n");
         md.push_str("|--------|------|-------------|--------|\n");
         for opt in options {

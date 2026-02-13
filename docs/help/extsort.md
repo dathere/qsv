@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/extsort.rs](https://github.com/dathere/qsv/blob/master/src/cmd/extsort.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [External Sort Option](#external-sort-option) | [Csv Mode Only Options](#csv-mode-only-options)
 
-## Description
+## Description [↩](#nav)
 
 Sort an arbitrarily large CSV/text file using a multithreaded external sort algorithm.
 
@@ -23,14 +24,14 @@ line-by-line basis. If sorting a non-CSV file, be sure to set --no-headers,
 otherwise, the first line will not be included in the external sort.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv extsort [options] [<input>] [<output>]
 qsv extsort --help
 ```
 
-## External Sort Option
+## External Sort Option [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -40,7 +41,7 @@ qsv extsort --help
 | `--tmp-dir` | string | The directory to use for externally sorting file segments. | `./` |
 | `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 
-## Csv Mode Only Options
+## Csv Mode Only Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

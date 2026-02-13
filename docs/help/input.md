@@ -4,9 +4,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/input.rs](https://github.com/dathere/qsv/blob/master/src/cmd/input.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Input Options](#input-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Read CSV data with special commenting, quoting, trimming, line-skipping &
 non UTF-8 encoding rules and transforms it to a "normalized", UTF-8 encoded CSV.
@@ -35,14 +36,14 @@ to normalize & prepare CSVs for further processing with other qsv commands.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_input.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv input [options] [<input>]
 qsv input --help
 ```
 
-## Input Options
+## Input Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -58,7 +59,7 @@ qsv input --help
 | `--comment` | string | The comment character to use. When set, lines starting with this character will be skipped. |  |
 | `--encoding-errors` | string | How to handle UTF-8 encoding errors. Possible values: replace, skip, strict. replace: Replace invalid UTF-8 sequences with �. skip: Fields with encoding errors are "<SKIPPED>". strict: Fail on any encoding errors. | `replace` |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

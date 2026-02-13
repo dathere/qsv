@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/schema.rs](https://github.com/dathere/qsv/blob/master/src/cmd/schema.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Schema Options](#schema-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Generate JSON Schema or Polars Schema (with the `--polars` option) from CSV data.
 
@@ -64,14 +65,14 @@ query needs (e.g. using a Decimal type with explicit precision and scale instead
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_schema.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv schema [options] [<input>]
 qsv schema --help
 ```
 
-## Schema Options
+## Schema Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -88,7 +89,7 @@ qsv schema --help
 | `-o, --output` | string | Write output to <file> instead of using the default filename. For JSON Schema, the default is <input>.schema.json. For Polars schema, the default is <input>.pschema.json. |  |
 | `--polars` | flag | Infer a Polars schema instead of a JSON Schema. This option is only available if the `polars` feature is enabled. The generated Polars schema will be written to a file with the `.pschema.json` suffix appended to the input filename. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

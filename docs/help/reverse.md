@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/reverse.rs](https://github.com/dathere/qsv/blob/master/src/cmd/reverse.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Reverses rows of CSV data.
 
@@ -19,14 +20,14 @@ Note that if the CSV is not indexed, this operation will require reading all of 
 CSV data into memory
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv reverse [options] [<input>]
 qsv reverse --help
 ```
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

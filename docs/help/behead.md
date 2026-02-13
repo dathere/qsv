@@ -4,21 +4,22 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/behead.rs](https://github.com/dathere/qsv/blob/master/src/cmd/behead.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Drop a CSV file's header.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv behead [options] [<input>]
 qsv behead --help
 ```
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

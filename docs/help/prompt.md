@@ -6,14 +6,15 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/prompt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/prompt.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Prompt Options](#prompt-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Open a file dialog to pick a file as input or save to an output file.
 
 
-## Examples
+## Examples [↩](#nav)
 
 Pick a single file as input to qsv stats using an INPUT file dialog,
 pipe into qsv stats using qsv prompt, and browse the stats using qsv lens:
@@ -34,14 +35,14 @@ qsv excel - | qsv prompt -m 'Save exported CSV to...' --fd-output
 ```
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv prompt [options]
 qsv prompt --help
 ```
 
-## Prompt Options
+## Prompt Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -52,7 +53,7 @@ qsv prompt --help
 | `--save-fname` | string | The filename to save the output as when using --fd-output. | `output.csv` |
 | `--base-delay-ms` | string | The base delay in milliseconds to use when opening INPUT dialog. This is to ensure that the INPUT dialog is shown before/over the OUTPUT dialog when using the prompt command is used in both INPUT and OUTPUT modes in a single pipeline. | `200` |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

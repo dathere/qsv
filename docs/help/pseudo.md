@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pseudo.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pseudo.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Pseudonymise the value of a given column by replacing it with an
 incremental identifier. See <https://en.wikipedia.org/wiki/Pseudonymization>
@@ -53,21 +54,21 @@ ID-1000,cyan
 For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_pseudo.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv pseudo [options] <column> [<input>]
 qsv pseudo --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<column>` | The column to pseudonymise. You can use the `--select` option to select the column by name or index. See `select` command for more details. |
 | `<input>` | The CSV file to read from. If not specified, then the input will be read from stdin. |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

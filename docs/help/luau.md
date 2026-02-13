@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/luau.rs](https://github.com/dathere/qsv/blob/master/src/cmd/luau.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Luau Options](#luau-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Create multiple new computed columns, filter rows or compute aggregations by
 executing a Luau 0.708 script for every row (SEQUENTIAL MODE) or for
@@ -230,7 +231,7 @@ the bottom of this file and on the Wiki (<https://github.com/dathere/qsv/wiki>)
 For more detailed examples, see <https://github.com/dathere/qsv/blob/master/tests/test_luau.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv luau map [options] -n <main-script> [<input>]
@@ -241,13 +242,13 @@ qsv luau filter --help
 qsv luau --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<new-columns>` | is a comma-separated list of new computed columns to add to the CSV when using "luau map". The new columns are added to the CSV after the existing columns, unless the --remap option is used. |
 
-## Luau Options
+## Luau Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -262,7 +263,7 @@ qsv luau --help
 | `--ckan-token` | string | The CKAN API token to use. Only required if downloading private resources. If the QSV_CKAN_TOKEN envvar is set, it will be used instead. |  |
 | `--cache-dir` | string | The directory to use for caching downloaded lookup_table resources using the qsv_register_lookup() helper function. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

@@ -4,9 +4,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/edit.rs](https://github.com/dathere/qsv/blob/master/src/cmd/edit.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Edit Options](#edit-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Replace the value of a cell specified by its row and column.
 
@@ -34,20 +35,20 @@ Specifying a column as a number is prioritized by index rather than name.
 If there is no newline (\n) at the end of the input data, it may be added to the output.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv edit [options] <input> <column> <row> <value>
 qsv edit --help
 ```
 
-## Edit Options
+## Edit Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-i, --in-place` | flag | Overwrite the input file data with the output. The input file is renamed to a .bak file in the same directory. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

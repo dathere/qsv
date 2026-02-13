@@ -4,9 +4,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fixlengths.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fixlengths.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Fixlengths Options](#fixlengths-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Transforms CSV data so that all records have the same length. The length is
 the length of the longest record in the data (not counting trailing empty fields,
@@ -20,14 +21,14 @@ Alternatively, if --length is set, then all records are forced to that length.
 This requires a single pass and can be done with stdin.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv fixlengths [options] [<input>]
 qsv fixlengths --help
 ```
 
-## Fixlengths Options
+## Fixlengths Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -37,7 +38,7 @@ qsv fixlengths --help
 | `--quote` | string | The quote character to use. | `"` |
 | `--escape` | string | The escape character to use. When not specified, quotes are escaped by doubling them. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

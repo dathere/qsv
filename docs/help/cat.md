@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/cat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/cat.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Columns Option](#columns-option) | [Rows Option](#rows-option) | [Rowskey Options](#rowskey-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Concatenate CSV files by row or by column.
 
@@ -34,7 +35,7 @@ empty field is written. If a column is missing in the header, an empty field
 is written for all rows.
 
 
-## Examples
+## Examples [↩](#nav)
 
 > Concatenate CSV files by rows:
 
@@ -69,7 +70,7 @@ qsv cat rows path/to/files_to_combine.infile-list -o combined.csv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_cat.rs).
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv cat rows    [options] [<input>...]
@@ -78,32 +79,32 @@ qsv cat columns [options] [<input>...]
 qsv cat --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<input>` | ...              The CSV file(s) to read. Use '-' for standard input. If input is a directory, all files in the directory will be read as input. If the input is a file with a '.infile-list' extension, the file will be read as a list of input files. If the input are snappy-compressed files(s), it will be decompressed automatically. |
 
-## Columns Option
+## Columns Option [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-p, --pad` | flag | When concatenating columns, this flag will cause all records to appear. It will pad each row if other CSV data isn't long enough. |  |
 
-## Rows Option
+## Rows Option [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--flexible` | flag | When concatenating rows, this flag turns off validation that the input and output CSVs have the same number of columns. This is faster, but may result in invalid CSV data. |  |
 
-## Rowskey Options
+## Rowskey Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-g, --group` | string | When concatenating with rowskey, you can specify a grouping value which will be used as the first column in the output. This is useful when you want to know which file a row came from. Valid values are 'fullpath', 'parentdirfname', 'parentdirfstem', 'fname', 'fstem' and 'none'. A new column will be added to the beginning of each row using --group-name. If 'none' is specified, no grouping column will be added. | `none` |
 | `-N, --group-name` | string | When concatenating with rowskey, this flag provides the name for the new grouping column. | `file` |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

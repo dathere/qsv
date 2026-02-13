@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/replace.rs](https://github.com/dathere/qsv/blob/master/src/cmd/replace.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Replace Options](#replace-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Replace occurrences of a pattern across a CSV file.
 
@@ -32,7 +33,7 @@ When the CSV is indexed, a faster parallel replace is used.
 If there were any replacements, the index will be refreshed.
 
 
-## Examples
+## Examples [↩](#nav)
 
 Replace all occurrences of 'hello' with 'world' in the file.csv file.
 ```console
@@ -61,14 +62,14 @@ qsv replace '([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})' \
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_replace.rs).
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv replace [options] <pattern> <replacement> [<input>]
 qsv replace --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
@@ -76,7 +77,7 @@ qsv replace --help
 | `<input>` | The CSV file to read. If not given, reads from stdin. |
 | `<replacement>` | Replacement string. Set to '<NULL>' if you want to replace matches with ''. |
 
-## Replace Options
+## Replace Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -90,7 +91,7 @@ qsv replace --help
 | `--not-one` | flag | Use exit code 0 instead of 1 for no replacement found. |  |
 | `-j, --jobs` | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

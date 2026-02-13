@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/searchset.rs](https://github.com/dathere/qsv/blob/master/src/cmd/searchset.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Searchset Options](#searchset-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Filters CSV data by whether the given regex set matches a row.
 
@@ -35,21 +36,21 @@ When the CSV is indexed, a faster parallel search is used.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_searchset.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv searchset [options] (<regexset-file>) [<input>]
 qsv searchset --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<regexset-file>` | The file containing regular expressions to match, with a regular expression on each line. See <https://docs.rs/regex/latest/regex/index.html#syntax> or <https://regex101.com> with the Rust flavor for regex syntax. |
 | `<input>` | The CSV file to read. If not given, reads from stdin. |
 
-## Searchset Options
+## Searchset Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -70,7 +71,7 @@ qsv searchset --help
 | `--not-one` | flag | Use exit code 0 instead of 1 for no match found. |  |
 | `--jobs` | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

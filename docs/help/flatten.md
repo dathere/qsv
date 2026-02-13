@@ -4,9 +4,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/flatten.rs](https://github.com/dathere/qsv/blob/master/src/cmd/flatten.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Flatten Options](#flatten-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Prints flattened records such that fields are labeled separated by a new line.
 This mode is particularly useful for viewing one record at a time. Each
@@ -19,14 +20,14 @@ contents of each field to provide a summary view.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_flatten.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv flatten [options] [<input>]
 qsv flatten --help
 ```
 
-## Flatten Options
+## Flatten Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -34,7 +35,7 @@ qsv flatten --help
 | `-f, --field-separator` | string | A string of character to write between a column name and its value. |  |
 | `-s, --separator` | string | A string of characters to write after each record. When non-empty, a new line is automatically appended to the separator. | `#` |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

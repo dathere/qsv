@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/join.rs](https://github.com/dathere/qsv/blob/master/src/cmd/join.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Join Options](#join-options) | [Join Key Transformation Options](#join-key-transformation-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Joins two sets of CSV data on the specified columns.
 
@@ -22,14 +23,14 @@ flag.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_join.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv join [options] <columns1> <input1> <columns2> <input2>
 qsv join --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
@@ -37,7 +38,7 @@ qsv join --help
 | `<input2>` | is the second CSV data set to join. |
 | `<columns1>` | & <columns2> are the columns to join on for each input. |
 
-## Join Options
+## Join Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -52,14 +53,14 @@ qsv join --help
 | `--nulls` | flag | When set, joins will work on empty fields. Otherwise, empty fields are completely ignored. (In fact, any row that has an empty field in the key specified is ignored.) |  |
 | `--keys-output` | string | Write successfully joined keys to <file>. This means that the keys are written to the output file when a match is found, with the exception of anti joins, where keys are written when NO match is found. Cross joins do not write keys. |  |
 
-## Join Key Transformation Options
+## Join Key Transformation Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-i, --ignore-case` | flag | When set, joins are done case insensitively. |  |
 | `-z, --ignore-leading-zeros` | flag | When set, leading zeros are ignored in join keys. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/foreach.rs](https://github.com/dathere/qsv/blob/master/src/cmd/foreach.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Foreach Options](#foreach-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Execute a shell command once per record in a given CSV file.
 
@@ -28,7 +29,7 @@ datacenter to a cancerous virus in your unvetted batch file you grabbed from som
 stranger on the internet that runs...FOR EACH LINE in your CSV file. GASP!"
 
 
-## Examples
+## Examples [↩](#nav)
 
 Delete all files whose filenames are listed in the filename column:
 ```console
@@ -48,14 +49,14 @@ qsv foreach query -u -c from_query 'search {}' queries.csv > results.csv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_foreach.rs).
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv foreach [options] <column> <command> [<input>]
 qsv foreach --help
 ```
 
-## Foreach Options
+## Foreach Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -63,7 +64,7 @@ qsv foreach --help
 | `-c, --new-column` | string | If unifying, add a new column with given name and copying the value of the current input file line. |  |
 | `--dry-run` | string | If set to true (the default for safety reasons), the commands are sent to stdout instead of executing them. If set to a file, the commands will be written to the specified text file instead of executing them. Only if set to false will the commands be actually executed. | `true` |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

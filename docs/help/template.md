@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/template.rs](https://github.com/dathere/qsv/blob/master/src/cmd/template.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Template Options](#template-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Renders a template using CSV data with the MiniJinja template engine.
 <https://docs.rs/minijinja/latest/minijinja/>
@@ -69,21 +70,21 @@ For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_te
 For a relatively complex MiniJinja template, see <https://github.com/dathere/qsv/blob/master/scripts/template.tpl>
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv template [options] [--template <str> | --template-file <file>] [<input>] [<outdir> | --output <file>]
 qsv template --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<input>` | The CSV file to read. If not given, input is read from STDIN. |
 | `<outdir>` | The directory where the output files will be written. If it does not exist, it will be created. If not set, output will be sent to stdout or the specified --output. When writing to <outdir>, files are organized into subdirectories of --outsubdir-size (default: 1000) files each to avoid filesystem navigation & performance issues. |
 
-## Template Options
+## Template Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -100,7 +101,7 @@ qsv template --help
 | `--ckan-api` | string | The URL of the CKAN API to use for downloading lookup resources with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. | `https://data.dathere.com/api/3/action` |
 | `--ckan-token` | string | The CKAN API token to use. Only required if downloading private resources. If the QSV_CKAN_TOKEN envvar is set, it will be used instead. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

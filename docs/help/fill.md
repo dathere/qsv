@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fill.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fill.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Fill Options](#fill-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Fill empty fields in selected columns of a CSV.
 
@@ -43,14 +44,14 @@ collected before the first valid value.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_fill.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv fill [options] [--] <selection> [<input>]
 qsv fill --help
 ```
 
-## Fill Options
+## Fill Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -59,7 +60,7 @@ qsv fill --help
 | `-b, --backfill` | flag | Fill initial empty values with the first valid value. |  |
 | `-v, --default` | string | Fill using this default value. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

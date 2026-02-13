@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/moarstats.rs](https://github.com/dathere/qsv/blob/master/src/cmd/moarstats.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Moarstats Options](#moarstats-options) | [Bivariate Statistics Options](#bivariate-statistics-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Add dozens of additional statistics, including extended outlier, robust & bivariate
 statistics to an existing stats CSV file. It also maps the field type to the most specific
@@ -201,7 +202,7 @@ automatically deleted after computing the bivariate statistics.
 The bivariate statistics are saved to `<FILESTEM>.stats.bivariate.joined.csv`.
 
 
-## Examples
+## Examples [↩](#nav)
 
 > Add moar stats to existing stats file
 
@@ -242,14 +243,14 @@ qsv moarstats data.csv --bivariate --join-inputs customers.csv,products.csv --jo
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_moarstats.rs).
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv moarstats [options] [<input>]
 qsv moarstats --help
 ```
 
-## Moarstats Options
+## Moarstats Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -261,7 +262,7 @@ qsv moarstats --help
 | `--pct-thresholds` | string | Comma-separated percentile pair (e.g., "10,90") to use for winsorization/trimming when --use-percentiles is set. Both values must be between 0 and 100, and lower < upper. | `5,95` |
 | `--xsd-gdate-scan` | string | Gregorian XSD date type detection mode. "quick": Fast detection using min/max values. Produces types with ?? suffix (less confident). "thorough": Comprehensive detection checking all percentile values. Slower but ensures all values match the pattern. Produces types with ? suffix (more confident). | `quick` |
 
-## Bivariate Statistics Options
+## Bivariate Statistics Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -273,7 +274,7 @@ qsv moarstats --help
 | `-T, --join-type` | string | Join type when using --join-inputs. Valid values: inner, left, right, full | `inner` |
 | `-p, --progressbar` | flag | Show progress bars when computing bivariate statistics. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

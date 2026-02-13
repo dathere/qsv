@@ -6,14 +6,15 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/transpose.rs](https://github.com/dathere/qsv/blob/master/src/cmd/transpose.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Transpose Options](#transpose-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Transpose the rows/columns of CSV data.
 
 
-## Examples
+## Examples [↩](#nav)
 
 > Transpose data in-memory.
 
@@ -59,14 +60,14 @@ qsv transpose --long /^name/ data.csv
 
 See <https://github.com/dathere/qsv/blob/master/tests/test_transpose.rs> for more examples.
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv transpose [options] [<input>]
 qsv transpose --help
 ```
 
-## Transpose Options
+## Transpose Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -74,7 +75,7 @@ qsv transpose --help
 | `-s, --select` | string | Select a subset of columns to transpose. When used with --long, this filters which columns become attribute rows (the field columns are unaffected). See 'qsv select --help' for the full selection syntax. |  |
 | `--long` | string | Convert wide-format CSV to "long" format. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

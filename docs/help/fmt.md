@@ -4,9 +4,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fmt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fmt.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Fmt Options](#fmt-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Formats CSV data with a custom delimiter or CRLF line endings.
 
@@ -19,14 +20,14 @@ useful.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_fmt.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv fmt [options] [<input>]
 qsv fmt --help
 ```
 
-## Fmt Options
+## Fmt Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -39,7 +40,7 @@ qsv fmt --help
 | `--escape` | string | The escape character to use. When not specified, quotes are escaped by doubling them. |  |
 | `--no-final-newline` | flag | Do not write a newline at the end of the output. This makes it easier to paste the output into Excel. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

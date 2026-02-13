@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetch.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetch.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Fetch Options](#fetch-options) | [Caching Options](#caching-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Send/Fetch data to/from web services for every row using HTTP Get.
 
@@ -167,14 +168,14 @@ $ qsv fetch URL data.csv --http-header "X-Api-Key:TEST_KEY" -H "X-Api-Secret:ABC
 For more extensive examples, see <https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv fetch [<url-column> | --url-template <template>] [--jaq <selector> | --jaqfile <file>] [--http-header <k:v>...] [options] [<input>]
 qsv fetch --help
 ```
 
-## Fetch Options
+## Fetch Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -193,7 +194,7 @@ qsv fetch --help
 | `--user-agent` | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
 | `--report` | string | Creates a report of the fetch job. The report has the same name as the input file with the ".fetch-report" suffix. There are two kinds of report - d for "detailed" & s for "short". The detailed report has the same columns as the input CSV with six additional columns - qsv_fetch_url, qsv_fetch_status, qsv_fetch_cache_hit, qsv_fetch_retries, qsv_fetch_elapsed_ms & qsv_fetch_response. The short report only has the six columns without the "qsv_fetch_" prefix. | `none` |
 
-## Caching Options
+## Caching Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -205,7 +206,7 @@ qsv fetch --help
 | `--cache-error` | flag | Cache error responses even if a request fails. If an identical URL is requested, the cached error is returned. Otherwise, the fetch is attempted again for --max-retries. |  |
 | `--flush-cache` | flag | Flush all the keys in the current cache on startup. This only applies to Disk and Redis caches. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

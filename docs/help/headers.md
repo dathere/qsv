@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/headers.rs](https://github.com/dathere/qsv/blob/master/src/cmd/headers.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Headers Options](#headers-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Prints the fields of the first row in the CSV data.
 
@@ -21,20 +22,20 @@ the --intersect flag.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_headers.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv headers [options] [<input>...]
 qsv headers --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<input>` | ...             The CSV file(s) to read. Use '-' for standard input. If input is a directory, all files in the directory will be read as input. If the input is a file with a '.infile-list' extension, the file will be read as a list of input files. If the input are snappy-compressed files(s), it will be decompressed automatically. |
 
-## Headers Options
+## Headers Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -43,7 +44,7 @@ qsv headers --help
 | `--intersect` | flag | Shows the intersection of all headers in all of the inputs given. |  |
 | `--trim` | flag | Trim space & quote characters from header name. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

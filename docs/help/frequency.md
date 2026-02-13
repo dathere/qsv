@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/frequency.rs](https://github.com/dathere/qsv/blob/master/src/cmd/frequency.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Frequency Options](#frequency-options) | [Json Output Options](#json-output-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Compute a frequency distribution table on input data. It has CSV and JSON output modes.
 <https://en.wikipedia.org/wiki/Frequency_(statistics)#Frequency_distribution_table>
@@ -81,14 +82,14 @@ of unique items and not to columns with a small number of unique items.
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_frequency.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv frequency [options] [<input>]
 qsv frequency --help
 ```
 
-## Frequency Options
+## Frequency Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -114,7 +115,7 @@ qsv frequency --help
 | `--vis-whitespace` | flag | Visualize whitespace characters in the output. See <https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers> for the list of whitespace markers. |  |
 | `-j, --jobs` | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
 
-## Json Output Options
+## Json Output Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -124,7 +125,7 @@ qsv frequency --help
 | `--no-stats` | flag | When using the JSON or TOON output mode, do not include the additional stats. |  |
 | `--weight` | string | Compute weighted frequencies using the specified column as weights. The weight column must be numeric. When specified, frequency counts are multiplied by the weight value for each row. The weight column is automatically excluded from frequency computation. Missing or unparsable weights default to 1.0. Zero, negative, NaN and infinite weights are ignored and do not contribute to frequencies. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

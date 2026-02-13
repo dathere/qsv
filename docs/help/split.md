@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/split.rs](https://github.com/dathere/qsv/blob/master/src/cmd/split.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Split Options](#split-options) | [Filter Options](#filter-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Splits the given CSV data into chunks. It has three modes: by size (rowcount),
 by number of chunks and by kb-size.
@@ -37,7 +38,7 @@ The files are written to the directory given with the name '{start}.csv',
 where {start} is the index of the first record of the chunk (starting at 0).
 
 
-## Examples
+## Examples [↩](#nav)
 
 > Create files with names like chunk_0.csv, chunk_100.csv, etc.
 
@@ -110,21 +111,21 @@ qsv split outdir --filter "powershell Compress-Archive -Path $FILE -Destination 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_split.rs).
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv split [options] (--size <arg> | --chunks <arg> | --kb-size <arg>) <outdir> [<input>]
 qsv split --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<outdir>` | The directory where the output files will be written. If it does not exist, it will be created. |
 | `<input>` | The CSV file to read. If not given, input is read from STDIN. |
 
-## Split Options
+## Split Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -135,7 +136,7 @@ qsv split --help
 | `--filename` | string | A filename template to use when constructing the names of the output files.  The string '{}' will be replaced by the zero-based row number of the first row in the chunk. | `{}.csv` |
 | `--pad` | string | The zero padding width that is used in the generated filename. | `0` |
 
-## Filter Options
+## Filter Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -143,7 +144,7 @@ qsv split --help
 | `--filter-cleanup` | flag | Cleanup the original output filename AFTER the filter command is run successfully for EACH chunk. If the filter command is not successful, the original filename is not removed. Only valid when --filter is used. |  |
 | `--filter-ignore-errors` | flag | Ignore errors when running the filter command. Only valid when --filter is used. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/partition.rs](https://github.com/dathere/qsv/blob/master/src/cmd/partition.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Partition Options](#partition-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Partitions the given CSV data into chunks based on the value of a column.
 
@@ -41,14 +42,14 @@ nyc311-Staten_Island.csv
 For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_partition.rs>.
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv partition [options] <column> <outdir> [<input>]
 qsv partition --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
@@ -56,7 +57,7 @@ qsv partition --help
 | `<outdir>` | The directory to write the output files to. |
 | `<input>` | The CSV file to read from. If not specified, then the input will be read from stdin. |
 
-## Partition Options
+## Partition Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -65,7 +66,7 @@ qsv partition --help
 | `--drop` | flag | Drop the partition column from results. |  |
 | `--limit` | string | Limit the number of simultaneously open files. Useful for partitioning large datasets with many unique values to avoid "too many open files" errors. Data is processed in batches until all unique values are processed. If not set, it will be automatically set to the system limit with a 10% safety margin. If set to 0, it will process all data at once, regardless of the system's open files limit. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

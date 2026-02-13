@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/explode.rs](https://github.com/dathere/qsv/blob/master/src/cmd/explode.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Explode Options](#explode-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Explodes a row into multiple ones by splitting a column value based on the
 given separator.
@@ -27,20 +28,20 @@ John,yellow
 Mary,red
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv explode [options] <column> <separator> [<input>]
 qsv explode --help
 ```
 
-## Explode Options
+## Explode Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `-r, --rename` | string | New name for the exploded column. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

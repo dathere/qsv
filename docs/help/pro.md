@@ -4,9 +4,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pro.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pro.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Interact with qsv pro API. Learn more about qsv pro at: <https://qsvpro.dathere.com>.
 
@@ -18,7 +19,7 @@ lens:     Run csvlens on a local file in a new Alacritty terminal emulator windo
 workflow: Import a local file into the qsv pro Workflow (Workflow must be open).
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv pro lens [options] [<input>]
@@ -26,13 +27,13 @@ qsv pro workflow [options] [<input>]
 qsv pro --help
 ```
 
-## Arguments
+## Arguments [↩](#nav)
 
 | Argument | Description |
 |----------|-------------|
 | `<input>` | The input file path to send to the qsv pro API. This must be a local file path, not stdin. Workflow supports: CSV, TSV, SSV, TAB, XLSX, XLS, XLSB, XLSM, ODS. |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

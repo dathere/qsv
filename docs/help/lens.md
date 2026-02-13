@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/lens.rs](https://github.com/dathere/qsv/blob/master/src/cmd/lens.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Lens Options](#lens-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Explore tabular data files interactively using the csvlens (<https://github.com/YS-L/csvlens>) engine.
 
@@ -22,7 +23,7 @@ its snappy-compressed variants (CSV.sz, TSV.sz, Tab.sz & SSV.sz).
 Press 'q' to exit. Press '?' for help.
 
 
-## Examples
+## Examples [↩](#nav)
 
 Automatically choose delimiter based on the file extension
 ```console
@@ -119,14 +120,14 @@ qsv lens --find '^\d+$' data.csv
 ```
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv lens [options] [<input>]
 qsv lens --help
 ```
 
-## Lens Options
+## Lens Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -146,7 +147,7 @@ qsv lens --help
 | `--echo-column` | string | Print the value of this column to stdout for the selected row |  |
 | `--debug` | flag | Show stats for debugging |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

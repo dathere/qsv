@@ -6,9 +6,10 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/slice.rs](https://github.com/dathere/qsv/blob/master/src/cmd/slice.rs)**
 
+<a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Slice Options](#slice-options) | [Common Options](#common-options)
 
-## Description
+## Description [↩](#nav)
 
 Returns the rows in the range specified (starting at 0, half-open interval).
 The range does not include headers.
@@ -25,7 +26,7 @@ sliced. Without an index, all rows up to the first row in the slice must be
 parsed.
 
 
-## Examples
+## Examples [↩](#nav)
 
 > Slice from the 3rd record to the end
 
@@ -96,14 +97,14 @@ qsv slice --start 9 --len 10 --invert --json data.csv
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_slice.rs).
 
 
-## Usage
+## Usage [↩](#nav)
 
 ```console
 qsv slice [options] [<input>]
 qsv slice --help
 ```
 
-## Slice Options
+## Slice Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -114,7 +115,7 @@ qsv slice --help
 | `--json` | flag | Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based). |  |
 | `--invert` | flag | slice all records EXCEPT those in the specified range. |  |
 
-## Common Options
+## Common Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|

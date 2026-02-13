@@ -383,3 +383,52 @@ test('SkillExecutor execute with --help flag does not require input file', async
     );
   }
 });
+
+// ============================================================================
+// buildCommand display-only behavior Tests
+// ============================================================================
+
+test('buildCommand joins args with spaces without escaping (display only)', () => {
+  const executor = new SkillExecutor('qsv');
+  const params: SkillParams = {
+    args: { selection: 'col with spaces', input: 'file name.csv' }
+  };
+
+  // buildCommand is for display/logging only - args are NOT escaped
+  const cmd = executor.buildCommand(selectSkill, params);
+  assert.ok(cmd.includes('col with spaces'));
+  assert.ok(cmd.includes('file name.csv'));
+  // Verify no quoting applied (this documents the non-shell-safe behavior)
+  assert.ok(!cmd.includes('"col with spaces"'));
+});
+
+// ============================================================================
+// normalizeOptionKey edge case Tests
+// ============================================================================
+
+test('buildCommand handles bare "--" option key gracefully', () => {
+  const executor = new SkillExecutor('qsv');
+  const params: SkillParams = {
+    args: { input: 'data.csv' },
+    options: { '--': true }
+  };
+
+  // "--" should be returned unchanged (not stripped to empty string)
+  // Since it won't match any option definition, it should be silently ignored
+  const cmd = executor.buildCommand(countSkill, params);
+  assert.ok(cmd.includes('count'));
+  assert.ok(cmd.includes('data.csv'));
+});
+
+test('buildCommand handles bare "-" option key gracefully', () => {
+  const executor = new SkillExecutor('qsv');
+  const params: SkillParams = {
+    args: { input: 'data.csv' },
+    options: { '-': true }
+  };
+
+  // "-" should be returned unchanged (not stripped to empty string)
+  const cmd = executor.buildCommand(countSkill, params);
+  assert.ok(cmd.includes('count'));
+  assert.ok(cmd.includes('data.csv'));
+});

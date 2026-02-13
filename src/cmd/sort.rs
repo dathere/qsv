@@ -31,11 +31,11 @@ sort options:
     --seed <number>         Random Number Generator (RNG) seed to use if --random is set
     --rng <kind>            The RNG algorithm to use if --random is set.
                             Three RNGs are supported:
-                            - standard: Use the standard RNG.
+                            * standard: Use the standard RNG.
                               1.5 GB/s throughput.
-                            - faster: Use faster RNG using the Xoshiro256Plus algorithm.
+                            * faster: Use faster RNG using the Xoshiro256Plus algorithm.
                               8 GB/s throughput.
-                            - cryptosecure: Use cryptographically secure HC128 algorithm.
+                            * cryptosecure: Use cryptographically secure HC128 algorithm.
                               Recommended by eSTREAM (https://www.ecrypt.eu.org/stream/).
                               2.1 GB/s throughput though slow initialization.
                             [default: standard]

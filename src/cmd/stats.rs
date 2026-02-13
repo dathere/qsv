@@ -81,8 +81,7 @@ hasn't changed, the stats will be loaded from the cache instead of recomputing i
 These cached stats are also used by other qsv commands (currently `describegpt`, `frequency`,
 `joinp`, `pivotp`, `schema`, `sqlp` & `tojsonl`) to work smarter & faster.
 If the cached stats are not current (i.e., the input file is newer than the cached stats),
-the cached stats will be ignored and recomputed. For example, see the "boston311" test files in
-https://github.com/dathere/qsv/blob/4529d51273218347fef6aca15ac24e22b85b2ec4/tests/test_stats.rs#L608.
+the cached stats will be ignored and recomputed.
 
 Examples:
 
@@ -232,8 +231,8 @@ stats options:
                               it is shortlisted for date inferencing.
 
                               Special values:
-                              - "all" - inspect ALL fields for date/datetime types
-                              - "sniff" - use `qsv sniff` to auto-detect date/datetime columns
+                              * "all" - inspect ALL fields for date/datetime types
+                              * "sniff" - use `qsv sniff` to auto-detect date/datetime columns
 
                               Note that false positive date matches WILL most likely occur
                               when using "all" as unix epoch timestamps are just numbers.
@@ -269,12 +268,12 @@ stats options:
                               You can preemptively create the stats-jsonl file by using this option
                               BEFORE running "smart" commands and they will automatically use it.
  -c, --cache-threshold <arg>  Controls the creation of stats cache files.
-                                - when greater than 1, the threshold in milliseconds before caching
+                                * when greater than 1, the threshold in milliseconds before caching
                                   stats results. If a stats run takes longer than this threshold,
                                   the stats results will be cached.
-                                - 0 to suppress caching.
-                                - 1 to force caching.
-                                - a negative number to automatically create an index when
+                                * 0 to suppress caching.
+                                * 1 to force caching.
+                                * a negative number to automatically create an index when
                                   the input file size is greater than abs(arg) in bytes.
                                   If the negative number ends with 5, it will delete the index
                                   file and the stats cache file after the stats run. Otherwise,

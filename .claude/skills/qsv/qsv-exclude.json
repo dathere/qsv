@@ -44,6 +44,11 @@
         "description": "When set, matching is done case insensitively."
       },
       {
+        "flag": "--invert",
+        "type": "flag",
+        "description": "When set, matching rows will be the only ones included, forming set intersection, instead of the ones discarded."
+      },
+      {
         "flag": "--no-headers",
         "type": "flag",
         "description": "When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.)"
@@ -52,11 +57,6 @@
         "flag": "--output",
         "type": "string",
         "description": "Write output to <file> instead of stdout."
-      },
-      {
-        "flag": "-v",
-        "type": "flag",
-        "description": "When set, matching rows will be the only ones included, forming set intersection, instead of the ones discarded."
       }
     ]
   },

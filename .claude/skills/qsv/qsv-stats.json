@@ -24,7 +24,7 @@
       {
         "flag": "--cache-threshold",
         "type": "string",
-        "description": "Controls the creation of stats cache files.",
+        "description": "Controls the creation of stats cache files. * when greater than 1, the threshold in milliseconds before caching stats results. If a stats run takes longer than this threshold, the stats results will be cached. * 0 to suppress caching. * 1 to force caching. * a negative number to automatically create an index when the input file size is greater than abs(arg) in bytes. If the negative number ends with 5, it will delete the index file and the stats cache file after the stats run. Otherwise, the index file and the cache files are kept.",
         "default": "5000"
       },
       {

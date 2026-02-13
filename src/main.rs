@@ -53,6 +53,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 mod clitypes;
 mod cmd;
 mod config;
+mod help_markdown_gen;
 mod index;
 mod lookup;
 #[cfg(feature = "mcp")]
@@ -70,7 +71,8 @@ Options:
     --list               List all commands available.
     --envlist            List all qsv-relevant environment variables.
     -u, --update         Update qsv to the latest release from GitHub.
-    -U, --updatenow      Update qsv to the latest release from GitHub without confirming."#;
+    -U, --updatenow      Update qsv to the latest release from GitHub without confirming.
+    --generate-help-md   Generate Markdown help files in docs/help/."#;
 
 #[cfg(feature = "mcp")]
 const USAGE_MCP: &str =
@@ -94,6 +96,7 @@ struct Args {
     flag_envlist:           bool,
     flag_update:            bool,
     flag_updatenow:         bool,
+    flag_generate_help_md:  bool,
     #[cfg(feature = "mcp")]
     flag_update_mcp_skills: bool,
 }
@@ -187,7 +190,10 @@ fn main() -> QsvExitCode {
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
     enabled_commands.push_str("    pivotp      Pivots CSV files using the Pola.rs engine\n");
 
-    enabled_commands.push_str("    pro         Interact with the qsv pro API\n");
+    enabled_commands.push_str(
+        "    pragmastat  Pragmatic statistical toolkit
+    pro         Interact with the qsv pro API\n",
+    );
 
     #[cfg(all(feature = "prompt", feature = "feature_capable"))]
     enabled_commands.push_str("    prompt      Open a file dialog to pick a file\n");
@@ -268,17 +274,39 @@ fn main() -> QsvExitCode {
         util::log_end(qsv_args, now);
         return QsvExitCode::Good;
     }
+    if args.flag_generate_help_md {
+        match help_markdown_gen::generate_help_markdown() {
+            Ok(()) => {
+                util::log_end(qsv_args, now);
+                return QsvExitCode::Good;
+            },
+            Err(e) => {
+                util::log_end(qsv_args, now);
+                werr!("Help Markdown generation error: {e}");
+                return QsvExitCode::Bad;
+            },
+        }
+    }
     #[cfg(feature = "mcp")]
     {
         if args.flag_update_mcp_skills {
             match mcp_skills_gen::generate_mcp_skills() {
+                Ok(()) => {},
+                Err(e) => {
+                    util::log_end(qsv_args, now);
+                    werr!("MCP skills generation error: {e}");
+                    return QsvExitCode::Bad;
+                },
+            }
+            // Also generate help markdown when updating MCP skills
+            match help_markdown_gen::generate_help_markdown() {
                 Ok(()) => {
                     util::log_end(qsv_args, now);
                     return QsvExitCode::Good;
                 },
                 Err(e) => {
                     util::log_end(qsv_args, now);
-                    werr!("MCP skills generation error: {e}");
+                    werr!("Help Markdown generation error: {e}");
                     return QsvExitCode::Bad;
                 },
             }
@@ -424,6 +452,7 @@ enum Command {
     Partition,
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
     PivotP,
+    Pragmastat,
     Pro,
     #[cfg(all(feature = "prompt", feature = "feature_capable"))]
     Prompt,
@@ -529,6 +558,7 @@ impl Command {
             Command::Partition => cmd::partition::run(argv),
             #[cfg(all(feature = "polars", feature = "feature_capable"))]
             Command::PivotP => cmd::pivotp::run(argv),
+            Command::Pragmastat => cmd::pragmastat::run(argv),
             Command::Pro => cmd::pro::run(argv),
             #[cfg(all(feature = "prompt", feature = "feature_capable"))]
             Command::Prompt => cmd::prompt::run(argv),

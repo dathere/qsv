@@ -1,0 +1,125 @@
+# count
+
+> Count the rows and optionally compile record width statistics of a CSV file. (11.87 seconds for a 15gb, 27m row NYC 311 dataset without an index. Instantaneous with an index.) If the `polars` feature is enabled, uses Polars' multithreaded, mem-mapped CSV reader for fast counts even without an index
+
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/count.rs](https://github.com/dathere/qsv/blob/master/src/cmd/count.rs)** | 📇🏎️🐻‍❄️
+
+<a name="nav"></a>
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Count Options](#count-options) | [Width Options](#width-options) | [When The Polars Feature Is Enabled Options](#when-the-polars-feature-is-enabled-options) | [Common Options](#common-options)
+
+<a name="description"></a>
+
+## Description [↩](#nav)
+
+Returns a count of the number of records in the CSV data.
+
+It has three modes of operation:
+1. If a valid index is present, it will use it to lookup the count and
+return instantaneously. (fastest)
+
+If no index is present, it will read the CSV and count the number
+of records by scanning the file.
+
+2. If the polars feature is enabled, it will use the multithreaded,
+mem-mapped Polars CSV reader. (faster - not available on qsvlite)
+
+3. If the polars feature is not enabled, it will use the "regular",
+single-threaded CSV reader.
+
+Note that the count will not include the header row (unless --no-headers is
+given).
+
+
+<a name="examples"></a>
+
+## Examples [↩](#nav)
+
+> Basic count of records in data.csv:
+
+```console
+qsv count data.csv
+```
+
+> Count records in data.csv without headers:
+
+```console
+qsv count --no-headers data.csv
+```
+
+> Count records in data.csv with human-readable output:
+
+```console
+qsv count --human-readable data.csv
+```
+
+> Count records in data.csv with width statistics:
+
+```console
+qsv count --width data.csv
+```
+
+> Count records in data.csv with width statistics (excluding delimiters):
+
+```console
+qsv count --width-no-delims data.csv
+```
+
+> Count records in data.csv with width statistics in JSON format:
+
+```console
+qsv count --width --json data.csv
+```
+
+For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_count.rs).
+
+
+<a name="usage"></a>
+
+## Usage [↩](#nav)
+
+```console
+qsv count [options] [<input>]
+qsv count --help
+```
+
+<a name="count-options"></a>
+
+## Count Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`-H,`<br>`--human-readable`&nbsp; | flag | Comma separate counts. |  |
+
+<a name="width-options"></a>
+
+## Width Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`--width`&nbsp; | flag | Also return the estimated widths of each record. Its an estimate as it doesn't count quotes, and will be an undercount if the record has quoted fields. The count and width are separated by a semicolon. It will return the max, avg, median, min, variance, stddev & MAD widths, separated by hyphens. If --human-readable is set, the widths will be labeled as "max", "avg", "median", "min", "stddev" & "mad" respectively, separated by spaces. Note that this option will require scanning the entire file using the "regular", single-threaded, streaming CSV reader, using the index if available for the count. If the file is very large, it may not be able to compile some stats - particularly avg, variance, stddev & MAD. In this case, it will return 0.0 for those stats. |  |
+| &nbsp;`--width-no-delims`&nbsp; | flag | Same as --width but does not count the delimiters in the width. |  |
+| &nbsp;`--json`&nbsp; | flag | Output the width stats in JSON format. |  |
+
+<a name="when-the-polars-feature-is-enabled-options"></a>
+
+## When The Polars Feature Is Enabled Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`--no-polars`&nbsp; | flag | Use the "regular", single-threaded, streaming CSV reader instead of the much faster multithreaded, mem-mapped Polars CSV reader. Use this when you encounter memory issues when counting with the Polars CSV reader. The streaming reader is slower but can read any valid CSV file of any size. |  |
+| &nbsp;`--low-memory`&nbsp; | flag | Use the Polars CSV Reader's low-memory mode. This mode is slower but uses less memory. If counting still fails, use --no-polars instead to use the streaming CSV reader. |  |
+
+<a name="common-options"></a>
+
+## Common Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-f,`<br>`--flexible`&nbsp; | flag | Do not validate if the CSV has different number of fields per record, increasing performance when counting without an index. |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will be included in the count. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The delimiter to use when reading CSV data. Must be a single character. | `,` |
+
+---
+**Source:** [`src/cmd/count.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/count.rs)
+| **[Table of Contents](TableOfContents.md)** | **[README](../../README.md)**

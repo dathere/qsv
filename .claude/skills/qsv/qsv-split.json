@@ -83,20 +83,28 @@
   },
   "examples": [
     {
-      "description": "This will create files with names like chunk_0.csv, chunk_100.csv, etc. in the directory 'outdir', creating the directory if it does not exist.",
+      "description": "Create files with names like chunk_0.csv, chunk_100.csv, etc. in the directory 'outdir', creating the directory if it does not exist.",
       "command": "qsv split outdir --size 100 --filename chunk_{}.csv input.csv"
     },
     {
-      "description": "This will create files with names like chunk_00000.csv, chunk_00100.csv, etc. in the directory 'outdir/subdir', creating the directories if they do not exist.",
+      "description": "Create files with names like chunk_00000.csv, chunk_00100.csv, etc. in the directory 'outdir/subdir', creating the directories if they do not exist.",
       "command": "qsv split outdir/subdir -s 100 --filename chunk_{}.csv --pad 5 input.csv"
     },
     {
-      "description": "This will create files like 0.csv, 100.csv, etc. in the current directory.",
+      "description": "Create files like 0.csv, 100.csv, etc. in the current directory.",
       "command": "qsv split . -s 100 input.csv"
     },
     {
-      "description": "This will create files with names like 0.csv, 994.csv, etc. in the directory 'outdir', creating the directory if it does not exist. Each file will be close to 1000KB in size.",
+      "description": "Create files with names like 0.csv, 994.csv, etc. in the directory 'outdir', creating the directory if it does not exist. Each file will be close to 1000KB in size.",
       "command": "qsv split outdir --kb-size 1000 input.csv"
+    },
+    {
+      "description": "Read from stdin and create files like mysplitoutput_0.csv, mysplitoutput_1000.csv, etc. Create 10 files with names like 0.csv, 1000.csv, etc. in the directory 'outdir',",
+      "command": "qsv split outdir --chunks 10 input.csv"
+    },
+    {
+      "description": "Create 10 files with names like splitoutdir_0.csv, splitoutdir_1000.csv, etc. using 4 parallel jobs. Note that the input CSV must have an index",
+      "command": "qsv split splitoutdir -c 10 -j 4 input.csv"
     },
     {
       "description": "This will create files with names like 0.csv, 100.csv, etc. in the directory 'outdir', and then run the command \"gzip\" on each chunk.",

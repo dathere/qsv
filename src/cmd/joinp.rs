@@ -123,10 +123,10 @@ joinp options:
                            ‎ -1: treat all columns as String. No Polars schema file is created.
                              0: do not cache Polars schema. Uses --infer-len to infer schema.
                              1: cache Polars schema with the following behavior:
-                                - If schema file exists and is newer than input: use cached schema
-                                - If schema file missing/outdated and stats cache exists: 
+                                * If schema file exists and is newer than input: use cached schema
+                                * If schema file missing/outdated and stats cache exists: 
                                   derive schema from stats and cache it
-                                - If no schema or stats cache: infer schema using --infer-len 
+                                * If no schema or stats cache: infer schema using --infer-len 
                                   and cache the result
                                 Schema files use the same name as input with .pschema.json extension
                                 (e.g., data.csv -> data.pschema.json)

@@ -43,6 +43,7 @@ static COMMAND_LIST: &str = r#"
     jsonl       Convert newline-delimited JSON files to CSV
     moarstats   Add "moar" statistics to existing stats CSV
     partition   Partition CSV data based on a column value
+    pragmastat  Pragmatic statistical toolkit
     pro         Interact with the qsv pro API
     pseudo      Pseudonymise the values of a column
     rename      Rename the columns of CSV data efficiently
@@ -250,6 +251,7 @@ enum Command {
     Json,
     Jsonl,
     Partition,
+    Pragmastat,
     Pro,
     Pseudo,
     Rename,
@@ -321,6 +323,7 @@ impl Command {
             Command::Json => cmd::json::run(argv),
             Command::Jsonl => cmd::jsonl::run(argv),
             Command::Partition => cmd::partition::run(argv),
+            Command::Pragmastat => cmd::pragmastat::run(argv),
             Command::Pro => cmd::pro::run(argv),
             Command::Pseudo => cmd::pseudo::run(argv),
             Command::Rename => cmd::rename::run(argv),

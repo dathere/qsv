@@ -24,12 +24,12 @@
       {
         "flag": "--backfill",
         "type": "flag",
-        "description": ""
+        "description": "Fill initial empty values with the first valid value."
       },
       {
         "flag": "--default",
         "type": "string",
-        "description": ""
+        "description": "Fill using this default value."
       },
       {
         "flag": "--delimiter",
@@ -39,12 +39,12 @@
       {
         "flag": "--first",
         "type": "flag",
-        "description": ""
+        "description": "Fill using the first valid value of a column, instead of the latest."
       },
       {
         "flag": "--groupby",
         "type": "string",
-        "description": ""
+        "description": "Group by specified columns."
       },
       {
         "flag": "--no-headers",

@@ -49,11 +49,11 @@ transpose options:
                            The <selection> argument is REQUIRED when using --long,
                            it specifies which column(s) to use as the "field" identifier.
                            It uses the same selection syntax as 'qsv select':
-                           - Column names: --long varname or --long "column name"
-                           - Column indices (1-based): --long 5 or --long 2,3
-                           - Ranges: --long 1-4 or --long 3-
-                           - Regex patterns: --long /^prefix/
-                           - Comma-separated: --long var1,var2 or --long 1,3,5
+                           * Column names: --long varname or --long "column name"
+                           * Column indices (1-based): --long 5 or --long 2,3
+                           * Ranges: --long 1-4 or --long 3-
+                           * Regex patterns: --long /^prefix/
+                           * Comma-separated: --long var1,var2 or --long 1,3,5
                            Multiple field columns are concatenated with | separator.
 
 Common options:

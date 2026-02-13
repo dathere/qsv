@@ -4576,7 +4576,7 @@ fn frequency_jsonl_high_cardinality() {
     let freqs = id_entry["frequencies"].as_array().unwrap();
     assert_eq!(freqs[0]["value"], "<ALL_UNIQUE>");
 
-    // category column (cardinality=19 > min(10, 50%*20=10) = 10) should be HIGH_CARDINALITY
+    // category column (cardinality=19 > effective_threshold=min(10, 50%*20=10)=10) → HIGH_CARDINALITY
     let cat_entry: Value = serde_json::from_str(lines[1]).unwrap();
     assert_eq!(cat_entry["field"], "category");
     assert_eq!(cat_entry["cardinality"], 19);
@@ -4828,4 +4828,78 @@ fn frequency_jsonl_high_card_at_threshold() {
     let freqs2 = cat_entry2["frequencies"].as_array().unwrap();
     assert_eq!(freqs2.len(), 1, "Cardinality above threshold should be HIGH_CARDINALITY");
     assert_eq!(freqs2[0]["value"], "<HIGH_CARDINALITY>");
+}
+
+#[test]
+fn frequency_jsonl_no_stats_cache() {
+    // When QSV_STATSCACHE_MODE=none, the stats cache is completely bypassed.
+    // Without cardinality info, FREQ_ROW_COUNT is never set (defaults to 0),
+    // so write_frequency_jsonl skips writing the cache file entirely.
+    let wrk = Workdir::new("frequency_jsonl_no_stats_cache");
+    let rows = vec![
+        svec!["id", "color"],
+        svec!["1", "red"],
+        svec!["2", "blue"],
+        svec!["3", "red"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Deliberately do NOT create a stats cache; disable auto mode
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_STATSCACHE_MODE", "none");
+    cmd.arg("in.csv").arg("--frequency-jsonl");
+    wrk.assert_success(&mut cmd);
+
+    // With no stats cache, the JSONL cache is NOT created (row_count=0 → skip)
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(
+        !jsonl_path.exists(),
+        "JSONL cache should not be created without stats cache"
+    );
+}
+
+#[test]
+fn frequency_jsonl_limit_does_not_affect_cache() {
+    // The JSONL cache should contain ALL frequency data regardless of --limit
+    let wrk = Workdir::new("frequency_jsonl_limit_does_not_affect_cache");
+    let rows = vec![
+        svec!["color"],
+        svec!["red"],
+        svec!["red"],
+        svec!["blue"],
+        svec!["blue"],
+        svec!["green"],
+        svec!["yellow"],
+        svec!["orange"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run with --limit 2 (stdout shows only top 2 values)
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .args(["-l", "2"]);
+    wrk.assert_success(&mut cmd);
+
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    let contents = std::fs::read_to_string(&jsonl_path).unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+
+    let entry: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(entry["field"], "color");
+    let freqs = entry["frequencies"].as_array().unwrap();
+    // Cache should have ALL 5 values, not just the top 2
+    assert_eq!(
+        freqs.len(),
+        5,
+        "JSONL cache should contain all frequency values regardless of --limit"
+    );
 }

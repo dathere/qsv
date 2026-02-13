@@ -93,8 +93,7 @@ hasn't changed, the stats will be loaded from the cache instead of recomputing i
 These cached stats are also used by other qsv commands (currently `describegpt`, `frequency`,
 `joinp`, `pivotp`, `schema`, `sqlp` & `tojsonl`) to work smarter & faster.
 If the cached stats are not current (i.e., the input file is newer than the cached stats),
-the cached stats will be ignored and recomputed. For example, see the "boston311" test files in
-<https://github.com/dathere/qsv/blob/4529d51273218347fef6aca15ac24e22b85b2ec4/tests/test_stats.rs#L608>.
+the cached stats will be ignored and recomputed.
 
 
 <a name="examples"></a>

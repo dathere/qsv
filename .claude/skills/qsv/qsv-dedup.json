@@ -4,7 +4,6 @@
   "description": "Remove duplicate rows (See also `extdedup`, `extsort`, `sort` & `sortcheck` commands).",
   "category": "utility",
   "command": {
-    "binary": "qsv",
     "subcommand": "dedup",
     "args": [
       {

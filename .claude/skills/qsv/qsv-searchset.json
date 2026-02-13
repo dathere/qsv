@@ -4,7 +4,6 @@
   "description": "_Run multiple regexes over a CSV in a single pass._ Applies the regexes to each field individually & shows only matching rows.",
   "category": "filtering",
   "command": {
-    "binary": "qsv",
     "subcommand": "searchset",
     "args": [
       {

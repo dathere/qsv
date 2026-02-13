@@ -4,7 +4,6 @@
   "description": "Transpose rows/columns of a CSV.",
   "category": "transformation",
   "command": {
-    "binary": "qsv",
     "subcommand": "transpose",
     "args": [
       {

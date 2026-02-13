@@ -4,7 +4,6 @@
   "description": "Execute a shell command once per record in a given CSV file.",
   "category": "utility",
   "command": {
-    "binary": "qsv",
     "subcommand": "foreach",
     "args": [
       {

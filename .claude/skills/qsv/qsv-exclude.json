@@ -4,7 +4,6 @@
   "description": "Removes a set of CSV data from another set based on the specified columns.",
   "category": "utility",
   "command": {
-    "binary": "qsv",
     "subcommand": "exclude",
     "args": [
       {

@@ -4,7 +4,6 @@
   "description": "Check if a CSV is sorted. With the --json options, also retrieve record count, sort breaks & duplicate count.",
   "category": "utility",
   "command": {
-    "binary": "qsv",
     "subcommand": "sortcheck",
     "args": [
       {

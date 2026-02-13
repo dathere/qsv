@@ -4,7 +4,6 @@
   "description": "Geocodes a location against an updatable local copy of the Geonames cities & the Maxmind GeoLite2 databases. With caching and multi-threading, it geocodes up to 360,000 records/sec!",
   "category": "utility",
   "command": {
-    "binary": "qsv",
     "subcommand": "geocode",
     "args": [
       {

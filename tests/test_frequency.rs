@@ -4894,8 +4894,24 @@ fn frequency_jsonl_limit_does_not_affect_cache() {
     cmd.arg("in.csv")
         .arg("--frequency-jsonl")
         .args(["-l", "2"]);
-    wrk.assert_success(&mut cmd);
 
+    // Verify stdout output IS limited to 2 entries (+ header + "Other" summary row)
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // got includes header row + 2 top-value rows + 1 "Other" aggregation row
+    assert_eq!(
+        got.len(),
+        4,
+        "stdout should have header + 2 value rows + 1 Other row when --limit 2 is set, got: \
+         {got:?}"
+    );
+    // The last row should be the "Other" summary
+    assert!(
+        got[3][1].starts_with("Other"),
+        "last stdout row should be 'Other' summary, got: {:?}",
+        got[3]
+    );
+
+    // Verify the JSONL cache contains ALL frequency values regardless of --limit
     let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
     let contents = std::fs::read_to_string(&jsonl_path).unwrap();
     let lines: Vec<&str> = contents.lines().collect();

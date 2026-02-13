@@ -4738,6 +4738,13 @@ fn frequency_jsonl_empty_file() {
     cmd.arg("in.csv").arg("--frequency-jsonl");
 
     wrk.assert_success(&mut cmd);
+
+    // Verify that no JSONL cache file was created for empty data
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(
+        !jsonl_path.exists(),
+        "JSONL cache file should not be created when row count is 0"
+    );
 }
 
 #[test]
@@ -4901,5 +4908,42 @@ fn frequency_jsonl_limit_does_not_affect_cache() {
         freqs.len(),
         5,
         "JSONL cache should contain all frequency values regardless of --limit"
+    );
+}
+
+#[test]
+fn frequency_jsonl_stdin_error() {
+    // --frequency-jsonl requires a file input, not stdin
+    use std::io::Write;
+
+    let wrk = Workdir::new("frequency_jsonl_stdin_error");
+    wrk.create(
+        "in.csv",
+        vec![svec!["h1", "h2"], svec!["a", "b"], svec!["c", "d"]],
+    );
+
+    let file_content = wrk.read_to_string("in.csv").unwrap();
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--frequency-jsonl")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().unwrap();
+    {
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(file_content.as_bytes()).unwrap();
+    }
+
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        !output.status.success(),
+        "--frequency-jsonl with stdin should fail"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("not stdin") || stderr.contains("file input"),
+        "Error message should mention that stdin is not supported, got: {stderr}"
     );
 }

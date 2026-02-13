@@ -327,6 +327,7 @@ static FLOAT_COLUMNS_TO_SKIP: OnceLock<Vec<usize>> = OnceLock::new();
 #[cfg(feature = "luau")]
 static STATS_FILTER_COLUMNS_TO_SKIP: OnceLock<Vec<usize>> = OnceLock::new();
 static EMPTY_VEC: Vec<(String, u64)> = Vec::new();
+static EMPTY_USIZE_VEC: Vec<usize> = Vec::new();
 static ALL_UNIQUE_TEXT: OnceLock<Vec<u8>> = OnceLock::new();
 // FrequencyCacheEntry and FrequencyCacheValue are structs for --frequency-jsonl output
 #[derive(Serialize)]
@@ -1358,7 +1359,6 @@ impl Args {
         // Build cache path: <FILESTEM>.freq.csv.data.jsonl
         let freq_jsonl_path = path.with_extension("freq.csv.data.jsonl");
 
-        static EMPTY_USIZE_VEC: Vec<usize> = Vec::new();
         let unique_headers = UNIQUE_COLUMNS_VEC.get().unwrap_or(&EMPTY_USIZE_VEC);
         let row_count = *FREQ_ROW_COUNT.get().unwrap_or(&0);
         if row_count == 0 {
